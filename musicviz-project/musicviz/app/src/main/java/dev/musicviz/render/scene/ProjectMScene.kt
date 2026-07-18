@@ -12,6 +12,8 @@ import dev.musicviz.analysis.AudioFeatures
 class ProjectMScene(
     /** Returns the newest mono PCM window, or null if none. Called on the GL thread. */
     private val pcmProvider: () -> FloatArray?,
+    /** Preset to load as soon as the scene renders; survives scene recreation. */
+    initialPresetPath: String? = null,
 ) : Scene {
     override val id: String = SceneIds.MILKDROP
 
@@ -19,8 +21,10 @@ class ProjectMScene(
     private var width = 1
     private var height = 1
 
+    private class PendingPreset(val path: String, val smooth: Boolean)
+
     @Volatile
-    private var pendingPresetPath: String? = null
+    private var pendingPreset: PendingPreset? = initialPresetPath?.let { PendingPreset(it, smooth = false) }
 
     @Volatile
     private var pendingBeatSensitivity: Float? = null
@@ -29,9 +33,15 @@ class ProjectMScene(
         pendingBeatSensitivity = params.intensity
     }
 
-    /** Thread-safe: queues a .milk preset file to load on the GL thread. */
-    fun queuePreset(path: String) {
-        pendingPresetPath = path
+    /**
+     * Thread-safe: queues a .milk preset file to load on the GL thread.
+     * [smooth] = false does a hard cut so the preset is visible immediately.
+     */
+    fun queuePreset(
+        path: String,
+        smooth: Boolean = false,
+    ) {
+        pendingPreset = PendingPreset(path, smooth)
     }
 
     override fun init() {
@@ -60,9 +70,11 @@ class ProjectMScene(
 
     override fun draw(timeSeconds: Float) {
         if (handle == 0L) return
-        pendingPresetPath?.let { path ->
-            pendingPresetPath = null
-            PMBridge.nativeLoadPreset(handle, path, true)
+        pendingPreset?.let { preset ->
+            pendingPreset = null
+            PMBridge.nativeLoadPreset(handle, preset.path, preset.smooth)
+            // Lock so projectM's preset-duration timer can't cut back to idle.
+            PMBridge.nativeSetPresetLocked(handle, true)
         }
         pendingBeatSensitivity?.let { value ->
             pendingBeatSensitivity = null

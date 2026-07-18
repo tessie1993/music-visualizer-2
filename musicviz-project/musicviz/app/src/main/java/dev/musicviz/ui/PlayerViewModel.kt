@@ -54,6 +54,7 @@ data class VizUiState(
     val shaderError: String? = null,
     val presets: List<Preset> = emptyList(),
     val params: SceneParams = SceneParams.DEFAULT,
+    val milkPresetPath: String? = null,
 )
 
 data class ExportUiState(
@@ -101,16 +102,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     /** Newest mono PCM window for the milkdrop scene; called from the GL thread. */
     fun latestPcm(): FloatArray? = if (ring.snapshotLatest(pcmScratch)) pcmScratch else null
 
-    /** Copies a user-picked .milk preset into app storage; returns the file path. */
+    /** Copies a user-picked .milk preset into app storage; returns the file path or null on failure. */
     fun importMilkPreset(uri: Uri): String? =
         try {
             val dir = java.io.File(getApplication<Application>().filesDir, "milk").apply { mkdirs() }
             val name = (uri.lastPathSegment ?: "preset").substringAfterLast('/').ifBlank { "preset" }
             val file = java.io.File(dir, if (name.endsWith(".milk")) name else "$name.milk")
-            getApplication<Application>().contentResolver.openInputStream(uri)?.use { input ->
-                file.outputStream().use { input.copyTo(it) }
+            val copied =
+                getApplication<Application>().contentResolver.openInputStream(uri)?.use { input ->
+                    file.outputStream().use { input.copyTo(it) }
+                } ?: -1L
+            if (copied > 0) {
+                _vizState.value = _vizState.value.copy(milkPresetPath = file.absolutePath)
+                file.absolutePath
+            } else {
+                file.delete()
+                null
             }
-            file.absolutePath
         } catch (t: Throwable) {
             null
         }

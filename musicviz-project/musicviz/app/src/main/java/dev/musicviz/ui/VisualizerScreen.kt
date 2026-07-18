@@ -88,6 +88,9 @@ fun VisualizerScreen(
     LaunchedEffect(viz.params) {
         visualizerView.visualizerRenderer.sceneParams = viz.params
     }
+    LaunchedEffect(viz.milkPresetPath) {
+        viz.milkPresetPath?.let { visualizerView.visualizerRenderer.loadMilkPreset(it) }
+    }
 
     LifecycleResumeEffect(Unit) {
         visualizerView.onResume()
