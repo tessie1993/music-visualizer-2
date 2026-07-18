@@ -70,6 +70,10 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
     @Volatile
     var pcmProvider: () -> FloatArray? = { null }
 
+    /** Last loaded .milk preset; reapplied when the GL context (and scene) is recreated. */
+    @Volatile
+    private var milkPresetPath: String? = null
+
     val milkdropAvailable: Boolean get() = PMBridge.available
 
     private val scenes = LinkedHashMap<String, Scene>()
@@ -98,6 +102,7 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
     fun shaderSourceFor(sceneId: String): String? = SHADER_SCENES[sceneId]?.let { loadRaw(it) }
 
     fun loadMilkPreset(path: String) {
+        milkPresetPath = path
         (scenes[SceneIds.MILKDROP] as? ProjectMScene)?.queuePreset(path)
     }
 
@@ -116,7 +121,7 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         for ((id, res) in SHADER_SCENES) {
             scenes[id] = ShaderScene(id, quadVert, loadRaw(res)) { onShaderError(it) }
         }
-        if (PMBridge.available) scenes[SceneIds.MILKDROP] = ProjectMScene { pcmProvider() }
+        if (PMBridge.available) scenes[SceneIds.MILKDROP] = ProjectMScene({ pcmProvider() }, milkPresetPath)
         scenes.values.forEach { it.init() }
         activeScene = scenes[requestedSceneId] ?: scenes[SceneIds.NEBULA]
 
@@ -188,7 +193,7 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
                 val quadVert = loadRaw(R.raw.quad_vert)
                 val scene: Scene =
                     when {
-                        sceneId == SceneIds.MILKDROP && PMBridge.available -> ProjectMScene { null }
+                        sceneId == SceneIds.MILKDROP && PMBridge.available -> ProjectMScene({ null }, milkPresetPath)
                         sceneId == SceneIds.BURSTS -> BurstScene(particleShaders)
                         sceneId == SceneIds.SWARM -> SwarmScene(particleShaders)
                         sceneId == SceneIds.FOUNTAIN -> FountainScene(particleShaders)

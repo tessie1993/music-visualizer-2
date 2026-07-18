@@ -32,6 +32,7 @@ class VideoExporter(private val context: Context) {
         private const val FPS: Int = 60
         private const val BIT_RATE: Int = 12_000_000
         private const val TIMEOUT_US: Long = 10_000
+        private const val DRAIN_TIMEOUT_NS: Long = 5_000_000_000L
     }
 
     interface SceneFactory {
@@ -60,7 +61,13 @@ class VideoExporter(private val context: Context) {
             val pfd = resolver.openFileDescriptor(outUri, "w") ?: return@withContext null
             try {
                 pfd.use { encodeInto(it, audioUri, timeline, sceneFactory, aspect, onProgress, isCancelled) }
-                outUri
+                if (isCancelled()) {
+                    // Don't leave a truncated video in the library.
+                    resolver.delete(outUri, null, null)
+                    null
+                } else {
+                    outUri
+                }
             } catch (e: Exception) {
                 resolver.delete(outUri, null, null)
                 throw e
@@ -136,7 +143,10 @@ class VideoExporter(private val context: Context) {
                 onProgress(0.1f + frame / totalFrames.toFloat() * 0.85f)
             }
             encoder.signalEndOfInputStream()
-            while (true) {
+            // Drain until EOS: the encoder may take longer than one timeout to
+            // flush its tail, so TRY_AGAIN_LATER must not end the loop early.
+            val drainDeadline = System.nanoTime() + DRAIN_TIMEOUT_NS
+            while (System.nanoTime() < drainDeadline) {
                 val outIndex = encoder.dequeueOutputBuffer(info, TIMEOUT_US)
                 if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     videoTrack = muxer.addTrack(encoder.outputFormat)
@@ -148,8 +158,6 @@ class VideoExporter(private val context: Context) {
                     val eos = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
                     encoder.releaseOutputBuffer(outIndex, false)
                     if (eos) break
-                } else if (outIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
-                    break
                 }
             }
             if (muxerStarted && !isCancelled() && audioTrack >= 0) {
