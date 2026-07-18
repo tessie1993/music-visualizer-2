@@ -1,0 +1,132 @@
+package dev.musicviz.render.scene
+
+import android.opengl.GLES30
+import dev.musicviz.analysis.AudioFeatures
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.FloatBuffer
+
+/**
+ * Shared plumbing for point-sprite particle scenes: one VBO, one draw call,
+ * and uniform handling of the Customize params. Subclasses implement
+ * [simulate] and fill [vertexData] with raw values (hue as a 0..1 fraction);
+ * palette mapping, color cycling, mirroring, density and beat pulse are
+ * applied here so every particle scene behaves consistently.
+ */
+abstract class ParticleSceneBase(
+    override val id: String,
+    protected val count: Int,
+    private val shaders: ShaderSources,
+) : Scene {
+    class ShaderSources(val vertex: String, val fragment: String)
+
+    companion object {
+        const val FLOATS_PER_PARTICLE: Int = 5
+    }
+
+    protected val vertexData: FloatArray = FloatArray(count * FLOATS_PER_PARTICLE)
+    protected var sceneParams: SceneParams = SceneParams.DEFAULT
+        private set
+
+    private var program = 0
+    private var vbo = 0
+    private var vao = 0
+    private lateinit var buffer: FloatBuffer
+    private var rotationAngle = 0f
+    private var cyclePhase = 0f
+    private var beatPulse = 0f
+    private var drawCount = 0
+
+    override fun setParams(params: SceneParams) {
+        sceneParams = params
+    }
+
+    override fun init() {
+        program = GlUtil.buildProgram(shaders.vertex, shaders.fragment)
+        val ids = IntArray(1)
+        GLES30.glGenVertexArrays(1, ids, 0)
+        vao = ids[0]
+        GLES30.glGenBuffers(1, ids, 0)
+        vbo = ids[0]
+        buffer = ByteBuffer.allocateDirect(vertexData.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+        GLES30.glBindVertexArray(vao)
+        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vbo)
+        GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, vertexData.size * 4, null, GLES30.GL_DYNAMIC_DRAW)
+        val stride = FLOATS_PER_PARTICLE * 4
+        GLES30.glEnableVertexAttribArray(0)
+        GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, stride, 0)
+        GLES30.glEnableVertexAttribArray(1)
+        GLES30.glVertexAttribPointer(1, 1, GLES30.GL_FLOAT, false, stride, 8)
+        GLES30.glEnableVertexAttribArray(2)
+        GLES30.glVertexAttribPointer(2, 1, GLES30.GL_FLOAT, false, stride, 12)
+        GLES30.glEnableVertexAttribArray(3)
+        GLES30.glVertexAttribPointer(3, 1, GLES30.GL_FLOAT, false, stride, 16)
+        GLES30.glBindVertexArray(0)
+    }
+
+    override fun resize(
+        width: Int,
+        height: Int,
+    ) = Unit
+
+    final override fun update(
+        features: AudioFeatures,
+        dt: Float,
+    ) {
+        val p = sceneParams
+        rotationAngle += p.rotation * dt
+        if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * dt) % 1f
+        beatPulse = if (features.beat) 1f else (beatPulse - dt * 3f).coerceAtLeast(0f)
+        simulate(features, dt)
+        postProcess(p)
+    }
+
+    /** Advances the particle simulation and fills [vertexData]. */
+    protected abstract fun simulate(
+        features: AudioFeatures,
+        dt: Float,
+    )
+
+    /** Palette/cycle/mirror/density applied uniformly after simulation. */
+    private fun postProcess(p: SceneParams) {
+        drawCount = (count * p.density).toInt().coerceIn(1, count)
+        val hueBase = p.paletteBase + p.colorShift + cyclePhase
+        val hueSpan = p.paletteRange * p.hueRange
+        for (i in 0 until drawCount) {
+            val o = i * FLOATS_PER_PARTICLE
+            vertexData[o + 3] = ((hueBase + vertexData[o + 3] * hueSpan) % 1f + 1f) % 1f
+            if (p.mirror && i % 2 == 1) {
+                vertexData[o] = -vertexData[o - FLOATS_PER_PARTICLE + 0]
+                vertexData[o + 1] = vertexData[o - FLOATS_PER_PARTICLE + 1]
+                vertexData[o + 2] = vertexData[o - FLOATS_PER_PARTICLE + 2]
+                vertexData[o + 3] = vertexData[o - FLOATS_PER_PARTICLE + 3]
+                vertexData[o + 4] = vertexData[o - FLOATS_PER_PARTICLE + 4]
+            }
+        }
+    }
+
+    override fun draw(timeSeconds: Float) {
+        val p = sceneParams
+        GLES30.glEnable(GLES30.GL_BLEND)
+        GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        GLES30.glUseProgram(program)
+        GLES30.glUniform1f(GLES30.glGetUniformLocation(program, "uZoom"), p.zoom * (1f + beatPulse * p.beatResponse * 0.2f))
+        GLES30.glUniform1f(GLES30.glGetUniformLocation(program, "uRotation"), rotationAngle)
+        GLES30.glUniform1f(GLES30.glGetUniformLocation(program, "uSat"), p.saturation)
+        GLES30.glUniform1f(GLES30.glGetUniformLocation(program, "uBright"), p.brightness * p.intensity)
+        GLES30.glUniform1f(GLES30.glGetUniformLocation(program, "uInvert"), if (p.invert) 1f else 0f)
+        GLES30.glBindVertexArray(vao)
+        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vbo)
+        buffer.clear()
+        buffer.put(vertexData)
+        buffer.flip()
+        GLES30.glBufferSubData(GLES30.GL_ARRAY_BUFFER, 0, drawCount * FLOATS_PER_PARTICLE * 4, buffer)
+        GLES30.glDrawArrays(GLES30.GL_POINTS, 0, drawCount)
+        GLES30.glBindVertexArray(0)
+    }
+
+    override fun release() {
+        if (program != 0) GLES30.glDeleteProgram(program)
+        program = 0
+    }
+}

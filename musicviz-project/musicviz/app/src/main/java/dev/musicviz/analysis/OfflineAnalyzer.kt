@@ -1,0 +1,161 @@
+package dev.musicviz.analysis
+
+import android.content.Context
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.nio.ByteOrder
+
+/**
+ * Decodes a whole audio file (no playback) via MediaExtractor/MediaCodec and
+ * runs the same FFT/feature pipeline as live analysis at a fixed hop.
+ *
+ * Streaming: decoded PCM is analyzed chunk-by-chunk and discarded, so memory
+ * stays constant regardless of track length.
+ */
+class OfflineAnalyzer(private val context: Context) {
+    suspend fun analyze(
+        uri: Uri,
+        onProgress: (Float) -> Unit = {},
+    ): FeatureTimeline = withContext(Dispatchers.Default) { analyzeBlocking(uri, onProgress) }
+
+    fun analyzeBlocking(
+        uri: Uri,
+        onProgress: (Float) -> Unit = {},
+    ): FeatureTimeline {
+        val extractor = MediaExtractor()
+        extractor.setDataSource(context, uri, null)
+        val trackIndex =
+            (0 until extractor.trackCount).firstOrNull {
+                extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+            } ?: run {
+                extractor.release()
+                throw IllegalArgumentException("No audio track in file")
+            }
+        val format = extractor.getTrackFormat(trackIndex)
+        extractor.selectTrack(trackIndex)
+        val durationUs =
+            if (format.containsKey(MediaFormat.KEY_DURATION)) format.getLong(MediaFormat.KEY_DURATION) else 0L
+        val mime = requireNotNull(format.getString(MediaFormat.KEY_MIME))
+        val codec = MediaCodec.createDecoderByType(mime)
+        codec.configure(format, null, null, 0)
+        codec.start()
+
+        val pipeline = StreamingPipeline()
+        val info = MediaCodec.BufferInfo()
+        var inputDone = false
+        var outputDone = false
+        var lastProgress = 0f
+        try {
+            while (!outputDone) {
+                if (!inputDone) {
+                    val inIndex = codec.dequeueInputBuffer(10_000)
+                    if (inIndex >= 0) {
+                        val buf = codec.getInputBuffer(inIndex)!!
+                        val size = extractor.readSampleData(buf, 0)
+                        if (size < 0) {
+                            codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            inputDone = true
+                        } else {
+                            codec.queueInputBuffer(inIndex, 0, size, extractor.sampleTime, 0)
+                            if (durationUs > 0) {
+                                val p = (extractor.sampleTime / durationUs.toFloat()).coerceIn(0f, 1f)
+                                if (p - lastProgress > 0.01f) {
+                                    lastProgress = p
+                                    onProgress(p)
+                                }
+                            }
+                            extractor.advance()
+                        }
+                    }
+                }
+                val outIndex = codec.dequeueOutputBuffer(info, 10_000)
+                if (outIndex >= 0) {
+                    if (info.size > 0) {
+                        val outFormat = codec.outputFormat
+                        val sampleRate = outFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                        val channels = outFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                        val buf = codec.getOutputBuffer(outIndex)!!
+                        buf.position(info.offset)
+                        buf.limit(info.offset + info.size)
+                        pipeline.feed(buf.order(ByteOrder.LITTLE_ENDIAN).asShortBuffer(), channels, sampleRate)
+                    }
+                    codec.releaseOutputBuffer(outIndex, false)
+                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
+                }
+            }
+        } finally {
+            runCatching { codec.stop() }
+            codec.release()
+            extractor.release()
+        }
+        onProgress(1f)
+        return pipeline.finish()
+    }
+
+    /** Windows a mono stream at a fixed hop, running the shared FFT/feature pipeline. */
+    private class StreamingPipeline {
+        private val processor = FftProcessor()
+        private val smoother = BandSmoother(processor.bandCount)
+        private val extractor = FeatureExtractor(processor.bandCount, hopRateHz = 60f)
+        private val window = FloatArray(processor.fftSize)
+        private val raw = FloatArray(processor.bandCount)
+        private val smoothed = FloatArray(processor.bandCount)
+        private val waveform = FloatArray(128)
+        private val frames = ArrayList<TimelineFrame>(16_384)
+        private var buffer = FloatArray(processor.fftSize * 4)
+        private var buffered = 0
+        private var sampleRate = 44100
+        private var hopSamples = sampleRate / 60
+        private var timeMs = 0L
+
+        fun feed(
+            pcm: java.nio.ShortBuffer,
+            channels: Int,
+            sampleRateHz: Int,
+        ) {
+            if (sampleRateHz != sampleRate) {
+                sampleRate = sampleRateHz
+                hopSamples = (sampleRate / 60).coerceAtLeast(1)
+            }
+            val frameCount = pcm.remaining() / channels
+            if (buffered + frameCount > buffer.size) {
+                buffer = buffer.copyOf((buffered + frameCount).coerceAtLeast(buffer.size * 2))
+            }
+            var s = 0
+            for (f in 0 until frameCount) {
+                var acc = 0f
+                for (c in 0 until channels) {
+                    acc += pcm.get(s) / 32768f
+                    s++
+                }
+                buffer[buffered + f] = acc / channels
+            }
+            buffered += frameCount
+            drain()
+        }
+
+        private fun drain() {
+            var start = 0
+            while (start + processor.fftSize <= buffered) {
+                System.arraycopy(buffer, start, window, 0, processor.fftSize)
+                processor.process(window, sampleRate, raw)
+                smoother.apply(raw, smoothed)
+                val step = processor.fftSize / waveform.size
+                for (i in waveform.indices) waveform[i] = window[i * step]
+                frames += TimelineFrame(timeMs, extractor.extract(smoothed, waveform, sampleRate))
+                timeMs += 1000L / 60
+                start += hopSamples
+            }
+            if (start > 0) {
+                System.arraycopy(buffer, start, buffer, 0, buffered - start)
+                buffered -= start
+            }
+        }
+
+        fun finish(): FeatureTimeline = FeatureTimeline(frames, hopMs = 1000L / 60)
+    }
+}
