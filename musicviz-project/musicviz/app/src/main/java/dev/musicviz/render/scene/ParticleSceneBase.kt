@@ -42,7 +42,7 @@ abstract class ParticleSceneBase(
     }
 
     override fun init() {
-        program = GlUtil.buildProgram(shaders.vertex, shaders.fragment)
+        program = GlUtil.buildProgram(shaders.vertex, shaders.fragment).also { uniformLocs.clear() }
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
         vao = ids[0]
@@ -110,11 +110,16 @@ abstract class ParticleSceneBase(
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         GLES30.glUseProgram(program)
-        GLES30.glUniform1f(GLES30.glGetUniformLocation(program, "uZoom"), p.zoom * (1f + beatPulse * p.beatResponse * 0.2f))
-        GLES30.glUniform1f(GLES30.glGetUniformLocation(program, "uRotation"), rotationAngle)
-        GLES30.glUniform1f(GLES30.glGetUniformLocation(program, "uSat"), p.saturation)
-        GLES30.glUniform1f(GLES30.glGetUniformLocation(program, "uBright"), p.brightness * p.intensity)
-        GLES30.glUniform1f(GLES30.glGetUniformLocation(program, "uInvert"), if (p.invert) 1f else 0f)
+        GLES30.glUniform1f(loc("uZoom"), p.zoom * (1f + beatPulse * p.beatResponse * 0.2f))
+        GLES30.glUniform1f(loc("uRotation"), rotationAngle)
+        GLES30.glUniform1f(loc("uSat"), p.saturation)
+        GLES30.glUniform1f(loc("uBright"), p.brightness * p.intensity)
+        GLES30.glUniform1f(loc("uContrast"), p.contrast)
+        GLES30.glUniform1f(loc("uGamma"), p.gamma)
+        GLES30.glUniform1f(loc("uShape"), p.particleShape.toFloat())
+        // Pulse: beat-driven size swell so the parameter works on particles
+        // (it previously only affected shader scenes).
+        GLES30.glUniform1f(loc("uSize"), p.particleSize * (1f + beatPulse * p.pulse * 0.8f))
         GLES30.glBindVertexArray(vao)
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vbo)
         buffer.clear()
@@ -125,8 +130,16 @@ abstract class ParticleSceneBase(
         GLES30.glBindVertexArray(0)
     }
 
+    private val uniformLocs = HashMap<String, Int>()
+
+    private fun loc(name: String): Int = uniformLocs.getOrPut(name) { GLES30.glGetUniformLocation(program, name) }
+
     override fun release() {
         if (program != 0) GLES30.glDeleteProgram(program)
+        if (vao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(vao), 0)
+        if (vbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(vbo), 0)
         program = 0
+        vao = 0
+        vbo = 0
     }
 }

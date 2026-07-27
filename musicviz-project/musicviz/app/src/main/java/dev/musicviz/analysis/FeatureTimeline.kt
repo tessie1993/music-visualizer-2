@@ -12,6 +12,8 @@ data class TimelineFrame(val timeMs: Long, val features: AudioFeatures)
 class FeatureTimeline(
     val frames: List<TimelineFrame>,
     val hopMs: Long,
+    /** Estimated musical key, e.g. "A minor"; empty when unknown. */
+    val key: String = "",
 ) {
     val durationMs: Long = frames.lastOrNull()?.timeMs ?: 0L
     val averageEnergy: Float = if (frames.isEmpty()) 0f else frames.map { it.features.rms }.average().toFloat()
@@ -22,7 +24,16 @@ class FeatureTimeline(
 
     fun featuresAt(timeMs: Long): AudioFeatures {
         if (frames.isEmpty()) return AudioFeatures.empty()
-        val index = (timeMs / hopMs).toInt().coerceIn(0, frames.size - 1)
+        // Index by the frames' actual spacing (durationMs / (n-1)), not the
+        // nominal hopMs: the offline hop is sampleRate/60 samples (16.67 ms),
+        // so dividing by a truncated 16 ms would drift ~4% over a track.
+        val spacing = if (frames.size > 1) durationMs.toDouble() / (frames.size - 1) else hopMs.toDouble()
+        val index =
+            if (spacing > 0.0) {
+                Math.round(timeMs / spacing).toInt().coerceIn(0, frames.size - 1)
+            } else {
+                0
+            }
         return frames[index].features
     }
 

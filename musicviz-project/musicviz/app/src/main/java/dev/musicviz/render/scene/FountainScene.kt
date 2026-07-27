@@ -33,6 +33,11 @@ class FountainScene(shaders: ShaderSources, count: Int = 2800) :
             hue[i] = random.nextFloat() * 0.4f + features.centroid * 0.5f
         }
         for (i in 0 until count) {
+            if (p.endlessZoom) {
+                val flow = p.endlessZoomSpeed * 1.5f * dt
+                px[i] += px[i] * flow
+                py[i] += py[i] * flow
+            }
             if (life[i] > 0f) {
                 life[i] -= dt
                 vy[i] -= 1.5f * dt

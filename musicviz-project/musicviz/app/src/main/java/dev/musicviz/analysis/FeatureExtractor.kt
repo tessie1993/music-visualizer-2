@@ -14,8 +14,34 @@ class FeatureExtractor(
     historySeconds: Float = 6f,
 ) {
     private val prevBands = FloatArray(bandCount)
+
+    /**
+     * Per-band weights for the onset/beat flux. Beats are tracked from kick
+     * and snare energy (bass + low mids); hi-hats, cymbals and vocal sibilance
+     * live in the upper bands and were previously counted at full weight,
+     * which made the beat gate fire on every 16th-note hat - the visible
+     * result was constant flicker of flash/pulse/strobe on busy tracks. This
+     * mirrors how DJ software (e.g. rekordbox) weights onset detection.
+     */
+    private val fluxWeights =
+        FloatArray(bandCount) { i ->
+            when {
+                i < bandCount / 8 -> 1f
+                i < bandCount / 4 -> 0.8f
+                i < bandCount / 2 -> 0.3f
+                else -> 0.1f
+            }
+        }
     private val historySize = (hopRateHz * historySeconds).toInt()
     private val fluxHistory = FloatArray(historySize)
+
+    /** Beat sensitivity in sigmas over mean flux; higher = fewer, surer beats. */
+    @Volatile
+    var beatThresholdSigma: Float = 2.5f
+
+    /** Extra smoothing for the treble group, which is jumpy on hi-hats and was
+     *  a flicker source when driving flash/strobe-style params. */
+    private var trebleSmooth = 0f
     private var historyIndex = 0
     private var historyFilled = 0
     private var framesSinceBeat = 100
@@ -32,7 +58,7 @@ class FeatureExtractor(
         var weighted = 0f
         for (i in 0 until bandCount) {
             val v = bands[i]
-            flux += max(0f, v - prevBands[i])
+            flux += max(0f, v - prevBands[i]) * fluxWeights[i]
             prevBands[i] = v
             sum += v
             sumSq += v * v
@@ -46,8 +72,14 @@ class FeatureExtractor(
         historyFilled = minOf(historyFilled + 1, historySize)
 
         val (mean, std) = fluxStats()
-        val threshold = mean + 1.6f * std
-        val isBeat = flux > threshold && flux > 0.02f && framesSinceBeat > (hopRateHz / 5f).toInt()
+        // 2.0 sigma (was 1.6) plus a 250 ms refractory (was 200 ms, i.e. up to
+        // 300 BPM): together with the band weighting this stops the beat flag
+        // strobing on high-frequency content while still catching real kicks.
+        // Threshold sigma is user-tunable (Settings > Analysis). The old fixed
+        // 2.0 sigma + short refractory fired on hi-hats/high-mids and made the
+        // visuals strobe on busy tracks.
+        val threshold = mean + beatThresholdSigma * std
+        val isBeat = flux > threshold && flux > 0.02f && framesSinceBeat > (hopRateHz / 3f).toInt()
         framesSinceBeat = if (isBeat) 0 else framesSinceBeat + 1
 
         if (historyFilled >= historySize / 2) {
@@ -61,12 +93,18 @@ class FeatureExtractor(
             rms = rms,
             bass = groupEnergy(bands, 0, bandCount / 8),
             mid = groupEnergy(bands, bandCount / 8, bandCount / 2),
-            treble = groupEnergy(bands, bandCount / 2, bandCount),
+            treble = smoothTreble(groupEnergy(bands, bandCount / 2, bandCount)),
             onset = if (std > 1e-6f) ((flux - mean) / (3f * std)).coerceIn(0f, 1f) else 0f,
             beat = isBeat,
             bpm = bpmSmoothed,
             centroid = centroid,
         )
+    }
+
+    private fun smoothTreble(raw: Float): Float {
+        val a = if (raw > trebleSmooth) 0.35f else 0.10f
+        trebleSmooth += (raw - trebleSmooth) * a
+        return trebleSmooth
     }
 
     private fun groupEnergy(
@@ -101,9 +139,13 @@ class FeatureExtractor(
         var bestScore = 0f
         for (lag in minLag..maxLag) {
             var score = 0f
-            for (i in 0 until historyFilled - lag) {
+            val overlap = historyFilled - lag
+            for (i in 0 until overlap) {
                 score += chronological(i) * chronological(i + lag)
             }
+            // Normalize by overlap length: raw sums have more terms at small
+            // lags, which biased the estimate toward doubled BPM.
+            score /= overlap.coerceAtLeast(1)
             if (score > bestScore) {
                 bestScore = score
                 bestLag = lag

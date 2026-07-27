@@ -7,6 +7,7 @@ layout(location = 3) in float aEnergy;
 
 uniform float uZoom;
 uniform float uRotation;
+uniform float uSize;
 
 out float vHue;
 out float vEnergy;
@@ -15,7 +16,7 @@ void main() {
     float a = uRotation;
     vec2 p = mat2(cos(a), -sin(a), sin(a), cos(a)) * aPos * uZoom;
     gl_Position = vec4(p, 0.0, 1.0);
-    gl_PointSize = aSize * max(uZoom, 0.25);
+    gl_PointSize = aSize * uSize * max(uZoom, 0.25);
     vHue = aHue;
     vEnergy = aEnergy;
 }

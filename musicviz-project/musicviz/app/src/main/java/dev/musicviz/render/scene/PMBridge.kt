@@ -1,8 +1,9 @@
 package dev.musicviz.render.scene
 
 /**
- * JNI bridge to libprojectM (MilkDrop-compatible engine). arm64-v8a only;
- * [available] is false on other ABIs and the milkdrop scene is hidden.
+ * JNI bridge to libprojectM (MilkDrop-compatible engine, v4.1.7 + FBO render
+ * backport). arm64-v8a only; [available] is false on other ABIs and the
+ * milkdrop scene is hidden.
  */
 object PMBridge {
     val available: Boolean =
@@ -31,11 +32,23 @@ object PMBridge {
 
     external fun nativeRender(handle: Long)
 
+    external fun nativeRenderToFbo(
+        handle: Long,
+        fbo: Int,
+    )
+
+    external fun nativeSetTexturePaths(
+        handle: Long,
+        dirs: Array<String>,
+    )
+
     external fun nativeLoadPreset(
         handle: Long,
         path: String,
         smooth: Boolean,
     )
+
+    external fun nativeGetLastError(): String?
 
     external fun nativeSetBeatSensitivity(
         handle: Long,

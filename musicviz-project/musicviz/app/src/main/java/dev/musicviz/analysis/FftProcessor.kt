@@ -26,6 +26,14 @@ class FftProcessor(
     private val work = FloatArray(fftSize)
     private val magnitudes = FloatArray(fftSize / 2)
 
+    /** Folds the magnitudes of the LAST [process] call into [detector]. */
+    fun accumulateChroma(
+        detector: KeyDetector,
+        sampleRateHz: Int,
+    ) {
+        detector.accumulate(magnitudes, sampleRateHz, fftSize)
+    }
+
     /** Maps each band to an inclusive range of FFT bin indices; recomputed per sample rate. */
     internal fun bandEdges(sampleRateHz: Int): IntArray {
         val nyquist = sampleRateHz / 2f

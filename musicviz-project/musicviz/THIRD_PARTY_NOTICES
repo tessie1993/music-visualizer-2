@@ -1,0 +1,61 @@
+THIRD-PARTY NOTICES
+===================
+
+WebGL-Fluid-Simulation
+----------------------
+The fluid simulation shaders and pipeline in app/src/main/res/raw/fluid_*.glsl
+and app/src/main/java/dev/musicviz/render/fluid/ are ported in part from:
+
+  https://github.com/PavelDoGreat/WebGL-Fluid-Simulation
+
+MIT License
+
+Copyright (c) 2017 Pavel Dobryakov
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Additional architecture (sim-space coordinates, boundary sampling helpers,
+grid-scale Jacobi, capsule emitters with velocity blending) implemented
+clean-room from published literature: J. Stam, "Stable Fluids" (1999);
+M. Harris, GPU Gems ch. 38 (2004); Fedkiw et al. (2001). No code from
+GPL-licensed fluid projects is included.
+
+libprojectM
+-----------
+The MilkDrop-compatible visualization engine bundled as a native library
+(libprojectM, https://github.com/projectM-visualizer/projectm) is licensed
+under the GNU Lesser General Public License v2.1 (LGPL-2.1). MusicViz links
+it dynamically as a separate shared object (.so) and does not modify it.
+Per LGPL-2.1: this notice preserves attribution; the library's source is
+available at the URL above; and the dynamic-linking arrangement preserves
+the user's ability to replace the library. The full LGPL-2.1 text:
+https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+
+AndroidX / Jetpack (Compose, Media3, DocumentFile, Activity, Lifecycle)
+-----------------------------------------------------------------------
+Copyright The Android Open Source Project. Licensed under the Apache
+License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0
+
+Kotlin Standard Library and kotlinx.coroutines
+----------------------------------------------
+Copyright JetBrains s.r.o. Licensed under the Apache License, Version 2.0.
+
+Robolectric, JUnit (test-only; not shipped in the APK)
+------------------------------------------------------
+Robolectric: MIT License. JUnit: Eclipse Public License 1.0/2.0.
