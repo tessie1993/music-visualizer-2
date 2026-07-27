@@ -144,6 +144,41 @@ class PresetStore(context: Context) {
                 .put("strobe", p.params.strobe.toDouble())
                 .put("paramFadeSec", p.params.paramFadeSec.toDouble())
                 .put("solarize", p.params.solarize)
+                .put("fluidQuality", p.params.fluidQuality)
+                .put("fluidAutoQuality", p.params.fluidAutoQuality)
+                .put("fluidIterations", p.params.fluidIterations)
+                .put("fluidPressure", p.params.fluidPressure.toDouble())
+                .put("fluidCurl", p.params.fluidCurl.toDouble())
+                .put("fluidVelocityDissipation", p.params.fluidVelocityDissipation.toDouble())
+                .put("fluidDensityDissipation", p.params.fluidDensityDissipation.toDouble())
+                .put("fluidChromaticAging", p.params.fluidChromaticAging.toDouble())
+                .put("fluidSplatRadius", p.params.fluidSplatRadius.toDouble())
+                .put("fluidSplatForce", p.params.fluidSplatForce.toDouble())
+                .put("fluidBeatPattern", p.params.fluidBeatPattern)
+                .put("fluidBeatSplats", p.params.fluidBeatSplats)
+                .put("fluidStirrers", p.params.fluidStirrers)
+                .put("fluidStirrerSpeed", p.params.fluidStirrerSpeed.toDouble())
+                .put("fluidBassPump", p.params.fluidBassPump)
+                .put("fluidPaletteCycleSpeed", p.params.fluidPaletteCycleSpeed.toDouble())
+                .put("fluidParticlesEnabled", p.params.fluidParticlesEnabled)
+                .put("fluidParticleDrag", p.params.fluidParticleDrag.toDouble())
+                .put("fluidParticleBrightness", p.params.fluidParticleBrightness.toDouble())
+                .put("fluidDyeEnabled", p.params.fluidDyeEnabled)
+                .put("fluidShading", p.params.fluidShading)
+                .put("fluidBloom", p.params.fluidBloom)
+                .put("fluidBloomIntensity", p.params.fluidBloomIntensity.toDouble())
+                .put("fluidBloomThreshold", p.params.fluidBloomThreshold.toDouble())
+                .put("fluidSunrays", p.params.fluidSunrays)
+                .put("fluidSunraysWeight", p.params.fluidSunraysWeight.toDouble())
+                .put("fluidCurlAudio", p.params.fluidCurlAudio.toDouble())
+                .put("fluidBloomAudio", p.params.fluidBloomAudio.toDouble())
+                .put("fluidFadeAudio", p.params.fluidFadeAudio.toDouble())
+                .put("fluidRadiusPulse", p.params.fluidRadiusPulse.toDouble())
+                .put("flowEnabled", p.params.flowEnabled)
+                .put("flowStrength", p.params.flowStrength.toDouble())
+                .put("flowForce", p.params.flowForce.toDouble())
+                .put("flowCurl", p.params.flowCurl.toDouble())
+                .put("flowAdvectParticles", p.params.flowAdvectParticles)
                 .apply { if (p.customShader != null) put("customShader", p.customShader) }
                 .toString(2)
 
@@ -214,6 +249,41 @@ class PresetStore(context: Context) {
                         fisheye = o.optDouble("fisheye", 0.0).toFloat(),
                         strobe = o.optDouble("strobe", 0.0).toFloat(),
                         paramFadeSec = o.optDouble("paramFadeSec", 0.0).toFloat(),
+                        fluidQuality = o.optInt("fluidQuality", 2),
+                        fluidAutoQuality = o.optBoolean("fluidAutoQuality", true),
+                        fluidIterations = o.optInt("fluidIterations", 20),
+                        fluidPressure = o.optDouble("fluidPressure", 0.8).toFloat(),
+                        fluidCurl = o.optDouble("fluidCurl", 30.0).toFloat(),
+                        fluidVelocityDissipation = o.optDouble("fluidVelocityDissipation", 0.2).toFloat(),
+                        fluidDensityDissipation = o.optDouble("fluidDensityDissipation", 1.0).toFloat(),
+                        fluidChromaticAging = o.optDouble("fluidChromaticAging", 0.3).toFloat(),
+                        fluidSplatRadius = o.optDouble("fluidSplatRadius", 0.12).toFloat(),
+                        fluidSplatForce = o.optDouble("fluidSplatForce", 1.0).toFloat(),
+                        fluidBeatPattern = o.optInt("fluidBeatPattern", 1),
+                        fluidBeatSplats = o.optInt("fluidBeatSplats", 3),
+                        fluidStirrers = o.optInt("fluidStirrers", 2),
+                        fluidStirrerSpeed = o.optDouble("fluidStirrerSpeed", 1.0).toFloat(),
+                        fluidBassPump = o.optBoolean("fluidBassPump", false),
+                        fluidPaletteCycleSpeed = o.optDouble("fluidPaletteCycleSpeed", 0.5).toFloat(),
+                        fluidParticlesEnabled = o.optBoolean("fluidParticlesEnabled", true),
+                        fluidParticleDrag = o.optDouble("fluidParticleDrag", 0.5).toFloat(),
+                        fluidParticleBrightness = o.optDouble("fluidParticleBrightness", 1.0).toFloat(),
+                        fluidDyeEnabled = o.optBoolean("fluidDyeEnabled", true),
+                        fluidShading = o.optBoolean("fluidShading", true),
+                        fluidBloom = o.optBoolean("fluidBloom", true),
+                        fluidBloomIntensity = o.optDouble("fluidBloomIntensity", 0.8).toFloat(),
+                        fluidBloomThreshold = o.optDouble("fluidBloomThreshold", 0.6).toFloat(),
+                        fluidSunrays = o.optBoolean("fluidSunrays", true),
+                        fluidSunraysWeight = o.optDouble("fluidSunraysWeight", 1.0).toFloat(),
+                        fluidCurlAudio = o.optDouble("fluidCurlAudio", 0.5).toFloat(),
+                        fluidBloomAudio = o.optDouble("fluidBloomAudio", 0.5).toFloat(),
+                        fluidFadeAudio = o.optDouble("fluidFadeAudio", 0.6).toFloat(),
+                        fluidRadiusPulse = o.optDouble("fluidRadiusPulse", 0.4).toFloat(),
+                        flowEnabled = o.optBoolean("flowEnabled", false),
+                        flowStrength = o.optDouble("flowStrength", 0.35).toFloat(),
+                        flowForce = o.optDouble("flowForce", 1.0).toFloat(),
+                        flowCurl = o.optDouble("flowCurl", 25.0).toFloat(),
+                        flowAdvectParticles = o.optBoolean("flowAdvectParticles", true),
                     ),
             )
         }

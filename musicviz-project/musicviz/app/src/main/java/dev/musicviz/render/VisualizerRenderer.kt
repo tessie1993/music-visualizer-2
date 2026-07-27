@@ -139,6 +139,27 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
             glitch = f(from.glitch, to.glitch),
             fisheye = f(from.fisheye, to.fisheye),
             strobe = f(from.strobe, to.strobe),
+            fluidPressure = f(from.fluidPressure, to.fluidPressure),
+            fluidCurl = f(from.fluidCurl, to.fluidCurl),
+            fluidVelocityDissipation = f(from.fluidVelocityDissipation, to.fluidVelocityDissipation),
+            fluidDensityDissipation = f(from.fluidDensityDissipation, to.fluidDensityDissipation),
+            fluidChromaticAging = f(from.fluidChromaticAging, to.fluidChromaticAging),
+            fluidSplatRadius = f(from.fluidSplatRadius, to.fluidSplatRadius),
+            fluidSplatForce = f(from.fluidSplatForce, to.fluidSplatForce),
+            fluidStirrerSpeed = f(from.fluidStirrerSpeed, to.fluidStirrerSpeed),
+            fluidPaletteCycleSpeed = f(from.fluidPaletteCycleSpeed, to.fluidPaletteCycleSpeed),
+            fluidParticleDrag = f(from.fluidParticleDrag, to.fluidParticleDrag),
+            fluidParticleBrightness = f(from.fluidParticleBrightness, to.fluidParticleBrightness),
+            fluidBloomIntensity = f(from.fluidBloomIntensity, to.fluidBloomIntensity),
+            fluidBloomThreshold = f(from.fluidBloomThreshold, to.fluidBloomThreshold),
+            fluidSunraysWeight = f(from.fluidSunraysWeight, to.fluidSunraysWeight),
+            fluidCurlAudio = f(from.fluidCurlAudio, to.fluidCurlAudio),
+            fluidBloomAudio = f(from.fluidBloomAudio, to.fluidBloomAudio),
+            fluidFadeAudio = f(from.fluidFadeAudio, to.fluidFadeAudio),
+            fluidRadiusPulse = f(from.fluidRadiusPulse, to.fluidRadiusPulse),
+            flowStrength = f(from.flowStrength, to.flowStrength),
+            flowForce = f(from.flowForce, to.flowForce),
+            flowCurl = f(from.flowCurl, to.flowCurl),
         )
     }
 
@@ -162,6 +183,31 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
     /** Retained across EGL context loss so scenes can be restored on recreation. */
     private var lastMilkPreset: String? = null
     private val activeCustomShaders = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** User fluid force/dye injection sources (extension points), retained
+     *  across context loss like custom scene shaders. */
+    @Volatile
+    private var fluidForceSrc: String? = null
+
+    @Volatile
+    private var fluidDyeSrc: String? = null
+
+    @Volatile
+    private var fluidInjectionDirty = false
+
+    /** Installs user force/dye GLSL for the FLUID scene (null = built-in). */
+    fun submitFluidInjectionShaders(
+        force: String?,
+        dye: String?,
+    ) {
+        fluidForceSrc = force
+        fluidDyeSrc = dye
+        fluidInjectionDirty = true
+    }
+
+    /** F7 FlowField service + the 1x1 zero texture bound when it's off. */
+    private var flowField: dev.musicviz.render.fluid.FlowField? = null
+    private var zeroTex = 0
 
     /** Fresh mono PCM for projectM; set by the UI wiring. */
     @Volatile
@@ -292,7 +338,10 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         for ((id, res) in SHADER_SCENES) {
             scenes[id] = ShaderScene(id, quadVert, loadRaw(res)) { onShaderError(it) }
         }
-        scenes[SceneIds.FLUID] = dev.musicviz.render.fluid.FluidScene(context)
+        scenes[SceneIds.FLUID] =
+            dev.musicviz.render.fluid.FluidScene(context).also { fluid ->
+                fluid.onShaderError = { onShaderError(it) }
+            }
         if (PMBridge.available) {
             scenes[SceneIds.MILKDROP] =
                 ProjectMScene(
@@ -313,8 +362,25 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
             (scenes[sceneId] as? ShaderScene)?.setFragmentSource(src)
         }
         lastMilkPreset?.let { (scenes[SceneIds.MILKDROP] as? ProjectMScene)?.queuePreset(it) }
+        // Re-apply user fluid injection shaders lost with the old context.
+        if (fluidForceSrc != null || fluidDyeSrc != null) fluidInjectionDirty = true
         activeScene = scenes[requestedSceneId] ?: scenes[SceneIds.NEBULA]
         outgoingScene = null
+
+        // FlowField service (F7) + the always-valid zero flow texture.
+        flowField?.release()
+        flowField = dev.musicviz.render.fluid.FlowField(context).also { it.create() }
+        val texIds = IntArray(1)
+        GLES30.glGenTextures(1, texIds, 0)
+        zeroTex = texIds[0]
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, zeroTex)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+        val zero = java.nio.ByteBuffer.allocateDirect(4).apply { put(byteArrayOf(0, 0, 0, 0)).position(0) }
+        GLES30.glTexImage2D(
+            GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA8, 1, 1, 0,
+            GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, zero,
+        )
 
         fadeProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), loadRaw(R.raw.fade_frag))
         compositeProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), loadRaw(R.raw.composite_frag))
@@ -344,6 +410,7 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         renderWidth = (width * ss).toInt()
         renderHeight = (height * ss).toInt()
         scenes.values.forEach { it.resize(renderWidth, renderHeight) }
+        flowField?.resize(renderWidth, renderHeight)
         fboA.ensure(renderWidth, renderHeight)
         fboB.ensure(renderWidth, renderHeight)
     }
@@ -400,6 +467,19 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         var p = LfoEngine.apply(displayedParams, lfoEngine.configs, lfoValues)
         p = AdsrEngine.apply(p, adsrEngine.configs, envValues)
         lastFinalParams = p
+        if (fluidInjectionDirty) {
+            fluidInjectionDirty = false
+            (scenes[SceneIds.FLUID] as? dev.musicviz.render.fluid.FluidScene)
+                ?.setInjectionShaders(fluidForceSrc, fluidDyeSrc)
+        }
+        // F7 FlowField: advance the shared velocity field (its own tiny FBOs)
+        // before any scene target is bound. When the FLUID scene is active
+        // its own field is reused instead - never both (one source of truth).
+        val ff = flowField
+        val fluidActive = scene is dev.musicviz.render.fluid.FluidScene
+        if (p.flowEnabled && ff != null && ff.available && !fluidActive) {
+            ff.step(gainAdjusted(features, p), dt, p)
+        }
         fboA.ensure(renderWidth, renderHeight)
         fboB.ensure(renderWidth, renderHeight)
 
@@ -427,6 +507,22 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         } else {
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
         }
+        // FlowField consumers on the active scene: CPU grid for particle
+        // scenes (16x16 readback), uFlow sampler for shader scenes.
+        if (p.flowEnabled && ff != null) {
+            if (scene is ParticleSceneBase && p.flowAdvectParticles && ff.available) {
+                ff.readback(ff.velocityTex, ff.flowScale, ff.aspect)
+                scene.flowGrid = ff.cpuGrid
+            } else if (scene is ParticleSceneBase) {
+                scene.flowGrid = null
+            }
+            if (scene is ShaderScene) {
+                scene.setFlow(if (ff.available) ff.velocityTex else zeroTex, p.flowStrength)
+            }
+        } else {
+            (scene as? ParticleSceneBase)?.flowGrid = null
+            (scene as? ShaderScene)?.setFlow(zeroTex, 0f)
+        }
         scene.setParams(p)
         scene.update(gainAdjusted(features, p), dt)
         scene.draw(timeSeconds)
@@ -442,6 +538,25 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, fboB.tex)
         GLES30.glUniform1i(cLoc("uTexB"), 1)
+        // fluidWarp: bend the scene fetch through the flow field. The FLUID
+        // scene contributes its own velocity texture; anything else uses the
+        // FlowField service; a 1x1 zero texture keeps the sampler valid off.
+        var flowTex = zeroTex
+        var flowStrength = 0f
+        if (p.flowEnabled) {
+            val fluidScene = scene as? dev.musicviz.render.fluid.FluidScene
+            if (fluidScene != null && fluidScene.simAvailable) {
+                flowTex = fluidScene.velocityTexture
+                flowStrength = p.flowStrength
+            } else if (ff != null && ff.available) {
+                flowTex = ff.velocityTex
+                flowStrength = p.flowStrength
+            }
+        }
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, flowTex)
+        GLES30.glUniform1i(cLoc("uFlow"), 2)
+        GLES30.glUniform1f(cLoc("uFlowStrength"), flowStrength)
         GLES30.glUniform1f(cLoc("uProgress"), progress)
         val style = if (outgoingScene != null) transitionStyle else TransitionStyle.CUT
         GLES30.glUniform1i(cLoc("uStyle"), style.ordinal)
@@ -522,7 +637,10 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
                 val quadVert = loadRaw(R.raw.quad_vert)
                 val scene: Scene =
                     when {
-                        sceneId == SceneIds.FLUID -> dev.musicviz.render.fluid.FluidScene(context)
+                        sceneId == SceneIds.FLUID ->
+                            dev.musicviz.render.fluid.FluidScene(context).also {
+                                it.setInjectionShaders(fluidForceSrc, fluidDyeSrc)
+                            }
                         sceneId == SceneIds.MILKDROP && PMBridge.available ->
                             ProjectMScene(
                                 postVertexSrc = loadRaw(R.raw.fade_vert),

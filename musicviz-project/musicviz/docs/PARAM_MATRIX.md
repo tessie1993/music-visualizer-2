@@ -39,3 +39,11 @@ meaningful post-hoc equivalent. UI hides it off shader scenes.
 v0.9.6 fixes from this audit: pulse now works on particles (beat size
 swell); endlessZoom added to Swarm/Fountain (outward flow) and Orbit
 (radius drift with respawn) so all five particle scenes honor it.
+
+Fluid additions (v0.12.0): the fluid* fields act on the FLUID scene only
+(sim/emitters/look inside FluidScene; documented no-ops elsewhere by tab
+scoping - the Fluid tab shows only the FlowField section on other styles).
+flow* fields are global: flowStrength/flowCurl/flowForce drive the shared
+FlowField consumed by the composite fluidWarp slot (C, all families incl.
+MilkDrop + export), flowAdvectParticles by the particle CPU pipeline (P),
+and uFlow/uFlowStrength by shader scenes (S, opt-in sampling).

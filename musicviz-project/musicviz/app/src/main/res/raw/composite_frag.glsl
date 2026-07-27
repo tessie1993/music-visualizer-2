@@ -40,6 +40,12 @@ uniform float uPostShake;
 uniform float uPostFlash;
 uniform float uPostTemp;
 uniform float uPostSolarize;
+// FlowField fluidWarp: the shared fluid velocity field bends the sampling
+// coordinate of ANY scene's output (particles, shaders, milkdrop) before the
+// scene-texture fetch. A 1x1 zero texture is bound when disabled so the
+// sampler is always valid.
+uniform highp sampler2D uFlow;   // half-float velocities exceed lowp range
+uniform float uFlowStrength;
 
 float hash12(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -98,6 +104,12 @@ vec2 geo(vec2 uv) {
 // bloom, strobe, invert).
 vec3 postFx(sampler2D tex, vec2 uv, vec3 fallback) {
     vec2 p = geo(uv);
+    if (uFlowStrength > 0.001) {
+        // Velocity is in grid units (roughly -6..6); 0.015 maps full
+        // strength to a ~0.09 UV displacement at typical emitter speeds.
+        vec2 flow = texture(uFlow, p).xy;
+        p -= flow * uFlowStrength * 0.015;
+    }
     if (abs(uFisheye) > 0.001) {
         vec2 c = p - 0.5;
         float r = length(c) * 2.0;

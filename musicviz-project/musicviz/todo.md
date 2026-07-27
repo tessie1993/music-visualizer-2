@@ -131,25 +131,32 @@ verify gate + on-device checklist every phase.
 - [x] F3 Particle layer: state-in-texture (ceil(sqrt N)^2 RGBA16F ping-pong),
       one-quad update kernel, static texel-coord VBO → GL_POINTS, drag
       inertia v += (flow−v)·drag (default 0.4-0.6), speed coloring, respawn.
-- [ ] F4 Look chain: soft-knee bloom (knee=T·K+1e-4) with mip up/down
+- [x] F4 Look chain: soft-knee bloom (knee=T·K+1e-4) with mip up/down
       ONE,ONE accumulation, 16-step sunrays march to (0.5,0.5) in scene-FBO
       UV space, pseudo-normal shading (normal z = display texelSize length),
-      blue-noise dither asset (LDR_LLL1_0.png, MIT), keyword display
-      variants; display blend ONE,ONE_MINUS_SRC_ALPHA; label "Glow (fluid)"
-      vs composite bloom.
-- [ ] F5 Customize → Fluid tab: SceneParams fluid*/flow* fields (spec §11.1;
-      reflection roundtrip auto-covers), chips for res (re-init on change),
+      procedural noise dither (generated at init; upstream blue-noise PNG
+      not bundled), keyword display variants; display blend
+      ONE,ONE_MINUS_SRC_ALPHA; labeled "Glow (fluid)" vs composite bloom.
+- [x] F5 Customize → Fluid tab: SceneParams fluid*/flow* fields (spec §11.1;
+      reflection roundtrip auto-covers), quality chips (re-init on change),
       locks/randomize, LFO/ADSR routing targets: fluidCurl, fluidSplatRadius,
       fluidSplatForce, fluidBloomIntensity, fluidDensityDissipation,
       flowStrength.
-- [ ] F6 Adaptive quality: rolling-FPS monitor with hysteresis driving three
-      axes (sim res / dye+particle count / output), reallocation only at
-      frame boundary.
-- [ ] F7 FlowField + extension points: 64-grid velocity-only service (reuse
+- [x] F6 Adaptive quality: rolling-FPS monitor (Welford, 2.5 s hysteresis,
+      stall readings discarded, downgrade-only latch) driving one tier enum
+      over sim res / dye res / particle count / iterations; reallocation
+      only at frame boundary with copy-preserving grids.
+- [x] F7 FlowField + extension points: 64-grid velocity-only service (reuse
       FLUID's own field when that scene is active — never both), fluidWarp
       composite slot (uv -= flow·k·strength, 1×1 zero texture when off,
-      export parity via FxCompositor), particle-scene advection option,
-      uFlow sampler for shader scenes + GLSL tab doc.
+      export parity via FxCompositor + export-context FlowField),
+      particle-scene advection (16×16 CPU readback), uFlow sampler for
+      shader scenes + GLSL tab doc, user force/dye injection shader editors
+      (last-good fallback). ON-DEVICE (F4-F7): each look toggle recompiles
+      correctly; banding gone with dither; quality chips re-init cleanly
+      mid-playback; forced Low tier holds; single stall never downgrades;
+      fluidWarp visibly bends a MilkDrop preset AND a particle scene incl.
+      a 10 s export; broken injection shader keeps last good program.
 
 ## P3 — Media architecture (VLC-mirror is DECIDED)
 - [x] AIFF playback: custom Media3 AiffExtractor (FORM/COMM/SSND chunks,

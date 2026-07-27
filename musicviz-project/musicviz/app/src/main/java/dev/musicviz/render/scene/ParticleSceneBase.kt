@@ -69,6 +69,13 @@ abstract class ParticleSceneBase(
         height: Int,
     ) = Unit
 
+    /** FlowField CPU downsample; when set (and the params opt in), particles
+     *  ride the shared fluid velocity field. Written by the renderer on the
+     *  GL thread before [update]. */
+    internal var flowGrid: dev.musicviz.render.fluid.FlowField.CpuGrid? = null
+
+    private val flowSample = FloatArray(2)
+
     final override fun update(
         features: AudioFeatures,
         dt: Float,
@@ -78,7 +85,27 @@ abstract class ParticleSceneBase(
         if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * dt) % 1f
         beatPulse = if (features.beat) 1f else (beatPulse - dt * 3f).coerceAtLeast(0f)
         simulate(features, dt)
+        applyFlowField(p, dt)
         postProcess(p)
+    }
+
+    /** F7: advect particle positions through the shared FlowField. */
+    private fun applyFlowField(
+        p: SceneParams,
+        dt: Float,
+    ) {
+        val grid = flowGrid ?: return
+        if (!p.flowEnabled || !p.flowAdvectParticles) return
+        val k = p.flowStrength.coerceIn(0f, 1f) * dt
+        if (k <= 0f) return
+        for (i in 0 until count) {
+            val o = i * FLOATS_PER_PARTICLE
+            val x = vertexData[o]
+            val y = vertexData[o + 1]
+            grid.sample(x * 0.5f + 0.5f, y * 0.5f + 0.5f, flowSample)
+            vertexData[o] = (x + flowSample[0] * k).coerceIn(-1.2f, 1.2f)
+            vertexData[o + 1] = (y + flowSample[1] * k).coerceIn(-1.2f, 1.2f)
+        }
     }
 
     /** Advances the particle simulation and fills [vertexData]. */

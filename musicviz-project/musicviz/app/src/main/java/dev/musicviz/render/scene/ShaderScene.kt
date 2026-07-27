@@ -49,6 +49,18 @@ class ShaderScene(
         sceneParams = params
     }
 
+    /** FlowField binding: 0 disables. Set by the renderer on the GL thread. */
+    private var flowTex = 0
+    private var flowStrength = 0f
+
+    fun setFlow(
+        tex: Int,
+        strength: Float,
+    ) {
+        flowTex = tex
+        flowStrength = strength
+    }
+
     /** Thread-safe: queues new fragment source for compilation on the GL thread. */
     @Synchronized
     fun setFragmentSource(src: String) {
@@ -180,6 +192,15 @@ class ShaderScene(
         setUniform1f("uGamma", p.gamma)
         GLES30.glUniform2f(GLES30.glGetUniformLocation(program, "uResolution"), width.toFloat(), height.toFloat())
         GLES30.glUniform1i(GLES30.glGetUniformLocation(program, "uAudioTex"), 0)
+        // FlowField sampler for scene GLSL / the user editor: harmless no-op
+        // (location -1) when the shader doesn't declare uFlow.
+        if (flowTex != 0) {
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, flowTex)
+            GLES30.glUniform1i(GLES30.glGetUniformLocation(program, "uFlow"), 1)
+            setUniform1f("uFlowStrength", flowStrength)
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+        }
         GLES30.glBindVertexArray(vao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)

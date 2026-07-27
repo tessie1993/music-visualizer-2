@@ -1,3 +1,39 @@
+## v0.12.0 - fluid phases F4-F7 complete (look chain, Fluid tab, adaptive quality, FlowField)
+- F4 look chain: the FLUID scene now renders through the full
+  Pavel-style look stack - soft-knee HDR bloom through a mip up/down chain
+  with additive (ONE,ONE) upsample, 16-step screen-space sunrays marched to
+  the scene-FBO centre, pseudo-normal embossed shading, and noise dither -
+  composited by #define keyword display variants (SHADING/BLOOM/SUNRAYS,
+  program cache keyed by flag set; no uniform branching).
+- F5 Customize > Fluid tab: 35 new SceneParams fields (quality/solver,
+  character, emitters, particles, look, audio routing, FlowField), all with
+  locks + Randomize ranges, preset JSON roundtrip (reflection test covers
+  them automatically), settings-fade lerp, and six new LFO/ADSR routing
+  targets: Fluid curl, splat radius, splat force, glow, fade, Flow strength.
+- F6 adaptive quality: five tiers (Ultra..Min) set sim grid, dye grid,
+  particle count and Jacobi iterations together; a Welford rolling-FPS
+  monitor with 2.5 s hysteresis downgrades on sustained deficit only
+  (single stalls discarded), latches (never auto-upgrades mid-session),
+  and reallocates at frame boundaries with copy-preserving grids.
+- F7 FlowField: a shared velocity-only fluid sim (64 grid, 12 iterations)
+  now drives EVERY style - the new universal fluidWarp composite slot bends
+  particles, shaders and MilkDrop output (and exports, via FxCompositor
+  parity + an export-context FlowField), particle scenes can ride the field
+  through a 16x16 CPU readback, and shader scenes (plus the GLSL editor)
+  get the field as uFlow/uFlowStrength. When the FLUID scene is active its
+  own field is reused - the service never runs twice.
+- F7 extension points: the fluid force and dye injection passes are now
+  user-editable GLSL (Fluid tab > Injection shaders) with the built-in
+  capsule splat as the starting template, audio uniforms (uDt, uDx, uTime,
+  uBass, uMid, uTreble, uEnergy, uBeat), last-good-program fallback on
+  compile errors, and export parity.
+- Fluid fixes: dye no longer advects at 1/4 speed (back-trace now scales by
+  the velocity grid's texel size, not the source's); surface resizes
+  preserve the simulation through a copy-resize instead of wiping it (and
+  same-size resume no longer resets anything); particle drag is
+  frame-rate-independent (per-1/60s factor); the particle pass restores the
+  blend function it changes.
+
 ## v0.11.1 - launch crash fixed, app-wide automated test pass
 - FIXED the immediate crash on launch. Root cause: the ViewModel's main loop
   starts in an init block on Dispatchers.Main.immediate, which executes

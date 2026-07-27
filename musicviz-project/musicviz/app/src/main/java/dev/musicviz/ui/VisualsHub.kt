@@ -322,8 +322,8 @@ private fun CustomizeHubTab(
     val viz by viewModel.vizState.collectAsState()
     var sub by rememberSaveable { mutableStateOf(0) }
     val isShader = viz.sceneId in dev.musicviz.render.VisualizerRenderer.SHADER_SCENES
-    val tabs = listOf("Motion", "Shape", "Behavior", "Color", "FX") + if (isShader) listOf("GLSL") else emptyList()
-    LaunchedEffect(isShader) { if (!isShader && sub >= 5) sub = 0 }
+    val tabs = listOf("Motion", "Shape", "Behavior", "Color", "FX", "Fluid") + if (isShader) listOf("GLSL") else emptyList()
+    LaunchedEffect(isShader) { if (!isShader && sub >= 6) sub = 0 }
     Column(Modifier.fillMaxSize()) {
         ScrollableTabRow(selectedTabIndex = sub, edgePadding = 8.dp) {
             tabs.forEachIndexed { i, t -> Tab(selected = sub == i, onClick = { sub = i }, text = { Text(t) }) }
@@ -368,7 +368,17 @@ private fun CustomizeHubTab(
                             onAdsrChange = viewModel::setAdsr,
                         )
                     }
-                    5 -> GlslHubTab(viewModel, visualizerView)
+                    5 ->
+                        FluidTab(
+                            p,
+                            onChange,
+                            isFluidScene = viz.sceneId == dev.musicviz.render.scene.SceneIds.FLUID,
+                            injectionError = if (viz.sceneId == dev.musicviz.render.scene.SceneIds.FLUID) viz.shaderError else null,
+                            onApplyInjectionShaders = { force, dye ->
+                                visualizerView.visualizerRenderer.submitFluidInjectionShaders(force, dye)
+                            },
+                        )
+                    6 -> GlslHubTab(viewModel, visualizerView)
                 }
             }
         }
@@ -421,8 +431,11 @@ private fun GlslHubTab(
     }
     Column {
         Text(
-            "Fragment source for this shader scene. The prelude (view(), pal(), " +
-                "grade(), audio uniforms, uFlow soon) is prepended automatically.",
+            "Fragment source for this shader scene (view(), pal(), grade() and " +
+                "the audio uniforms are available). When FlowField is enabled " +
+                "the fluid velocity field is bound as `uniform sampler2D uFlow` " +
+                "with `uniform float uFlowStrength` - declare and sample it for " +
+                "fluid-driven distortion.",
             style = MaterialTheme.typography.labelSmall,
         )
         OutlinedTextField(

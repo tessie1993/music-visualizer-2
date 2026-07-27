@@ -43,6 +43,9 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
     var radiusPulse = 0.4f
     var paletteCycleSpeed = 0.5f
 
+    /** Emitter momentum multiplier (Customize "Splat force", 0..3). */
+    var forceScale = 1f
+
     // ---- envelopes (read after tick) ----
     var beatEnv = 0f
         private set
@@ -74,7 +77,7 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
 
         val out = ArrayList<FluidSim.Splat>()
         val radius = splatRadius * (1f + radiusPulse * beatEnv)
-        val speed = BASE_SPEED * (0.4f + 1.6f * f.bass) * (0.3f + 0.7f * beatEnv)
+        val speed = BASE_SPEED * forceScale * (0.4f + 1.6f * f.bass) * (0.3f + 0.7f * beatEnv)
 
         stirrerSplats(out, f, dt, aspect, baseHue, hueSpan, radius)
         if (f.beat && beatSplats > 0) beatSplats(out, f, aspect, baseHue, hueSpan, radius, speed)
@@ -113,8 +116,8 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
                     FluidSim.Splat(
                         prevX = px, prevY = py, curX = x, curY = y,
                         radius = radius,
-                        velX = (x - px) * invDt * 0.22f,
-                        velY = (y - py) * invDt * 0.22f,
+                        velX = (x - px) * invDt * 0.22f * forceScale,
+                        velY = (y - py) * invDt * 0.22f * forceScale,
                         r = cr * amp, g = cg * amp, b = cb * amp,
                     )
             }
@@ -203,7 +206,7 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
         hueSpan: Float,
         radius: Float,
     ) {
-        val v = BASE_SPEED * bassEnv
+        val v = BASE_SPEED * forceScale * bassEnv
         for (i in 0 until 6) {
             val a = i / 6f * 2f * PI.toFloat()
             val (cr, cg, cb) = hsv((baseHue + palettePhase) % 1f, 0.95f, 1f)

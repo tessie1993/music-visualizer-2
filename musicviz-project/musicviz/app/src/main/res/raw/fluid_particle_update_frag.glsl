@@ -17,7 +17,10 @@ void main() {
     // sim -> texel space for the field fetch
     vec2 uv = vec2(p.x / uAspect, p.y) * 0.5 + 0.5;
     vec2 flow = texture(uVelocityField, clamp(uv, 0.0, 1.0)).xy * uFlowScale;
-    v += (flow - v) * uDrag;
+    // Frame-rate-independent inertia: uDrag is the per-1/60s blend factor, so
+    // trail character doesn't change between 60 Hz and 120 Hz displays.
+    float k = 1.0 - pow(1.0 - uDrag, uDt * 60.0);
+    v += (flow - v) * k;
     p += v * uDt;
     // Wrap at the domain edges so the field never empties.
     if (p.x >  uAspect) p.x -= 2.0 * uAspect;
