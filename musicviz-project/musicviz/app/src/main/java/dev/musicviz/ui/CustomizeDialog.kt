@@ -495,6 +495,187 @@ private fun CheckRow(
     }
 }
 
+/**
+ * Customize -> Fluid tab (F5). When the FLUID style is active every section
+ * is shown, including the force/dye injection shader editors (the section-13
+ * extension points). For every other style only the FlowField section
+ * appears - the same tab is the one home for "fluid principles" regardless
+ * of style, mirroring how the GLSL tab scopes to shader scenes.
+ */
+@Composable
+internal fun FluidTab(
+    p: SceneParams,
+    onChange: (SceneParams) -> Unit,
+    isFluidScene: Boolean,
+    injectionError: String? = null,
+    onApplyInjectionShaders: (String?, String?) -> Unit = { _, _ -> },
+) {
+    Column {
+        if (isFluidScene) {
+            SectionHeader("Quality")
+            ChipRow(
+                dev.musicviz.render.fluid.FluidQuality.LABELS,
+                p.fluidQuality.coerceIn(0, dev.musicviz.render.fluid.FluidQuality.LABELS.size - 1),
+            ) { onChange(p.copy(fluidQuality = it)) }
+            CheckRow("Auto quality (downgrade on sustained low FPS)", p.fluidAutoQuality) {
+                onChange(p.copy(fluidAutoQuality = it))
+            }
+            LabeledIntSlider("Solver iterations", p.fluidIterations, 8..40) { onChange(p.copy(fluidIterations = it)) }
+            SectionHeader("Character")
+            LabeledSlider("Fluid curl", p.fluidCurl, 0f..50f) { onChange(p.copy(fluidCurl = it)) }
+            LabeledSlider("Motion fade", p.fluidVelocityDissipation, 0f..4f) { onChange(p.copy(fluidVelocityDissipation = it)) }
+            LabeledSlider("Fluid fade", p.fluidDensityDissipation, 0f..4f) { onChange(p.copy(fluidDensityDissipation = it)) }
+            LabeledSlider("Chromatic aging", p.fluidChromaticAging, 0f..1f) { onChange(p.copy(fluidChromaticAging = it)) }
+            LabeledSlider("Pressure", p.fluidPressure, 0f..1f) { onChange(p.copy(fluidPressure = it)) }
+            SectionHeader("Emitters")
+            Text("Beat pattern", style = MaterialTheme.typography.labelSmall)
+            ChipRow(SceneParams.FLUID_PATTERNS, p.fluidBeatPattern.coerceIn(0, 3)) {
+                onChange(p.copy(fluidBeatPattern = it))
+            }
+            LabeledIntSlider("Beat splats", p.fluidBeatSplats, 0..8) { onChange(p.copy(fluidBeatSplats = it)) }
+            LabeledIntSlider("Stirrers", p.fluidStirrers, 0..4) { onChange(p.copy(fluidStirrers = it)) }
+            LabeledSlider("Stirrer speed", p.fluidStirrerSpeed, 0f..2f) { onChange(p.copy(fluidStirrerSpeed = it)) }
+            LabeledSlider("Fluid splat radius", p.fluidSplatRadius, 0.02f..0.4f) { onChange(p.copy(fluidSplatRadius = it)) }
+            LabeledSlider("Fluid splat force", p.fluidSplatForce, 0f..3f) { onChange(p.copy(fluidSplatForce = it)) }
+            CheckRow("Bass pump", p.fluidBassPump) { onChange(p.copy(fluidBassPump = it)) }
+            LabeledSlider("Palette cycle", p.fluidPaletteCycleSpeed, 0f..2f) { onChange(p.copy(fluidPaletteCycleSpeed = it)) }
+            SectionHeader("Particles")
+            CheckRow("Particle layer", p.fluidParticlesEnabled) { onChange(p.copy(fluidParticlesEnabled = it)) }
+            if (p.fluidParticlesEnabled) {
+                LabeledSlider("Particle drag", p.fluidParticleDrag, 0.02f..1f) { onChange(p.copy(fluidParticleDrag = it)) }
+                LabeledSlider("Particle brightness", p.fluidParticleBrightness, 0f..2f) {
+                    onChange(p.copy(fluidParticleBrightness = it))
+                }
+            }
+            CheckRow("Ink layer", p.fluidDyeEnabled) { onChange(p.copy(fluidDyeEnabled = it)) }
+            SectionHeader("Look")
+            CheckRow("Shading (embossed ink)", p.fluidShading) { onChange(p.copy(fluidShading = it)) }
+            // "Glow (fluid)" is the style's internal HDR bloom - a different
+            // knob from the composite Bloom in the Color/FX tabs.
+            CheckRow("Glow (fluid)", p.fluidBloom) { onChange(p.copy(fluidBloom = it)) }
+            if (p.fluidBloom) {
+                LabeledSlider("Fluid glow", p.fluidBloomIntensity, 0.1f..2f) { onChange(p.copy(fluidBloomIntensity = it)) }
+                LabeledSlider("Glow threshold", p.fluidBloomThreshold, 0f..1f) { onChange(p.copy(fluidBloomThreshold = it)) }
+            }
+            CheckRow("Sunrays", p.fluidSunrays) { onChange(p.copy(fluidSunrays = it)) }
+            if (p.fluidSunrays) {
+                LabeledSlider("Sunrays weight", p.fluidSunraysWeight, 0.3f..1f) { onChange(p.copy(fluidSunraysWeight = it)) }
+            }
+            SectionHeader("Audio routing")
+            LabeledSlider("Curl from mids", p.fluidCurlAudio, 0f..1f) { onChange(p.copy(fluidCurlAudio = it)) }
+            LabeledSlider("Glow from loudness", p.fluidBloomAudio, 0f..1f) { onChange(p.copy(fluidBloomAudio = it)) }
+            LabeledSlider("Fade when quiet", p.fluidFadeAudio, 0f..1f) { onChange(p.copy(fluidFadeAudio = it)) }
+            LabeledSlider("Radius on beat", p.fluidRadiusPulse, 0f..1f) { onChange(p.copy(fluidRadiusPulse = it)) }
+        }
+        SectionHeader("FlowField (all styles)")
+        Text(
+            "A shared fluid velocity field that bends ANY style: fluidWarp " +
+                "distorts the composite output (particles, shaders, MilkDrop - " +
+                "and exports), particle scenes can ride the field, and shader " +
+                "scenes see it as uFlow.",
+            style = MaterialTheme.typography.labelSmall,
+        )
+        CheckRow("FlowField enabled", p.flowEnabled) { onChange(p.copy(flowEnabled = it)) }
+        if (p.flowEnabled) {
+            LabeledSlider("Flow strength", p.flowStrength, 0f..1f) { onChange(p.copy(flowStrength = it)) }
+            LabeledSlider("Flow force", p.flowForce, 0f..3f) { onChange(p.copy(flowForce = it)) }
+            LabeledSlider("Flow curl", p.flowCurl, 0f..50f) { onChange(p.copy(flowCurl = it)) }
+            CheckRow("Particles ride the field", p.flowAdvectParticles) { onChange(p.copy(flowAdvectParticles = it)) }
+        }
+        if (isFluidScene) {
+            SectionHeader("Injection shaders (advanced)")
+            Text(
+                "The force and dye injection passes are user-replaceable GLSL. " +
+                    "Both start from the built-in capsule splat (uMode 0 = " +
+                    "velocity, 1 = dye); a failed compile keeps the last good " +
+                    "program. Extra uniforms: uDt, uDx, uTime, uBass, uMid, " +
+                    "uTreble, uEnergy, uBeat. Clear the text to restore built-ins.",
+                style = MaterialTheme.typography.labelSmall,
+            )
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val template =
+                remember {
+                    runCatching {
+                        ctx.resources.openRawResource(dev.musicviz.R.raw.fluid_splat_frag)
+                            .bufferedReader().use { it.readText() }
+                    }.getOrDefault("")
+                }
+            var forceSrc by remember { mutableStateOf(template) }
+            var dyeSrc by remember { mutableStateOf(template) }
+            var editorsUsed by remember { mutableStateOf(false) }
+            Text("Force shader", style = MaterialTheme.typography.labelSmall)
+            OutlinedTextField(
+                value = forceSrc,
+                onValueChange = {
+                    forceSrc = it
+                    editorsUsed = true
+                },
+                modifier = Modifier.fillMaxWidth().height(180.dp),
+                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            )
+            Text("Dye shader", style = MaterialTheme.typography.labelSmall)
+            OutlinedTextField(
+                value = dyeSrc,
+                onValueChange = {
+                    dyeSrc = it
+                    editorsUsed = true
+                },
+                modifier = Modifier.fillMaxWidth().height(180.dp),
+                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            )
+            if (injectionError != null) {
+                Text(injectionError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = {
+                    // Unedited/blank editors mean "use the built-in pass".
+                    val f = forceSrc.takeIf { editorsUsed && it.isNotBlank() && it != template }
+                    val d = dyeSrc.takeIf { editorsUsed && it.isNotBlank() && it != template }
+                    onApplyInjectionShaders(f, d)
+                }) { Text("Apply shaders") }
+                TextButton(onClick = {
+                    forceSrc = template
+                    dyeSrc = template
+                    onApplyInjectionShaders(null, null)
+                }) { Text("Reset to built-in") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LabeledIntSlider(
+    label: String,
+    value: Int,
+    range: IntRange,
+    onChange: (Int) -> Unit,
+) {
+    val (locked, toggle) = LocalParamLocks.current
+    Column {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("$label $value", style = MaterialTheme.typography.labelSmall)
+            Text(
+                if (label in locked) "locked" else "lock",
+                style = MaterialTheme.typography.labelSmall,
+                color =
+                    if (label in locked) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    },
+                modifier = Modifier.clickable { toggle(label) },
+            )
+        }
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { onChange(it.toInt().coerceIn(range.first, range.last)) },
+            valueRange = range.first.toFloat()..range.last.toFloat(),
+            steps = (range.last - range.first - 1).coerceAtLeast(0),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun AdsrCard(

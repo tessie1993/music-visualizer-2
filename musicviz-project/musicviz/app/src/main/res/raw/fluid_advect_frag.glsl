@@ -5,7 +5,8 @@ precision highp float;
 in vec2 vUv;
 uniform sampler2D uVelocity;
 uniform sampler2D uSource;
-uniform vec2 uSrcInvRes;   // texel size of uSource
+uniform vec2 uSrcInvRes;   // texel size of uSource (bilerp grid)
+uniform vec2 uVelInvRes;   // texel size of the VELOCITY grid (back-trace scale)
 uniform float uDt;
 uniform float uRdx;        // 1/cellSize
 uniform vec3 uDecay;       // per-channel (1 + dissipation*dt); velocity uses .xxx
@@ -24,7 +25,10 @@ vec4 bilerp(sampler2D t, vec2 uv, vec2 inv) {
 
 void main() {
     vec2 vel = texture(uVelocity, vUv).xy;
-    vec2 traced = vUv - uDt * uRdx * vel * uSrcInvRes;
+    // The trace displacement is scaled by the VELOCITY grid's texel size, not
+    // the source's: with uSrcInvRes here the dye (4x finer grid) would advect
+    // at 1/4 of the fluid's actual speed and visibly lag its own vortices.
+    vec2 traced = vUv - uDt * uRdx * vel * uVelInvRes;
     vec4 s = bilerp(uSource, traced, uSrcInvRes);
     fragColor = vec4(s.rgb / uDecay, s.a);
 }

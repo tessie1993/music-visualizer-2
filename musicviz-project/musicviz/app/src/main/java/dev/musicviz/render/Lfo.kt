@@ -49,6 +49,12 @@ enum class LfoTarget(val label: String) {
     FISHEYE("Fisheye"),
     PARTICLE_SIZE("Particle size"),
     TRAIL_LENGTH("Trail length"),
+    FLUID_CURL("Fluid curl"),
+    FLUID_RADIUS("Fluid splat radius"),
+    FLUID_FORCE("Fluid splat force"),
+    FLUID_GLOW("Fluid glow"),
+    FLUID_FADE("Fluid fade"),
+    FLOW_STRENGTH("Flow strength"),
     LFO1_RATE("LFO1 rate"),
     LFO1_DEPTH("LFO1 depth"),
     LFO2_RATE("LFO2 rate"),
@@ -181,6 +187,12 @@ class LfoEngine {
                         LfoTarget.FISHEYE -> r.copy(fisheye = (r.fisheye + v).coerceIn(-1f, 1f))
                         LfoTarget.PARTICLE_SIZE -> r.copy(particleSize = (r.particleSize + v).coerceIn(0.3f, 2.5f))
                         LfoTarget.TRAIL_LENGTH -> r.copy(trailLength = (r.trailLength + v).coerceIn(0.05f, 0.98f))
+                        LfoTarget.FLUID_CURL -> r.copy(fluidCurl = (r.fluidCurl + v * 25f).coerceIn(0f, 50f))
+                        LfoTarget.FLUID_RADIUS -> r.copy(fluidSplatRadius = (r.fluidSplatRadius + v * 0.15f).coerceIn(0.02f, 0.4f))
+                        LfoTarget.FLUID_FORCE -> r.copy(fluidSplatForce = (r.fluidSplatForce + v * 1.5f).coerceIn(0f, 3f))
+                        LfoTarget.FLUID_GLOW -> r.copy(fluidBloomIntensity = (r.fluidBloomIntensity + v).coerceIn(0.1f, 2f))
+                        LfoTarget.FLUID_FADE -> r.copy(fluidDensityDissipation = (r.fluidDensityDissipation + v * 1.5f).coerceIn(0f, 4f))
+                        LfoTarget.FLOW_STRENGTH -> r.copy(flowStrength = (r.flowStrength + v).coerceIn(0f, 1f))
                         else -> r
                     }
             }

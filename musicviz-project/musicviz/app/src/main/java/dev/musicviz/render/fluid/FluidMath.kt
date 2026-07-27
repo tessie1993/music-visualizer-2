@@ -43,11 +43,41 @@ internal object FluidMath {
 
     /**
      * CPU mirror of the particle update kernel's inertia term
-     * (fluid_particle_update_frag): v += (flow - v) * drag.
+     * (fluid_particle_update_frag): frame-rate-independent blend where
+     * [drag] is the per-1/60s factor: k = 1-(1-drag)^(dt*60).
      */
     fun dragStep(
         v: Float,
         flow: Float,
         drag: Float,
-    ): Float = v + (flow - v) * drag
+        dt: Float = 1f / 60f,
+    ): Float {
+        val k = 1f - Math.pow((1f - drag).toDouble(), (dt * 60f).toDouble()).toFloat()
+        return v + (flow - v) * k
+    }
+
+    /**
+     * Soft-knee bloom prefilter curve, mirroring
+     * fluid_bloom_prefilter_frag.glsl: knee = T*K + 1e-4,
+     * curve = (T - knee, 2*knee, 0.25/knee).
+     */
+    fun bloomCurve(
+        threshold: Float,
+        softKnee: Float,
+    ): Triple<Float, Float, Float> {
+        val knee = threshold * softKnee + 1e-4f
+        return Triple(threshold - knee, knee * 2f, 0.25f / knee)
+    }
+
+    /** CPU mirror of the prefilter's brightness rescale for a given max-channel. */
+    fun bloomPrefilterScale(
+        br: Float,
+        threshold: Float,
+        softKnee: Float,
+    ): Float {
+        val (cx, cy, cz) = bloomCurve(threshold, softKnee)
+        var rq = (br - cx).coerceIn(0f, cy)
+        rq = cz * rq * rq
+        return maxOf(rq, br - threshold) / maxOf(br, 1e-4f)
+    }
 }

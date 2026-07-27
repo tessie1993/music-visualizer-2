@@ -96,13 +96,17 @@ internal class FxCompositor(
         GLES30.glDisable(GLES30.GL_BLEND)
     }
 
-    /** Composites the scene texture (with FX) onto the currently-bound surface. */
+    /** Composites the scene texture (with FX) onto the currently-bound surface.
+     *  [flowTex]/[flowStrength] feed the fluidWarp slot so FlowField bending
+     *  appears in exports exactly like the live view (0 = disabled). */
     fun composite(
         timeSeconds: Float,
         features: AudioFeatures,
         isParticle: Boolean,
         isShaderScene: Boolean,
         params: SceneParams,
+        flowTex: Int = 0,
+        flowStrength: Float = 0f,
     ) {
         // Shader scenes apply all geometric/stylize FX in-shader already;
         // pass neutral values so they aren't applied twice (matches the
@@ -120,6 +124,10 @@ internal class FxCompositor(
         GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, emptyTex)
         GLES30.glUniform1i(loc("uTexB"), 1)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, if (flowTex != 0) flowTex else emptyTex)
+        GLES30.glUniform1i(loc("uFlow"), 2)
+        GLES30.glUniform1f(loc("uFlowStrength"), if (flowTex != 0) flowStrength else 0f)
         GLES30.glUniform1f(loc("uProgress"), 1f)
         GLES30.glUniform1i(loc("uStyle"), 0)
         GLES30.glUniform1f(loc("uTime"), timeSeconds)

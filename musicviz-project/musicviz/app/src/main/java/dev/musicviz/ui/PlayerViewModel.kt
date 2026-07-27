@@ -264,6 +264,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         r("Glitch") { p.copy(glitch = f(0f, 0.4f)) }
         r("Fisheye") { p.copy(fisheye = f(0f, 0.5f)) }
         r("Flash") { p.copy(flash = f(0f, 0.6f)) }
+        // Fluid scene (curated ranges so a roll stays watchable; quality and
+        // the FlowField master toggle are deliberately never randomized).
+        r("Fluid curl") { p.copy(fluidCurl = f(5f, 45f)) }
+        r("Motion fade") { p.copy(fluidVelocityDissipation = f(0.02f, 0.6f)) }
+        r("Fluid fade") { p.copy(fluidDensityDissipation = f(0.2f, 2.2f)) }
+        r("Chromatic aging") { p.copy(fluidChromaticAging = f(0f, 0.8f)) }
+        r("Beat pattern") { p.copy(fluidBeatPattern = rnd.nextInt(4)) }
+        r("Beat splats") { p.copy(fluidBeatSplats = 1 + rnd.nextInt(6)) }
+        r("Stirrers") { p.copy(fluidStirrers = rnd.nextInt(4)) }
+        r("Stirrer speed") { p.copy(fluidStirrerSpeed = f(0.3f, 1.6f)) }
+        r("Fluid splat radius") { p.copy(fluidSplatRadius = f(0.05f, 0.25f)) }
+        r("Fluid splat force") { p.copy(fluidSplatForce = f(0.5f, 2f)) }
+        r("Bass pump") { p.copy(fluidBassPump = rnd.nextInt(4) == 0) }
+        r("Particle drag") { p.copy(fluidParticleDrag = f(0.15f, 0.9f)) }
+        r("Fluid glow") { p.copy(fluidBloomIntensity = f(0.4f, 1.4f)) }
+        r("Glow threshold") { p.copy(fluidBloomThreshold = f(0.4f, 0.8f)) }
+        r("Sunrays weight") { p.copy(fluidSunraysWeight = f(0.4f, 1f)) }
         setSceneParams(p)
     }
 

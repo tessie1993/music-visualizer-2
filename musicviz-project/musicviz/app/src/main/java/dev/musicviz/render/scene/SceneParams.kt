@@ -69,6 +69,49 @@ data class SceneParams(
     val strobe: Float = 0f,
     // Automation: seconds to fade toward newly applied settings (0 = instant)
     val paramFadeSec: Float = 0f,
+    // Fluid (FLUID scene) - grid & solver
+    val fluidQuality: Int = 2, // index into FluidQuality.TIERS (0 Ultra .. 4 Min)
+    val fluidAutoQuality: Boolean = true,
+    val fluidIterations: Int = 20, // 8..40 Jacobi pressure iterations
+    val fluidPressure: Float = 0.8f, // warm-start damping 0..1
+    // Fluid - character
+    val fluidCurl: Float = 30f, // vorticity confinement 0..50
+    val fluidVelocityDissipation: Float = 0.2f, // 0..4
+    val fluidDensityDissipation: Float = 1f, // 0..4
+    val fluidChromaticAging: Float = 0.3f, // per-channel decay spread 0..1
+    // Fluid - emitters
+    val fluidSplatRadius: Float = 0.12f, // sim units 0.02..0.4
+    val fluidSplatForce: Float = 1f, // emitter speed multiplier 0..3
+    val fluidBeatPattern: Int = 1, // 0 center | 1 ring | 2 random | 3 spectrum arc
+    val fluidBeatSplats: Int = 3, // 0..8
+    val fluidStirrers: Int = 2, // 0..4
+    val fluidStirrerSpeed: Float = 1f, // 0..2
+    val fluidBassPump: Boolean = false,
+    val fluidPaletteCycleSpeed: Float = 0.5f, // 0..2
+    // Fluid - particles
+    val fluidParticlesEnabled: Boolean = true,
+    val fluidParticleDrag: Float = 0.5f, // 0.02..1; <1 = inertia streaks
+    val fluidParticleBrightness: Float = 1f, // 0..2
+    val fluidDyeEnabled: Boolean = true, // draw the ink layer
+    // Fluid - look
+    val fluidShading: Boolean = true,
+    val fluidBloom: Boolean = true,
+    val fluidBloomIntensity: Float = 0.8f, // "Glow (fluid)" - distinct from FX bloom
+    val fluidBloomThreshold: Float = 0.6f, // 0..1
+    val fluidSunrays: Boolean = true,
+    val fluidSunraysWeight: Float = 1f, // 0.3..1
+    // Fluid - audio routing
+    val fluidCurlAudio: Float = 0.5f, // mids swirl harder 0..1
+    val fluidBloomAudio: Float = 0.5f, // loud glows 0..1
+    val fluidFadeAudio: Float = 0.6f, // quiet passages clear the canvas 0..1
+    val fluidRadiusPulse: Float = 0.4f, // beat radius swell 0..1
+    // FlowField: fluid principles for EVERY style (composite fluidWarp,
+    // particle advection, uFlow sampler for shader scenes)
+    val flowEnabled: Boolean = false,
+    val flowStrength: Float = 0.35f, // fluidWarp amount in the composite 0..1
+    val flowForce: Float = 1f, // emitter speed multiplier 0..3
+    val flowCurl: Float = 25f, // 0..50
+    val flowAdvectParticles: Boolean = true, // particle scenes ride the field
 ) {
     companion object {
         val DEFAULT: SceneParams = SceneParams()
@@ -101,6 +144,9 @@ data class SceneParams(
 
         /** Symmetry fold options; 0 = off. */
         val SYMMETRY_FOLDS: List<Int> = listOf(0, 2, 3, 4, 5, 6, 7, 8, 9, 12, 16)
+
+        /** Fluid beat-splat emitter patterns (index = fluidBeatPattern). */
+        val FLUID_PATTERNS: List<String> = listOf("Center", "Ring", "Random", "Spectrum")
     }
 
     val paletteBase: Float get() = PALETTES[palette.coerceIn(0, PALETTES.size - 1)].second

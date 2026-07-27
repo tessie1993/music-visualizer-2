@@ -247,6 +247,19 @@ class VideoExporter(private val context: Context) {
         // does. Without this, exports - especially of particle scenes - would
         // omit every FX/shape customization, which are composite-only.
         val fx = FxCompositor(context, aspect.width, aspect.height)
+        // FlowField export parity (F7): run the shared field in the export GL
+        // context so fluidWarp bends exported frames exactly like the live
+        // view. The FLUID scene reuses its own velocity field instead.
+        val exportFluidScene = scene as? dev.musicviz.render.fluid.FluidScene
+        val flowField =
+            if (sceneParams.flowEnabled && exportFluidScene == null) {
+                dev.musicviz.render.fluid.FlowField(context).also {
+                    it.create()
+                    it.resize(aspect.width, aspect.height)
+                }
+            } else {
+                null
+            }
         // Reproduce the live path's per-frame LFO modulation so automations
         // the user set up appear in the render, not just on screen.
         val lfoEngine = dev.musicviz.render.LfoEngine()
@@ -276,6 +289,11 @@ class VideoExporter(private val context: Context) {
                 var p = dev.musicviz.render.LfoEngine.apply(sceneParams, lfoEngine.configs, lfoValues)
                 scene.setParams(p)
                 scene.update(dev.musicviz.render.scene.applyBandGains(features, p), 1f / fps)
+                if (p.flowEnabled && flowField != null && flowField.available) {
+                    // Steps into the FlowField's own FBOs, before the scene
+                    // target is bound - mirrors the live frame order.
+                    flowField.step(dev.musicviz.render.scene.applyBandGains(features, p), 1f / fps, p)
+                }
                 // Draw the scene into the FX FBO, then composite (with the full
                 // FX chain) onto the encoder surface, matching the live path.
                 fx.bindSceneTarget()
@@ -286,7 +304,18 @@ class VideoExporter(private val context: Context) {
                     GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
                 }
                 scene.draw(timeMs / 1000f)
-                fx.composite(timeMs / 1000f, features, isParticle, isShaderScene, p)
+                val flowTex =
+                    when {
+                        !p.flowEnabled -> 0
+                        exportFluidScene != null && exportFluidScene.simAvailable -> exportFluidScene.velocityTexture
+                        flowField != null && flowField.available -> flowField.velocityTex
+                        else -> 0
+                    }
+                fx.composite(
+                    timeMs / 1000f, features, isParticle, isShaderScene, p,
+                    flowTex = flowTex,
+                    flowStrength = if (flowTex != 0) p.flowStrength else 0f,
+                )
                 egl.setPresentationTimeNs(frame * frameDurationNs)
                 egl.swapBuffers()
 
@@ -341,6 +370,7 @@ class VideoExporter(private val context: Context) {
             // must never mask the original exception.
             runCatching {
                 scene.release()
+                runCatching { flowField?.release() }
                 runCatching { fx.release() }
             }
             if (muxerStarted) runCatching { muxer.stop() }

@@ -8,36 +8,57 @@ import dev.musicviz.render.scene.SceneIds
 import dev.musicviz.render.scene.SceneParams
 
 /**
- * The FLUID style, phases F2+F3: core sim, the four-emitter audio system,
- * and the GPU particle layer (drag-inertia light trails)
- * (BeatSplat/BandStirrer/TrebleSparkle/BassPump) with continuous modulation. The renderer binds the scene FBO before [update]/[draw],
- * so all internal sim passes snapshot and restore the framebuffer, viewport,
- * and blend state around themselves. Emitter system, look chain, Customize
- * tab, and FlowField land in the following fluid phases (see todo.md).
+ * The FLUID style: core sim (F1), the four-emitter audio system (F2), the
+ * GPU particle layer (F3), the bloom/sunrays/shading/dither look chain (F4),
+ * full Customize wiring (F5) and the adaptive quality monitor (F6). The
+ * renderer binds the scene FBO before [update]/[draw], so all internal sim
+ * passes snapshot and restore the framebuffer, viewport and blend state
+ * around themselves. Force/dye injection are user-replaceable extension
+ * points forwarded to [FluidSim.setInjectionShaders].
  */
 internal class FluidScene(context: Context) : Scene {
     override val id: String = SceneIds.FLUID
 
     private val sim = FluidSim(context)
+    private val look = FluidLook(context)
     private val particles = FluidParticles(context)
     private val emitters = FluidEmitters()
+    private val monitor = PerformanceMonitor()
 
-    /** F3 defaults; the Customize tab phase (F5) surfaces these. */
-    private val particleCount = 256 * 256
     private var params = SceneParams()
     private var time = 0f
     private var lastDt = 1f / 60f
     private var pendingFeatures: AudioFeatures? = null
+    private var width = 1
+    private var height = 1
 
-    // F2 modulation strengths (surfaced as SceneParams in F5).
-    private val curlAudio = 0.5f
-    private val fadeAudio = 0.6f
-    private val baseCurl = 30f
-    private val baseDensityDissipation = 1.0f
+    /** Latched automatic downgrade steps; never upgrades during a session. */
+    private var autoDowngrade = 0
+    private var lastUserQuality = -1
+    private var appliedTier = -1
+    private var appliedParticleSide = 0
+
+    /** Error surface for the user force/dye injection shaders. */
+    var onShaderError: (String?) -> Unit = {}
+
+    /** The sim's velocity field, for FlowField reuse (one source of truth). */
+    val velocityTexture: Int get() = sim.velocityTex
+    val simAvailable: Boolean get() = sim.available
+
+    fun setInjectionShaders(
+        forceSrc: String?,
+        dyeSrc: String?,
+    ) = sim.setInjectionShaders(forceSrc, dyeSrc)
 
     override fun init() {
+        sim.onShaderError = { onShaderError(it) }
         sim.create()
-        if (sim.available) particles.create(particleCount, sim.texFormats)
+        if (sim.available) {
+            look.create(sim.texFormats)
+            appliedTier = -1
+            appliedParticleSide = 0
+            applyQualityTier()
+        }
     }
 
     override fun setParams(params: SceneParams) {
@@ -48,8 +69,12 @@ internal class FluidScene(context: Context) : Scene {
         width: Int,
         height: Int,
     ) {
-        sim.resize(width, height)
-        particles.invalidateSeed()
+        this.width = width
+        this.height = height
+        // Copy-preserving path inside the sim: only an actual dimension
+        // change reallocates (and re-seeds particles for the new aspect).
+        if (sim.resize(width, height)) particles.invalidateSeed()
+        look.resize(width, height)
     }
 
     override fun update(
@@ -61,53 +86,142 @@ internal class FluidScene(context: Context) : Scene {
         pendingFeatures = features
     }
 
+    /** Applies the effective quality tier; reallocates only on change. */
+    private fun applyQualityTier() {
+        if (!sim.available) return
+        // A manual tier change resets the automatic latch and the monitor.
+        if (params.fluidQuality != lastUserQuality) {
+            lastUserQuality = params.fluidQuality
+            autoDowngrade = 0
+            monitor.reset()
+        }
+        val idx = FluidQuality.effectiveIndex(params.fluidQuality, if (params.fluidAutoQuality) autoDowngrade else 0)
+        if (idx == appliedTier && appliedParticleSide != 0) return
+        val tier = FluidQuality.tier(idx)
+        appliedTier = idx
+        sim.applyResolution(tier.simRes, tier.dyeRes)
+        if (appliedParticleSide != tier.particleSide) {
+            appliedParticleSide = tier.particleSide
+            particles.create(tier.particleSide * tier.particleSide, sim.texFormats)
+        }
+    }
+
     override fun draw(timeSeconds: Float) {
         if (!sim.available) return
+        val p = params
         val f = pendingFeatures
-        // Snapshot the engine's target: the sim renders to its own grids.
+
+        // Snapshot the engine's target + blend state: the sim renders to its
+        // own grids and the particle pass changes the blend function.
         val prevFbo = IntArray(1)
         val prevViewport = IntArray(4)
+        val prevBlendFunc = IntArray(4)
         GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, prevFbo, 0)
         GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
+        GLES30.glGetIntegerv(GLES30.GL_BLEND_SRC_RGB, prevBlendFunc, 0)
+        GLES30.glGetIntegerv(GLES30.GL_BLEND_DST_RGB, prevBlendFunc, 1)
+        GLES30.glGetIntegerv(GLES30.GL_BLEND_SRC_ALPHA, prevBlendFunc, 2)
+        GLES30.glGetIntegerv(GLES30.GL_BLEND_DST_ALPHA, prevBlendFunc, 3)
         val blendWas = GLES30.glIsEnabled(GLES30.GL_BLEND)
 
         if (f != null) {
-            // Continuous modulation (v2 spec 7.3): mids swirl harder, quiet
-            // passages fade the canvas, drops leave lasting ink.
+            // F6: sustained frame deficit lowers the latched tier; a single
+            // stall never fires, and quality never auto-upgrades mid-session.
+            if (p.fluidAutoQuality) {
+                val severity = monitor.onFrame(lastDt)
+                if (severity > 0) {
+                    autoDowngrade += severity
+                    monitor.reset()
+                }
+            }
+            applyQualityTier()
+
+            // F5 param wiring + F2 continuous modulation (v2 spec 7.3): mids
+            // swirl harder, quiet passages fade the canvas, drops leave ink.
             val energy = f.rms.coerceIn(0f, 1f)
-            sim.curlStrength = baseCurl * params.turbulence.coerceIn(0.1f, 2f) * (1f + curlAudio * f.mid)
-            sim.densityDissipation = baseDensityDissipation * (1f + fadeAudio * (1f - energy))
-            sim.chromaticAging = 0.3f
-            emitters.stirrerSpeed = params.speed.coerceIn(0.1f, 2f)
-            emitters.paletteCycleSpeed = if (params.colorCycle) params.cycleSpeed * 20f else 0.15f
+            sim.pressureIterations = p.fluidIterations.coerceIn(8, 40)
+            sim.pressureDamp = p.fluidPressure.coerceIn(0f, 1f)
+            sim.velocityDissipation = p.fluidVelocityDissipation.coerceIn(0f, 4f)
+            sim.curlStrength = p.fluidCurl.coerceIn(0f, 50f) * (1f + p.fluidCurlAudio * f.mid)
+            sim.densityDissipation =
+                p.fluidDensityDissipation.coerceIn(0f, 4f) *
+                (1f + p.fluidFadeAudio * (1f - energy))
+            sim.chromaticAging = p.fluidChromaticAging.coerceIn(0f, 1f)
+            sim.audioBass = f.bass
+            sim.audioMid = f.mid
+            sim.audioTreble = f.treble
+            sim.audioEnergy = energy
+            sim.audioBeat = if (f.beat) 1f else 0f
+            sim.timeSeconds = time
+
+            emitters.beatPattern = p.fluidBeatPattern.coerceIn(0, 3)
+            emitters.beatSplats = p.fluidBeatSplats.coerceIn(0, 8)
+            emitters.stirrers = p.fluidStirrers.coerceIn(0, 4)
+            emitters.stirrerSpeed = p.fluidStirrerSpeed.coerceIn(0f, 2f) * p.speed.coerceIn(0.1f, 2f)
+            emitters.bassPump = p.fluidBassPump
+            emitters.splatRadius = p.fluidSplatRadius.coerceIn(0.02f, 0.4f)
+            emitters.radiusPulse = p.fluidRadiusPulse.coerceIn(0f, 1f)
+            emitters.paletteCycleSpeed =
+                if (p.colorCycle) {
+                    p.fluidPaletteCycleSpeed.coerceIn(0f, 2f) + p.cycleSpeed * 20f
+                } else {
+                    p.fluidPaletteCycleSpeed.coerceIn(0f, 2f)
+                }
+            emitters.forceScale = p.fluidSplatForce.coerceIn(0f, 3f)
             for (s in emitters.tick(f, lastDt, sim.aspect, params.paletteBase, params.hueRange.coerceIn(0.1f, 1f))) {
                 sim.queueSplat(s)
             }
             sim.step(lastDt)
-            if (particles.available) {
-                particles.drag = 0.5f
+            if (particles.available && p.fluidParticlesEnabled) {
+                particles.drag = p.fluidParticleDrag.coerceIn(0.02f, 1f)
                 particles.step(lastDt, sim.velocityTex, sim.aspect, sim.flowScale)
             }
+            // F4 offscreen look passes (bloom mips + sunrays march), audio-
+            // modulated: loud sections glow harder.
+            look.bloomIntensity =
+                p.fluidBloomIntensity.coerceIn(0.1f, 2f) * (0.6f + p.fluidBloomAudio * energy)
+            look.bloomThreshold = p.fluidBloomThreshold.coerceIn(0f, 1f)
+            look.sunraysWeight = p.fluidSunraysWeight.coerceIn(0.3f, 1f)
+            if (p.fluidDyeEnabled) look.process(sim.dyeTex, p.fluidBloom, p.fluidSunrays)
             pendingFeatures = null
         }
 
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
         GLES30.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3])
-        sim.drawDisplay()
-        if (particles.available) {
+        if (p.fluidDyeEnabled) {
+            if (look.available) {
+                look.drawDisplay(
+                    dyeTex = sim.dyeTex,
+                    shadingOn = p.fluidShading,
+                    bloomOn = p.fluidBloom,
+                    sunraysOn = p.fluidSunrays,
+                    viewportW = prevViewport[2].coerceAtLeast(1),
+                    viewportH = prevViewport[3].coerceAtLeast(1),
+                )
+            } else {
+                sim.drawDisplay()
+            }
+        }
+        if (particles.available && p.fluidParticlesEnabled) {
             particles.draw(
                 aspect = sim.aspect,
-                pointScale = (1.5f * params.particleSize.coerceIn(0.2f, 3f)),
-                hueBase = params.paletteBase,
-                hueSpan = params.hueRange.coerceIn(0.1f, 1f),
-                brightness = 0.55f * (0.3f + params.density.coerceIn(0f, 1.5f)),
+                pointScale = (1.5f * p.particleSize.coerceIn(0.2f, 3f)),
+                hueBase = p.paletteBase,
+                hueSpan = p.hueRange.coerceIn(0.1f, 1f),
+                brightness =
+                    0.55f * p.fluidParticleBrightness.coerceIn(0f, 2f) *
+                        (0.3f + p.density.coerceIn(0f, 1.5f)),
             )
         }
         if (blendWas) GLES30.glEnable(GLES30.GL_BLEND) else GLES30.glDisable(GLES30.GL_BLEND)
+        GLES30.glBlendFuncSeparate(prevBlendFunc[0], prevBlendFunc[1], prevBlendFunc[2], prevBlendFunc[3])
     }
 
     override fun release() {
         particles.release()
+        look.release()
         sim.release()
+        appliedTier = -1
+        appliedParticleSide = 0
     }
 }
