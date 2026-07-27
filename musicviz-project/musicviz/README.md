@@ -1,3 +1,56 @@
+## v0.12.1 - full bug-scan fix pass (25 fixes across render, audio, export, stores)
+Renderer/scenes:
+- Shader recompiles clear the uniform-location cache (editing a scene's GLSL
+  no longer silently corrupts zoom/color/audio uniforms on the 2nd compile).
+- Shader time is an integrated clock (dt*speed): Speed slider/LFO changes
+  alter the rate instead of violently scrubbing every shader scene.
+- Audio texture uses NEAREST (R32F+LINEAR is incomplete without
+  OES_texture_float_linear - bars/scope/waves went flat on those GPUs).
+- Outgoing scene keeps its FX chain during FADE/MELT transitions (no more
+  un-mirror/vignette pop at transition start).
+- Milk preset load/reload routed through the GL thread (no more racing
+  surface recreation from the UI thread); queuePreset poll is synchronized
+  so a preset queued mid-frame can't be silently dropped.
+- ProjectMScene releases its post VAO; endless-zoom wrap pop fixed in all
+  20 shader scenes (triangle-wave exponent, as pm_post already did);
+  LFO S&H phase accumulates in double (froze after days of runtime).
+Audio/analysis:
+- AIFF PCM reads are bounded to the SSND payload: trailing MARK/APPL/ID3
+  chunks are no longer decoded as a burst of noise at the end of every
+  AIFF analysis/export; chunk sizes handled as unsigned with robust skips;
+  non-byte-multiple sample sizes rejected instead of decoding silence.
+- AiffExtractor validates COMM (size, channels, rate) and reports malformed
+  or unsupported files as typed ParserExceptions instead of crashing with
+  raw runtime exceptions; >=2GiB chunk skips no longer overflow.
+- OfflineAnalyzer releases extractor/codec on ALL failure paths.
+- Key detection uses true Pearson (mean-centered) Krumhansl-Schmuckler
+  correlation - broadband material no longer leans systematically minor.
+Export:
+- One try/finally now covers encoder/surface/muxer/EGL/transcode SETUP as
+  well as the render loop: cancelling during the audio phase (or any setup
+  failure) no longer leaks the hardware codec until process death.
+- Encoder is matched to the decoder's real output format (HE-AAC/SBR and
+  parametric-stereo sources no longer export slow/garbled); AAC tail pad
+  computed from the sample rate; AIFF PTS derived from absolute byte count
+  (no more drift on hour-long files).
+- Pending-export request survives rotation while the file picker is open
+  (and an orphaned zero-byte file is deleted if it doesn't); orphaned
+  IS_PENDING MediaStore rows cleaned up; silent EOS truncation now logged
+  with a 3x longer flush window.
+Stores/ViewModel:
+- Track analysis is cached under the track that was ACTUALLY analyzed;
+  skipping mid-analysis re-queues the new track instead of mislabeling it.
+- TrackLibrary mutations are synchronized + atomic (concurrent import +
+  analysis could clobber or truncate the library file).
+- Playlist and preset files resolve by the name stored IN the JSON:
+  names that sanitize to the same filename can no longer overwrite or
+  delete each other (rename "Rock?"->"Rock!" destroyed the playlist).
+- MediaStore scan and queue building moved off the main thread (shuffle-all
+  froze the UI for seconds); play-history writes are async.
+- takePersistableUriPermission guarded everywhere (providers without
+  persistable grants crashed the app); search-screen preset apply no longer
+  drops the preset's custom shader.
+
 ## v0.12.0 - fluid phases F4-F7 complete (look chain, Fluid tab, adaptive quality, FlowField)
 - F4 look chain: the FLUID scene now renders through the full
   Pavel-style look stack - soft-knee HDR bloom through a mip up/down chain

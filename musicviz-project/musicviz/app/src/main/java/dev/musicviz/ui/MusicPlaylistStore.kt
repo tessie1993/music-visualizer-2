@@ -24,12 +24,35 @@ class MusicPlaylistStore(context: Context) {
             ?.sortedBy { it.name.lowercase() }
             .orEmpty()
 
+    /**
+     * File resolution is by the playlist name STORED IN the JSON, not the
+     * sanitized filename: two names that differ only in special characters
+     * (e.g. "Rock?" and "Rock!") sanitize to the same filename, so a
+     * filename-keyed save silently destroyed the other playlist and a rename
+     * across such names deleted the playlist it had just written.
+     */
+    private fun findFile(name: String): File? =
+        dir.listFiles { f -> f.extension == "json" }
+            ?.firstOrNull { runCatching { fromJson(it.readText()).name }.getOrNull() == name }
+
+    private fun targetFile(name: String): File {
+        findFile(name)?.let { return it }
+        val base = sanitize(name).ifBlank { "playlist" }
+        var f = File(dir, "$base.json")
+        var i = 2
+        while (f.exists()) {
+            f = File(dir, "${base}_$i.json")
+            i++
+        }
+        return f
+    }
+
     fun save(playlist: MusicPlaylist) {
-        File(dir, sanitize(playlist.name) + ".json").writeText(toJson(playlist))
+        targetFile(playlist.name).writeText(toJson(playlist))
     }
 
     fun delete(name: String) {
-        File(dir, sanitize(name) + ".json").delete()
+        findFile(name)?.delete()
     }
 
     /** Appends a track uri if not already present. */

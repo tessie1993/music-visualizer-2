@@ -22,7 +22,23 @@ fun ExportHost(
     val export by viewModel.exportState.collectAsState()
     val appTheme by viewModel.theme.collectAsState()
     val gui by viewModel.guiPrefs.collectAsState()
-    var pendingExport by remember { mutableStateOf<Triple<dev.musicviz.export.ExportAspect, Int, String>?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // rememberSaveable: the CreateDocument picker is a foreign activity, so a
+    // rotation (or process death) while it is open used to reset a plain
+    // remember{} to null - the chosen file was then silently never written.
+    var pendingExport by androidx.compose.runtime.saveable.rememberSaveable(
+        stateSaver =
+            androidx.compose.runtime.saveable.Saver(
+                save = { v -> v?.let { arrayListOf<Any>(it.first.width, it.first.height, it.first.bitRate, it.second, it.third) } },
+                restore = { saved ->
+                    Triple(
+                        dev.musicviz.export.ExportAspect(saved[0] as Int, saved[1] as Int, saved[2] as Int),
+                        saved[3] as Int,
+                        saved[4] as String,
+                    )
+                },
+            ),
+    ) { mutableStateOf<Triple<dev.musicviz.export.ExportAspect, Int, String>?>(null) }
     val destinationPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { dest ->
             val req = pendingExport
@@ -34,17 +50,26 @@ fun ExportHost(
                     visualizerView.visualizerRenderer.exportSceneFactory(req.third),
                     destination = dest,
                 )
+            } else if (dest != null) {
+                // Request lost (shouldn't happen with the saveable state, but
+                // stay safe): don't leave the picker's zero-byte .mp4 behind.
+                runCatching {
+                    android.provider.DocumentsContract.deleteDocument(context.contentResolver, dest)
+                }
             }
         }
-    val context = androidx.compose.ui.platform.LocalContext.current
     val presetFolderPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                        android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                )
+                // Not every provider grants persistable permissions; an
+                // uncaught SecurityException here crashed the app.
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                    )
+                }
                 viewModel.setGuiPrefs(viewModel.guiPrefs.value.copy(presetMirrorUri = uri.toString()))
             }
         }

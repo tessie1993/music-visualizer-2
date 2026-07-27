@@ -121,7 +121,17 @@ fun LibraryScreen(
     val permLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     var reloadKey by remember { mutableStateOf(0) }
-    val tracks = remember(granted, reloadKey) { if (granted) queryDeviceTracks(context) else emptyList() }
+    // Off the main thread: a full MediaStore scan inside remember{} ran
+    // synchronously during composition - jank/ANR territory on devices with
+    // thousands of tracks.
+    val tracks by androidx.compose.runtime.produceState(initialValue = emptyList<DeviceTrack>(), granted, reloadKey) {
+        value =
+            if (granted) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { queryDeviceTracks(context) }
+            } else {
+                emptyList()
+            }
+    }
     var tab by rememberSaveable { mutableStateOf(0) }
     val tabs = listOf("Tracks", "Albums", "Artists", "Playlists", "Folders")
 

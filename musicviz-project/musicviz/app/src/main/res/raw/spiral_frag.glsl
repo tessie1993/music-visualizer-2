@@ -78,7 +78,7 @@ vec2 view() {
     uv = mat2(cos(a), -sin(a), sin(a), cos(a)) * uv;
     // Beat-locked pulse: peaks exactly on the musical beat (uBeatPhase=0).
     float pulse = 1.0 + uPulse * 0.22 * pow(0.5 + 0.5 * cos(6.2831853 * uBeatPhase), 2.0);
-    float z = uZoom * pulse * pow(2.0, uZoomPhase) * (1.0 + uBeat * uBeatResponse * 0.15);
+    float z = uZoom * pulse * pow(2.0, 1.0 - abs(2.0 * uZoomPhase - 1.0)) * (1.0 + uBeat * uBeatResponse * 0.15);
     uv /= max(z, 0.05);
     uv += uTurbulence * 0.06 * vec2(sin(uv.y * 6.0 + uTime), cos(uv.x * 6.0 + uTime * 1.3));
     // Radial twist: rotate by an angle growing with radius.

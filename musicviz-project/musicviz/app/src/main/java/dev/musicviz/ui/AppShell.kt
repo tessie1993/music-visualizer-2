@@ -359,11 +359,15 @@ fun SettingsScreen(
             val folderPicker =
                 rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
                     if (uri != null) {
-                        ctx.contentResolver.takePersistableUriPermission(
-                            uri,
-                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                                android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                        )
+                        // Not every provider grants persistable permissions;
+                        // an uncaught SecurityException here crashed the app.
+                        runCatching {
+                            ctx.contentResolver.takePersistableUriPermission(
+                                uri,
+                                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                    android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                            )
+                        }
                         viewModel.setGuiPrefs(gui.copy(presetMirrorUri = uri.toString()))
                     }
                 }
@@ -451,7 +455,12 @@ fun SearchScreen(
                             Text(
                                 p.name,
                                 Modifier.fillMaxWidth().clickable {
-                                    viewModel.applyPreset(p)
+                                    // applyPreset returns the preset's custom
+                                    // shader for the caller to push; dropping
+                                    // it restored scene/params but silently
+                                    // skipped the user's GLSL.
+                                    val shader = viewModel.applyPreset(p)
+                                    shader?.let { viewModel.applyCustomShader(it) }
                                     onClose()
                                 }.padding(vertical = 8.dp),
                             )

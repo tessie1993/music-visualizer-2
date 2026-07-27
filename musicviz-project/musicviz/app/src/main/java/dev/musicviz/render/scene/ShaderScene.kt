@@ -45,6 +45,11 @@ class ShaderScene(
     private var zoomPhase = 0f
     private var cyclePhase = 0f
 
+    /** Integrated speed-scaled clock: dt*speed accumulates, so a Speed change
+     *  (or LFO on Speed) alters the RATE without scrubbing shader time the
+     *  way `timeSeconds * speed` did. */
+    private var shaderTime = 0f
+
     override fun setParams(params: SceneParams) {
         sceneParams = params
     }
@@ -76,8 +81,11 @@ class ShaderScene(
         GLES30.glGenTextures(1, ids, 0)
         audioTex = ids[0]
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, audioTex)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+        // R32F is NOT filterable in core ES 3.0 (needs OES_texture_float_linear);
+        // with LINEAR the texture is incomplete on some GPUs and samples 0,
+        // killing all audio reactivity. NEAREST is always valid.
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_NEAREST)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexImage2D(
@@ -99,6 +107,7 @@ class ShaderScene(
         dt: Float,
     ) {
         val p = sceneParams
+        shaderTime += dt * p.speed
         rotationAngle += p.rotation * dt
         if (p.endlessZoom) zoomPhase = (zoomPhase + p.endlessZoomSpeed * dt) % 1f
         if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * dt) % 1f
@@ -144,7 +153,7 @@ class ShaderScene(
             GLES30.GL_TEXTURE_2D, 0, 0, 0, AUDIO_TEX_WIDTH, 2,
             GLES30.GL_RED, GLES30.GL_FLOAT, texData,
         )
-        setUniform1f("uTime", timeSeconds * p.speed)
+        setUniform1f("uTime", shaderTime)
         setUniform1f("uBass", bass)
         setUniform1f("uMid", mid)
         setUniform1f("uTreble", treble)
@@ -221,6 +230,9 @@ class ShaderScene(
             val newProgram = GlUtil.buildProgram(vertexSrc, src)
             if (program != 0) GLES30.glDeleteProgram(program)
             program = newProgram
+            // Locations are per-program: reusing entries cached from the old
+            // program silently corrupts uniforms after an editor recompile.
+            uniformLocs.clear()
             currentFragment = src
             onError(null)
         } catch (e: GlUtil.ShaderCompileException) {

@@ -163,7 +163,11 @@ void main() {
         fragColor = vec4(a, 1.0);
         return;
     }
-    vec3 b = texture(uTexB, vUv).rgb;
+    // The outgoing scene keeps the full FX chain during the crossfade -
+    // sampling uTexB raw made mirror/kaleido/vignette visibly pop off the
+    // instant a transition started. (SLIDE/ZOOM sample both textures at
+    // offset coordinates, so they stay on the raw path symmetrically.)
+    vec3 b = postFx(uTexB, vUv, vec3(0.0));
     if (uStyle == 1) {
         fragColor = vec4(mix(b, a, uProgress), 1.0);
     } else if (uStyle == 3) {
@@ -181,7 +185,7 @@ void main() {
     } else {
         float lumB = dot(b, vec3(0.299, 0.587, 0.114));
         vec2 melted = vUv + vec2(0.0, uProgress * (0.25 + lumB * 0.6));
-        vec3 bMelt = texture(uTexB, clamp(melted, 0.0, 1.0)).rgb;
+        vec3 bMelt = postFx(uTexB, clamp(melted, 0.0, 1.0), vec3(0.0));
         float reveal = smoothstep(0.0, 1.0, uProgress * 1.4 - lumB * 0.4);
         fragColor = vec4(mix(bMelt, a, clamp(reveal, 0.0, 1.0)), 1.0);
     }

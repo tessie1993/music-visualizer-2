@@ -36,8 +36,12 @@ class AudioTranscoder(private val context: Context) {
         val durationUs: Long =
             sampleInfos.lastOrNull()?.let { last ->
                 // One AAC frame is 1024 PCM samples; extend past the last PTS
-                // so the final frame's own duration is included.
-                last.presentationTimeUs + 24_000L
+                // so the final frame's own duration is included (1024/rate
+                // seconds - a hard-coded 24 ms was off by up to ~3 ms).
+                val rate =
+                    runCatching { format.getInteger(MediaFormat.KEY_SAMPLE_RATE) }.getOrDefault(0)
+                val frameUs = if (rate > 0) 1_024_000_000L / rate else 24_000L
+                last.presentationTimeUs + frameUs
             } ?: 0L
 
         fun release() {
@@ -111,6 +115,7 @@ class AudioTranscoder(private val context: Context) {
         var encoderDone = false
         var pcmCarry: ByteBuffer? = null
         var carryTimeUs = 0L
+        var pcmBytesTotal = 0L
         try {
             while (!encoderDone) {
                 if (isCancelled()) throw kotlinx.coroutines.CancellationException("Export cancelled")
@@ -147,9 +152,13 @@ class AudioTranscoder(private val context: Context) {
                         val toWrite = minOf(inBuf.remaining(), carry.remaining())
                         val slice = carry.duplicate().apply { limit(position() + toWrite) }
                         inBuf.put(slice)
-                        val bytesPerUs = sampleRate.toLong() * channels * 2 / 1_000_000.0
                         encoder.queueInputBuffer(inIndex, 0, toWrite, carryTimeUs, 0)
-                        carryTimeUs += (toWrite / bytesPerUs).toLong()
+                        // PTS from the ABSOLUTE byte count: per-chunk
+                        // truncation accumulated tens of ms of drift over an
+                        // hour-long AIFF and (unlike the decoder path) was
+                        // never re-anchored.
+                        pcmBytesTotal += toWrite
+                        carryTimeUs = pcmBytesTotal * 1_000_000L / (sampleRate.toLong() * channels * 2)
                         carry.position(carry.position() + toWrite)
                         if (!carry.hasRemaining()) pcmCarry = null
                     }
@@ -234,9 +243,18 @@ class AudioTranscoder(private val context: Context) {
                 setInteger(MediaFormat.KEY_BIT_RATE, 192_000)
                 setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 65536)
             }
-        val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
+        var encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
         encoder.configure(encFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         encoder.start()
+        // The container's DECLARED rate/channels can differ from what the
+        // decoder actually emits: HE-AAC (SBR) decodes at double the declared
+        // rate, parametric stereo decodes mono-declared streams to stereo.
+        // The encoder is re-created from the decoder's real output format
+        // before the first PCM is fed (see below), so pitch/speed and channel
+        // interleaving stay correct.
+        var encRate = sampleRate
+        var encChannels = channels
+        var encoderMatched = false
 
         val outFile = File.createTempFile("musicviz_aac_", ".bin", context.cacheDir)
         val out = BufferedOutputStream(FileOutputStream(outFile))
@@ -270,7 +288,7 @@ class AudioTranscoder(private val context: Context) {
             val toWrite = minOf(inBuf.remaining(), carry.remaining())
             val slice = carry.duplicate().apply { limit(position() + toWrite) }
             inBuf.put(slice)
-            val bytesPerUs = sampleRate.toLong() * channels * 2 / 1_000_000.0
+            val bytesPerUs = encRate.toLong() * encChannels * 2 / 1_000_000.0
             encoder.queueInputBuffer(inIndex, 0, toWrite, carryTimeUs, 0)
             carryTimeUs += (toWrite / bytesPerUs).toLong()
             carry.position(carry.position() + toWrite)
@@ -327,16 +345,52 @@ class AudioTranscoder(private val context: Context) {
                                 copy.put(buf)
                                 copy.flip()
                             }
-                            // Multichannel sources (5.1 etc.): the AAC encoder
-                            // was configured for at most 2 channels, but the
-                            // decoder emits ALL source channels interleaved.
+                            // Match the encoder to the decoder's REAL output
+                            // format on the first buffer; nothing has been fed
+                            // yet, so a recreate here is safe and cheap.
+                            val decRate =
+                                if (outFmt.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                                    outFmt.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                                } else {
+                                    sampleRate
+                                }
+                            val decCh =
+                                if (outFmt.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                                    outFmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                                } else {
+                                    srcChannels
+                                }
+                            if (!encoderMatched) {
+                                encoderMatched = true
+                                val wantCh = decCh.coerceAtMost(2).coerceAtLeast(1)
+                                if (decRate != encRate || wantCh != encChannels) {
+                                    encRate = decRate
+                                    encChannels = wantCh
+                                    runCatching { encoder.stop() }
+                                    runCatching { encoder.release() }
+                                    val actualFormat =
+                                        MediaFormat.createAudioFormat(
+                                            MediaFormat.MIMETYPE_AUDIO_AAC, encRate, encChannels,
+                                        ).apply {
+                                            setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+                                            setInteger(MediaFormat.KEY_BIT_RATE, 192_000)
+                                            setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 65536)
+                                        }
+                                    encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
+                                    encoder.configure(actualFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                                    encoder.start()
+                                }
+                            }
+                            // Multichannel sources (5.1 etc.): the decoder
+                            // emits ALL its output channels interleaved.
                             // Feeding that stream unchanged garbles the audio
                             // and breaks the bytes-per-microsecond timestamp
                             // math, so fold the frames down to the encoder's
-                            // channel count here.
+                            // channel count here (by the DECODER's count, not
+                            // the container's declared one).
                             val mixed =
-                                if (srcChannels > channels) {
-                                    downmix(copy, srcChannels, channels)
+                                if (decCh > encChannels) {
+                                    downmix(copy, decCh, encChannels)
                                 } else {
                                     copy
                                 }

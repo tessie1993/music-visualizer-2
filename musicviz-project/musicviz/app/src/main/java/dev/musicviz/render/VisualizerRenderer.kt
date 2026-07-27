@@ -310,14 +310,22 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
     /** The user-edited fragment source for [sceneId], or null if unedited. */
     fun customShaderFor(sceneId: String): String? = activeCustomShaders[sceneId]
 
+    // Milk preset requests are queued and applied on the GL thread: the
+    // `scenes` map is cleared/repopulated by onSurfaceCreated on the GL
+    // thread, so reading it from the UI thread races surface recreation
+    // (a load could land on a just-released stale ProjectMScene).
+    private val milkLock = Any()
+    private var pendingMilkLoad: String? = null
+    private var pendingMilkReload = false
+
     fun loadMilkPreset(path: String) {
         lastMilkPreset = path
-        (scenes[SceneIds.MILKDROP] as? ProjectMScene)?.queuePreset(path)
+        synchronized(milkLock) { pendingMilkLoad = path }
     }
 
     /** Re-queues the currently loaded preset so newly added textures apply. */
     fun reloadCurrentMilkPreset() {
-        (scenes[SceneIds.MILKDROP] as? ProjectMScene)?.reloadCurrent()
+        synchronized(milkLock) { pendingMilkReload = true }
     }
 
     override fun onSurfaceCreated(
@@ -438,6 +446,15 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
             val (sceneId, src) = pendingCustomShaders.poll() ?: break
             (scenes[sceneId] as? ShaderScene)?.setFragmentSource(src)
         }
+        val (milkLoad, milkReload) =
+            synchronized(milkLock) {
+                val r = pendingMilkLoad to pendingMilkReload
+                pendingMilkLoad = null
+                pendingMilkReload = false
+                r
+            }
+        milkLoad?.let { (scenes[SceneIds.MILKDROP] as? ProjectMScene)?.queuePreset(it) }
+        if (milkReload) (scenes[SceneIds.MILKDROP] as? ProjectMScene)?.reloadCurrent()
         val requested = scenes[requestedSceneId]
         var sceneJustSwitched = false
         if (requested != null && requested !== activeScene) {

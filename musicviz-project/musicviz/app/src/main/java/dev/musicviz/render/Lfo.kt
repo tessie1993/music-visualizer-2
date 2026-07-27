@@ -85,7 +85,10 @@ class LfoEngine {
 
     private val phases = FloatArray(3)
     private val sampleHold = FloatArray(3)
-    private val totalPhase = FloatArray(3)
+
+    /** Double: float ulps exceed the per-frame increment after ~2^24 cycles,
+     *  freezing the S&H waveform on very long sessions. */
+    private val totalPhase = DoubleArray(3)
     private val lastCycle = IntArray(3) { -1 }
 
     /** Advances phases and returns each LFO's bipolar output value. */

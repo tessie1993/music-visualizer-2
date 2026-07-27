@@ -56,8 +56,21 @@ class PresetStore(context: Context) {
     /** The on-disk JSON file for a saved preset, for mirroring/export. */
     fun fileOf(name: String): File? = findFile(name)
 
-    private fun findFile(name: String): File? =
-        dir.walkTopDown().firstOrNull { it.isFile && it.extension == "json" && it.nameWithoutExtension == sanitize(name) }
+    /**
+     * Resolves a preset's file by the name STORED IN its JSON (filename match
+     * only as a legacy fallback): distinct names can sanitize to the same
+     * filename ("Neon: Blue" / "Neon* Blue"), and matching by filename alone
+     * made delete/move hit the wrong preset.
+     */
+    private fun findFile(name: String): File? {
+        val byContent =
+            dir.walkTopDown().firstOrNull {
+                it.isFile && it.extension == "json" &&
+                    runCatching { fromJson(it.readText()).name }.getOrNull() == name
+            }
+        if (byContent != null) return byContent
+        return dir.walkTopDown().firstOrNull { it.isFile && it.extension == "json" && it.nameWithoutExtension == sanitize(name) }
+    }
 
     fun list(): List<Preset> =
         dir.walkTopDown()
@@ -71,7 +84,24 @@ class PresetStore(context: Context) {
         folder: String = "",
     ) {
         val destDir = if (folder.isEmpty()) dir else File(dir, sanitize(folder)).apply { mkdirs() }
-        File(destDir, sanitize(preset.name) + ".json").writeText(toJson(preset))
+        // Overwrite the same-named preset in this folder; otherwise pick a
+        // filename that does NOT belong to a different preset whose name
+        // happens to sanitize identically (that silently destroyed it).
+        val existing =
+            destDir.listFiles { f -> f.extension == "json" }
+                ?.firstOrNull { runCatching { fromJson(it.readText()).name }.getOrNull() == preset.name }
+        val target =
+            existing ?: run {
+                val base = sanitize(preset.name).ifBlank { "preset" }
+                var f = File(destDir, "$base.json")
+                var i = 2
+                while (f.exists() && runCatching { fromJson(f.readText()).name }.getOrNull() != preset.name) {
+                    f = File(destDir, "${base}_$i.json")
+                    i++
+                }
+                f
+            }
+        target.writeText(toJson(preset))
     }
 
     fun delete(name: String) {

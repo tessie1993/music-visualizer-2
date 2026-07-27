@@ -3,6 +3,7 @@ package dev.musicviz.audio
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.ParserException
 import androidx.media3.common.util.ParsableByteArray
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.extractor.Extractor
@@ -108,9 +109,23 @@ class AiffExtractor : Extractor {
             val size = scratch.readInt().toLong() and 0xFFFFFFFFL
             when (id) {
                 COMM -> {
+                    // A COMM below 18 bytes underflows the fixed fields and a
+                    // huge/corrupt size would attempt a multi-GB allocation
+                    // (or wrap negative) - both crash instead of erroring.
+                    if (size < 18L || size > 256L) {
+                        throw ParserException.createForMalformedContainer("AIFF: bad COMM size $size", null)
+                    }
                     val comm = ByteArray(size.toInt())
                     input.readFully(comm, 0, comm.size)
                     val parsed = parseComm(comm, isAifc)
+                    if (parsed.channels <= 0 || parsed.sampleRate <= 0 || parsed.bitsPerSample <= 0) {
+                        // channels=0 or rate=0 would divide by zero later in
+                        // frame/duration math - malformed, not a crash.
+                        throw ParserException.createForMalformedContainer(
+                            "AIFF: bad COMM (channels=${parsed.channels} rate=${parsed.sampleRate} bits=${parsed.bitsPerSample})",
+                            null,
+                        )
+                    }
                     channels = parsed.channels
                     sampleRate = parsed.sampleRate
                     bitsPerSample = parsed.bitsPerSample
@@ -118,7 +133,7 @@ class AiffExtractor : Extractor {
                     commSeen = true
                 }
                 SSND -> {
-                    check(commSeen) { "AIFF: SSND before COMM" }
+                    if (!commSeen) throw ParserException.createForMalformedContainer("AIFF: SSND before COMM", null)
                     scratch.reset(8)
                     input.readFully(scratch.data, 0, 8)
                     scratch.setPosition(0)
@@ -131,16 +146,35 @@ class AiffExtractor : Extractor {
                 }
                 else -> {
                     // Chunks are word-aligned: odd sizes carry a pad byte.
-                    input.skipFully((size + (size and 1L)).toInt())
+                    // Skip in Int-sized steps: a single .toInt() goes negative
+                    // for chunks >= 2 GiB (unsigned 32-bit sizes).
+                    skipLong(input, size + (size and 1L))
                 }
             }
             if (id == COMM && (size and 1L) == 1L) input.skipFully(1)
         }
     }
 
+    private fun skipLong(
+        input: ExtractorInput,
+        count: Long,
+    ) {
+        var remaining = count
+        while (remaining > 0) {
+            val step = minOf(remaining, Int.MAX_VALUE.toLong()).toInt()
+            input.skipFully(step)
+            remaining -= step
+        }
+    }
+
     private fun emitFormat() {
-        check(pcmEncoding != C.ENCODING_INVALID) {
-            "AIFF: unsupported sample format ($bitsPerSample-bit)"
+        if (pcmEncoding == C.ENCODING_INVALID) {
+            // Legal-but-unsupported variants (8-bit, little-endian 24/32-bit
+            // "sowt") surface as a typed unsupported-format error, not an
+            // IllegalStateException crash.
+            throw ParserException.createForUnsupportedContainerFeature(
+                "AIFF: unsupported sample format ($bitsPerSample-bit)",
+            )
         }
         track.format(
             Format.Builder()

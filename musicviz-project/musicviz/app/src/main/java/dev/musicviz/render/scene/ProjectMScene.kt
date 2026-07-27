@@ -63,11 +63,13 @@ class ProjectMScene(
     }
 
     /** Thread-safe: queues a .milk preset file to load on the GL thread. */
+    @Synchronized
     fun queuePreset(path: String) {
         pendingPresetPath = path
     }
 
     /** Re-queues the currently loaded preset (e.g. after textures change). */
+    @Synchronized
     fun reloadCurrent() {
         lastPresetPath?.let {
             pendingPresetPath = it
@@ -164,19 +166,28 @@ class ProjectMScene(
         ensureFbo()
         if (handle == 0L || pmFbo == 0) return
         val now = SystemClock.elapsedRealtime()
-        pendingPresetPath?.let { path ->
-            if (now - lastLoadMs >= LOAD_DEBOUNCE_MS) {
-                pendingPresetPath = null
-                lastLoadMs = now
-                val dir = File(path).parent ?: "/"
-                val dirs = mutableListOf(dir, "$dir/textures")
-                sharedTextureDir?.let { dirs += it }
-                PMBridge.nativeSetTexturePaths(handle, dirs.toTypedArray())
-                PMBridge.nativeLoadPreset(handle, path, false)
-                val error = PMBridge.nativeGetLastError()
-                onError(error)
-                if (error == null) lastPresetPath = path
+        // Synchronized poll: a queuePreset() landing between an unsynchronized
+        // read and the null-out would be silently discarded.
+        val polled =
+            synchronized(this) {
+                val p = pendingPresetPath
+                if (p != null && now - lastLoadMs >= LOAD_DEBOUNCE_MS) {
+                    pendingPresetPath = null
+                    p
+                } else {
+                    null
+                }
             }
+        polled?.let { path ->
+            lastLoadMs = now
+            val dir = File(path).parent ?: "/"
+            val dirs = mutableListOf(dir, "$dir/textures")
+            sharedTextureDir?.let { dirs += it }
+            PMBridge.nativeSetTexturePaths(handle, dirs.toTypedArray())
+            PMBridge.nativeLoadPreset(handle, path, false)
+            val error = PMBridge.nativeGetLastError()
+            onError(error)
+            if (error == null) lastPresetPath = path
         }
         val p = sceneParams
         PMBridge.nativeSetBeatSensitivity(handle, (0.2f + p.beatResponse).coerceIn(0.2f, 3f))
@@ -245,5 +256,7 @@ class ProjectMScene(
         releaseFbo()
         if (postProgram != 0) GLES30.glDeleteProgram(postProgram)
         postProgram = 0
+        if (postVao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(postVao), 0)
+        postVao = 0
     }
 }

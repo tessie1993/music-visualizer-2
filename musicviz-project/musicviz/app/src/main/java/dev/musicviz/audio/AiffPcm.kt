@@ -20,8 +20,12 @@ class AiffPcm private constructor(
     val sampleRate: Int,
     private val bitsPerSample: Int,
     val totalFrames: Long,
+    /** SSND payload bytes: reads stop here so trailing chunks (MARK, APPL,
+     *  ID3, annotations) are never decoded as audio noise. */
+    private val dataBytes: Long,
 ) {
     private var framesRead = 0L
+    private var bytesConsumed = 0L
 
     val durationUs: Long get() = if (sampleRate > 0) totalFrames * 1_000_000L / sampleRate else 0L
 
@@ -33,8 +37,12 @@ class AiffPcm private constructor(
      */
     fun read(out: ShortArray): Int {
         val bytesPer = bitsPerSample / 8
-        val maxSamples = out.size - (out.size % channels)
-        val raw = ByteArray(maxSamples * bytesPer)
+        val remaining = dataBytes - bytesConsumed
+        if (remaining < bytesPer) return -1
+        val wantSamples =
+            minOf((out.size - (out.size % channels)).toLong(), remaining / bytesPer).toInt()
+        if (wantSamples <= 0) return -1
+        val raw = ByteArray(wantSamples * bytesPer)
         var got = 0
         try {
             while (got < raw.size) {
@@ -46,6 +54,7 @@ class AiffPcm private constructor(
         }
         val samples = got / bytesPer
         if (samples == 0) return -1
+        bytesConsumed += (samples * bytesPer).toLong()
         for (i in 0 until samples) {
             val o = i * bytesPer
             out[i] =
@@ -95,33 +104,65 @@ class AiffPcm private constructor(
                 } catch (_: EOFException) {
                     return null
                 }
-                val size = din.readInt()
+                // Chunk sizes are UNSIGNED 32-bit: a signed read goes negative
+                // for large chunks, turning skips into no-ops and re-parsing
+                // chunk bodies as garbage headers.
+                val size = din.readInt().toLong() and 0xFFFFFFFFL
                 when (String(id)) {
                     "COMM" -> {
+                        if (size < 18) return null
                         channels = din.readShort().toInt()
                         frames = din.readInt().toLong() and 0xFFFFFFFFL
                         bits = din.readShort().toInt()
                         rate = readExtended80(din)
-                        var consumed = 18
+                        var consumed = 18L
                         if (size > consumed) {
                             // AIFC compression type: only uncompressed variants
                             // ("NONE"/"sowt"-less big-endian) are supported.
                             val comp = ByteArray(4).also { din.readFully(it) }
                             consumed += 4
                             if (String(comp) != "NONE") return null
-                            din.skipBytes(size - consumed + (size and 1))
-                        } else if (size and 1 == 1) {
-                            din.skipBytes(1)
+                            skipFully(din, size - consumed + (size and 1L))
+                        } else if (size and 1L == 1L) {
+                            skipFully(din, 1L)
                         }
                     }
                     "SSND" -> {
-                        val offset = din.readInt()
+                        val offset = din.readInt().toLong() and 0xFFFFFFFFL
                         din.readInt() // block size
-                        if (offset > 0) din.skipBytes(offset)
+                        if (offset > 0) skipFully(din, offset)
                         if (channels <= 0 || rate <= 0 || bits <= 0) return null
-                        return AiffPcm(din, channels, rate, bits, frames)
+                        // Sample sizes that aren't byte multiples (legal in
+                        // AIFF, e.g. 12-bit stored in 2 bytes) would silently
+                        // decode as zeros with a wrong stride - reject.
+                        if (bits != 8 && bits != 16 && bits != 24 && bits != 32) return null
+                        // Bound the PCM read to the SSND payload; anything
+                        // after it (MARK/APPL/ID3) is metadata, not audio.
+                        val byChunk = if (size >= 8 + offset) size - 8 - offset else Long.MAX_VALUE
+                        val byFrames =
+                            if (frames > 0) frames * channels * (bits / 8) else Long.MAX_VALUE
+                        val dataBytes = minOf(byChunk, byFrames)
+                        if (dataBytes == Long.MAX_VALUE || dataBytes <= 0) return null
+                        return AiffPcm(din, channels, rate, bits, frames, dataBytes)
                     }
-                    else -> din.skipBytes(size + (size and 1))
+                    else -> skipFully(din, size + (size and 1L))
+                }
+            }
+        }
+
+        /** Skips exactly [count] bytes; a short skip means a malformed file. */
+        private fun skipFully(
+            din: DataInputStream,
+            count: Long,
+        ) {
+            var remaining = count
+            while (remaining > 0) {
+                val skipped = din.skip(remaining)
+                if (skipped > 0) {
+                    remaining -= skipped
+                } else {
+                    if (din.read() < 0) throw EOFException("truncated AIFF chunk")
+                    remaining--
                 }
             }
         }

@@ -920,15 +920,26 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         setIntelligenceMode(if (next == 2) IntelligenceMode.AUTO else IntelligenceMode.MANUAL)
     }
 
+    // Queue building resolves per-URI metadata (a synchronous provider IPC
+    // for anything not in the library). Batching that on the main thread
+    // froze the UI for seconds on "shuffle all" / large albums, so items are
+    // built on IO and handed to the player back on Main.
+
     fun playNext(uri: String) {
-        val at = (player.currentMediaItemIndex + 1).coerceAtMost(player.mediaItemCount)
-        player.addMediaItem(at, mediaItemFor(Uri.parse(uri)))
-        refresh()
+        viewModelScope.launch {
+            val item = withContext(Dispatchers.IO) { mediaItemFor(Uri.parse(uri)) }
+            val at = (player.currentMediaItemIndex + 1).coerceAtMost(player.mediaItemCount)
+            player.addMediaItem(at, item)
+            refresh()
+        }
     }
 
     fun enqueue(uri: String) {
-        player.addMediaItem(mediaItemFor(Uri.parse(uri)))
-        refresh()
+        viewModelScope.launch {
+            val item = withContext(Dispatchers.IO) { mediaItemFor(Uri.parse(uri)) }
+            player.addMediaItem(item)
+            refresh()
+        }
     }
 
     fun shuffleAllHistory() {
@@ -941,9 +952,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun openStringsPublic(uris: List<String>) = openStrings(uris)
 
     private fun openStrings(uris: List<String>) {
-        player.setMediaItems(uris.map { mediaItemFor(Uri.parse(it)) })
-        player.prepare()
-        player.play()
+        viewModelScope.launch {
+            val items = withContext(Dispatchers.IO) { uris.map { mediaItemFor(Uri.parse(it)) } }
+            player.setMediaItems(items)
+            player.prepare()
+            player.play()
+        }
     }
 
     // Preset folder tree
@@ -995,11 +1009,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Plays a single library track immediately. */
     fun playTrack(uri: String) {
-        player.setMediaItems(listOf(mediaItemFor(Uri.parse(uri))))
-        player.prepare()
-        player.play()
-        currentUri = Uri.parse(uri)
-        onTrackChanged()
+        viewModelScope.launch {
+            val u = Uri.parse(uri)
+            val item = withContext(Dispatchers.IO) { mediaItemFor(u) }
+            player.setMediaItems(listOf(item))
+            player.prepare()
+            player.play()
+            currentUri = u
+            onTrackChanged()
+        }
     }
 
     /**
@@ -1087,11 +1105,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun open(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        player.setMediaItems(uris.map { mediaItemFor(it) })
-        player.prepare()
-        player.play()
-        currentUri = uris.first()
-        onTrackChanged()
+        viewModelScope.launch {
+            val items = withContext(Dispatchers.IO) { uris.map { mediaItemFor(it) } }
+            player.setMediaItems(items)
+            player.prepare()
+            player.play()
+            currentUri = uris.first()
+            onTrackChanged()
+        }
     }
 
     /** Human-readable labels for the playback queue, in play order. */
@@ -1148,22 +1169,33 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     offlineAnalyzer.analyze(uri) { p ->
                         _vizState.update { it.copy(analysisProgress = p) }
                     }
-                timeline = t
-                currentUri?.let { u ->
-                    val merged = trackLibrary.updateAnalysis(u.toString(), titleFor(u), t.durationMs, t.bpm, t.key)
-                    _library.update { it.copy(tracks = merged) }
+                // Cache under the URI that was ACTUALLY analyzed: re-reading
+                // currentUri here attributed track A's BPM/key to whatever
+                // track the user had skipped to in the meantime.
+                val merged = trackLibrary.updateAnalysis(uri.toString(), titleFor(uri), t.durationMs, t.bpm, t.key)
+                _library.update { it.copy(tracks = merged) }
+                if (currentUri == uri) {
+                    timeline = t
+                    val suggestion = SceneSuggester.suggestForTrack(t)
+                    _vizState.value =
+                        _vizState.value.copy(
+                            analyzing = false,
+                            bpm = t.bpm,
+                            sections = t.detectSections(),
+                            suggestedSceneId = suggestion,
+                        )
+                    // ExoPlayer may only be accessed from its application thread;
+                    // this coroutine runs on Dispatchers.Default.
+                    withContext(Dispatchers.Main) { applyIntelligence() }
+                } else {
+                    // The track changed mid-analysis and the `analyzing` guard
+                    // swallowed its request: don't drive intelligence with the
+                    // old timeline - analyze the new track now instead.
+                    _vizState.update { it.copy(analyzing = false) }
+                    if (_vizState.value.intelligenceMode != IntelligenceMode.MANUAL && timeline == null) {
+                        withContext(Dispatchers.Main) { analyzeCurrentTrack() }
+                    }
                 }
-                val suggestion = SceneSuggester.suggestForTrack(t)
-                _vizState.value =
-                    _vizState.value.copy(
-                        analyzing = false,
-                        bpm = t.bpm,
-                        sections = t.detectSections(),
-                        suggestedSceneId = suggestion,
-                    )
-                // ExoPlayer may only be accessed from its application thread;
-                // this coroutine runs on Dispatchers.Default.
-                withContext(Dispatchers.Main) { applyIntelligence() }
             } catch (t: Throwable) {
                 _vizState.update { it.copy(analyzing = false) }
             }

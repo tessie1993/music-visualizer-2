@@ -36,15 +36,25 @@ class KeyDetector {
     /** "A minor", "F# major", … or "" when nothing was accumulated. */
     fun finish(): String {
         if (frames == 0L || chroma.all { it == 0.0 }) return ""
+        // Proper Krumhansl-Schmuckler = PEARSON correlation. Without mean
+        // centering the score is a cosine similarity biased toward the
+        // flatter profile (minor), so broadband material systematically
+        // leaned minor.
+        val cMean = chroma.average()
+        val cDev = DoubleArray(12) { chroma[it] - cMean }
+        val cNorm = norm(cDev)
         var bestScore = Double.NEGATIVE_INFINITY
         var bestPc = 0
         var bestMinor = false
         for (minor in booleanArrayOf(false, true)) {
             val profile = if (minor) MINOR else MAJOR
+            val pMean = profile.average()
+            val pDev = DoubleArray(12) { profile[it] - pMean }
+            val pNorm = norm(pDev)
             for (root in 0 until 12) {
                 var score = 0.0
-                for (i in 0 until 12) score += chroma[(root + i) % 12] * profile[i]
-                score /= norm(chroma) * norm(profile)
+                for (i in 0 until 12) score += cDev[(root + i) % 12] * pDev[i]
+                score /= cNorm * pNorm
                 if (score > bestScore) {
                     bestScore = score
                     bestPc = root
