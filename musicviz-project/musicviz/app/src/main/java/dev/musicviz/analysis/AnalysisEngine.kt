@@ -22,7 +22,16 @@ class AnalysisEngine(
     @Volatile
     var sampleRateHz: Int = 44100
 
-    private val extractor = FeatureExtractor(processor.bandCount)
+    // delay(16) yields ~62.5 iterations/sec; the extractor's beat/BPM math
+    // must use the real hop rate or live BPM reads ~4% high.
+    private val extractor = FeatureExtractor(processor.bandCount, hopRateHz = 1000f / 16f)
+
+    /** Beat sensitivity in sigmas; higher = fewer, surer beats (less flicker). */
+    var beatThresholdSigma: Float
+        get() = extractor.beatThresholdSigma
+        set(value) {
+            extractor.beatThresholdSigma = value.coerceIn(1.5f, 4f)
+        }
     private val _features = MutableStateFlow(AudioFeatures.empty(processor.bandCount))
     val features: StateFlow<AudioFeatures> = _features
 

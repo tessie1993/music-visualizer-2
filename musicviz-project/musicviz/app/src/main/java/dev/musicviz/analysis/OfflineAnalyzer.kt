@@ -26,6 +26,27 @@ class OfflineAnalyzer(private val context: Context) {
         uri: Uri,
         onProgress: (Float) -> Unit = {},
     ): FeatureTimeline {
+        // AIFF first: the platform extractor/codec stack can't read it, but
+        // it's plain PCM - stream it straight into the pipeline.
+        dev.musicviz.audio.AiffPcm.open(context, uri)?.let { aiff ->
+            try {
+                val pipeline = StreamingPipeline()
+                val buf = ShortArray(16384)
+                var last = 0f
+                while (true) {
+                    val n = aiff.read(buf)
+                    if (n <= 0) break
+                    pipeline.feed(java.nio.ShortBuffer.wrap(buf, 0, n), aiff.channels, aiff.sampleRate)
+                    if (aiff.progress - last > 0.01f) {
+                        last = aiff.progress
+                        onProgress(last)
+                    }
+                }
+                return pipeline.finish()
+            } finally {
+                aiff.close()
+            }
+        }
         val extractor = MediaExtractor()
         extractor.setDataSource(context, uri, null)
         val trackIndex =
@@ -81,7 +102,17 @@ class OfflineAnalyzer(private val context: Context) {
                         val buf = codec.getOutputBuffer(outIndex)!!
                         buf.position(info.offset)
                         buf.limit(info.offset + info.size)
-                        pipeline.feed(buf.order(ByteOrder.LITTLE_ENDIAN).asShortBuffer(), channels, sampleRate)
+                        val pcmEncoding =
+                            if (outFormat.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
+                                outFormat.getInteger(MediaFormat.KEY_PCM_ENCODING)
+                            } else {
+                                android.media.AudioFormat.ENCODING_PCM_16BIT
+                            }
+                        if (pcmEncoding == android.media.AudioFormat.ENCODING_PCM_FLOAT) {
+                            pipeline.feedFloat(buf.order(ByteOrder.nativeOrder()).asFloatBuffer(), channels, sampleRate)
+                        } else {
+                            pipeline.feed(buf.order(ByteOrder.LITTLE_ENDIAN).asShortBuffer(), channels, sampleRate)
+                        }
                     }
                     codec.releaseOutputBuffer(outIndex, false)
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
@@ -99,6 +130,7 @@ class OfflineAnalyzer(private val context: Context) {
     /** Windows a mono stream at a fixed hop, running the shared FFT/feature pipeline. */
     private class StreamingPipeline {
         private val processor = FftProcessor()
+        private val keyDetector = KeyDetector()
         private val smoother = BandSmoother(processor.bandCount)
         private val extractor = FeatureExtractor(processor.bandCount, hopRateHz = 60f)
         private val window = FloatArray(processor.fftSize)
@@ -110,7 +142,10 @@ class OfflineAnalyzer(private val context: Context) {
         private var buffered = 0
         private var sampleRate = 44100
         private var hopSamples = sampleRate / 60
-        private var timeMs = 0L
+
+        /** Absolute mono-sample index of the current window start; timestamps
+         *  derive from this so they never drift (1000/60 truncates to 16 ms). */
+        private var absSample = 0L
 
         fun feed(
             pcm: java.nio.ShortBuffer,
@@ -138,16 +173,45 @@ class OfflineAnalyzer(private val context: Context) {
             drain()
         }
 
+        /** Same as [feed] for decoders that output float PCM. */
+        fun feedFloat(
+            pcm: java.nio.FloatBuffer,
+            channels: Int,
+            sampleRateHz: Int,
+        ) {
+            if (sampleRateHz != sampleRate) {
+                sampleRate = sampleRateHz
+                hopSamples = (sampleRate / 60).coerceAtLeast(1)
+            }
+            val frameCount = pcm.remaining() / channels
+            if (buffered + frameCount > buffer.size) {
+                buffer = buffer.copyOf((buffered + frameCount).coerceAtLeast(buffer.size * 2))
+            }
+            var s = 0
+            for (f in 0 until frameCount) {
+                var acc = 0f
+                for (c in 0 until channels) {
+                    acc += pcm.get(s)
+                    s++
+                }
+                buffer[buffered + f] = acc / channels
+            }
+            buffered += frameCount
+            drain()
+        }
+
         private fun drain() {
             var start = 0
             while (start + processor.fftSize <= buffered) {
                 System.arraycopy(buffer, start, window, 0, processor.fftSize)
                 processor.process(window, sampleRate, raw)
+                processor.accumulateChroma(keyDetector, sampleRate)
                 smoother.apply(raw, smoothed)
                 val step = processor.fftSize / waveform.size
                 for (i in waveform.indices) waveform[i] = window[i * step]
+                val timeMs = absSample * 1000L / sampleRate
                 frames += TimelineFrame(timeMs, extractor.extract(smoothed, waveform, sampleRate))
-                timeMs += 1000L / 60
+                absSample += hopSamples
                 start += hopSamples
             }
             if (start > 0) {
@@ -156,6 +220,6 @@ class OfflineAnalyzer(private val context: Context) {
             }
         }
 
-        fun finish(): FeatureTimeline = FeatureTimeline(frames, hopMs = 1000L / 60)
+        fun finish(): FeatureTimeline = FeatureTimeline(frames, hopMs = 1000L / 60, key = keyDetector.finish())
     }
 }

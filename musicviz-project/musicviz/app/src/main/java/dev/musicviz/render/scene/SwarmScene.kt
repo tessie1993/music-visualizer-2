@@ -37,6 +37,11 @@ class SwarmScene(shaders: ShaderSources, count: Int = 2200) :
         val pull = (0.8f + features.bass * p.audioDrive * 2f) * p.speed
         val scatter = features.treble * p.audioDrive * (0.5f + p.turbulence)
         for (i in 0 until count) {
+            if (p.endlessZoom) {
+                val flow = p.endlessZoomSpeed * 1.5f * dt
+                px[i] += px[i] * flow
+                py[i] += py[i] * flow
+            }
             var dx = ax - px[i]
             var dy = ay - py[i]
             vx[i] += dx * pull * dt

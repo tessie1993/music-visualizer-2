@@ -1,7 +1,9 @@
 # Rebuilding libprojectM for Android
 
 ```
-git clone --depth 1 --recurse-submodules https://github.com/projectM-visualizer/projectm.git
+# IMPORTANT: build from a release tag, never master (master carries
+# experimental GL bootstrap code that breaks Android rendering).
+git clone --branch v4.1.7 --depth 1 --recurse-submodules https://github.com/projectM-visualizer/projectm.git
 cmake -B build-android -S projectm \
   -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake \
   -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 \

@@ -20,5 +20,13 @@ object SceneIds {
     const val LISS: String = "liss"
     const val METABALLS: String = "metaballs"
     const val RIPPLES: String = "ripples"
+    const val STARFIELD: String = "starfield"
+    const val WAVES: String = "waves"
+    const val HEXGRID: String = "hexgrid"
+    const val SPIRAL: String = "spiral"
+    const val AURORA: String = "aurora"
+    const val SOLAR: String = "solar"
+    const val ORBITS: String = "orbits"
     const val MILKDROP: String = "milkdrop"
+    const val FLUID: String = "fluid"
 }

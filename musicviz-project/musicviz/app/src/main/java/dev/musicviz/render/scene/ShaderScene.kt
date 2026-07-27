@@ -39,6 +39,7 @@ class ShaderScene(
     private var treble = 0f
     private var energy = 0f
     private var beatPulse = 0f
+    private var beatPhase = 0f
     private var sceneParams: SceneParams = SceneParams.DEFAULT
     private var rotationAngle = 0f
     private var zoomPhase = 0f
@@ -94,6 +95,20 @@ class ShaderScene(
         treble = (features.treble * p.audioDrive).coerceIn(0f, 1.5f)
         energy = (features.rms * p.audioDrive).coerceIn(0f, 1.5f)
         beatPulse = if (features.beat) 1f else (beatPulse - dt * 3f).coerceAtLeast(0f)
+        // BPM-locked phase clock in [0,1): advances at the detected tempo and
+        // softly resynchronizes on detected beats, so shader pulses land on
+        // the actual musical beat instead of free-running.
+        val bpm = features.bpm
+        if (bpm > 40f) {
+            beatPhase = (beatPhase + dt * bpm / 60f) % 1f
+            if (features.beat) {
+                // Pull phase toward 0 (the beat) without a hard snap.
+                beatPhase = if (beatPhase > 0.5f) beatPhase * 0.5f + 0.5f else beatPhase * 0.5f
+                if (beatPhase >= 0.999f) beatPhase = 0f
+            }
+        } else {
+            beatPhase = (beatPhase + dt) % 1f
+        }
         texData.clear()
         val fb = texData.asFloatBuffer()
         for (i in 0 until AUDIO_TEX_WIDTH) {
@@ -138,6 +153,31 @@ class ShaderScene(
         setUniform1f("uTurbulence", p.turbulence)
         setUniform1f("uPalBase", p.paletteBase)
         setUniform1f("uPalRange", p.paletteRange)
+        setUniform1f("uPal2Base", p.palette2Base)
+        setUniform1f("uPal2Range", p.palette2Range)
+        setUniform1f("uPaletteMix", p.paletteMix)
+        setUniform1f("uDuotone", if (p.duotone) 1f else 0f)
+        setUniform1f("uBloom", p.bloom)
+        setUniform1f("uWarp", p.warp)
+        setUniform1f("uRipple", p.ripple)
+        setUniform1f("uSymmetry", p.symmetry.toFloat())
+        setUniform1f("uKaleido", if (p.kaleidoscope) 1f else 0f)
+        setUniform1f("uMorph", p.morph)
+        setUniform1f("uPixelate", p.pixelate)
+        setUniform1f("uPosterize", p.posterize)
+        setUniform1f("uSway", p.sway)
+        setUniform1f("uPulse", p.pulse)
+        setUniform1f("uBeatPhase", beatPhase)
+        setUniform1f("uDriftX", p.driftX)
+        setUniform1f("uDriftY", p.driftY)
+        setUniform1f("uShake", p.shake)
+        setUniform1f("uTile", p.tile)
+        setUniform1f("uTwist", p.twist)
+        setUniform1f("uTemperature", p.temperature)
+        setUniform1f("uSolarize", if (p.solarize) 1f else 0f)
+        setUniform1f("uFlash", p.flash)
+        setUniform1f("uContrast", p.contrast)
+        setUniform1f("uGamma", p.gamma)
         GLES30.glUniform2f(GLES30.glGetUniformLocation(program, "uResolution"), width.toFloat(), height.toFloat())
         GLES30.glUniform1i(GLES30.glGetUniformLocation(program, "uAudioTex"), 0)
         GLES30.glBindVertexArray(vao)
@@ -145,11 +185,13 @@ class ShaderScene(
         GLES30.glBindVertexArray(0)
     }
 
+    private val uniformLocs = HashMap<String, Int>()
+
     private fun setUniform1f(
         name: String,
         value: Float,
     ) {
-        GLES30.glUniform1f(GLES30.glGetUniformLocation(program, name), value)
+        GLES30.glUniform1f(uniformLocs.getOrPut(name) { GLES30.glGetUniformLocation(program, name) }, value)
     }
 
     private fun compilePendingIfAny() {
@@ -167,6 +209,10 @@ class ShaderScene(
 
     override fun release() {
         if (program != 0) GLES30.glDeleteProgram(program)
+        if (vao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(vao), 0)
+        if (audioTex != 0) GLES30.glDeleteTextures(1, intArrayOf(audioTex), 0)
         program = 0
+        vao = 0
+        audioTex = 0
     }
 }
