@@ -295,10 +295,16 @@ class PresetStore(context: Context) {
                         fluidSpawnPath = o.optInt("fluidSpawnPath", 1),
                         fluidSpawnPoints = o.optInt("fluidSpawnPoints", 3),
                         fluidSpawnProgress = o.optDouble("fluidSpawnProgress", 1.0).toFloat(),
-                        fluidCatchPoints = o.optInt("fluidCatchPoints", 2),
+                        // Legacy migration: presets saved before v0.13.0 have
+                        // no journey keys - default them to NO catch wells and
+                        // a slow lifecycle (close to the old ~12.5 s mean
+                        // rebirth) so a tuned pre-rebuild look doesn't gain
+                        // suction/churn it was never designed with. Presets
+                        // saved from v0.13.0 on always carry explicit values.
+                        fluidCatchPoints = o.optInt("fluidCatchPoints", 0),
                         fluidCatchPull = o.optDouble("fluidCatchPull", 1.0).toFloat(),
                         fluidCatchRadius = o.optDouble("fluidCatchRadius", 0.12).toFloat(),
-                        fluidParticleLife = o.optDouble("fluidParticleLife", 6.0).toFloat(),
+                        fluidParticleLife = o.optDouble("fluidParticleLife", 12.0).toFloat(),
                         flowEnabled = o.optBoolean("flowEnabled", false),
                         flowStrength = o.optDouble("flowStrength", 0.35).toFloat(),
                         flowForce = o.optDouble("flowForce", 1.0).toFloat(),

@@ -1269,7 +1269,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun onTrackChanged() {
         timeline = null
         _vizState.update { it.copy(suggestedSceneId = null, bpm = 0f, sections = emptyList()) }
-        if (_vizState.value.intelligenceMode != IntelligenceMode.MANUAL) analyzeCurrentTrack()
+        if (_vizState.value.intelligenceMode != IntelligenceMode.MANUAL) {
+            analyzeCurrentTrack()
+        } else {
+            // MANUAL mode never runs the offline analyzer, but a cached
+            // analysis is a cheap file read - load it so the fluid journey's
+            // section re-seats match a later export of the same track
+            // (export always detects sections from the same timeline).
+            val uri = currentUri ?: return
+            viewModelScope.launch(Dispatchers.IO) {
+                dev.musicviz.analysis.AnalysisCache.load(getApplication<Application>(), uri)?.let { t ->
+                    if (currentUri == uri) {
+                        timeline = t
+                        _vizState.update { it.copy(bpm = t.bpm, sections = t.detectSections()) }
+                    }
+                }
+            }
+        }
     }
 
     fun setIntelligenceMode(mode: IntelligenceMode) {
@@ -1456,6 +1472,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                         timeline ?: analyzeCached(uri) { p ->
                             _exportState.update { it.copy(progress = p * 0.2f) }
                         }.also { timeline = it }
+                    // Publish the section context the exporter is about to
+                    // journey through, so live playback of the same track
+                    // re-seats identically from now on (journey parity even
+                    // in MANUAL mode, where onTrackChanged only reads cache).
+                    if (currentUri == uri && _vizState.value.sections.isEmpty()) {
+                        _vizState.update { it.copy(bpm = t.bpm, sections = t.detectSections()) }
+                    }
                     val name = "musicviz_${System.currentTimeMillis()}.mp4"
                     val result =
                         exporter.export(

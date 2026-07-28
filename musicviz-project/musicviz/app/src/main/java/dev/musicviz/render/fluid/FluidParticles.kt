@@ -180,7 +180,11 @@ internal class FluidParticles(private val context: Context) {
         GLES30.glUniform1f(loc(updateProgram, "uDt"), dt)
         GLES30.glUniform1f(loc(updateProgram, "uDrag"), drag.coerceIn(0.02f, 1f))
         GLES30.glUniform1f(loc(updateProgram, "uFlowScale"), flowScale)
-        GLES30.glUniform1f(loc(updateProgram, "uTime"), timeSeconds)
+        // Wrapped: the respawn hash multiplies time by ~440 and fract()s it;
+        // past ~2 h the float32 ULP exceeds the fract precision and recycle
+        // positions collapse onto a coarse lattice. 256 s of unique phase is
+        // plenty for a visual hash and never degrades.
+        GLES30.glUniform1f(loc(updateProgram, "uTime"), timeSeconds % 256f)
         GLES30.glUniform1f(loc(updateProgram, "uLife"), life.coerceIn(1f, 30f))
         GLES30.glUniform4fv(loc(updateProgram, "uSpawns"), FluidChoreography.MAX_SPAWN, spawnData, 0)
         GLES30.glUniform1i(loc(updateProgram, "uSpawnCount"), spawnCount)

@@ -74,13 +74,17 @@ void main() {
     // Lifetime recycle at the CURRENT spawn choreography.
     if (age > ttl) { respawn(3.7); return; }
 
-    // Catch points: attraction + capture.
+    // Catch points: attraction + capture. A zero-pull well is fully inert
+    // (no invisible capture), and newborn particles get a grace period so a
+    // well overlapping a spawn point can't recycle births before they even
+    // fade in.
     for (int i = 0; i < 4; i++) {
         if (i >= uCatchCount) { break; }
         vec4 c = uCatches[i];
+        if (c.z <= 0.0) { continue; }
         vec2 d = vec2(c.x, c.y) - p;
         float dist2 = dot(d, d);
-        if (dist2 < c.w * c.w) { respawn(9.1 + float(i)); return; }
+        if (age > 0.5 && dist2 < c.w * c.w) { respawn(9.1 + float(i)); return; }
         // Inverse-square pull, softened + soft-capped (no slingshots).
         float f = c.z / (dist2 + 0.05);
         f = f * 6.0 / (6.0 + f);
