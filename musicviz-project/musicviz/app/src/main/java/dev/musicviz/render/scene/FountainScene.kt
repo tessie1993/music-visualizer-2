@@ -4,8 +4,10 @@ import dev.musicviz.analysis.AudioFeatures
 import kotlin.random.Random
 
 /** Bottom-center fountain: bass drives launch power, gravity pulls back. */
-class FountainScene(shaders: ShaderSources, count: Int = 2800) :
-    ParticleSceneBase(SceneIds.FOUNTAIN, count, shaders) {
+class FountainScene(
+    shaders: ShaderSources,
+    count: Int = 2800,
+) : ParticleSceneBase(SceneIds.FOUNTAIN, count, shaders) {
     private val random = Random(23)
     private val px = FloatArray(count)
     private val py = FloatArray(count) { -2f }

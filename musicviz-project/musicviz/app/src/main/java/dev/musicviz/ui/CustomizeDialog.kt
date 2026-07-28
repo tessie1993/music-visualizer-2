@@ -624,8 +624,10 @@ internal fun FluidTab(
             val template =
                 remember {
                     runCatching {
-                        ctx.resources.openRawResource(dev.musicviz.R.raw.fluid_splat_frag)
-                            .bufferedReader().use { it.readText() }
+                        ctx.resources
+                            .openRawResource(dev.musicviz.R.raw.fluid_splat_frag)
+                            .bufferedReader()
+                            .use { it.readText() }
                     }.getOrDefault("")
                 }
             var forceSrc by remember { mutableStateOf(template) }

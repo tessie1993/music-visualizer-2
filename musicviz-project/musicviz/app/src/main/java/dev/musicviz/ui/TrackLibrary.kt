@@ -25,7 +25,9 @@ data class LibraryTrack(
  * storage. One file holds the whole list; the set is small (user's own
  * imports) so full rewrites are fine.
  */
-class TrackLibrary(context: Context) {
+class TrackLibrary(
+    context: Context,
+) {
     private val file = File(context.filesDir, "library.json")
 
     fun list(): List<LibraryTrack> =

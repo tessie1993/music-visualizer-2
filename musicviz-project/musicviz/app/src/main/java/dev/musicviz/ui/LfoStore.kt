@@ -11,7 +11,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** Persists the three LFO slots in shared preferences as JSON. */
-class LfoStore(context: Context) {
+class LfoStore(
+    context: Context,
+) {
     private val prefs = context.getSharedPreferences("musicviz-prefs", Context.MODE_PRIVATE)
 
     fun load(): List<LfoConfig> =

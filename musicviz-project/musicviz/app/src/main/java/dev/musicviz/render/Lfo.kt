@@ -6,7 +6,9 @@ import kotlin.math.floor
 import kotlin.math.sin
 
 /** Waveforms available to an LFO. */
-enum class LfoWave(val label: String) {
+enum class LfoWave(
+    val label: String,
+) {
     SINE("Sin"),
     TRIANGLE("Tri"),
     SAW("Saw"),
@@ -19,7 +21,9 @@ enum class LfoWave(val label: String) {
  * the rate or depth of a HIGHER-numbered LFO (evaluation runs in index
  * order, so chains flow 1 -> 2 -> 3 without feedback loops).
  */
-enum class LfoTarget(val label: String) {
+enum class LfoTarget(
+    val label: String,
+) {
     NONE("None"),
     SPEED("Speed"),
     ZOOM("Zoom"),

@@ -20,7 +20,9 @@ import dev.musicviz.render.scene.GlUtil
  * track. Drag-based inertia (v += (flow - v) * k) is what turns tracer dots
  * into streaming light trails. All methods run on the GL thread.
  */
-internal class FluidParticles(private val context: Context) {
+internal class FluidParticles(
+    private val context: Context,
+) {
     var drag = 0.5f
 
     /** Base particle lifetime in seconds; per-particle ttl varies 0.6-1.4x. */
@@ -261,8 +263,16 @@ internal class FluidParticles(private val context: Context) {
     ): Int = uniforms.getValue(program).getOrPut(name) { GLES30.glGetUniformLocation(program, name) }
 
     private fun floatBuf(data: FloatArray) =
-        java.nio.ByteBuffer.allocateDirect(data.size * 4)
-            .order(java.nio.ByteOrder.nativeOrder()).asFloatBuffer().put(data).apply { position(0) }
+        java.nio.ByteBuffer
+            .allocateDirect(data.size * 4)
+            .order(java.nio.ByteOrder.nativeOrder())
+            .asFloatBuffer()
+            .put(data)
+            .apply { position(0) }
 
-    private fun loadRaw(resId: Int): String = context.resources.openRawResource(resId).bufferedReader().use { it.readText() }
+    private fun loadRaw(resId: Int): String =
+        context.resources
+            .openRawResource(resId)
+            .bufferedReader()
+            .use { it.readText() }
 }

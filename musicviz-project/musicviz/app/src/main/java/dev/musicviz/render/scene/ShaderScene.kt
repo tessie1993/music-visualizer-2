@@ -93,8 +93,15 @@ class ShaderScene(
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexImage2D(
-            GLES30.GL_TEXTURE_2D, 0, GLES30.GL_R32F, AUDIO_TEX_WIDTH, 2, 0,
-            GLES30.GL_RED, GLES30.GL_FLOAT, null,
+            GLES30.GL_TEXTURE_2D,
+            0,
+            GLES30.GL_R32F,
+            AUDIO_TEX_WIDTH,
+            2,
+            0,
+            GLES30.GL_RED,
+            GLES30.GL_FLOAT,
+            null,
         )
     }
 
@@ -154,8 +161,15 @@ class ShaderScene(
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, audioTex)
         texData.position(0)
         GLES30.glTexSubImage2D(
-            GLES30.GL_TEXTURE_2D, 0, 0, 0, AUDIO_TEX_WIDTH, 2,
-            GLES30.GL_RED, GLES30.GL_FLOAT, texData,
+            GLES30.GL_TEXTURE_2D,
+            0,
+            0,
+            0,
+            AUDIO_TEX_WIDTH,
+            2,
+            GLES30.GL_RED,
+            GLES30.GL_FLOAT,
+            texData,
         )
         setUniform1f("uTime", shaderTime)
         setUniform1f("uBass", bass)

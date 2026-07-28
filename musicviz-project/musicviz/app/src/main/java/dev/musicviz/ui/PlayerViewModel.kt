@@ -97,7 +97,10 @@ data class VizApply(
 )
 
 /** A .milk file available to the milkdrop scene. */
-data class MilkFile(val name: String, val path: String)
+data class MilkFile(
+    val name: String,
+    val path: String,
+)
 
 /** Music library + playlists + batch-analysis progress. */
 data class LibraryState(
@@ -123,7 +126,9 @@ data class ExportUiState(
  * analysis/intelligence, presets and export orchestration.
  */
 @OptIn(UnstableApi::class)
-class PlayerViewModel(application: Application) : AndroidViewModel(application) {
+class PlayerViewModel(
+    application: Application,
+) : AndroidViewModel(application) {
     private val ring = PcmRingBuffer()
     private val engine = AnalysisEngine(ring)
     private val sink = PcmTapSink(ring) { rate -> engine.sampleRateHz = rate }
@@ -145,16 +150,20 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
                     application,
                     androidx.media3.extractor.ExtractorsFactory {
-                        androidx.media3.extractor.DefaultExtractorsFactory().createExtractors() +
+                        androidx.media3.extractor
+                            .DefaultExtractorsFactory()
+                            .createExtractors() +
                             dev.musicviz.audio.AiffExtractor()
                     },
                 ),
-            )
-            .setAudioAttributes(
-                AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(),
+            ).setAudioAttributes(
+                AudioAttributes
+                    .Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .build(),
                 true,
-            )
-            .build()
+            ).build()
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState
@@ -433,7 +442,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun nextBuiltInMilkPresetBlocking(): String? =
         try {
             val files =
-                importDir().listFiles { f -> f.extension == "milk" }.orEmpty()
+                importDir()
+                    .listFiles { f -> f.extension == "milk" }
+                    .orEmpty()
                     .sortedBy { it.name }
             if (files.isEmpty()) {
                 null
@@ -459,7 +470,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     // they stop appearing, and list only the user's files.
                     builtInDir().deleteRecursively()
                     java.io.File(importDir(), "textures").mkdirs()
-                    importDir().listFiles { f -> f.extension == "milk" }.orEmpty()
+                    importDir()
+                        .listFiles { f -> f.extension == "milk" }
+                        .orEmpty()
                         .map { MilkFile(it.nameWithoutExtension, it.absolutePath) }
                         .sortedBy { it.name }
                 } catch (t: Throwable) {
@@ -533,7 +546,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                         currentUri?.let { u ->
                             val title =
                                 player.mediaMetadata.title?.toString()
-                                    ?: player.currentMediaItem?.localConfiguration?.uri?.lastPathSegment.orEmpty()
+                                    ?: player.currentMediaItem
+                                        ?.localConfiguration
+                                        ?.uri
+                                        ?.lastPathSegment
+                                        .orEmpty()
                             historyStore.recordPlay(u.toString(), title)
                             _historyTick.update { it + 1 }
                         }
@@ -793,7 +810,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun applyVizEntry(entry: VizPlaylistEntry) {
         selectScene(entry.sceneId)
         if (entry.presetName != null) {
-            _vizState.value.presets.firstOrNull { it.name == entry.presetName && it.sceneId == entry.sceneId }
+            _vizState.value.presets
+                .firstOrNull { it.name == entry.presetName && it.sceneId == entry.sceneId }
                 ?.let { applyPreset(it) }
         }
         if (entry.milkPath != null) {
@@ -826,7 +844,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (title == null) {
             title =
                 runCatching {
-                    app.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                    app.contentResolver
+                        .query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
                         ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
                 }.getOrNull()?.substringBeforeLast('.')
         }
@@ -873,7 +892,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             return it
         }
         return offlineAnalyzer.analyze(uri, onProgress).also {
-            dev.musicviz.analysis.AnalysisCache.save(app, uri, it)
+            dev.musicviz.analysis.AnalysisCache
+                .save(app, uri, it)
         }
     }
 
@@ -934,7 +954,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val app = getApplication<Application>()
         val found = mutableListOf<LibraryTrack>()
         runCatching {
-            val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(app, treeUri) ?: return@runCatching
+            val root =
+                androidx.documentfile.provider.DocumentFile
+                    .fromTreeUri(app, treeUri) ?: return@runCatching
 
             fun walk(
                 dir: androidx.documentfile.provider.DocumentFile,
@@ -1028,7 +1050,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     /** Resolves a playlist's track uris to library entries, preserving order. */
     fun playlistTracks(playlist: String): List<LibraryTrack> {
         val byUri = _library.value.tracks.associateBy { it.uri }
-        val names = _library.value.playlists.firstOrNull { it.name == playlist }?.trackUris.orEmpty()
+        val names =
+            _library.value.playlists
+                .firstOrNull { it.name == playlist }
+                ?.trackUris
+                .orEmpty()
         return names.map { uri -> byUri[uri] ?: LibraryTrack(uri = uri, title = titleFor(Uri.parse(uri))) }
     }
 
@@ -1037,7 +1063,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         playlist: String,
         startIndex: Int = 0,
     ) {
-        val uris = _library.value.playlists.firstOrNull { it.name == playlist }?.trackUris.orEmpty()
+        val uris =
+            _library.value.playlists
+                .firstOrNull { it.name == playlist }
+                ?.trackUris
+                .orEmpty()
         if (uris.isEmpty()) return
         player.setMediaItems(uris.map { mediaItemFor(Uri.parse(it)) })
         player.prepare()
@@ -1113,7 +1143,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     /** User .milk files (imports + saves), newest first. Built-ins removed. */
     fun userMilkPresets(): List<java.io.File> {
         val dir = java.io.File(getApplication<Application>().filesDir, "milk")
-        return dir.listFiles { f -> f.isFile && f.extension == "milk" }
+        return dir
+            .listFiles { f -> f.isFile && f.extension == "milk" }
             ?.sortedByDescending { it.lastModified() }
             .orEmpty()
     }
@@ -1151,7 +1182,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
      * duration into the library so results persist and show up later.
      */
     fun analyzePlaylist(playlist: String) {
-        val uris = _library.value.playlists.firstOrNull { it.name == playlist }?.trackUris.orEmpty()
+        val uris =
+            _library.value.playlists
+                .firstOrNull { it.name == playlist }
+                ?.trackUris
+                .orEmpty()
         if (uris.isEmpty() || _library.value.analyzing) return
         _library.update { it.copy(analyzing = true, analyzeProgress = 0f) }
         viewModelScope.launch(Dispatchers.Default) {
@@ -1183,15 +1218,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun mediaItemFor(uri: Uri): MediaItem {
         val known = _library.value.tracks.firstOrNull { it.uri == uri.toString() }
         val (t, a) = if (known != null) known.title to known.artist else metadataQuick(uri)
-        return MediaItem.Builder()
+        return MediaItem
+            .Builder()
             .setUri(uri)
             .setMediaMetadata(
-                androidx.media3.common.MediaMetadata.Builder()
+                androidx.media3.common.MediaMetadata
+                    .Builder()
                     .setTitle(t)
                     .setArtist(a.ifBlank { null })
                     .build(),
-            )
-            .build()
+            ).build()
     }
 
     /** Main-thread-safe metadata: display name only (no retriever I/O). */
@@ -1199,7 +1235,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val app = getApplication<Application>()
         val name =
             runCatching {
-                app.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                app.contentResolver
+                    .query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
                     ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
             }.getOrNull()?.substringBeforeLast('.')
         return (name ?: "Track") to ""
@@ -1243,7 +1280,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         (0 until player.mediaItemCount).map { i ->
             val item = player.getMediaItemAt(i)
             item.mediaMetadata.title?.toString()
-                ?: item.localConfiguration?.uri?.lastPathSegment?.substringAfterLast('/')
+                ?: item.localConfiguration
+                    ?.uri
+                    ?.lastPathSegment
+                    ?.substringAfterLast('/')
                     ?.substringBeforeLast('.')
                 ?: "Track ${i + 1}"
         }
@@ -1408,7 +1448,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             runCatching {
                 val app = getApplication<Application>()
                 val tree =
-                    androidx.documentfile.provider.DocumentFile.fromTreeUri(app, Uri.parse(uriStr))
+                    androidx.documentfile.provider.DocumentFile
+                        .fromTreeUri(app, Uri.parse(uriStr))
                         ?: return@runCatching
 
                 fun copyInto(

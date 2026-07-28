@@ -19,7 +19,9 @@ import dev.musicviz.render.scene.SceneParams
  * injection are user-replaceable extension points forwarded to
  * [FluidSim.setInjectionShaders].
  */
-internal class FluidScene(context: Context) : Scene {
+internal class FluidScene(
+    context: Context,
+) : Scene {
     override val id: String = SceneIds.FLUID
 
     private val sim = FluidSim(context)
@@ -162,7 +164,8 @@ internal class FluidScene(context: Context) : Scene {
         // The sim runs ~30 FBO passes that assume clean scissor/mask/blend-
         // equation state; enforce the contract in case a prior scene (native
         // projectM especially) left anything dirty this frame.
-        dev.musicviz.render.scene.GlUtil.resetFrameState()
+        dev.musicviz.render.scene.GlUtil
+            .resetFrameState()
         val p = params
         // Prefer this frame's features; fall back to the last REAL features
         // for a short grace window (draw can outrun update), then idle.

@@ -98,11 +98,16 @@ class VmBehaviorTest {
         assertTrue("Chill" in v.presetFolders())
         v.savePreset("My Test · Preset", null, folder = "Chill")
         // " · " sanitized so the preset stays deletable (built-in marker).
-        val saved = v.vizState.value.presets.first { it.name.startsWith("My Test") }
+        val saved =
+            v.vizState.value.presets
+                .first { it.name.startsWith("My Test") }
         assertFalse(saved.name.contains(" · "))
         assertEquals("Chill", v.presetFolderOf(saved.name))
         v.deletePreset(saved.name)
-        assertTrue(v.vizState.value.presets.none { it.name == saved.name })
+        assertTrue(
+            v.vizState.value.presets
+                .none { it.name == saved.name },
+        )
     }
 
     @Test

@@ -4,7 +4,9 @@ import android.opengl.GLES30
 
 /** Shader compile/link helpers with error capture for the in-app editor. */
 object GlUtil {
-    class ShaderCompileException(message: String) : RuntimeException(message)
+    class ShaderCompileException(
+        message: String,
+    ) : RuntimeException(message)
 
     /**
      * Resets the mutable GL state the render pipeline assumes but never sets

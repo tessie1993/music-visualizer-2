@@ -10,8 +10,10 @@ import kotlin.random.Random
  * Orbital rings: particles circle the center on per-band radii; bass swells
  * the whole system, each particle's band energy drives its speed and glow.
  */
-class OrbitScene(shaders: ShaderSources, count: Int = 2200) :
-    ParticleSceneBase(SceneIds.ORBITS, count, shaders) {
+class OrbitScene(
+    shaders: ShaderSources,
+    count: Int = 2200,
+) : ParticleSceneBase(SceneIds.ORBITS, count, shaders) {
     private val random = Random(7)
     private val angle = FloatArray(count) { random.nextFloat() * 2f * PI.toFloat() }
     private val radius = FloatArray(count) { 0.12f + random.nextFloat() * 0.95f }

@@ -7,8 +7,10 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 /** Beat-driven fireworks: each detected beat launches a radial burst. */
-class BurstScene(shaders: ShaderSources, count: Int = 3000) :
-    ParticleSceneBase(SceneIds.BURSTS, count, shaders) {
+class BurstScene(
+    shaders: ShaderSources,
+    count: Int = 3000,
+) : ParticleSceneBase(SceneIds.BURSTS, count, shaders) {
     private val random = Random(7)
     private val px = FloatArray(count)
     private val py = FloatArray(count)

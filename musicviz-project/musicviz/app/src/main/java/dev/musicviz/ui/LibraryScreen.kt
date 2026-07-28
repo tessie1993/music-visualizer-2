@@ -75,33 +75,34 @@ private fun queryDeviceTracks(context: Context): List<DeviceTrack> {
             MediaStore.Audio.Media.DATA,
         )
     runCatching {
-        context.contentResolver.query(
-            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-            proj,
-            "${MediaStore.Audio.Media.IS_MUSIC} != 0",
-            null,
-            "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC",
-        )?.use { c ->
-            val id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-            val ti = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-            val ar = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-            val al = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-            val du = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-            val da = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
-            while (c.moveToNext()) {
-                val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, c.getLong(id))
-                val path = c.getString(da).orEmpty()
-                out +=
-                    DeviceTrack(
-                        uri = uri.toString(),
-                        title = c.getString(ti) ?: "Unknown",
-                        artist = c.getString(ar) ?: "Unknown artist",
-                        album = c.getString(al) ?: "Unknown album",
-                        folder = path.substringBeforeLast('/', ""),
-                        durationMs = c.getLong(du),
-                    )
+        context.contentResolver
+            .query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                proj,
+                "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+                null,
+                "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC",
+            )?.use { c ->
+                val id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val ti = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                val ar = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                val al = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                val du = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                val da = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+                while (c.moveToNext()) {
+                    val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, c.getLong(id))
+                    val path = c.getString(da).orEmpty()
+                    out +=
+                        DeviceTrack(
+                            uri = uri.toString(),
+                            title = c.getString(ti) ?: "Unknown",
+                            artist = c.getString(ar) ?: "Unknown artist",
+                            album = c.getString(al) ?: "Unknown album",
+                            folder = path.substringBeforeLast('/', ""),
+                            durationMs = c.getLong(du),
+                        )
+                }
             }
-        }
     }
     return out
 }
@@ -177,7 +178,8 @@ private fun TrackRow(
         subtitleOverride
             ?: listOf(
                 t.artist,
-                dev.musicviz.analysis.KeyDetector.compact(analysis?.key.orEmpty()),
+                dev.musicviz.analysis.KeyDetector
+                    .compact(analysis?.key.orEmpty()),
                 analysis?.takeIf { it.analyzed && it.bpm > 0f }?.let { "${it.bpm.toInt()} BPM" } ?: "",
             ).filter { it.isNotBlank() }.joinToString(" \u00b7 ")
     var menu by remember { mutableStateOf(false) }
@@ -352,7 +354,8 @@ private fun FoldersTab(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    java.net.URLDecoder.decode(root.substringAfterLast("%3A").substringAfterLast("/"), "UTF-8")
+                    java.net.URLDecoder
+                        .decode(root.substringAfterLast("%3A").substringAfterLast("/"), "UTF-8")
                         .ifBlank { root },
                     Modifier.weight(1f),
                     maxLines = 1,

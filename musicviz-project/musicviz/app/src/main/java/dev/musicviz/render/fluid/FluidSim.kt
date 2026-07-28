@@ -137,8 +137,12 @@ internal class FluidSim(
         vbo = ids[0]
         val quad = floatArrayOf(-1f, -1f, 3f, -1f, -1f, 3f)
         val buf =
-            java.nio.ByteBuffer.allocateDirect(quad.size * 4)
-                .order(java.nio.ByteOrder.nativeOrder()).asFloatBuffer().put(quad).apply { position(0) }
+            java.nio.ByteBuffer
+                .allocateDirect(quad.size * 4)
+                .order(java.nio.ByteOrder.nativeOrder())
+                .asFloatBuffer()
+                .put(quad)
+                .apply { position(0) }
         GLES30.glBindVertexArray(vao)
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vbo)
         GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, quad.size * 4, buf, GLES30.GL_STATIC_DRAW)
@@ -156,9 +160,15 @@ internal class FluidSim(
         GLES30.glSamplerParameteri(linearSampler, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
         val frags =
             intArrayOf(
-                R.raw.fluid_splat_frag, R.raw.fluid_advect_frag, R.raw.fluid_curl_frag,
-                R.raw.fluid_vorticity_frag, R.raw.fluid_divergence_frag, R.raw.fluid_pressure_frag,
-                R.raw.fluid_gradient_frag, R.raw.fluid_clear_frag, R.raw.fluid_copy_frag,
+                R.raw.fluid_splat_frag,
+                R.raw.fluid_advect_frag,
+                R.raw.fluid_curl_frag,
+                R.raw.fluid_vorticity_frag,
+                R.raw.fluid_divergence_frag,
+                R.raw.fluid_pressure_frag,
+                R.raw.fluid_gradient_frag,
+                R.raw.fluid_clear_frag,
+                R.raw.fluid_copy_frag,
                 R.raw.fluid_display_frag,
             )
         baseVertSrc = loadRaw(R.raw.fluid_base_vert)
@@ -253,8 +263,10 @@ internal class FluidSim(
         divergence = FluidBuffers.Fbo(sw, sh, formats.r, linear = false).also { it.create() }
         curl = FluidBuffers.Fbo(sw, sh, formats.r, linear = false).also { it.create() }
         val allOk =
-            velocity?.ok == true && pressure?.ok == true &&
-                divergence?.ok == true && curl?.ok == true &&
+            velocity?.ok == true &&
+                pressure?.ok == true &&
+                divergence?.ok == true &&
+                curl?.ok == true &&
                 (velocityOnly || dye?.ok == true)
         if (!allOk) {
             android.util.Log.w("FluidSim", "grid allocation failed (${sw}x$sh / ${dw}x$dh) - fluid disabled")
@@ -353,10 +365,26 @@ internal class FluidSim(
         if (!available) return
         // Grids exist only after the first resize(); queued splats from
         // before that point must not accumulate and all fire in one burst.
-        val vel = velocity ?: run { pending.clear(); return }
-        val press = pressure ?: run { pending.clear(); return }
-        val div = divergence ?: run { pending.clear(); return }
-        val crl = curl ?: run { pending.clear(); return }
+        val vel =
+            velocity ?: run {
+                pending.clear()
+                return
+            }
+        val press =
+            pressure ?: run {
+                pending.clear()
+                return
+            }
+        val div =
+            divergence ?: run {
+                pending.clear()
+                return
+            }
+        val crl =
+            curl ?: run {
+                pending.clear()
+                return
+            }
         // Cap at 1/30 s: semi-Lagrangian advection stays stable, and 30-60fps
         // devices keep real-time fluid speed instead of a permanent slow-mo
         // that desynchronized from the (real-dt) emitters.
@@ -529,14 +557,20 @@ internal class FluidSim(
             val n = 8
             val out: String
             if (type[0] == GLES30.GL_FLOAT) {
-                val buf = java.nio.ByteBuffer.allocateDirect(n * n * 4 * 4).order(java.nio.ByteOrder.nativeOrder())
+                val buf =
+                    java.nio.ByteBuffer
+                        .allocateDirect(n * n * 4 * 4)
+                        .order(java.nio.ByteOrder.nativeOrder())
                 GLES30.glReadPixels(d.width / 2 - n / 2, d.height / 2 - n / 2, n, n, GLES30.GL_RGBA, GLES30.GL_FLOAT, buf)
                 val fb = buf.asFloatBuffer()
                 var mx = 0f
                 while (fb.hasRemaining()) mx = maxOf(mx, fb.get())
                 out = "max=%.4f (float read, fmt=0x%x)".format(mx, fmt[0])
             } else {
-                val buf = java.nio.ByteBuffer.allocateDirect(n * n * 4).order(java.nio.ByteOrder.nativeOrder())
+                val buf =
+                    java.nio.ByteBuffer
+                        .allocateDirect(n * n * 4)
+                        .order(java.nio.ByteOrder.nativeOrder())
                 GLES30.glReadPixels(d.width / 2 - n / 2, d.height / 2 - n / 2, n, n, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buf)
                 var mx = 0
                 while (buf.hasRemaining()) mx = maxOf(mx, buf.get().toInt() and 0xFF)
@@ -632,5 +666,9 @@ internal class FluidSim(
         c: Float,
     ) = GLES30.glUniform3f(loc(id, n), a, b, c)
 
-    private fun loadRaw(resId: Int): String = context.resources.openRawResource(resId).bufferedReader().use { it.readText() }
+    private fun loadRaw(resId: Int): String =
+        context.resources
+            .openRawResource(resId)
+            .bufferedReader()
+            .use { it.readText() }
 }

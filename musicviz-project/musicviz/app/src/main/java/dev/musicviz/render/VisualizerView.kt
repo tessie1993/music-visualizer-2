@@ -12,7 +12,9 @@ import android.opengl.GLSurfaceView
  * hangs. Scenes restore their own state (including the last .milk preset)
  * after recreation.
  */
-class VisualizerView(context: Context) : GLSurfaceView(context) {
+class VisualizerView(
+    context: Context,
+) : GLSurfaceView(context) {
     val visualizerRenderer: VisualizerRenderer = VisualizerRenderer(context)
 
     init {

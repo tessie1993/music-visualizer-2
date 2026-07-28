@@ -21,7 +21,9 @@ import java.nio.ByteBuffer
  * is ~86 MB - buffering it in RAM caused OOM on long-form exports). Callers
  * must invoke [Result.release] when done to delete the temp file.
  */
-class AudioTranscoder(private val context: Context) {
+class AudioTranscoder(
+    private val context: Context,
+) {
     class Result(
         val format: MediaFormat,
         val file: File,
@@ -45,7 +47,12 @@ class AudioTranscoder(private val context: Context) {
         }
     }
 
-    class SampleInfo(val offset: Long, val size: Int, val presentationTimeUs: Long, val flags: Int)
+    class SampleInfo(
+        val offset: Long,
+        val size: Int,
+        val presentationTimeUs: Long,
+        val flags: Int,
+    )
 
     /** Folds interleaved 16-bit PCM from [srcCh] channels down to [dstCh]. */
     private fun downmix(

@@ -11,7 +11,9 @@ import androidx.compose.ui.graphics.Color
  * visualizer canvas fills the screen behind the controls, so themes mostly
  * affect the control surfaces, dialogs, sliders and accent colors.
  */
-enum class AppTheme(val label: String) {
+enum class AppTheme(
+    val label: String,
+) {
     MIDNIGHT("Midnight"),
     NEON("Neon"),
     SUNSET("Sunset"),
@@ -164,10 +166,21 @@ enum class AppTheme(val label: String) {
 }
 
 /** Where the music player bar sits on screen; controls sit on the other side. */
-enum class PlayerPosition(val label: String) { TOP("Top"), BOTTOM("Bottom") }
+enum class PlayerPosition(
+    val label: String,
+) {
+    TOP("Top"),
+    BOTTOM("Bottom"),
+}
 
 /** Corner styling for the floating control surfaces. */
-enum class CornerStyle(val label: String) { SHARP("Sharp"), ROUNDED("Rounded"), PILL("Pill") }
+enum class CornerStyle(
+    val label: String,
+) {
+    SHARP("Sharp"),
+    ROUNDED("Rounded"),
+    PILL("Pill"),
+}
 
 /** GUI layout/appearance preferences beyond the color theme. */
 data class GuiPrefs(
@@ -183,7 +196,9 @@ data class GuiPrefs(
 )
 
 /** Persists the chosen [AppTheme] in shared preferences. */
-class ThemeStore(context: Context) {
+class ThemeStore(
+    context: Context,
+) {
     private val prefs = context.getSharedPreferences("musicviz-prefs", Context.MODE_PRIVATE)
 
     fun load(): AppTheme =
@@ -209,7 +224,8 @@ class ThemeStore(context: Context) {
         )
 
     fun saveGui(gui: GuiPrefs) {
-        prefs.edit()
+        prefs
+            .edit()
             .putString(KEY_POS, gui.playerPosition.name)
             .putString(KEY_CORNER, gui.cornerStyle.name)
             .putFloat(KEY_OPACITY, gui.barOpacity)

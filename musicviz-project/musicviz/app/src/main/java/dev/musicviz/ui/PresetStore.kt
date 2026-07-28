@@ -16,17 +16,23 @@ data class Preset(
 )
 
 /** JSON file persistence for presets in app-private storage. */
-class PresetStore(context: Context) {
+class PresetStore(
+    context: Context,
+) {
     private val dir = File(context.filesDir, "presets").apply { mkdirs() }
 
     /** Relative folder ("" = root) for each preset name, for the tree UI. */
     fun folderOf(name: String): String {
         val f = findFile(name) ?: return ""
-        return f.parentFile?.relativeTo(dir)?.path.orEmpty()
+        return f.parentFile
+            ?.relativeTo(dir)
+            ?.path
+            .orEmpty()
     }
 
     fun folders(): List<String> =
-        dir.walkTopDown()
+        dir
+            .walkTopDown()
             .filter { it.isDirectory && it != dir }
             .map { it.relativeTo(dir).path }
             .sorted()
@@ -60,7 +66,8 @@ class PresetStore(context: Context) {
         dir.walkTopDown().firstOrNull { it.isFile && it.extension == "json" && it.nameWithoutExtension == sanitize(name) }
 
     fun list(): List<Preset> =
-        dir.walkTopDown()
+        dir
+            .walkTopDown()
             .filter { it.isFile && it.extension == "json" }
             .mapNotNull { runCatching { fromJson(it.readText()) }.getOrNull() }
             .sortedBy { it.name }

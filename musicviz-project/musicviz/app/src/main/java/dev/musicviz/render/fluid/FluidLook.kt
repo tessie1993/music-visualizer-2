@@ -17,7 +17,9 @@ import dev.musicviz.render.scene.GlUtil
  * #defines, program cache keyed by the flag set - no uniform branching in
  * the hot shader). All methods run on the GL thread.
  */
-internal class FluidLook(private val context: Context) {
+internal class FluidLook(
+    private val context: Context,
+) {
     companion object {
         private const val BLOOM_BASE_RES = 256
         private const val BLOOM_MAX_LEVELS = 8
@@ -103,11 +105,22 @@ internal class FluidLook(private val context: Context) {
         val noise = ByteArray(DITHER_SIZE * DITHER_SIZE * 3)
         val rnd = java.util.Random(0x0D17_4E12L)
         rnd.nextBytes(noise)
-        val buf = java.nio.ByteBuffer.allocateDirect(noise.size).put(noise).apply { position(0) }
+        val buf =
+            java.nio.ByteBuffer
+                .allocateDirect(noise.size)
+                .put(noise)
+                .apply { position(0) }
         GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT, 1)
         GLES30.glTexImage2D(
-            GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGB8, DITHER_SIZE, DITHER_SIZE, 0,
-            GLES30.GL_RGB, GLES30.GL_UNSIGNED_BYTE, buf,
+            GLES30.GL_TEXTURE_2D,
+            0,
+            GLES30.GL_RGB8,
+            DITHER_SIZE,
+            DITHER_SIZE,
+            0,
+            GLES30.GL_RGB,
+            GLES30.GL_UNSIGNED_BYTE,
+            buf,
         )
         GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT, 4)
 
@@ -117,8 +130,12 @@ internal class FluidLook(private val context: Context) {
         vbo = ids[0]
         val quad = floatArrayOf(-1f, -1f, 3f, -1f, -1f, 3f)
         val qbuf =
-            java.nio.ByteBuffer.allocateDirect(quad.size * 4)
-                .order(java.nio.ByteOrder.nativeOrder()).asFloatBuffer().put(quad).apply { position(0) }
+            java.nio.ByteBuffer
+                .allocateDirect(quad.size * 4)
+                .order(java.nio.ByteOrder.nativeOrder())
+                .asFloatBuffer()
+                .put(quad)
+                .apply { position(0) }
         GLES30.glBindVertexArray(vao)
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vbo)
         GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, quad.size * 4, qbuf, GLES30.GL_STATIC_DRAW)
@@ -154,8 +171,11 @@ internal class FluidLook(private val context: Context) {
         sunrays = FluidBuffers.Fbo(sw, sh, formats.r, linear = true).also { it.create() }
         sunraysTemp = FluidBuffers.Fbo(sw, sh, formats.r, linear = true).also { it.create() }
         val allOk =
-            bloomResult?.ok == true && bloomMips.all { it.ok } &&
-                sunraysMask?.ok == true && sunrays?.ok == true && sunraysTemp?.ok == true
+            bloomResult?.ok == true &&
+                bloomMips.all { it.ok } &&
+                sunraysMask?.ok == true &&
+                sunrays?.ok == true &&
+                sunraysTemp?.ok == true
         if (!allOk) {
             android.util.Log.w("FluidSim", "look target allocation failed - bloom/sunrays disabled")
             releaseTargets()
@@ -283,8 +303,12 @@ internal class FluidLook(private val context: Context) {
         releaseTargets()
         (
             listOf(
-                prefilterProgram, bloomBlurProgram, bloomFinalProgram,
-                sunraysMaskProgram, sunraysProgram, blurProgram,
+                prefilterProgram,
+                bloomBlurProgram,
+                bloomFinalProgram,
+                sunraysMaskProgram,
+                sunraysProgram,
+                blurProgram,
             ) + displayPrograms.values
         ).forEach { if (it != 0) GLES30.glDeleteProgram(it) }
         prefilterProgram = 0
@@ -366,5 +390,9 @@ internal class FluidLook(private val context: Context) {
         GLES30.glUniform1i(loc(program, name), unit)
     }
 
-    private fun loadRaw(resId: Int): String = context.resources.openRawResource(resId).bufferedReader().use { it.readText() }
+    private fun loadRaw(resId: Int): String =
+        context.resources
+            .openRawResource(resId)
+            .bufferedReader()
+            .use { it.readText() }
 }

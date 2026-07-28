@@ -6,7 +6,10 @@ import dev.musicviz.analysis.AudioFeatures
 import java.io.File
 
 /** A chunk of fresh mono PCM samples; [count] entries of [data] are valid. */
-class PcmChunk(val data: FloatArray, val count: Int)
+class PcmChunk(
+    val data: FloatArray,
+    val count: Int,
+)
 
 /**
  * MilkDrop-compatible scene backed by libprojectM (v4.1.7 with a backported
@@ -128,8 +131,15 @@ class ProjectMScene(
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexImage2D(
-            GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA8, width, height, 0,
-            GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null,
+            GLES30.GL_TEXTURE_2D,
+            0,
+            GLES30.GL_RGBA8,
+            width,
+            height,
+            0,
+            GLES30.GL_RGBA,
+            GLES30.GL_UNSIGNED_BYTE,
+            null,
         )
         GLES30.glGenFramebuffers(1, ids, 0)
         pmFbo = ids[0]
@@ -195,7 +205,8 @@ class ProjectMScene(
         // The native preset pipeline can leave scissor/masks/blend-equation
         // dirty; re-establish the contract before anything else draws this
         // frame (post pass here, plus any transition co-scene + composite).
-        dev.musicviz.render.scene.GlUtil.resetFrameState()
+        dev.musicviz.render.scene.GlUtil
+            .resetFrameState()
         GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, prevFbo[0])
         GLES30.glViewport(0, 0, width, height)
 

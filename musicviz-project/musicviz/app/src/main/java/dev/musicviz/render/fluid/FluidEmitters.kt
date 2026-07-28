@@ -29,7 +29,9 @@ import kotlin.random.Random
  * the same shape as the app's ADSR spec, local so the scene works without
  * user routing.
  */
-internal class FluidEmitters(private val random: Random = Random.Default) {
+internal class FluidEmitters(
+    private val random: Random = Random.Default,
+) {
     companion object {
         const val PATTERN_CENTER = 0
         const val PATTERN_RING = 1
@@ -179,11 +181,16 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
                 val amp = 0.1f + 0.55f * band
                 out +=
                     FluidSim.Splat(
-                        prevX = px, prevY = py, curX = x, curY = y,
+                        prevX = px,
+                        prevY = py,
+                        curX = x,
+                        curY = y,
                         radius = radius,
                         velX = (x - px) * invDt * 0.22f * forceScale,
                         velY = (y - py) * invDt * 0.22f * forceScale,
-                        r = cr * amp, g = cg * amp, b = cb * amp,
+                        r = cr * amp,
+                        g = cg * amp,
+                        b = cb * amp,
                     )
             }
             stirrerPrevX[i] = x
@@ -214,8 +221,17 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
                     val a = frac * 2f * PI.toFloat() + palettePhase * 6f
                     out +=
                         capsule(
-                            ax, ay, ax + cos(a) * 0.06f, ay + sin(a) * 0.06f, radius,
-                            cos(a) * speed, sin(a) * speed, cr, cg, cb, dyeGain,
+                            ax,
+                            ay,
+                            ax + cos(a) * 0.06f,
+                            ay + sin(a) * 0.06f,
+                            radius,
+                            cos(a) * speed,
+                            sin(a) * speed,
+                            cr,
+                            cg,
+                            cb,
+                            dyeGain,
                         )
                 }
                 PATTERN_RANDOM -> {
@@ -224,8 +240,17 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
                     val a = random.nextFloat() * 2f * PI.toFloat()
                     out +=
                         capsule(
-                            x, y, x + cos(a) * 0.05f, y + sin(a) * 0.05f, radius,
-                            cos(a) * speed, sin(a) * speed, cr, cg, cb, dyeGain,
+                            x,
+                            y,
+                            x + cos(a) * 0.05f,
+                            y + sin(a) * 0.05f,
+                            radius,
+                            cos(a) * speed,
+                            sin(a) * speed,
+                            cr,
+                            cg,
+                            cb,
+                            dyeGain,
                         )
                 }
                 PATTERN_SPECTRUM_ARC -> {
@@ -253,8 +278,17 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
                     val ty = cos(a)
                     out +=
                         capsule(
-                            x - tx * 0.04f, y - ty * 0.04f, x + tx * 0.04f, y + ty * 0.04f, radius,
-                            tx * speed, ty * speed, cr, cg, cb, dyeGain,
+                            x - tx * 0.04f,
+                            y - ty * 0.04f,
+                            x + tx * 0.04f,
+                            y + ty * 0.04f,
+                            radius,
+                            tx * speed,
+                            ty * speed,
+                            cr,
+                            cg,
+                            cb,
+                            dyeGain,
                         )
                 }
             }
@@ -286,10 +320,16 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
         val len = sqrt(ox * ox + oy * oy).coerceAtLeast(1e-4f)
         out +=
             FluidSim.Splat(
-                prevX = a.x + ox, prevY = a.y + oy, curX = a.x, curY = a.y,
+                prevX = a.x + ox,
+                prevY = a.y + oy,
+                curX = a.x,
+                curY = a.y,
                 radius = radius * 0.8f,
-                velX = -ox / len * strength, velY = -oy / len * strength,
-                r = 0f, g = 0f, b = 0f,
+                velX = -ox / len * strength,
+                velY = -oy / len * strength,
+                r = 0f,
+                g = 0f,
+                b = 0f,
             )
     }
 
@@ -308,8 +348,17 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
             val (cr, cg, cb) = hsv((baseHue + palettePhase + hueSpan * 0.5f) % 1f, 0.35f, 1f)
             out +=
                 capsule(
-                    x, y, x + cos(a) * 0.02f, y + sin(a) * 0.02f, radius * 0.35f,
-                    cos(a) * BASE_SPEED * 0.5f, sin(a) * BASE_SPEED * 0.5f, cr, cg, cb, 0.9f,
+                    x,
+                    y,
+                    x + cos(a) * 0.02f,
+                    y + sin(a) * 0.02f,
+                    radius * 0.35f,
+                    cos(a) * BASE_SPEED * 0.5f,
+                    sin(a) * BASE_SPEED * 0.5f,
+                    cr,
+                    cg,
+                    cb,
+                    0.9f,
                 )
         }
     }
@@ -328,9 +377,17 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
             val (cr, cg, cb) = hsv((baseHue + palettePhase) % 1f, 0.95f, 1f)
             out +=
                 capsule(
-                    ax + cos(a) * 0.06f, ay + sin(a) * 0.06f,
-                    ax + cos(a) * 0.14f, ay + sin(a) * 0.14f, radius,
-                    cos(a) * v, sin(a) * v, cr, cg, cb, 0.3f + 0.9f * bassEnv,
+                    ax + cos(a) * 0.06f,
+                    ay + sin(a) * 0.06f,
+                    ax + cos(a) * 0.14f,
+                    ay + sin(a) * 0.14f,
+                    radius,
+                    cos(a) * v,
+                    sin(a) * v,
+                    cr,
+                    cg,
+                    cb,
+                    0.3f + 0.9f * bassEnv,
                 )
         }
     }

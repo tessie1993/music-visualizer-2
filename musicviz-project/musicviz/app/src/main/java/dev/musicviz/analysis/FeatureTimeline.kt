@@ -3,7 +3,10 @@ package dev.musicviz.analysis
 import kotlin.math.sqrt
 
 /** One analysis frame at a fixed hop, produced by offline analysis. */
-data class TimelineFrame(val timeMs: Long, val features: AudioFeatures)
+data class TimelineFrame(
+    val timeMs: Long,
+    val features: AudioFeatures,
+)
 
 /**
  * Full-track analysis result: frames at a fixed hop plus track-level summary.

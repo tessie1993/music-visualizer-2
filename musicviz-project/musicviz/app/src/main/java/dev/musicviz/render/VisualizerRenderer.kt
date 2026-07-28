@@ -34,7 +34,9 @@ import kotlin.math.pow
  * edits are queued from other threads and applied on the GL thread; all GL
  * resources are (re)created in [onSurfaceCreated].
  */
-class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer {
+class VisualizerRenderer(
+    private val context: Context,
+) : GLSurfaceView.Renderer {
     companion object {
         /** Fragment-shader scenes: id -> raw resource. Order = UI order. */
         val SHADER_SCENES: Map<String, Int> =
@@ -184,7 +186,9 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
     private fun gainAdjusted(
         f: dev.musicviz.analysis.AudioFeatures,
         p: SceneParams,
-    ): dev.musicviz.analysis.AudioFeatures = dev.musicviz.render.scene.applyBandGains(f, p)
+    ): dev.musicviz.analysis.AudioFeatures =
+        dev.musicviz.render.scene
+            .applyBandGains(f, p)
 
     @Volatile
     var transitionStyle: TransitionStyle = TransitionStyle.FADE
@@ -282,8 +286,15 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
             GLES30.glTexImage2D(
-                GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA8, width, height, 0,
-                GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null,
+                GLES30.GL_TEXTURE_2D,
+                0,
+                GLES30.GL_RGBA8,
+                width,
+                height,
+                0,
+                GLES30.GL_RGBA,
+                GLES30.GL_UNSIGNED_BYTE,
+                null,
             )
             GLES30.glGenFramebuffers(1, ids, 0)
             fbo = ids[0]
@@ -375,7 +386,9 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
             }
         // Was listed in availableSceneIds but never constructed - selecting
         // Curl Flow silently did nothing (the "style not working" bug).
-        scenes[SceneIds.CURLFLOW] = dev.musicviz.render.fluid.CurlFlowScene(context)
+        scenes[SceneIds.CURLFLOW] =
+            dev.musicviz.render.fluid
+                .CurlFlowScene(context)
         if (PMBridge.available) {
             scenes[SceneIds.MILKDROP] =
                 ProjectMScene(
@@ -403,17 +416,30 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
 
         // FlowField service (F7) + the always-valid zero flow texture.
         flowField?.release()
-        flowField = dev.musicviz.render.fluid.FlowField(context).also { it.create() }
+        flowField =
+            dev.musicviz.render.fluid
+                .FlowField(context)
+                .also { it.create() }
         val texIds = IntArray(1)
         GLES30.glGenTextures(1, texIds, 0)
         zeroTex = texIds[0]
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, zeroTex)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
-        val zero = java.nio.ByteBuffer.allocateDirect(4).apply { put(byteArrayOf(0, 0, 0, 0)).position(0) }
+        val zero =
+            java.nio.ByteBuffer
+                .allocateDirect(4)
+                .apply { put(byteArrayOf(0, 0, 0, 0)).position(0) }
         GLES30.glTexImage2D(
-            GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA8, 1, 1, 0,
-            GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, zero,
+            GLES30.GL_TEXTURE_2D,
+            0,
+            GLES30.GL_RGBA8,
+            1,
+            1,
+            0,
+            GLES30.GL_RGBA,
+            GLES30.GL_UNSIGNED_BYTE,
+            zero,
         )
 
         fadeProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), loadRaw(R.raw.fade_frag))
@@ -692,8 +718,16 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, fboA.fbo)
         GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, trailFbo)
         GLES30.glBlitFramebuffer(
-            0, 0, renderWidth, renderHeight, 0, 0, renderWidth, renderHeight,
-            GLES30.GL_COLOR_BUFFER_BIT, GLES30.GL_NEAREST,
+            0,
+            0,
+            renderWidth,
+            renderHeight,
+            0,
+            0,
+            renderWidth,
+            renderHeight,
+            GLES30.GL_COLOR_BUFFER_BIT,
+            GLES30.GL_NEAREST,
         )
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboA.fbo)
         GLES30.glViewport(0, 0, renderWidth, renderHeight)
@@ -733,8 +767,15 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexImage2D(
-            GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA8, renderWidth, renderHeight, 0,
-            GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null,
+            GLES30.GL_TEXTURE_2D,
+            0,
+            GLES30.GL_RGBA8,
+            renderWidth,
+            renderHeight,
+            0,
+            GLES30.GL_RGBA,
+            GLES30.GL_UNSIGNED_BYTE,
+            null,
         )
         GLES30.glGenFramebuffers(1, ids, 0)
         trailFbo = ids[0]
@@ -767,7 +808,11 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         GLES30.glDisable(GLES30.GL_BLEND)
     }
 
-    private fun loadRaw(resId: Int): String = context.resources.openRawResource(resId).bufferedReader().use { it.readText() }
+    private fun loadRaw(resId: Int): String =
+        context.resources
+            .openRawResource(resId)
+            .bufferedReader()
+            .use { it.readText() }
 
     /**
      * Builds fresh scene instances for the export GL context. Never reuses
@@ -785,7 +830,9 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
                             dev.musicviz.render.fluid.FluidScene(context).also {
                                 it.setInjectionShaders(fluidForceSrc, fluidDyeSrc)
                             }
-                        sceneId == SceneIds.CURLFLOW -> dev.musicviz.render.fluid.CurlFlowScene(context)
+                        sceneId == SceneIds.CURLFLOW ->
+                            dev.musicviz.render.fluid
+                                .CurlFlowScene(context)
                         sceneId == SceneIds.MILKDROP && PMBridge.available ->
                             ProjectMScene(
                                 postVertexSrc = loadRaw(R.raw.fade_vert),

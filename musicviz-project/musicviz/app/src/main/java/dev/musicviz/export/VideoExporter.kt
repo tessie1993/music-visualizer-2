@@ -19,14 +19,21 @@ import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 
 /** Output quality tier - the short side (px) and target video bitrate. */
-enum class ExportQuality(val shortSide: Int, val bitRate: Int) {
+enum class ExportQuality(
+    val shortSide: Int,
+    val bitRate: Int,
+) {
     HD720(720, 6_000_000),
     FHD1080(1080, 12_000_000),
     UHD4K(2160, 40_000_000),
 }
 
 /** Output aspect ratio as width:height. */
-enum class ExportRatio(val label: String, val wRatio: Int, val hRatio: Int) {
+enum class ExportRatio(
+    val label: String,
+    val wRatio: Int,
+    val hRatio: Int,
+) {
     R16_9("16:9", 16, 9),
     R9_16("9:16", 9, 16),
     R1_1("1:1", 1, 1),
@@ -40,7 +47,11 @@ enum class ExportRatio(val label: String, val wRatio: Int, val hRatio: Int) {
  * chosen bitrate, derived from a quality tier and a ratio. The short side of
  * the frame equals the quality's [ExportQuality.shortSide].
  */
-class ExportAspect(val width: Int, val height: Int, val bitRate: Int) {
+class ExportAspect(
+    val width: Int,
+    val height: Int,
+    val bitRate: Int,
+) {
     companion object {
         fun of(
             quality: ExportQuality,
@@ -74,7 +85,9 @@ class ExportAspect(val width: Int, val height: Int, val bitRate: Int) {
  * H.264 encoder using the precomputed [FeatureTimeline] (deterministic - no
  * dropped frames), then muxes the original audio track alongside.
  */
-class VideoExporter(private val context: Context) {
+class VideoExporter(
+    private val context: Context,
+) {
     companion object {
         private const val FPS: Int = 60
         private const val TIMEOUT_US: Long = 10_000
@@ -134,8 +147,17 @@ class VideoExporter(private val context: Context) {
             try {
                 pfd.use {
                     encodeInto(
-                        it, audioUri, timeline, sceneFactory, aspect,
-                        sceneParams, lfoConfigs, adsrConfigs, requestedFps, onProgress, isCancelled,
+                        it,
+                        audioUri,
+                        timeline,
+                        sceneFactory,
+                        aspect,
+                        sceneParams,
+                        lfoConfigs,
+                        adsrConfigs,
+                        requestedFps,
+                        onProgress,
+                        isCancelled,
                     )
                 }
                 if (isCancelled()) {
@@ -174,8 +196,17 @@ class VideoExporter(private val context: Context) {
         return try {
             pfd.use {
                 encodeInto(
-                    it, audioUri, timeline, sceneFactory, aspect,
-                    sceneParams, lfoConfigs, adsrConfigs, requestedFps, onProgress, isCancelled,
+                    it,
+                    audioUri,
+                    timeline,
+                    sceneFactory,
+                    aspect,
+                    sceneParams,
+                    lfoConfigs,
+                    adsrConfigs,
+                    requestedFps,
+                    onProgress,
+                    isCancelled,
                 )
             }
             if (isCancelled()) {
@@ -246,7 +277,8 @@ class VideoExporter(private val context: Context) {
             val muxer = MediaMuxer(pfd.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4).also { muxerRef = it }
             // MP4 cannot carry MP3/Vorbis/FLAC tracks; transcode audio to AAC first.
             val aac =
-                AudioTranscoder(context).transcode(audioUri, 0L, isCancelled) { onProgress(it * 0.1f) }
+                AudioTranscoder(context)
+                    .transcode(audioUri, 0L, isCancelled) { onProgress(it * 0.1f) }
                     .also { aacRef = it }
             val egl = EncoderSurface(inputSurface).also { eglRef = it }
             egl.makeCurrent()
@@ -314,16 +346,31 @@ class VideoExporter(private val context: Context) {
                 // silently dropping ALL ADSR routing - including the new
                 // Catch pull/Catch radius targets - from rendered video.
                 val envValues = adsrEngine.tick(1f / fps, features)
-                val (envRate, envDepth) = dev.musicviz.render.AdsrEngine.lfoOffsets(adsrEngine.configs, envValues)
+                val (envRate, envDepth) =
+                    dev.musicviz.render.AdsrEngine
+                        .lfoOffsets(adsrEngine.configs, envValues)
                 val lfoValues = lfoEngine.tick(1f / fps, features.bpm, envRate, envDepth)
-                var p = dev.musicviz.render.LfoEngine.apply(sceneParams, lfoEngine.configs, lfoValues)
-                p = dev.musicviz.render.AdsrEngine.apply(p, adsrEngine.configs, envValues)
+                var p =
+                    dev.musicviz.render.LfoEngine
+                        .apply(sceneParams, lfoEngine.configs, lfoValues)
+                p =
+                    dev.musicviz.render.AdsrEngine
+                        .apply(p, adsrEngine.configs, envValues)
                 scene.setParams(p)
-                scene.update(dev.musicviz.render.scene.applyBandGains(features, p), 1f / fps)
+                scene.update(
+                    dev.musicviz.render.scene
+                        .applyBandGains(features, p),
+                    1f / fps,
+                )
                 if (p.flowEnabled && flowField != null && flowField.available) {
                     // Steps into the FlowField's own FBOs, before the scene
                     // target is bound - mirrors the live frame order.
-                    flowField.step(dev.musicviz.render.scene.applyBandGains(features, p), 1f / fps, p)
+                    flowField.step(
+                        dev.musicviz.render.scene
+                            .applyBandGains(features, p),
+                        1f / fps,
+                        p,
+                    )
                 }
                 // FlowField consumers, mirroring the live renderer: CPU grid
                 // for particle scenes ("Particles ride the field"), uFlow

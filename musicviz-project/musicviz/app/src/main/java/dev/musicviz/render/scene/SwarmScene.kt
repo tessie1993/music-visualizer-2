@@ -9,8 +9,10 @@ import kotlin.random.Random
  * Firefly swarm: particles chase a wandering attractor; treble scatters
  * them, beats relocate the attractor. Boids-lite with O(n) cost.
  */
-class SwarmScene(shaders: ShaderSources, count: Int = 2200) :
-    ParticleSceneBase(SceneIds.SWARM, count, shaders) {
+class SwarmScene(
+    shaders: ShaderSources,
+    count: Int = 2200,
+) : ParticleSceneBase(SceneIds.SWARM, count, shaders) {
     private val random = Random(11)
     private val px = FloatArray(count) { random.nextFloat() * 2f - 1f }
     private val py = FloatArray(count) { random.nextFloat() * 2f - 1f }

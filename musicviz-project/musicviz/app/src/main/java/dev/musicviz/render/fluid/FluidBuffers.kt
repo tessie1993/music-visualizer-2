@@ -10,7 +10,11 @@ import kotlin.math.roundToInt
  * resize, and the aspect-correct grid resolution helper.
  */
 internal object FluidBuffers {
-    data class TexFormat(val internal: Int, val format: Int, val type: Int)
+    data class TexFormat(
+        val internal: Int,
+        val format: Int,
+        val type: Int,
+    )
 
     data class Formats(
         val r: TexFormat,
@@ -186,10 +190,18 @@ internal object FluidBuffers {
                 fbo = ids[0]
                 GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fbo)
                 GLES30.glFramebufferTexture2D(
-                    GLES30.GL_FRAMEBUFFER, GLES30.GL_COLOR_ATTACHMENT0, GLES30.GL_TEXTURE_2D, texA, 0,
+                    GLES30.GL_FRAMEBUFFER,
+                    GLES30.GL_COLOR_ATTACHMENT0,
+                    GLES30.GL_TEXTURE_2D,
+                    texA,
+                    0,
                 )
                 GLES30.glFramebufferTexture2D(
-                    GLES30.GL_FRAMEBUFFER, GLES30.GL_COLOR_ATTACHMENT1, GLES30.GL_TEXTURE_2D, texB, 0,
+                    GLES30.GL_FRAMEBUFFER,
+                    GLES30.GL_COLOR_ATTACHMENT1,
+                    GLES30.GL_TEXTURE_2D,
+                    texB,
+                    0,
                 )
                 GLES30.glDrawBuffers(2, intArrayOf(GLES30.GL_COLOR_ATTACHMENT0, GLES30.GL_COLOR_ATTACHMENT1), 0)
                 if (GLES30.glCheckFramebufferStatus(GLES30.GL_FRAMEBUFFER) != GLES30.GL_FRAMEBUFFER_COMPLETE) {
