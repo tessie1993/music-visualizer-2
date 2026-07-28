@@ -202,5 +202,11 @@ class FluidChoreographyTest {
             "bloom target did not advance on beats",
             abs(after.first - before.first) + abs(after.second - before.second) > 1e-3f,
         )
+        // Edge-detected: one sustained beat=true snapshot (the analysis hop
+        // is slower than a 120 Hz display) is ONE beat, not one per frame.
+        assertEquals(1, c.beatCount)
+        c.tick(features(beat = false), 1f / 60f, 1f)
+        c.tick(features(beat = true), 1f / 60f, 1f)
+        assertEquals(2, c.beatCount)
     }
 }

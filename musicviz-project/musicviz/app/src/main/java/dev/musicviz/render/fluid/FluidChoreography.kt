@@ -120,6 +120,7 @@ internal class FluidChoreography {
     private var initialized = false
     private var beatEnv = 0f
     private var bassEnv = 0f
+    private var prevBeat = false
 
     /**
      * Advances the choreography one frame. [aspect] is sim-space half-width.
@@ -132,7 +133,12 @@ internal class FluidChoreography {
         aspect: Float,
     ) {
         time += dt * (0.4f + 0.6f * speed)
-        if (f.beat) beatCount++
+        // Edge-detect: the analysis publishes at ~62.5 Hz while draw runs at
+        // the display rate, so one beat=true snapshot can be consumed by
+        // several frames - counting frames instead of edges advanced the
+        // bloom twice per beat on 120 Hz displays and diverged from export.
+        if (f.beat && !prevBeat) beatCount++
+        prevBeat = f.beat
         beatEnv = if (f.beat) 1f else beatEnv * kotlin.math.exp(-dt / 0.35f)
         val bassTarget = (f.bass * 1.2f).coerceIn(0f, 1f)
         bassEnv += (bassTarget - bassEnv) * (if (bassTarget > bassEnv) (dt / 0.03f) else (dt / 0.45f)).coerceAtMost(1f)
@@ -152,7 +158,16 @@ internal class FluidChoreography {
             val (tx, ty) = spawnTarget(i, nS, progress, ax)
             spawns[i].targetX = tx.coerceIn(-ax, ax)
             spawns[i].targetY = ty.coerceIn(-DOMAIN_MARGIN, DOMAIN_MARGIN)
-            spawns[i].energy = beatEnv
+            // Per-slot energy = beat impulse + this slot's share of the
+            // spectrum, so the weighted respawn pick actually biases births
+            // toward the spawn points whose band is loud right now.
+            val bandE =
+                if (f.bands.isEmpty()) {
+                    0f
+                } else {
+                    f.bands[(i * f.bands.size / nS).coerceIn(0, f.bands.size - 1)].coerceIn(0f, 1f)
+                }
+            spawns[i].energy = (0.5f * beatEnv + 0.5f * bandE).coerceIn(0f, 1f)
         }
         val nC = catchCount.coerceIn(0, MAX_CATCH)
         for (i in 0 until nC) {
@@ -181,6 +196,7 @@ internal class FluidChoreography {
         sectionPhase = 0f
         beatEnv = 0f
         bassEnv = 0f
+        prevBeat = false
     }
 
     /**
