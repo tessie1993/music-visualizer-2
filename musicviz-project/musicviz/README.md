@@ -1,3 +1,63 @@
+## v0.12.2 - fluid particles fixed, gradient maker, lava lamp scene
+Merged the locally audited v0.12.1a (six fluid launch variants, gate-green
+ktlint restyles) with the 25-bug fix pass; versionCode bumped to 15 to
+resolve the double-claimed code 14.
+
+FLUID PARTICLES FIXED (the layer degenerated over time and stuttered):
+- Staggered lifetime respawn: every particle recycles to a fresh hashed
+  position every ~8-16 s (phase-offset, so only a handful move per frame).
+  Without it particles collapsed onto streamlines and stagnation points
+  until the layer was clumped dots - the reported breakage.
+- dt clamp: a hitched frame (up to 100 ms) teleported every particle; the
+  particle kernel now clamps to the same 1/60 s the sim uses.
+- Overdraw control for smoothness: point size hard-capped at 4 px (was 8 -
+  additive cost grows with the SQUARE of size and converging particles
+  collapsed the frame rate), tier particle counts rebalanced
+  (Medium 512^2 -> 384^2 etc.), and brightness is normalized by count so
+  tier changes/auto-downgrades keep the same on-screen energy.
+
+CUSTOM COLORS - the gradient maker (Customize > Color):
+- Build a 3-stop RGB gradient with per-channel sliders + live preview
+  swatches. When enabled it recolors EVERY style (particles, shaders,
+  MilkDrop - and exports) through a luminance gradient map in the
+  composite, and the FLUID scene emits the actual chosen colors: ink
+  splats and the particle speed ramp both ride your A->B->C gradient.
+- "Color fade" cycles the stops into each other (seamless loop - stops
+  rotate positions, so there is no wrap pop). Gradient amount, fade and
+  all nine channels are preset-persisted and settings-fade smoothed.
+
+NEW SCENE - lava (Styles > Shaders):
+- A vector (SDF metaball) lava lamp with an actual story: blobs detach
+  from a molten pool at the BOTTOM, rise on individual 18-40 s clocks from
+  many x positions, stretch while moving, merge, hang, and sink back.
+  Music heats the lamp instead of strobing it: bass makes the wax breathe,
+  mids steer the drift, beats light the rims. Full prelude support -
+  every Customize param, presets, export, and the gradient maker apply.
+
+## v0.12.1a (local) - baseline audit + six fluid launch variants
+- Adopted the externally built v0.12.0 (F5 Fluid tab, F6 adaptive quality,
+  F7 FlowField) as the local baseline and AUDITED it here: full gate run
+  (ktlint after a param-comment style fix, every unit test including the
+  reflection roundtrip now covering all 35 fluid/flow params, assemble,
+  lint); targeted sweep of this project's known bug classes - cross-stage
+  uniform precision (clean in all fluid shaders), lowp samplers on
+  position/flow textures (composite uFlow already highp with a strength
+  gate + zero-texture default so non-fluid scenes are untouched),
+  FlowField GL release completeness (all 5 objects freed), and the
+  spec rule that the fluid scene's own field is reused rather than
+  running two sims. versionCode collision with the old code-13 resolved
+  (now 14 / 0.12.1).
+- NEW - six fluid launch variants in the preset browser: Inkdrop (calm
+  center drops, long aging ink), Vortex (ring-pattern spin-up with
+  low-drag particle streaks), Spectrum (spectrum-arc splats + bass pump +
+  sunrays), Nebula (dye hidden - pure particle field riding the invisible
+  flow), Lava (slow heavy blobs, max chromatic aging, hot bloom), Storm
+  (everything on, never clears). Each is a strongly different starting
+  point for customizing.
+- ON-DEVICE: flip through the six variants (each should feel immediately
+  distinct); Nebula must show particles with no ink; verify the Fluid tab
+  sliders bite on top of a variant and Save produces a working preset.
+
 ## v0.12.1 - full bug-scan fix pass (25 fixes across render, audio, export, stores)
 Renderer/scenes:
 - Shader recompiles clear the uniform-location cache (editing a scene's GLSL

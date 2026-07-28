@@ -110,6 +110,10 @@ internal class FluidScene(context: Context) : Scene {
         if (!sim.available) return
         val p = params
         val f = pendingFeatures
+        // One stability clamp for the whole frame: the sim clamps internally,
+        // but the particle layer previously integrated the RAW renderer dt
+        // (up to 100 ms on a hitch), teleporting every particle.
+        val dt = lastDt.coerceIn(0f, 1f / 60f)
 
         // Snapshot the engine's target + blend state: the sim renders to its
         // own grids and the particle pass changes the blend function.
@@ -168,13 +172,19 @@ internal class FluidScene(context: Context) : Scene {
                     p.fluidPaletteCycleSpeed.coerceIn(0f, 2f)
                 }
             emitters.forceScale = p.fluidSplatForce.coerceIn(0f, 3f)
-            for (s in emitters.tick(f, lastDt, sim.aspect, params.paletteBase, params.hueRange.coerceIn(0.1f, 1f))) {
+            emitters.gradient =
+                if (p.gradientEnabled) {
+                    dev.musicviz.render.scene.GradientMap.resolvedStops(p, time)
+                } else {
+                    null
+                }
+            for (s in emitters.tick(f, dt, sim.aspect, params.paletteBase, params.hueRange.coerceIn(0.1f, 1f))) {
                 sim.queueSplat(s)
             }
-            sim.step(lastDt)
+            sim.step(dt)
             if (particles.available && p.fluidParticlesEnabled) {
                 particles.drag = p.fluidParticleDrag.coerceIn(0.02f, 1f)
-                particles.step(lastDt, sim.velocityTex, sim.aspect, sim.flowScale)
+                particles.step(dt, sim.velocityTex, sim.aspect, sim.flowScale)
             }
             // F4 offscreen look passes (bloom mips + sunrays march), audio-
             // modulated: loud sections glow harder.
@@ -203,14 +213,24 @@ internal class FluidScene(context: Context) : Scene {
             }
         }
         if (particles.available && p.fluidParticlesEnabled) {
+            // Normalize brightness by particle count so quality-tier changes
+            // (and auto-downgrades) keep the same overall energy on screen
+            // instead of Ultra washing out white and Min going dim.
+            val countNorm = kotlin.math.sqrt(147_456f / particles.count.coerceAtLeast(1)).coerceIn(0.4f, 2f)
             particles.draw(
                 aspect = sim.aspect,
                 pointScale = (1.5f * p.particleSize.coerceIn(0.2f, 3f)),
                 hueBase = p.paletteBase,
                 hueSpan = p.hueRange.coerceIn(0.1f, 1f),
                 brightness =
-                    0.55f * p.fluidParticleBrightness.coerceIn(0f, 2f) *
+                    0.55f * countNorm * p.fluidParticleBrightness.coerceIn(0f, 2f) *
                         (0.3f + p.density.coerceIn(0f, 1.5f)),
+                gradient =
+                    if (p.gradientEnabled) {
+                        dev.musicviz.render.scene.GradientMap.resolvedStops(p, time)
+                    } else {
+                        null
+                    },
             )
         }
         if (blendWas) GLES30.glEnable(GLES30.GL_BLEND) else GLES30.glDisable(GLES30.GL_BLEND)

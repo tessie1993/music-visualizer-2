@@ -46,6 +46,25 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
     /** Emitter momentum multiplier (Customize "Splat force", 0..3). */
     var forceScale = 1f
 
+    /**
+     * Resolved custom-gradient stops (9 floats, see GradientMap), or null to
+     * use the HSV palette. When set, the ink literally emits the user's
+     * colors: the same hue fraction that would pick a palette hue instead
+     * walks the A->B->C gradient (palette cycling walks the gradient too).
+     */
+    var gradient: FloatArray? = null
+    private val gradOut = FloatArray(3)
+
+    private fun pick(
+        hue: Float,
+        sat: Float,
+        v: Float,
+    ): Triple<Float, Float, Float> {
+        val g = gradient ?: return hsv(hue, sat, v)
+        dev.musicviz.render.scene.GradientMap.colorAt(g, ((hue % 1f) + 1f) % 1f, gradOut)
+        return Triple(gradOut[0] * v, gradOut[1] * v, gradOut[2] * v)
+    }
+
     // ---- envelopes (read after tick) ----
     var beatEnv = 0f
         private set
@@ -110,7 +129,7 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
             val py = stirrerPrevY[i]
             if (!px.isNaN()) {
                 val invDt = 1f / dt.coerceAtLeast(1e-3f)
-                val (cr, cg, cb) = hsv((baseHue + palettePhase + i * hueSpan / 4f) % 1f, 0.85f, 1f)
+                val (cr, cg, cb) = pick((baseHue + palettePhase + i * hueSpan / 4f) % 1f, 0.85f, 1f)
                 val amp = 0.1f + 0.55f * band
                 out +=
                     FluidSim.Splat(
@@ -140,7 +159,7 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
         for (i in 0 until n) {
             val frac = i / n.toFloat()
             val hue = (baseHue + palettePhase + frac * hueSpan) % 1f
-            val (cr, cg, cb) = hsv(hue, 0.9f, 1f)
+            val (cr, cg, cb) = pick(hue, 0.9f, 1f)
             when (beatPattern) {
                 PATTERN_CENTER -> {
                     val a = frac * 2f * PI.toFloat()
@@ -191,7 +210,7 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
             val x = (random.nextFloat() * 2f - 1f) * 0.8f * aspect
             val y = 0.1f + random.nextFloat() * 0.75f
             val a = random.nextFloat() * 2f * PI.toFloat()
-            val (cr, cg, cb) = hsv((baseHue + palettePhase + hueSpan * 0.5f) % 1f, 0.35f, 1f)
+            val (cr, cg, cb) = pick((baseHue + palettePhase + hueSpan * 0.5f) % 1f, 0.35f, 1f)
             out +=
                 capsule(
                     x, y, x + cos(a) * 0.02f, y + sin(a) * 0.02f, radius * 0.35f,
@@ -209,7 +228,7 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
         val v = BASE_SPEED * forceScale * bassEnv
         for (i in 0 until 6) {
             val a = i / 6f * 2f * PI.toFloat()
-            val (cr, cg, cb) = hsv((baseHue + palettePhase) % 1f, 0.95f, 1f)
+            val (cr, cg, cb) = pick((baseHue + palettePhase) % 1f, 0.95f, 1f)
             out +=
                 capsule(
                     cos(a) * 0.06f, sin(a) * 0.06f, cos(a) * 0.14f, sin(a) * 0.14f, radius,

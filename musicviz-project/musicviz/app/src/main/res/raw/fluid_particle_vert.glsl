@@ -11,5 +11,7 @@ void main() {
     vec4 s = texture(uState, aTexel);
     vSpeed = length(s.zw);
     gl_Position = vec4(s.x / uAspect, s.y, 0.0, 1.0);
-    gl_PointSize = clamp(uPointScale * (0.8 + vSpeed * 1.6), 1.0, 8.0);
+    // Hard 4px cap: additive overdraw cost grows with the SQUARE of point
+    // size, and converging particles at 8px collapsed the frame rate.
+    gl_PointSize = clamp(uPointScale * (0.8 + vSpeed * 1.2), 1.0, 4.0);
 }

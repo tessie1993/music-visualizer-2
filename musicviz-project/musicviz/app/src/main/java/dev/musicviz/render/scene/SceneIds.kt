@@ -27,6 +27,7 @@ object SceneIds {
     const val AURORA: String = "aurora"
     const val SOLAR: String = "solar"
     const val ORBITS: String = "orbits"
+    const val LAVA: String = "lava"
     const val MILKDROP: String = "milkdrop"
     const val FLUID: String = "fluid"
 }

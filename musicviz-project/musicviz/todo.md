@@ -146,6 +146,9 @@ verify gate + on-device checklist every phase.
       stall readings discarded, downgrade-only latch) driving one tier enum
       over sim res / dye res / particle count / iterations; reallocation
       only at frame boundary with copy-preserving grids.
+- [x] F8 Launch variants: six built-in fluid presets (Inkdrop / Vortex /
+      Spectrum / Nebula / Lava / Storm) in the preset browser, each leaning
+      on a different subsystem; audited import of externally-built F5-F7.
 - [x] F7 FlowField + extension points: 64-grid velocity-only service (reuse
       FLUID's own field when that scene is active — never both), fluidWarp
       composite slot (uv -= flow·k·strength, 1×1 zero texture when off,

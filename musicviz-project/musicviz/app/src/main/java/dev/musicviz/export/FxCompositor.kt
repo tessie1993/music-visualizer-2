@@ -128,6 +128,15 @@ internal class FxCompositor(
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, if (flowTex != 0) flowTex else emptyTex)
         GLES30.glUniform1i(loc("uFlow"), 2)
         GLES30.glUniform1f(loc("uFlowStrength"), if (flowTex != 0) flowStrength else 0f)
+        if (params.gradientEnabled && params.gradientAmount > 0.001f) {
+            val g = dev.musicviz.render.scene.GradientMap.resolvedStops(params, timeSeconds)
+            GLES30.glUniform3f(loc("uGradA"), g[0], g[1], g[2])
+            GLES30.glUniform3f(loc("uGradB"), g[3], g[4], g[5])
+            GLES30.glUniform3f(loc("uGradC"), g[6], g[7], g[8])
+            GLES30.glUniform1f(loc("uGradAmount"), params.gradientAmount)
+        } else {
+            GLES30.glUniform1f(loc("uGradAmount"), 0f)
+        }
         GLES30.glUniform1f(loc("uProgress"), 1f)
         GLES30.glUniform1i(loc("uStyle"), 0)
         GLES30.glUniform1f(loc("uTime"), timeSeconds)

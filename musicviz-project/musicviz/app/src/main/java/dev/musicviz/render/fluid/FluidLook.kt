@@ -71,8 +71,12 @@ internal class FluidLook(private val context: Context) {
             displayPrograms[flags] = GlUtil.buildProgram(vert, withKeywords(displaySrc, flags))
         }
         listOf(
-            prefilterProgram, bloomBlurProgram, bloomFinalProgram,
-            sunraysMaskProgram, sunraysProgram, blurProgram,
+            prefilterProgram,
+            bloomBlurProgram,
+            bloomFinalProgram,
+            sunraysMaskProgram,
+            sunraysProgram,
+            blurProgram,
         ).forEach { uniforms[it] = HashMap() }
         displayPrograms.values.forEach { uniforms[it] = HashMap() }
 
@@ -170,7 +174,9 @@ internal class FluidLook(private val context: Context) {
         bindTex(prefilterProgram, "uTexture", dyeTex, 0)
         GLES30.glUniform3f(
             loc(prefilterProgram, "uCurve"),
-            bloomThreshold - knee, knee * 2f, 0.25f / knee,
+            bloomThreshold - knee,
+            knee * 2f,
+            0.25f / knee,
         )
         GLES30.glUniform1f(loc(prefilterProgram, "uThreshold"), bloomThreshold)
         blit(dst)

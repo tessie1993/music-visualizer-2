@@ -1,5 +1,6 @@
 package dev.musicviz.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -317,11 +319,79 @@ internal fun ColorTab(
         LabeledSlider("Gamma", p.gamma, 0.3f..2.5f) { onChange(p.copy(gamma = it)) }
         LabeledSlider("Intensity", p.intensity, 0.2f..2f) { onChange(p.copy(intensity = it)) }
         LabeledSlider("Temperature", p.temperature, -1f..1f) { onChange(p.copy(temperature = it)) }
+        SectionHeader("Custom colors (gradient maker)")
+        Text(
+            "Build your own 3-stop color ramp: it recolors EVERY style through " +
+                "the composite, and the Fluid scene's ink and particles emit " +
+                "these exact colors. Color fade slowly cycles the stops into " +
+                "each other.",
+            style = MaterialTheme.typography.labelSmall,
+        )
+        CheckRow("Custom gradient", p.gradientEnabled) { onChange(p.copy(gradientEnabled = it)) }
+        if (p.gradientEnabled) {
+            androidx.compose.foundation.layout.Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(22.dp)
+                    .background(
+                        androidx.compose.ui.graphics.Brush.horizontalGradient(
+                            listOf(
+                                androidx.compose.ui.graphics.Color(p.gradAR, p.gradAG, p.gradAB),
+                                androidx.compose.ui.graphics.Color(p.gradBR, p.gradBG, p.gradBB),
+                                androidx.compose.ui.graphics.Color(p.gradCR, p.gradCG, p.gradCB),
+                            ),
+                        ),
+                    ),
+            )
+            LabeledSlider("Gradient amount", p.gradientAmount, 0f..1f) { onChange(p.copy(gradientAmount = it)) }
+            LabeledSlider("Color fade", p.gradientFade, 0f..1f) { onChange(p.copy(gradientFade = it)) }
+            ColorStopEditor("Color A (shadows)", p.gradAR, p.gradAG, p.gradAB) { r, g, b ->
+                onChange(p.copy(gradAR = r, gradAG = g, gradAB = b))
+            }
+            ColorStopEditor("Color B (mids)", p.gradBR, p.gradBG, p.gradBB) { r, g, b ->
+                onChange(p.copy(gradBR = r, gradBG = g, gradBB = b))
+            }
+            ColorStopEditor("Color C (highlights)", p.gradCR, p.gradCG, p.gradCB) { r, g, b ->
+                onChange(p.copy(gradCR = r, gradCG = g, gradCB = b))
+            }
+        }
         SectionHeader("Effects")
         LabeledSlider("Bloom", p.bloom, 0f..1f) { onChange(p.copy(bloom = it)) }
         CheckRow("Duotone", p.duotone) { onChange(p.copy(duotone = it)) }
         CheckRow("Solarize", p.solarize) { onChange(p.copy(solarize = it)) }
         CheckRow("Invert", p.invert) { onChange(p.copy(invert = it)) }
+    }
+}
+
+/** One gradient stop: swatch + R/G/B channel sliders. */
+@Composable
+private fun ColorStopEditor(
+    label: String,
+    r: Float,
+    g: Float,
+    b: Float,
+    onChange: (Float, Float, Float) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        androidx.compose.foundation.layout.Box(
+            Modifier.width(36.dp).height(20.dp).background(androidx.compose.ui.graphics.Color(r, g, b)),
+        )
+        Text(label, style = MaterialTheme.typography.labelSmall)
+    }
+    ChannelSlider("R", r) { onChange(it, g, b) }
+    ChannelSlider("G", g) { onChange(r, it, b) }
+    ChannelSlider("B", b) { onChange(r, g, it) }
+}
+
+@Composable
+private fun ChannelSlider(
+    label: String,
+    value: Float,
+    onChange: (Float) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(16.dp))
+        Slider(value = value, onValueChange = onChange, valueRange = 0f..1f, modifier = Modifier.weight(1f))
     }
 }
 

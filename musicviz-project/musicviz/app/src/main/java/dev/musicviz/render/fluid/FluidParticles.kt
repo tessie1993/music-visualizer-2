@@ -17,7 +17,12 @@ internal class FluidParticles(private val context: Context) {
     var drag = 0.5f
 
     private var side = 0
-    private var count = 0
+
+    var count = 0
+        private set
+
+    /** Accumulated (clamped) sim time driving the staggered respawn phase. */
+    private var simTime = 0f
     private var state: FluidBuffers.DoubleFbo? = null
     private var updateProgram = 0
     private var seedProgram = 0
@@ -97,6 +102,10 @@ internal class FluidParticles(private val context: Context) {
         flowScale: Float,
     ) {
         val st = state ?: return
+        // Same stability clamp as the fluid sim: an unclamped hitch frame
+        // (up to 100 ms from the renderer clock) teleported every particle.
+        val dtC = dt.coerceIn(0f, 1f / 60f)
+        simTime += dtC
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glBindVertexArray(quadVao)
         if (!seeded) {
@@ -116,21 +125,24 @@ internal class FluidParticles(private val context: Context) {
         GLES30.glUniform1i(loc(updateProgram, "uVelocityField"), 1)
         GLES30.glUniform1f(loc(updateProgram, "uAspect"), aspect)
         GLES30.glUniform2f(loc(updateProgram, "uInvRes"), 1f / side, 1f / side)
-        GLES30.glUniform1f(loc(updateProgram, "uDt"), dt)
+        GLES30.glUniform1f(loc(updateProgram, "uDt"), dtC)
         GLES30.glUniform1f(loc(updateProgram, "uDrag"), drag.coerceIn(0.02f, 1f))
         GLES30.glUniform1f(loc(updateProgram, "uFlowScale"), flowScale)
+        GLES30.glUniform1f(loc(updateProgram, "uTime"), simTime)
         blit(st.write)
         st.swap()
         GLES30.glBindVertexArray(0)
     }
 
-    /** Draws additively into the currently bound framebuffer/viewport. */
+    /** Draws additively into the currently bound framebuffer/viewport.
+     *  [gradient] = resolved custom-gradient stops (9 floats) or null. */
     fun draw(
         aspect: Float,
         pointScale: Float,
         hueBase: Float,
         hueSpan: Float,
         brightness: Float,
+        gradient: FloatArray? = null,
     ) {
         val st = state ?: return
         GLES30.glEnable(GLES30.GL_BLEND)
@@ -145,6 +157,14 @@ internal class FluidParticles(private val context: Context) {
         GLES30.glUniform1f(loc(renderProgram, "uHueBase"), hueBase)
         GLES30.glUniform1f(loc(renderProgram, "uHueSpan"), hueSpan)
         GLES30.glUniform1f(loc(renderProgram, "uBrightness"), brightness)
+        if (gradient != null) {
+            GLES30.glUniform3f(loc(renderProgram, "uGradA"), gradient[0], gradient[1], gradient[2])
+            GLES30.glUniform3f(loc(renderProgram, "uGradB"), gradient[3], gradient[4], gradient[5])
+            GLES30.glUniform3f(loc(renderProgram, "uGradC"), gradient[6], gradient[7], gradient[8])
+            GLES30.glUniform1f(loc(renderProgram, "uUseGrad"), 1f)
+        } else {
+            GLES30.glUniform1f(loc(renderProgram, "uUseGrad"), 0f)
+        }
         GLES30.glDrawArrays(GLES30.GL_POINTS, 0, count)
         GLES30.glBindVertexArray(0)
         GLES30.glDisable(GLES30.GL_BLEND)

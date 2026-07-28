@@ -16,13 +16,17 @@ internal object FluidQuality {
         val iterations: Int,
     )
 
+    // Particle sides sized for additive fill cost (count grows with side^2):
+    // Medium's 384^2 = ~147k is the smooth-60fps sweet spot on mid devices;
+    // the old 512^2+ defaults collapsed the frame rate when particles
+    // converged (overdraw pathology, FLUID_SIM v2 section 8.4).
     val TIERS: List<Tier> =
         listOf(
-            Tier("Ultra", 256, 1024, 1024, 28),
-            Tier("High", 192, 768, 768, 24),
-            Tier("Medium", 128, 512, 512, 20),
-            Tier("Low", 96, 384, 320, 16),
-            Tier("Min", 64, 256, 160, 12),
+            Tier("Ultra", 256, 1024, 896, 28),
+            Tier("High", 192, 768, 640, 24),
+            Tier("Medium", 128, 512, 384, 20),
+            Tier("Low", 96, 384, 256, 16),
+            Tier("Min", 64, 256, 144, 12),
         )
 
     val LABELS: List<String> = TIERS.map { it.label }

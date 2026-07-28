@@ -35,3 +35,16 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     text appears; Reset to built-in restores the capsule splat.
 12. Fluid resize (bugfix): rotate the device on FLUID - the ink pattern
     survives rotation; backgrounding and resuming does not reset it.
+13. Fluid particles (v0.12.2): run FLUID for 10+ minutes - the particle
+    layer must stay evenly alive (no permanent clumps/streak collapse);
+    background the app and resume - no particle teleport; Ultra tier must
+    not collapse the frame rate when particles converge.
+14. Gradient maker: enable Custom gradient on a shader scene, a particle
+    scene, MilkDrop and FLUID - all recolor; on FLUID the ink emits the
+    picked colors. Color fade > 0 cycles hues with no pop at the loop
+    point. Save/load a preset with a gradient - colors survive. Export a
+    10 s clip - gradient and fade match live.
+15. Lava scene: blobs rise from the bottom pool at different x positions
+    on different clocks (watch 2 minutes - no synchronized motion, no
+    center flashing); bass visibly swells the blobs; works with kaleido/
+    tile/gradient like any shader scene.

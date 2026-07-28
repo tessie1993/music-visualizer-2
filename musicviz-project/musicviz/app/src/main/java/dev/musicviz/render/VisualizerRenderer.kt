@@ -51,6 +51,7 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
                 SceneIds.GRID to R.raw.grid_frag,
                 SceneIds.VORONOI to R.raw.voronoi_frag,
                 SceneIds.METABALLS to R.raw.metaballs_frag,
+                SceneIds.LAVA to R.raw.lava_frag,
                 SceneIds.RIPPLES to R.raw.ripples_frag,
                 SceneIds.STARFIELD to R.raw.starfield_frag,
                 SceneIds.WAVES to R.raw.waves_frag,
@@ -160,6 +161,17 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
             flowStrength = f(from.flowStrength, to.flowStrength),
             flowForce = f(from.flowForce, to.flowForce),
             flowCurl = f(from.flowCurl, to.flowCurl),
+            gradientAmount = f(from.gradientAmount, to.gradientAmount),
+            gradientFade = f(from.gradientFade, to.gradientFade),
+            gradAR = f(from.gradAR, to.gradAR),
+            gradAG = f(from.gradAG, to.gradAG),
+            gradAB = f(from.gradAB, to.gradAB),
+            gradBR = f(from.gradBR, to.gradBR),
+            gradBG = f(from.gradBG, to.gradBG),
+            gradBB = f(from.gradBB, to.gradBB),
+            gradCR = f(from.gradCR, to.gradCR),
+            gradCG = f(from.gradCG, to.gradCG),
+            gradCB = f(from.gradCB, to.gradCB),
         )
     }
 
@@ -574,6 +586,15 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, flowTex)
         GLES30.glUniform1i(cLoc("uFlow"), 2)
         GLES30.glUniform1f(cLoc("uFlowStrength"), flowStrength)
+        if (p.gradientEnabled && p.gradientAmount > 0.001f) {
+            val g = dev.musicviz.render.scene.GradientMap.resolvedStops(p, timeSeconds)
+            GLES30.glUniform3f(cLoc("uGradA"), g[0], g[1], g[2])
+            GLES30.glUniform3f(cLoc("uGradB"), g[3], g[4], g[5])
+            GLES30.glUniform3f(cLoc("uGradC"), g[6], g[7], g[8])
+            GLES30.glUniform1f(cLoc("uGradAmount"), p.gradientAmount)
+        } else {
+            GLES30.glUniform1f(cLoc("uGradAmount"), 0f)
+        }
         GLES30.glUniform1f(cLoc("uProgress"), progress)
         val style = if (outgoingScene != null) transitionStyle else TransitionStyle.CUT
         GLES30.glUniform1i(cLoc("uStyle"), style.ordinal)

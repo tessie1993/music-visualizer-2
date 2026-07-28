@@ -46,6 +46,12 @@ uniform float uPostSolarize;
 // sampler is always valid.
 uniform highp sampler2D uFlow;   // half-float velocities exceed lowp range
 uniform float uFlowStrength;
+// Custom 3-stop gradient map ("gradient maker"): luminance -> A/B/C ramp,
+// stops pre-animated on the CPU so color fading loops seamlessly.
+uniform vec3 uGradA;
+uniform vec3 uGradB;
+uniform vec3 uGradC;
+uniform float uGradAmount;
 
 float hash12(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -151,6 +157,11 @@ vec3 postFx(sampler2D tex, vec2 uv, vec3 fallback) {
     }
     col.r += uPostTemp * 0.12;
     col.b -= uPostTemp * 0.12;
+    if (uGradAmount > 0.001) {
+        float l = clamp(dot(col, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
+        vec3 g = l < 0.5 ? mix(uGradA, uGradB, l * 2.0) : mix(uGradB, uGradC, l * 2.0 - 1.0);
+        col = mix(col, g, uGradAmount);
+    }
     if (uPostSolarize > 0.5) col = abs(1.0 - 2.0 * col);
     col += uPostFlash * uBeat * 0.6;
     if (uPostInvert > 0.5) col = max(vec3(1.0) - col, 0.0);

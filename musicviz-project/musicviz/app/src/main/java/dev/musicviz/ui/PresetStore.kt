@@ -209,6 +209,18 @@ class PresetStore(context: Context) {
                 .put("flowForce", p.params.flowForce.toDouble())
                 .put("flowCurl", p.params.flowCurl.toDouble())
                 .put("flowAdvectParticles", p.params.flowAdvectParticles)
+                .put("gradientEnabled", p.params.gradientEnabled)
+                .put("gradientAmount", p.params.gradientAmount.toDouble())
+                .put("gradientFade", p.params.gradientFade.toDouble())
+                .put("gradAR", p.params.gradAR.toDouble())
+                .put("gradAG", p.params.gradAG.toDouble())
+                .put("gradAB", p.params.gradAB.toDouble())
+                .put("gradBR", p.params.gradBR.toDouble())
+                .put("gradBG", p.params.gradBG.toDouble())
+                .put("gradBB", p.params.gradBB.toDouble())
+                .put("gradCR", p.params.gradCR.toDouble())
+                .put("gradCG", p.params.gradCG.toDouble())
+                .put("gradCB", p.params.gradCB.toDouble())
                 .apply { if (p.customShader != null) put("customShader", p.customShader) }
                 .toString(2)
 
@@ -314,6 +326,18 @@ class PresetStore(context: Context) {
                         flowForce = o.optDouble("flowForce", 1.0).toFloat(),
                         flowCurl = o.optDouble("flowCurl", 25.0).toFloat(),
                         flowAdvectParticles = o.optBoolean("flowAdvectParticles", true),
+                        gradientEnabled = o.optBoolean("gradientEnabled", false),
+                        gradientAmount = o.optDouble("gradientAmount", 1.0).toFloat(),
+                        gradientFade = o.optDouble("gradientFade", 0.0).toFloat(),
+                        gradAR = o.optDouble("gradAR", 0.05).toFloat(),
+                        gradAG = o.optDouble("gradAG", 0.15).toFloat(),
+                        gradAB = o.optDouble("gradAB", 0.85).toFloat(),
+                        gradBR = o.optDouble("gradBR", 0.9).toFloat(),
+                        gradBG = o.optDouble("gradBG", 0.2).toFloat(),
+                        gradBB = o.optDouble("gradBB", 0.6).toFloat(),
+                        gradCR = o.optDouble("gradCR", 1.0).toFloat(),
+                        gradCG = o.optDouble("gradCG", 0.9).toFloat(),
+                        gradCB = o.optDouble("gradCB", 0.35).toFloat(),
                     ),
             )
         }
