@@ -312,6 +312,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         r("Fluid glow") { p.copy(fluidBloomIntensity = f(0.4f, 1.4f)) }
         r("Glow threshold") { p.copy(fluidBloomThreshold = f(0.4f, 0.8f)) }
         r("Sunrays weight") { p.copy(fluidSunraysWeight = f(0.4f, 1f)) }
+        // Journey (spawn/catch progression); the progression amount itself is
+        // never randomized - it expresses how much the song drives the look.
+        r("Path") { p.copy(fluidSpawnPath = rnd.nextInt(SceneParams.FLUID_PATHS.size)) }
+        r("Spawn points") { p.copy(fluidSpawnPoints = 2 + rnd.nextInt(4)) }
+        r("Catch points") { p.copy(fluidCatchPoints = rnd.nextInt(4)) }
+        r("Catch pull") { p.copy(fluidCatchPull = f(0.4f, 1.8f)) }
+        r("Catch radius") { p.copy(fluidCatchRadius = f(0.06f, 0.2f)) }
+        r("Particle life (s)") { p.copy(fluidParticleLife = f(3f, 12f)) }
+        r("Treble sparkle") { p.copy(fluidSparkle = rnd.nextInt(3) != 0) }
         setSceneParams(p)
     }
 
@@ -376,6 +385,30 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     val features: StateFlow<AudioFeatures> = engine.features
+
+    /**
+     * Adds track-position context to live features for progression-driven
+     * scenes (fluid spawn/catch choreography): playback progress from the
+     * cached player position (refreshed by the 500 ms loop - a slow signal
+     * is fine, the choreography rate-limits its motion) and section context
+     * from the offline analysis when available. Without a duration (radio
+     * stream, idle) features pass through with the zero defaults.
+     */
+    fun enrichFeatures(f: AudioFeatures): AudioFeatures {
+        val ui = _uiState.value
+        if (ui.durationMs <= 0L) return f
+        val pos = ui.positionMs.coerceIn(0L, ui.durationMs)
+        val sections = _vizState.value.sections
+        var idx = 0
+        for (s in sections) {
+            if (s <= pos) idx++ else break
+        }
+        return f.copy(
+            progress = pos.toFloat() / ui.durationMs,
+            sectionIndex = idx,
+            sectionCount = sections.size + 1,
+        )
+    }
 
     private val pcmScratch = FloatArray(4096)
     private var pcmCursor = 0L

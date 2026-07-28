@@ -6,19 +6,29 @@ import dev.musicviz.R
 import dev.musicviz.render.scene.GlUtil
 
 /**
- * F3 GPU particle layer per FLUID_SIM v2 section 8: state lives in an RGBA
- * half-float texture (xy = position in sim space, zw = velocity), one
- * fullscreen quad advances every particle, and a static VBO of texel
+ * Rebuilt GPU particle layer with a full spawn -> flow -> catch -> respawn
+ * lifecycle. State lives in an MRT ping-pong pair:
+ * attachment A = (pos.xy, vel.xy), attachment B = (age, ttl, emitterIndex,
+ * seed). One fullscreen quad advances every particle; a static VBO of texel
  * coordinates drives a GL_POINTS render whose vertex stage fetches state.
- * Drag-based inertia (v += (flow - v) * drag) is what turns tracer dots
+ *
+ * The layer renders whatever choreography it is given: [setChoreography]
+ * uploads the current spawn/catch point arrays (packed by
+ * [FluidChoreography]), and every recycle - capture by a catch point or ttl
+ * expiry - re-births the particle at a CURRENT spawn point, so the
+ * population physically migrates as the choreography progresses through the
+ * track. Drag-based inertia (v += (flow - v) * k) is what turns tracer dots
  * into streaming light trails. All methods run on the GL thread.
  */
 internal class FluidParticles(private val context: Context) {
     var drag = 0.5f
 
+    /** Base particle lifetime in seconds; per-particle ttl varies 0.6-1.4x. */
+    var life = 6f
+
     private var side = 0
     private var count = 0
-    private var state: FluidBuffers.DoubleFbo? = null
+    private var state: FluidBuffers.DoubleMrt? = null
     private var updateProgram = 0
     private var seedProgram = 0
     private var renderProgram = 0
@@ -29,8 +39,20 @@ internal class FluidParticles(private val context: Context) {
     private var pointsVbo = 0
     private var seeded = false
 
+    private val spawnData = FloatArray(FluidChoreography.MAX_SPAWN * 4)
+    private val catchData = FloatArray(FluidChoreography.MAX_CATCH * 4)
+    private var spawnCount = 1
+    private var catchCount = 0
+
     var available = false
         private set
+
+    init {
+        // A single centered default spawn keeps the layer usable before the
+        // first choreography upload (and in tests of the seed math).
+        spawnData[2] = 1f
+        spawnData[3] = 0.35f
+    }
 
     fun create(
         particleCount: Int,
@@ -40,11 +62,12 @@ internal class FluidParticles(private val context: Context) {
         side = FluidMath.stateSide(particleCount)
         count = side * side
         // Positions in 16F quantise as particles cluster (spec 5.2): use
-        // full-float state when the device can render to it, 16F otherwise.
-        val stateFmt = formats.rgba32 ?: formats.rgba
-        state = FluidBuffers.DoubleFbo(side, side, stateFmt, linear = false).also { it.create() }
+        // full-float position state when the device can render to it. The
+        // meta attachment (age/ttl/index/seed) is fine in 16F everywhere.
+        val posFmt = formats.rgba32 ?: formats.rgba
+        state = FluidBuffers.DoubleMrt(side, side, posFmt, formats.rgba).also { it.create() }
         if (state?.ok != true) {
-            android.util.Log.w("FluidSim", "particle state FBO failed - particle layer disabled")
+            android.util.Log.w("FluidSim", "particle MRT state FBO failed - particle layer disabled")
             release()
             return
         }
@@ -102,15 +125,29 @@ internal class FluidParticles(private val context: Context) {
         available = true
     }
 
-    /** Seeds/advances all particles; call between sim.step and drawing.
-     *  [respawnRate] = expected fraction of particles reborn per second at
-     *  fresh hashed positions (0 = classic never-respawn behavior). */
+    /**
+     * Uploads this frame's choreography (packed by
+     * [FluidChoreography.packSpawns]/[FluidChoreography.packCatches]).
+     * The arrays are copied; safe to reuse the caller's buffers.
+     */
+    fun setChoreography(
+        spawns: FloatArray,
+        spawnPoints: Int,
+        catches: FloatArray,
+        catchPoints: Int,
+    ) {
+        spawns.copyInto(spawnData, endIndex = spawnData.size.coerceAtMost(spawns.size))
+        catches.copyInto(catchData, endIndex = catchData.size.coerceAtMost(catches.size))
+        spawnCount = spawnPoints.coerceIn(1, FluidChoreography.MAX_SPAWN)
+        catchCount = catchPoints.coerceIn(0, FluidChoreography.MAX_CATCH)
+    }
+
+    /** Seeds/advances all particles; call between sim.step and drawing. */
     fun step(
         dt: Float,
         velocityTex: Int,
         aspect: Float,
         flowScale: Float,
-        respawnRate: Float = 0f,
         timeSeconds: Float = 0f,
     ) {
         val st = state ?: return
@@ -119,25 +156,33 @@ internal class FluidParticles(private val context: Context) {
         if (!seeded) {
             GLES30.glUseProgram(seedProgram)
             GLES30.glUniform1f(loc(seedProgram, "uAspect"), aspect)
-            GLES30.glUniform2f(loc(seedProgram, "uInvRes"), 1f / side, 1f / side)
+            GLES30.glUniform4fv(loc(seedProgram, "uSpawns"), FluidChoreography.MAX_SPAWN, spawnData, 0)
+            GLES30.glUniform1i(loc(seedProgram, "uSpawnCount"), spawnCount)
+            GLES30.glUniform1f(loc(seedProgram, "uLife"), life.coerceIn(1f, 30f))
             blit(st.write)
             st.swap()
             seeded = true
         }
         GLES30.glUseProgram(updateProgram)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, st.read.tex)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, st.read.texA)
         GLES30.glUniform1i(loc(updateProgram, "uState"), 0)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, st.read.texB)
+        GLES30.glUniform1i(loc(updateProgram, "uMeta"), 1)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, velocityTex)
-        GLES30.glUniform1i(loc(updateProgram, "uVelocityField"), 1)
+        GLES30.glUniform1i(loc(updateProgram, "uVelocityField"), 2)
         GLES30.glUniform1f(loc(updateProgram, "uAspect"), aspect)
-        GLES30.glUniform2f(loc(updateProgram, "uInvRes"), 1f / side, 1f / side)
         GLES30.glUniform1f(loc(updateProgram, "uDt"), dt)
         GLES30.glUniform1f(loc(updateProgram, "uDrag"), drag.coerceIn(0.02f, 1f))
         GLES30.glUniform1f(loc(updateProgram, "uFlowScale"), flowScale)
-        GLES30.glUniform1f(loc(updateProgram, "uRespawn"), respawnRate.coerceIn(0f, 2f))
         GLES30.glUniform1f(loc(updateProgram, "uTime"), timeSeconds)
+        GLES30.glUniform1f(loc(updateProgram, "uLife"), life.coerceIn(1f, 30f))
+        GLES30.glUniform4fv(loc(updateProgram, "uSpawns"), FluidChoreography.MAX_SPAWN, spawnData, 0)
+        GLES30.glUniform1i(loc(updateProgram, "uSpawnCount"), spawnCount)
+        GLES30.glUniform4fv(loc(updateProgram, "uCatches"), FluidChoreography.MAX_CATCH, catchData, 0)
+        GLES30.glUniform1i(loc(updateProgram, "uCatchCount"), catchCount)
         blit(st.write)
         st.swap()
         GLES30.glBindVertexArray(0)
@@ -157,8 +202,11 @@ internal class FluidParticles(private val context: Context) {
         GLES30.glUseProgram(renderProgram)
         GLES30.glBindVertexArray(pointsVao)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, st.read.tex)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, st.read.texA)
         GLES30.glUniform1i(loc(renderProgram, "uState"), 0)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, st.read.texB)
+        GLES30.glUniform1i(loc(renderProgram, "uMeta"), 1)
         GLES30.glUniform1f(loc(renderProgram, "uAspect"), aspect)
         GLES30.glUniform1f(loc(renderProgram, "uPointScale"), pointScale)
         GLES30.glUniform1f(loc(renderProgram, "uHueBase"), hueBase)
@@ -194,9 +242,9 @@ internal class FluidParticles(private val context: Context) {
         available = false
     }
 
-    private fun blit(target: FluidBuffers.Fbo) {
+    private fun blit(target: FluidBuffers.DoubleMrt.Side) {
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, target.fbo)
-        GLES30.glViewport(0, 0, target.width, target.height)
+        GLES30.glViewport(0, 0, side, side)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
     }
 

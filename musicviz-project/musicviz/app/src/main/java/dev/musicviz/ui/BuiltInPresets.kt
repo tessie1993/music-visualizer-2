@@ -162,6 +162,9 @@ object BuiltInPresets {
                         fluidDensityDissipation = 0.35f, fluidChromaticAging = 0.45f,
                         fluidSplatRadius = 0.16f, fluidBloomIntensity = 0.5f,
                         fluidParticlesEnabled = false, palette = 5,
+                        // Slow single-spawn drift: ink wells up from one
+                        // wandering source; no catch wells.
+                        fluidSpawnPath = 4, fluidSpawnPoints = 1, fluidCatchPoints = 0,
                     ),
             ),
             Preset(
@@ -176,6 +179,9 @@ object BuiltInPresets {
                         fluidStirrerSpeed = 1.4f, fluidCurl = 45f,
                         fluidChromaticAging = 0.5f, fluidParticlesEnabled = true,
                         fluidParticleDrag = 0.35f, palette = 2,
+                        // Orbiting spawns with a strong central drain.
+                        fluidSpawnPath = 0, fluidSpawnPoints = 3,
+                        fluidCatchPoints = 1, fluidCatchPull = 1.6f, fluidCatchRadius = 0.1f,
                     ),
             ),
             Preset(
@@ -190,6 +196,7 @@ object BuiltInPresets {
                         fluidBassPump = true, fluidSunrays = true, fluidSunraysWeight = 1.2f,
                         fluidFadeAudio = 1.0f, fluidPaletteCycleSpeed = 1.2f,
                         colorCycle = true, cycleSpeed = 0.05f, palette = 3,
+                        fluidSpawnPath = 1, fluidSpawnPoints = 4, fluidCatchPoints = 0,
                     ),
             ),
             Preset(
@@ -204,6 +211,10 @@ object BuiltInPresets {
                         fluidParticleDrag = 0.6f, fluidParticleBrightness = 1.6f,
                         fluidCurl = 40f, fluidStirrers = 3, fluidStirrerSpeed = 0.8f,
                         fluidBloomIntensity = 1.1f, palette = 7,
+                        // Pure-particle scene: golden-angle bloom births with
+                        // two gravity wells the streams fall into.
+                        fluidSpawnPath = 3, fluidSpawnPoints = 5, fluidParticleLife = 9f,
+                        fluidCatchPoints = 2, fluidCatchPull = 1.2f, fluidCatchRadius = 0.14f,
                     ),
             ),
             Preset(
@@ -219,6 +230,8 @@ object BuiltInPresets {
                         fluidSplatRadius = 0.22f, fluidSplatForce = 0.7f,
                         fluidBloomIntensity = 1.2f, fluidBloomThreshold = 0.4f,
                         fluidStirrerSpeed = 0.4f, palette = 1,
+                        fluidSpawnPath = 2, fluidSpawnPoints = 2, fluidCatchPoints = 0,
+                        fluidSpawnProgress = 0.6f,
                     ),
             ),
             Preset(
@@ -233,6 +246,43 @@ object BuiltInPresets {
                         fluidStirrerSpeed = 1.8f, fluidCurl = 50f, fluidBassPump = true,
                         fluidParticlesEnabled = true, fluidFadeAudio = 0.15f,
                         fluidSunrays = true, palette = 6,
+                        fluidSpawnPath = 4, fluidSpawnPoints = 6, fluidParticleLife = 3.5f,
+                        fluidCatchPoints = 3, fluidCatchPull = 2.2f, fluidCatchRadius = 0.08f,
+                    ),
+            ),
+            Preset(
+                name = "fluid · Journey",
+                sceneId = dev.musicviz.render.scene.SceneIds.FLUID,
+                attack = 0.45f,
+                decay = 0.45f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        // The progression showcase: everything rides the
+                        // track - spawns weave a rose that blooms outward,
+                        // catches spiral in for the finale drain.
+                        fluidSpawnPath = 2, fluidSpawnPoints = 4, fluidSpawnProgress = 1f,
+                        fluidCatchPoints = 2, fluidCatchPull = 1.4f, fluidCatchRadius = 0.12f,
+                        fluidParticleLife = 7f, fluidBeatPattern = 1, fluidBeatSplats = 3,
+                        fluidStirrers = 2, fluidChromaticAging = 0.4f, fluidCurl = 35f,
+                        colorCycle = true, cycleSpeed = 0.03f, palette = 16,
+                    ),
+            ),
+            Preset(
+                name = "curlflow · Streams",
+                sceneId = dev.musicviz.render.scene.SceneIds.CURLFLOW,
+                attack = 0.4f,
+                decay = 0.5f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        // Curl-noise streams born at lissajous spawns, drawn
+                        // into two drifting wells; trails carry the motion.
+                        fluidSpawnPath = 1, fluidSpawnPoints = 3,
+                        fluidCatchPoints = 2, fluidCatchPull = 1.2f, fluidCatchRadius = 0.12f,
+                        fluidParticleLife = 8f, fluidParticleDrag = 0.4f,
+                        turbulence = 0.7f, audioDrive = 1.2f, particleSize = 1.4f,
+                        trails = true, trailLength = 0.92f, palette = 10,
                     ),
             ),
         )

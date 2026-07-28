@@ -279,12 +279,16 @@ class VideoExporter(private val context: Context) {
         val exportDurationUs = if (aac.durationUs > 0) aac.durationUs else timeline.durationMs * 1000
         val totalFrames = (exportDurationUs * fps / 1_000_000L).toInt().coerceAtLeast(1)
         val frameDurationNs = 1_000_000_000L / fps
+        // Section boundaries once (O(n)); per-frame features then carry the
+        // progress/section context, so the fluid spawn/catch choreography
+        // journeys through the exported video exactly like live playback.
+        val sections = timeline.detectSections()
 
         try {
             for (frame in 0 until totalFrames) {
                 if (isCancelled()) break
                 val timeMs = frame * 1000L / fps
-                val features = timeline.featuresAt(timeMs)
+                val features = timeline.progressionAt(timeMs, sections)
                 val lfoValues = lfoEngine.tick(1f / fps, features.bpm)
                 var p = dev.musicviz.render.LfoEngine.apply(sceneParams, lfoEngine.configs, lfoValues)
                 scene.setParams(p)

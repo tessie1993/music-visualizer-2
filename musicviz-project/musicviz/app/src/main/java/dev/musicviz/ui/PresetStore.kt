@@ -176,6 +176,14 @@ class PresetStore(context: Context) {
                 .put("fluidBloomAudio", p.params.fluidBloomAudio.toDouble())
                 .put("fluidFadeAudio", p.params.fluidFadeAudio.toDouble())
                 .put("fluidRadiusPulse", p.params.fluidRadiusPulse.toDouble())
+                .put("fluidSparkle", p.params.fluidSparkle)
+                .put("fluidSpawnPath", p.params.fluidSpawnPath)
+                .put("fluidSpawnPoints", p.params.fluidSpawnPoints)
+                .put("fluidSpawnProgress", p.params.fluidSpawnProgress.toDouble())
+                .put("fluidCatchPoints", p.params.fluidCatchPoints)
+                .put("fluidCatchPull", p.params.fluidCatchPull.toDouble())
+                .put("fluidCatchRadius", p.params.fluidCatchRadius.toDouble())
+                .put("fluidParticleLife", p.params.fluidParticleLife.toDouble())
                 .put("flowEnabled", p.params.flowEnabled)
                 .put("flowStrength", p.params.flowStrength.toDouble())
                 .put("flowForce", p.params.flowForce.toDouble())
@@ -283,6 +291,14 @@ class PresetStore(context: Context) {
                         fluidBloomAudio = o.optDouble("fluidBloomAudio", 0.5).toFloat(),
                         fluidFadeAudio = o.optDouble("fluidFadeAudio", 0.6).toFloat(),
                         fluidRadiusPulse = o.optDouble("fluidRadiusPulse", 0.4).toFloat(),
+                        fluidSparkle = o.optBoolean("fluidSparkle", true),
+                        fluidSpawnPath = o.optInt("fluidSpawnPath", 1),
+                        fluidSpawnPoints = o.optInt("fluidSpawnPoints", 3),
+                        fluidSpawnProgress = o.optDouble("fluidSpawnProgress", 1.0).toFloat(),
+                        fluidCatchPoints = o.optInt("fluidCatchPoints", 2),
+                        fluidCatchPull = o.optDouble("fluidCatchPull", 1.0).toFloat(),
+                        fluidCatchRadius = o.optDouble("fluidCatchRadius", 0.12).toFloat(),
+                        fluidParticleLife = o.optDouble("fluidParticleLife", 6.0).toFloat(),
                         flowEnabled = o.optBoolean("flowEnabled", false),
                         flowStrength = o.optDouble("flowStrength", 0.35).toFloat(),
                         flowForce = o.optDouble("flowForce", 1.0).toFloat(),

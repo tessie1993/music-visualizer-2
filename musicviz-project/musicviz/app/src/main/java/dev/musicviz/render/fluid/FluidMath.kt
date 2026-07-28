@@ -135,6 +135,37 @@ internal object FluidMath {
     fun stateSide(count: Int): Int = kotlin.math.ceil(kotlin.math.sqrt(count.toDouble())).toInt().coerceAtLeast(2)
 
     /**
+     * CPU mirror of the particle update kernel's catch-point attraction
+     * (fluid_particle_update_frag): inverse-square pull with softening
+     * epsilon 0.05, then the soft cap f*6/(6+f) - bounded below 6 for ANY
+     * pull/distance, so a close pass swings around the well instead of
+     * exploding across the screen in one frame.
+     */
+    fun attractorForce(
+        pull: Float,
+        dist2: Float,
+    ): Float {
+        val f = pull / (dist2 + 0.05f)
+        return f * 6f / (6f + f)
+    }
+
+    /**
+     * CPU mirror of the capture predicate: a particle inside the capture
+     * radius of a catch point is recycled to a spawn point.
+     */
+    fun isCaptured(
+        px: Float,
+        py: Float,
+        cx: Float,
+        cy: Float,
+        captureRadius: Float,
+    ): Boolean {
+        val dx = cx - px
+        val dy = cy - py
+        return dx * dx + dy * dy < captureRadius * captureRadius
+    }
+
+    /**
      * Point-to-segment distance with fractional projection, mirroring
      * fluid_splat_frag.glsl's segDist(). Degenerate segments (length below
      * epsilon) return the point distance with fp = 0 - never a normalize

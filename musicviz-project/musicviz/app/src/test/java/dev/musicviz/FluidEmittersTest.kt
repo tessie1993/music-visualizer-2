@@ -84,10 +84,11 @@ class FluidEmittersTest {
         for (i in 1 until splats.size) {
             assertTrue("arc not left->right", splats[i].curX > splats[i - 1].curX)
         }
-        // All fire upward from the bottom arc.
+        // All fire upward from the lower-band arc (the baseline may drift
+        // with the journey anchors but stays below -0.3).
         splats.forEach {
             assertTrue(it.curY > it.prevY || it.velY > 0f)
-            assertTrue(it.prevY < -0.5f)
+            assertTrue(it.prevY < -0.3f)
         }
     }
 

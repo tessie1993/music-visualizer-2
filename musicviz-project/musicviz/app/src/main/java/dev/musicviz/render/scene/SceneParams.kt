@@ -106,8 +106,25 @@ data class SceneParams(
     val fluidBassPump: Boolean = false,
     // 0..2
     val fluidPaletteCycleSpeed: Float = 0.5f,
+    // treble sparkle splats on/off
+    val fluidSparkle: Boolean = true,
+    // Fluid - journey (spawn/catch progression; shared by FLUID + CURLFLOW)
+    // path family: 0 orbit | 1 lissajous | 2 rose | 3 bloom | 4 drift
+    val fluidSpawnPath: Int = 1,
+    // choreographed spawn points 1..8
+    val fluidSpawnPoints: Int = 3,
+    // how strongly song progress reshapes the journey 0..1
+    val fluidSpawnProgress: Float = 1f,
+    // attractor/catch points 0..4
+    val fluidCatchPoints: Int = 2,
+    // catch pull strength 0..3 (also dye suction)
+    val fluidCatchPull: Float = 1f,
+    // capture radius in sim units 0.03..0.3
+    val fluidCatchRadius: Float = 0.12f,
     // Fluid - particles
     val fluidParticlesEnabled: Boolean = true,
+    // base particle lifetime seconds 1..20
+    val fluidParticleLife: Float = 6f,
     // 0.02..1; <1 = inertia streaks
     val fluidParticleDrag: Float = 0.5f,
     // 0..2
@@ -179,6 +196,9 @@ data class SceneParams(
 
         /** Fluid beat-splat emitter patterns (index = fluidBeatPattern). */
         val FLUID_PATTERNS: List<String> = listOf("Center", "Ring", "Random", "Spectrum")
+
+        /** Journey path families (index = fluidSpawnPath). */
+        val FLUID_PATHS: List<String> = listOf("Orbit", "Lissajous", "Rose", "Bloom", "Drift")
     }
 
     val paletteBase: Float get() = PALETTES[palette.coerceIn(0, PALETTES.size - 1)].second

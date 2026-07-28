@@ -379,6 +379,9 @@ private fun CustomizeHubTab(
                             p,
                             onChange,
                             isFluidScene = viz.sceneId == dev.musicviz.render.scene.SceneIds.FLUID,
+                            isJourneyScene =
+                                viz.sceneId == dev.musicviz.render.scene.SceneIds.FLUID ||
+                                    viz.sceneId == dev.musicviz.render.scene.SceneIds.CURLFLOW,
                             injectionError = if (viz.sceneId == dev.musicviz.render.scene.SceneIds.FLUID) viz.shaderError else null,
                             onApplyInjectionShaders = { force, dye ->
                                 visualizerView.visualizerRenderer.submitFluidInjectionShaders(force, dye)

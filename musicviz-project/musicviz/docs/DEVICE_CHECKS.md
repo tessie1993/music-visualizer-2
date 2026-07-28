@@ -35,3 +35,15 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     text appears; Reset to built-in restores the capsule splat.
 12. Fluid resize (bugfix): rotate the device on FLUID - the ink pattern
     survives rotation; backgrounding and resuming does not reset it.
+13. Journey rebuild (v0.13.0): play a full track on FLUID with the
+    "fluid · Journey" preset. Expect: dye/particle activity visibly
+    RELOCATES as the track advances (lower third early, center bloom
+    mid-track, upper drift late), section changes glide the layout to a
+    new arrangement (never a snap), and particles stream INTO the catch
+    wells and re-emerge at the spawn points. Sweep Catch pull 0->3: the
+    pull-in strengthens live. Set Progression to 0: the layout stops
+    journeying and only orbits in place. Repeat on Curl Flow (same
+    Journey section). Export 20 s from mid-track: the exported journey
+    position must match the live view at the same timestamps (progress
+    plumbing parity). Particle births/deaths must be soft fades - any
+    popping = fade envelope regression.

@@ -25,7 +25,11 @@ fun VisualizerEngineBindings(
     LaunchedEffect(Unit) {
         visualizerView.visualizerRenderer.onShaderError = viewModel::reportShaderError
         visualizerView.visualizerRenderer.pcmProvider = { viewModel.latestPcm() }
-        viewModel.features.collect { visualizerView.visualizerRenderer.features = it }
+        viewModel.features.collect {
+            // Enriched with progress/section context so the fluid spawn/catch
+            // choreography can journey through the track.
+            visualizerView.visualizerRenderer.features = viewModel.enrichFeatures(it)
+        }
     }
     LaunchedEffect(viz.sceneId) {
         visualizerView.visualizerRenderer.requestedSceneId = viz.sceneId

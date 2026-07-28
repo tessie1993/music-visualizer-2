@@ -91,6 +91,16 @@ internal class FluidSim(
 
     private var vao = 0
     private var vbo = 0
+
+    /**
+     * Linear sampler object for the dye-advection velocity read: the
+     * velocity texture itself is NEAREST (the velocity self-advect does
+     * manual bilerp), but the dye grid is up to 4x finer, so a NEAREST
+     * back-trace direction staircases. Half-float LINEAR filtering is core
+     * ES 3.0; a sampler object overrides the texture's filter for this one
+     * bind point only.
+     */
+    private var linearSampler = 0
     private var baseVertSrc = ""
     private val programs = HashMap<Int, Int>()
     private val uniforms = HashMap<Int, HashMap<String, Int>>()
@@ -135,6 +145,10 @@ internal class FluidSim(
         GLES30.glEnableVertexAttribArray(0)
         GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 0, 0)
         GLES30.glBindVertexArray(0)
+        GLES30.glGenSamplers(1, ids, 0)
+        linearSampler = ids[0]
+        GLES30.glSamplerParameteri(linearSampler, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+        GLES30.glSamplerParameteri(linearSampler, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
         val frags =
             intArrayOf(
                 R.raw.fluid_splat_frag, R.raw.fluid_advect_frag, R.raw.fluid_curl_frag,
@@ -286,13 +300,22 @@ internal class FluidSim(
                 injectionDirty = false
                 pendingForceSrc to pendingDyeSrc
             }
-        customForce = compileCustom(force, customForce)
-        customDye = compileCustom(dyeS, customDye)
+        // Collect BOTH results before reporting: a successful dye compile
+        // must not clear the error from a failed force compile (or vice
+        // versa) - the user would lose the only message telling them why
+        // their shader isn't running.
+        var firstError: String? = null
+        customForce =
+            compileCustom(force, customForce) { firstError = firstError ?: it }
+        customDye =
+            compileCustom(dyeS, customDye) { firstError = firstError ?: it }
+        onShaderError(firstError)
     }
 
     private fun compileCustom(
         src: String?,
         current: Pair<Int, HashMap<String, Int>>?,
+        reportError: (String?) -> Unit,
     ): Pair<Int, HashMap<String, Int>>? {
         if (src.isNullOrBlank()) {
             current?.let { GLES30.glDeleteProgram(it.first) }
@@ -301,11 +324,10 @@ internal class FluidSim(
         return try {
             val p = GlUtil.buildProgram(baseVertSrc, src)
             current?.let { GLES30.glDeleteProgram(it.first) }
-            onShaderError(null)
             p to HashMap()
         } catch (e: GlUtil.ShaderCompileException) {
             // Keep the last good program rather than dropping to black.
-            onShaderError(e.message)
+            reportError(e.message)
             current
         }
     }
@@ -324,10 +346,12 @@ internal class FluidSim(
     /** v2 pass order: advect vel -> forces -> curl -> vorticity -> project -> dye. */
     fun step(dtRaw: Float) {
         if (!available) return
-        val vel = velocity ?: return
-        val press = pressure ?: return
-        val div = divergence ?: return
-        val crl = curl ?: return
+        // Grids exist only after the first resize(); queued splats from
+        // before that point must not accumulate and all fire in one burst.
+        val vel = velocity ?: run { pending.clear(); return }
+        val press = pressure ?: run { pending.clear(); return }
+        val div = divergence ?: run { pending.clear(); return }
+        val crl = curl ?: run { pending.clear(); return }
         // Cap at 1/30 s: semi-Lagrangian advection stays stable, and 30-60fps
         // devices keep real-time fluid speed instead of a permanent slow-mo
         // that desynchronized from the (real-dt) emitters.
@@ -403,6 +427,8 @@ internal class FluidSim(
             runInjection(dyeB, mode = 1, custom = customDye, dt = dt)
             useProgram(R.raw.fluid_advect_frag, dyeB.width, dyeB.height)
             bindTex("uVelocity", vel.read.tex, 0, R.raw.fluid_advect_frag)
+            // Smooth back-trace direction at the finer dye resolution.
+            GLES30.glBindSampler(0, linearSampler)
             bindTex("uSource", dyeB.read.tex, 1, R.raw.fluid_advect_frag)
             set2f(R.raw.fluid_advect_frag, "uSrcInvRes", 1f / dyeB.width, 1f / dyeB.height)
             set2f(R.raw.fluid_advect_frag, "uVelInvRes", velInvW, velInvH)
@@ -415,6 +441,7 @@ internal class FluidSim(
             set3f(R.raw.fluid_advect_frag, "uDecay", ddR, ddG, ddB)
             blit(dyeB.write)
             dyeB.swap()
+            GLES30.glBindSampler(0, 0)
         }
         pending.clear()
         GLES30.glBindVertexArray(0)
@@ -535,6 +562,8 @@ internal class FluidSim(
         customDye = null
         if (vbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(vbo), 0)
         if (vao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(vao), 0)
+        if (linearSampler != 0) GLES30.glDeleteSamplers(1, intArrayOf(linearSampler), 0)
+        linearSampler = 0
         vbo = 0
         vao = 0
         pending.clear()

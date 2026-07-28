@@ -161,6 +161,39 @@ verify gate + on-device checklist every phase.
       fluidWarp visibly bends a MilkDrop preset AND a particle scene incl.
       a 10 s export; broken injection shader keeps last good program.
 
+## FLUID-R — Fluid & particle REBUILD (v0.13.0, user-directed)
+Rebuilt from scratch around spawn/catch progression ("journey"), replacing
+the static-pattern implementation. Research: Pavel/Enhanced sources re-read,
+curl-noise + GPU-particle-lifecycle + emitter/attractor patterns surveyed.
+- [x] R1 FluidChoreography.kt: spawn (≤8) + catch (≤4) anchors on five path
+      families (Orbit/Lissajous/Rose/Bloom-phyllotaxis/Drift); song progress
+      slides the journey arc, sections re-seat by golden angle, beats advance
+      the bloom floret; rate-limited follow (never teleports). Headless:
+      FluidChoreographyTest (continuity/progression/bounds/pack).
+- [x] R2 Particle lifecycle: MRT state (pos+vel | age/ttl/emitter/seed),
+      births at spawn points, catch capture + ttl recycle at the CURRENT
+      choreography, fade-in/out, softened inverse-square attraction with
+      soft cap (FluidMath.attractorForce, tested). DPI-compensated sprites.
+- [x] R3 Emitters anchored to choreography: orbiting stirrers, anchor-fired
+      beat patterns, catch-point suction splats (dye drains into the wells);
+      stirrer re-enable kick fixed, splat budget priority-ordered, sparkle
+      dt-scaled + wired to fluidSparkle.
+- [x] R4 CurlFlow on the same choreography (field + attractors compose);
+      linear 96-res field, cached uniforms, wall-clock respawn hash.
+- [x] R5 Progress plumbing: AudioFeatures.progress/sectionIndex/sectionCount;
+      live enrichment (PlayerViewModel.enrichFeatures via EnginePlumbing),
+      export parity via FeatureTimeline.progressionAt (deterministic,
+      FluidLifecycleMathTest).
+- [x] R6 Customization: Journey section in the Fluid tab (FLUID + CURLFLOW),
+      8 new SceneParams fields through PresetStore/param-fade/morphing,
+      LFO/ADSR targets Catch pull + Catch radius, randomizer ranges,
+      6 fluid presets retuned + "fluid · Journey" + "curlflow · Streams".
+- [x] R7 Core sim fixes: pre-resize splat-queue burst, injection error
+      masking, LINEAR sampler for dye-advect velocity read.
+- [ ] R8 ON-DEVICE: docs/DEVICE_CHECKS.md item 13 (journey progression,
+      catch drain, export parity, soft births) — container had no Android
+      SDK this round; run the full ./gradlew gate before release.
+
 ## ORGANIC MOTION (spec: docs/ORGANIC_MOTION.md, from the research report)
 - [x] O1 Feedback echo-trails: renderer trail pass gains zoom + sine-warp
       (trailZoom/trailWarp params, Customize sliders, export parity via

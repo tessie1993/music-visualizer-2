@@ -1,3 +1,59 @@
+## v0.13.0 (code 21) - Fluid & particle REBUILD: spawn/catch journey choreography
+- The fluid + particle stack is rebuilt around a progression engine
+  (render/fluid/FluidChoreography.kt): up to 8 SPAWN points (dye splats
+  fire there, particles are born there) and up to 4 CATCH points
+  (attractors that pull particles in, capture them and recycle them back
+  to a spawn point) now JOURNEY through the track instead of sitting on
+  static patterns. Three nested time scales: song progress slides the
+  layout through a journey arc (radius breathes, layout precesses, center
+  rises), detected sections re-seat the pattern by golden-angle steps, and
+  beats advance a phyllotaxis floret counter. Anchors chase targets with a
+  rate-limited follow - progression glides, never teleports (proven
+  headless: FluidChoreographyTest).
+- Particle layer rebuilt with a full lifecycle (FluidParticles + MRT
+  state): state A = pos+vel, state B = age/ttl/emitter/seed in a second
+  render target. Every particle is born AT a spawn point (weighted,
+  jittered), ages with fade-in/out, and recycles - by catch-point capture
+  or ttl expiry - at the CURRENT spawn choreography, so the population
+  physically migrates with the journey. Catch attraction is a softened
+  inverse-square pull with a hard soft-cap (CPU mirror
+  FluidMath.attractorForce, tested) so close passes swing, never explode.
+- Emitters rebuilt anchored to the choreography: stirrers orbit the moving
+  spawn anchors, beat splats fire from them (all four patterns), catch
+  points emit inward suction splats so the dye visibly drains into the
+  same wells that capture particles. Fixes rolled in: stale-stirrer
+  velocity kick on re-enable, priority-ordered splat budget (beats first),
+  dt-scaled sparkle EMA (was frame-rate dependent), sparkle finally wired
+  to a param (fluidSparkle).
+- Curl Flow rides the same choreography (spawn/catch + curl field
+  compose: swirl AND convergence), with a linear-filtered 96-res field
+  (was blocky NEAREST 64), cached uniforms, and wall-clock respawn hashing
+  (quiet passages no longer freeze recycling).
+- Track-position plumbing: AudioFeatures gains progress/sectionIndex/
+  sectionCount; live path enriches from the player position + cached
+  section analysis (PlayerViewModel.enrichFeatures), export path uses the
+  deterministic FeatureTimeline.progressionAt - live and export agree
+  exactly (FluidLifecycleMathTest).
+- Customize > Fluid gains the "Journey" section (path family chips:
+  Orbit/Lissajous/Rose/Bloom/Drift, spawn points, progression amount,
+  catch points/pull/radius, particle life), shown for FLUID and CURLFLOW.
+  New LFO/ADSR targets: Catch pull, Catch radius. Randomizer rolls the
+  journey (progression amount deliberately excluded). Presets: six fluid
+  variants retuned onto distinct journeys + new "fluid - Journey"
+  showcase + first "curlflow - Streams" built-in. All 8 new SceneParams
+  fields persist through PresetStore + param-fade + preset morphing.
+- Core sim fixes: pre-first-resize splat queue no longer accumulates into
+  a burst; a force-shader compile error is no longer masked by a
+  successful dye compile; dye advection samples velocity through a LINEAR
+  sampler object (blocky back-trace staircase at high dye res gone).
+  Point sprites are resolution-compensated (same preset reads the same at
+  1080p and 1440p+).
+- Verify note: this round was built in a container without the Android
+  SDK; gate = kotlinc typecheck of analysis/render/export/PresetStore
+  against android-all + the full headless JUnit fluid suite (37 green).
+  Run the standard ./gradlew gate + docs/DEVICE_CHECKS.md item 13 before
+  release.
+
 ## v0.12.7 (code 20) - LOWP SAMPLER root cause (device symptoms finally explained)
 - SECOND ROOT (numerically proven via a CPU reference run of the exact
   shader pipeline): vorticity confinement injects energy faster than

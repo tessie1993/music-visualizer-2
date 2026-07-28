@@ -10,34 +10,45 @@ import dev.musicviz.render.scene.SceneIds
 import dev.musicviz.render.scene.SceneParams
 
 /**
- * Curl-noise flow-field particle scene (docs/ORGANIC_MOTION.md quick-win 2,
- * Bridson SIGGRAPH 2007): a small velocity texture is regenerated each frame
- * as the curl of a time-evolving FBM potential - divergence-free, so the
- * particle streams swirl without ever clumping - and the existing GPU
- * particle layer rides it. Music mapping per the report's conventions:
- * mids drive how fast the field morphs, treble gains the fine-turbulence
- * octave, beats kick field amplitude and particle brightness (impulse +
- * exponential release). Existing Customize controls map on: Speed = morph
- * rate, Turbulence = spatial frequency, Audio drive = flow strength,
- * Particle size/Palette/Hue range = rendering.
+ * Curl-noise flow-field particle scene, rebuilt on the lifecycle particle
+ * layer: a velocity texture is regenerated each frame as the curl of a
+ * time-evolving FBM potential (Bridson SIGGRAPH 2007 - divergence-free, so
+ * the streams swirl without clumping) and the particles ride it - but
+ * births, captures and recycling follow the SAME [FluidChoreography]
+ * spawn/catch progression as the fluid scene, so the streams visibly
+ * journey through the track. Catch attraction composes with the curl field:
+ * divergence-free flow plus explicit sinks gives swirl AND convergence,
+ * which pure curl noise cannot do.
+ *
+ * Music mapping: mids drive field morph rate, treble gains the fine
+ * turbulence octave, beats kick field amplitude and brightness (impulse +
+ * exponential release), bass pulls toward the catch points. Existing
+ * Customize controls map on: Speed = morph rate, Turbulence = spatial
+ * frequency, Audio drive = flow strength, Particle size/Palette/Hue range =
+ * rendering, plus the shared fluid spawn/catch params.
  */
 internal class CurlFlowScene(private val context: Context) : Scene {
     override val id: String = SceneIds.CURLFLOW
 
     private val particles = FluidParticles(context)
+    private val choreography = FluidChoreography()
     private lateinit var formats: FluidBuffers.Formats
     private var field: FluidBuffers.Fbo? = null
     private var fieldProgram = 0
+    private val fieldUniforms = HashMap<String, Int>()
     private var quadVao = 0
     private var quadVbo = 0
     private var params = SceneParams()
     private var pending: AudioFeatures? = null
     private var lastDt = 1f / 60f
     private var noiseTime = 0f
+    private var wallTime = 0f
     private var beatEnv = 0f
     private var aspect = 1f
     private var available = false
 
+    private val spawnPack = FloatArray(FluidChoreography.MAX_SPAWN * 4)
+    private val catchPack = FloatArray(FluidChoreography.MAX_CATCH * 4)
     private val prevFbo = IntArray(1)
     private val prevViewport = IntArray(4)
 
@@ -46,6 +57,7 @@ internal class CurlFlowScene(private val context: Context) : Scene {
         formats = FluidBuffers.probeFormats()
         available = formats.ok
         if (!available) return
+        choreography.reset()
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
         quadVao = ids[0]
@@ -73,6 +85,7 @@ internal class CurlFlowScene(private val context: Context) : Scene {
             release()
             return
         }
+        fieldUniforms.clear()
         particles.create(49_152, formats)
         if (!particles.available) {
             release()
@@ -86,8 +99,10 @@ internal class CurlFlowScene(private val context: Context) : Scene {
         if (!available) return
         aspect = width.toFloat() / height.coerceAtLeast(1)
         field?.release()
-        val (fw, fh) = FluidBuffers.resolution(64, width, height)
-        field = FluidBuffers.Fbo(fw, fh, formats.rg, linear = false).also { it.create() }
+        // LINEAR filtering (core ES3 for half-float SAMPLING) smooths the
+        // per-cell velocity quantization that banded the old NEAREST field.
+        val (fw, fh) = FluidBuffers.resolution(96, width, height)
+        field = FluidBuffers.Fbo(fw, fh, formats.rg, linear = true).also { it.create() }
         particles.invalidateSeed()
     }
 
@@ -103,6 +118,8 @@ internal class CurlFlowScene(private val context: Context) : Scene {
         lastDt = dt.coerceIn(0f, 1f / 30f)
     }
 
+    private fun loc(name: String): Int = fieldUniforms.getOrPut(name) { GLES30.glGetUniformLocation(fieldProgram, name) }
+
     override fun draw(timeSeconds: Float) {
         if (!available) return
         val fld = field ?: return
@@ -111,22 +128,28 @@ internal class CurlFlowScene(private val context: Context) : Scene {
         GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
 
         if (f != null) {
+            wallTime += lastDt
             beatEnv = if (f.beat) 1f else beatEnv * kotlin.math.exp(-lastDt / 0.35f)
             noiseTime += lastDt * (0.15f + f.mid * 1.4f) * params.speed.coerceIn(0.1f, 2f)
+
+            // Shared spawn/catch progression: same params as the fluid scene.
+            choreography.path = params.fluidSpawnPath.coerceIn(0, FluidChoreography.PATH_LABELS.size - 1)
+            choreography.spawnCount = params.fluidSpawnPoints.coerceIn(1, FluidChoreography.MAX_SPAWN)
+            choreography.catchCount = params.fluidCatchPoints.coerceIn(0, FluidChoreography.MAX_CATCH)
+            choreography.progressionAmount = params.fluidSpawnProgress.coerceIn(0f, 1f)
+            choreography.speed = params.speed.coerceIn(0.1f, 2f)
+            choreography.tick(f, lastDt, aspect)
 
             GLES30.glDisable(GLES30.GL_BLEND)
             GLES30.glBindVertexArray(quadVao)
             GLES30.glUseProgram(fieldProgram)
-            GLES30.glUniform2f(GLES30.glGetUniformLocation(fieldProgram, "uInvRes"), 1f / fld.width, 1f / fld.height)
-            GLES30.glUniform1f(GLES30.glGetUniformLocation(fieldProgram, "uAspect"), aspect)
-            GLES30.glUniform1f(GLES30.glGetUniformLocation(fieldProgram, "uTime"), noiseTime)
+            GLES30.glUniform2f(loc("uInvRes"), 1f / fld.width, 1f / fld.height)
+            GLES30.glUniform1f(loc("uAspect"), aspect)
+            GLES30.glUniform1f(loc("uTime"), noiseTime)
+            GLES30.glUniform1f(loc("uFreq"), 1.2f * (0.5f + params.turbulence.coerceIn(0.1f, 2f)))
+            GLES30.glUniform1f(loc("uDetail"), (f.treble * 3f).coerceIn(0f, 1.5f))
             GLES30.glUniform1f(
-                GLES30.glGetUniformLocation(fieldProgram, "uFreq"),
-                1.2f * (0.5f + params.turbulence.coerceIn(0.1f, 2f)),
-            )
-            GLES30.glUniform1f(GLES30.glGetUniformLocation(fieldProgram, "uDetail"), (f.treble * 3f).coerceIn(0f, 1.5f))
-            GLES30.glUniform1f(
-                GLES30.glGetUniformLocation(fieldProgram, "uAmp"),
+                loc("uAmp"),
                 0.55f * params.audioDrive.coerceIn(0.2f, 2f) * (1f + beatEnv * 0.9f),
             )
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fld.fbo)
@@ -134,18 +157,31 @@ internal class CurlFlowScene(private val context: Context) : Scene {
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
             GLES30.glBindVertexArray(0)
 
-            // Field speeds are already sim units/s -> flowScale 1. Respawn
-            // 0.25/s: fresh origin points appear continuously (~4 s full
-            // turnover) instead of the one-time seed slowly filamenting.
-            particles.step(lastDt, fld.tex, aspect, 1f, respawnRate = 0.25f, timeSeconds = noiseTime)
+            // Field speeds are already sim units/s -> flowScale 1. Lifecycle
+            // recycling (ttl + catch capture) replaces the old stochastic
+            // respawn: fresh births continuously appear AT the progressing
+            // spawn points, and captures drain into the catch points.
+            particles.drag = params.fluidParticleDrag.coerceIn(0.02f, 1f)
+            particles.life = params.fluidParticleLife.coerceIn(1f, 20f)
+            choreography.packSpawns(spawnPack)
+            choreography.packCatches(
+                catchPack,
+                pull = params.fluidCatchPull.coerceIn(0f, 3f),
+                captureRadius = params.fluidCatchRadius.coerceIn(0.03f, 0.3f),
+            )
+            particles.setChoreography(spawnPack, choreography.spawnCount, catchPack, choreography.catchCount)
+            // Wall-clock time for the respawn hash: noiseTime nearly freezes
+            // in quiet passages, which froze the old respawn gate.
+            particles.step(lastDt, fld.tex, aspect, 1f, timeSeconds = wallTime)
             pending = null
         }
 
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
         GLES30.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3])
+        val dpiScale = (prevViewport[3].coerceAtLeast(1) / 1080f).coerceIn(0.75f, 2.5f)
         particles.draw(
             aspect,
-            params.particleSize.coerceIn(0.4f, 4f),
+            params.particleSize.coerceIn(0.4f, 4f) * dpiScale,
             params.paletteBase,
             params.hueRange.coerceIn(0.1f, 1f),
             // Beat response lives in the FIELD kick (uAmp); keeping the
@@ -161,6 +197,7 @@ internal class CurlFlowScene(private val context: Context) : Scene {
         field = null
         if (fieldProgram != 0) GLES30.glDeleteProgram(fieldProgram)
         fieldProgram = 0
+        fieldUniforms.clear()
         if (quadVbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(quadVbo), 0)
         if (quadVao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(quadVao), 0)
         quadVbo = 0
