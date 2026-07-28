@@ -62,10 +62,13 @@ internal class FluidParticles(private val context: Context) {
         side = FluidMath.stateSide(particleCount)
         count = side * side
         // Positions in 16F quantise as particles cluster (spec 5.2): use
-        // full-float position state when the device can render to it. The
-        // meta attachment (age/ttl/index/seed) is fine in 16F everywhere.
-        val posFmt = formats.rgba32 ?: formats.rgba
-        state = FluidBuffers.DoubleMrt(side, side, posFmt, formats.rgba).also { it.create() }
+        // full-float state when the device can render to it. The meta
+        // attachment needs it too: age accumulates dt every frame, and at
+        // age >= 16 s a half-float ULP (15.6 ms) exceeds a 144 Hz frame -
+        // round-to-nearest freezes aging and long-lived particles would
+        // never expire or fade. 16F fallback stays correct at 60 Hz.
+        val stateFmt = formats.rgba32 ?: formats.rgba
+        state = FluidBuffers.DoubleMrt(side, side, stateFmt, stateFmt).also { it.create() }
         if (state?.ok != true) {
             android.util.Log.w("FluidSim", "particle MRT state FBO failed - particle layer disabled")
             release()

@@ -149,6 +149,11 @@ internal class FluidSim(
         linearSampler = ids[0]
         GLES30.glSamplerParameteri(linearSampler, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
         GLES30.glSamplerParameteri(linearSampler, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+        // A bound sampler overrides ALL of the texture's sampling state and
+        // its wrap defaults are GL_REPEAT - without these two lines the dye
+        // back-trace would wrap edge reads to the OPPOSITE screen edge.
+        GLES30.glSamplerParameteri(linearSampler, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+        GLES30.glSamplerParameteri(linearSampler, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
         val frags =
             intArrayOf(
                 R.raw.fluid_splat_frag, R.raw.fluid_advect_frag, R.raw.fluid_curl_frag,
