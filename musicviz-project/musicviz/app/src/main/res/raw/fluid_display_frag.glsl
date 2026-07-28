@@ -4,6 +4,11 @@
 // SUNRAYS prepended by FluidLook after the #version line) - never branch on
 // uniforms in this hot shader. Drawn with ONE, ONE_MINUS_SRC_ALPHA blending.
 precision highp float;
+// GLSL ES 3.00 defaults fragment sampler2D to LOWP (range [-2,2), ~8
+// fraction bits). Half-float velocity/dye/pressure values far exceed
+// that; on GPUs honoring sampler precision (Mali) every read clamped
+// and quantized - the on-device "few pixels then black" root cause.
+precision highp sampler2D;
 in vec2 vUv;
 in vec2 vL;
 in vec2 vR;
@@ -38,7 +43,10 @@ void main() {
 #endif
 
 #ifdef SUNRAYS
-    float sunrays = texture(uSunrays, vUv).r;
+    // A dead sunrays target (cleared to 0, or a stalled pass) would multiply
+    // the ENTIRE dye to black; clamp so the effect darkens/brightens but can
+    // never erase the ink outright.
+    float sunrays = clamp(texture(uSunrays, vUv).r, 0.15, 6.0);
     c *= sunrays;
 #endif
 

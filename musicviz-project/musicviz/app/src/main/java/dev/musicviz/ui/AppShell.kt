@@ -43,8 +43,10 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -55,6 +57,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.musicviz.render.VisualizerView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Navigation-v2 app shell: bottom nav (Home / Library / Visuals / Settings)
@@ -381,6 +385,25 @@ fun SettingsScreen(
         item { HorizontalDivider() }
         item { Text("Analysis", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
         item {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            var cacheInfo by remember { mutableStateOf("…") }
+            var cacheBump by remember { mutableIntStateOf(0) }
+            LaunchedEffect(cacheBump) {
+                cacheInfo =
+                    withContext(Dispatchers.IO) {
+                        val app = context.applicationContext
+                        val n = dev.musicviz.analysis.AnalysisCache.entryCount(app)
+                        val mb = dev.musicviz.analysis.AnalysisCache.sizeBytes(app) / (1024f * 1024f)
+                        "%d tracks · %.1f MB".format(n, mb)
+                    }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Analysis cache: $cacheInfo", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = {
+                    dev.musicviz.analysis.AnalysisCache.clear(context.applicationContext)
+                    cacheBump++
+                }) { Text("Clear") }
+            }
             Text("Preset morph: ${gui.morphBeats} beats (0 = snap)")
             Slider(
                 value = gui.morphBeats.toFloat(),

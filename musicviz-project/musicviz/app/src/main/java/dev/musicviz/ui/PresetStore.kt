@@ -98,6 +98,8 @@ class PresetStore(context: Context) {
                 .put("density", p.params.density.toDouble())
                 .put("trails", p.params.trails)
                 .put("trailLength", p.params.trailLength.toDouble())
+                .put("trailZoom", p.params.trailZoom.toDouble())
+                .put("trailWarp", p.params.trailWarp.toDouble())
                 .put("mirror", p.params.mirror)
                 .put("palette", p.params.palette)
                 .put("colorShift", p.params.colorShift.toDouble())
@@ -174,6 +176,14 @@ class PresetStore(context: Context) {
                 .put("fluidBloomAudio", p.params.fluidBloomAudio.toDouble())
                 .put("fluidFadeAudio", p.params.fluidFadeAudio.toDouble())
                 .put("fluidRadiusPulse", p.params.fluidRadiusPulse.toDouble())
+                .put("fluidSparkle", p.params.fluidSparkle)
+                .put("fluidSpawnPath", p.params.fluidSpawnPath)
+                .put("fluidSpawnPoints", p.params.fluidSpawnPoints)
+                .put("fluidSpawnProgress", p.params.fluidSpawnProgress.toDouble())
+                .put("fluidCatchPoints", p.params.fluidCatchPoints)
+                .put("fluidCatchPull", p.params.fluidCatchPull.toDouble())
+                .put("fluidCatchRadius", p.params.fluidCatchRadius.toDouble())
+                .put("fluidParticleLife", p.params.fluidParticleLife.toDouble())
                 .put("flowEnabled", p.params.flowEnabled)
                 .put("flowStrength", p.params.flowStrength.toDouble())
                 .put("flowForce", p.params.flowForce.toDouble())
@@ -208,6 +218,8 @@ class PresetStore(context: Context) {
                         density = o.optDouble("density", 1.0).toFloat(),
                         trails = o.optBoolean("trails", false),
                         trailLength = o.optDouble("trailLength", 0.5).toFloat(),
+                        trailZoom = o.optDouble("trailZoom", 0.0).toFloat(),
+                        trailWarp = o.optDouble("trailWarp", 0.0).toFloat(),
                         mirror = o.optBoolean("mirror", false),
                         warp = o.optDouble("warp", 0.0).toFloat(),
                         ripple = o.optDouble("ripple", 0.0).toFloat(),
@@ -279,6 +291,20 @@ class PresetStore(context: Context) {
                         fluidBloomAudio = o.optDouble("fluidBloomAudio", 0.5).toFloat(),
                         fluidFadeAudio = o.optDouble("fluidFadeAudio", 0.6).toFloat(),
                         fluidRadiusPulse = o.optDouble("fluidRadiusPulse", 0.4).toFloat(),
+                        fluidSparkle = o.optBoolean("fluidSparkle", true),
+                        fluidSpawnPath = o.optInt("fluidSpawnPath", 1),
+                        fluidSpawnPoints = o.optInt("fluidSpawnPoints", 3),
+                        fluidSpawnProgress = o.optDouble("fluidSpawnProgress", 1.0).toFloat(),
+                        // Legacy migration: presets saved before v0.13.0 have
+                        // no journey keys - default them to NO catch wells and
+                        // a slow lifecycle (close to the old ~12.5 s mean
+                        // rebirth) so a tuned pre-rebuild look doesn't gain
+                        // suction/churn it was never designed with. Presets
+                        // saved from v0.13.0 on always carry explicit values.
+                        fluidCatchPoints = o.optInt("fluidCatchPoints", 0),
+                        fluidCatchPull = o.optDouble("fluidCatchPull", 1.0).toFloat(),
+                        fluidCatchRadius = o.optDouble("fluidCatchRadius", 0.12).toFloat(),
+                        fluidParticleLife = o.optDouble("fluidParticleLife", 12.0).toFloat(),
                         flowEnabled = o.optBoolean("flowEnabled", false),
                         flowStrength = o.optDouble("flowStrength", 0.35).toFloat(),
                         flowForce = o.optDouble("flowForce", 1.0).toFloat(),

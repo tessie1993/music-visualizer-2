@@ -1,3 +1,273 @@
+## v0.13.0 (code 21) - Fluid & particle REBUILD: spawn/catch journey choreography
+- The fluid + particle stack is rebuilt around a progression engine
+  (render/fluid/FluidChoreography.kt): up to 8 SPAWN points (dye splats
+  fire there, particles are born there) and up to 4 CATCH points
+  (attractors that pull particles in, capture them and recycle them back
+  to a spawn point) now JOURNEY through the track instead of sitting on
+  static patterns. Three nested time scales: song progress slides the
+  layout through a journey arc (radius breathes, layout precesses, center
+  rises), detected sections re-seat the pattern by golden-angle steps, and
+  beats advance a phyllotaxis floret counter. Anchors chase targets with a
+  rate-limited follow - progression glides, never teleports (proven
+  headless: FluidChoreographyTest).
+- Particle layer rebuilt with a full lifecycle (FluidParticles + MRT
+  state): state A = pos+vel, state B = age/ttl/emitter/seed in a second
+  render target. Every particle is born AT a spawn point (weighted,
+  jittered), ages with fade-in/out, and recycles - by catch-point capture
+  or ttl expiry - at the CURRENT spawn choreography, so the population
+  physically migrates with the journey. Catch attraction is a softened
+  inverse-square pull with a hard soft-cap (CPU mirror
+  FluidMath.attractorForce, tested) so close passes swing, never explode.
+- Emitters rebuilt anchored to the choreography: stirrers orbit the moving
+  spawn anchors, beat splats fire from them (all four patterns), catch
+  points emit inward suction splats so the dye visibly drains into the
+  same wells that capture particles. Fixes rolled in: stale-stirrer
+  velocity kick on re-enable, priority-ordered splat budget (beats first),
+  dt-scaled sparkle EMA (was frame-rate dependent), sparkle finally wired
+  to a param (fluidSparkle).
+- Curl Flow rides the same choreography (spawn/catch + curl field
+  compose: swirl AND convergence), with a linear-filtered 96-res field
+  (was blocky NEAREST 64), cached uniforms, and wall-clock respawn hashing
+  (quiet passages no longer freeze recycling).
+- Track-position plumbing: AudioFeatures gains progress/sectionIndex/
+  sectionCount; live path enriches from the player position + cached
+  section analysis (PlayerViewModel.enrichFeatures), export path uses the
+  deterministic FeatureTimeline.progressionAt - live and export agree
+  exactly (FluidLifecycleMathTest).
+- Customize > Fluid gains the "Journey" section (path family chips:
+  Orbit/Lissajous/Rose/Bloom/Drift, spawn points, progression amount,
+  catch points/pull/radius, particle life), shown for FLUID and CURLFLOW.
+  New LFO/ADSR targets: Catch pull, Catch radius. Randomizer rolls the
+  journey (progression amount deliberately excluded). Presets: six fluid
+  variants retuned onto distinct journeys + new "fluid - Journey"
+  showcase + first "curlflow - Streams" built-in. All 8 new SceneParams
+  fields persist through PresetStore + param-fade + preset morphing.
+- Core sim fixes: pre-first-resize splat queue no longer accumulates into
+  a burst; a force-shader compile error is no longer masked by a
+  successful dye compile; dye advection samples velocity through a LINEAR
+  sampler object (blocky back-trace staircase at high dye res gone).
+  Point sprites are resolution-compensated (same preset reads the same at
+  1080p and 1440p+).
+- Verify note: this round was built in a container without the Android
+  SDK; gate = kotlinc typecheck of analysis/render/export/PresetStore
+  against android-all + the full headless JUnit fluid suite (37 green).
+  Run the standard ./gradlew gate + docs/DEVICE_CHECKS.md item 13 before
+  release.
+
+## v0.12.7 (code 20) - LOWP SAMPLER root cause (device symptoms finally explained)
+- SECOND ROOT (numerically proven via a CPU reference run of the exact
+  shader pipeline): vorticity confinement injects energy faster than
+  dissipation removes it - with realistic beat splats the reference run
+  reaches max|v|~38 by 5s, dye near-black by ~10s and max|v|~830 with the
+  screen fully black by ~30s. fluid_gradient_frag (the frame's final
+  velocity write, shared by the FLUID scene AND the FlowField service) now
+  applies a terminal-speed soft cap: v *= 12/max(12,|v|) - exact identity
+  below 12 sim units/s (6 screen heights/s, beyond any aesthetic need),
+  magnitude-pinned with direction preserved above it. This also bounds the
+  fluidWarp warp offset at the source. CPU mirror
+  FluidMath.terminalSpeedCap + tests lock the property.
+- FLUID particles also get the gentle stochastic respawn (0.08/s) so
+  tracer coverage never decays over long sessions.
+- ROOT CAUSE, all three device symptoms: GLSL ES 3.00 predeclares fragment
+  sampler2D as LOWP (range [-2,2), ~8 fraction bits) and EVERY fluid sim
+  shader left its samplers undeclared. On GPUs that honor sampler precision
+  (Mali family especially) every velocity (+-36), pressure and HDR dye read
+  was clamped and quantised: injection rounded toward zero so decay won
+  ("a few pixels then black"), the projection chaos flashed, and the
+  FlowField's garbage field made the composite warp thrash the whole screen
+  ("flashes colours"). composite_frag already documented this exact hazard
+  for its own uFlow sampler; the 18 sim/look/particle shaders now all
+  declare `precision highp sampler2D;`. Headless validators can't catch
+  this - it's runtime hardware behavior - which is why every gate was green
+  while devices failed. glReadPixels bypasses samplers, which is why the
+  dye-liveness probe reported a healthy sim under a black screen.
+- fluidWarp bound: emitter velocities legitimately reach ~36 but the 0.015
+  UV scale was tuned for +-6 - the warp could displace fetches by half the
+  screen per frame. The field is now soft-limited (v * 6/(6+|v|), CPU
+  mirror + FluidFlowLimitTest) so max warp is ~0.09 UV: a fluid bend, never
+  full-screen flashing.
+- Curl Flow "no new origin points": the one-time seed only ever wrapped and
+  slowly filamented. The particle update kernel now stochastically respawns
+  particles at fresh hashed positions (uRespawn expected-rate/s; CurlFlow
+  runs 0.25/s ~ 4 s full turnover, FLUID keeps 0 = unchanged look) -
+  continuous new origins, clustering can never accumulate, works on 16F
+  fallback state too.
+- Curl Flow strobe: beat response now lives in the field kick only; the
+  brightness pulse eased (0.85 + 0.35*beatEnv, was 0.7 + 0.8) so amp +
+  brightness + size no longer compound into a flash on busy tracks.
+- Verify gate green: ktlint, 63/63 unit tests, assembleDebug, lint.
+
+## v0.12.6 (code 19) - GL state contract + live customization persistence
+- RENDERING ROOT FIX: nothing in the pipeline ever reset scissor, stencil,
+  color/depth/stencil write masks or the blend EQUATION - and the native
+  libprojectM render runs an arbitrary preset pipeline free to leave any of
+  them dirty. A leaked scissor rect silently clips every subsequent FBO pass
+  (all ~30 fluid grid passes included -> "fluid dead after visiting
+  MilkDrop"), a MIN/MAX blend equation corrupts every blended draw, with
+  zero GL errors. New GlUtil.resetFrameState() enforces the contract at the
+  top of every frame, immediately after the native projectM render, and
+  defensively at the start of FluidScene.draw.
+- CUSTOMIZATION ROOT FIX: the live viz state was never persisted - every
+  app restart reset the selected style and ALL Customize sliders to
+  defaults (only explicit presets survived). The live state (scene id,
+  every SceneParams field, attack/decay reactivity) now saves to prefs on
+  every change via the preset JSON serializer (full roundtrip coverage) and
+  restores at startup. New Robolectric regression test proves a fresh
+  ViewModel restores scene + sliders + reactivity.
+- CACHING FIXES: projectM post-pass looked up every uniform location every
+  frame (13 glGetUniformLocation calls/frame); the fade + trail-warp
+  programs did the same. All now cached per program link like the composite
+  pass already was.
+- Verify gate green: ktlint, 61/61 unit tests, assembleDebug, lint.
+
+## v0.12.5 (code 18) - fluid "goes black almost straight away" ROOT CAUSE fix
+- ROOT CAUSE (verified against the upstream MIT sim's source): the vorticity
+  confinement force omitted the h (= dx) factor of the GPU Gems ch.38 form
+  f = eps * h * (N x omega). Our curl pass carries a halfRdx (1/2dx ~ 64-142)
+  scale, so the applied force was 64-142x stronger than the 0..50
+  curlStrength range was tuned for. Chain: velocity exploded to the +-1000
+  clamp within ~2 frames -> divergence = halfRdx * (+-4000 diffs) ~ 284k
+  OVERFLOWED the R16F half-float grid (max 65504) to Inf -> Jacobi produced
+  Inf pressure -> gradient computed Inf - Inf = NaN into velocity -> dye
+  advected through NaN and rendered black; the 0.8x pressure warm start
+  recycled the NaN forever. fluid_vorticity_frag now multiplies by uDx,
+  restoring the upstream tuning (eps*h*omega collapses to eps*0.5*velDiff,
+  the exact dimensionless force the reference uses at CURL=30).
+- Hardening so no transient can ever latch black again: advection (velocity
+  AND dye run through it every frame) and the pressure clear pass sanitize
+  NaN/Inf texels to zero (self-healing); divergence output clamped to the
+  half-float-safe +-60000; gradient-subtract output clamped +-1000 like the
+  vorticity pass (it was the one unbounded velocity write).
+- New headless gate: FluidVorticityMathTest + FluidMath.confinementDeltaV
+  CPU mirror assert the confinement is non-explosive at default curl on
+  every quality tier, grid-resolution independent, and equal to the
+  upstream tuning scale - this test fails on the pre-fix formulation.
+- Expected on device: vivid multicolor ink continuously injected by the
+  stirrers/beat splats, swirling in smooth vortices over black, glowing
+  (bloom + sunrays), never emptying - the upstream reference look.
+
+## v0.12.4 (code 17) - fluid crash/flicker hardening round (full-section debug)
+- FIX (crash): every fluid shader compile is now guarded - FluidSim base
+  programs, FluidLook's 8 display variants + bloom/sunrays chain,
+  FluidParticles (which also compiles MID-DRAW on tier changes),
+  CurlFlowScene's field program and FlowField's readback copy. A
+  driver-rejected shader now degrades that layer (look chain -> plain dye
+  display; particles/style -> unavailable + onShaderError message) instead
+  of throwing an uncaught ShaderCompileException on the GL thread, which
+  killed the whole app - even for users who never opened Fluid, since all
+  scenes init at surface creation.
+- FIX (crash, memory): copy-preserving grid reallocation was double-
+  allocating (all new grids created while every old grid was still alive).
+  Now staged - pressure freed first (its copy was only a Jacobi warm
+  start), then velocity and dye each copied and released one at a time -
+  roughly halving peak GPU memory on Ultra-tier changes / rotation.
+- FIX (silent black): the half-float renderability probe failing (ok=false)
+  left Fluid permanently black with no feedback. FluidScene now reports
+  "unavailable on this GPU" through onShaderError; every FBO is
+  completeness-checked at creation, and a failed allocation disables the
+  sim (with message) instead of rendering into broken attachments.
+- FIX (flicker): automatic quality downgrades no longer recreate the
+  particle layer - create() reseeded every particle to random positions,
+  a full-screen pop right when the device was already struggling. Only an
+  explicit user tier change reallocates particles. PerformanceMonitor.reset
+  also zeroes its sample window now.
+- FIX (flicker, low fps): emitters ticked on raw frame dt while the sim
+  clamped to 1/60 s - below 60 fps capsule spacing outran the fluid and
+  splats degenerated into disconnected flickering stamps. One shared dt
+  (clamped to 1/30 s, raised from 1/60 so 30-60 fps devices keep real-time
+  fluid speed) now feeds emitters, sim and particles in both FluidScene
+  and FlowField.
+- FIX (latent crash): Spectrum-arc beat pattern threw
+  IllegalArgumentException (coerceIn(0,-1)) on an empty bands array;
+  guarded. queueSplat also drops splats while the sim is unavailable
+  instead of growing the pending list unboundedly.
+- Verify gate green: ktlintCheck, 57/57 unit tests, assembleDebug, lint.
+
+## v0.12.3 (code 16) - fluid bug-analysis round (device report: flashing / not working)
+- ANALYSIS TOOLING: glslangValidator now in the build environment; every
+  fluid shader PROGRAM link-validated headlessly - all 25, including all
+  8 runtime-assembled display keyword variants and the particle pairs:
+  CLEAN. Shaders ruled out as the black-screen cause.
+- FIX (certain, "style not working at all"): the Curl Flow style was
+  listed in the picker but NEVER constructed in the renderer - selecting
+  it silently did nothing. Now built live and in the export factory. If
+  you tapped the second entry under the Fluid tab, this was your bug.
+- FIX (certain, "flashing"): FluidSim's copy-preserving grid reallocation
+  rebinds framebuffer + viewport but runs OUTSIDE the scene's draw
+  snapshot when triggered by resize - after every rotation or quality
+  change the engine's next pass rendered into a fluid grid. allocGrids
+  now saves/restores both.
+- Hardened: display #define injection now lands after the #version line
+  wherever it is (GLSL ES ordering rule) instead of assuming line 1.
+- STILL NEEDED FROM DEVICE if fluid remains black: `adb logcat -s
+  FluidSim` - the scene logs the format probe, "first frames stepped
+  clean"/glError codes, and "dye liveness: <max>" at t=1.5s. Those three
+  lines conclusively split sim-dead vs display-dead vs never-selected.
+
+## v0.12.2 (code 15) - organic motion round 1: echo-trails + curl-noise scene
+- From the organic-motion research report (docs/ORGANIC_MOTION.md). Joint
+  round with a parallel session - their drop audited and completed here.
+- NEW scene "curlflow": particles ride the curl of a time-morphing FBM
+  potential (divergence-free per Bridson 2007 - streams swirl, never
+  clump). Tiny 64-res field texture feeds the existing GPU particle layer,
+  so it costs a fraction of the full fluid sim. Mids drive field morph
+  speed, treble adds fine turbulence, beats kick amplitude/brightness with
+  impulse + exponential release; cosine-palette coloring; Speed/Turbulence/
+  Audio drive/Particle size/Palette all bite.
+- Echo-trails everywhere: the trail pass can now zoom and sine-warp the
+  previous frame (trailZoom/trailWarp in Customize) - the MilkDrop-style
+  liquid echo/tunnel feel on every scene, live AND in exports.
+- BUG caught by the reflection roundtrip gate: the new trailZoom/trailWarp
+  params were missing from preset JSON (saves would silently drop them) -
+  serializer fixed, test green. Divergence-free property of the new field
+  proven headless via a CPU mirror of the exact shader math.
+- ON-DEVICE: curlflow shows silky non-clumping streams that whirl faster
+  in busy mids; trailZoom small positive = endless-tunnel echo on any
+  scene; save/load a preset with trail warp set and confirm it survives.
+
+## v0.12.2 (code 15) - library roots + analysis cache (old-P3 complete)
+- Media folder ROOTS: Library > Folders now keeps your chosen folders as
+  persistent library roots (SAF, permission persisted) with Add folder,
+  per-root remove, and a Rescan that re-walks every root, tag-reads new
+  files, and merges into the library (dedupe by uri). The VLC-style
+  "point it at your music folders once" flow.
+- Analysis CACHE: every full track analysis is now saved to a compact
+  binary store (all 10 feature fields per frame; bands/waveform
+  int16-quantized, versioned header, LRU-capped) and reused - repeat
+  visualizer prep and ESPECIALLY exports skip the whole offline analysis
+  phase on cache hits. Settings shows cache entries/size with Clear.
+  Corrupt or version-mismatched files are dropped and re-analyzed.
+- Round audited from a parallel-session drop: all three analyze paths
+  verified cached, cache roundtrip covered by unit test, full gate green.
+- ON-DEVICE: add a folder root, drop a new file in it later, Rescan picks
+  it up; export the same track twice - the second export must skip the
+  analysis phase (progress jumps straight to rendering); Settings cache
+  row counts up and Clear empties it.
+
+## v0.12.1 (code 14) - baseline audit + six fluid launch variants
+- Adopted the externally built v0.12.0 (F5 Fluid tab, F6 adaptive quality,
+  F7 FlowField) as the local baseline and AUDITED it here: full gate run
+  (ktlint after a param-comment style fix, every unit test including the
+  reflection roundtrip now covering all 35 fluid/flow params, assemble,
+  lint); targeted sweep of this project's known bug classes - cross-stage
+  uniform precision (clean in all fluid shaders), lowp samplers on
+  position/flow textures (composite uFlow already highp with a strength
+  gate + zero-texture default so non-fluid scenes are untouched),
+  FlowField GL release completeness (all 5 objects freed), and the
+  spec rule that the fluid scene's own field is reused rather than
+  running two sims. versionCode collision with the old code-13 resolved
+  (now 14 / 0.12.1).
+- NEW - six fluid launch variants in the preset browser: Inkdrop (calm
+  center drops, long aging ink), Vortex (ring-pattern spin-up with
+  low-drag particle streaks), Spectrum (spectrum-arc splats + bass pump +
+  sunrays), Nebula (dye hidden - pure particle field riding the invisible
+  flow), Lava (slow heavy blobs, max chromatic aging, hot bloom), Storm
+  (everything on, never clears). Each is a strongly different starting
+  point for customizing.
+- ON-DEVICE: flip through the six variants (each should feel immediately
+  distinct); Nebula must show particles with no ink; verify the Fluid tab
+  sliders bite on top of a variant and Save produces a working preset.
+
 ## v0.12.0 - fluid phases F4-F7 complete (look chain, Fluid tab, adaptive quality, FlowField)
 - F4 look chain: the FLUID scene now renders through the full
   Pavel-style look stack - soft-knee HDR bloom through a mip up/down chain

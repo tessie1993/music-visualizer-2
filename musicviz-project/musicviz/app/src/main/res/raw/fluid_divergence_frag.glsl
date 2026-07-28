@@ -1,7 +1,12 @@
 #version 300 es
 // Free-slip velocity boundaries via reflected sampling, per FLUID_SIM v2
 // section 6.2 (GPU Gems ch.38 boundary treatment, common practice).
-precision mediump float;
+precision highp float;
+// GLSL ES 3.00 defaults fragment sampler2D to LOWP (range [-2,2), ~8
+// fraction bits). Half-float velocity/dye/pressure values far exceed
+// that; on GPUs honoring sampler precision (Mali) every read clamped
+// and quantized - the on-device "few pixels then black" root cause.
+precision highp sampler2D;
 in vec2 vUv; in vec2 vL; in vec2 vR; in vec2 vT; in vec2 vB;
 uniform sampler2D uVelocity;
 uniform float uHalfRdx;
@@ -21,5 +26,8 @@ void main() {
     float R = sampleVel(vR).x;
     float T = sampleVel(vT).y;
     float B = sampleVel(vB).y;
-    fragColor = vec4(uHalfRdx * ((R - L) + (T - B)), 0.0, 0.0, 1.0);
+    // Half-float storage tops out at 65504: clamp so an extreme velocity
+    // field can never overflow the divergence grid to Inf.
+    float div = clamp(uHalfRdx * ((R - L) + (T - B)), -60000.0, 60000.0);
+    fragColor = vec4(div, 0.0, 0.0, 1.0);
 }

@@ -6,6 +6,31 @@ import android.opengl.GLES30
 object GlUtil {
     class ShaderCompileException(message: String) : RuntimeException(message)
 
+    /**
+     * Resets the mutable GL state the render pipeline assumes but never sets
+     * per-pass: scissor/stencil/depth/cull toggles, write masks and the blend
+     * EQUATION (scenes restore blend enable + func, but never the equation).
+     * The libprojectM native render runs an arbitrary preset pipeline and is
+     * free to leave any of these dirty - a leaked scissor rect silently clips
+     * every subsequent FBO pass (fluid grids included) and a MIN/MAX blend
+     * equation corrupts every blended draw, with zero GL errors to trace.
+     * Call at the top of every frame and after any native/external render.
+     */
+    fun resetFrameState() {
+        GLES30.glDisable(GLES30.GL_SCISSOR_TEST)
+        GLES30.glDisable(GLES30.GL_STENCIL_TEST)
+        GLES30.glDisable(GLES30.GL_DEPTH_TEST)
+        GLES30.glDisable(GLES30.GL_CULL_FACE)
+        GLES30.glDisable(GLES30.GL_POLYGON_OFFSET_FILL)
+        GLES30.glDisable(GLES30.GL_SAMPLE_ALPHA_TO_COVERAGE)
+        GLES30.glColorMask(true, true, true, true)
+        GLES30.glDepthMask(true)
+        GLES30.glStencilMask(-1)
+        GLES30.glBlendEquation(GLES30.GL_FUNC_ADD)
+        GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT, 4)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+    }
+
     fun buildProgram(
         vertexSrc: String,
         fragmentSrc: String,

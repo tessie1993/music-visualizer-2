@@ -91,6 +91,16 @@ internal class FluidSim(
 
     private var vao = 0
     private var vbo = 0
+
+    /**
+     * Linear sampler object for the dye-advection velocity read: the
+     * velocity texture itself is NEAREST (the velocity self-advect does
+     * manual bilerp), but the dye grid is up to 4x finer, so a NEAREST
+     * back-trace direction staircases. Half-float LINEAR filtering is core
+     * ES 3.0; a sampler object overrides the texture's filter for this one
+     * bind point only.
+     */
+    private var linearSampler = 0
     private var baseVertSrc = ""
     private val programs = HashMap<Int, Int>()
     private val uniforms = HashMap<Int, HashMap<String, Int>>()
@@ -135,6 +145,15 @@ internal class FluidSim(
         GLES30.glEnableVertexAttribArray(0)
         GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 0, 0)
         GLES30.glBindVertexArray(0)
+        GLES30.glGenSamplers(1, ids, 0)
+        linearSampler = ids[0]
+        GLES30.glSamplerParameteri(linearSampler, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+        GLES30.glSamplerParameteri(linearSampler, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+        // A bound sampler overrides ALL of the texture's sampling state and
+        // its wrap defaults are GL_REPEAT - without these two lines the dye
+        // back-trace would wrap edge reads to the OPPOSITE screen edge.
+        GLES30.glSamplerParameteri(linearSampler, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+        GLES30.glSamplerParameteri(linearSampler, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
         val frags =
             intArrayOf(
                 R.raw.fluid_splat_frag, R.raw.fluid_advect_frag, R.raw.fluid_curl_frag,
@@ -143,10 +162,20 @@ internal class FluidSim(
                 R.raw.fluid_display_frag,
             )
         baseVertSrc = loadRaw(R.raw.fluid_base_vert)
-        for (f in frags) {
-            val p = GlUtil.buildProgram(baseVertSrc, loadRaw(f))
-            programs[f] = p
-            uniforms[f] = HashMap()
+        // A driver-rejected shader must degrade the style to "unavailable",
+        // never crash the GL thread: headless validation cannot guarantee
+        // every device driver accepts these sources.
+        try {
+            for (f in frags) {
+                val p = GlUtil.buildProgram(baseVertSrc, loadRaw(f))
+                programs[f] = p
+                uniforms[f] = HashMap()
+            }
+        } catch (e: GlUtil.ShaderCompileException) {
+            android.util.Log.w("FluidSim", "base shader rejected by driver: ${e.message}")
+            onShaderError("Fluid unavailable on this GPU: ${e.message}")
+            release()
+            return
         }
         // Re-apply any user injection shaders after a context loss.
         injectionDirty = pendingForceSrc != null || pendingDyeSrc != null
@@ -184,33 +213,63 @@ internal class FluidSim(
     }
 
     private fun allocGrids(preserve: Boolean) {
+        // resize() runs OUTSIDE the scene's draw snapshot; the preserve-copy
+        // below rebinds framebuffer + viewport, so restore both on exit or
+        // the engine's next pass renders into a fluid grid (screen flashing
+        // after rotation / quality change).
+        val prevFbo = IntArray(1)
+        val prevVp = IntArray(4)
+        GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, prevFbo, 0)
+        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevVp, 0)
         val (sw, sh) = FluidBuffers.resolution(simRes, width, height)
         val (dw, dh) = FluidBuffers.resolution(dyeRes, width, height)
         val oldVelocity = velocity
         val oldDye = dye
-        val oldPressure = pressure
+        // Free small helpers + pressure FIRST: the pressure copy was only a
+        // Jacobi warm start (one frame of extra convergence), not worth
+        // doubling the largest allocation window. Then each grid is copied
+        // and its old counterpart released immediately, so peak GPU memory
+        // during an Ultra-tier reallocation is ~1x the new grids + one old
+        // grid instead of a full 2x (the "crashes on quality change /
+        // rotation on tight-memory GPUs" fix).
+        pressure?.release()
+        pressure = null
         divergence?.release()
         curl?.release()
         // Velocity NEAREST (manual bilerp in advection); dye LINEAR for display.
         velocity = FluidBuffers.DoubleFbo(sw, sh, formats.rg, linear = false).also { it.create() }
-        if (!velocityOnly) dye = FluidBuffers.DoubleFbo(dw, dh, formats.rgba, linear = true).also { it.create() }
+        if (preserve && oldVelocity != null) {
+            velocity?.let { if (it.ok && oldVelocity.ok) copyInto(oldVelocity.read, it.read) }
+        }
+        oldVelocity?.release()
+        if (!velocityOnly) {
+            dye = FluidBuffers.DoubleFbo(dw, dh, formats.rgba, linear = true).also { it.create() }
+            if (preserve && oldDye != null) {
+                dye?.let { if (it.ok && oldDye.ok) copyInto(oldDye.read, it.read) }
+            }
+        }
+        oldDye?.release()
         pressure = FluidBuffers.DoubleFbo(sw, sh, formats.r, linear = false).also { it.create() }
         divergence = FluidBuffers.Fbo(sw, sh, formats.r, linear = false).also { it.create() }
         curl = FluidBuffers.Fbo(sw, sh, formats.r, linear = false).also { it.create() }
-        if (preserve && oldVelocity != null) {
-            // Copy-preserving resize: the picture survives rotation and
-            // quality changes instead of resetting to black.
-            copyInto(oldVelocity.read, velocity!!.read)
-            oldDye?.let { old -> dye?.let { copyInto(old.read, it.read) } }
-            oldPressure?.let { old -> pressure?.let { copyInto(old.read, it.read) } }
+        val allOk =
+            velocity?.ok == true && pressure?.ok == true &&
+                divergence?.ok == true && curl?.ok == true &&
+                (velocityOnly || dye?.ok == true)
+        if (!allOk) {
+            android.util.Log.w("FluidSim", "grid allocation failed (${sw}x$sh / ${dw}x$dh) - fluid disabled")
+            onShaderError("Fluid grids could not be allocated on this GPU")
+            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
+            GLES30.glViewport(prevVp[0], prevVp[1], prevVp[2], prevVp[3])
+            release()
+            return
         }
-        oldVelocity?.release()
-        oldDye?.release()
-        oldPressure?.release()
         cellSize = 2f / sh
         rdx = 1f / cellSize
         halfRdx = 0.5f / cellSize
         alpha = -cellSize * cellSize
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
+        GLES30.glViewport(prevVp[0], prevVp[1], prevVp[2], prevVp[3])
     }
 
     private fun copyInto(
@@ -246,13 +305,22 @@ internal class FluidSim(
                 injectionDirty = false
                 pendingForceSrc to pendingDyeSrc
             }
-        customForce = compileCustom(force, customForce)
-        customDye = compileCustom(dyeS, customDye)
+        // Collect BOTH results before reporting: a successful dye compile
+        // must not clear the error from a failed force compile (or vice
+        // versa) - the user would lose the only message telling them why
+        // their shader isn't running.
+        var firstError: String? = null
+        customForce =
+            compileCustom(force, customForce) { firstError = firstError ?: it }
+        customDye =
+            compileCustom(dyeS, customDye) { firstError = firstError ?: it }
+        onShaderError(firstError)
     }
 
     private fun compileCustom(
         src: String?,
         current: Pair<Int, HashMap<String, Int>>?,
+        reportError: (String?) -> Unit,
     ): Pair<Int, HashMap<String, Int>>? {
         if (src.isNullOrBlank()) {
             current?.let { GLES30.glDeleteProgram(it.first) }
@@ -261,16 +329,18 @@ internal class FluidSim(
         return try {
             val p = GlUtil.buildProgram(baseVertSrc, src)
             current?.let { GLES30.glDeleteProgram(it.first) }
-            onShaderError(null)
             p to HashMap()
         } catch (e: GlUtil.ShaderCompileException) {
             // Keep the last good program rather than dropping to black.
-            onShaderError(e.message)
+            reportError(e.message)
             current
         }
     }
 
     fun queueSplat(s: Splat) {
+        // step() never runs while unavailable, so queued splats would only
+        // accumulate; drop them instead of leaking.
+        if (!available) return
         pending.add(s)
     }
 
@@ -281,11 +351,16 @@ internal class FluidSim(
     /** v2 pass order: advect vel -> forces -> curl -> vorticity -> project -> dye. */
     fun step(dtRaw: Float) {
         if (!available) return
-        val vel = velocity ?: return
-        val press = pressure ?: return
-        val div = divergence ?: return
-        val crl = curl ?: return
-        val dt = dtRaw.coerceIn(0f, 1f / 60f)
+        // Grids exist only after the first resize(); queued splats from
+        // before that point must not accumulate and all fire in one burst.
+        val vel = velocity ?: run { pending.clear(); return }
+        val press = pressure ?: run { pending.clear(); return }
+        val div = divergence ?: run { pending.clear(); return }
+        val crl = curl ?: run { pending.clear(); return }
+        // Cap at 1/30 s: semi-Lagrangian advection stays stable, and 30-60fps
+        // devices keep real-time fluid speed instead of a permanent slow-mo
+        // that desynchronized from the (real-dt) emitters.
+        val dt = dtRaw.coerceIn(0f, 1f / 30f)
         compileInjectionIfNeeded()
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glBindVertexArray(vao)
@@ -318,6 +393,7 @@ internal class FluidSim(
         bindTex("uVelocity", vel.read.tex, 0, R.raw.fluid_vorticity_frag)
         bindTex("uCurl", crl.tex, 1, R.raw.fluid_vorticity_frag)
         set1f(R.raw.fluid_vorticity_frag, "uCurlStrength", curlStrength)
+        set1f(R.raw.fluid_vorticity_frag, "uDx", cellSize)
         set1f(R.raw.fluid_vorticity_frag, "uDt", dt)
         blit(vel.write)
         vel.swap()
@@ -356,6 +432,8 @@ internal class FluidSim(
             runInjection(dyeB, mode = 1, custom = customDye, dt = dt)
             useProgram(R.raw.fluid_advect_frag, dyeB.width, dyeB.height)
             bindTex("uVelocity", vel.read.tex, 0, R.raw.fluid_advect_frag)
+            // Smooth back-trace direction at the finer dye resolution.
+            GLES30.glBindSampler(0, linearSampler)
             bindTex("uSource", dyeB.read.tex, 1, R.raw.fluid_advect_frag)
             set2f(R.raw.fluid_advect_frag, "uSrcInvRes", 1f / dyeB.width, 1f / dyeB.height)
             set2f(R.raw.fluid_advect_frag, "uVelInvRes", velInvW, velInvH)
@@ -368,6 +446,7 @@ internal class FluidSim(
             set3f(R.raw.fluid_advect_frag, "uDecay", ddR, ddG, ddB)
             blit(dyeB.write)
             dyeB.swap()
+            GLES30.glBindSampler(0, 0)
         }
         pending.clear()
         GLES30.glBindVertexArray(0)
@@ -432,6 +511,42 @@ internal class FluidSim(
         GLES30.glBindVertexArray(0)
     }
 
+    /**
+     * One-time diagnostic: reads a few dye texels (implementation-preferred
+     * format) and reports the max channel value - splits "sim is dead" from
+     * "display path loses the ink" in a single logcat line.
+     */
+    fun probeDyeMax(): String {
+        val d = dye ?: return "no dye buffer"
+        return runCatching {
+            val prev = IntArray(1)
+            GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, prev, 0)
+            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, d.read.fbo)
+            val fmt = IntArray(1)
+            val type = IntArray(1)
+            GLES30.glGetIntegerv(GLES30.GL_IMPLEMENTATION_COLOR_READ_FORMAT, fmt, 0)
+            GLES30.glGetIntegerv(GLES30.GL_IMPLEMENTATION_COLOR_READ_TYPE, type, 0)
+            val n = 8
+            val out: String
+            if (type[0] == GLES30.GL_FLOAT) {
+                val buf = java.nio.ByteBuffer.allocateDirect(n * n * 4 * 4).order(java.nio.ByteOrder.nativeOrder())
+                GLES30.glReadPixels(d.width / 2 - n / 2, d.height / 2 - n / 2, n, n, GLES30.GL_RGBA, GLES30.GL_FLOAT, buf)
+                val fb = buf.asFloatBuffer()
+                var mx = 0f
+                while (fb.hasRemaining()) mx = maxOf(mx, fb.get())
+                out = "max=%.4f (float read, fmt=0x%x)".format(mx, fmt[0])
+            } else {
+                val buf = java.nio.ByteBuffer.allocateDirect(n * n * 4).order(java.nio.ByteOrder.nativeOrder())
+                GLES30.glReadPixels(d.width / 2 - n / 2, d.height / 2 - n / 2, n, n, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buf)
+                var mx = 0
+                while (buf.hasRemaining()) mx = maxOf(mx, buf.get().toInt() and 0xFF)
+                out = "max=$mx/255 (byte read, type=0x${Integer.toHexString(type[0])})"
+            }
+            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prev[0])
+            out
+        }.getOrElse { "probe failed: ${it.message}" }
+    }
+
     fun release() {
         velocity?.release()
         dye?.release()
@@ -452,6 +567,8 @@ internal class FluidSim(
         customDye = null
         if (vbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(vbo), 0)
         if (vao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(vao), 0)
+        if (linearSampler != 0) GLES30.glDeleteSamplers(1, intArrayOf(linearSampler), 0)
+        linearSampler = 0
         vbo = 0
         vao = 0
         pending.clear()

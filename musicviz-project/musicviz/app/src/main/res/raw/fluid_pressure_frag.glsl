@@ -1,7 +1,12 @@
 #version 300 es
 // Jacobi pressure solve with alpha = -dx^2 and Neumann boundaries, per
 // FLUID_SIM v2 sections 6.2/6.4 (GPU Gems ch.38 formulation).
-precision mediump float;
+precision highp float;
+// GLSL ES 3.00 defaults fragment sampler2D to LOWP (range [-2,2), ~8
+// fraction bits). Half-float velocity/dye/pressure values far exceed
+// that; on GPUs honoring sampler precision (Mali) every read clamped
+// and quantized - the on-device "few pixels then black" root cause.
+precision highp sampler2D;
 in vec2 vUv; in vec2 vL; in vec2 vR; in vec2 vT; in vec2 vB;
 uniform sampler2D uPressure;
 uniform sampler2D uDivergence;

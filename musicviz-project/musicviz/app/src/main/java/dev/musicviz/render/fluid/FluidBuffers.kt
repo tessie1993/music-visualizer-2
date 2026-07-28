@@ -109,6 +109,9 @@ internal object FluidBuffers {
         var tex = 0
             private set
 
+        /** False when the driver refused the attachment (create() self-released). */
+        val ok: Boolean get() = fbo != 0 && tex != 0
+
         fun create() {
             val ids = IntArray(1)
             GLES30.glGenTextures(1, ids, 0)
@@ -130,6 +133,12 @@ internal object FluidBuffers {
                 tex,
                 0,
             )
+            if (GLES30.glCheckFramebufferStatus(GLES30.GL_FRAMEBUFFER) != GLES30.GL_FRAMEBUFFER_COMPLETE) {
+                android.util.Log.w("FluidSim", "FBO incomplete (${width}x$height fmt=0x${Integer.toHexString(fmt.internal)})")
+                GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
+                release()
+                return
+            }
             GLES30.glClearColor(0f, 0f, 0f, 1f)
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
@@ -140,6 +149,106 @@ internal object FluidBuffers {
             if (fbo != 0) GLES30.glDeleteFramebuffers(1, intArrayOf(fbo), 0)
             tex = 0
             fbo = 0
+        }
+    }
+
+    /**
+     * Ping-pong pair of two-attachment MRT framebuffers, for GPGPU state that
+     * needs more than one vec4 per texel (the rebuilt particle layer: pos+vel
+     * in attachment 0, age/ttl/emitter/seed in attachment 1). MRT with two
+     * color attachments is core ES 3.0 (MAX_COLOR_ATTACHMENTS >= 4).
+     */
+    internal class DoubleMrt(
+        val width: Int,
+        val height: Int,
+        private val fmtA: TexFormat,
+        private val fmtB: TexFormat,
+    ) {
+        class Side(
+            private val width: Int,
+            private val height: Int,
+            private val fmtA: TexFormat,
+            private val fmtB: TexFormat,
+        ) {
+            var fbo = 0
+                private set
+            var texA = 0
+                private set
+            var texB = 0
+                private set
+            val ok: Boolean get() = fbo != 0 && texA != 0 && texB != 0
+
+            fun create() {
+                texA = makeTex(width, height, fmtA)
+                texB = makeTex(width, height, fmtB)
+                val ids = IntArray(1)
+                GLES30.glGenFramebuffers(1, ids, 0)
+                fbo = ids[0]
+                GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fbo)
+                GLES30.glFramebufferTexture2D(
+                    GLES30.GL_FRAMEBUFFER, GLES30.GL_COLOR_ATTACHMENT0, GLES30.GL_TEXTURE_2D, texA, 0,
+                )
+                GLES30.glFramebufferTexture2D(
+                    GLES30.GL_FRAMEBUFFER, GLES30.GL_COLOR_ATTACHMENT1, GLES30.GL_TEXTURE_2D, texB, 0,
+                )
+                GLES30.glDrawBuffers(2, intArrayOf(GLES30.GL_COLOR_ATTACHMENT0, GLES30.GL_COLOR_ATTACHMENT1), 0)
+                if (GLES30.glCheckFramebufferStatus(GLES30.GL_FRAMEBUFFER) != GLES30.GL_FRAMEBUFFER_COMPLETE) {
+                    android.util.Log.w("FluidSim", "MRT FBO incomplete (${width}x$height)")
+                    GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
+                    release()
+                    return
+                }
+                GLES30.glClearColor(0f, 0f, 0f, 0f)
+                GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+                GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
+            }
+
+            private fun makeTex(
+                w: Int,
+                h: Int,
+                fmt: TexFormat,
+            ): Int {
+                val ids = IntArray(1)
+                GLES30.glGenTextures(1, ids, 0)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, ids[0])
+                GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST)
+                GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_NEAREST)
+                GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+                GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+                GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, fmt.internal, w, h, 0, fmt.format, fmt.type, null)
+                return ids[0]
+            }
+
+            fun release() {
+                if (texA != 0) GLES30.glDeleteTextures(1, intArrayOf(texA), 0)
+                if (texB != 0) GLES30.glDeleteTextures(1, intArrayOf(texB), 0)
+                if (fbo != 0) GLES30.glDeleteFramebuffers(1, intArrayOf(fbo), 0)
+                texA = 0
+                texB = 0
+                fbo = 0
+            }
+        }
+
+        var read = Side(width, height, fmtA, fmtB)
+            private set
+        var write = Side(width, height, fmtA, fmtB)
+            private set
+        val ok: Boolean get() = read.ok && write.ok
+
+        fun create() {
+            read.create()
+            write.create()
+        }
+
+        fun swap() {
+            val t = read
+            read = write
+            write = t
+        }
+
+        fun release() {
+            read.release()
+            write.release()
         }
     }
 
@@ -156,6 +265,7 @@ internal object FluidBuffers {
 
         val width: Int get() = read.width
         val height: Int get() = read.height
+        val ok: Boolean get() = read.ok && write.ok
 
         fun create() {
             read.create()

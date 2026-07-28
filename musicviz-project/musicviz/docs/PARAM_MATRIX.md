@@ -47,3 +47,14 @@ flow* fields are global: flowStrength/flowCurl/flowForce drive the shared
 FlowField consumed by the composite fluidWarp slot (C, all families incl.
 MilkDrop + export), flowAdvectParticles by the particle CPU pipeline (P),
 and uFlow/uFlowStrength by shader scenes (S, opt-in sampling).
+
+Journey additions (v0.13.0): fluidSpawnPath / fluidSpawnPoints /
+fluidSpawnProgress / fluidCatchPoints / fluidCatchPull / fluidCatchRadius /
+fluidParticleLife / fluidSparkle act on BOTH FLUID and CURLFLOW (the shared
+FluidChoreography spawn/catch progression + lifecycle particle layer; the
+Customize Fluid tab shows the Journey section for both styles, the
+remaining fluid* sections for FLUID only). fluidCatchPull doubles as the
+dye suction strength in FLUID (emitter suction splats at catch points).
+progress/sectionIndex/sectionCount ride AudioFeatures: live from the
+player position + cached section analysis, export from
+FeatureTimeline.progressionAt - no SceneParams field, not persisted.

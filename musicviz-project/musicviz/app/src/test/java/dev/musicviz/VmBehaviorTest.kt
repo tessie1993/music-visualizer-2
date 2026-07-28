@@ -20,6 +20,33 @@ class VmBehaviorTest {
     private fun vm(): PlayerViewModel = PlayerViewModel(ApplicationProvider.getApplicationContext<Application>())
 
     @Test
+    fun live_customization_survives_restart() {
+        val first = vm()
+        first.selectScene(dev.musicviz.render.scene.SceneIds.FLUID)
+        first.setSceneParams(
+            first.vizState.value.params.copy(
+                speed = 1.77f,
+                fluidCurl = 42f,
+                fluidSplatRadius = 0.31f,
+                fluidBloom = false,
+            ),
+        )
+        first.setReactivity(attack = 0.83f, decay = 0.21f)
+        // A new ViewModel = a fresh app process: the live state (scene, every
+        // Customize slider, reactivity) must be restored, not reset to
+        // defaults - the "customization loses all progress" bug.
+        val second = vm()
+        val s = second.vizState.value
+        assertEquals(dev.musicviz.render.scene.SceneIds.FLUID, s.sceneId)
+        assertEquals(1.77f, s.params.speed, 1e-4f)
+        assertEquals(42f, s.params.fluidCurl, 1e-4f)
+        assertEquals(0.31f, s.params.fluidSplatRadius, 1e-4f)
+        assertFalse(s.params.fluidBloom)
+        assertEquals(0.83f, s.attack, 1e-4f)
+        assertEquals(0.21f, s.decay, 1e-4f)
+    }
+
+    @Test
     fun randomize_respects_locks() {
         val v = vm()
         val before = v.vizState.value.params

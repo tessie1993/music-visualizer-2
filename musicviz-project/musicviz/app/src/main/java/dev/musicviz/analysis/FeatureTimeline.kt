@@ -38,6 +38,29 @@ class FeatureTimeline(
     }
 
     /**
+     * [featuresAt] plus track-position context (progress + section index)
+     * for progression-driven scenes. [sections] is a detectSections() result
+     * the caller computed once - recomputing per frame would be O(n) each.
+     * Deterministic, so live playback and export agree exactly.
+     */
+    fun progressionAt(
+        timeMs: Long,
+        sections: List<Long>,
+    ): AudioFeatures {
+        val f = featuresAt(timeMs)
+        if (durationMs <= 0L) return f
+        var idx = 0
+        for (s in sections) {
+            if (s <= timeMs) idx++ else break
+        }
+        return f.copy(
+            progress = (timeMs.toFloat() / durationMs).coerceIn(0f, 1f),
+            sectionIndex = idx,
+            sectionCount = sections.size + 1,
+        )
+    }
+
+    /**
      * Section boundaries (ms) from a novelty curve: distance between averaged
      * band vectors before/after each frame, peak-picked.
      */

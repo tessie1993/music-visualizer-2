@@ -54,6 +54,8 @@ enum class LfoTarget(val label: String) {
     FLUID_FORCE("Fluid splat force"),
     FLUID_GLOW("Fluid glow"),
     FLUID_FADE("Fluid fade"),
+    FLUID_CATCH_PULL("Catch pull"),
+    FLUID_CATCH_RADIUS("Catch radius"),
     FLOW_STRENGTH("Flow strength"),
     LFO1_RATE("LFO1 rate"),
     LFO1_DEPTH("LFO1 depth"),
@@ -192,6 +194,8 @@ class LfoEngine {
                         LfoTarget.FLUID_FORCE -> r.copy(fluidSplatForce = (r.fluidSplatForce + v * 1.5f).coerceIn(0f, 3f))
                         LfoTarget.FLUID_GLOW -> r.copy(fluidBloomIntensity = (r.fluidBloomIntensity + v).coerceIn(0.1f, 2f))
                         LfoTarget.FLUID_FADE -> r.copy(fluidDensityDissipation = (r.fluidDensityDissipation + v * 1.5f).coerceIn(0f, 4f))
+                        LfoTarget.FLUID_CATCH_PULL -> r.copy(fluidCatchPull = (r.fluidCatchPull + v * 1.5f).coerceIn(0f, 3f))
+                        LfoTarget.FLUID_CATCH_RADIUS -> r.copy(fluidCatchRadius = (r.fluidCatchRadius + v * 0.12f).coerceIn(0.03f, 0.3f))
                         LfoTarget.FLOW_STRENGTH -> r.copy(flowStrength = (r.flowStrength + v).coerceIn(0f, 1f))
                         else -> r
                     }

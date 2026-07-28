@@ -279,6 +279,8 @@ internal fun BehaviorTab(
         CheckRow("Trails (particle scenes)", p.trails) { onChange(p.copy(trails = it)) }
         if (p.trails) {
             LabeledSlider("Trail length", p.trailLength, 0.05f..0.98f) { onChange(p.copy(trailLength = it)) }
+            LabeledSlider("Trail zoom (echo in/out)", p.trailZoom, -0.5f..0.5f) { onChange(p.copy(trailZoom = it)) }
+            LabeledSlider("Trail warp (liquid echo)", p.trailWarp, 0f..1f) { onChange(p.copy(trailWarp = it)) }
         }
         SectionHeader("Reactivity envelope")
         LabeledSlider("Attack", attack, 0.05f..1f) { onReactivityChange(it, decay) }
@@ -507,10 +509,33 @@ internal fun FluidTab(
     p: SceneParams,
     onChange: (SceneParams) -> Unit,
     isFluidScene: Boolean,
+    isJourneyScene: Boolean = isFluidScene,
     injectionError: String? = null,
     onApplyInjectionShaders: (String?, String?) -> Unit = { _, _ -> },
 ) {
     Column {
+        if (isJourneyScene) {
+            SectionHeader("Journey (spawn & catch progression)")
+            Text(
+                "Spawn points birth particles and dye; catch points pull them " +
+                    "in and recycle them. Both travel through the track: song " +
+                    "progress reshapes the layout, sections re-seat it, beats " +
+                    "advance the bloom.",
+                style = MaterialTheme.typography.labelSmall,
+            )
+            Text("Path", style = MaterialTheme.typography.labelSmall)
+            ChipRow(SceneParams.FLUID_PATHS, p.fluidSpawnPath.coerceIn(0, SceneParams.FLUID_PATHS.size - 1)) {
+                onChange(p.copy(fluidSpawnPath = it))
+            }
+            LabeledIntSlider("Spawn points", p.fluidSpawnPoints, 1..8) { onChange(p.copy(fluidSpawnPoints = it)) }
+            LabeledSlider("Progression", p.fluidSpawnProgress, 0f..1f) { onChange(p.copy(fluidSpawnProgress = it)) }
+            LabeledIntSlider("Catch points", p.fluidCatchPoints, 0..4) { onChange(p.copy(fluidCatchPoints = it)) }
+            if (p.fluidCatchPoints > 0) {
+                LabeledSlider("Catch pull", p.fluidCatchPull, 0f..3f) { onChange(p.copy(fluidCatchPull = it)) }
+                LabeledSlider("Catch radius", p.fluidCatchRadius, 0.03f..0.3f) { onChange(p.copy(fluidCatchRadius = it)) }
+            }
+            LabeledSlider("Particle life (s)", p.fluidParticleLife, 1f..20f) { onChange(p.copy(fluidParticleLife = it)) }
+        }
         if (isFluidScene) {
             SectionHeader("Quality")
             ChipRow(
@@ -538,6 +563,7 @@ internal fun FluidTab(
             LabeledSlider("Fluid splat radius", p.fluidSplatRadius, 0.02f..0.4f) { onChange(p.copy(fluidSplatRadius = it)) }
             LabeledSlider("Fluid splat force", p.fluidSplatForce, 0f..3f) { onChange(p.copy(fluidSplatForce = it)) }
             CheckRow("Bass pump", p.fluidBassPump) { onChange(p.copy(fluidBassPump = it)) }
+            CheckRow("Treble sparkle", p.fluidSparkle) { onChange(p.copy(fluidSparkle = it)) }
             LabeledSlider("Palette cycle", p.fluidPaletteCycleSpeed, 0f..2f) { onChange(p.copy(fluidPaletteCycleSpeed = it)) }
             SectionHeader("Particles")
             CheckRow("Particle layer", p.fluidParticlesEnabled) { onChange(p.copy(fluidParticlesEnabled = it)) }

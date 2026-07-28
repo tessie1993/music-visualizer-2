@@ -105,9 +105,12 @@ vec2 geo(vec2 uv) {
 vec3 postFx(sampler2D tex, vec2 uv, vec3 fallback) {
     vec2 p = geo(uv);
     if (uFlowStrength > 0.001) {
-        // Velocity is in grid units (roughly -6..6); 0.015 maps full
-        // strength to a ~0.09 UV displacement at typical emitter speeds.
+        // Soft-limit the field to the +-6 range the 0.015 scale was tuned
+        // for: emitter velocities reach ~36 (splat force x audio), and an
+        // unbounded warp displaces the fetch by half the screen per frame -
+        // perceived as full-screen colour flashing, not a fluid bend.
         vec2 flow = texture(uFlow, p).xy;
+        flow *= 6.0 / (6.0 + length(flow));
         p -= flow * uFlowStrength * 0.015;
     }
     if (abs(uFisheye) > 0.001) {

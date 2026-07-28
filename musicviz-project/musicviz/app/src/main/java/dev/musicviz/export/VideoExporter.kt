@@ -240,6 +240,10 @@ class VideoExporter(private val context: Context) {
         GLES30.glViewport(0, 0, aspect.width, aspect.height)
         val isParticle = scene is dev.musicviz.render.scene.ParticleSceneBase
         val isShaderScene = scene is dev.musicviz.render.scene.ShaderScene
+        // Curl Flow's look is DEFINED by canvas persistence (live renderer
+        // forces it regardless of the trails toggle); a hard-cleared export
+        // reads as strobing dots instead of streams.
+        val isCurlFlow = scene is dev.musicviz.render.fluid.CurlFlowScene
 
         // Build an offscreen FBO + composite program so the export applies the
         // SAME screen-space FX chain (geometry, chroma, vignette, scanlines,
@@ -279,14 +283,25 @@ class VideoExporter(private val context: Context) {
         val exportDurationUs = if (aac.durationUs > 0) aac.durationUs else timeline.durationMs * 1000
         val totalFrames = (exportDurationUs * fps / 1_000_000L).toInt().coerceAtLeast(1)
         val frameDurationNs = 1_000_000_000L / fps
+        // Section boundaries once (O(n)); per-frame features then carry the
+        // progress/section context, so the fluid spawn/catch choreography
+        // journeys through the exported video exactly like live playback.
+        val sections = timeline.detectSections()
 
         try {
             for (frame in 0 until totalFrames) {
                 if (isCancelled()) break
                 val timeMs = frame * 1000L / fps
-                val features = timeline.featuresAt(timeMs)
-                val lfoValues = lfoEngine.tick(1f / fps, features.bpm)
+                val features = timeline.progressionAt(timeMs, sections)
+                // Mirror the live modulation order exactly (envelopes first:
+                // their offsets can drive LFO rate/depth): the export was
+                // silently dropping ALL ADSR routing - including the new
+                // Catch pull/Catch radius targets - from rendered video.
+                val envValues = adsrEngine.tick(1f / fps, features)
+                val (envRate, envDepth) = dev.musicviz.render.AdsrEngine.lfoOffsets(adsrEngine.configs, envValues)
+                val lfoValues = lfoEngine.tick(1f / fps, features.bpm, envRate, envDepth)
                 var p = dev.musicviz.render.LfoEngine.apply(sceneParams, lfoEngine.configs, lfoValues)
+                p = dev.musicviz.render.AdsrEngine.apply(p, adsrEngine.configs, envValues)
                 scene.setParams(p)
                 scene.update(dev.musicviz.render.scene.applyBandGains(features, p), 1f / fps)
                 if (p.flowEnabled && flowField != null && flowField.available) {
@@ -297,8 +312,11 @@ class VideoExporter(private val context: Context) {
                 // Draw the scene into the FX FBO, then composite (with the full
                 // FX chain) onto the encoder surface, matching the live path.
                 fx.bindSceneTarget()
-                if (p.trails && isParticle && frame > 0) {
-                    fx.fadeSceneTarget(p.trailLength)
+                if (((p.trails && isParticle) || isCurlFlow) && frame > 0) {
+                    // Mirror the live curlPersist rule: keep >= 0.85.
+                    val fadeParams =
+                        if (isCurlFlow) p.copy(trailLength = p.trailLength.coerceAtLeast(0.85f)) else p
+                    fx.fadeSceneTargetWarp(fadeParams, fx.sceneFbo, fx.width, fx.height, timeMs / 1000f)
                 } else {
                     GLES30.glClearColor(0f, 0f, 0f, 1f)
                     GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
@@ -312,7 +330,11 @@ class VideoExporter(private val context: Context) {
                         else -> 0
                     }
                 fx.composite(
-                    timeMs / 1000f, features, isParticle, isShaderScene, p,
+                    timeMs / 1000f,
+                    features,
+                    isParticle,
+                    isShaderScene,
+                    p,
                     flowTex = flowTex,
                     flowStrength = if (flowTex != 0) p.flowStrength else 0f,
                 )

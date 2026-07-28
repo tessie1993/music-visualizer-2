@@ -234,7 +234,13 @@ private fun StylesTab(
                     visualizerView.visualizerRenderer.requestedSceneId = it
                 }
             2 ->
-                SceneList(listOf(dev.musicviz.render.scene.SceneIds.FLUID), viz.sceneId) {
+                SceneList(
+                    listOf(
+                        dev.musicviz.render.scene.SceneIds.FLUID,
+                        dev.musicviz.render.scene.SceneIds.CURLFLOW,
+                    ),
+                    viz.sceneId,
+                ) {
                     viewModel.selectScene(it)
                     visualizerView.visualizerRenderer.requestedSceneId = it
                 }
@@ -373,6 +379,9 @@ private fun CustomizeHubTab(
                             p,
                             onChange,
                             isFluidScene = viz.sceneId == dev.musicviz.render.scene.SceneIds.FLUID,
+                            isJourneyScene =
+                                viz.sceneId == dev.musicviz.render.scene.SceneIds.FLUID ||
+                                    viz.sceneId == dev.musicviz.render.scene.SceneIds.CURLFLOW,
                             injectionError = if (viz.sceneId == dev.musicviz.render.scene.SceneIds.FLUID) viz.shaderError else null,
                             onApplyInjectionShaders = { force, dye ->
                                 visualizerView.visualizerRenderer.submitFluidInjectionShaders(force, dye)

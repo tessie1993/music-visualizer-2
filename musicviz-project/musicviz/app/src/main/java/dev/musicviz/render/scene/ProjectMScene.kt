@@ -43,6 +43,10 @@ class ProjectMScene(
     private var fboWidth = 0
     private var fboHeight = 0
     private var postProgram = 0
+
+    /** Uniform locations cached per program link: glGetUniformLocation every
+     *  frame for every uniform is measurable driver overhead on mobile. */
+    private val postLocs = HashMap<String, Int>()
     private var postVao = 0
     private var rotationAngle = 0f
     private var zoomPhase = 0f
@@ -81,6 +85,7 @@ class ProjectMScene(
         release()
         reportedCreateFailure = false
         postProgram = GlUtil.buildProgram(postVertexSrc, postFragmentSrc)
+        postLocs.clear()
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
         postVao = ids[0]
@@ -187,6 +192,10 @@ class ProjectMScene(
         GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
         PMBridge.nativeRenderToFbo(handle, pmFbo)
         PMBridge.nativeGetLastError()?.let(onError)
+        // The native preset pipeline can leave scissor/masks/blend-equation
+        // dirty; re-establish the contract before anything else draws this
+        // frame (post pass here, plus any transition co-scene + composite).
+        dev.musicviz.render.scene.GlUtil.resetFrameState()
         GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, prevFbo[0])
         GLES30.glViewport(0, 0, width, height)
 
@@ -218,14 +227,14 @@ class ProjectMScene(
         name: String,
         value: Int,
     ) {
-        GLES30.glUniform1i(GLES30.glGetUniformLocation(postProgram, name), value)
+        GLES30.glUniform1i(postLocs.getOrPut(name) { GLES30.glGetUniformLocation(postProgram, name) }, value)
     }
 
     private fun setUniform1f(
         name: String,
         value: Float,
     ) {
-        GLES30.glUniform1f(GLES30.glGetUniformLocation(postProgram, name), value)
+        GLES30.glUniform1f(postLocs.getOrPut(name) { GLES30.glGetUniformLocation(postProgram, name) }, value)
     }
 
     private fun releaseFbo() {
@@ -245,5 +254,6 @@ class ProjectMScene(
         releaseFbo()
         if (postProgram != 0) GLES30.glDeleteProgram(postProgram)
         postProgram = 0
+        postLocs.clear()
     }
 }
