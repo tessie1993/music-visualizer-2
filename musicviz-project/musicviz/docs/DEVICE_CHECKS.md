@@ -48,3 +48,8 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     on different clocks (watch 2 minutes - no synchronized motion, no
     center flashing); bass visibly swells the blobs; works with kaleido/
     tile/gradient like any shader scene.
+16. Organic motion (v0.12.3): watch lava for 3+ minutes - blobs grow from
+    nothing and dissolve away in their own columns (nothing appears fully
+    formed, nothing changes lanes); fluid particles must show NO visible
+    pop at recycling (smoke-like fade in/out); metaballs slowly change
+    which balls exist without popping.

@@ -3,6 +3,7 @@
 // gradient enabled, speed rides the user's A->B->C ramp instead of HSV.
 precision highp float;
 in highp float vSpeed;
+in highp float vLife;
 uniform highp float uHueBase;
 uniform highp float uHueSpan;
 uniform highp float uBrightness;
@@ -26,5 +27,5 @@ void main() {
     } else {
         c = hsv(fract(uHueBase + sp * uHueSpan), 0.75 - sp * 0.35, 1.0);
     }
-    fragColor = vec4(c * (m * m) * uBrightness * (0.25 + sp), 1.0);
+    fragColor = vec4(c * (m * m) * uBrightness * (0.25 + sp) * vLife, 1.0);
 }

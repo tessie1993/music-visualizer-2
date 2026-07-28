@@ -1,3 +1,19 @@
+## v0.12.3 - organic motion pass: things morph in place like smoke, never pop
+- Lava scene v2: every blob now owns a PERMANENT home lane (its x position
+  is part of its identity - it wanders around home but never relocates),
+  and blobs are added/removed through slow grow/dissolve life envelopes
+  (45-90 s cycles, staggered) instead of appearing fully formed. Edges
+  undulate with a two-frequency wobble and the bottom pool carries a slow
+  surface wave - the lamp reads as wax/smoke morphing, not shapes flashing.
+- Fluid particles: the staggered respawn is now INVISIBLE - the vertex
+  stage mirrors the update kernel's per-particle lifetime clock and fades
+  each particle out before its respawn and back in after, so recycling
+  reads as smoke continuously forming and dissolving instead of dots
+  teleporting.
+- Metaballs: balls periodically dissolve and regrow on their own anchored
+  orbits (~80 s staggered cycles) - the set keeps changing membership by
+  morphing in place.
+
 ## v0.12.2 - fluid particles fixed, gradient maker, lava lamp scene
 Merged the locally audited v0.12.1a (six fluid launch variants, gate-green
 ktlint restyles) with the 25-bug fix pass; versionCode bumped to 15 to

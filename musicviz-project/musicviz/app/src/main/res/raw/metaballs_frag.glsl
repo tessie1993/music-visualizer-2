@@ -145,7 +145,12 @@ void main() {
         float fi = float(i) / 7.0;
         float b = aband(fi);
         vec2 c = 0.75 * vec2(sin(t * (0.5 + fi) + fi * 6.28), cos(t * (0.7 + fi * 0.5) + fi * 4.0));
-        float radius = 0.05 + b * 0.22;
+        // Life envelope: each ball periodically dissolves and regrows ON ITS
+        // OWN ORBIT (~80 s cycle, staggered) - the set keeps adding and
+        // removing members by morphing, never by popping in.
+        float lp = fract(t * 0.012 + fi * 1.37);
+        float life = smoothstep(0.0, 0.18, lp) * (1.0 - smoothstep(0.78, 1.0, lp));
+        float radius = (0.05 + b * 0.22) * (0.25 + 0.75 * life);
         float d = max(length(p - c), 0.001);
         float contrib = radius * radius / (d * d);
         field += contrib;

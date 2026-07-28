@@ -135,11 +135,12 @@ vec3 grade(vec3 col) {
     col = col * uBright * uIntensity;
     return mix(col, max(vec3(1.0) - col, 0.0), uInvert);
 }
-// Lava lamp: slow molten blobs with a real lifecycle - they detach from the
-// pool at the BOTTOM, rise on their own clocks from many x positions,
-// hang, merge, and sink back. Vector (SDF metaball) rendering, no flashing:
-// the music heats the lamp (bass = blob breathing, mids = drift, beats =
-// rim light) instead of strobing it.
+// Lava lamp: slow molten blobs with a real lifecycle. Every blob owns a
+// PERMANENT home lane (its x position never relocates), rises and sinks on
+// its own 18-40 s clock, and is born/dies IN PLACE through a smooth
+// grow/dissolve envelope - so the composition stays anchored and shapes
+// appear, merge and vanish by morphing like wax, never by popping in.
+// Noise-wobbled edges make the surfaces undulate like smoke underwater.
 float lavaHash(float n) { return fract(sin(n * 78.233) * 43758.5453); }
 void main() {
     vec2 p = view();
@@ -150,35 +151,52 @@ void main() {
     // The molten pool at the bottom every blob is born from and returns to.
     {
         vec2 q = vec2(p.x * 0.42, p.y + 1.52 - uBass * 0.06);
+        // Slow traveling surface wave so the pool breathes like liquid.
+        q.y += 0.05 * sin(p.x * 2.6 + t * 0.5) * sin(t * 0.23);
         float contrib = 0.34 / max(dot(q, q), 0.02);
         field += contrib;
         hueAcc += 0.08 * contrib;
     }
 
-    for (int i = 0; i < 9; i++) {
-        float fi = float(i) / 9.0;
+    for (int i = 0; i < 10; i++) {
+        float fi = float(i) / 10.0;
         float seed = lavaHash(fi + 0.37);
         float seed2 = lavaHash(fi * 3.1 + 9.2);
-        // Each blob has its own slow clock: one full rise-and-sink takes
-        // 18-40 s. Cosine ease = it detaches and lands gently, never pops.
+        // Own slow clock: one full rise-and-sink takes 18-40 s, cosine ease
+        // so it detaches and lands gently.
         float period = mix(18.0, 40.0, seed);
         float u = fract(t / period + seed2 * 1.7);
         float yc = -1.30 + 2.55 * (0.5 - 0.5 * cos(6.2831853 * u));
-        // Born anywhere across the width, wandering as it rises.
+        // PERMANENT home lane: x0 depends only on the blob's identity, so a
+        // blob always works the same column - it wanders around home but
+        // never teleports somewhere new.
         float x0 = (seed2 * 2.0 - 1.0) * 0.9;
         float x = x0 +
-            0.18 * sin(t * (0.15 + seed * 0.25) + seed * 31.0) +
+            0.16 * sin(t * (0.15 + seed * 0.25) + seed * 31.0) +
             uMid * 0.12 * sin(t * 0.8 + seed * 9.0);
+        // Life envelope: each blob periodically dissolves away and later
+        // regrows IN ITS OWN LANE (radius -> 0 and back over ~12 s), so the
+        // lamp keeps adding and removing wax without anything popping.
+        float lifePeriod = mix(45.0, 90.0, lavaHash(seed * 5.21));
+        float lp = fract(t / lifePeriod + seed * 2.3);
+        float life = smoothstep(0.0, 0.14, lp) * (1.0 - smoothstep(0.82, 1.0, lp));
         // Bass makes the wax breathe; each blob listens to its own band.
         float r = mix(0.13, 0.24, lavaHash(seed * 7.13)) *
+            (0.15 + 0.85 * life) *
             (1.0 + 0.30 * aband(fi) * uBeatResponse + 0.10 * uBass);
         vec2 q = p - vec2(x, yc);
         // Rising/sinking blobs stretch vertically like real wax.
         float vy = abs(sin(6.2831853 * u));
         q.y *= mix(0.95, 0.62, vy);
+        // Smoke-like surface: the blob's edge undulates with a slow
+        // two-frequency wobble instead of staying a perfect ellipse.
+        q += r * 0.22 * vec2(
+            sin(q.y * 9.0 + t * 0.9 + seed * 13.0) + 0.5 * sin(q.y * 17.0 - t * 0.6),
+            cos(q.x * 8.0 + t * 0.7 + seed * 7.0)
+        );
         float contrib = r * r / max(dot(q, q), 0.0008);
-        field += contrib;
-        hueAcc += (0.15 + 0.7 * fi) * contrib;
+        field += contrib * life;
+        hueAcc += (0.15 + 0.7 * fi) * contrib * life;
     }
 
     float hue = hueAcc / max(field, 0.001);

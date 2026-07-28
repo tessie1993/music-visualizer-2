@@ -157,6 +157,9 @@ internal class FluidParticles(private val context: Context) {
         GLES30.glUniform1f(loc(renderProgram, "uHueBase"), hueBase)
         GLES30.glUniform1f(loc(renderProgram, "uHueSpan"), hueSpan)
         GLES30.glUniform1f(loc(renderProgram, "uBrightness"), brightness)
+        // Same clock the update kernel respawns on - the vertex stage fades
+        // each particle out before its respawn and back in after.
+        GLES30.glUniform1f(loc(renderProgram, "uTime"), simTime)
         if (gradient != null) {
             GLES30.glUniform3f(loc(renderProgram, "uGradA"), gradient[0], gradient[1], gradient[2])
             GLES30.glUniform3f(loc(renderProgram, "uGradB"), gradient[3], gradient[4], gradient[5])
