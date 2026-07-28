@@ -6,6 +6,7 @@ import dev.musicviz.R
 import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.render.scene.GlUtil
 import dev.musicviz.render.scene.SceneParams
+import kotlin.math.pow
 
 /**
  * Applies MusicViz's screen-space composite FX chain (geometry, chromatic
@@ -49,8 +50,15 @@ internal class FxCompositor(
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexImage2D(
-            GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA8, width, height, 0,
-            GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null,
+            GLES30.GL_TEXTURE_2D,
+            0,
+            GLES30.GL_RGBA8,
+            width,
+            height,
+            0,
+            GLES30.GL_RGBA,
+            GLES30.GL_UNSIGNED_BYTE,
+            null,
         )
         GLES30.glGenFramebuffers(1, ids, 0)
         sceneFbo = ids[0]
@@ -71,8 +79,15 @@ internal class FxCompositor(
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
         GLES30.glTexImage2D(
-            GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA8, 1, 1, 0,
-            GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null,
+            GLES30.GL_TEXTURE_2D,
+            0,
+            GLES30.GL_RGBA8,
+            1,
+            1,
+            0,
+            GLES30.GL_RGBA,
+            GLES30.GL_UNSIGNED_BYTE,
+            null,
         )
     }
 
@@ -96,14 +111,15 @@ internal class FxCompositor(
         w: Int,
         h: Int,
         timeSeconds: Float,
+        dtSeconds: Float = 1f / 60f,
     ) {
         if (params.trailZoom == 0f && params.trailWarp <= 0f) {
-            fadeSceneTarget(params.trailLength)
+            fadeSceneTarget(params.trailLength, dtSeconds)
             return
         }
         ensureTrailBuffer(w, h)
         if (trailFbo == 0) {
-            fadeSceneTarget(params.trailLength)
+            fadeSceneTarget(params.trailLength, dtSeconds)
             return
         }
         GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, sceneFbo)
@@ -118,7 +134,7 @@ internal class FxCompositor(
         GLES30.glUniform1i(GLES30.glGetUniformLocation(trailWarpProgram, "uPrev"), 0)
         GLES30.glUniform1f(
             GLES30.glGetUniformLocation(trailWarpProgram, "uDecay"),
-            (params.trailLength * 0.97f + 0.02f).coerceIn(0f, 0.99f),
+            (params.trailLength * 0.97f + 0.02f).coerceIn(0f, 0.99f).pow(dtSeconds * 60f),
         )
         GLES30.glUniform1f(GLES30.glGetUniformLocation(trailWarpProgram, "uZoom"), params.trailZoom)
         GLES30.glUniform1f(GLES30.glGetUniformLocation(trailWarpProgram, "uWarp"), params.trailWarp)
@@ -161,13 +177,18 @@ internal class FxCompositor(
         trailFbo = 0
     }
 
-    fun fadeSceneTarget(trailLength: Float) {
+    fun fadeSceneTarget(
+        trailLength: Float,
+        dtSeconds: Float = 1f / 60f,
+    ) {
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         GLES30.glUseProgram(fadeProgram)
+        // Retention^(dt*60): matches the live renderer's frame-rate-independent
+        // fade so a 30 fps export decays trails like the 60 Hz live view.
         GLES30.glUniform1f(
             GLES30.glGetUniformLocation(fadeProgram, "uFadeAlpha"),
-            (1f - trailLength * 0.97f).coerceIn(0.02f, 1f),
+            (1f - (trailLength * 0.97f).pow(dtSeconds * 60f)).coerceIn(0.02f, 1f),
         )
         GLES30.glBindVertexArray(vao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
@@ -262,5 +283,9 @@ internal class FxCompositor(
     private fun loadRaw(
         context: Context,
         resId: Int,
-    ): String = context.resources.openRawResource(resId).bufferedReader().use { it.readText() }
+    ): String =
+        context.resources
+            .openRawResource(resId)
+            .bufferedReader()
+            .use { it.readText() }
 }

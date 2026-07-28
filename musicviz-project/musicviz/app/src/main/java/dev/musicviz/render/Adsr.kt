@@ -4,7 +4,9 @@ import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.render.scene.SceneParams
 
 /** Which energy band gates an envelope's sustain. */
-enum class EnvBand(val label: String) {
+enum class EnvBand(
+    val label: String,
+) {
     BASS("Bass"),
     MID("Mid"),
     TREBLE("Treble"),
@@ -122,9 +124,12 @@ class AdsrEngine {
         const val COUNT = 2
 
         private fun isLfoTarget(t: LfoTarget): Boolean =
-            t == LfoTarget.LFO1_RATE || t == LfoTarget.LFO1_DEPTH ||
-                t == LfoTarget.LFO2_RATE || t == LfoTarget.LFO2_DEPTH ||
-                t == LfoTarget.LFO3_RATE || t == LfoTarget.LFO3_DEPTH
+            t == LfoTarget.LFO1_RATE ||
+                t == LfoTarget.LFO1_DEPTH ||
+                t == LfoTarget.LFO2_RATE ||
+                t == LfoTarget.LFO2_DEPTH ||
+                t == LfoTarget.LFO3_RATE ||
+                t == LfoTarget.LFO3_DEPTH
 
         /**
          * Rate/depth offsets the envelopes contribute to the LFOs; pass into

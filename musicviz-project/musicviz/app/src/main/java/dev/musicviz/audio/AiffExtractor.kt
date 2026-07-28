@@ -143,7 +143,8 @@ class AiffExtractor : Extractor {
             "AIFF: unsupported sample format ($bitsPerSample-bit)"
         }
         track.format(
-            Format.Builder()
+            Format
+                .Builder()
                 .setSampleMimeType(MimeTypes.AUDIO_RAW)
                 .setChannelCount(channels)
                 .setSampleRate(sampleRate)
@@ -207,7 +208,14 @@ class AiffExtractor : Extractor {
             p.skipBytes(4) // numSampleFrames
             val bits = p.readShort().toInt()
             val rate = parseExtendedFloat80(body, 8)
-            val compression = if (isAifc && body.size >= 22) java.nio.ByteBuffer.wrap(body, 18, 4).int else NONE
+            val compression =
+                if (isAifc && body.size >= 22) {
+                    java.nio.ByteBuffer
+                        .wrap(body, 18, 4)
+                        .int
+                } else {
+                    NONE
+                }
             val littleEndian = compression == SOWT
             val encoding =
                 when {

@@ -83,7 +83,10 @@ fun AppRoot(
 
     var crashText by remember {
         mutableStateOf(
-            java.io.File(context.filesDir, "crash-latest.txt").takeIf { it.exists() }?.readText(),
+            java.io
+                .File(context.filesDir, "crash-latest.txt")
+                .takeIf { it.exists() }
+                ?.readText(),
         )
     }
     VisualizerEngineBindings(viewModel, visualizerView)
@@ -392,15 +395,20 @@ fun SettingsScreen(
                 cacheInfo =
                     withContext(Dispatchers.IO) {
                         val app = context.applicationContext
-                        val n = dev.musicviz.analysis.AnalysisCache.entryCount(app)
-                        val mb = dev.musicviz.analysis.AnalysisCache.sizeBytes(app) / (1024f * 1024f)
+                        val n =
+                            dev.musicviz.analysis.AnalysisCache
+                                .entryCount(app)
+                        val mb =
+                            dev.musicviz.analysis.AnalysisCache
+                                .sizeBytes(app) / (1024f * 1024f)
                         "%d tracks · %.1f MB".format(n, mb)
                     }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Analysis cache: $cacheInfo", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = {
-                    dev.musicviz.analysis.AnalysisCache.clear(context.applicationContext)
+                    dev.musicviz.analysis.AnalysisCache
+                        .clear(context.applicationContext)
                     cacheBump++
                 }) { Text("Clear") }
             }
@@ -460,10 +468,12 @@ fun SearchScreen(
                         items(tracks) { t ->
                             Text(
                                 t.title,
-                                Modifier.fillMaxWidth().clickable {
-                                    viewModel.playTrack(t.uri)
-                                    onClose()
-                                }.padding(vertical = 8.dp),
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.playTrack(t.uri)
+                                        onClose()
+                                    }.padding(vertical = 8.dp),
                             )
                         }
                     }
@@ -473,10 +483,12 @@ fun SearchScreen(
                         items(presets) { p ->
                             Text(
                                 p.name,
-                                Modifier.fillMaxWidth().clickable {
-                                    viewModel.applyPreset(p)
-                                    onClose()
-                                }.padding(vertical = 8.dp),
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.applyPreset(p)
+                                        onClose()
+                                    }.padding(vertical = 8.dp),
                             )
                         }
                     }

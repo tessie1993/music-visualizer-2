@@ -5,7 +5,10 @@ import android.net.Uri
 import java.io.File
 
 /** A milkdrop texture image available to presets that reference it by name. */
-data class MilkTexture(val name: String, val path: String)
+data class MilkTexture(
+    val name: String,
+    val path: String,
+)
 
 /**
  * Manages the shared milkdrop texture directory (filesDir/milk/textures),
@@ -15,12 +18,15 @@ data class MilkTexture(val name: String, val path: String)
  * importing images here, presets that reference them by filename can render
  * correctly instead of falling back to noise or black.
  */
-class TextureStore(context: Context) {
+class TextureStore(
+    context: Context,
+) {
     private val appContext = context.applicationContext
     private val dir = File(context.filesDir, "milk/textures").apply { mkdirs() }
 
     fun list(): List<MilkTexture> =
-        dir.listFiles { f -> f.isFile && f.extension.lowercase() in IMAGE_EXTS }
+        dir
+            .listFiles { f -> f.isFile && f.extension.lowercase() in IMAGE_EXTS }
             ?.sortedBy { it.name.lowercase() }
             ?.map { MilkTexture(it.name, it.absolutePath) }
             .orEmpty()

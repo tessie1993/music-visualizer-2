@@ -4,8 +4,10 @@ import dev.musicviz.analysis.AudioFeatures
 import kotlin.random.Random
 
 /** Bottom-center fountain: bass drives launch power, gravity pulls back. */
-class FountainScene(shaders: ShaderSources, count: Int = 2800) :
-    ParticleSceneBase(SceneIds.FOUNTAIN, count, shaders) {
+class FountainScene(
+    shaders: ShaderSources,
+    count: Int = 2800,
+) : ParticleSceneBase(SceneIds.FOUNTAIN, count, shaders) {
     private val random = Random(23)
     private val px = FloatArray(count)
     private val py = FloatArray(count) { -2f }
@@ -15,13 +17,19 @@ class FountainScene(shaders: ShaderSources, count: Int = 2800) :
     private val hue = FloatArray(count)
     private var nextIndex = 0
 
+    // Fractional-emission carry so the rate is per-second, not per-frame
+    // (per-frame doubled density and halved lifetimes on 120 Hz panels).
+    private var emitAcc = 0f
+
     override fun simulate(
         features: AudioFeatures,
         dt: Float,
     ) {
         val p = sceneParams
         val power = (features.bass * p.audioDrive).coerceIn(0f, 1.5f)
-        val emitCount = (6 + power * 60f * (1f + p.beatResponse * (if (features.beat) 2f else 0f))).toInt()
+        emitAcc += (6 + power * 60f * (1f + p.beatResponse * (if (features.beat) 2f else 0f))) * dt * 60f
+        val emitCount = emitAcc.toInt().coerceAtMost(count)
+        emitAcc -= emitCount
         repeat(emitCount) {
             val i = nextIndex
             nextIndex = (nextIndex + 1) % count

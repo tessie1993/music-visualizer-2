@@ -19,14 +19,21 @@ import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 
 /** Output quality tier - the short side (px) and target video bitrate. */
-enum class ExportQuality(val shortSide: Int, val bitRate: Int) {
+enum class ExportQuality(
+    val shortSide: Int,
+    val bitRate: Int,
+) {
     HD720(720, 6_000_000),
     FHD1080(1080, 12_000_000),
     UHD4K(2160, 40_000_000),
 }
 
 /** Output aspect ratio as width:height. */
-enum class ExportRatio(val label: String, val wRatio: Int, val hRatio: Int) {
+enum class ExportRatio(
+    val label: String,
+    val wRatio: Int,
+    val hRatio: Int,
+) {
     R16_9("16:9", 16, 9),
     R9_16("9:16", 9, 16),
     R1_1("1:1", 1, 1),
@@ -40,7 +47,11 @@ enum class ExportRatio(val label: String, val wRatio: Int, val hRatio: Int) {
  * chosen bitrate, derived from a quality tier and a ratio. The short side of
  * the frame equals the quality's [ExportQuality.shortSide].
  */
-class ExportAspect(val width: Int, val height: Int, val bitRate: Int) {
+class ExportAspect(
+    val width: Int,
+    val height: Int,
+    val bitRate: Int,
+) {
     companion object {
         fun of(
             quality: ExportQuality,
@@ -74,7 +85,9 @@ class ExportAspect(val width: Int, val height: Int, val bitRate: Int) {
  * H.264 encoder using the precomputed [FeatureTimeline] (deterministic - no
  * dropped frames), then muxes the original audio track alongside.
  */
-class VideoExporter(private val context: Context) {
+class VideoExporter(
+    private val context: Context,
+) {
     companion object {
         private const val FPS: Int = 60
         private const val TIMEOUT_US: Long = 10_000
@@ -134,8 +147,17 @@ class VideoExporter(private val context: Context) {
             try {
                 pfd.use {
                     encodeInto(
-                        it, audioUri, timeline, sceneFactory, aspect,
-                        sceneParams, lfoConfigs, adsrConfigs, requestedFps, onProgress, isCancelled,
+                        it,
+                        audioUri,
+                        timeline,
+                        sceneFactory,
+                        aspect,
+                        sceneParams,
+                        lfoConfigs,
+                        adsrConfigs,
+                        requestedFps,
+                        onProgress,
+                        isCancelled,
                     )
                 }
                 if (isCancelled()) {
@@ -174,8 +196,17 @@ class VideoExporter(private val context: Context) {
         return try {
             pfd.use {
                 encodeInto(
-                    it, audioUri, timeline, sceneFactory, aspect,
-                    sceneParams, lfoConfigs, adsrConfigs, requestedFps, onProgress, isCancelled,
+                    it,
+                    audioUri,
+                    timeline,
+                    sceneFactory,
+                    aspect,
+                    sceneParams,
+                    lfoConfigs,
+                    adsrConfigs,
+                    requestedFps,
+                    onProgress,
+                    isCancelled,
                 )
             }
             if (isCancelled()) {
@@ -213,82 +244,99 @@ class VideoExporter(private val context: Context) {
                 setInteger(MediaFormat.KEY_FRAME_RATE, fps)
                 setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
             }
-        var encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-        var fps = requestedFps.coerceIn(24, 60)
-        try {
-            encoder.configure(makeFormat(fps, aspect.bitRate), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        } catch (e: Exception) {
-            // High resolutions/60 fps can exceed a device's encoder limits
-            // (notably 4K); retry once at 30 fps and 2/3 bitrate.
-            runCatching { encoder.release() }
-            encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-            fps = 30
-            encoder.configure(makeFormat(30, aspect.bitRate * 2 / 3), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        }
-        val inputSurface = encoder.createInputSurface()
-        encoder.start()
-
-        val muxer = MediaMuxer(pfd.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-        // MP4 cannot carry MP3/Vorbis/FLAC tracks; transcode audio to AAC first.
-        val aac = AudioTranscoder(context).transcode(audioUri, 0L, isCancelled) { onProgress(it * 0.1f) }
-        val egl = EncoderSurface(inputSurface)
-        egl.makeCurrent()
-
-        val scene = sceneFactory.create()
-        scene.init()
-        scene.resize(aspect.width, aspect.height)
-        GLES30.glViewport(0, 0, aspect.width, aspect.height)
-        val isParticle = scene is dev.musicviz.render.scene.ParticleSceneBase
-        val isShaderScene = scene is dev.musicviz.render.scene.ShaderScene
-        // Curl Flow's look is DEFINED by canvas persistence (live renderer
-        // forces it regardless of the trails toggle); a hard-cleared export
-        // reads as strobing dots instead of streams.
-        val isCurlFlow = scene is dev.musicviz.render.fluid.CurlFlowScene
-
-        // Build an offscreen FBO + composite program so the export applies the
-        // SAME screen-space FX chain (geometry, chroma, vignette, scanlines,
-        // grain, glitch, fisheye, strobe, bloom, posterize) the live renderer
-        // does. Without this, exports - especially of particle scenes - would
-        // omit every FX/shape customization, which are composite-only.
-        val fx = FxCompositor(context, aspect.width, aspect.height)
-        // FlowField export parity (F7): run the shared field in the export GL
-        // context so fluidWarp bends exported frames exactly like the live
-        // view. The FLUID scene reuses its own velocity field instead.
-        val exportFluidScene = scene as? dev.musicviz.render.fluid.FluidScene
-        val flowField =
-            if (sceneParams.flowEnabled && exportFluidScene == null) {
-                dev.musicviz.render.fluid.FlowField(context).also {
-                    it.create()
-                    it.resize(aspect.width, aspect.height)
-                }
-            } else {
-                null
-            }
-        // Reproduce the live path's per-frame LFO modulation so automations
-        // the user set up appear in the render, not just on screen.
-        val lfoEngine = dev.musicviz.render.LfoEngine()
-        if (lfoConfigs.isNotEmpty()) lfoEngine.configs = lfoConfigs
-        val adsrEngine =
-            dev.musicviz.render.AdsrEngine().also {
-                if (adsrConfigs.isNotEmpty()) it.configs = adsrConfigs
-            }
-
-        var videoTrack = -1
-        var audioTrack = -1
+        // Every resource below must be released even when SETUP throws - a
+        // cancelled audio transcode, a source with no audio track, or a failed
+        // shader/EGL init used to leak the started encoder, its input surface
+        // and the muxer (repeated attempts exhaust hardware codec instances).
+        var encoderRef: MediaCodec? = null
+        var inputSurfaceRef: android.view.Surface? = null
+        var muxerRef: MediaMuxer? = null
+        var aacRef: AudioTranscoder.Result? = null
+        var eglRef: EncoderSurface? = null
+        var sceneRef: Scene? = null
+        var fxRef: FxCompositor? = null
+        var flowFieldRef: dev.musicviz.render.fluid.FlowField? = null
         var muxerStarted = false
-        val info = MediaCodec.BufferInfo()
-        // Video length is derived from the ACTUAL transcoded audio duration so
-        // the export always matches the music exactly. The analysis timeline is
-        // only used for per-frame features (featuresAt clamps at its end).
-        val exportDurationUs = if (aac.durationUs > 0) aac.durationUs else timeline.durationMs * 1000
-        val totalFrames = (exportDurationUs * fps / 1_000_000L).toInt().coerceAtLeast(1)
-        val frameDurationNs = 1_000_000_000L / fps
-        // Section boundaries once (O(n)); per-frame features then carry the
-        // progress/section context, so the fluid spawn/catch choreography
-        // journeys through the exported video exactly like live playback.
-        val sections = timeline.detectSections()
-
         try {
+            var encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).also { encoderRef = it }
+            var fps = requestedFps.coerceIn(24, 60)
+            try {
+                encoder.configure(makeFormat(fps, aspect.bitRate), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            } catch (e: Exception) {
+                // High resolutions/60 fps can exceed a device's encoder limits
+                // (notably 4K); retry once at 30 fps and 2/3 bitrate.
+                runCatching { encoder.release() }
+                encoderRef = null
+                encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).also { encoderRef = it }
+                fps = 30
+                encoder.configure(makeFormat(30, aspect.bitRate * 2 / 3), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            }
+            val inputSurface = encoder.createInputSurface().also { inputSurfaceRef = it }
+            encoder.start()
+
+            val muxer = MediaMuxer(pfd.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4).also { muxerRef = it }
+            // MP4 cannot carry MP3/Vorbis/FLAC tracks; transcode audio to AAC first.
+            val aac =
+                AudioTranscoder(context)
+                    .transcode(audioUri, 0L, isCancelled) { onProgress(it * 0.1f) }
+                    .also { aacRef = it }
+            val egl = EncoderSurface(inputSurface).also { eglRef = it }
+            egl.makeCurrent()
+
+            val scene = sceneFactory.create().also { sceneRef = it }
+            scene.init()
+            scene.resize(aspect.width, aspect.height)
+            GLES30.glViewport(0, 0, aspect.width, aspect.height)
+            val isParticle = scene is dev.musicviz.render.scene.ParticleSceneBase
+            val isShaderScene = scene is dev.musicviz.render.scene.ShaderScene
+            // Curl Flow's look is DEFINED by canvas persistence (live renderer
+            // forces it regardless of the trails toggle); a hard-cleared export
+            // reads as strobing dots instead of streams.
+            val isCurlFlow = scene is dev.musicviz.render.fluid.CurlFlowScene
+
+            // Build an offscreen FBO + composite program so the export applies the
+            // SAME screen-space FX chain (geometry, chroma, vignette, scanlines,
+            // grain, glitch, fisheye, strobe, bloom, posterize) the live renderer
+            // does. Without this, exports - especially of particle scenes - would
+            // omit every FX/shape customization, which are composite-only.
+            val fx = FxCompositor(context, aspect.width, aspect.height).also { fxRef = it }
+            // FlowField export parity (F7): run the shared field in the export GL
+            // context so fluidWarp bends exported frames exactly like the live
+            // view. The FLUID scene reuses its own velocity field instead.
+            val exportFluidScene = scene as? dev.musicviz.render.fluid.FluidScene
+            val flowField =
+                if (sceneParams.flowEnabled && exportFluidScene == null) {
+                    dev.musicviz.render.fluid.FlowField(context).also {
+                        flowFieldRef = it
+                        it.create()
+                        it.resize(aspect.width, aspect.height)
+                    }
+                } else {
+                    null
+                }
+            // Reproduce the live path's per-frame LFO modulation so automations
+            // the user set up appear in the render, not just on screen.
+            val lfoEngine = dev.musicviz.render.LfoEngine()
+            if (lfoConfigs.isNotEmpty()) lfoEngine.configs = lfoConfigs
+            val adsrEngine =
+                dev.musicviz.render.AdsrEngine().also {
+                    if (adsrConfigs.isNotEmpty()) it.configs = adsrConfigs
+                }
+
+            var videoTrack = -1
+            var audioTrack = -1
+            val info = MediaCodec.BufferInfo()
+            // Video length is derived from the ACTUAL transcoded audio duration so
+            // the export always matches the music exactly. The analysis timeline is
+            // only used for per-frame features (featuresAt clamps at its end).
+            val exportDurationUs = if (aac.durationUs > 0) aac.durationUs else timeline.durationMs * 1000
+            val totalFrames = (exportDurationUs * fps / 1_000_000L).toInt().coerceAtLeast(1)
+            val frameDurationNs = 1_000_000_000L / fps
+            // Section boundaries once (O(n)); per-frame features then carry the
+            // progress/section context, so the fluid spawn/catch choreography
+            // journeys through the exported video exactly like live playback.
+            val sections = timeline.detectSections()
+
             for (frame in 0 until totalFrames) {
                 if (isCancelled()) break
                 val timeMs = frame * 1000L / fps
@@ -298,25 +346,61 @@ class VideoExporter(private val context: Context) {
                 // silently dropping ALL ADSR routing - including the new
                 // Catch pull/Catch radius targets - from rendered video.
                 val envValues = adsrEngine.tick(1f / fps, features)
-                val (envRate, envDepth) = dev.musicviz.render.AdsrEngine.lfoOffsets(adsrEngine.configs, envValues)
+                val (envRate, envDepth) =
+                    dev.musicviz.render.AdsrEngine
+                        .lfoOffsets(adsrEngine.configs, envValues)
                 val lfoValues = lfoEngine.tick(1f / fps, features.bpm, envRate, envDepth)
-                var p = dev.musicviz.render.LfoEngine.apply(sceneParams, lfoEngine.configs, lfoValues)
-                p = dev.musicviz.render.AdsrEngine.apply(p, adsrEngine.configs, envValues)
+                var p =
+                    dev.musicviz.render.LfoEngine
+                        .apply(sceneParams, lfoEngine.configs, lfoValues)
+                p =
+                    dev.musicviz.render.AdsrEngine
+                        .apply(p, adsrEngine.configs, envValues)
                 scene.setParams(p)
-                scene.update(dev.musicviz.render.scene.applyBandGains(features, p), 1f / fps)
+                scene.update(
+                    dev.musicviz.render.scene
+                        .applyBandGains(features, p),
+                    1f / fps,
+                )
                 if (p.flowEnabled && flowField != null && flowField.available) {
                     // Steps into the FlowField's own FBOs, before the scene
                     // target is bound - mirrors the live frame order.
-                    flowField.step(dev.musicviz.render.scene.applyBandGains(features, p), 1f / fps, p)
+                    flowField.step(
+                        dev.musicviz.render.scene
+                            .applyBandGains(features, p),
+                        1f / fps,
+                        p,
+                    )
+                }
+                // FlowField consumers, mirroring the live renderer: CPU grid
+                // for particle scenes ("Particles ride the field"), uFlow
+                // sampler for shader scenes. Without this, exported particles
+                // ignored the field and shader-scene flow distortion was 0.
+                if (p.flowEnabled && flowField != null && flowField.available) {
+                    if (isParticle && p.flowAdvectParticles) {
+                        flowField.readback(flowField.velocityTex, flowField.flowScale, flowField.aspect)
+                        (scene as dev.musicviz.render.scene.ParticleSceneBase).flowGrid = flowField.cpuGrid
+                    } else if (isParticle) {
+                        (scene as dev.musicviz.render.scene.ParticleSceneBase).flowGrid = null
+                    }
+                    if (scene is dev.musicviz.render.scene.ShaderScene) {
+                        scene.setFlow(flowField.velocityTex, p.flowStrength)
+                    }
                 }
                 // Draw the scene into the FX FBO, then composite (with the full
                 // FX chain) onto the encoder surface, matching the live path.
                 fx.bindSceneTarget()
                 if (((p.trails && isParticle) || isCurlFlow) && frame > 0) {
-                    // Mirror the live curlPersist rule: keep >= 0.85.
+                    // Mirror the live curlPersist rule: keep >= 0.85 - but only
+                    // in the plain-fade branch; the live path passes the raw
+                    // trailLength to the trail-warp pass.
                     val fadeParams =
-                        if (isCurlFlow) p.copy(trailLength = p.trailLength.coerceAtLeast(0.85f)) else p
-                    fx.fadeSceneTargetWarp(fadeParams, fx.sceneFbo, fx.width, fx.height, timeMs / 1000f)
+                        if (isCurlFlow && p.trailZoom == 0f && p.trailWarp <= 0f) {
+                            p.copy(trailLength = p.trailLength.coerceAtLeast(0.85f))
+                        } else {
+                            p
+                        }
+                    fx.fadeSceneTargetWarp(fadeParams, fx.sceneFbo, fx.width, fx.height, timeMs / 1000f, 1f / fps)
                 } else {
                     GLES30.glClearColor(0f, 0f, 0f, 1f)
                     GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
@@ -389,18 +473,18 @@ class VideoExporter(private val context: Context) {
             }
         } finally {
             // Cleanup failures (e.g. stopping a muxer after a mid-export error)
-            // must never mask the original exception.
-            runCatching {
-                scene.release()
-                runCatching { flowField?.release() }
-                runCatching { fx.release() }
-            }
-            if (muxerStarted) runCatching { muxer.stop() }
-            runCatching { muxer.release() }
-            runCatching { encoder.stop() }
-            runCatching { encoder.release() }
-            runCatching { egl.release() }
-            aac.release()
+            // must never mask the original exception. Refs are null for any
+            // resource whose creation was never reached.
+            runCatching { sceneRef?.release() }
+            runCatching { flowFieldRef?.release() }
+            runCatching { fxRef?.release() }
+            if (muxerStarted) runCatching { muxerRef?.stop() }
+            runCatching { muxerRef?.release() }
+            runCatching { encoderRef?.stop() }
+            runCatching { encoderRef?.release() }
+            runCatching { inputSurfaceRef?.release() }
+            runCatching { eglRef?.release() }
+            aacRef?.release()
         }
     }
 

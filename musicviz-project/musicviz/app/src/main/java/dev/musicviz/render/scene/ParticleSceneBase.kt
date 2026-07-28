@@ -18,7 +18,10 @@ abstract class ParticleSceneBase(
     protected val count: Int,
     private val shaders: ShaderSources,
 ) : Scene {
-    class ShaderSources(val vertex: String, val fragment: String)
+    class ShaderSources(
+        val vertex: String,
+        val fragment: String,
+    )
 
     companion object {
         const val FLOATS_PER_PARTICLE: Int = 5

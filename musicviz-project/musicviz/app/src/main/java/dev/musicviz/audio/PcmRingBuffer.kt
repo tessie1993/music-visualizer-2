@@ -8,7 +8,9 @@ package dev.musicviz.audio
  * never blocked; benign tearing at the write head is acceptable for
  * visualization purposes.
  */
-class PcmRingBuffer(capacity: Int = 1 shl 16) {
+class PcmRingBuffer(
+    capacity: Int = 1 shl 16,
+) {
     private val data: FloatArray = FloatArray(capacity)
     private val mask: Long = (capacity - 1).toLong()
 

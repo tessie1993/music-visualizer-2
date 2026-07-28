@@ -132,7 +132,11 @@ internal object FluidMath {
     }
 
     /** Particle state texture side: smallest square holding [count] texels. */
-    fun stateSide(count: Int): Int = kotlin.math.ceil(kotlin.math.sqrt(count.toDouble())).toInt().coerceAtLeast(2)
+    fun stateSide(count: Int): Int =
+        kotlin.math
+            .ceil(kotlin.math.sqrt(count.toDouble()))
+            .toInt()
+            .coerceAtLeast(2)
 
     /**
      * CPU mirror of the particle update kernel's catch-point attraction

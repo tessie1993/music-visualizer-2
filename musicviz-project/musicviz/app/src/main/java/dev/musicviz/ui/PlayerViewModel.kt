@@ -97,7 +97,10 @@ data class VizApply(
 )
 
 /** A .milk file available to the milkdrop scene. */
-data class MilkFile(val name: String, val path: String)
+data class MilkFile(
+    val name: String,
+    val path: String,
+)
 
 /** Music library + playlists + batch-analysis progress. */
 data class LibraryState(
@@ -123,7 +126,9 @@ data class ExportUiState(
  * analysis/intelligence, presets and export orchestration.
  */
 @OptIn(UnstableApi::class)
-class PlayerViewModel(application: Application) : AndroidViewModel(application) {
+class PlayerViewModel(
+    application: Application,
+) : AndroidViewModel(application) {
     private val ring = PcmRingBuffer()
     private val engine = AnalysisEngine(ring)
     private val sink = PcmTapSink(ring) { rate -> engine.sampleRateHz = rate }
@@ -145,16 +150,20 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
                     application,
                     androidx.media3.extractor.ExtractorsFactory {
-                        androidx.media3.extractor.DefaultExtractorsFactory().createExtractors() +
+                        androidx.media3.extractor
+                            .DefaultExtractorsFactory()
+                            .createExtractors() +
                             dev.musicviz.audio.AiffExtractor()
                     },
                 ),
-            )
-            .setAudioAttributes(
-                AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(),
+            ).setAudioAttributes(
+                AudioAttributes
+                    .Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .build(),
                 true,
-            )
-            .build()
+            ).build()
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState
@@ -433,7 +442,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun nextBuiltInMilkPresetBlocking(): String? =
         try {
             val files =
-                importDir().listFiles { f -> f.extension == "milk" }.orEmpty()
+                importDir()
+                    .listFiles { f -> f.extension == "milk" }
+                    .orEmpty()
                     .sortedBy { it.name }
             if (files.isEmpty()) {
                 null
@@ -459,7 +470,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     // they stop appearing, and list only the user's files.
                     builtInDir().deleteRecursively()
                     java.io.File(importDir(), "textures").mkdirs()
-                    importDir().listFiles { f -> f.extension == "milk" }.orEmpty()
+                    importDir()
+                        .listFiles { f -> f.extension == "milk" }
+                        .orEmpty()
                         .map { MilkFile(it.nameWithoutExtension, it.absolutePath) }
                         .sortedBy { it.name }
                 } catch (t: Throwable) {
@@ -533,7 +546,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                         currentUri?.let { u ->
                             val title =
                                 player.mediaMetadata.title?.toString()
-                                    ?: player.currentMediaItem?.localConfiguration?.uri?.lastPathSegment.orEmpty()
+                                    ?: player.currentMediaItem
+                                        ?.localConfiguration
+                                        ?.uri
+                                        ?.lastPathSegment
+                                        .orEmpty()
                             historyStore.recordPlay(u.toString(), title)
                             _historyTick.update { it + 1 }
                         }
@@ -599,6 +616,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Renderer side effects (milk preset loads, custom shaders) to apply. */
     val vizApply: SharedFlow<VizApply> = _vizApply
+
+    private val _morphFade = MutableSharedFlow<Float>(extraBufferCapacity = 4)
+
+    /** One-shot preset-morph fade (seconds) for the renderer; never persisted. */
+    val morphFade: SharedFlow<Float> = _morphFade
 
     private var lastVizSwitchMs = 0L
     private var vizPlaylistIndex = 0
@@ -783,16 +805,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /** Applies a playlist entry: scene, saved preset params and side effects. */
+    /** Applies a playlist entry: scene, saved preset params and side effects.
+     *  The preset's custom shader (if any) is emitted by [applyPreset]. */
     fun applyVizEntry(entry: VizPlaylistEntry) {
         selectScene(entry.sceneId)
-        var shader: String? = null
         if (entry.presetName != null) {
-            _vizState.value.presets.firstOrNull { it.name == entry.presetName && it.sceneId == entry.sceneId }
-                ?.let { shader = applyPreset(it) }
+            _vizState.value.presets
+                .firstOrNull { it.name == entry.presetName && it.sceneId == entry.sceneId }
+                ?.let { applyPreset(it) }
         }
-        if (entry.milkPath != null || shader != null) {
-            _vizApply.tryEmit(VizApply(milkPath = entry.milkPath, customShader = shader, sceneId = entry.sceneId))
+        if (entry.milkPath != null) {
+            _vizApply.tryEmit(VizApply(milkPath = entry.milkPath, sceneId = entry.sceneId))
         }
     }
 
@@ -821,7 +844,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (title == null) {
             title =
                 runCatching {
-                    app.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                    app.contentResolver
+                        .query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
                         ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
                 }.getOrNull()?.substringBeforeLast('.')
         }
@@ -868,7 +892,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             return it
         }
         return offlineAnalyzer.analyze(uri, onProgress).also {
-            dev.musicviz.analysis.AnalysisCache.save(app, uri, it)
+            dev.musicviz.analysis.AnalysisCache
+                .save(app, uri, it)
         }
     }
 
@@ -929,7 +954,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val app = getApplication<Application>()
         val found = mutableListOf<LibraryTrack>()
         runCatching {
-            val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(app, treeUri) ?: return@runCatching
+            val root =
+                androidx.documentfile.provider.DocumentFile
+                    .fromTreeUri(app, treeUri) ?: return@runCatching
 
             fun walk(
                 dir: androidx.documentfile.provider.DocumentFile,
@@ -1023,7 +1050,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     /** Resolves a playlist's track uris to library entries, preserving order. */
     fun playlistTracks(playlist: String): List<LibraryTrack> {
         val byUri = _library.value.tracks.associateBy { it.uri }
-        val names = _library.value.playlists.firstOrNull { it.name == playlist }?.trackUris.orEmpty()
+        val names =
+            _library.value.playlists
+                .firstOrNull { it.name == playlist }
+                ?.trackUris
+                .orEmpty()
         return names.map { uri -> byUri[uri] ?: LibraryTrack(uri = uri, title = titleFor(Uri.parse(uri))) }
     }
 
@@ -1032,7 +1063,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         playlist: String,
         startIndex: Int = 0,
     ) {
-        val uris = _library.value.playlists.firstOrNull { it.name == playlist }?.trackUris.orEmpty()
+        val uris =
+            _library.value.playlists
+                .firstOrNull { it.name == playlist }
+                ?.trackUris
+                .orEmpty()
         if (uris.isEmpty()) return
         player.setMediaItems(uris.map { mediaItemFor(Uri.parse(it)) })
         player.prepare()
@@ -1108,7 +1143,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     /** User .milk files (imports + saves), newest first. Built-ins removed. */
     fun userMilkPresets(): List<java.io.File> {
         val dir = java.io.File(getApplication<Application>().filesDir, "milk")
-        return dir.listFiles { f -> f.isFile && f.extension == "milk" }
+        return dir
+            .listFiles { f -> f.isFile && f.extension == "milk" }
             ?.sortedByDescending { it.lastModified() }
             .orEmpty()
     }
@@ -1146,7 +1182,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
      * duration into the library so results persist and show up later.
      */
     fun analyzePlaylist(playlist: String) {
-        val uris = _library.value.playlists.firstOrNull { it.name == playlist }?.trackUris.orEmpty()
+        val uris =
+            _library.value.playlists
+                .firstOrNull { it.name == playlist }
+                ?.trackUris
+                .orEmpty()
         if (uris.isEmpty() || _library.value.analyzing) return
         _library.update { it.copy(analyzing = true, analyzeProgress = 0f) }
         viewModelScope.launch(Dispatchers.Default) {
@@ -1178,15 +1218,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun mediaItemFor(uri: Uri): MediaItem {
         val known = _library.value.tracks.firstOrNull { it.uri == uri.toString() }
         val (t, a) = if (known != null) known.title to known.artist else metadataQuick(uri)
-        return MediaItem.Builder()
+        return MediaItem
+            .Builder()
             .setUri(uri)
             .setMediaMetadata(
-                androidx.media3.common.MediaMetadata.Builder()
+                androidx.media3.common.MediaMetadata
+                    .Builder()
                     .setTitle(t)
                     .setArtist(a.ifBlank { null })
                     .build(),
-            )
-            .build()
+            ).build()
     }
 
     /** Main-thread-safe metadata: display name only (no retriever I/O). */
@@ -1194,7 +1235,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val app = getApplication<Application>()
         val name =
             runCatching {
-                app.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                app.contentResolver
+                    .query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
                     ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
             }.getOrNull()?.substringBeforeLast('.')
         return (name ?: "Track") to ""
@@ -1238,7 +1280,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         (0 until player.mediaItemCount).map { i ->
             val item = player.getMediaItemAt(i)
             item.mediaMetadata.title?.toString()
-                ?: item.localConfiguration?.uri?.lastPathSegment?.substringAfterLast('/')
+                ?: item.localConfiguration
+                    ?.uri
+                    ?.lastPathSegment
+                    ?.substringAfterLast('/')
                     ?.substringBeforeLast('.')
                 ?: "Track ${i + 1}"
         }
@@ -1403,7 +1448,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             runCatching {
                 val app = getApplication<Application>()
                 val tree =
-                    androidx.documentfile.provider.DocumentFile.fromTreeUri(app, Uri.parse(uriStr))
+                    androidx.documentfile.provider.DocumentFile
+                        .fromTreeUri(app, Uri.parse(uriStr))
                         ?: return@runCatching
 
                 fun copyInto(
@@ -1431,20 +1477,29 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Preset morphing: applied params fade over [GuiPrefs.morphBeats] beats
-     *  of the detected BPM (renderer's displayedParams does the lerp). */
-    private fun morphedParams(p: dev.musicviz.render.scene.SceneParams): dev.musicviz.render.scene.SceneParams {
+     *  of the detected BPM (renderer's displayedParams does the lerp). The
+     *  fade travels as a transient [morphFade] event - baking it into
+     *  paramFadeSec permanently inflated the user's "Fade time" setting and
+     *  got persisted into every preset saved afterwards. */
+    private fun emitPresetMorph() {
         val beats = _guiPrefs.value.morphBeats
-        if (beats <= 0) return p
+        if (beats <= 0) return
         val bpm = features.value.bpm.takeIf { it > 40f } ?: 120f
-        val sec = beats * 60f / bpm
-        return p.copy(paramFadeSec = maxOf(p.paramFadeSec, sec))
+        _morphFade.tryEmit(beats * 60f / bpm)
     }
 
-    fun applyPreset(preset: Preset): String? {
+    fun applyPreset(preset: Preset) {
         setReactivity(preset.attack, preset.decay)
         selectScene(preset.sceneId)
-        setSceneParams(morphedParams(preset.params))
-        return preset.customShader
+        setSceneParams(preset.params)
+        emitPresetMorph()
+        // Every apply path must push the preset's custom shader; returning it
+        // for the caller to forward let two call sites (quick-preset swipe,
+        // search overlay) silently drop it - the preset rendered with the
+        // stock shader instead of the saved GLSL.
+        preset.customShader?.let {
+            _vizApply.tryEmit(VizApply(customShader = it, sceneId = preset.sceneId))
+        }
     }
 
     fun deletePreset(name: String) {

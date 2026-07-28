@@ -22,7 +22,8 @@ class TapRenderersFactory(
         enableFloatOutput: Boolean,
         enableAudioTrackPlaybackParams: Boolean,
     ): AudioSink =
-        DefaultAudioSink.Builder(context)
+        DefaultAudioSink
+            .Builder(context)
             .setEnableFloatOutput(enableFloatOutput)
             .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
             .setAudioProcessors(arrayOf(TeeAudioProcessor(sink)))

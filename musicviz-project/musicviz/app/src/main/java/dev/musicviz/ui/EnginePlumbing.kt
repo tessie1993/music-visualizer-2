@@ -46,6 +46,9 @@ fun VisualizerEngineBindings(
         visualizerView.visualizerRenderer.transitionDurationMs = (viz.transitionDurationSec * 1000).toLong()
     }
     LaunchedEffect(Unit) {
+        viewModel.morphFade.collect { visualizerView.visualizerRenderer.beginParamMorph(it) }
+    }
+    LaunchedEffect(Unit) {
         viewModel.vizApply.collect { apply ->
             apply.milkPath?.let {
                 visualizerView.visualizerRenderer.loadMilkPreset(it)

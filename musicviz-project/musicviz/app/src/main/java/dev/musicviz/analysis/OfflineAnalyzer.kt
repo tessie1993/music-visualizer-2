@@ -16,7 +16,9 @@ import java.nio.ByteOrder
  * Streaming: decoded PCM is analyzed chunk-by-chunk and discarded, so memory
  * stays constant regardless of track length.
  */
-class OfflineAnalyzer(private val context: Context) {
+class OfflineAnalyzer(
+    private val context: Context,
+) {
     suspend fun analyze(
         uri: Uri,
         onProgress: (Float) -> Unit = {},

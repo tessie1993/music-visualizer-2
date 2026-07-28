@@ -15,11 +15,14 @@ data class MusicPlaylist(
  * JSON-file persistence for user music playlists (one file per playlist).
  * Track order is the list order; reordering rewrites the file.
  */
-class MusicPlaylistStore(context: Context) {
+class MusicPlaylistStore(
+    context: Context,
+) {
     private val dir = File(context.filesDir, "music-playlists").apply { mkdirs() }
 
     fun list(): List<MusicPlaylist> =
-        dir.listFiles { f -> f.extension == "json" }
+        dir
+            .listFiles { f -> f.extension == "json" }
             ?.mapNotNull { runCatching { fromJson(it.readText()) }.getOrNull() }
             ?.sortedBy { it.name.lowercase() }
             .orEmpty()

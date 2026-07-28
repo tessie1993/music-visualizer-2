@@ -12,10 +12,11 @@ data class AudioFeatures(
     val beat: Boolean = false,
     val bpm: Float = 0f,
     val centroid: Float = 0f,
-    // Track-position context for progression-driven scenes (fluid spawn/catch
-    // choreography): 0 when unknown, so every existing call site keeps its
-    // meaning and scenes degrade to a static-progress layout.
-    /** Playback position as a fraction of track duration, 0..1. */
+    /** Playback position as a fraction of track duration, 0..1. Together with
+     *  sectionIndex/sectionCount this is the track-position context for
+     *  progression-driven scenes (fluid spawn/catch choreography): 0 when
+     *  unknown, so every existing call site keeps its meaning and scenes
+     *  degrade to a static-progress layout. */
     val progress: Float = 0f,
     /** Index of the current detected section (0 until analysis knows more). */
     val sectionIndex: Int = 0,

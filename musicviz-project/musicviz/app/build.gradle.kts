@@ -54,7 +54,6 @@ dependencies {
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.kotlinx.coroutines.android)
-    implementation("androidx.documentfile:documentfile:1.0.1")
     testImplementation(kotlin("reflect"))
     testImplementation(libs.junit)
     testImplementation("org.robolectric:robolectric:4.14.1")

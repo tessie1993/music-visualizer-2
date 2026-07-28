@@ -27,7 +27,9 @@ import dev.musicviz.render.scene.SceneParams
  * frequency, Audio drive = flow strength, Particle size/Palette/Hue range =
  * rendering, plus the shared fluid spawn/catch params.
  */
-internal class CurlFlowScene(private val context: Context) : Scene {
+internal class CurlFlowScene(
+    private val context: Context,
+) : Scene {
     override val id: String = SceneIds.CURLFLOW
 
     private val particles = FluidParticles(context)
@@ -65,8 +67,12 @@ internal class CurlFlowScene(private val context: Context) : Scene {
         quadVbo = ids[0]
         val quad = floatArrayOf(-1f, -1f, 3f, -1f, -1f, 3f)
         val buf =
-            java.nio.ByteBuffer.allocateDirect(quad.size * 4)
-                .order(java.nio.ByteOrder.nativeOrder()).asFloatBuffer().put(quad).apply { position(0) }
+            java.nio.ByteBuffer
+                .allocateDirect(quad.size * 4)
+                .order(java.nio.ByteOrder.nativeOrder())
+                .asFloatBuffer()
+                .put(quad)
+                .apply { position(0) }
         GLES30.glBindVertexArray(quadVao)
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, quadVbo)
         GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, quad.size * 4, buf, GLES30.GL_STATIC_DRAW)
@@ -77,8 +83,14 @@ internal class CurlFlowScene(private val context: Context) : Scene {
         try {
             fieldProgram =
                 GlUtil.buildProgram(
-                    context.resources.openRawResource(R.raw.fluid_base_vert).bufferedReader().use { it.readText() },
-                    context.resources.openRawResource(R.raw.curl_field_frag).bufferedReader().use { it.readText() },
+                    context.resources
+                        .openRawResource(R.raw.fluid_base_vert)
+                        .bufferedReader()
+                        .use { it.readText() },
+                    context.resources
+                        .openRawResource(R.raw.curl_field_frag)
+                        .bufferedReader()
+                        .use { it.readText() },
                 )
         } catch (e: GlUtil.ShaderCompileException) {
             android.util.Log.w("FluidSim", "curl field shader rejected by driver: ${e.message}")

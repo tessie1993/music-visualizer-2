@@ -12,7 +12,9 @@ import android.view.Surface
  * EGL context bound to a MediaCodec input surface so scenes can render
  * straight into the video encoder (Big Flake EncodeAndMux pattern).
  */
-class EncoderSurface(surface: Surface) {
+class EncoderSurface(
+    surface: Surface,
+) {
     private var display: EGLDisplay = EGL14.EGL_NO_DISPLAY
     private var context: EGLContext = EGL14.EGL_NO_CONTEXT
     private var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
@@ -25,12 +27,18 @@ class EncoderSurface(surface: Surface) {
         val eglRecordable = 0x3142
         val attribs =
             intArrayOf(
-                EGL14.EGL_RED_SIZE, 8,
-                EGL14.EGL_GREEN_SIZE, 8,
-                EGL14.EGL_BLUE_SIZE, 8,
-                EGL14.EGL_ALPHA_SIZE, 8,
-                EGL14.EGL_RENDERABLE_TYPE, EGLExt.EGL_OPENGL_ES3_BIT_KHR,
-                eglRecordable, 1,
+                EGL14.EGL_RED_SIZE,
+                8,
+                EGL14.EGL_GREEN_SIZE,
+                8,
+                EGL14.EGL_BLUE_SIZE,
+                8,
+                EGL14.EGL_ALPHA_SIZE,
+                8,
+                EGL14.EGL_RENDERABLE_TYPE,
+                EGLExt.EGL_OPENGL_ES3_BIT_KHR,
+                eglRecordable,
+                1,
                 EGL14.EGL_NONE,
             )
         val configs = arrayOfNulls<EGLConfig>(1)

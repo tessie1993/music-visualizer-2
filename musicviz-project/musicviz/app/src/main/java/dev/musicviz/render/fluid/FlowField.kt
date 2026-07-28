@@ -20,7 +20,9 @@ import dev.musicviz.render.scene.SceneParams
  * it exposes the fluid's own velocity texture instead (one source of truth,
  * zero duplicate cost) and only the readback path here is used.
  */
-internal class FlowField(context: Context) {
+internal class FlowField(
+    context: Context,
+) {
     companion object {
         private const val GRID_RES = 64
         const val CPU_GRID = 16
@@ -83,7 +85,8 @@ internal class FlowField(context: Context) {
     private var copyVao = 0
     private var copyVbo = 0
     private var readBuf =
-        java.nio.ByteBuffer.allocateDirect(CPU_GRID * CPU_GRID * 4 * 4)
+        java.nio.ByteBuffer
+            .allocateDirect(CPU_GRID * CPU_GRID * 4 * 4)
             .order(java.nio.ByteOrder.nativeOrder())
     private var canReadback = false
 
@@ -114,8 +117,15 @@ internal class FlowField(context: Context) {
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST)
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_NEAREST)
             GLES30.glTexImage2D(
-                GLES30.GL_TEXTURE_2D, 0, fmt.internal, CPU_GRID, CPU_GRID, 0,
-                fmt.format, fmt.type, null,
+                GLES30.GL_TEXTURE_2D,
+                0,
+                fmt.internal,
+                CPU_GRID,
+                CPU_GRID,
+                0,
+                fmt.format,
+                fmt.type,
+                null,
             )
             GLES30.glGenFramebuffers(1, ids, 0)
             readFbo = ids[0]
@@ -154,8 +164,12 @@ internal class FlowField(context: Context) {
         val vbo = ids[0]
         val quad = floatArrayOf(-1f, -1f, 3f, -1f, -1f, 3f)
         val buf =
-            java.nio.ByteBuffer.allocateDirect(quad.size * 4)
-                .order(java.nio.ByteOrder.nativeOrder()).asFloatBuffer().put(quad).apply { position(0) }
+            java.nio.ByteBuffer
+                .allocateDirect(quad.size * 4)
+                .order(java.nio.ByteOrder.nativeOrder())
+                .asFloatBuffer()
+                .put(quad)
+                .apply { position(0) }
         GLES30.glBindVertexArray(vao)
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vbo)
         GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, quad.size * 4, buf, GLES30.GL_STATIC_DRAW)
@@ -201,6 +215,12 @@ internal class FlowField(context: Context) {
         sourceAspect: Float,
     ) {
         if (!canReadback || sourceTex == 0) return
+        // Callers invoke this mid-frame with their scene target already bound;
+        // the binding and viewport must survive the detour into readFbo.
+        val prevFbo = IntArray(1)
+        val prevViewport = IntArray(4)
+        GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, prevFbo, 0)
+        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glUseProgram(copyProgram)
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, readFbo)
@@ -213,7 +233,8 @@ internal class FlowField(context: Context) {
         GLES30.glBindVertexArray(0)
         readBuf.clear()
         GLES30.glReadPixels(0, 0, CPU_GRID, CPU_GRID, GLES30.GL_RGBA, GLES30.GL_FLOAT, readBuf)
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
+        GLES30.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3])
         readBuf.position(0)
         readBuf.asFloatBuffer().get(cpuGrid.data)
         cpuGrid.scale = sourceFlowScale
@@ -237,5 +258,9 @@ internal class FlowField(context: Context) {
 
     private val contextRef = context.applicationContext
 
-    private fun loadRaw(resId: Int): String = contextRef.resources.openRawResource(resId).bufferedReader().use { it.readText() }
+    private fun loadRaw(resId: Int): String =
+        contextRef.resources
+            .openRawResource(resId)
+            .bufferedReader()
+            .use { it.readText() }
 }

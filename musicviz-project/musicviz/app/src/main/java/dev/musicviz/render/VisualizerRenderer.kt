@@ -24,6 +24,7 @@ import dev.musicviz.render.scene.SwarmScene
 import java.io.File
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import kotlin.math.pow
 
 /**
  * Multi-scene GL ES 3.0 renderer with an offscreen pipeline: the active scene
@@ -33,7 +34,9 @@ import javax.microedition.khronos.opengles.GL10
  * edits are queued from other threads and applied on the GL thread; all GL
  * resources are (re)created in [onSurfaceCreated].
  */
-class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer {
+class VisualizerRenderer(
+    private val context: Context,
+) : GLSurfaceView.Renderer {
     companion object {
         /** Fragment-shader scenes: id -> raw resource. Order = UI order. */
         val SHADER_SCENES: Map<String, Int> =
@@ -74,6 +77,19 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
 
     /** Smoothed params actually shown; fades toward [sceneParams] over paramFadeSec. */
     private var displayedParams: SceneParams = SceneParams.DEFAULT
+
+    // One-shot preset morph: glides displayedParams over the given seconds,
+    // then expires (3 time constants ~ 95% settled) so later slider tweaks
+    // respond at the user's own paramFadeSec again.
+    private var morphFadeSec = 0f
+    private var morphRemainSec = 0f
+
+    /** Called on preset apply; safe from any thread (floats, worst case one late frame). */
+    fun beginParamMorph(seconds: Float) {
+        if (seconds <= 0f) return
+        morphFadeSec = seconds
+        morphRemainSec = seconds * 3f
+    }
 
     /** Assignable LFO modulation, evaluated per frame after smoothing. */
     val lfoEngine = LfoEngine()
@@ -170,7 +186,9 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
     private fun gainAdjusted(
         f: dev.musicviz.analysis.AudioFeatures,
         p: SceneParams,
-    ): dev.musicviz.analysis.AudioFeatures = dev.musicviz.render.scene.applyBandGains(f, p)
+    ): dev.musicviz.analysis.AudioFeatures =
+        dev.musicviz.render.scene
+            .applyBandGains(f, p)
 
     @Volatile
     var transitionStyle: TransitionStyle = TransitionStyle.FADE
@@ -268,8 +286,15 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
             GLES30.glTexImage2D(
-                GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA8, width, height, 0,
-                GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null,
+                GLES30.GL_TEXTURE_2D,
+                0,
+                GLES30.GL_RGBA8,
+                width,
+                height,
+                0,
+                GLES30.GL_RGBA,
+                GLES30.GL_UNSIGNED_BYTE,
+                null,
             )
             GLES30.glGenFramebuffers(1, ids, 0)
             fbo = ids[0]
@@ -338,6 +363,13 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         scenes.clear()
         fboA.release()
         fboB.release()
+        // Trail buffer names belong to the OLD context; without this reset
+        // ensureTrailBuffer() keeps blitting into a dead framebuffer after
+        // the app resumes (trail warp renders black until a resize).
+        trailFbo = 0
+        trailTex = 0
+        trailW = 0
+        trailH = 0
         val particleShaders = particleShaderSources(context)
         scenes[SceneIds.NEBULA] = NebulaScene(particleShaders)
         scenes[SceneIds.BURSTS] = BurstScene(particleShaders)
@@ -354,7 +386,9 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
             }
         // Was listed in availableSceneIds but never constructed - selecting
         // Curl Flow silently did nothing (the "style not working" bug).
-        scenes[SceneIds.CURLFLOW] = dev.musicviz.render.fluid.CurlFlowScene(context)
+        scenes[SceneIds.CURLFLOW] =
+            dev.musicviz.render.fluid
+                .CurlFlowScene(context)
         if (PMBridge.available) {
             scenes[SceneIds.MILKDROP] =
                 ProjectMScene(
@@ -382,17 +416,30 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
 
         // FlowField service (F7) + the always-valid zero flow texture.
         flowField?.release()
-        flowField = dev.musicviz.render.fluid.FlowField(context).also { it.create() }
+        flowField =
+            dev.musicviz.render.fluid
+                .FlowField(context)
+                .also { it.create() }
         val texIds = IntArray(1)
         GLES30.glGenTextures(1, texIds, 0)
         zeroTex = texIds[0]
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, zeroTex)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
-        val zero = java.nio.ByteBuffer.allocateDirect(4).apply { put(byteArrayOf(0, 0, 0, 0)).position(0) }
+        val zero =
+            java.nio.ByteBuffer
+                .allocateDirect(4)
+                .apply { put(byteArrayOf(0, 0, 0, 0)).position(0) }
         GLES30.glTexImage2D(
-            GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA8, 1, 1, 0,
-            GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, zero,
+            GLES30.GL_TEXTURE_2D,
+            0,
+            GLES30.GL_RGBA8,
+            1,
+            1,
+            0,
+            GLES30.GL_RGBA,
+            GLES30.GL_UNSIGNED_BYTE,
+            zero,
         )
 
         fadeProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), loadRaw(R.raw.fade_frag))
@@ -470,7 +517,16 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         val scene = activeScene ?: return
         // Settings fade: exponentially approach the target params so preset
         // and slider changes glide instead of jumping. Toggles/choices snap.
-        val fade = sceneParams.paramFadeSec
+        // A transient preset morph can lengthen the fade without ever being
+        // written into (and persisted with) the params themselves.
+        val morph =
+            if (morphRemainSec > 0f) {
+                morphRemainSec -= dt
+                morphFadeSec
+            } else {
+                0f
+            }
+        val fade = maxOf(sceneParams.paramFadeSec, morph)
         displayedParams =
             if (fade <= 0.01f) {
                 sceneParams
@@ -528,10 +584,12 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         val curlPersist = scene is dev.musicviz.render.fluid.CurlFlowScene && !sceneJustSwitched
         if ((p.trails && scene is ParticleSceneBase && !sceneJustSwitched) || curlPersist) {
             if (p.trailZoom != 0f || p.trailWarp > 0f) {
-                drawTrailWarp(p, timeSeconds)
+                drawTrailWarp(p, timeSeconds, dt)
             } else {
                 val keep = if (curlPersist) p.trailLength.coerceAtLeast(0.85f) else p.trailLength
-                drawFadeQuad(1f - keep * 0.97f)
+                // Retention^(dt*60): same look as the old per-frame constant
+                // at 60 Hz, but trail length no longer halves on 120 Hz panels.
+                drawFadeQuad(1f - (keep * 0.97f).pow(dt * 60f))
             }
         } else {
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
@@ -650,17 +708,26 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
     private fun drawTrailWarp(
         p: SceneParams,
         timeSeconds: Float,
+        dt: Float,
     ) {
         ensureTrailBuffer()
         if (trailFbo == 0) {
-            drawFadeQuad(1f - p.trailLength * 0.97f)
+            drawFadeQuad(1f - (p.trailLength * 0.97f).pow(dt * 60f))
             return
         }
         GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, fboA.fbo)
         GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, trailFbo)
         GLES30.glBlitFramebuffer(
-            0, 0, renderWidth, renderHeight, 0, 0, renderWidth, renderHeight,
-            GLES30.GL_COLOR_BUFFER_BIT, GLES30.GL_NEAREST,
+            0,
+            0,
+            renderWidth,
+            renderHeight,
+            0,
+            0,
+            renderWidth,
+            renderHeight,
+            GLES30.GL_COLOR_BUFFER_BIT,
+            GLES30.GL_NEAREST,
         )
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboA.fbo)
         GLES30.glViewport(0, 0, renderWidth, renderHeight)
@@ -671,7 +738,10 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
 
         fun tLoc(n: String) = trailLocs.getOrPut(n) { GLES30.glGetUniformLocation(trailWarpProgram, n) }
         GLES30.glUniform1i(tLoc("uPrev"), 0)
-        GLES30.glUniform1f(tLoc("uDecay"), (p.trailLength * 0.97f + 0.02f).coerceIn(0f, 0.99f))
+        GLES30.glUniform1f(
+            tLoc("uDecay"),
+            (p.trailLength * 0.97f + 0.02f).coerceIn(0f, 0.99f).pow(dt * 60f),
+        )
         GLES30.glUniform1f(tLoc("uZoom"), p.trailZoom)
         GLES30.glUniform1f(tLoc("uWarp"), p.trailWarp)
         GLES30.glUniform1f(tLoc("uTime"), timeSeconds)
@@ -697,8 +767,15 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexImage2D(
-            GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA8, renderWidth, renderHeight, 0,
-            GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null,
+            GLES30.GL_TEXTURE_2D,
+            0,
+            GLES30.GL_RGBA8,
+            renderWidth,
+            renderHeight,
+            0,
+            GLES30.GL_RGBA,
+            GLES30.GL_UNSIGNED_BYTE,
+            null,
         )
         GLES30.glGenFramebuffers(1, ids, 0)
         trailFbo = ids[0]
@@ -731,7 +808,11 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         GLES30.glDisable(GLES30.GL_BLEND)
     }
 
-    private fun loadRaw(resId: Int): String = context.resources.openRawResource(resId).bufferedReader().use { it.readText() }
+    private fun loadRaw(resId: Int): String =
+        context.resources
+            .openRawResource(resId)
+            .bufferedReader()
+            .use { it.readText() }
 
     /**
      * Builds fresh scene instances for the export GL context. Never reuses
@@ -749,7 +830,9 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
                             dev.musicviz.render.fluid.FluidScene(context).also {
                                 it.setInjectionShaders(fluidForceSrc, fluidDyeSrc)
                             }
-                        sceneId == SceneIds.CURLFLOW -> dev.musicviz.render.fluid.CurlFlowScene(context)
+                        sceneId == SceneIds.CURLFLOW ->
+                            dev.musicviz.render.fluid
+                                .CurlFlowScene(context)
                         sceneId == SceneIds.MILKDROP && PMBridge.available ->
                             ProjectMScene(
                                 postVertexSrc = loadRaw(R.raw.fade_vert),

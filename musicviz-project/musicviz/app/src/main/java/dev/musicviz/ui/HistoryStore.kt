@@ -9,13 +9,20 @@ import org.json.JSONObject
  * ordering, play counts, and the resume queue. JSON in files dir - a Room
  * database is overkill until analysis data moves in (see FEATURES_TODO).
  */
-class HistoryStore(context: Context) {
+class HistoryStore(
+    context: Context,
+) {
     private val file = java.io.File(context.filesDir, "history.json")
 
     /** uri -> (lastPlayedMs, playCount, title) */
     private val entries = LinkedHashMap<String, Entry>()
 
-    data class Entry(val uri: String, var lastPlayedMs: Long, var playCount: Int, var title: String)
+    data class Entry(
+        val uri: String,
+        var lastPlayedMs: Long,
+        var playCount: Int,
+        var title: String,
+    )
 
     init {
         runCatching {

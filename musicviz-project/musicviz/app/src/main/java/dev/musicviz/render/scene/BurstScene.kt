@@ -7,8 +7,10 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 /** Beat-driven fireworks: each detected beat launches a radial burst. */
-class BurstScene(shaders: ShaderSources, count: Int = 3000) :
-    ParticleSceneBase(SceneIds.BURSTS, count, shaders) {
+class BurstScene(
+    shaders: ShaderSources,
+    count: Int = 3000,
+) : ParticleSceneBase(SceneIds.BURSTS, count, shaders) {
     private val random = Random(7)
     private val px = FloatArray(count)
     private val py = FloatArray(count)
@@ -18,12 +20,18 @@ class BurstScene(shaders: ShaderSources, count: Int = 3000) :
     private val hue = FloatArray(count)
     private var nextIndex = 0
 
+    // Beat snapshots outlive one display frame (analysis ~62.5 Hz vs up to
+    // 120 Hz draws); edge-detect like FluidEmitters so a beat fires once.
+    private var prevBeat = false
+
     override fun simulate(
         features: AudioFeatures,
         dt: Float,
     ) {
         val p = sceneParams
-        if (features.beat && p.beatResponse > 0.05f) {
+        val beatEdge = features.beat && !prevBeat
+        prevBeat = features.beat
+        if (beatEdge && p.beatResponse > 0.05f) {
             val cx = if (p.endlessZoom) 0f else random.nextFloat() * 1.2f - 0.6f
             val cy = if (p.endlessZoom) 0f else random.nextFloat() * 1.2f - 0.6f
             val burstHue = random.nextFloat()

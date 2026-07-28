@@ -7,8 +7,10 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 /** Cosmic drift: band-tinted glow particles, bass swells, gentle curl. */
-class NebulaScene(shaders: ShaderSources, count: Int = 2500) :
-    ParticleSceneBase(SceneIds.NEBULA, count, shaders) {
+class NebulaScene(
+    shaders: ShaderSources,
+    count: Int = 2500,
+) : ParticleSceneBase(SceneIds.NEBULA, count, shaders) {
     private val random = Random(42)
     private val px = FloatArray(count)
     private val py = FloatArray(count)

@@ -196,14 +196,13 @@ private fun PresetsTreeTab(
     }
 }
 
-/** Applies a preset AND pushes its shader/milk side straight to the renderer. */
+/** Applies a preset; its shader side reaches the renderer via vizApply. */
 private fun applyPresetLive(
     viewModel: PlayerViewModel,
-    visualizerView: VisualizerView,
+    @Suppress("UNUSED_PARAMETER") visualizerView: VisualizerView,
     p: Preset,
 ) {
-    val shader = viewModel.applyPreset(p)
-    shader?.let { visualizerView.visualizerRenderer.submitShader(p.sceneId, it) }
+    viewModel.applyPreset(p)
 }
 
 // ---------------------------------------------------------------- Styles

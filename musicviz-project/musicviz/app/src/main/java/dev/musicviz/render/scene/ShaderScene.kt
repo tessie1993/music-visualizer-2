@@ -45,6 +45,12 @@ class ShaderScene(
     private var zoomPhase = 0f
     private var cyclePhase = 0f
 
+    // Speed-scaled shader clock, integrated like rotationAngle/zoomPhase.
+    // Multiplying absolute elapsed time by speed instead would make any
+    // speed change (slider or LFO) jump uTime by (t * delta-speed) - a
+    // teleport that grows unbounded with session length.
+    private var shaderTime = 0f
+
     override fun setParams(params: SceneParams) {
         sceneParams = params
     }
@@ -69,6 +75,7 @@ class ShaderScene(
 
     override fun init() {
         program = 0
+        uniformLocs.clear()
         pendingFragment = currentFragment
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
@@ -76,13 +83,25 @@ class ShaderScene(
         GLES30.glGenTextures(1, ids, 0)
         audioTex = ids[0]
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, audioTex)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+        // R32F is not filterable in core ES 3.0; LINEAR without the extension
+        // leaves the texture incomplete (samples all-zero -> flat visuals).
+        val floatLinear =
+            (GLES30.glGetString(GLES30.GL_EXTENSIONS) ?: "").contains("OES_texture_float_linear")
+        val audioFilter = if (floatLinear) GLES30.GL_LINEAR else GLES30.GL_NEAREST
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, audioFilter)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, audioFilter)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexImage2D(
-            GLES30.GL_TEXTURE_2D, 0, GLES30.GL_R32F, AUDIO_TEX_WIDTH, 2, 0,
-            GLES30.GL_RED, GLES30.GL_FLOAT, null,
+            GLES30.GL_TEXTURE_2D,
+            0,
+            GLES30.GL_R32F,
+            AUDIO_TEX_WIDTH,
+            2,
+            0,
+            GLES30.GL_RED,
+            GLES30.GL_FLOAT,
+            null,
         )
     }
 
@@ -99,6 +118,7 @@ class ShaderScene(
         dt: Float,
     ) {
         val p = sceneParams
+        shaderTime += p.speed * dt
         rotationAngle += p.rotation * dt
         if (p.endlessZoom) zoomPhase = (zoomPhase + p.endlessZoomSpeed * dt) % 1f
         if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * dt) % 1f
@@ -141,10 +161,17 @@ class ShaderScene(
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, audioTex)
         texData.position(0)
         GLES30.glTexSubImage2D(
-            GLES30.GL_TEXTURE_2D, 0, 0, 0, AUDIO_TEX_WIDTH, 2,
-            GLES30.GL_RED, GLES30.GL_FLOAT, texData,
+            GLES30.GL_TEXTURE_2D,
+            0,
+            0,
+            0,
+            AUDIO_TEX_WIDTH,
+            2,
+            GLES30.GL_RED,
+            GLES30.GL_FLOAT,
+            texData,
         )
-        setUniform1f("uTime", timeSeconds * p.speed)
+        setUniform1f("uTime", shaderTime)
         setUniform1f("uBass", bass)
         setUniform1f("uMid", mid)
         setUniform1f("uTreble", treble)
@@ -221,6 +248,9 @@ class ShaderScene(
             val newProgram = GlUtil.buildProgram(vertexSrc, src)
             if (program != 0) GLES30.glDeleteProgram(program)
             program = newProgram
+            // Locations are per-program; stale entries would write values to
+            // the wrong uniforms of the freshly-linked program.
+            uniformLocs.clear()
             currentFragment = src
             onError(null)
         } catch (e: GlUtil.ShaderCompileException) {

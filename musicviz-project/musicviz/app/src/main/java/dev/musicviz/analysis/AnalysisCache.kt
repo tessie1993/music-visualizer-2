@@ -93,8 +93,12 @@ object AnalysisCache {
                 d.writeLong(t.hopMs)
                 d.writeUTF(t.key)
                 d.writeInt(t.frames.size)
-                val bandCount = t.frames[0].features.bands.size
-                val waveSize = t.frames[0].features.waveform.size
+                val bandCount =
+                    t.frames[0]
+                        .features.bands.size
+                val waveSize =
+                    t.frames[0]
+                        .features.waveform.size
                 d.writeInt(bandCount)
                 d.writeInt(waveSize)
                 for (fr in t.frames) {

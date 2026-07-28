@@ -155,13 +155,20 @@ class FluidMathTest {
         val drag = 0.5f
         var prevGap = flow - v
         repeat(12) {
-            v = dev.musicviz.render.fluid.FluidMath.dragStep(v, flow, drag)
+            v =
+                dev.musicviz.render.fluid.FluidMath
+                    .dragStep(v, flow, drag)
             val gap = flow - v
             org.junit.Assert.assertEquals(prevGap * (1f - drag), gap, 1e-5f)
             prevGap = gap
         }
         org.junit.Assert.assertTrue(kotlin.math.abs(flow - v) < 1e-3f)
         // drag = 1 is the pure tracer: matches the flow in one step.
-        org.junit.Assert.assertEquals(flow, dev.musicviz.render.fluid.FluidMath.dragStep(0f, flow, 1f), 1e-6f)
+        org.junit.Assert.assertEquals(
+            flow,
+            dev.musicviz.render.fluid.FluidMath
+                .dragStep(0f, flow, 1f),
+            1e-6f,
+        )
     }
 }
