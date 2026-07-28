@@ -24,6 +24,7 @@ import dev.musicviz.render.scene.SwarmScene
 import java.io.File
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import kotlin.math.pow
 
 /**
  * Multi-scene GL ES 3.0 renderer with an offscreen pipeline: the active scene
@@ -74,6 +75,19 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
 
     /** Smoothed params actually shown; fades toward [sceneParams] over paramFadeSec. */
     private var displayedParams: SceneParams = SceneParams.DEFAULT
+
+    // One-shot preset morph: glides displayedParams over the given seconds,
+    // then expires (3 time constants ~ 95% settled) so later slider tweaks
+    // respond at the user's own paramFadeSec again.
+    private var morphFadeSec = 0f
+    private var morphRemainSec = 0f
+
+    /** Called on preset apply; safe from any thread (floats, worst case one late frame). */
+    fun beginParamMorph(seconds: Float) {
+        if (seconds <= 0f) return
+        morphFadeSec = seconds
+        morphRemainSec = seconds * 3f
+    }
 
     /** Assignable LFO modulation, evaluated per frame after smoothing. */
     val lfoEngine = LfoEngine()
@@ -338,6 +352,13 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         scenes.clear()
         fboA.release()
         fboB.release()
+        // Trail buffer names belong to the OLD context; without this reset
+        // ensureTrailBuffer() keeps blitting into a dead framebuffer after
+        // the app resumes (trail warp renders black until a resize).
+        trailFbo = 0
+        trailTex = 0
+        trailW = 0
+        trailH = 0
         val particleShaders = particleShaderSources(context)
         scenes[SceneIds.NEBULA] = NebulaScene(particleShaders)
         scenes[SceneIds.BURSTS] = BurstScene(particleShaders)
@@ -470,7 +491,16 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         val scene = activeScene ?: return
         // Settings fade: exponentially approach the target params so preset
         // and slider changes glide instead of jumping. Toggles/choices snap.
-        val fade = sceneParams.paramFadeSec
+        // A transient preset morph can lengthen the fade without ever being
+        // written into (and persisted with) the params themselves.
+        val morph =
+            if (morphRemainSec > 0f) {
+                morphRemainSec -= dt
+                morphFadeSec
+            } else {
+                0f
+            }
+        val fade = maxOf(sceneParams.paramFadeSec, morph)
         displayedParams =
             if (fade <= 0.01f) {
                 sceneParams
@@ -528,10 +558,12 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         val curlPersist = scene is dev.musicviz.render.fluid.CurlFlowScene && !sceneJustSwitched
         if ((p.trails && scene is ParticleSceneBase && !sceneJustSwitched) || curlPersist) {
             if (p.trailZoom != 0f || p.trailWarp > 0f) {
-                drawTrailWarp(p, timeSeconds)
+                drawTrailWarp(p, timeSeconds, dt)
             } else {
                 val keep = if (curlPersist) p.trailLength.coerceAtLeast(0.85f) else p.trailLength
-                drawFadeQuad(1f - keep * 0.97f)
+                // Retention^(dt*60): same look as the old per-frame constant
+                // at 60 Hz, but trail length no longer halves on 120 Hz panels.
+                drawFadeQuad(1f - (keep * 0.97f).pow(dt * 60f))
             }
         } else {
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
@@ -650,10 +682,11 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
     private fun drawTrailWarp(
         p: SceneParams,
         timeSeconds: Float,
+        dt: Float,
     ) {
         ensureTrailBuffer()
         if (trailFbo == 0) {
-            drawFadeQuad(1f - p.trailLength * 0.97f)
+            drawFadeQuad(1f - (p.trailLength * 0.97f).pow(dt * 60f))
             return
         }
         GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, fboA.fbo)
@@ -671,7 +704,10 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
 
         fun tLoc(n: String) = trailLocs.getOrPut(n) { GLES30.glGetUniformLocation(trailWarpProgram, n) }
         GLES30.glUniform1i(tLoc("uPrev"), 0)
-        GLES30.glUniform1f(tLoc("uDecay"), (p.trailLength * 0.97f + 0.02f).coerceIn(0f, 0.99f))
+        GLES30.glUniform1f(
+            tLoc("uDecay"),
+            (p.trailLength * 0.97f + 0.02f).coerceIn(0f, 0.99f).pow(dt * 60f),
+        )
         GLES30.glUniform1f(tLoc("uZoom"), p.trailZoom)
         GLES30.glUniform1f(tLoc("uWarp"), p.trailWarp)
         GLES30.glUniform1f(tLoc("uTime"), timeSeconds)

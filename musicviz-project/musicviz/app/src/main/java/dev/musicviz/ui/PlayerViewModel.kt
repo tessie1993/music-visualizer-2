@@ -600,6 +600,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     /** Renderer side effects (milk preset loads, custom shaders) to apply. */
     val vizApply: SharedFlow<VizApply> = _vizApply
 
+    private val _morphFade = MutableSharedFlow<Float>(extraBufferCapacity = 4)
+
+    /** One-shot preset-morph fade (seconds) for the renderer; never persisted. */
+    val morphFade: SharedFlow<Float> = _morphFade
+
     private var lastVizSwitchMs = 0L
     private var vizPlaylistIndex = 0
 
@@ -783,16 +788,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /** Applies a playlist entry: scene, saved preset params and side effects. */
+    /** Applies a playlist entry: scene, saved preset params and side effects.
+     *  The preset's custom shader (if any) is emitted by [applyPreset]. */
     fun applyVizEntry(entry: VizPlaylistEntry) {
         selectScene(entry.sceneId)
-        var shader: String? = null
         if (entry.presetName != null) {
             _vizState.value.presets.firstOrNull { it.name == entry.presetName && it.sceneId == entry.sceneId }
-                ?.let { shader = applyPreset(it) }
+                ?.let { applyPreset(it) }
         }
-        if (entry.milkPath != null || shader != null) {
-            _vizApply.tryEmit(VizApply(milkPath = entry.milkPath, customShader = shader, sceneId = entry.sceneId))
+        if (entry.milkPath != null) {
+            _vizApply.tryEmit(VizApply(milkPath = entry.milkPath, sceneId = entry.sceneId))
         }
     }
 
@@ -1431,20 +1436,29 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Preset morphing: applied params fade over [GuiPrefs.morphBeats] beats
-     *  of the detected BPM (renderer's displayedParams does the lerp). */
-    private fun morphedParams(p: dev.musicviz.render.scene.SceneParams): dev.musicviz.render.scene.SceneParams {
+     *  of the detected BPM (renderer's displayedParams does the lerp). The
+     *  fade travels as a transient [morphFade] event - baking it into
+     *  paramFadeSec permanently inflated the user's "Fade time" setting and
+     *  got persisted into every preset saved afterwards. */
+    private fun emitPresetMorph() {
         val beats = _guiPrefs.value.morphBeats
-        if (beats <= 0) return p
+        if (beats <= 0) return
         val bpm = features.value.bpm.takeIf { it > 40f } ?: 120f
-        val sec = beats * 60f / bpm
-        return p.copy(paramFadeSec = maxOf(p.paramFadeSec, sec))
+        _morphFade.tryEmit(beats * 60f / bpm)
     }
 
-    fun applyPreset(preset: Preset): String? {
+    fun applyPreset(preset: Preset) {
         setReactivity(preset.attack, preset.decay)
         selectScene(preset.sceneId)
-        setSceneParams(morphedParams(preset.params))
-        return preset.customShader
+        setSceneParams(preset.params)
+        emitPresetMorph()
+        // Every apply path must push the preset's custom shader; returning it
+        // for the caller to forward let two call sites (quick-preset swipe,
+        // search overlay) silently drop it - the preset rendered with the
+        // stock shader instead of the saved GLSL.
+        preset.customShader?.let {
+            _vizApply.tryEmit(VizApply(customShader = it, sceneId = preset.sceneId))
+        }
     }
 
     fun deletePreset(name: String) {

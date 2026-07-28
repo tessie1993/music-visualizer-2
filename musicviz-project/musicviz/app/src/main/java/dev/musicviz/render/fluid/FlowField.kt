@@ -201,6 +201,12 @@ internal class FlowField(context: Context) {
         sourceAspect: Float,
     ) {
         if (!canReadback || sourceTex == 0) return
+        // Callers invoke this mid-frame with their scene target already bound;
+        // the binding and viewport must survive the detour into readFbo.
+        val prevFbo = IntArray(1)
+        val prevViewport = IntArray(4)
+        GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, prevFbo, 0)
+        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glUseProgram(copyProgram)
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, readFbo)
@@ -213,7 +219,8 @@ internal class FlowField(context: Context) {
         GLES30.glBindVertexArray(0)
         readBuf.clear()
         GLES30.glReadPixels(0, 0, CPU_GRID, CPU_GRID, GLES30.GL_RGBA, GLES30.GL_FLOAT, readBuf)
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
+        GLES30.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3])
         readBuf.position(0)
         readBuf.asFloatBuffer().get(cpuGrid.data)
         cpuGrid.scale = sourceFlowScale

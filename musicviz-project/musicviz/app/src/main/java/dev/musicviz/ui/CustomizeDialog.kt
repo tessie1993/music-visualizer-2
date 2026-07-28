@@ -262,7 +262,9 @@ internal fun BehaviorTab(
                 }
             }
             Text("Duration ${"%.1f".format(transitionDurationSec)}s", style = MaterialTheme.typography.labelMedium)
-            Slider(value = transitionDurationSec, onValueChange = onTransitionDuration, valueRange = 0.1f..3f)
+            // Must match setTransitionDuration's 0.3-5 s clamp: below 0.3 the
+            // thumb snapped back mid-drag, and 3-5 s was unreachable.
+            Slider(value = transitionDurationSec, onValueChange = onTransitionDuration, valueRange = 0.3f..5f)
         }
         SectionHeader("Audio response")
         LabeledSlider("Audio drive", p.audioDrive, 0.2f..2.5f) { onChange(p.copy(audioDrive = it)) }

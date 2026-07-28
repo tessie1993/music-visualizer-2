@@ -88,7 +88,10 @@ void main() {
         // Inverse-square pull, softened + soft-capped (no slingshots).
         float f = c.z / (dist2 + 0.05);
         f = f * 6.0 / (6.0 + f);
-        v += normalize(d) * f * uDt;
+        // Not normalize(d): a newborn (age <= 0.5, capture-immune) particle
+        // sitting exactly on the catch center would divide by zero and latch
+        // NaN into the state texture (this kernel has no NaN scrub).
+        v += d * inversesqrt(max(dist2, 1e-6)) * f * uDt;
     }
 
     // sim -> texel space for the field fetch.
