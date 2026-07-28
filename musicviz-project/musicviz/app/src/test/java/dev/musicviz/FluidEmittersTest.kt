@@ -40,9 +40,16 @@ class FluidEmittersTest {
         val onBeat = e.tick(features(beat = true), dt, 1.6f, 0.1f, 0.5f).size
         assertEquals(2, calm) // the two stirrers
         assertEquals(calm + 3, onBeat)
-        // Three beats in a row -> beatSplats each time.
+        // Beat firing is EDGE-triggered: a sustained beat=true snapshot (the
+        // analysis hop is slower than a high-refresh display) fires once,
+        // not once per frame - three separated beats fire three times.
+        val sustained = e.tick(features(beat = true), dt, 1.6f, 0.1f, 0.5f).size
+        assertEquals(calm, sustained)
         var extra = 0
-        repeat(3) { extra += e.tick(features(beat = true), dt, 1.6f, 0.1f, 0.5f).size - calm }
+        repeat(3) {
+            e.tick(features(), dt, 1.6f, 0.1f, 0.5f)
+            extra += e.tick(features(beat = true), dt, 1.6f, 0.1f, 0.5f).size - calm
+        }
         assertEquals(9, extra)
     }
 

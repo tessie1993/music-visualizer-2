@@ -46,4 +46,9 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     Journey section). Export 20 s from mid-track: the exported journey
     position must match the live view at the same timestamps (progress
     plumbing parity). Particle births/deaths must be soft fades - any
-    popping = fade envelope regression.
+    popping = fade envelope regression. Known nuance: section re-seats
+    only appear live once the track has been analyzed (AUTO/SUGGEST or
+    cached analysis); in MANUAL mode with no cache the live view has no
+    section data while the export always detects sections offline - the
+    progress journey still matches, only the golden-angle re-seats
+    differ. Verify with an analyzed track.

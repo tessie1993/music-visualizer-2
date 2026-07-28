@@ -78,6 +78,7 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
     private var palettePhase = 0f
     private var suctionPhase = 0f
     private var suctionIndex = 0
+    private var prevBeat = false
 
     /** Advances envelopes + emitters; returns this frame's splat requests. */
     fun tick(
@@ -103,10 +104,16 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
         val radius = splatRadius * (1f + radiusPulse * beatEnv)
         val speed = BASE_SPEED * forceScale * (0.4f + 1.6f * f.bass) * (0.3f + 0.7f * beatEnv)
 
+        // Edge-detect the beat flag: the ~62.5 Hz analysis snapshot can be
+        // consumed by several display frames, and level-triggered firing
+        // doubled the splats per beat on 120 Hz screens.
+        val beatEdge = f.beat && !prevBeat
+        prevBeat = f.beat
+
         // Priority order fills the frame budget most-important first: beats
         // define the rhythm, stirrers the continuity, suction the drain,
         // sparkle/pump are garnish.
-        if (f.beat && beatSplats > 0) beatSplats(out, f, aspect, baseHue, hueSpan, radius, speed)
+        if (beatEdge && beatSplats > 0) beatSplats(out, f, aspect, baseHue, hueSpan, radius, speed)
         stirrerSplats(out, f, dt, aspect, baseHue, hueSpan, radius)
         suctionSplats(out, radius)
         if (sparkle && f.treble > trebleMean * 1.6f && f.treble > 0.08f) {
