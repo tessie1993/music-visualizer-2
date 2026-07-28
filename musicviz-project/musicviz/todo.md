@@ -146,6 +146,9 @@ verify gate + on-device checklist every phase.
       stall readings discarded, downgrade-only latch) driving one tier enum
       over sim res / dye res / particle count / iterations; reallocation
       only at frame boundary with copy-preserving grids.
+- [x] F8 Launch variants: six built-in fluid presets (Inkdrop / Vortex /
+      Spectrum / Nebula / Lava / Storm) in the preset browser, each leaning
+      on a different subsystem; audited import of externally-built F5-F7.
 - [x] F7 FlowField + extension points: 64-grid velocity-only service (reuse
       FLUID's own field when that scene is active — never both), fluidWarp
       composite slot (uv -= flow·k·strength, 1×1 zero texture when off,
@@ -158,11 +161,32 @@ verify gate + on-device checklist every phase.
       fluidWarp visibly bends a MilkDrop preset AND a particle scene incl.
       a 10 s export; broken injection shader keeps last good program.
 
+## ORGANIC MOTION (spec: docs/ORGANIC_MOTION.md, from the research report)
+- [x] O1 Feedback echo-trails: renderer trail pass gains zoom + sine-warp
+      (trailZoom/trailWarp params, Customize sliders, export parity via
+      FxCompositor/VideoExporter) - the MilkDrop "warp shader has a memory"
+      liquid-echo feel on EVERY scene.
+- [x] O2 Curl-noise flow-field scene ("curlflow"): 64-res divergence-free
+      velocity field (curl of time-morphing FBM, Bridson 2007) driving the
+      existing GPU particle layer; mids = morph rate, treble = fine
+      turbulence, beats = amplitude + brightness impulse; cosine-palette
+      coloring; divergence-free property proven headless
+      (CurlFieldMathTest against a CPU mirror of the shader).
+- [ ] O3 Reaction-diffusion scene (Gray-Scott ping-pong, beat-perturbed
+      feed/kill) - ambient "living texture" for slow passages.
+- [ ] O4 Physarum slime-mold scene (agents-in-texture, sense/turn/deposit,
+      blur+decay trail map).
+- [ ] O5 Metaball gel scene (smoothMin SDF blobs, band-driven radii).
+- [ ] O6 Raymarched fractal scenes (Mandelbulb/KIFS) - heaviest; gated
+      behind the high quality tier, reduced-res render + upscale.
+- [ ] O7 Shared audio-mapping layer: extract the bass/mid/treble/beat ->
+      spawn/speed/detail/burst conventions into one reusable component.
+
 ## P3 — Media architecture (VLC-mirror is DECIDED)
 - [x] AIFF playback: custom Media3 AiffExtractor (FORM/COMM/SSND chunks,
       big-endian PCM → 16-bit LE), registered via ExtractorsFactory;
       unit test with a small bundled .aiff.
-- [ ] Library scanner (mirror VLC): user adds FOLDER PATHS (SAF tree
+- [x] Library scanner (mirror VLC): user adds FOLDER PATHS (SAF tree
       picker per root, displayed as a normal file tree). Scanner reads
       audio files recursively in each root, registers them, and queues
       background ANALYSIS. Dedupe: canonical (docId|path)+size — a file
@@ -171,7 +195,7 @@ verify gate + on-device checklist every phase.
       (VLC-style: folders first, audio files with play/add). Tracks tab
       stays flat; path detection auto-suggests common music dirs on
       first run (Music/, Download/, DCIM excluded).
-- [ ] Analysis database (Room): TrackAnalysis(id = uri+size+mtime hash,
+- [x] Analysis database (Room): TrackAnalysis(id = uri+size+mtime hash,
       bpm, key, sections, energy curve blob, analyzedAt). OfflineAnalyzer
       writes it; player + export read it (skip re-analysis). Settings→
       Analysis: DB size + [clear]. Analyzed badge (key·BPM) on track rows.

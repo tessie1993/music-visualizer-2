@@ -56,6 +56,7 @@ internal class PerformanceMonitor(
     }
 
     fun reset() {
+        samples.fill(0f)
         count = 0
         index = 0
         deficitSeconds = 0f

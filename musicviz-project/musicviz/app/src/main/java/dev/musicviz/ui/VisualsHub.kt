@@ -234,7 +234,13 @@ private fun StylesTab(
                     visualizerView.visualizerRenderer.requestedSceneId = it
                 }
             2 ->
-                SceneList(listOf(dev.musicviz.render.scene.SceneIds.FLUID), viz.sceneId) {
+                SceneList(
+                    listOf(
+                        dev.musicviz.render.scene.SceneIds.FLUID,
+                        dev.musicviz.render.scene.SceneIds.CURLFLOW,
+                    ),
+                    viz.sceneId,
+                ) {
                     viewModel.selectScene(it)
                     visualizerView.visualizerRenderer.requestedSceneId = it
                 }

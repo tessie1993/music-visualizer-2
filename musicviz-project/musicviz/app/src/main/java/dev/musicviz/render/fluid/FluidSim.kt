@@ -143,10 +143,20 @@ internal class FluidSim(
                 R.raw.fluid_display_frag,
             )
         baseVertSrc = loadRaw(R.raw.fluid_base_vert)
-        for (f in frags) {
-            val p = GlUtil.buildProgram(baseVertSrc, loadRaw(f))
-            programs[f] = p
-            uniforms[f] = HashMap()
+        // A driver-rejected shader must degrade the style to "unavailable",
+        // never crash the GL thread: headless validation cannot guarantee
+        // every device driver accepts these sources.
+        try {
+            for (f in frags) {
+                val p = GlUtil.buildProgram(baseVertSrc, loadRaw(f))
+                programs[f] = p
+                uniforms[f] = HashMap()
+            }
+        } catch (e: GlUtil.ShaderCompileException) {
+            android.util.Log.w("FluidSim", "base shader rejected by driver: ${e.message}")
+            onShaderError("Fluid unavailable on this GPU: ${e.message}")
+            release()
+            return
         }
         // Re-apply any user injection shaders after a context loss.
         injectionDirty = pendingForceSrc != null || pendingDyeSrc != null
@@ -184,33 +194,63 @@ internal class FluidSim(
     }
 
     private fun allocGrids(preserve: Boolean) {
+        // resize() runs OUTSIDE the scene's draw snapshot; the preserve-copy
+        // below rebinds framebuffer + viewport, so restore both on exit or
+        // the engine's next pass renders into a fluid grid (screen flashing
+        // after rotation / quality change).
+        val prevFbo = IntArray(1)
+        val prevVp = IntArray(4)
+        GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, prevFbo, 0)
+        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevVp, 0)
         val (sw, sh) = FluidBuffers.resolution(simRes, width, height)
         val (dw, dh) = FluidBuffers.resolution(dyeRes, width, height)
         val oldVelocity = velocity
         val oldDye = dye
-        val oldPressure = pressure
+        // Free small helpers + pressure FIRST: the pressure copy was only a
+        // Jacobi warm start (one frame of extra convergence), not worth
+        // doubling the largest allocation window. Then each grid is copied
+        // and its old counterpart released immediately, so peak GPU memory
+        // during an Ultra-tier reallocation is ~1x the new grids + one old
+        // grid instead of a full 2x (the "crashes on quality change /
+        // rotation on tight-memory GPUs" fix).
+        pressure?.release()
+        pressure = null
         divergence?.release()
         curl?.release()
         // Velocity NEAREST (manual bilerp in advection); dye LINEAR for display.
         velocity = FluidBuffers.DoubleFbo(sw, sh, formats.rg, linear = false).also { it.create() }
-        if (!velocityOnly) dye = FluidBuffers.DoubleFbo(dw, dh, formats.rgba, linear = true).also { it.create() }
+        if (preserve && oldVelocity != null) {
+            velocity?.let { if (it.ok && oldVelocity.ok) copyInto(oldVelocity.read, it.read) }
+        }
+        oldVelocity?.release()
+        if (!velocityOnly) {
+            dye = FluidBuffers.DoubleFbo(dw, dh, formats.rgba, linear = true).also { it.create() }
+            if (preserve && oldDye != null) {
+                dye?.let { if (it.ok && oldDye.ok) copyInto(oldDye.read, it.read) }
+            }
+        }
+        oldDye?.release()
         pressure = FluidBuffers.DoubleFbo(sw, sh, formats.r, linear = false).also { it.create() }
         divergence = FluidBuffers.Fbo(sw, sh, formats.r, linear = false).also { it.create() }
         curl = FluidBuffers.Fbo(sw, sh, formats.r, linear = false).also { it.create() }
-        if (preserve && oldVelocity != null) {
-            // Copy-preserving resize: the picture survives rotation and
-            // quality changes instead of resetting to black.
-            copyInto(oldVelocity.read, velocity!!.read)
-            oldDye?.let { old -> dye?.let { copyInto(old.read, it.read) } }
-            oldPressure?.let { old -> pressure?.let { copyInto(old.read, it.read) } }
+        val allOk =
+            velocity?.ok == true && pressure?.ok == true &&
+                divergence?.ok == true && curl?.ok == true &&
+                (velocityOnly || dye?.ok == true)
+        if (!allOk) {
+            android.util.Log.w("FluidSim", "grid allocation failed (${sw}x$sh / ${dw}x$dh) - fluid disabled")
+            onShaderError("Fluid grids could not be allocated on this GPU")
+            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
+            GLES30.glViewport(prevVp[0], prevVp[1], prevVp[2], prevVp[3])
+            release()
+            return
         }
-        oldVelocity?.release()
-        oldDye?.release()
-        oldPressure?.release()
         cellSize = 2f / sh
         rdx = 1f / cellSize
         halfRdx = 0.5f / cellSize
         alpha = -cellSize * cellSize
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
+        GLES30.glViewport(prevVp[0], prevVp[1], prevVp[2], prevVp[3])
     }
 
     private fun copyInto(
@@ -271,6 +311,9 @@ internal class FluidSim(
     }
 
     fun queueSplat(s: Splat) {
+        // step() never runs while unavailable, so queued splats would only
+        // accumulate; drop them instead of leaking.
+        if (!available) return
         pending.add(s)
     }
 
@@ -285,7 +328,10 @@ internal class FluidSim(
         val press = pressure ?: return
         val div = divergence ?: return
         val crl = curl ?: return
-        val dt = dtRaw.coerceIn(0f, 1f / 60f)
+        // Cap at 1/30 s: semi-Lagrangian advection stays stable, and 30-60fps
+        // devices keep real-time fluid speed instead of a permanent slow-mo
+        // that desynchronized from the (real-dt) emitters.
+        val dt = dtRaw.coerceIn(0f, 1f / 30f)
         compileInjectionIfNeeded()
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glBindVertexArray(vao)
@@ -318,6 +364,7 @@ internal class FluidSim(
         bindTex("uVelocity", vel.read.tex, 0, R.raw.fluid_vorticity_frag)
         bindTex("uCurl", crl.tex, 1, R.raw.fluid_vorticity_frag)
         set1f(R.raw.fluid_vorticity_frag, "uCurlStrength", curlStrength)
+        set1f(R.raw.fluid_vorticity_frag, "uDx", cellSize)
         set1f(R.raw.fluid_vorticity_frag, "uDt", dt)
         blit(vel.write)
         vel.swap()
@@ -430,6 +477,42 @@ internal class FluidSim(
         GLES30.glUniform2f(loc(R.raw.fluid_display_frag, "uTexelSize"), 1f / d.width, 1f / d.height)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)
+    }
+
+    /**
+     * One-time diagnostic: reads a few dye texels (implementation-preferred
+     * format) and reports the max channel value - splits "sim is dead" from
+     * "display path loses the ink" in a single logcat line.
+     */
+    fun probeDyeMax(): String {
+        val d = dye ?: return "no dye buffer"
+        return runCatching {
+            val prev = IntArray(1)
+            GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, prev, 0)
+            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, d.read.fbo)
+            val fmt = IntArray(1)
+            val type = IntArray(1)
+            GLES30.glGetIntegerv(GLES30.GL_IMPLEMENTATION_COLOR_READ_FORMAT, fmt, 0)
+            GLES30.glGetIntegerv(GLES30.GL_IMPLEMENTATION_COLOR_READ_TYPE, type, 0)
+            val n = 8
+            val out: String
+            if (type[0] == GLES30.GL_FLOAT) {
+                val buf = java.nio.ByteBuffer.allocateDirect(n * n * 4 * 4).order(java.nio.ByteOrder.nativeOrder())
+                GLES30.glReadPixels(d.width / 2 - n / 2, d.height / 2 - n / 2, n, n, GLES30.GL_RGBA, GLES30.GL_FLOAT, buf)
+                val fb = buf.asFloatBuffer()
+                var mx = 0f
+                while (fb.hasRemaining()) mx = maxOf(mx, fb.get())
+                out = "max=%.4f (float read, fmt=0x%x)".format(mx, fmt[0])
+            } else {
+                val buf = java.nio.ByteBuffer.allocateDirect(n * n * 4).order(java.nio.ByteOrder.nativeOrder())
+                GLES30.glReadPixels(d.width / 2 - n / 2, d.height / 2 - n / 2, n, n, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buf)
+                var mx = 0
+                while (buf.hasRemaining()) mx = maxOf(mx, buf.get().toInt() and 0xFF)
+                out = "max=$mx/255 (byte read, type=0x${Integer.toHexString(type[0])})"
+            }
+            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prev[0])
+            out
+        }.getOrElse { "probe failed: ${it.message}" }
     }
 
     fun release() {

@@ -8,6 +8,129 @@ import kotlin.math.sqrt
  * If a formula changes in a shader, change it here too.
  */
 internal object FluidMath {
+    // ---- CPU mirror of curl_field_frag.glsl (kept in lockstep for tests) ----
+    private fun fract(x: Float) = x - kotlin.math.floor(x)
+
+    private fun hash3(
+        x0: Float,
+        y0: Float,
+        z0: Float,
+    ): Float {
+        var x = fract(x0 * 0.3183099f + 0.1f) * 17f
+        var y = fract(y0 * 0.3183099f + 0.2f) * 17f
+        var z = fract(z0 * 0.3183099f + 0.3f) * 17f
+        return fract(x * y * z * (x + y + z))
+    }
+
+    private fun vnoise3(
+        px: Float,
+        py: Float,
+        pz: Float,
+    ): Float {
+        val ix = kotlin.math.floor(px)
+        val iy = kotlin.math.floor(py)
+        val iz = kotlin.math.floor(pz)
+        var fx = px - ix
+        var fy = py - iy
+        var fz = pz - iz
+        fx = fx * fx * (3f - 2f * fx)
+        fy = fy * fy * (3f - 2f * fy)
+        fz = fz * fz * (3f - 2f * fz)
+
+        fun n(
+            dx: Float,
+            dy: Float,
+            dz: Float,
+        ) = hash3(ix + dx, iy + dy, iz + dz)
+
+        fun mix(
+            a: Float,
+            b: Float,
+            t: Float,
+        ) = a + (b - a) * t
+        return mix(
+            mix(mix(n(0f, 0f, 0f), n(1f, 0f, 0f), fx), mix(n(0f, 1f, 0f), n(1f, 1f, 0f), fx), fy),
+            mix(mix(n(0f, 0f, 1f), n(1f, 0f, 1f), fx), mix(n(0f, 1f, 1f), n(1f, 1f, 1f), fx), fy),
+            fz,
+        )
+    }
+
+    private fun psi(
+        x: Float,
+        y: Float,
+        time: Float,
+        freq: Float,
+        detail: Float,
+    ): Float {
+        var v = vnoise3(x * freq, y * freq, time) * 0.625f
+        v += vnoise3(x * freq * 2.02f + 11.3f, y * freq * 2.02f + 11.3f, time * 2.02f + 11.3f) * 0.25f
+        v += vnoise3(x * freq * 4.05f + 29.7f, y * freq * 4.05f + 29.7f, time * 4.05f + 29.7f) * 0.125f * detail
+        return v
+    }
+
+    /** Curl-noise velocity, mirroring the shader (central diff, e = 0.02). */
+    fun curlVelocity(
+        x: Float,
+        y: Float,
+        time: Float,
+        freq: Float,
+        detail: Float,
+    ): Pair<Float, Float> {
+        val e = 0.02f
+        val dpdx = psi(x + e, y, time, freq, detail) - psi(x - e, y, time, freq, detail)
+        val dpdy = psi(x, y + e, time, freq, detail) - psi(x, y - e, time, freq, detail)
+        return (dpdy / (2f * e)) to (-dpdx / (2f * e))
+    }
+
+    /**
+     * CPU mirror of fluid_vorticity_frag's confinement magnitude (GPU Gems
+     * ch.38: f = eps * h * omega, with omega = halfRdx * velDiff from the
+     * curl pass). The eps*h*omega form makes the per-frame velocity change
+     * independent of grid resolution - the property the headless gate
+     * asserts, because omitting the h (= dx) factor made the force ~1/dx
+     * (64-142x) too strong and blew the sim up to NaN/black within frames.
+     */
+    fun confinementDeltaV(
+        curlStrength: Float,
+        dx: Float,
+        velDiff: Float,
+        dt: Float,
+    ): Float {
+        val omega = (0.5f / dx) * velDiff
+        return curlStrength * dx * omega * dt
+    }
+
+    /**
+     * CPU mirror of composite_frag's fluidWarp soft limit:
+     * flow * 6/(6+|flow|) - bounded below 6 for any input, ~identity for
+     * small fields, so the 0.015 UV scale can never displace by more than
+     * ~0.09 UV regardless of emitter force.
+     */
+    fun softLimitFlow(
+        x: Float,
+        y: Float,
+    ): Pair<Float, Float> {
+        val len = sqrt(x * x + y * y)
+        val k = 6f / (6f + len)
+        return (x * k) to (y * k)
+    }
+
+    /**
+     * CPU mirror of fluid_gradient_frag's terminal-speed soft cap
+     * (v *= 12/max(12,|v|)): confinement injects energy faster than
+     * dissipation removes it, so uncapped speed grows without bound and the
+     * dye advects off-grid faster than injection - numerically reproduced
+     * as near-black by ~10s and fully black by ~30s in the reference run.
+     */
+    fun terminalSpeedCap(
+        x: Float,
+        y: Float,
+    ): Pair<Float, Float> {
+        val sp = sqrt(x * x + y * y)
+        val k = 12f / maxOf(12f, sp)
+        return (x * k) to (y * k)
+    }
+
     /** Particle state texture side: smallest square holding [count] texels. */
     fun stateSide(count: Int): Int = kotlin.math.ceil(kotlin.math.sqrt(count.toDouble())).toInt().coerceAtLeast(2)
 

@@ -157,8 +157,15 @@ internal class FluidEmitters(private val random: Random = Random.Default) {
                         )
                 }
                 PATTERN_SPECTRUM_ARC -> {
-                    val bandIdx = (frac * (f.bands.size - 1)).toInt().coerceIn(0, f.bands.size - 1)
-                    val bandE = f.bands[bandIdx].coerceIn(0f, 1.5f)
+                    // coerceIn(0, -1) throws on an empty bands array; fall
+                    // back to a neutral band energy instead of crashing.
+                    val bandE =
+                        if (f.bands.isEmpty()) {
+                            0.5f
+                        } else {
+                            val bandIdx = (frac * (f.bands.size - 1)).toInt().coerceIn(0, f.bands.size - 1)
+                            f.bands[bandIdx].coerceIn(0f, 1.5f)
+                        }
                     val x = (frac * 2f - 1f) * 0.7f * aspect
                     val y = -0.75f
                     val v = speed * (0.4f + 1.6f * bandE) / (0.4f + 1.6f * f.bass).coerceAtLeast(0.4f)

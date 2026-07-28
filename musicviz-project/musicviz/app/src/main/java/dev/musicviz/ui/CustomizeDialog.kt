@@ -279,6 +279,8 @@ internal fun BehaviorTab(
         CheckRow("Trails (particle scenes)", p.trails) { onChange(p.copy(trails = it)) }
         if (p.trails) {
             LabeledSlider("Trail length", p.trailLength, 0.05f..0.98f) { onChange(p.copy(trailLength = it)) }
+            LabeledSlider("Trail zoom (echo in/out)", p.trailZoom, -0.5f..0.5f) { onChange(p.copy(trailZoom = it)) }
+            LabeledSlider("Trail warp (liquid echo)", p.trailWarp, 0f..1f) { onChange(p.copy(trailWarp = it)) }
         }
         SectionHeader("Reactivity envelope")
         LabeledSlider("Attack", attack, 0.05f..1f) { onReactivityChange(it, decay) }

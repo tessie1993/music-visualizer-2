@@ -2,6 +2,11 @@
 // Capsule (swept-segment) injection with velocity blending, per FLUID_SIM v2
 // section 7 (clean-room from spec; distance-to-segment is elementary geometry).
 precision highp float;
+// GLSL ES 3.00 defaults fragment sampler2D to LOWP (range [-2,2), ~8
+// fraction bits). Half-float velocity/dye/pressure values far exceed
+// that; on GPUs honoring sampler precision (Mali) every read clamped
+// and quantized - the on-device "few pixels then black" root cause.
+precision highp sampler2D;
 in vec2 vUv;
 in vec2 vSim;
 uniform sampler2D uTarget;

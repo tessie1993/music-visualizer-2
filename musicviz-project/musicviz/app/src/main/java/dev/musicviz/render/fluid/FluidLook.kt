@@ -59,20 +59,32 @@ internal class FluidLook(private val context: Context) {
     fun create(fmts: FluidBuffers.Formats) {
         release()
         formats = fmts
-        val vert = loadRaw(R.raw.fluid_base_vert)
-        prefilterProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_bloom_prefilter_frag))
-        bloomBlurProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_bloom_blur_frag))
-        bloomFinalProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_bloom_final_frag))
-        sunraysMaskProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_sunrays_mask_frag))
-        sunraysProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_sunrays_frag))
-        blurProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_blur_frag))
-        val displaySrc = loadRaw(R.raw.fluid_display_frag)
-        for (flags in 0 until 8) {
-            displayPrograms[flags] = GlUtil.buildProgram(vert, withKeywords(displaySrc, flags))
+        // Driver-rejected look shaders must not crash the GL thread: on
+        // failure the scene falls back to the sim's plain dye display.
+        try {
+            val vert = loadRaw(R.raw.fluid_base_vert)
+            prefilterProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_bloom_prefilter_frag))
+            bloomBlurProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_bloom_blur_frag))
+            bloomFinalProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_bloom_final_frag))
+            sunraysMaskProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_sunrays_mask_frag))
+            sunraysProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_sunrays_frag))
+            blurProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_blur_frag))
+            val displaySrc = loadRaw(R.raw.fluid_display_frag)
+            for (flags in 0 until 8) {
+                displayPrograms[flags] = GlUtil.buildProgram(vert, withKeywords(displaySrc, flags))
+            }
+        } catch (e: GlUtil.ShaderCompileException) {
+            android.util.Log.w("FluidSim", "look shader rejected by driver: ${e.message}")
+            release()
+            return
         }
         listOf(
-            prefilterProgram, bloomBlurProgram, bloomFinalProgram,
-            sunraysMaskProgram, sunraysProgram, blurProgram,
+            prefilterProgram,
+            bloomBlurProgram,
+            bloomFinalProgram,
+            sunraysMaskProgram,
+            sunraysProgram,
+            blurProgram,
         ).forEach { uniforms[it] = HashMap() }
         displayPrograms.values.forEach { uniforms[it] = HashMap() }
 
@@ -141,6 +153,13 @@ internal class FluidLook(private val context: Context) {
         sunraysMask = FluidBuffers.Fbo(sw, sh, formats.rgba, linear = true).also { it.create() }
         sunrays = FluidBuffers.Fbo(sw, sh, formats.r, linear = true).also { it.create() }
         sunraysTemp = FluidBuffers.Fbo(sw, sh, formats.r, linear = true).also { it.create() }
+        val allOk =
+            bloomResult?.ok == true && bloomMips.all { it.ok } &&
+                sunraysMask?.ok == true && sunrays?.ok == true && sunraysTemp?.ok == true
+        if (!allOk) {
+            android.util.Log.w("FluidSim", "look target allocation failed - bloom/sunrays disabled")
+            releaseTargets()
+        }
     }
 
     /**
@@ -170,7 +189,9 @@ internal class FluidLook(private val context: Context) {
         bindTex(prefilterProgram, "uTexture", dyeTex, 0)
         GLES30.glUniform3f(
             loc(prefilterProgram, "uCurve"),
-            bloomThreshold - knee, knee * 2f, 0.25f / knee,
+            bloomThreshold - knee,
+            knee * 2f,
+            0.25f / knee,
         )
         GLES30.glUniform1f(loc(prefilterProgram, "uThreshold"), bloomThreshold)
         blit(dst)
@@ -307,7 +328,10 @@ internal class FluidLook(private val context: Context) {
         if (flags and 2 != 0) defines.append("#define BLOOM\n")
         if (flags and 4 != 0) defines.append("#define SUNRAYS\n")
         if (defines.isEmpty()) return src
-        val nl = src.indexOf('\n')
+        // #defines must land AFTER the #version directive (GLSL ES requires
+        // #version first); find that line rather than assuming it is line 1.
+        val vIdx = src.indexOf("#version")
+        val nl = src.indexOf('\n', if (vIdx >= 0) vIdx else 0)
         return src.substring(0, nl + 1) + defines + src.substring(nl + 1)
     }
 

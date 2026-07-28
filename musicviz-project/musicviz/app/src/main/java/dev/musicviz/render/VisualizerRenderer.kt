@@ -226,11 +226,16 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
     private var lastFrameMs = 0L
     private var timeSeconds = 0f
     private var fadeProgram = 0
+    private var trailWarpProgram = 0
+    private var trailFbo = 0
+    private var trailTex = 0
     private var compositeProgram = 0
 
     /** Uniform locations cached per program link; ~30 glGetUniformLocation
      *  calls per frame are measurable driver overhead on mobile GPUs. */
     private val compositeLocs = HashMap<String, Int>()
+    private val fadeLocs = HashMap<String, Int>()
+    private val trailLocs = HashMap<String, Int>()
 
     private fun cLoc(name: String): Int = compositeLocs.getOrPut(name) { GLES30.glGetUniformLocation(compositeProgram, name) }
 
@@ -295,6 +300,7 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
             addAll(SHADER_SCENES.keys)
             if (PMBridge.available) add(SceneIds.MILKDROP)
             add(SceneIds.FLUID)
+            add(SceneIds.CURLFLOW)
         }
 
     fun submitShader(
@@ -342,6 +348,9 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
             dev.musicviz.render.fluid.FluidScene(context).also { fluid ->
                 fluid.onShaderError = { onShaderError(it) }
             }
+        // Was listed in availableSceneIds but never constructed - selecting
+        // Curl Flow silently did nothing (the "style not working" bug).
+        scenes[SceneIds.CURLFLOW] = dev.musicviz.render.fluid.CurlFlowScene(context)
         if (PMBridge.available) {
             scenes[SceneIds.MILKDROP] =
                 ProjectMScene(
@@ -383,8 +392,11 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         )
 
         fadeProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), loadRaw(R.raw.fade_frag))
+        trailWarpProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), loadRaw(R.raw.trail_warp_frag))
         compositeProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), loadRaw(R.raw.composite_frag))
         compositeLocs.clear()
+        fadeLocs.clear()
+        trailLocs.clear()
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
         quadVao = ids[0]
@@ -429,6 +441,9 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
     }
 
     override fun onDrawFrame(gl: GL10?) {
+        // State contract: undo anything the previous frame's scenes (native
+        // projectM especially) left dirty before any pass runs.
+        GlUtil.resetFrameState()
         val now = SystemClock.elapsedRealtime()
         val dt = ((now - lastFrameMs).coerceIn(1, 100)) / 1000f
         lastFrameMs = now
@@ -502,8 +517,18 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         // Active scene renders into FBO A (fade instead of clear for trails).
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboA.fbo)
         GLES30.glViewport(0, 0, renderWidth, renderHeight)
-        if (p.trails && scene is ParticleSceneBase && !sceneJustSwitched) {
-            drawFadeQuad(1f - p.trailLength * 0.97f)
+        // Curl Flow's look is DEFINED by canvas persistence: bare GL_POINTS
+        // on a hard-cleared canvas read as strobing dots, not streams. It
+        // always fades (echo trails) regardless of the trails toggle, and
+        // honors trailZoom/trailWarp + trailLength like particle scenes.
+        val curlPersist = scene is dev.musicviz.render.fluid.CurlFlowScene && !sceneJustSwitched
+        if ((p.trails && scene is ParticleSceneBase && !sceneJustSwitched) || curlPersist) {
+            if (p.trailZoom != 0f || p.trailWarp > 0f) {
+                drawTrailWarp(p, timeSeconds)
+            } else {
+                val keep = if (curlPersist) p.trailLength.coerceAtLeast(0.85f) else p.trailLength
+                drawFadeQuad(1f - keep * 0.97f)
+            }
         } else {
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
         }
@@ -612,11 +637,90 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
     }
 
+    /**
+     * Feedback-trail warp: copies the persisted frame aside, then redraws it
+     * into the scene FBO slightly zoomed/warped and decayed (blend off - the
+     * resample is the new base). Falls back to the plain fade when the trail
+     * buffer can't be sized.
+     */
+    private fun drawTrailWarp(
+        p: SceneParams,
+        timeSeconds: Float,
+    ) {
+        ensureTrailBuffer()
+        if (trailFbo == 0) {
+            drawFadeQuad(1f - p.trailLength * 0.97f)
+            return
+        }
+        GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, fboA.fbo)
+        GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, trailFbo)
+        GLES30.glBlitFramebuffer(
+            0, 0, renderWidth, renderHeight, 0, 0, renderWidth, renderHeight,
+            GLES30.GL_COLOR_BUFFER_BIT, GLES30.GL_NEAREST,
+        )
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboA.fbo)
+        GLES30.glViewport(0, 0, renderWidth, renderHeight)
+        GLES30.glDisable(GLES30.GL_BLEND)
+        GLES30.glUseProgram(trailWarpProgram)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, trailTex)
+
+        fun tLoc(n: String) = trailLocs.getOrPut(n) { GLES30.glGetUniformLocation(trailWarpProgram, n) }
+        GLES30.glUniform1i(tLoc("uPrev"), 0)
+        GLES30.glUniform1f(tLoc("uDecay"), (p.trailLength * 0.97f + 0.02f).coerceIn(0f, 0.99f))
+        GLES30.glUniform1f(tLoc("uZoom"), p.trailZoom)
+        GLES30.glUniform1f(tLoc("uWarp"), p.trailWarp)
+        GLES30.glUniform1f(tLoc("uTime"), timeSeconds)
+        GLES30.glBindVertexArray(quadVao)
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
+        GLES30.glBindVertexArray(0)
+    }
+
+    private fun ensureTrailBuffer() {
+        if (trailTex != 0 && trailW == renderWidth && trailH == renderHeight) return
+        if (trailTex != 0) {
+            GLES30.glDeleteTextures(1, intArrayOf(trailTex), 0)
+            GLES30.glDeleteFramebuffers(1, intArrayOf(trailFbo), 0)
+            trailTex = 0
+            trailFbo = 0
+        }
+        val ids = IntArray(1)
+        GLES30.glGenTextures(1, ids, 0)
+        trailTex = ids[0]
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, trailTex)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+        GLES30.glTexImage2D(
+            GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA8, renderWidth, renderHeight, 0,
+            GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null,
+        )
+        GLES30.glGenFramebuffers(1, ids, 0)
+        trailFbo = ids[0]
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, trailFbo)
+        GLES30.glFramebufferTexture2D(GLES30.GL_FRAMEBUFFER, GLES30.GL_COLOR_ATTACHMENT0, GLES30.GL_TEXTURE_2D, trailTex, 0)
+        if (GLES30.glCheckFramebufferStatus(GLES30.GL_FRAMEBUFFER) != GLES30.GL_FRAMEBUFFER_COMPLETE) {
+            GLES30.glDeleteTextures(1, intArrayOf(trailTex), 0)
+            GLES30.glDeleteFramebuffers(1, intArrayOf(trailFbo), 0)
+            trailTex = 0
+            trailFbo = 0
+        }
+        trailW = renderWidth
+        trailH = renderHeight
+    }
+
+    private var trailW = 0
+    private var trailH = 0
+
     private fun drawFadeQuad(alpha: Float) {
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         GLES30.glUseProgram(fadeProgram)
-        GLES30.glUniform1f(GLES30.glGetUniformLocation(fadeProgram, "uFadeAlpha"), alpha.coerceIn(0.02f, 1f))
+        GLES30.glUniform1f(
+            fadeLocs.getOrPut("uFadeAlpha") { GLES30.glGetUniformLocation(fadeProgram, "uFadeAlpha") },
+            alpha.coerceIn(0.02f, 1f),
+        )
         GLES30.glBindVertexArray(quadVao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)
@@ -641,6 +745,7 @@ class VisualizerRenderer(private val context: Context) : GLSurfaceView.Renderer 
                             dev.musicviz.render.fluid.FluidScene(context).also {
                                 it.setInjectionShaders(fluidForceSrc, fluidDyeSrc)
                             }
+                        sceneId == SceneIds.CURLFLOW -> dev.musicviz.render.fluid.CurlFlowScene(context)
                         sceneId == SceneIds.MILKDROP && PMBridge.available ->
                             ProjectMScene(
                                 postVertexSrc = loadRaw(R.raw.fade_vert),

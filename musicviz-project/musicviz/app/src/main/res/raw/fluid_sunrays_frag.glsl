@@ -3,6 +3,11 @@
 // 16-sample radial march from each pixel toward the screen centre (0.5,0.5)
 // of the scene-FBO UV space, accumulating the occlusion mask's alpha.
 precision highp float;
+// GLSL ES 3.00 defaults fragment sampler2D to LOWP (range [-2,2), ~8
+// fraction bits). Half-float velocity/dye/pressure values far exceed
+// that; on GPUs honoring sampler precision (Mali) every read clamped
+// and quantized - the on-device "few pixels then black" root cause.
+precision highp sampler2D;
 in vec2 vUv;
 uniform sampler2D uTexture;
 uniform float uWeight;

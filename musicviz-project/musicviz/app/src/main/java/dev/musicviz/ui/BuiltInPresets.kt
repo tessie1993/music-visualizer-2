@@ -142,6 +142,101 @@ object BuiltInPresets {
             ),
         )
 
+    /**
+     * The six fluid launch variants: strongly differentiated starting points
+     * for the FLUID scene, each leaning on a different part of the system
+     * (emitter pattern, particle layer, chromatic aging, look chain).
+     */
+    private val FLUID_VARIANTS: List<Preset> =
+        listOf(
+            Preset(
+                name = "fluid · Inkdrop",
+                sceneId = dev.musicviz.render.scene.SceneIds.FLUID,
+                attack = 0.35f,
+                decay = 0.5f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        fluidBeatPattern = 0, fluidBeatSplats = 2, fluidStirrers = 1,
+                        fluidStirrerSpeed = 0.5f, fluidCurl = 20f,
+                        fluidDensityDissipation = 0.35f, fluidChromaticAging = 0.45f,
+                        fluidSplatRadius = 0.16f, fluidBloomIntensity = 0.5f,
+                        fluidParticlesEnabled = false, palette = 5,
+                    ),
+            ),
+            Preset(
+                name = "fluid · Vortex",
+                sceneId = dev.musicviz.render.scene.SceneIds.FLUID,
+                attack = 0.5f,
+                decay = 0.4f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        fluidBeatPattern = 1, fluidBeatSplats = 4, fluidStirrers = 2,
+                        fluidStirrerSpeed = 1.4f, fluidCurl = 45f,
+                        fluidChromaticAging = 0.5f, fluidParticlesEnabled = true,
+                        fluidParticleDrag = 0.35f, palette = 2,
+                    ),
+            ),
+            Preset(
+                name = "fluid · Spectrum",
+                sceneId = dev.musicviz.render.scene.SceneIds.FLUID,
+                attack = 0.6f,
+                decay = 0.35f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        fluidBeatPattern = 3, fluidBeatSplats = 6, fluidStirrers = 0,
+                        fluidBassPump = true, fluidSunrays = true, fluidSunraysWeight = 1.2f,
+                        fluidFadeAudio = 1.0f, fluidPaletteCycleSpeed = 1.2f,
+                        colorCycle = true, cycleSpeed = 0.05f, palette = 3,
+                    ),
+            ),
+            Preset(
+                name = "fluid · Nebula",
+                sceneId = dev.musicviz.render.scene.SceneIds.FLUID,
+                attack = 0.4f,
+                decay = 0.55f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        fluidDyeEnabled = false, fluidParticlesEnabled = true,
+                        fluidParticleDrag = 0.6f, fluidParticleBrightness = 1.6f,
+                        fluidCurl = 40f, fluidStirrers = 3, fluidStirrerSpeed = 0.8f,
+                        fluidBloomIntensity = 1.1f, palette = 7,
+                    ),
+            ),
+            Preset(
+                name = "fluid · Lava",
+                sceneId = dev.musicviz.render.scene.SceneIds.FLUID,
+                attack = 0.25f,
+                decay = 0.7f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        fluidChromaticAging = 1.0f, fluidCurl = 15f,
+                        fluidVelocityDissipation = 0.6f, fluidDensityDissipation = 0.25f,
+                        fluidSplatRadius = 0.22f, fluidSplatForce = 0.7f,
+                        fluidBloomIntensity = 1.2f, fluidBloomThreshold = 0.4f,
+                        fluidStirrerSpeed = 0.4f, palette = 1,
+                    ),
+            ),
+            Preset(
+                name = "fluid · Storm",
+                sceneId = dev.musicviz.render.scene.SceneIds.FLUID,
+                attack = 0.7f,
+                decay = 0.25f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        fluidBeatPattern = 2, fluidBeatSplats = 5, fluidStirrers = 4,
+                        fluidStirrerSpeed = 1.8f, fluidCurl = 50f, fluidBassPump = true,
+                        fluidParticlesEnabled = true, fluidFadeAudio = 0.15f,
+                        fluidSunrays = true, palette = 6,
+                    ),
+            ),
+        )
+
     val ALL: List<Preset> =
         (VisualizerRenderer.PARTICLE_SCENES + VisualizerRenderer.SHADER_SCENES.keys).flatMap { id ->
             LOOKS.map { look ->
@@ -154,7 +249,7 @@ object BuiltInPresets {
                     params = look.params,
                 )
             }
-        }
+        } + FLUID_VARIANTS
 
     fun isBuiltIn(name: String): Boolean = name.contains(" · ")
 }

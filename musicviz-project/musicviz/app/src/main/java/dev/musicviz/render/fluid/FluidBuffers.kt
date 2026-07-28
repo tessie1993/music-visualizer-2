@@ -109,6 +109,9 @@ internal object FluidBuffers {
         var tex = 0
             private set
 
+        /** False when the driver refused the attachment (create() self-released). */
+        val ok: Boolean get() = fbo != 0 && tex != 0
+
         fun create() {
             val ids = IntArray(1)
             GLES30.glGenTextures(1, ids, 0)
@@ -130,6 +133,12 @@ internal object FluidBuffers {
                 tex,
                 0,
             )
+            if (GLES30.glCheckFramebufferStatus(GLES30.GL_FRAMEBUFFER) != GLES30.GL_FRAMEBUFFER_COMPLETE) {
+                android.util.Log.w("FluidSim", "FBO incomplete (${width}x$height fmt=0x${Integer.toHexString(fmt.internal)})")
+                GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
+                release()
+                return
+            }
             GLES30.glClearColor(0f, 0f, 0f, 1f)
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
@@ -156,6 +165,7 @@ internal object FluidBuffers {
 
         val width: Int get() = read.width
         val height: Int get() = read.height
+        val ok: Boolean get() = read.ok && write.ok
 
         fun create() {
             read.create()

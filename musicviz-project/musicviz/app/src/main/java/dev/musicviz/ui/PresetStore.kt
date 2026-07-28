@@ -98,6 +98,8 @@ class PresetStore(context: Context) {
                 .put("density", p.params.density.toDouble())
                 .put("trails", p.params.trails)
                 .put("trailLength", p.params.trailLength.toDouble())
+                .put("trailZoom", p.params.trailZoom.toDouble())
+                .put("trailWarp", p.params.trailWarp.toDouble())
                 .put("mirror", p.params.mirror)
                 .put("palette", p.params.palette)
                 .put("colorShift", p.params.colorShift.toDouble())
@@ -208,6 +210,8 @@ class PresetStore(context: Context) {
                         density = o.optDouble("density", 1.0).toFloat(),
                         trails = o.optBoolean("trails", false),
                         trailLength = o.optDouble("trailLength", 0.5).toFloat(),
+                        trailZoom = o.optDouble("trailZoom", 0.0).toFloat(),
+                        trailWarp = o.optDouble("trailWarp", 0.0).toFloat(),
                         mirror = o.optBoolean("mirror", false),
                         warp = o.optDouble("warp", 0.0).toFloat(),
                         ripple = o.optDouble("ripple", 0.0).toFloat(),

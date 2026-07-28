@@ -128,10 +128,16 @@ internal class FlowField(context: Context) {
                 0,
             )
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
-            val ctx = copyContext()
-            copyProgram = ctx.first
-            copyVao = ctx.second
-            copyVbo = ctx.third
+            try {
+                val ctx = copyContext()
+                copyProgram = ctx.first
+                copyVao = ctx.second
+                copyVbo = ctx.third
+            } catch (e: GlUtil.ShaderCompileException) {
+                // The uFlow / fluidWarp paths still work without CPU readback.
+                android.util.Log.w("FluidSim", "flowfield copy shader rejected: ${e.message}")
+                canReadback = false
+            }
         }
     }
 
@@ -179,8 +185,9 @@ internal class FlowField(context: Context) {
         sim.curlStrength = p.flowCurl.coerceIn(0f, 50f)
         emitters.forceScale = p.flowForce.coerceIn(0f, 3f)
         emitters.stirrerSpeed = p.speed.coerceIn(0.1f, 2f)
-        for (s in emitters.tick(features, dt, sim.aspect, 0f, 1f)) sim.queueSplat(s)
-        sim.step(dt)
+        val simDt = dt.coerceIn(0f, 1f / 30f)
+        for (s in emitters.tick(features, simDt, sim.aspect, 0f, 1f)) sim.queueSplat(s)
+        sim.step(simDt)
     }
 
     /**

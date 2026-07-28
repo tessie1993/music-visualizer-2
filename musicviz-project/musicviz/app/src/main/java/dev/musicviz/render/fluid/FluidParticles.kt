@@ -43,12 +43,25 @@ internal class FluidParticles(private val context: Context) {
         // full-float state when the device can render to it, 16F otherwise.
         val stateFmt = formats.rgba32 ?: formats.rgba
         state = FluidBuffers.DoubleFbo(side, side, stateFmt, linear = false).also { it.create() }
+        if (state?.ok != true) {
+            android.util.Log.w("FluidSim", "particle state FBO failed - particle layer disabled")
+            release()
+            return
+        }
 
-        val vert = loadRaw(R.raw.fluid_base_vert)
-        seedProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_particle_seed_frag))
-        updateProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_particle_update_frag))
-        renderProgram =
-            GlUtil.buildProgram(loadRaw(R.raw.fluid_particle_vert), loadRaw(R.raw.fluid_particle_frag))
+        // create() also runs mid-draw on quality-tier changes; a compile
+        // failure must disable the layer, never throw on the GL thread.
+        try {
+            val vert = loadRaw(R.raw.fluid_base_vert)
+            seedProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_particle_seed_frag))
+            updateProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_particle_update_frag))
+            renderProgram =
+                GlUtil.buildProgram(loadRaw(R.raw.fluid_particle_vert), loadRaw(R.raw.fluid_particle_frag))
+        } catch (e: GlUtil.ShaderCompileException) {
+            android.util.Log.w("FluidSim", "particle shader rejected by driver: ${e.message}")
+            release()
+            return
+        }
         uniforms[seedProgram] = HashMap()
         uniforms[updateProgram] = HashMap()
         uniforms[renderProgram] = HashMap()
@@ -89,12 +102,16 @@ internal class FluidParticles(private val context: Context) {
         available = true
     }
 
-    /** Seeds/advances all particles; call between sim.step and drawing. */
+    /** Seeds/advances all particles; call between sim.step and drawing.
+     *  [respawnRate] = expected fraction of particles reborn per second at
+     *  fresh hashed positions (0 = classic never-respawn behavior). */
     fun step(
         dt: Float,
         velocityTex: Int,
         aspect: Float,
         flowScale: Float,
+        respawnRate: Float = 0f,
+        timeSeconds: Float = 0f,
     ) {
         val st = state ?: return
         GLES30.glDisable(GLES30.GL_BLEND)
@@ -119,6 +136,8 @@ internal class FluidParticles(private val context: Context) {
         GLES30.glUniform1f(loc(updateProgram, "uDt"), dt)
         GLES30.glUniform1f(loc(updateProgram, "uDrag"), drag.coerceIn(0.02f, 1f))
         GLES30.glUniform1f(loc(updateProgram, "uFlowScale"), flowScale)
+        GLES30.glUniform1f(loc(updateProgram, "uRespawn"), respawnRate.coerceIn(0f, 2f))
+        GLES30.glUniform1f(loc(updateProgram, "uTime"), timeSeconds)
         blit(st.write)
         st.swap()
         GLES30.glBindVertexArray(0)

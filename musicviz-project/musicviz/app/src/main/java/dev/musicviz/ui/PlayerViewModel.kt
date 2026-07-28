@@ -159,8 +159,35 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState
 
-    private val _vizState = MutableStateFlow(VizUiState(presets = BuiltInPresets.ALL + presetStore.list()))
+    private val _vizState = MutableStateFlow(restoreVizState())
     val vizState: StateFlow<VizUiState> = _vizState
+
+    /** Prefs file for the LIVE viz state (scene + Customize params). */
+    private fun vizPrefs(): android.content.SharedPreferences =
+        getApplication<Application>().getSharedPreferences("musicviz-viz", android.content.Context.MODE_PRIVATE)
+
+    /**
+     * Restores the live customization on startup. Without this every app
+     * restart silently reset the selected style and ALL Customize sliders to
+     * defaults - only explicit presets survived. Reuses the preset JSON
+     * serializer so every SceneParams field roundtrips (same coverage the
+     * PresetRoundtripTest gate proves).
+     */
+    private fun restoreVizState(): VizUiState {
+        val base = VizUiState(presets = BuiltInPresets.ALL + presetStore.list())
+        val json = vizPrefs().getString("live_state", null) ?: return base
+        return runCatching {
+            val p = PresetStore.fromJson(json)
+            base.copy(sceneId = p.sceneId, attack = p.attack, decay = p.decay, params = p.params)
+        }.getOrDefault(base)
+    }
+
+    /** Persists the live viz state; called from every mutation funnel. */
+    private fun persistVizState() {
+        val s = _vizState.value
+        val json = PresetStore.toJson(Preset("__live__", s.sceneId, s.attack, s.decay, null, s.params))
+        vizPrefs().edit().putString("live_state", json).apply()
+    }
 
     private val _exportState = MutableStateFlow(ExportUiState())
     val exportState: StateFlow<ExportUiState> = _exportState
@@ -175,6 +202,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         engine.beatThresholdSigma = _guiPrefs.value.beatThresholdSigma
+        // Apply the restored reactivity to the engine (setReactivity normally
+        // does this, but the restored values arrive outside that path).
+        engine.smoother.attack = _vizState.value.attack
+        engine.smoother.decay = _vizState.value.decay
     }
 
     val guiPrefs: StateFlow<GuiPrefs> = _guiPrefs
@@ -790,36 +821,111 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /** Imports every audio file found directly under a picked folder tree. */
+    /**
+     * Analysis with the persistent cache: a hit skips the whole offline
+     * pass (the dominant cost of export). Call on Dispatchers.IO.
+     */
+    private suspend fun analyzeCached(
+        uri: Uri,
+        onProgress: (Float) -> Unit,
+    ): dev.musicviz.analysis.FeatureTimeline {
+        val app = getApplication<Application>()
+        dev.musicviz.analysis.AnalysisCache.load(app, uri)?.let {
+            onProgress(1f)
+            return it
+        }
+        return offlineAnalyzer.analyze(uri, onProgress).also {
+            dev.musicviz.analysis.AnalysisCache.save(app, uri, it)
+        }
+    }
+
+    private fun libraryPrefs(): android.content.SharedPreferences =
+        getApplication<Application>().getSharedPreferences("musicviz-library", android.content.Context.MODE_PRIVATE)
+
+    private val _mediaRoots =
+        MutableStateFlow<Set<String>>(libraryPrefs().getStringSet("roots", emptySet()) ?: emptySet())
+
+    /** Persistent library folders (SAF tree URIs); rescanned on demand. */
+    val mediaRoots: StateFlow<Set<String>> = _mediaRoots
+
+    private val _libraryScanning = MutableStateFlow(false)
+    val libraryScanning: StateFlow<Boolean> = _libraryScanning
+
     fun importFolder(treeUri: Uri) {
+        val app = getApplication<Application>()
+        runCatching {
+            app.contentResolver.takePersistableUriPermission(
+                treeUri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }
+        _mediaRoots.update { it + treeUri.toString() }
+        libraryPrefs().edit().putStringSet("roots", _mediaRoots.value).apply()
         viewModelScope.launch(Dispatchers.IO) {
-            val app = getApplication<Application>()
-            runCatching {
-                app.contentResolver.takePersistableUriPermission(
-                    treeUri,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                )
+            _libraryScanning.value = true
+            try {
+                scanTreeBlocking(treeUri)
+            } finally {
+                _libraryScanning.value = false
             }
-            val found = mutableListOf<LibraryTrack>()
-            runCatching {
-                val doc = androidx.documentfile.provider.DocumentFile.fromTreeUri(app, treeUri)
-                doc?.listFiles()?.forEach { f ->
+        }
+    }
+
+    fun removeMediaRoot(uriStr: String) {
+        _mediaRoots.update { it - uriStr }
+        libraryPrefs().edit().putStringSet("roots", _mediaRoots.value).apply()
+    }
+
+    /** Re-walks every registered folder; existing entries keep their analysis. */
+    fun rescanMediaRoots() {
+        if (_libraryScanning.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _libraryScanning.value = true
+            try {
+                for (root in _mediaRoots.value) {
+                    scanTreeBlocking(Uri.parse(root))
+                }
+            } finally {
+                _libraryScanning.value = false
+            }
+        }
+    }
+
+    /** Recursive SAF walk (VLC-mirror: full tree, hidden dirs skipped). */
+    private suspend fun scanTreeBlocking(treeUri: Uri) {
+        val app = getApplication<Application>()
+        val found = mutableListOf<LibraryTrack>()
+        runCatching {
+            val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(app, treeUri) ?: return@runCatching
+
+            fun walk(
+                dir: androidx.documentfile.provider.DocumentFile,
+                depth: Int,
+            ) {
+                if (depth > 8) return
+                dir.listFiles().forEach { f ->
                     val name = f.name ?: return@forEach
-                    val isAudio =
-                        f.type?.startsWith("audio/") == true ||
-                            name.substringAfterLast('.', "").lowercase() in AUDIO_EXTS
-                    if (f.isFile && isAudio) {
-                        found +=
-                            metadataFor(f.uri).let { (t, a) ->
-                                LibraryTrack(uri = f.uri.toString(), title = t, artist = a)
-                            }
+                    if (name.startsWith(".")) return@forEach
+                    if (f.isDirectory) {
+                        walk(f, depth + 1)
+                    } else {
+                        val isAudio =
+                            f.type?.startsWith("audio/") == true ||
+                                name.substringAfterLast('.', "").lowercase() in AUDIO_EXTS
+                        if (isAudio) {
+                            found +=
+                                metadataFor(f.uri).let { (t, a) ->
+                                    LibraryTrack(uri = f.uri.toString(), title = t, artist = a)
+                                }
+                        }
                     }
                 }
             }
-            if (found.isNotEmpty()) {
-                val merged = trackLibrary.addAll(found)
-                withContext(Dispatchers.Main) { _library.update { it.copy(tracks = merged) } }
-            }
+            walk(root, 0)
+        }
+        if (found.isNotEmpty()) {
+            val merged = trackLibrary.addAll(found)
+            withContext(Dispatchers.Main) { _library.update { it.copy(tracks = merged) } }
         }
     }
 
@@ -1015,7 +1121,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 val uri = Uri.parse(uriStr)
                 val merged =
                     runCatching {
-                        val t = offlineAnalyzer.analyze(uri) { }
+                        val t = analyzeCached(uri) { }
                         trackLibrary.updateAnalysis(uriStr, titleFor(uri), t.durationMs, t.bpm, t.key)
                     }.getOrNull()
                 // Progress advances even for tracks that fail to decode, so
@@ -1145,7 +1251,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch(Dispatchers.Default) {
             try {
                 val t =
-                    offlineAnalyzer.analyze(uri) { p ->
+                    analyzeCached(uri) { p ->
                         _vizState.update { it.copy(analysisProgress = p) }
                     }
                 timeline = t
@@ -1184,6 +1290,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun selectScene(sceneId: String) {
         _vizState.update { it.copy(sceneId = sceneId) }
+        persistVizState()
     }
 
     fun setReactivity(
@@ -1193,10 +1300,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         engine.smoother.attack = attack
         engine.smoother.decay = decay
         _vizState.update { it.copy(attack = attack, decay = decay) }
+        persistVizState()
     }
 
     fun setSceneParams(params: SceneParams) {
         _vizState.update { it.copy(params = params) }
+        persistVizState()
     }
 
     fun reportShaderError(error: String?) {
@@ -1311,7 +1420,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             viewModelScope.launch(Dispatchers.Default) {
                 try {
                     val t =
-                        timeline ?: offlineAnalyzer.analyze(uri) { p ->
+                        timeline ?: analyzeCached(uri) { p ->
                             _exportState.update { it.copy(progress = p * 0.2f) }
                         }.also { timeline = it }
                     val name = "musicviz_${System.currentTimeMillis()}.mp4"

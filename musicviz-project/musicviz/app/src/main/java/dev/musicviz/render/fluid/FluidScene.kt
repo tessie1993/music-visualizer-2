@@ -58,6 +58,9 @@ internal class FluidScene(context: Context) : Scene {
             appliedTier = -1
             appliedParticleSide = 0
             applyQualityTier()
+        } else {
+            // Silent-black is the worst failure mode: tell the user why.
+            onShaderError("Fluid style unavailable: this GPU can't render half-float buffers")
         }
     }
 
@@ -90,7 +93,8 @@ internal class FluidScene(context: Context) : Scene {
     private fun applyQualityTier() {
         if (!sim.available) return
         // A manual tier change resets the automatic latch and the monitor.
-        if (params.fluidQuality != lastUserQuality) {
+        val userChanged = params.fluidQuality != lastUserQuality
+        if (userChanged) {
             lastUserQuality = params.fluidQuality
             autoDowngrade = 0
             monitor.reset()
@@ -100,16 +104,48 @@ internal class FluidScene(context: Context) : Scene {
         val tier = FluidQuality.tier(idx)
         appliedTier = idx
         sim.applyResolution(tier.simRes, tier.dyeRes)
-        if (appliedParticleSide != tier.particleSide) {
+        // Automatic downgrades keep the live particle layer: a create() here
+        // reseeds every particle to a random position, which reads as a
+        // full-screen flash right when the device is already struggling.
+        // Only an explicit user tier change (or first init) recreates it.
+        val recreateParticles =
+            appliedParticleSide == 0 || (userChanged && appliedParticleSide != tier.particleSide)
+        if (recreateParticles) {
             appliedParticleSide = tier.particleSide
             particles.create(tier.particleSide * tier.particleSide, sim.texFormats)
         }
     }
 
+    private var idlePhase = 0f
+    private var diagFrames = 0
+    private var dyeProbed = false
+
+    /** Gentle synthetic features so the fluid breathes with no track playing. */
+    private fun idleFeatures(dt: Float): dev.musicviz.analysis.AudioFeatures {
+        idlePhase += dt
+        val t = idlePhase
+        val bass = 0.18f + 0.12f * kotlin.math.sin(t * 0.7f)
+        val mid = 0.15f + 0.10f * kotlin.math.sin(t * 1.1f + 1.7f)
+        val treble = 0.05f + 0.04f * kotlin.math.sin(t * 1.9f + 3.1f)
+        return dev.musicviz.analysis.AudioFeatures(
+            bands = FloatArray(16) { i -> 0.1f + 0.08f * kotlin.math.sin(t * (0.5f + i * 0.13f)) },
+            waveform = FloatArray(64),
+            rms = 0.2f,
+            bass = bass.coerceAtLeast(0f),
+            mid = mid.coerceAtLeast(0f),
+            treble = treble.coerceAtLeast(0f),
+            beat = false,
+        )
+    }
+
     override fun draw(timeSeconds: Float) {
         if (!sim.available) return
+        // The sim runs ~30 FBO passes that assume clean scissor/mask/blend-
+        // equation state; enforce the contract in case a prior scene (native
+        // projectM especially) left anything dirty this frame.
+        dev.musicviz.render.scene.GlUtil.resetFrameState()
         val p = params
-        val f = pendingFeatures
+        val f = pendingFeatures ?: idleFeatures(lastDt)
 
         // Snapshot the engine's target + blend state: the sim renders to its
         // own grids and the particle pass changes the blend function.
@@ -168,13 +204,26 @@ internal class FluidScene(context: Context) : Scene {
                     p.fluidPaletteCycleSpeed.coerceIn(0f, 2f)
                 }
             emitters.forceScale = p.fluidSplatForce.coerceIn(0f, 3f)
-            for (s in emitters.tick(f, lastDt, sim.aspect, params.paletteBase, params.hueRange.coerceIn(0.1f, 1f))) {
+            // One clamped dt for emitters + sim + particles: the sim clamps
+            // internally, so feeding emitters the raw frame dt at low FPS
+            // made capsule spacing outrun the fluid (splats degenerate into
+            // disconnected flickering stamps).
+            val simDt = lastDt.coerceIn(0f, 1f / 30f)
+            for (s in emitters.tick(f, simDt, sim.aspect, params.paletteBase, params.hueRange.coerceIn(0.1f, 1f))) {
                 sim.queueSplat(s)
             }
-            sim.step(lastDt)
+            sim.step(simDt)
+            if (diagFrames < 3) {
+                val err = GLES30.glGetError()
+                if (err != GLES30.GL_NO_ERROR) {
+                    android.util.Log.w("FluidSim", "glError after step frame $diagFrames: 0x${Integer.toHexString(err)}")
+                }
+                diagFrames++
+                if (diagFrames == 3) android.util.Log.i("FluidSim", "first frames stepped clean (no GL errors)")
+            }
             if (particles.available && p.fluidParticlesEnabled) {
                 particles.drag = p.fluidParticleDrag.coerceIn(0.02f, 1f)
-                particles.step(lastDt, sim.velocityTex, sim.aspect, sim.flowScale)
+                particles.step(simDt, sim.velocityTex, sim.aspect, sim.flowScale, respawnRate = 0.08f, timeSeconds = time)
             }
             // F4 offscreen look passes (bloom mips + sunrays march), audio-
             // modulated: loud sections glow harder.
@@ -184,6 +233,10 @@ internal class FluidScene(context: Context) : Scene {
             look.sunraysWeight = p.fluidSunraysWeight.coerceIn(0.3f, 1f)
             if (p.fluidDyeEnabled) look.process(sim.dyeTex, p.fluidBloom, p.fluidSunrays)
             pendingFeatures = null
+            if (!dyeProbed && time > 1.5f) {
+                dyeProbed = true
+                android.util.Log.i("FluidSim", "dye liveness: ${sim.probeDyeMax()}")
+            }
         }
 
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])

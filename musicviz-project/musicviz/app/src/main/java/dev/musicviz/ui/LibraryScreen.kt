@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -31,6 +32,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
@@ -332,7 +334,45 @@ private fun FoldersTab(
     folders: Map<String, List<DeviceTrack>>,
     viewModel: PlayerViewModel,
 ) {
+    val roots by viewModel.mediaRoots.collectAsState()
+    val scanning by viewModel.libraryScanning.collectAsState()
+    val folderPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri != null) viewModel.importFolder(uri)
+        }
     Column {
+        Text(
+            "Library folders",
+            Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.titleSmall,
+        )
+        roots.sorted().forEach { root ->
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    java.net.URLDecoder.decode(root.substringAfterLast("%3A").substringAfterLast("/"), "UTF-8")
+                        .ifBlank { root },
+                    Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                IconButton(onClick = { viewModel.removeMediaRoot(root) }) {
+                    Icon(Icons.Filled.Close, "Remove folder")
+                }
+            }
+        }
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(onClick = { folderPicker.launch(null) }) { Text("Add folder") }
+            OutlinedButton(onClick = viewModel::rescanMediaRoots, enabled = roots.isNotEmpty() && !scanning) {
+                Text(if (scanning) "Scanning…" else "Rescan")
+            }
+        }
         Text(
             "Device folders · Google Drive coming soon",
             Modifier.padding(horizontal = 16.dp, vertical = 4.dp),

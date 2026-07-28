@@ -2,6 +2,11 @@
 // GL_POINTS render: static VBO of texel coords; state fetched in the vertex
 // stage (vertex texture fetch, core ES3). FLUID_SIM v2 section 8.1.
 precision highp float;
+// GLSL ES 3.00 defaults fragment sampler2D to LOWP (range [-2,2), ~8
+// fraction bits). Half-float velocity/dye/pressure values far exceed
+// that; on GPUs honoring sampler precision (Mali) every read clamped
+// and quantized - the on-device "few pixels then black" root cause.
+precision highp sampler2D;
 layout(location = 0) in vec2 aTexel;
 uniform highp sampler2D uState;
 uniform highp float uAspect;

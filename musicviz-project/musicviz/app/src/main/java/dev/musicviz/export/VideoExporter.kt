@@ -298,7 +298,7 @@ class VideoExporter(private val context: Context) {
                 // FX chain) onto the encoder surface, matching the live path.
                 fx.bindSceneTarget()
                 if (p.trails && isParticle && frame > 0) {
-                    fx.fadeSceneTarget(p.trailLength)
+                    fx.fadeSceneTargetWarp(p, fx.sceneFbo, fx.width, fx.height, timeMs / 1000f)
                 } else {
                     GLES30.glClearColor(0f, 0f, 0f, 1f)
                     GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
@@ -312,7 +312,11 @@ class VideoExporter(private val context: Context) {
                         else -> 0
                     }
                 fx.composite(
-                    timeMs / 1000f, features, isParticle, isShaderScene, p,
+                    timeMs / 1000f,
+                    features,
+                    isParticle,
+                    isShaderScene,
+                    p,
                     flowTex = flowTex,
                     flowStrength = if (flowTex != 0) p.flowStrength else 0f,
                 )
