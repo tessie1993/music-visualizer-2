@@ -1,0 +1,54 @@
+name: Android CI
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: ktlint + tests + build + lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: musicviz-project/musicviz
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      # The project's own verify gate (todo.md), split to keep steps readable.
+      - name: ktlint check
+        run: ./gradlew ktlintCheck
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest
+
+      - name: Assemble debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Android Lint
+        run: ./gradlew lint
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: musicviz-debug-apk
+          path: musicviz-project/musicviz/app/build/outputs/apk/debug/*.apk
+
+      - name: Upload reports on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-reports
+          path: |
+            musicviz-project/musicviz/app/build/reports/
+            musicviz-project/musicviz/app/build/test-results/
