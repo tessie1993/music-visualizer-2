@@ -9,6 +9,9 @@ on:
       - "musicviz-project/musicviz/**"
       - ".github/workflows/build-apk.yml"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -36,3 +39,19 @@ jobs:
           name: musicviz-debug
           path: musicviz-project/musicviz/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      # Artifact downloads go through Azure blob storage, which the remote
+      # dev container's proxy blocks - publish the APK on a dedicated orphan
+      # branch too, reachable through the authorized git remote.
+      - name: Publish APK to build/apk branch
+        run: |
+          set -e
+          mkdir "$RUNNER_TEMP/apkpub" && cd "$RUNNER_TEMP/apkpub"
+          git init -q -b build/apk
+          cp "$GITHUB_WORKSPACE/musicviz-project/musicviz/app/build/outputs/apk/debug/app-debug.apk" musicviz-debug.apk
+          git add musicviz-debug.apk
+          git -c user.name="github-actions" -c user.email="actions@github.com" \
+            commit -q -m "musicviz-debug.apk built from $GITHUB_SHA"
+          git push --force \
+            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" \
+            build/apk
