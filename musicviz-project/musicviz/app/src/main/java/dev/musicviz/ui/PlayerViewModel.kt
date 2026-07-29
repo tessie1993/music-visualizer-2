@@ -1592,7 +1592,9 @@ class PlayerViewModel(
     }
 
     fun seekBy(deltaMs: Long) {
-        player.seekTo((player.currentPosition + deltaMs).coerceIn(0L, player.duration.coerceAtLeast(0L)))
+        val d = player.duration
+        val target = (player.currentPosition + deltaMs).coerceAtLeast(0L)
+        player.seekTo(if (d > 0) target.coerceAtMost(d) else target)
     }
 
     /** Swipe left/right in Now Playing: step through this scene's presets. */
@@ -1790,22 +1792,27 @@ class PlayerViewModel(
                     analyzeCached(uri) { p ->
                         _vizState.update { it.copy(analysisProgress = p) }
                     }
-                timeline = t
-                currentUri?.let { u ->
-                    val merged = trackLibrary.updateAnalysis(u.toString(), titleFor(u), t.durationMs, t.bpm, t.key)
-                    _library.update { it.copy(tracks = merged) }
+                val merged = trackLibrary.updateAnalysis(uri.toString(), titleFor(uri), t.durationMs, t.bpm, t.key)
+                _library.update { it.copy(tracks = merged) }
+                if (currentUri == uri) {
+                    timeline = t
+                    val suggestion = SceneSuggester.suggestForTrack(t)
+                    _vizState.value =
+                        _vizState.value.copy(
+                            analyzing = false,
+                            bpm = t.bpm,
+                            sections = t.detectSections(),
+                            suggestedSceneId = suggestion,
+                        )
+                    // ExoPlayer may only be accessed from its application thread;
+                    // this coroutine runs on Dispatchers.Default.
+                    withContext(Dispatchers.Main) { applyIntelligence() }
+                } else {
+                    _vizState.update { it.copy(analyzing = false) }
+                    if (_vizState.value.intelligenceMode != IntelligenceMode.MANUAL) {
+                        withContext(Dispatchers.Main) { analyzeCurrentTrack() }
+                    }
                 }
-                val suggestion = SceneSuggester.suggestForTrack(t)
-                _vizState.value =
-                    _vizState.value.copy(
-                        analyzing = false,
-                        bpm = t.bpm,
-                        sections = t.detectSections(),
-                        suggestedSceneId = suggestion,
-                    )
-                // ExoPlayer may only be accessed from its application thread;
-                // this coroutine runs on Dispatchers.Default.
-                withContext(Dispatchers.Main) { applyIntelligence() }
             } catch (t: Throwable) {
                 _vizState.update { it.copy(analyzing = false) }
             }
@@ -1981,7 +1988,7 @@ class PlayerViewModel(
                     val t =
                         timeline ?: analyzeCached(uri) { p ->
                             _exportState.update { it.copy(progress = p * 0.2f) }
-                        }.also { timeline = it }
+                        }.also { if (currentUri == uri) timeline = it }
                     // Publish the section context the exporter is about to
                     // journey through, so live playback of the same track
                     // re-seats identically from now on (journey parity even
