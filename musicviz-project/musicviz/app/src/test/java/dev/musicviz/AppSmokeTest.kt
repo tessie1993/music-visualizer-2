@@ -46,8 +46,9 @@ class AppSmokeTest {
         compose.onAllNodesWithText("Presets").onFirst().assertExists()
         navTo("Settings")
         // First collapsible section header; later ones may sit below the fold
-        // of the lazy list on the small Robolectric display.
-        compose.onNodeWithText("Appearance").assertExists()
+        // of the lazy list on the small Robolectric display. Headers render
+        // tracked-caps in the crystal design, hence ignoreCase.
+        compose.onNodeWithText("Appearance", ignoreCase = true).assertExists()
         navTo("Home")
     }
 

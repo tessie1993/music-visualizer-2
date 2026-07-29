@@ -2,8 +2,10 @@ package dev.musicviz.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,13 +19,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.LayersClear
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -38,6 +45,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -49,28 +58,73 @@ import dev.musicviz.render.scene.SceneIds
  * The Visuals nav destination: everything visual in one hub. Style/Customize
  * changes apply straight to the shared renderer, so switching to Now Playing
  * shows them live ("same content, two doors").
+ *
+ * With [liveBackdrop] (Settings › "Clear-overlay Visuals menu", or the
+ * layers toggle in the header) the hub hosts the live visualizer canvas
+ * fullscreen behind text-only chrome — no panels, just shadowed text — so
+ * every adjustment is visible on the visuals while it's being made.
  */
 @Composable
 fun VisualsHub(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
     onOpenNowPlaying: () -> Unit,
+    liveBackdrop: Boolean = false,
 ) {
     var tab by rememberSaveable { mutableStateOf(0) }
     val tabs = listOf("Presets", "Styles", "Customize", "Textures")
-    Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Visuals", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-            OutlinedButton(onClick = onOpenNowPlaying) { Text("View live") }
+    val gui by viewModel.guiPrefs.collectAsState()
+    Box(Modifier.fillMaxSize()) {
+        if (liveBackdrop) {
+            VisualizerCanvasHost(visualizerView, Modifier.fillMaxSize())
+            // Gentle dim so text stays legible over bright visuals; the
+            // menu itself stays clear (no panel fills in this mode).
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
         }
-        ScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
-            tabs.forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) }) }
-        }
-        when (tab) {
-            0 -> PresetsTreeTab(viewModel, visualizerView)
-            1 -> StylesTab(viewModel, visualizerView, onOpenTextures = { tab = 3 })
-            2 -> CustomizeHubTab(viewModel, visualizerView)
-            3 -> TexturesHubTab(viewModel, visualizerView)
+        val bodyStyle =
+            if (liveBackdrop) {
+                LocalTextStyle.current.copy(
+                    shadow = Shadow(color = Color.Black.copy(alpha = 0.9f), blurRadius = 10f),
+                )
+            } else {
+                LocalTextStyle.current
+            }
+        ProvideTextStyle(bodyStyle) {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        CrystalOverline(if (liveBackdrop) "Live overlay" else "MusicViz")
+                        GlowTitle("Visuals")
+                    }
+                    IconButton(onClick = {
+                        viewModel.setGuiPrefs(gui.copy(clearVisualsMenu = !gui.clearVisualsMenu))
+                    }) {
+                        Icon(
+                            if (liveBackdrop) Icons.Filled.LayersClear else Icons.Filled.Layers,
+                            if (liveBackdrop) "Solid menu" else "Clear overlay on live visuals",
+                            tint = if (liveBackdrop) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                        )
+                    }
+                    OutlinedButton(onClick = onOpenNowPlaying) { Text("View live") }
+                }
+                ScrollableTabRow(
+                    selectedTabIndex = tab,
+                    edgePadding = 8.dp,
+                    containerColor = Color.Transparent,
+                ) {
+                    tabs.forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) }) }
+                }
+                when (tab) {
+                    0 -> PresetsTreeTab(viewModel, visualizerView)
+                    1 -> StylesTab(viewModel, visualizerView, onOpenTextures = { tab = 3 })
+                    2 -> CustomizeHubTab(viewModel, visualizerView)
+                    3 -> TexturesHubTab(viewModel, visualizerView)
+                }
+            }
         }
     }
 }
@@ -222,7 +276,7 @@ private fun StylesTab(
     // state flow. One source of truth is what keeps switching stable.
     val pickScene: (String) -> Unit = { viewModel.selectScene(it) }
     Column(Modifier.fillMaxSize()) {
-        ScrollableTabRow(selectedTabIndex = sub, edgePadding = 8.dp) {
+        ScrollableTabRow(selectedTabIndex = sub, edgePadding = 8.dp, containerColor = Color.Transparent) {
             listOf("Particles", "Shaders", "Fluid", "MilkDrop").forEachIndexed { i, t ->
                 Tab(selected = sub == i, onClick = { sub = i }, text = { Text(t) })
             }
@@ -319,7 +373,7 @@ private fun CustomizeHubTab(
     val tabs = listOf("Motion", "Shape", "Behavior", "Color", "FX", "Fluid") + if (isShader) listOf("GLSL") else emptyList()
     LaunchedEffect(isShader) { if (!isShader && sub >= 6) sub = 0 }
     Column(Modifier.fillMaxSize()) {
-        ScrollableTabRow(selectedTabIndex = sub, edgePadding = 8.dp) {
+        ScrollableTabRow(selectedTabIndex = sub, edgePadding = 8.dp, containerColor = Color.Transparent) {
             tabs.forEachIndexed { i, t -> Tab(selected = sub == i, onClick = { sub = i }, text = { Text(t) }) }
         }
         Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {

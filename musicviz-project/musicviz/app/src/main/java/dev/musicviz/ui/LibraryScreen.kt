@@ -76,7 +76,10 @@ fun LibraryScreen(
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Library", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                CrystalOverline("MusicViz")
+                GlowTitle("Library")
+            }
             IconButton(onClick = onOpenSearch) { Icon(Icons.Filled.Search, "Search") }
         }
         if (!granted) {
@@ -86,7 +89,11 @@ fun LibraryScreen(
             }
             return
         }
-        ScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
+        ScrollableTabRow(
+            selectedTabIndex = tab,
+            edgePadding = 8.dp,
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
+        ) {
             tabs.forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) }) }
         }
         when (tab) {

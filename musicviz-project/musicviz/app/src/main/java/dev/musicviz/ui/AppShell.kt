@@ -33,8 +33,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -59,9 +57,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.musicviz.analysis.SearchMatcher
 import dev.musicviz.render.VisualizerView
 import kotlinx.coroutines.Dispatchers
@@ -121,6 +121,7 @@ fun AppRoot(
     MaterialTheme(
         colorScheme = effectiveTheme.colorScheme(gui.accentIntensity, gui.backgroundDim),
         shapes = gui.cornerStyle.shapes(),
+        typography = crystalTypography(),
     ) {
         val miniPlayer: @Composable () -> Unit = {
             MiniPlayer(
@@ -145,7 +146,11 @@ fun AppRoot(
             )
         }
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            // Nebula + star-field backdrop behind every shell tab; the
+            // Scaffold goes transparent so the glow shows through the glass.
+            CrystalBackground(Modifier.fillMaxSize())
             Scaffold(
+                containerColor = Color.Transparent,
                 topBar = {
                     // hasMedia guard: an empty statusBarsPadding box would
                     // still reserve inset height with nothing playing.
@@ -156,8 +161,16 @@ fun AppRoot(
                 bottomBar = {
                     Column {
                         if (gui.playerPosition == PlayerPosition.BOTTOM) miniPlayer()
+                        // Luminous accent hairline along the top edge of the
+                        // nav glass, per the mockups' "stroked" bottom nav.
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .luminousHairline(MaterialTheme.colorScheme.primary),
+                        )
                         NavigationBar(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = gui.barOpacity),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = gui.barOpacity * 0.9f),
                         ) {
                             NavigationBarItem(
                                 selected = dest == 0,
@@ -191,7 +204,15 @@ fun AppRoot(
                     when (dest) {
                         0 -> HomeScreen(viewModel, onOpenSearch = { searching = true }, onExpand = { expanded = true })
                         1 -> LibraryScreen(viewModel, onPersistUri, onOpenSearch = { searching = true })
-                        2 -> VisualsHub(viewModel, visualizerView, onOpenNowPlaying = { expanded = true })
+                        2 ->
+                            VisualsHub(
+                                viewModel,
+                                visualizerView,
+                                onOpenNowPlaying = { expanded = true },
+                                // The single GL view can't live in two parents:
+                                // only host it here while Now Playing is closed.
+                                liveBackdrop = gui.clearVisualsMenu && !expanded,
+                            )
                         3 -> SettingsScreen(viewModel, visualizerView)
                     }
                 }
@@ -259,7 +280,7 @@ private fun MiniPlayer(
     Column(
         Modifier
             .fillMaxWidth()
-            .glassPanel(barOpacity, MaterialTheme.colorScheme.surfaceVariant)
+            .glassPanel(barOpacity, MaterialTheme.colorScheme.surfaceVariant, glow = MaterialTheme.colorScheme.primary)
             .clickable(onClick = onExpand),
     ) {
         Row(
@@ -304,19 +325,36 @@ fun HomeScreen(
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Home", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+                Column(Modifier.weight(1f)) {
+                    CrystalOverline("MusicViz")
+                    GlowTitle("Home")
+                }
                 IconButton(onClick = onOpenSearch) { Icon(Icons.Filled.Search, "Search") }
             }
         }
         if (state.hasMedia) {
             item {
-                Card(Modifier.fillMaxWidth().clickable(onClick = onExpand)) {
-                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.PlayArrow, null, tint = MaterialTheme.colorScheme.primary)
-                        Column(Modifier.padding(start = 10.dp)) {
-                            Text("Resume", style = MaterialTheme.typography.labelMedium)
-                            Text(state.title ?: "Current queue", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .crystalPanel(
+                            0.4f,
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            MaterialTheme.colorScheme.primary,
+                            corner = 20.dp,
+                        ).clickable(onClick = onExpand)
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Filled.PlayArrow,
+                        null,
+                        Modifier.softGlow(MaterialTheme.colorScheme.primary, 12.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Column(Modifier.padding(start = 10.dp)) {
+                        CrystalOverline("Resume")
+                        Text(state.title ?: "Current queue", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
@@ -327,7 +365,7 @@ fun HomeScreen(
             }
         }
         if (recent.isNotEmpty()) {
-            item { Text("Recently played", style = MaterialTheme.typography.titleMedium) }
+            item { CrystalOverline("Recently played", Modifier.padding(top = 6.dp)) }
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(recent) { e -> HistoryChip(e.title) { viewModel.playTrack(e.uri) } }
@@ -335,7 +373,7 @@ fun HomeScreen(
             }
         }
         if (most.isNotEmpty()) {
-            item { Text("Most played", style = MaterialTheme.typography.titleMedium) }
+            item { CrystalOverline("Most played", Modifier.padding(top = 6.dp)) }
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(most) { e -> HistoryChip("${e.title} (${e.playCount})") { viewModel.playTrack(e.uri) } }
@@ -353,10 +391,19 @@ private fun HistoryChip(
     label: String,
     onClick: () -> Unit,
 ) {
-    Card(onClick = onClick) {
+    Box(
+        Modifier
+            .crystalPanel(
+                0.3f,
+                MaterialTheme.colorScheme.surfaceVariant,
+                MaterialTheme.colorScheme.primary,
+                corner = 24.dp,
+                glowStrength = 0.6f,
+            ).clickable(onClick = onClick),
+    ) {
         Text(
             label,
-            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             style = MaterialTheme.typography.bodyMedium,
@@ -383,20 +430,27 @@ private fun SettingsSection(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                title,
+                title.uppercase(),
                 Modifier.weight(1f),
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.2.sp),
                 color = MaterialTheme.colorScheme.primary,
             )
             Icon(
                 if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                 if (expanded) "Collapse" else "Expand",
+                tint = MaterialTheme.colorScheme.primary,
             )
         }
         if (expanded) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
         }
-        HorizontalDivider(Modifier.padding(top = 10.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp)
+                .height(1.dp)
+                .luminousHairline(MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+        )
     }
 }
 
@@ -410,17 +464,42 @@ fun SettingsScreen(
     val appTheme by viewModel.theme.collectAsState()
     var showExport by remember { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("Settings", style = MaterialTheme.typography.headlineSmall) }
+        item {
+            Column {
+                CrystalOverline("MusicViz")
+                GlowTitle("Settings")
+            }
+        }
         item {
             SettingsSection("Appearance") {
+                CrystalOverline("Theme", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(AppTheme.entries.toList()) { t ->
                         val sel = t == appTheme
-                        Card(onClick = { viewModel.setTheme(t) }) {
+                        Box(
+                            Modifier
+                                .crystalPanel(
+                                    if (sel) 0.55f else 0.25f,
+                                    if (sel) {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    },
+                                    MaterialTheme.colorScheme.primary,
+                                    corner = 20.dp,
+                                    glowStrength = if (sel) 1.2f else 0.4f,
+                                ).clickable { viewModel.setTheme(t) },
+                        ) {
                             Text(
-                                (if (sel) "● " else "") + t.label,
-                                Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                t.label,
+                                Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                 style = MaterialTheme.typography.bodySmall,
+                                color =
+                                    if (sel) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
                             )
                         }
                     }
@@ -477,6 +556,20 @@ fun SettingsScreen(
                     Switch(
                         checked = gui.compactPlayer,
                         onCheckedChange = { viewModel.setGuiPrefs(gui.copy(compactPlayer = it)) },
+                    )
+                }
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Clear-overlay Visuals menu", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Switch(
+                            checked = gui.clearVisualsMenu,
+                            onCheckedChange = { viewModel.setGuiPrefs(gui.copy(clearVisualsMenu = it)) },
+                        )
+                    }
+                    Text(
+                        "Text-only Visuals menu over the live visuals, so adjustments are visible as you make them.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 // Boot animation toggle (persisted directly; read by AppRoot at start).

@@ -203,6 +203,9 @@ data class GuiPrefs(
     val compactPlayer: Boolean = false,
     /** When the system is in light mode, switch to the LIGHT theme automatically. */
     val followSystemDark: Boolean = false,
+    /** Visuals hub renders as a text-only clear overlay on the live canvas,
+     *  so adjustments are visible on the visuals while being adjusted. */
+    val clearVisualsMenu: Boolean = false,
 )
 
 /** Persists the chosen [AppTheme] in shared preferences. */
@@ -235,6 +238,7 @@ class ThemeStore(
             backgroundDim = prefs.getFloat(KEY_DIM, 0f),
             compactPlayer = prefs.getBoolean(KEY_COMPACT, false),
             followSystemDark = prefs.getBoolean(KEY_FOLLOW_DARK, false),
+            clearVisualsMenu = prefs.getBoolean(KEY_CLEAR_VIZ_MENU, false),
         )
 
     fun saveGui(gui: GuiPrefs) {
@@ -250,6 +254,7 @@ class ThemeStore(
             .putFloat(KEY_DIM, gui.backgroundDim)
             .putBoolean(KEY_COMPACT, gui.compactPlayer)
             .putBoolean(KEY_FOLLOW_DARK, gui.followSystemDark)
+            .putBoolean(KEY_CLEAR_VIZ_MENU, gui.clearVisualsMenu)
             .apply()
     }
 
@@ -262,5 +267,6 @@ class ThemeStore(
         const val KEY_DIM = "gui_background_dim"
         const val KEY_COMPACT = "gui_compact_player"
         const val KEY_FOLLOW_DARK = "gui_follow_system_dark"
+        const val KEY_CLEAR_VIZ_MENU = "gui_clear_visuals_menu"
     }
 }
