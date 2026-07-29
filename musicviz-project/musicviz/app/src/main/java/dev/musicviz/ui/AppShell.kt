@@ -85,6 +85,7 @@ fun AppRoot(
     var expanded by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     val state by viewModel.uiState.collectAsState()
+    val gui by viewModel.guiPrefs.collectAsState()
 
     var crashText by remember {
         mutableStateOf(
@@ -120,11 +121,14 @@ fun AppRoot(
                                 } else {
                                     0f
                                 },
+                            barOpacity = gui.barOpacity,
                             onExpand = { expanded = true },
                             onPlayPause = viewModel::togglePlayPause,
                             onNext = viewModel::next,
                         )
-                        NavigationBar {
+                        NavigationBar(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = gui.barOpacity),
+                        ) {
                             NavigationBarItem(
                                 selected = dest == 0,
                                 onClick = { dest = 0 },
@@ -211,6 +215,7 @@ private fun MiniPlayer(
     isPlaying: Boolean,
     hasMedia: Boolean,
     progress: Float,
+    barOpacity: Float,
     onExpand: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
@@ -219,7 +224,7 @@ private fun MiniPlayer(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .glassPanel(barOpacity, MaterialTheme.colorScheme.surfaceVariant)
             .clickable(onClick = onExpand),
     ) {
         Row(
@@ -537,6 +542,7 @@ fun SearchScreen(
     var debounced by rememberSaveable { mutableStateOf("") }
     val library by viewModel.library.collectAsState()
     val viz by viewModel.vizState.collectAsState()
+    val gui by viewModel.guiPrefs.collectAsState()
     val deviceTracks by viewModel.deviceTracks.collectAsState()
     // The device index may be empty when search opens before the Library tab
     // has loaded it; refresh is a no-op without the audio permission.
@@ -590,7 +596,10 @@ fun SearchScreen(
             viz.presets.filter { SearchMatcher.matches(terms, listOf(it.name)) }
         }
 
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    // Search floats over a full content screen, so it needs more glass than
+    // the bars: clamp to >= 0.85 opacity or result text becomes unreadable
+    // against whatever is behind the overlay.
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background.copy(alpha = maxOf(gui.barOpacity, 0.85f)))) {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(

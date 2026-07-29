@@ -62,3 +62,9 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
 15. Back button (v0.13.0 r22): system back collapses Now Playing, then
     closes Search, then pops a Library drill-in, then returns any tab to
     Home, and only exits from Home.
+16. Chrome translucency (v0.13.x): sweep Settings > Look > Bar opacity —
+    the bottom nav bar, mini player, Now Playing header chip and
+    transport card must visibly change translucency live. Transport
+    never drops below ~25% opacity; the Search overlay stays near-opaque
+    (>= 85%) regardless of the slider. On the LIGHT/PAPER themes the
+    Now Playing header text must remain readable (onSurface, not white).

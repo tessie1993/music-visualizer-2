@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -69,6 +70,10 @@ fun VisualizerScreen(
     val state by viewModel.uiState.collectAsState()
     val autoMode by viewModel.autoMode.collectAsState()
     val audioQuality by viewModel.audioQuality.collectAsState()
+    val gui by viewModel.guiPrefs.collectAsState()
+    // Chrome over the live canvas follows the Settings bar-opacity slider,
+    // clamped to >= 0.25 so the transport stays readable over bright visuals.
+    val chromeAlpha = maxOf(gui.barOpacity, 0.25f)
     var controlsVisible by remember { mutableStateOf(true) }
     var qualityExpanded by remember { mutableStateOf(false) }
 
@@ -89,7 +94,9 @@ fun VisualizerScreen(
                 Modifier
                     .align(Alignment.TopStart)
                     .statusBarsPadding()
-                    .padding(12.dp),
+                    .padding(12.dp)
+                    .glassPanel(chromeAlpha, MaterialTheme.colorScheme.surface, corner = 12.dp)
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -100,14 +107,14 @@ fun VisualizerScreen(
                     Text(
                         state.title?.ifBlank { "MusicViz" } ?: "MusicViz",
                         style = MaterialTheme.typography.titleSmall,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                     )
                     state.artist?.takeIf { it.isNotBlank() }?.let {
                         Text(
                             it,
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                             maxLines = 1,
                         )
                     }
@@ -121,6 +128,16 @@ fun VisualizerScreen(
                 }
             }
 
+            // Readability scrim under the transport: darkens the lowest part
+            // of bright visuals so a low-opacity glass card stays legible.
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .glassScrim(),
+            )
+
             Card(
                 modifier =
                     Modifier
@@ -131,7 +148,7 @@ fun VisualizerScreen(
                         .padding(bottom = 16.dp),
                 colors =
                     CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = chromeAlpha),
                     ),
             ) {
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
