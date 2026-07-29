@@ -1,3 +1,43 @@
+## v0.13.1 (code 23) - Player settings, library metadata & search, WATER style + ripple overlay, glass UI, boot intro
+- Player: PlayerPrefs store (shuffle/repeat now persisted and restored),
+  playback speed 0.5-2x and pitch +/-6 st, skip silence, pause-on-unplug,
+  keep-screen-on, auto-resume (prepares last track), sleep timer with 3 s
+  fade; Equalizer/BassBoost/LoudnessEnhancer on the ExoPlayer session with
+  device presets and per-band sliders, fully persisted, degrades gracefully
+  where audiofx is unsupported.
+- Audio quality readout: Now Playing shows a LOSSLESS / BIT-PERFECT / LOSSY
+  badge with an expandable detail card (source codec/rate/depth/channels vs
+  decoded output, bitrate, one-line verdict). The tap tee is read-only, so
+  the readout reflects what the device actually receives.
+- Library: track info editor (title/artist/album/genre/year/track#/comment)
+  stored app-only in a versioned library.json v2 (legacy array migrates);
+  overrides join into MediaStore rows; imports read full tags.
+- Search: MediaStore query moved off the composition thread into the VM
+  (fixes Library-tab jank); debounced multi-term search across device
+  tracks, imported tracks (incl. album/genre), playlists and presets with
+  grouped results and queue-append.
+- Visuals: new WATER scene (wave-equation RippleSim height field, 2 GPU
+  passes/frame, choreography/emitter-driven drops, refracted depth-graded
+  pool, Blinn specular + fresnel, treble glints); ripple overlay applies
+  water refraction + glint over ANY style including MilkDrop, with full
+  export parity (FxCompositor/VideoExporter) and deterministic musical
+  drops shared by live and export paths. GlUtil.resetFrameState now also
+  unbinds sampler objects and pack/unpack PBOs (projectM leak hardening).
+  New CPU mirrors RippleMath/RippleOverlayDrops + headless tests.
+- Appearance: Settings restructured into five collapsible sections; glass
+  chrome finally consumes the bar-opacity slider (nav bar, mini player,
+  Now Playing chip/card, search overlay); 18 themes fleshed out to full
+  derived schemes; corner style and player position (top/bottom) wired;
+  accent intensity, background dim, compact mini-player, follow-system
+  light/dark - all applying live. Boot animation: system splash hands off
+  to a tap-skippable ripple intro (toggle in Appearance).
+- Docs: full-app wireframe (docs/wireframe.html, 14 frames) for UI
+  ideation; DEVICE_CHECKS items 16-20 cover the new visuals/appearance.
+- Verify note: built in a container without the Android SDK (Google Maven
+  unreachable); gate = kotlinc typecheck of the SDK-independent subset
+  against android-all + 106 headless JUnit tests green. Run the standard
+  ./gradlew gate + DEVICE_CHECKS items 16-20 on-device before release.
+
 ## v0.13.0 (code 21–22) - Fluid & particle REBUILD: spawn/catch journey choreography
 - Note: r22 (transition-flash fix + system back handling) shipped under the
   same 0.13.0 version name.

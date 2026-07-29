@@ -590,7 +590,7 @@ fun SettingsScreen(
                     // buildFeatures.buildConfig is enabled — BuildConfig is not
                     // generated or referenced anywhere in the app today.
                     Text("MusicViz", style = MaterialTheme.typography.titleSmall)
-                    Text("Version 0.13.0", style = MaterialTheme.typography.bodySmall)
+                    Text("Version 0.13.1", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
