@@ -1147,7 +1147,8 @@ class PlayerViewModel(
                 android.Manifest.permission.READ_EXTERNAL_STORAGE
             }
         val granted =
-            androidx.core.content.ContextCompat.checkSelfPermission(app, permission) ==
+            androidx.core.content.ContextCompat
+                .checkSelfPermission(app, permission) ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED
         if (!granted) return emptyList()
         val out = mutableListOf<DeviceTrack>()

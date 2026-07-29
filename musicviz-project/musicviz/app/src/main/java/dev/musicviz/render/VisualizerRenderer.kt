@@ -241,7 +241,9 @@ class VisualizerRenderer(
 
     /** F2 ripple overlay: renderer-owned heightfield refracting ANY style. */
     private var rippleOverlay: dev.musicviz.render.fluid.RippleSim? = null
-    private val rippleDrops = dev.musicviz.render.fluid.RippleOverlayDrops()
+    private val rippleDrops =
+        dev.musicviz.render.fluid
+            .RippleOverlayDrops()
 
     /** Overlay grid short side: fixed budget tier (WaterScene tier 4-ish);
      *  the overlay rides on top of a full scene, so it stays cheap. */

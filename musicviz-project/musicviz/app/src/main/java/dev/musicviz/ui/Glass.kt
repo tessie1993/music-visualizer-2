@@ -13,9 +13,9 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/**
+/*
  * "Glass" chrome helpers: translucent panels whose opacity follows the
- * Settings "Bar opacity" slider ([GuiPrefs.barOpacity]). This is flat
+ * Settings "Bar opacity" slider (GuiPrefs.barOpacity). This is flat
  * alpha glass by design - no backdrop blur (RenderEffect cannot blur the
  * content BEHIND a composable here), and behind the main shell screens
  * there is no live visualizer anyway, so the glass reveals the theme

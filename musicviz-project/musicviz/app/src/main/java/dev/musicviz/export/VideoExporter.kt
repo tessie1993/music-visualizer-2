@@ -335,7 +335,9 @@ class VideoExporter(
                 } else {
                     null
                 }
-            val rippleDrops = dev.musicviz.render.fluid.RippleOverlayDrops()
+            val rippleDrops =
+                dev.musicviz.render.fluid
+                    .RippleOverlayDrops()
             // Reproduce the live path's per-frame LFO modulation so automations
             // the user set up appear in the render, not just on screen.
             val lfoEngine = dev.musicviz.render.LfoEngine()
