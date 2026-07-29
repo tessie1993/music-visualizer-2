@@ -1,4 +1,6 @@
-## v0.13.0 (code 21) - Fluid & particle REBUILD: spawn/catch journey choreography
+## v0.13.0 (code 21–22) - Fluid & particle REBUILD: spawn/catch journey choreography
+- Note: r22 (transition-flash fix + system back handling) shipped under the
+  same 0.13.0 version name.
 - The fluid + particle stack is rebuilt around a progression engine
   (render/fluid/FluidChoreography.kt): up to 8 SPAWN points (dye splats
   fire there, particles are born there) and up to 4 CATCH points
