@@ -47,7 +47,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.Player
 import dev.musicviz.analysis.AudioQualityInfo
 import dev.musicviz.render.VisualizerView
@@ -87,7 +86,7 @@ fun VisualizerScreen(
                 detectTapGestures(onTap = { controlsVisible = !controlsVisible })
             },
     ) {
-        AndroidView(factory = { visualizerView }, modifier = Modifier.fillMaxSize())
+        VisualizerCanvasHost(visualizerView, Modifier.fillMaxSize())
 
         if (controlsVisible) {
             Row(
@@ -95,8 +94,12 @@ fun VisualizerScreen(
                     .align(Alignment.TopStart)
                     .statusBarsPadding()
                     .padding(12.dp)
-                    .glassPanel(chromeAlpha, MaterialTheme.colorScheme.surface, corner = 12.dp)
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    .glassPanel(
+                        chromeAlpha,
+                        MaterialTheme.colorScheme.surface,
+                        corner = 12.dp,
+                        glow = MaterialTheme.colorScheme.primary,
+                    ).padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -138,18 +141,21 @@ fun VisualizerScreen(
                     .glassScrim(),
             )
 
-            Card(
+            Box(
                 modifier =
                     Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .navigationBarsPadding()
                         .padding(horizontal = 12.dp)
-                        .padding(bottom = 16.dp),
-                colors =
-                    CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = chromeAlpha),
-                    ),
+                        .padding(bottom = 16.dp)
+                        .crystalPanel(
+                            chromeAlpha,
+                            MaterialTheme.colorScheme.surface,
+                            MaterialTheme.colorScheme.primary,
+                            corner = 24.dp,
+                            glowStrength = 0.8f,
+                        ),
             ) {
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                     Row(
@@ -190,7 +196,11 @@ fun VisualizerScreen(
                         IconButton(onClick = viewModel::previous, enabled = state.hasMedia) {
                             Icon(Icons.Filled.SkipPrevious, "Previous")
                         }
-                        FilledTonalIconButton(onClick = viewModel::togglePlayPause, enabled = state.hasMedia) {
+                        FilledTonalIconButton(
+                            onClick = viewModel::togglePlayPause,
+                            enabled = state.hasMedia,
+                            modifier = Modifier.softGlow(MaterialTheme.colorScheme.primary, 14.dp),
+                        ) {
                             Icon(
                                 if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                                 if (state.isPlaying) "Pause" else "Play",

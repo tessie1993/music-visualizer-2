@@ -1,15 +1,15 @@
 package dev.musicviz.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -26,28 +26,36 @@ import androidx.compose.ui.unit.dp
 internal fun glassBorderAlpha(opacity: Float): Float = (opacity.coerceIn(0f, 1f) + 0.15f).coerceAtMost(1f)
 
 /**
- * Translucent panel: [color] at [opacity] plus a subtle hairline top
- * border so the glass edge reads against whatever sits behind it.
- * [corner] > 0 rounds the panel (border clipped to the shape).
+ * Translucent crystal panel: [color] at [opacity] as a top-lit vertical
+ * gradient, plus a luminous [glow]-tinted gradient border so the glass edge
+ * reads against whatever sits behind it (brightest along the top, like the
+ * mockups' "luminous stroke" material). [corner] > 0 rounds the panel.
  */
 fun Modifier.glassPanel(
     opacity: Float,
     color: Color,
     corner: Dp = 0.dp,
+    glow: Color? = null,
 ): Modifier {
     val alpha = opacity.coerceIn(0f, 1f)
     val shape: Shape = if (corner > 0.dp) RoundedCornerShape(corner) else RectangleShape
+    val edge = glow ?: color
     return this
         .clip(shape)
-        .background(color.copy(alpha = alpha))
-        .drawBehind {
-            // Default stroke width = hairline.
-            drawLine(
-                color = color.copy(alpha = glassBorderAlpha(alpha)),
-                start = Offset(0f, 0f),
-                end = Offset(size.width, 0f),
-            )
-        }
+        .background(
+            Brush.verticalGradient(
+                0f to lerp(color, edge, 0.15f).copy(alpha = (alpha + 0.06f).coerceAtMost(1f)),
+                1f to lerp(color, Color.Black, 0.2f).copy(alpha = alpha),
+            ),
+        ).border(
+            1.dp,
+            Brush.verticalGradient(
+                0f to edge.copy(alpha = glassBorderAlpha(alpha)),
+                0.6f to edge.copy(alpha = glassBorderAlpha(alpha) * 0.3f),
+                1f to edge.copy(alpha = glassBorderAlpha(alpha) * 0.55f),
+            ),
+            shape,
+        )
 }
 
 /**

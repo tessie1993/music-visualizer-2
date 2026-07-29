@@ -8,7 +8,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,10 +19,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.max
@@ -81,24 +85,51 @@ fun BootIntro(onDone: () -> Unit) {
             rings.forEach { ring ->
                 val p = ring.value
                 if (p > 0f && p < 1f) {
+                    val radius = startRadius + (endRadius - startRadius) * p
+                    val fade = 1f - p
+                    // Layered strokes fake a luminous bloom around each ring:
+                    // wide faint halo, mid glow, bright core.
                     drawCircle(
-                        color = primary.copy(alpha = (1f - p) * 0.45f),
-                        radius = startRadius + (endRadius - startRadius) * p,
+                        color = primary.copy(alpha = fade * 0.12f),
+                        radius = radius,
+                        style = Stroke(width = strokeWidth * 7f),
+                    )
+                    drawCircle(
+                        color = primary.copy(alpha = fade * 0.28f),
+                        radius = radius,
+                        style = Stroke(width = strokeWidth * 3f),
+                    )
+                    drawCircle(
+                        color = Color.White.copy(alpha = fade * 0.5f),
+                        radius = radius,
                         style = Stroke(width = strokeWidth),
                     )
                 }
             }
         }
-        Text(
-            "MusicViz",
-            color = primary,
-            style = MaterialTheme.typography.headlineLarge,
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
             modifier =
                 Modifier.graphicsLayer {
                     alpha = textAlpha.value
                     scaleX = textScale.value
                     scaleY = textScale.value
                 },
-        )
+        ) {
+            Text(
+                "MusicViz",
+                color = Color.White,
+                style =
+                    MaterialTheme.typography.headlineLarge.copy(
+                        shadow = Shadow(color = primary, blurRadius = 36f),
+                    ),
+            )
+            Text(
+                "VISUALIZE THE INVISIBLE",
+                color = primary.copy(alpha = 0.85f),
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 3.5.sp),
+                modifier = Modifier.padding(top = 10.dp),
+            )
+        }
     }
 }
