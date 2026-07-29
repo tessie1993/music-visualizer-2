@@ -57,6 +57,9 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(kotlin("reflect"))
     testImplementation(libs.junit)
+    // Real org.json for plain (non-Robolectric) unit tests: the mockable
+    // android.jar's org.json classes throw "Stub!" (TrackLibraryMigrationTest).
+    testImplementation(libs.json)
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.test:core-ktx:1.6.1")
     testImplementation("androidx.test.ext:junit-ktx:1.2.1")
