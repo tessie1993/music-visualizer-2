@@ -88,7 +88,7 @@ private fun PresetsTreeTab(
     var newFolder by remember { mutableStateOf("") }
     var saveName by remember { mutableStateOf("") }
     var saveFolder by rememberSaveable { mutableStateOf("") }
-    val userPresets = viz.presets.filterNot { BuiltInPresets.isBuiltIn(it.name) }
+    val userPresets = viz.presets.filterNot { BuiltInPresets.isBuiltIn(it.name) }.distinctBy { it.name }
     val byFolder = userPresets.groupBy { viewModel.presetFolderOf(it.name) }
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
