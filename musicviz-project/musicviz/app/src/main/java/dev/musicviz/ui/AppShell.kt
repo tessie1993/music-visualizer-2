@@ -92,6 +92,15 @@ fun AppRoot(
     var dest by rememberSaveable { mutableStateOf(0) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
+    // rememberSaveable: rotation/config changes must not replay the intro;
+    // only a fresh process start does.
+    var bootDone by rememberSaveable { mutableStateOf(false) }
+    val bootAnimEnabled =
+        remember {
+            context
+                .getSharedPreferences("musicviz-prefs", android.content.Context.MODE_PRIVATE)
+                .getBoolean("boot_anim", true)
+        }
     val state by viewModel.uiState.collectAsState()
 
     var crashText by remember {
@@ -225,6 +234,10 @@ fun AppRoot(
                         dest = 2
                     },
                 )
+            }
+            // Last overlay in the Box so it draws above everything else.
+            if (bootAnimEnabled && !bootDone) {
+                BootIntro(onDone = { bootDone = true })
             }
         }
     }
@@ -465,6 +478,17 @@ fun SettingsScreen(
                         checked = gui.compactPlayer,
                         onCheckedChange = { viewModel.setGuiPrefs(gui.copy(compactPlayer = it)) },
                     )
+                }
+                // Boot animation toggle (persisted directly; read by AppRoot at start).
+                val bootCtx = LocalContext.current
+                val bootPrefs = remember { bootCtx.getSharedPreferences("musicviz-prefs", android.content.Context.MODE_PRIVATE) }
+                var bootAnim by remember { mutableStateOf(bootPrefs.getBoolean("boot_anim", true)) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Boot animation", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = bootAnim, onCheckedChange = {
+                        bootAnim = it
+                        bootPrefs.edit().putBoolean("boot_anim", it).apply()
+                    })
                 }
             }
         }

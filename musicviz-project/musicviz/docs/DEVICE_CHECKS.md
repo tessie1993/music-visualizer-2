@@ -75,3 +75,7 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     (sharp/rounded/pill), Compact mini-player slims the bar, player
     position Top/Bottom moves the bar, and "Follow system light/dark"
     swaps to the LIGHT theme when the OS is in light mode.
+18. Boot animation (0.13.x): Cold start: system splash hands off to the
+    ripple intro, no flash of unstyled content; tap skips; rotating during
+    the intro does not replay it; the Settings > Look "Boot animation"
+    toggle off disables it on the next cold start.
