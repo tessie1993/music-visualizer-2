@@ -409,6 +409,33 @@ object BuiltInPresets {
                     ),
             ),
             Preset(
+                name = "water · Rainfall",
+                sceneId = dev.musicviz.render.scene.SceneIds.WATER,
+                attack = 0.45f,
+                decay = 0.35f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        // A deep rained-on pool: beats land interfering rings
+                        // from scattered spawns, one slow stirrer carves a
+                        // wake, treble sparkle patters small drops between.
+                        waterDepth = 0.7f,
+                        waterSpecular = 0.8f,
+                        waterRippleStrength = 1.1f,
+                        waterWaveSpeed = 1.0f,
+                        waterFlow = 0.35f,
+                        fluidBeatPattern = 1,
+                        fluidBeatSplats = 3,
+                        fluidStirrers = 1,
+                        fluidStirrerSpeed = 0.6f,
+                        fluidSparkle = true,
+                        fluidSpawnPath = 3,
+                        fluidSpawnPoints = 4,
+                        fluidCatchPoints = 0,
+                        palette = 3,
+                    ),
+            ),
+            Preset(
                 name = "curlflow · Streams",
                 sceneId = dev.musicviz.render.scene.SceneIds.CURLFLOW,
                 attack = 0.4f,

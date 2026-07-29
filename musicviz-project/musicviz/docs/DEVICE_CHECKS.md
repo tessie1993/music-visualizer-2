@@ -83,3 +83,14 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     interfering rings; specular glint tracks ripples; palette retints the
     pool; export falls back correctly (exportSceneFactory constructs
     WaterScene).
+20. Ripple overlay (F2): enable "Water ripples" (Fluid tab) on a particle
+    scene, a shader scene, AND a live MilkDrop preset — beat rings must
+    visibly refract each one and the glint must sparkle on crests.
+    Switch scenes mid-beat: the transition keeps the ripples on BOTH the
+    outgoing and incoming image (postFx path). Ripple strength 0 must be
+    zero visible difference. On the WATER style the overlay must NOT
+    double-apply (its own surface already refracts; the renderer guard
+    keeps the overlay off). Export 10 s of MilkDrop + overlay: the mp4
+    must show the same refraction/glint as the live view. Watch frame
+    time on a Min-tier device with overlay + FlowField both on (two
+    extra sims per frame).
