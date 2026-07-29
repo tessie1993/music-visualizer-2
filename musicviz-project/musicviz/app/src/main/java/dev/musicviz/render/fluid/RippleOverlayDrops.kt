@@ -26,10 +26,12 @@ internal class RippleOverlayDrops {
 
     private var frame = 0
     private var dropIndex = 0
+    private var prevBeat = false
 
     fun reset() {
         frame = 0
         dropIndex = 0
+        prevBeat = false
     }
 
     /**
@@ -42,7 +44,11 @@ internal class RippleOverlayDrops {
         queue: (Float, Float, Float, Float) -> Unit,
     ) {
         frame++
-        if (features.beat) {
+        // Edge-detect the beat flag: the ~62.5 Hz analysis snapshot can be
+        // consumed by several display frames (FluidEmitters convention).
+        val beatEdge = features.beat && !prevBeat
+        prevBeat = features.beat
+        if (beatEdge) {
             val amp = 0.22f + 0.4f * features.bass.coerceIn(0f, 1.5f)
             repeat(BEAT_DROPS) {
                 val (x, y) = RippleMath.overlayDropPosition(dropIndex++, aspect)
