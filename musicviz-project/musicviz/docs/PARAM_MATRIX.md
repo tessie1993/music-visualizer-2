@@ -58,3 +58,16 @@ dye suction strength in FLUID (emitter suction splats at catch points).
 progress/sectionIndex/sectionCount ride AudioFeatures: live from the
 player position + cached section analysis, export from
 FeatureTimeline.progressionAt - no SceneParams field, not persisted.
+
+Water additions (v0.13.x, unit F1): waterWaveSpeed / waterDamping /
+waterRippleStrength / waterDepth / waterSpecular / waterFlow act on the
+WATER scene only (RippleSim wave character + water_display shading inside
+WaterScene; the Customize Fluid tab shows the Water section only when the
+water style is active). WATER also consumes the shared journey params
+(fluidSpawnPath/Points/Progress, fluidCatchPoints/Pull, and the emitter
+schedule fields fluidBeatPattern/BeatSplats/Stirrers/StirrerSpeed/
+SplatRadius/SplatForce/BassPump/Sparkle/RadiusPulse) to place and time its
+drops, plus fluidQuality/fluidAutoQuality for its grid tier.
+rippleOverlayEnabled / rippleOverlayStrength / rippleOverlaySpecular are
+persisted and LFO-targetable now but consumed by the follow-up ripple
+overlay unit (F2): documented no-ops until then.

@@ -79,3 +79,7 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     ripple intro, no flash of unstyled content; tap skips; rotating during
     the intro does not replay it; the Settings > Look "Boot animation"
     toggle off disables it on the next cold start.
+19. Water style: select water — beat drops radiate as expanding
+    interfering rings; specular glint tracks ripples; palette retints the
+    pool; export falls back correctly (exportSceneFactory constructs
+    WaterScene).

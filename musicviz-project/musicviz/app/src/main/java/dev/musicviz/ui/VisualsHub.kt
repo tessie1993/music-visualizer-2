@@ -230,7 +230,7 @@ private fun StylesTab(
         when (sub) {
             0 -> SceneList(VisualizerRenderer.PARTICLE_SCENES, viz.sceneId, pickScene)
             1 -> SceneList(VisualizerRenderer.SHADER_SCENES.keys.toList(), viz.sceneId, pickScene)
-            2 -> SceneList(listOf(SceneIds.FLUID, SceneIds.CURLFLOW), viz.sceneId, pickScene)
+            2 -> SceneList(listOf(SceneIds.FLUID, SceneIds.CURLFLOW, SceneIds.WATER), viz.sceneId, pickScene)
             3 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
         }
     }
@@ -369,7 +369,9 @@ private fun CustomizeHubTab(
                             isFluidScene = viz.sceneId == dev.musicviz.render.scene.SceneIds.FLUID,
                             isJourneyScene =
                                 viz.sceneId == dev.musicviz.render.scene.SceneIds.FLUID ||
-                                    viz.sceneId == dev.musicviz.render.scene.SceneIds.CURLFLOW,
+                                    viz.sceneId == dev.musicviz.render.scene.SceneIds.CURLFLOW ||
+                                    viz.sceneId == dev.musicviz.render.scene.SceneIds.WATER,
+                            isWaterScene = viz.sceneId == dev.musicviz.render.scene.SceneIds.WATER,
                             injectionError = if (viz.sceneId == dev.musicviz.render.scene.SceneIds.FLUID) viz.shaderError else null,
                             onApplyInjectionShaders = { force, dye ->
                                 visualizerView.visualizerRenderer.submitFluidInjectionShaders(force, dye)

@@ -196,6 +196,15 @@ class PresetStore(
                 .put("flowForce", p.params.flowForce.toDouble())
                 .put("flowCurl", p.params.flowCurl.toDouble())
                 .put("flowAdvectParticles", p.params.flowAdvectParticles)
+                .put("waterWaveSpeed", p.params.waterWaveSpeed.toDouble())
+                .put("waterDamping", p.params.waterDamping.toDouble())
+                .put("waterRippleStrength", p.params.waterRippleStrength.toDouble())
+                .put("waterDepth", p.params.waterDepth.toDouble())
+                .put("waterSpecular", p.params.waterSpecular.toDouble())
+                .put("waterFlow", p.params.waterFlow.toDouble())
+                .put("rippleOverlayEnabled", p.params.rippleOverlayEnabled)
+                .put("rippleOverlayStrength", p.params.rippleOverlayStrength.toDouble())
+                .put("rippleOverlaySpecular", p.params.rippleOverlaySpecular.toDouble())
                 .apply { if (p.customShader != null) put("customShader", p.customShader) }
                 .toString(2)
 
@@ -317,6 +326,15 @@ class PresetStore(
                         flowForce = o.optDouble("flowForce", 1.0).toFloat(),
                         flowCurl = o.optDouble("flowCurl", 25.0).toFloat(),
                         flowAdvectParticles = o.optBoolean("flowAdvectParticles", true),
+                        waterWaveSpeed = o.optDouble("waterWaveSpeed", 1.0).toFloat(),
+                        waterDamping = o.optDouble("waterDamping", 0.985).toFloat(),
+                        waterRippleStrength = o.optDouble("waterRippleStrength", 1.0).toFloat(),
+                        waterDepth = o.optDouble("waterDepth", 0.6).toFloat(),
+                        waterSpecular = o.optDouble("waterSpecular", 0.7).toFloat(),
+                        waterFlow = o.optDouble("waterFlow", 0.3).toFloat(),
+                        rippleOverlayEnabled = o.optBoolean("rippleOverlayEnabled", false),
+                        rippleOverlayStrength = o.optDouble("rippleOverlayStrength", 0.4).toFloat(),
+                        rippleOverlaySpecular = o.optDouble("rippleOverlaySpecular", 0.3).toFloat(),
                     ),
             )
         }

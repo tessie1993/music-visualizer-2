@@ -161,6 +161,23 @@ data class SceneParams(
     val flowCurl: Float = 25f,
     // particle scenes ride the field
     val flowAdvectParticles: Boolean = true,
+    // Water (WATER scene; wave character shared with the ripple overlay)
+    // 0.2..2
+    val waterWaveSpeed: Float = 1f,
+    // 0.9..0.999
+    val waterDamping: Float = 0.985f,
+    // 0..2
+    val waterRippleStrength: Float = 1f,
+    // 0..1
+    val waterDepth: Float = 0.6f,
+    // 0..1
+    val waterSpecular: Float = 0.7f,
+    // 0..1
+    val waterFlow: Float = 0.3f,
+    // Ripple overlay (all styles; consumed by follow-up unit F2)
+    val rippleOverlayEnabled: Boolean = false,
+    val rippleOverlayStrength: Float = 0.4f,
+    val rippleOverlaySpecular: Float = 0.3f,
 ) {
     companion object {
         val DEFAULT: SceneParams = SceneParams()
