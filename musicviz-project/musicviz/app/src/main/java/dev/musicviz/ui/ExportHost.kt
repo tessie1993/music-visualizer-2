@@ -45,6 +45,9 @@ fun ExportHost(
             destinationPicker.launch("musicviz_${System.currentTimeMillis()}.mp4")
         },
         onCancel = viewModel::cancelExport,
-        onDismiss = onDismiss,
+        onDismiss = {
+            viewModel.resetExportState()
+            onDismiss()
+        },
     )
 }

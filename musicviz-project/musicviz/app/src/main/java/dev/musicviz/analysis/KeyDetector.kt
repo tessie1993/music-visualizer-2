@@ -1,5 +1,6 @@
 package dev.musicviz.analysis
 
+import kotlin.math.ceil
 import kotlin.math.log2
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -22,7 +23,7 @@ class KeyDetector {
         sampleRateHz: Int,
         fftSize: Int,
     ) {
-        val minBin = (60f * fftSize / sampleRateHz).toInt().coerceAtLeast(1)
+        val minBin = ceil(60f * fftSize / sampleRateHz).toInt().coerceAtLeast(1)
         val maxBin = (5000f * fftSize / sampleRateHz).toInt().coerceAtMost(magnitudes.size - 1)
         for (k in minBin..maxBin) {
             val f = k.toFloat() * sampleRateHz / fftSize

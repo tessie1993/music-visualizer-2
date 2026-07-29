@@ -33,7 +33,12 @@ class AiffPcm private constructor(
      */
     fun read(out: ShortArray): Int {
         val bytesPer = bitsPerSample / 8
-        val maxSamples = out.size - (out.size % channels)
+        var maxSamples = out.size - (out.size % channels)
+        if (totalFrames > 0) {
+            val remaining = (totalFrames - framesRead) * channels
+            if (remaining <= 0) return -1
+            if (remaining < maxSamples) maxSamples = remaining.toInt()
+        }
         val raw = ByteArray(maxSamples * bytesPer)
         var got = 0
         try {

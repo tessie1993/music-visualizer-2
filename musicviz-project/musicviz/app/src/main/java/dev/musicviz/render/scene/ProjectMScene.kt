@@ -162,7 +162,7 @@ class ProjectMScene(
     ) {
         val p = sceneParams
         rotationAngle += p.rotation * dt
-        if (p.endlessZoom) zoomPhase = (zoomPhase + p.endlessZoomSpeed * dt) % 1f
+        zoomPhase = if (p.endlessZoom) (zoomPhase + p.endlessZoomSpeed * dt) % 1f else 0f
         if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * dt) % 1f
         beatPulse = if (features.beat) 1f else (beatPulse - dt * 3f).coerceAtLeast(0f)
         if (handle == 0L) return
@@ -265,6 +265,8 @@ class ProjectMScene(
         releaseFbo()
         if (postProgram != 0) GLES30.glDeleteProgram(postProgram)
         postProgram = 0
+        if (postVao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(postVao), 0)
+        postVao = 0
         postLocs.clear()
     }
 }

@@ -81,7 +81,10 @@ class VisualizerRenderer(
     // One-shot preset morph: glides displayedParams over the given seconds,
     // then expires (3 time constants ~ 95% settled) so later slider tweaks
     // respond at the user's own paramFadeSec again.
+    @Volatile
     private var morphFadeSec = 0f
+
+    @Volatile
     private var morphRemainSec = 0f
 
     /** Called on preset apply; safe from any thread (floats, worst case one late frame). */

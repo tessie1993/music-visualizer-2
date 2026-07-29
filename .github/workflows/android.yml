@@ -54,7 +54,7 @@ jobs:
           retention-days: 14
 
       - name: Publish APK to apk-drop branch
-        if: success()
+        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         working-directory: musicviz-project/musicviz/app/build/outputs/apk/debug
         env:
           GH_TOKEN: ${{ github.token }}

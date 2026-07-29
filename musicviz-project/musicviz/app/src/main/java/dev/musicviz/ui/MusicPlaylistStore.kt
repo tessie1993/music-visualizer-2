@@ -55,7 +55,7 @@ class MusicPlaylistStore(
         val current = list().firstOrNull { it.name == oldName } ?: return false
         if (newName.isBlank() || list().any { it.name == newName }) return false
         save(current.copy(name = newName))
-        delete(oldName)
+        if (sanitize(oldName) != sanitize(newName)) delete(oldName)
         return true
     }
 

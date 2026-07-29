@@ -348,6 +348,11 @@ private fun FoldersTab(
             Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             style = MaterialTheme.typography.bodySmall,
         )
-        GroupList(folders.mapKeys { (k, _) -> k.substringAfterLast('/').ifEmpty { k } }, viewModel)
+        GroupList(
+            folders.entries
+                .groupBy({ (k, _) -> k.substringAfterLast('/').ifEmpty { k } }, { it.value })
+                .mapValues { (_, lists) -> lists.flatten() },
+            viewModel,
+        )
     }
 }
