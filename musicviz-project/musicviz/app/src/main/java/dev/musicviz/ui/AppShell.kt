@@ -365,6 +365,7 @@ fun SettingsScreen(
                 }
             }
         }
+        item { PlaybackSettingsSection(viewModel) }
         item { HorizontalDivider() }
         item { Text("Paths", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
         item {
