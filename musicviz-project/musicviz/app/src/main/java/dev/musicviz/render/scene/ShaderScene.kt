@@ -120,7 +120,7 @@ class ShaderScene(
         val p = sceneParams
         shaderTime += p.speed * dt
         rotationAngle += p.rotation * dt
-        if (p.endlessZoom) zoomPhase = (zoomPhase + p.endlessZoomSpeed * dt) % 1f
+        zoomPhase = if (p.endlessZoom) (zoomPhase + p.endlessZoomSpeed * dt) % 1f else 0f
         if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * dt) % 1f
         bass = (features.bass * p.audioDrive).coerceIn(0f, 1.5f)
         mid = (features.mid * p.audioDrive).coerceIn(0f, 1.5f)
