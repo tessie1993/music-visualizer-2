@@ -410,8 +410,7 @@ fun SettingsScreen(
         }
         item {
             SettingsSection("Playback") {
-                // Playback settings land here (units U2/U3): speed, EQ, sleep timer.
-                Text("More playback settings are coming soon.", style = MaterialTheme.typography.bodySmall)
+                PlaybackSettingsSection(viewModel)
             }
         }
         item {

@@ -21,6 +21,7 @@ fun VisualizerEngineBindings(
     val viz by viewModel.vizState.collectAsState()
     val lfos by viewModel.lfos.collectAsState()
     val adsrs by viewModel.adsrs.collectAsState()
+    val playerPrefs by viewModel.playerPrefs.collectAsState()
 
     LaunchedEffect(Unit) {
         visualizerView.visualizerRenderer.onShaderError = viewModel::reportShaderError
@@ -36,6 +37,9 @@ fun VisualizerEngineBindings(
     }
     LaunchedEffect(viz.params) {
         visualizerView.visualizerRenderer.sceneParams = viz.params
+    }
+    LaunchedEffect(playerPrefs.keepScreenOn) {
+        visualizerView.keepScreenOn = playerPrefs.keepScreenOn
     }
     LaunchedEffect(lfos, adsrs) {
         visualizerView.visualizerRenderer.lfoEngine.configs = lfos

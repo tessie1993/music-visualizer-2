@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -16,6 +17,7 @@ import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.analysis.FeatureTimeline
 import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.analysis.OfflineAnalyzer
+import dev.musicviz.analysis.PlaybackMath
 import dev.musicviz.analysis.SceneSuggester
 import dev.musicviz.audio.PcmRingBuffer
 import dev.musicviz.audio.PcmTapSink
@@ -136,6 +138,7 @@ class PlayerViewModel(
     private val presetStore = PresetStore(application)
     private val trackLibrary = TrackLibrary(application)
     private val themeStore = ThemeStore(application)
+    private val playerPrefsStore = PlayerPrefsStore(application)
     private val textureStore = TextureStore(application)
     private val lfoStore = LfoStore(application)
     private val musicPlaylists = MusicPlaylistStore(application)
@@ -228,6 +231,40 @@ class PlayerViewModel(
     fun setTheme(theme: AppTheme) {
         themeStore.save(theme)
         _theme.value = theme
+    }
+
+    // ---- Playback preferences ----
+
+    private val _playerPrefs = MutableStateFlow(playerPrefsStore.load())
+
+    /** Core playback preferences (speed, pitch, skip silence, sleep timer, ...). */
+    val playerPrefs: StateFlow<PlayerPrefs> = _playerPrefs
+
+    /** Applies changed playback prefs to the live player and persists them. */
+    fun setPlayerPrefs(prefs: PlayerPrefs) {
+        val p =
+            prefs.copy(
+                speed = prefs.speed.coerceIn(0.5f, 2f),
+                pitchSemitones = prefs.pitchSemitones.coerceIn(-6f, 6f),
+                sleepTimerMinutes = prefs.sleepTimerMinutes.coerceAtLeast(0),
+            )
+        _playerPrefs.value = p
+        playerPrefsStore.save(p)
+        applyPlaybackPrefs(p)
+    }
+
+    /** Pushes speed/pitch, skip-silence and noisy-handling onto the ExoPlayer. */
+    private fun applyPlaybackPrefs(p: PlayerPrefs) {
+        player.playbackParameters = PlaybackParameters(p.speed, PlaybackMath.semitonesToRatio(p.pitchSemitones))
+        player.skipSilenceEnabled = p.skipSilence
+        player.setHandleAudioBecomingNoisy(p.pauseOnNoisy)
+    }
+
+    /** Mirrors the player's shuffle/repeat state into the persisted prefs. */
+    private fun persistPlayerOptions() {
+        val p = _playerPrefs.value.copy(shuffle = player.shuffleModeEnabled, repeatMode = player.repeatMode)
+        _playerPrefs.value = p
+        playerPrefsStore.save(p)
     }
 
     private val _textures = MutableStateFlow(textureStore.list())
@@ -534,6 +571,15 @@ class PlayerViewModel(
     init {
         engine.start(viewModelScope)
         refreshNumericTitles()
+        // Restore persisted playback options onto the freshly built player.
+        // Auto-resume runs BEFORE the listener registers so the startup
+        // preparation never records a phantom play into history (ExoPlayer
+        // only delivers events to listeners registered when they occurred).
+        val pp = _playerPrefs.value
+        player.shuffleModeEnabled = pp.shuffle
+        player.repeatMode = pp.repeatMode
+        applyPlaybackPrefs(pp)
+        if (pp.autoResume) prepareLastPlayed()
         player.addListener(
             object : Player.Listener {
                 override fun onEvents(
@@ -597,6 +643,7 @@ class PlayerViewModel(
 
     fun toggleShuffle() {
         player.shuffleModeEnabled = !player.shuffleModeEnabled
+        persistPlayerOptions()
         refresh()
     }
 
@@ -607,7 +654,68 @@ class PlayerViewModel(
                 Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
                 else -> Player.REPEAT_MODE_OFF
             }
+        persistPlayerOptions()
         refresh()
+    }
+
+    /**
+     * Auto-resume: prepares (without playing) the most recent history entry
+     * so the mini-player and the Home resume card can continue it with one
+     * tap. Prepare-only by design - the existing Resume card stays the UI.
+     */
+    private fun prepareLastPlayed() {
+        val last = historyStore.recentlyPlayed(1).firstOrNull() ?: return
+        runCatching {
+            val uri = Uri.parse(last.uri)
+            player.setMediaItems(listOf(mediaItemFor(uri)))
+            player.prepare()
+            currentUri = uri
+        }
+    }
+
+    // ---- Sleep timer ----
+
+    private var sleepTimerJob: Job? = null
+    private val _sleepTimerRemainingMs = MutableStateFlow<Long?>(null)
+
+    /** Remaining sleep-timer time, or null when no timer is running. */
+    val sleepTimerRemainingMs: StateFlow<Long?> = _sleepTimerRemainingMs
+
+    /**
+     * Starts (or restarts) the sleep timer: counts down, fades the volume
+     * over the final 3 s, pauses, then restores full volume for next play.
+     * Persists [minutes] as the last-chosen duration (never a running state).
+     */
+    fun startSleepTimer(minutes: Int) {
+        if (minutes <= 0) {
+            cancelSleepTimer()
+            return
+        }
+        setPlayerPrefs(_playerPrefs.value.copy(sleepTimerMinutes = minutes))
+        sleepTimerJob?.cancel()
+        sleepTimerJob =
+            viewModelScope.launch {
+                val endMs = android.os.SystemClock.elapsedRealtime() + minutes * 60_000L
+                while (true) {
+                    val remaining = endMs - android.os.SystemClock.elapsedRealtime()
+                    if (remaining <= 0L) break
+                    _sleepTimerRemainingMs.value = remaining
+                    player.volume = PlaybackMath.sleepFadeVolume(remaining)
+                    delay(if (remaining <= PlaybackMath.SLEEP_FADE_MS) 100 else 500)
+                }
+                player.pause()
+                player.volume = 1f
+                _sleepTimerRemainingMs.value = null
+                sleepTimerJob = null
+            }
+    }
+
+    /** Cancels a running sleep timer and restores full volume. */
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        _sleepTimerRemainingMs.value = null
+        player.volume = 1f
     }
 
     // ---- Visual playlist ----
