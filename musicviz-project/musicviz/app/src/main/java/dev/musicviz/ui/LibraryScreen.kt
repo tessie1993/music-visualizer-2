@@ -170,25 +170,29 @@ private fun TrackRow(
     viewModel: PlayerViewModel,
     subtitleOverride: String? = null,
 ) {
-    // Analysis results (key/BPM) live in the analysis store keyed by uri;
-    // join them onto the device row when this track has been analyzed.
-    val lib by viewModel.library.collectAsState()
-    val analysis = lib.tracks.firstOrNull { it.uri == t.uri }
+    // Analysis results (key/BPM) and user-edited metadata overrides live in
+    // the library store keyed by uri; join them onto the device row.
+    val overrides by viewModel.trackOverrides.collectAsState()
+    val stored = overrides[t.uri]
+    val title = stored?.title?.ifBlank { null } ?: t.title
     val subtitle =
         subtitleOverride
             ?: listOf(
-                t.artist,
+                stored?.artist?.ifBlank { null } ?: t.artist,
+                stored?.album.orEmpty(),
+                stored?.genre.orEmpty(),
                 dev.musicviz.analysis.KeyDetector
-                    .compact(analysis?.key.orEmpty()),
-                analysis?.takeIf { it.analyzed && it.bpm > 0f }?.let { "${it.bpm.toInt()} BPM" } ?: "",
+                    .compact(stored?.key.orEmpty()),
+                stored?.takeIf { it.analyzed && it.bpm > 0f }?.let { "${it.bpm.toInt()} BPM" } ?: "",
             ).filter { it.isNotBlank() }.joinToString(" \u00b7 ")
     var menu by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().clickable { viewModel.playTrack(t.uri) }.padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (subtitle.isNotBlank()) {
                 Text(
                     subtitle,
@@ -213,7 +217,14 @@ private fun TrackRow(
                 viewModel.importTracks(listOf(Uri.parse(t.uri)))
                 menu = false
             })
+            DropdownMenuItem(text = { Text("Edit track info") }, onClick = {
+                editing = true
+                menu = false
+            })
         }
+    }
+    if (editing) {
+        TrackInfoEditor(uri = t.uri, viewModel = viewModel, onDismiss = { editing = false })
     }
 }
 
