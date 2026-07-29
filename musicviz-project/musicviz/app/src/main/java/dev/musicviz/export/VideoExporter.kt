@@ -146,7 +146,11 @@ class VideoExporter(
             val outUri =
                 resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
                     ?: return@withContext null
-            val pfd = resolver.openFileDescriptor(outUri, "w") ?: return@withContext null
+            val pfd = resolver.openFileDescriptor(outUri, "w")
+            if (pfd == null) {
+                runCatching { resolver.delete(outUri, null, null) }
+                return@withContext null
+            }
             try {
                 pfd.use {
                     encodeInto(

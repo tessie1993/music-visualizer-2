@@ -102,11 +102,23 @@ class AudioTranscoder(
                 setInteger(MediaFormat.KEY_BIT_RATE, 192_000)
                 setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 65536)
             }
-        val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
-        encoder.configure(encFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        encoder.start()
-        val outFile = File.createTempFile("musicviz_aac_", ".bin", context.cacheDir)
-        val out = BufferedOutputStream(FileOutputStream(outFile))
+        val encoder: MediaCodec
+        val outFile: File
+        val out: BufferedOutputStream
+        var encoderRef: MediaCodec? = null
+        var outFileRef: File? = null
+        try {
+            encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).also { encoderRef = it }
+            encoder.configure(encFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            encoder.start()
+            outFile = File.createTempFile("musicviz_aac_", ".bin", context.cacheDir).also { outFileRef = it }
+            out = BufferedOutputStream(FileOutputStream(outFile))
+        } catch (t: Throwable) {
+            runCatching { encoderRef?.release() }
+            runCatching { outFileRef?.delete() }
+            runCatching { aiff.close() }
+            throw t
+        }
         var outBytes = 0L
         val infos = mutableListOf<SampleInfo>()
         var outFormat: MediaFormat? = null
@@ -118,6 +130,7 @@ class AudioTranscoder(
         var encoderDone = false
         var pcmCarry: ByteBuffer? = null
         var carryTimeUs = 0L
+        var fedBytes = 0L
         try {
             while (!encoderDone) {
                 if (isCancelled()) throw kotlinx.coroutines.CancellationException("Export cancelled")
@@ -154,9 +167,9 @@ class AudioTranscoder(
                         val toWrite = minOf(inBuf.remaining(), carry.remaining())
                         val slice = carry.duplicate().apply { limit(position() + toWrite) }
                         inBuf.put(slice)
-                        val bytesPerUs = sampleRate.toLong() * channels * 2 / 1_000_000.0
                         encoder.queueInputBuffer(inIndex, 0, toWrite, carryTimeUs, 0)
-                        carryTimeUs += (toWrite / bytesPerUs).toLong()
+                        fedBytes += toWrite
+                        carryTimeUs = fedBytes * 1_000_000L / (sampleRate.toLong() * channels * 2)
                         carry.position(carry.position() + toWrite)
                         if (!carry.hasRemaining()) pcmCarry = null
                     }
@@ -219,34 +232,53 @@ class AudioTranscoder(
             return transcodeAiff(aiff, maxDurationMs, isCancelled, onProgress)
         }
         val extractor = MediaExtractor()
-        extractor.setDataSource(context, uri, null)
-        val trackIndex =
-            (0 until extractor.trackCount).firstOrNull {
-                extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
-            } ?: throw IllegalArgumentException("No audio track in source file")
-        val srcFormat = extractor.getTrackFormat(trackIndex)
-        extractor.selectTrack(trackIndex)
-        val mime = requireNotNull(srcFormat.getString(MediaFormat.KEY_MIME))
-        val sampleRate = srcFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-        val srcChannels = srcFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-        val channels = srcChannels.coerceAtMost(2)
+        val srcFormat: MediaFormat
+        val sampleRate: Int
+        val srcChannels: Int
+        val channels: Int
+        val decoder: MediaCodec
+        val encoder: MediaCodec
+        val outFile: File
+        val out: BufferedOutputStream
+        var decoderRef: MediaCodec? = null
+        var encoderRef: MediaCodec? = null
+        var outFileRef: File? = null
+        try {
+            extractor.setDataSource(context, uri, null)
+            val trackIndex =
+                (0 until extractor.trackCount).firstOrNull {
+                    extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+                } ?: throw IllegalArgumentException("No audio track in source file")
+            srcFormat = extractor.getTrackFormat(trackIndex)
+            extractor.selectTrack(trackIndex)
+            val mime = requireNotNull(srcFormat.getString(MediaFormat.KEY_MIME))
+            sampleRate = srcFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+            srcChannels = srcFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+            channels = srcChannels.coerceAtMost(2)
 
-        val decoder = MediaCodec.createDecoderByType(mime)
-        decoder.configure(srcFormat, null, null, 0)
-        decoder.start()
+            decoder = MediaCodec.createDecoderByType(mime).also { decoderRef = it }
+            decoder.configure(srcFormat, null, null, 0)
+            decoder.start()
 
-        val encFormat =
-            MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, channels).apply {
-                setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
-                setInteger(MediaFormat.KEY_BIT_RATE, 192_000)
-                setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 65536)
-            }
-        val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
-        encoder.configure(encFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        encoder.start()
+            val encFormat =
+                MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, channels).apply {
+                    setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+                    setInteger(MediaFormat.KEY_BIT_RATE, 192_000)
+                    setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 65536)
+                }
+            encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).also { encoderRef = it }
+            encoder.configure(encFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            encoder.start()
 
-        val outFile = File.createTempFile("musicviz_aac_", ".bin", context.cacheDir)
-        val out = BufferedOutputStream(FileOutputStream(outFile))
+            outFile = File.createTempFile("musicviz_aac_", ".bin", context.cacheDir).also { outFileRef = it }
+            out = BufferedOutputStream(FileOutputStream(outFile))
+        } catch (t: Throwable) {
+            runCatching { decoderRef?.release() }
+            runCatching { encoderRef?.release() }
+            runCatching { outFileRef?.delete() }
+            runCatching { extractor.release() }
+            throw t
+        }
         var outBytes = 0L
         val infos = mutableListOf<SampleInfo>()
         var outFormat: MediaFormat? = null
