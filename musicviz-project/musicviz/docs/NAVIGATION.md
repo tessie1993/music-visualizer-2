@@ -1,59 +1,68 @@
 # MusicViz — Navigation Map
 
 Edit freely; this file is the single source of truth for navigation.
-Legend: `[button]` action · `(sheet)` bottom sheet over the canvas · `>` opens
+Legend: `[button]` action · `>` opens · v0.13.0 (navigation-v2 shell)
 
-Architecture: SINGLE SCREEN. The visualizer is the app. One glass player
-panel (top or bottom per Settings) holds everything; all features open as
-sheets over the canvas. No bottom bar, no tab navigation.
+Architecture: BOTTOM-NAV SHELL (AppShell.AppRoot). Four destinations with a
+persistent mini-player docked above the nav bar. The fullscreen visualizer
+("Now Playing") is an overlay expanded from the mini-player; the single
+VisualizerView is owned by the shell so renderer state survives
+collapse/expand. Search is a fullscreen overlay available from Home and
+Library.
 
 ```
-MAIN SCREEN (visualizer canvas, themed border)
-├── tap canvas ............ hide/show the player panel
-├── PLAYER PANEL (one glass panel; position top/bottom from Settings)
-│   ├── row 1  ▸ Track Title — artist                      [⚙ Settings]
-│   ├── row 2  [⇄ shuffle] [◀◀] [▶/❚❚] [▶▶] [↻ repeat]
-│   ├── row 3  0:42 ────●──────── 3:51   (seek)
-│   └── row 4  [Style] [Customize] [Presets] [Library] [⚄ Random]
-│              (the old canvas bottom bar is GONE — these are its icons)
+APP SHELL (Scaffold)
+├── MINI-PLAYER (hidden until media loaded; tap > Now Playing overlay)
+│   ├── title — artist · [▶/❚❚] · [▶▶]
+│   └── thin progress bar
+├── NAV BAR:  Home · Library · Visuals · Settings
 │
-├── [Style] > (STYLE sheet) — tabs: Particles | Shaders | MilkDrop
-│   ├── Particles: Nebula · Bursts · Swarm · Fountain · Orbits
-│   ├── Shaders:   scene grid (post style-dedupe)
-│   └── MilkDrop:  [Load .milk file] · [Textures…] · your .milk list
-│       ├── (no built-in milk presets — removed)
-│       └── [Next preset ▸]
+├── HOME
+│   ├── [Search 🔍] > SEARCH overlay (tracks + visual presets)
+│   ├── Resume card (tap > Now Playing)
+│   ├── [Shuffle all]
+│   └── Recently played · Most played chip rows
 │
-├── [Customize] > (CUSTOMIZE sheet)
-│   ├── tabs: Motion · Shape · Behavior · Color · FX · Mod · GLSL
-│   ├── every param row: slider + [lock 🔒] (locked = skipped by ⚄)
-│   ├── [⚄ Randomize unlocked]
-│   ├── Mod tab: 3 LFOs + 2 ADSRs (multi-target: params or LFOs)
-│   └── GLSL tab (shader scenes only)
+├── LIBRARY (tabs: Tracks · Albums · Artists · Folders · Playlists)
+│   ├── Albums/Artists/Folders: two-level drill-in (group > track list,
+│   │   "‹ Back" or system back pops the level)
+│   └── [Search 🔍] > SEARCH overlay
 │
-├── [Presets] > (PRESET BROWSER sheet)
-│   ├── tree: user folders > presets  [+ folder] [rename] [move]
-│   ├── preset row: [apply] [🗑 remove]  (built-ins: no 🗑)
-│   └── [Save current…] (into selected folder; milkdrop saves .milk too)
+├── VISUALS hub (tabs: Presets · Styles · Customize · Textures)
+│   ├── [View live] > Now Playing overlay
+│   ├── Presets: user folder tree ([+ folder], apply, ♥ viz-playlist, 🗑)
+│   │   · built-ins for the current scene · [Save current as…]
+│   ├── Styles (sub-tabs: Particles · Shaders · Fluid · MilkDrop)
+│   │   · one pick path: selectScene > vizState > EnginePlumbing > renderer
+│   │   · MilkDrop: [Load .milk] · [Textures…] · your .milk list
+│   ├── Customize (sub-tabs: Motion · Shape · Behavior · Color · FX ·
+│   │   Fluid · GLSL when shader scene) · [⚄ Randomize unlocked] ·
+│   │   per-param locks · LFO/ADSR editors in FX
+│   └── Textures: [Import images] · per-texture [Use]
 │
-├── [Library] > (MUSIC LIBRARY sheet)
-│   ├── tabs: Tracks · Playlists · Folders · Drive
-│   ├── Tracks: analyzed badge (key/BPM) · [add] [play]
-│   ├── Playlists: create · rename · drag-reorder · delete
-│   ├── Folders: device tree from detected media paths (dedupe on import)
-│   └── Drive: connect > browse > [download] or [stream]
+├── SETTINGS
+│   ├── Look: theme cards · bar opacity
+│   ├── Player: position · corner style
+│   ├── Paths: preset mirror folder (SAF)
+│   ├── Analysis: cache view/clear · preset morph beats · beat threshold
+│   └── [Export video…] > export host dialog
 │
-├── [⚄ Random] cycle: off / random / intelligent (section+energy switch)
+├── SEARCH overlay (fullscreen; tracks + visual presets; tap applies/plays)
 │
-└── [⚙] > (SETTINGS sheet)
-    ├── Look: theme · UI opacity slider · themed border on/off
-    │         (crystal palettes/overlays: see open question)
-    ├── Player: panel position (top/bottom) · size · touch feedback
-    ├── Analysis: beat threshold · reactivity · key detection on/off ·
-    │             analysis database (view/clear)
-    ├── Paths: media folders (add/remove/rescan) · preset folder path
-    ├── Export: quality · ratio · fps · [render] [render to folder…]
-    └── About / version
-
-(EXPORT PROGRESS) overlay — progress bar · [cancel]
+└── NOW PLAYING overlay (VisualizerScreen, fullscreen canvas)
+    ├── tap canvas: hide/show controls
+    ├── collapse chip · title/artist
+    ├── transport card: seek · shuffle/prev/play/next/repeat
+    └── [Visuals] (> hub) · [Auto: off/random/smart]
 ```
+
+## System back button (integrated v0.13.0)
+
+Compose `BackHandler`s, last-composed enabled handler wins, so back unwinds
+in overlay order:
+
+1. Now Playing expanded  → collapse to the shell
+2. Search overlay open   → close search
+3. Library drill-in open → pop to the group list
+4. Any non-Home tab      → return to Home
+5. Home                  → system default (exit)

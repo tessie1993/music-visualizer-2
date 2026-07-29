@@ -240,6 +240,12 @@ class VisualizerRenderer(
     private val scenes = LinkedHashMap<String, Scene>()
     private var activeScene: Scene? = null
     private var outgoingScene: Scene? = null
+
+    /** Frozen at transition start: the outgoing scene keeps the look it had
+     *  when the switch happened. Feeding it the live (morphing) params made
+     *  snapped fields - palette choice, toggles - jump on the OLD scene
+     *  during its fade-out, one of the preset-switch flash sources. */
+    private var outgoingParams: SceneParams? = null
     private var transitionStartMs = 0L
     private var width = 1
     private var height = 1
@@ -413,6 +419,7 @@ class VisualizerRenderer(
         if (fluidForceSrc != null || fluidDyeSrc != null) fluidInjectionDirty = true
         activeScene = scenes[requestedSceneId] ?: scenes[SceneIds.NEBULA]
         outgoingScene = null
+        outgoingParams = null
 
         // FlowField service (F7) + the always-valid zero flow texture.
         flowField?.release()
@@ -509,6 +516,7 @@ class VisualizerRenderer(
         if (requested != null && requested !== activeScene) {
             if (transitionStyle != TransitionStyle.CUT && activeScene != null) {
                 outgoingScene = activeScene
+                outgoingParams = lastFinalParams
                 transitionStartMs = now
             }
             activeScene = requested
@@ -564,12 +572,14 @@ class VisualizerRenderer(
             progress = ((now - transitionStartMs).toFloat() / transitionDurationMs).coerceIn(0f, 1f)
             if (progress >= 1f) {
                 outgoingScene = null
+                outgoingParams = null
             } else {
                 GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboB.fbo)
                 GLES30.glViewport(0, 0, renderWidth, renderHeight)
                 GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
-                outgoing.setParams(p)
-                outgoing.update(gainAdjusted(features, p), dt)
+                val op = outgoingParams ?: p
+                outgoing.setParams(op)
+                outgoing.update(gainAdjusted(features, op), dt)
                 outgoing.draw(timeSeconds)
             }
         }

@@ -160,31 +160,36 @@ vec3 postFx(sampler2D tex, vec2 uv, vec3 fallback) {
     return col;
 }
 
+// Every sample below goes through postFx, INCLUDING the outgoing texture:
+// sampling uTexB raw made the whole FX chain (vignette, chroma, scanlines,
+// kaleido, bloom...) pop off on the old scene for the entire transition and
+// snap back at the end - perceived as a flash on every preset/scene switch.
+// SLIDE/ZOOM previously resampled BOTH textures raw, dropping FX everywhere.
 void main() {
     vec3 a = postFx(uTexA, vUv, vec3(0.0));
     if (uStyle == 0 || uProgress >= 1.0) {
         fragColor = vec4(a, 1.0);
         return;
     }
-    vec3 b = texture(uTexB, vUv).rgb;
     if (uStyle == 1) {
+        vec3 b = postFx(uTexB, vUv, vec3(0.0));
         fragColor = vec4(mix(b, a, uProgress), 1.0);
     } else if (uStyle == 3) {
         float sh = smoothstep(0.0, 1.0, uProgress);
-        vec3 aSlide = texture(uTexA, clamp(vUv + vec2(1.0 - sh, 0.0), 0.0, 1.0)).rgb;
-        vec3 bSlide = texture(uTexB, clamp(vUv - vec2(sh, 0.0), 0.0, 1.0)).rgb;
+        vec3 aSlide = postFx(uTexA, clamp(vUv + vec2(1.0 - sh, 0.0), 0.0, 1.0), vec3(0.0));
+        vec3 bSlide = postFx(uTexB, clamp(vUv - vec2(sh, 0.0), 0.0, 1.0), vec3(0.0));
         fragColor = vec4(vUv.x < sh ? aSlide : bSlide, 1.0);
     } else if (uStyle == 4) {
         float sh = smoothstep(0.0, 1.0, uProgress);
         vec2 zUv = (vUv - 0.5) / (1.0 + sh * 2.5) + 0.5;
-        vec3 bZoom = texture(uTexB, clamp(zUv, 0.0, 1.0)).rgb;
+        vec3 bZoom = postFx(uTexB, clamp(zUv, 0.0, 1.0), vec3(0.0));
         vec2 aUv = (vUv - 0.5) * (1.0 + (1.0 - sh) * 0.35) + 0.5;
-        vec3 aZoom = texture(uTexA, clamp(aUv, 0.0, 1.0)).rgb;
+        vec3 aZoom = postFx(uTexA, clamp(aUv, 0.0, 1.0), vec3(0.0));
         fragColor = vec4(mix(bZoom, aZoom, sh), 1.0);
     } else {
-        float lumB = dot(b, vec3(0.299, 0.587, 0.114));
+        float lumB = dot(texture(uTexB, vUv).rgb, vec3(0.299, 0.587, 0.114));
         vec2 melted = vUv + vec2(0.0, uProgress * (0.25 + lumB * 0.6));
-        vec3 bMelt = texture(uTexB, clamp(melted, 0.0, 1.0)).rgb;
+        vec3 bMelt = postFx(uTexB, clamp(melted, 0.0, 1.0), vec3(0.0));
         float reveal = smoothstep(0.0, 1.0, uProgress * 1.4 - lumB * 0.4);
         fragColor = vec4(mix(bMelt, a, clamp(reveal, 0.0, 1.0)), 1.0);
     }
