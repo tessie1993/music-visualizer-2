@@ -1,6 +1,8 @@
 package dev.musicviz.render.fluid
 
+import kotlin.math.cos
 import kotlin.math.exp
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
@@ -106,5 +108,30 @@ internal object RippleMath {
         ox *= k
         oy *= k
         return ox to oy
+    }
+
+    /** Golden angle (radians): successive turns never resonate into rows. */
+    private const val GOLDEN_ANGLE = 2.3999631f
+
+    /** Golden-ratio conjugate: low-discrepancy radius sequence. */
+    private const val GOLDEN_FRACT = 0.6180339887f
+
+    /**
+     * Deterministic drop position [index] for the ripple overlay (F2): a
+     * golden-angle spiral with a low-discrepancy sqrt-radius, so successive
+     * beat/sparkle drops scatter evenly over the pool without ever calling a
+     * random source (live view and export must land identical drops for the
+     * same index sequence). Returns sim-space coords - y in [-0.85, 0.85],
+     * x in [-0.85 * aspect, 0.85 * aspect] (the sim domain is y in [-1, 1],
+     * x in [-aspect, aspect]; the 0.85 margin keeps rings on-screen).
+     */
+    fun overlayDropPosition(
+        index: Int,
+        aspect: Float,
+    ): Pair<Float, Float> {
+        val n = index.coerceAtLeast(0)
+        val angle = n * GOLDEN_ANGLE
+        val radius = 0.85f * sqrt(((n * GOLDEN_FRACT.toDouble()) % 1.0).toFloat())
+        return (cos(angle) * radius * aspect) to (sin(angle) * radius)
     }
 }

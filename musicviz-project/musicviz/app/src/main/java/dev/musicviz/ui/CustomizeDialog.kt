@@ -626,6 +626,20 @@ internal fun FluidTab(
             LabeledSlider("Flow curl", p.flowCurl, 0f..50f) { onChange(p.copy(flowCurl = it)) }
             CheckRow("Particles ride the field", p.flowAdvectParticles) { onChange(p.copy(flowAdvectParticles = it)) }
         }
+        SectionHeader("Water ripples (all styles)")
+        Text(
+            "The water heightfield rides on top of ANY style: beats drop " +
+                "rings that refract the image (particles, shaders, MilkDrop - " +
+                "and exports), treble sprinkles small drops, and glint adds a " +
+                "specular sparkle on the crests. The water style's own surface " +
+                "already refracts, so the overlay stays off there.",
+            style = MaterialTheme.typography.labelSmall,
+        )
+        CheckRow("Water ripples enabled", p.rippleOverlayEnabled) { onChange(p.copy(rippleOverlayEnabled = it)) }
+        if (p.rippleOverlayEnabled) {
+            LabeledSlider("Ripple strength", p.rippleOverlayStrength, 0f..1f) { onChange(p.copy(rippleOverlayStrength = it)) }
+            LabeledSlider("Ripple glint", p.rippleOverlaySpecular, 0f..1f) { onChange(p.copy(rippleOverlaySpecular = it)) }
+        }
         if (isFluidScene) {
             SectionHeader("Injection shaders (advanced)")
             Text(
