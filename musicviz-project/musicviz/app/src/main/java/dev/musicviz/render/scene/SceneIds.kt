@@ -30,4 +30,5 @@ object SceneIds {
     const val MILKDROP: String = "milkdrop"
     const val FLUID: String = "fluid"
     const val CURLFLOW: String = "curlflow"
+    const val WATER: String = "water"
 }

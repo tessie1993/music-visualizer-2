@@ -180,6 +180,14 @@ class VisualizerRenderer(
             flowStrength = f(from.flowStrength, to.flowStrength),
             flowForce = f(from.flowForce, to.flowForce),
             flowCurl = f(from.flowCurl, to.flowCurl),
+            waterWaveSpeed = f(from.waterWaveSpeed, to.waterWaveSpeed),
+            waterDamping = f(from.waterDamping, to.waterDamping),
+            waterRippleStrength = f(from.waterRippleStrength, to.waterRippleStrength),
+            waterDepth = f(from.waterDepth, to.waterDepth),
+            waterSpecular = f(from.waterSpecular, to.waterSpecular),
+            waterFlow = f(from.waterFlow, to.waterFlow),
+            rippleOverlayStrength = f(from.rippleOverlayStrength, to.rippleOverlayStrength),
+            rippleOverlaySpecular = f(from.rippleOverlaySpecular, to.rippleOverlaySpecular),
         )
     }
 
@@ -336,6 +344,7 @@ class VisualizerRenderer(
             if (PMBridge.available) add(SceneIds.MILKDROP)
             add(SceneIds.FLUID)
             add(SceneIds.CURLFLOW)
+            add(SceneIds.WATER)
         }
 
     fun submitShader(
@@ -395,6 +404,10 @@ class VisualizerRenderer(
         scenes[SceneIds.CURLFLOW] =
             dev.musicviz.render.fluid
                 .CurlFlowScene(context)
+        scenes[SceneIds.WATER] =
+            dev.musicviz.render.fluid.WaterScene(context).also { water ->
+                water.onShaderError = { onShaderError(it) }
+            }
         if (PMBridge.available) {
             scenes[SceneIds.MILKDROP] =
                 ProjectMScene(
@@ -843,6 +856,9 @@ class VisualizerRenderer(
                         sceneId == SceneIds.CURLFLOW ->
                             dev.musicviz.render.fluid
                                 .CurlFlowScene(context)
+                        sceneId == SceneIds.WATER ->
+                            dev.musicviz.render.fluid
+                                .WaterScene(context)
                         sceneId == SceneIds.MILKDROP && PMBridge.available ->
                             ProjectMScene(
                                 postVertexSrc = loadRaw(R.raw.fade_vert),

@@ -1,0 +1,326 @@
+package dev.musicviz.render.fluid
+
+import android.content.Context
+import android.opengl.GLES30
+import dev.musicviz.R
+import dev.musicviz.analysis.AudioFeatures
+import dev.musicviz.render.scene.GlUtil
+import dev.musicviz.render.scene.Scene
+import dev.musicviz.render.scene.SceneIds
+import dev.musicviz.render.scene.SceneParams
+
+/**
+ * The WATER style: a pool whose surface is the [RippleSim] heightfield.
+ * Musical events land as drops - the shared [FluidChoreography] spawn/catch
+ * progression places WHERE they fall (the same journey params as
+ * FLUID/CURLFLOW), and [FluidEmitters]' splat schedule decides WHEN: beat
+ * splats become expanding interfering rings, stirrer splats become trails
+ * of small drops (wakes flowing across the screen), suction/sparkle/pump
+ * splats keep their triggers as smaller ripples. The display pass refracts
+ * a palette-tinted depth-graded pool through the surface with Blinn
+ * specular, fresnel rim and treble glints (water_display_frag).
+ *
+ * FluidScene's defensive conventions apply: GlUtil.resetFrameState() at
+ * draw entry, framebuffer/viewport/blend snapshot-restore around the sim
+ * passes, a PerformanceMonitor downgrade latch, and idle synthetic rain
+ * when no track is playing.
+ */
+internal class WaterScene(
+    private val context: Context,
+) : Scene {
+    override val id: String = SceneIds.WATER
+
+    private val sim = RippleSim(context)
+    private val choreography = FluidChoreography()
+    private val emitters = FluidEmitters().also { it.choreography = choreography }
+    private val monitor = PerformanceMonitor()
+
+    private var params = SceneParams()
+    private var time = 0f
+    private var lastDt = 1f / 60f
+    private var pendingFeatures: AudioFeatures? = null
+
+    /** Last real features, kept warm so draw() > update() rates don't flicker. */
+    private var lastFeatures: AudioFeatures? = null
+    private var featuresAgeSec = 0f
+    private var width = 1
+    private var height = 1
+
+    private var displayProgram = 0
+    private val displayUniforms = HashMap<String, Int>()
+    private var displayOk = false
+
+    /** Latched automatic downgrade steps; never upgrades during a session. */
+    private var autoDowngrade = 0
+    private var lastUserQuality = -1
+    private var appliedTier = -1
+
+    private val prevFbo = IntArray(1)
+    private val prevViewport = IntArray(4)
+    private val prevBlendFunc = IntArray(4)
+
+    var onShaderError: (String?) -> Unit = {}
+
+    override fun init() {
+        // Handles from a lost EGL context are dead names; forget them so the
+        // lazy fullscreen VAO is recreated in the new context.
+        quadVao = 0
+        quadVbo = 0
+        sim.onShaderError = { onShaderError(it) }
+        sim.create()
+        choreography.reset()
+        appliedTier = -1
+        lastUserQuality = -1
+        autoDowngrade = 0
+        displayOk = false
+        if (!sim.available) {
+            // Silent-black is the worst failure mode: tell the user why.
+            onShaderError("Water style unavailable: this GPU can't render half-float buffers")
+            return
+        }
+        try {
+            displayProgram = GlUtil.buildProgram(loadRaw(R.raw.fluid_base_vert), loadRaw(R.raw.water_display_frag))
+            displayUniforms.clear()
+            displayOk = true
+        } catch (e: GlUtil.ShaderCompileException) {
+            android.util.Log.w("RippleSim", "water display shader rejected by driver: ${e.message}")
+            onShaderError("Water display unavailable on this GPU: ${e.message}")
+        }
+        applyQualityTier()
+    }
+
+    override fun setParams(params: SceneParams) {
+        this.params = params
+    }
+
+    override fun resize(
+        width: Int,
+        height: Int,
+    ) {
+        this.width = width
+        this.height = height
+        sim.resize(width, height)
+    }
+
+    override fun update(
+        features: AudioFeatures,
+        dt: Float,
+    ) {
+        time += dt
+        lastDt = dt
+        pendingFeatures = features
+        lastFeatures = features
+        featuresAgeSec = 0f
+    }
+
+    /** Ripple grid short side (~384 nominal) per fluid quality tier. */
+    private fun gridResFor(tierIndex: Int): Int =
+        when (tierIndex) {
+            0 -> 512
+            1 -> 448
+            2 -> 384
+            3 -> 288
+            else -> 192
+        }
+
+    /** Applies the effective quality tier; reallocates only on change. */
+    private fun applyQualityTier() {
+        if (!sim.available) return
+        val userChanged = params.fluidQuality != lastUserQuality
+        if (userChanged) {
+            lastUserQuality = params.fluidQuality
+            autoDowngrade = 0
+            monitor.reset()
+        }
+        val idx = FluidQuality.effectiveIndex(params.fluidQuality, if (params.fluidAutoQuality) autoDowngrade else 0)
+        if (idx == appliedTier) return
+        appliedTier = idx
+        sim.applyResolution(gridResFor(idx))
+    }
+
+    private var idlePhase = 0f
+    private var rainAccum = 0f
+
+    // Cached idle buffers: idling must not allocate two arrays per frame.
+    private val idleBands = FloatArray(16)
+    private val idleWaveform = FloatArray(64)
+
+    /** Gentle synthetic features so the pool breathes with no track playing. */
+    private fun idleFeatures(dt: Float): AudioFeatures {
+        idlePhase += dt
+        val t = idlePhase
+        val bass = 0.16f + 0.10f * kotlin.math.sin(t * 0.6f)
+        val mid = 0.13f + 0.09f * kotlin.math.sin(t * 1.0f + 1.7f)
+        val treble = 0.05f + 0.04f * kotlin.math.sin(t * 1.8f + 3.1f)
+        for (i in idleBands.indices) idleBands[i] = 0.1f + 0.07f * kotlin.math.sin(t * (0.5f + i * 0.13f))
+        return AudioFeatures(
+            bands = idleBands,
+            waveform = idleWaveform,
+            rms = 0.18f,
+            bass = bass.coerceAtLeast(0f),
+            mid = mid.coerceAtLeast(0f),
+            treble = treble.coerceAtLeast(0f),
+            beat = false,
+        )
+    }
+
+    /** Idle rain: sparse random drops so a silent pool still ripples. */
+    private fun queueIdleRain(dt: Float) {
+        rainAccum += dt
+        if (rainAccum < 0.45f) return
+        rainAccum = 0f
+        val x = (kotlin.random.Random.nextFloat() * 2f - 1f) * sim.aspect * 0.85f
+        val y = kotlin.random.Random.nextFloat() * 2f - 1f
+        sim.queueDrop(x, y * 0.85f, 0.05f, 0.28f * params.waterRippleStrength.coerceIn(0f, 2f))
+    }
+
+    override fun draw(timeSeconds: Float) {
+        if (!sim.available || !displayOk) return
+        // The sim's FBO passes assume clean scissor/mask/blend-equation state;
+        // enforce the contract in case a prior scene (native projectM
+        // especially) left anything dirty this frame.
+        GlUtil.resetFrameState()
+        val p = params
+        featuresAgeSec += lastDt
+        val idle = pendingFeatures == null && featuresAgeSec >= 0.25f
+        val f =
+            pendingFeatures
+                ?: lastFeatures.takeIf { featuresAgeSec < 0.25f }
+                ?: idleFeatures(lastDt)
+
+        // Snapshot the engine's target + blend state (FluidScene pattern).
+        GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, prevFbo, 0)
+        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
+        GLES30.glGetIntegerv(GLES30.GL_BLEND_SRC_RGB, prevBlendFunc, 0)
+        GLES30.glGetIntegerv(GLES30.GL_BLEND_DST_RGB, prevBlendFunc, 1)
+        GLES30.glGetIntegerv(GLES30.GL_BLEND_SRC_ALPHA, prevBlendFunc, 2)
+        GLES30.glGetIntegerv(GLES30.GL_BLEND_DST_ALPHA, prevBlendFunc, 3)
+        val blendWas = GLES30.glIsEnabled(GLES30.GL_BLEND)
+
+        // Sustained frame deficit lowers the latched tier (FluidScene F6).
+        if (p.fluidAutoQuality) {
+            val severity = monitor.onFrame(lastDt)
+            if (severity > 0) {
+                autoDowngrade += severity
+                monitor.reset()
+            }
+        }
+        applyQualityTier()
+
+        // Wave character.
+        sim.waveSpeed = 1.2f * p.waterWaveSpeed.coerceIn(0.2f, 2f)
+        sim.damping = p.waterDamping.coerceIn(0.9f, 0.999f)
+
+        // Journey: the same spawn/catch progression as FLUID/CURLFLOW.
+        choreography.path = p.fluidSpawnPath.coerceIn(0, FluidChoreography.PATH_LABELS.size - 1)
+        choreography.spawnCount = p.fluidSpawnPoints.coerceIn(1, FluidChoreography.MAX_SPAWN)
+        choreography.catchCount = p.fluidCatchPoints.coerceIn(0, FluidChoreography.MAX_CATCH)
+        choreography.progressionAmount = p.fluidSpawnProgress.coerceIn(0f, 1f)
+        choreography.speed = p.speed.coerceIn(0.1f, 2f)
+
+        // Emitter schedule reused verbatim; splats are converted to drops.
+        emitters.beatPattern = p.fluidBeatPattern.coerceIn(0, 3)
+        emitters.beatSplats = p.fluidBeatSplats.coerceIn(0, 8)
+        emitters.stirrers = p.fluidStirrers.coerceIn(0, 4)
+        emitters.stirrerSpeed = p.fluidStirrerSpeed.coerceIn(0f, 2f) * p.speed.coerceIn(0.1f, 2f)
+        emitters.bassPump = p.fluidBassPump
+        emitters.sparkle = p.fluidSparkle
+        emitters.splatRadius = p.fluidSplatRadius.coerceIn(0.02f, 0.4f)
+        emitters.radiusPulse = p.fluidRadiusPulse.coerceIn(0f, 1f)
+        emitters.catchSuction = p.fluidCatchPull.coerceIn(0f, 3f)
+        emitters.forceScale = p.fluidSplatForce.coerceIn(0f, 3f)
+
+        val simDt = lastDt.coerceIn(0f, 1f / 30f)
+        choreography.tick(f, simDt, sim.aspect)
+        val rippleStrength = p.waterRippleStrength.coerceIn(0f, 2f)
+        for (s in emitters.tick(f, simDt, sim.aspect, p.paletteBase, p.hueRange.coerceIn(0.1f, 1f))) {
+            // Splat -> drop: position lands at the capsule head, velocity
+            // magnitude scales amplitude (x waterRippleStrength), radius
+            // carries over tightened. Stirrer splats arrive every frame from
+            // moving anchors, so their small drops naturally trail into
+            // wakes that flow across the pool.
+            val speed = kotlin.math.sqrt(s.velX * s.velX + s.velY * s.velY) / FluidEmitters.BASE_SPEED
+            val amp = (0.06f + 0.5f * speed.coerceAtMost(2f)) * rippleStrength
+            if (amp > 1e-4f) sim.queueDrop(s.curX, s.curY, s.radius * 0.6f, amp)
+        }
+        if (idle) queueIdleRain(lastDt)
+        sim.step(simDt)
+        pendingFeatures = null
+
+        // Restore the engine's target and draw the display pass (opaque).
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
+        GLES30.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3])
+        GLES30.glDisable(GLES30.GL_BLEND)
+        GLES30.glUseProgram(displayProgram)
+        GLES30.glUniform2f(dLoc("uInvRes"), sim.texelW, sim.texelH)
+        GLES30.glUniform1f(dLoc("uAspect"), sim.aspect)
+        GLES30.glUniform1f(dLoc("uTime"), time)
+        GLES30.glUniform1f(dLoc("uBaseHue"), p.paletteBase)
+        GLES30.glUniform1f(dLoc("uHueSpan"), p.hueRange.coerceIn(0.1f, 1f) * p.paletteRange)
+        GLES30.glUniform1f(dLoc("uDepth"), p.waterDepth.coerceIn(0f, 1f))
+        GLES30.glUniform1f(dLoc("uSpecular"), p.waterSpecular.coerceIn(0f, 1f))
+        GLES30.glUniform1f(dLoc("uFlowDrift"), p.waterFlow.coerceIn(0f, 1f))
+        GLES30.glUniform1f(dLoc("uRefract"), 0.9f)
+        GLES30.glUniform1f(dLoc("uTreble"), f.treble.coerceIn(0f, 2f))
+        GLES30.glUniform1f(dLoc("uBrightness"), p.brightness.coerceIn(0.2f, 2f) * p.intensity.coerceIn(0.2f, 2f))
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, sim.heightTex)
+        GLES30.glUniform1i(dLoc("uHeight"), 0)
+        drawFullscreen()
+
+        if (blendWas) GLES30.glEnable(GLES30.GL_BLEND) else GLES30.glDisable(GLES30.GL_BLEND)
+        GLES30.glBlendFuncSeparate(prevBlendFunc[0], prevBlendFunc[1], prevBlendFunc[2], prevBlendFunc[3])
+    }
+
+    // Fullscreen triangle VAO owned by the scene (the sim's VAO is private).
+    private var quadVao = 0
+    private var quadVbo = 0
+
+    private fun drawFullscreen() {
+        if (quadVao == 0) {
+            val ids = IntArray(1)
+            GLES30.glGenVertexArrays(1, ids, 0)
+            quadVao = ids[0]
+            GLES30.glGenBuffers(1, ids, 0)
+            quadVbo = ids[0]
+            val quad = floatArrayOf(-1f, -1f, 3f, -1f, -1f, 3f)
+            val buf =
+                java.nio.ByteBuffer
+                    .allocateDirect(quad.size * 4)
+                    .order(java.nio.ByteOrder.nativeOrder())
+                    .asFloatBuffer()
+                    .put(quad)
+                    .apply { position(0) }
+            GLES30.glBindVertexArray(quadVao)
+            GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, quadVbo)
+            GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, quad.size * 4, buf, GLES30.GL_STATIC_DRAW)
+            GLES30.glEnableVertexAttribArray(0)
+            GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 0, 0)
+        } else {
+            GLES30.glBindVertexArray(quadVao)
+        }
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
+        GLES30.glBindVertexArray(0)
+    }
+
+    private fun dLoc(name: String): Int = displayUniforms.getOrPut(name) { GLES30.glGetUniformLocation(displayProgram, name) }
+
+    override fun release() {
+        sim.release()
+        if (displayProgram != 0) GLES30.glDeleteProgram(displayProgram)
+        displayProgram = 0
+        displayUniforms.clear()
+        displayOk = false
+        if (quadVbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(quadVbo), 0)
+        if (quadVao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(quadVao), 0)
+        quadVbo = 0
+        quadVao = 0
+        appliedTier = -1
+    }
+
+    private fun loadRaw(resId: Int): String =
+        context.resources
+            .openRawResource(resId)
+            .bufferedReader()
+            .use { it.readText() }
+}

@@ -62,3 +62,7 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
 15. Back button (v0.13.0 r22): system back collapses Now Playing, then
     closes Search, then pops a Library drill-in, then returns any tab to
     Home, and only exits from Home.
+17. Water style: select water — beat drops radiate as expanding
+    interfering rings; specular glint tracks ripples; palette retints the
+    pool; export falls back correctly (exportSceneFactory constructs
+    WaterScene).

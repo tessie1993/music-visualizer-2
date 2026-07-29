@@ -61,6 +61,8 @@ enum class LfoTarget(
     FLUID_CATCH_PULL("Catch pull"),
     FLUID_CATCH_RADIUS("Catch radius"),
     FLOW_STRENGTH("Flow strength"),
+    WATER_RIPPLE("Ripple amp"),
+    RIPPLE_OVERLAY("Ripple ovl"),
     LFO1_RATE("LFO1 rate"),
     LFO1_DEPTH("LFO1 depth"),
     LFO2_RATE("LFO2 rate"),
@@ -201,6 +203,8 @@ class LfoEngine {
                         LfoTarget.FLUID_CATCH_PULL -> r.copy(fluidCatchPull = (r.fluidCatchPull + v * 1.5f).coerceIn(0f, 3f))
                         LfoTarget.FLUID_CATCH_RADIUS -> r.copy(fluidCatchRadius = (r.fluidCatchRadius + v * 0.12f).coerceIn(0.03f, 0.3f))
                         LfoTarget.FLOW_STRENGTH -> r.copy(flowStrength = (r.flowStrength + v).coerceIn(0f, 1f))
+                        LfoTarget.WATER_RIPPLE -> r.copy(waterRippleStrength = (r.waterRippleStrength + v).coerceIn(0f, 2f))
+                        LfoTarget.RIPPLE_OVERLAY -> r.copy(rippleOverlayStrength = (r.rippleOverlayStrength + v).coerceIn(0f, 1f))
                         else -> r
                     }
             }

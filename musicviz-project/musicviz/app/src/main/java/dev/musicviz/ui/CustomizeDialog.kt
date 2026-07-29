@@ -502,7 +502,8 @@ private fun CheckRow(
 /**
  * Customize -> Fluid tab (F5). When the FLUID style is active every section
  * is shown, including the force/dye injection shader editors (the section-13
- * extension points). For every other style only the FlowField section
+ * extension points). The WATER style adds its Water section (plus the shared
+ * Journey section); for every other style only the FlowField section
  * appears - the same tab is the one home for "fluid principles" regardless
  * of style, mirroring how the GLSL tab scopes to shader scenes.
  */
@@ -512,10 +513,25 @@ internal fun FluidTab(
     onChange: (SceneParams) -> Unit,
     isFluidScene: Boolean,
     isJourneyScene: Boolean = isFluidScene,
+    isWaterScene: Boolean = false,
     injectionError: String? = null,
     onApplyInjectionShaders: (String?, String?) -> Unit = { _, _ -> },
 ) {
     Column {
+        if (isWaterScene) {
+            SectionHeader("Water")
+            Text(
+                "Heightfield water: beats drop expanding rings, stirrers " +
+                    "carve wakes, the journey decides where they land.",
+                style = MaterialTheme.typography.labelSmall,
+            )
+            LabeledSlider("Wave speed", p.waterWaveSpeed, 0.2f..2f) { onChange(p.copy(waterWaveSpeed = it)) }
+            LabeledSlider("Damping", p.waterDamping, 0.9f..0.999f) { onChange(p.copy(waterDamping = it)) }
+            LabeledSlider("Ripple strength", p.waterRippleStrength, 0f..2f) { onChange(p.copy(waterRippleStrength = it)) }
+            LabeledSlider("Depth", p.waterDepth, 0f..1f) { onChange(p.copy(waterDepth = it)) }
+            LabeledSlider("Specular", p.waterSpecular, 0f..1f) { onChange(p.copy(waterSpecular = it)) }
+            LabeledSlider("Flow drift", p.waterFlow, 0f..1f) { onChange(p.copy(waterFlow = it)) }
+        }
         if (isJourneyScene) {
             SectionHeader("Journey (spawn & catch progression)")
             Text(
