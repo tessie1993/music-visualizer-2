@@ -10,6 +10,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 defaults:
   run:
     working-directory: musicviz-project/musicviz
@@ -49,6 +52,19 @@ jobs:
           name: musicviz-debug-apk
           path: musicviz-project/musicviz/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
+
+      - name: Publish APK to apk-drop branch
+        if: success()
+        working-directory: musicviz-project/musicviz/app/build/outputs/apk/debug
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git init -b apk-drop
+          git config user.email noreply@anthropic.com
+          git config user.name Claude
+          git add app-debug.apk
+          git commit -m "MusicViz debug APK from ${GITHUB_SHA} (run ${GITHUB_RUN_ID})"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" apk-drop
 
       - name: Upload test & lint reports
         if: failure()
