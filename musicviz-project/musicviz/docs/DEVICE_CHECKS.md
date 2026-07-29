@@ -62,3 +62,10 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
 15. Back button (v0.13.0 r22): system back collapses Now Playing, then
     closes Search, then pops a Library drill-in, then returns any tab to
     Home, and only exits from Home.
+16. Appearance (0.13.x): in Settings, every slider/selector must visibly
+    change the UI immediately, no navigation needed — theme cards recolor
+    all surfaces, Accent intensity mutes/vivifies primary accents,
+    Background dim darkens surfaces, Corner style reshapes cards/buttons
+    (sharp/rounded/pill), Compact mini-player slims the bar, player
+    position Top/Bottom moves the bar, and "Follow system light/dark"
+    swaps to the LIGHT theme when the OS is in light mode.
