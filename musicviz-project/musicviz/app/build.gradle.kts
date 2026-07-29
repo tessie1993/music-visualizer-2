@@ -42,6 +42,7 @@ kotlin {
 }
 
 dependencies {
+    implementation(libs.core.splashscreen)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.common)
     implementation(libs.documentfile)

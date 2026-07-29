@@ -10,6 +10,12 @@ VisualizerView is owned by the shell so renderer state survives
 collapse/expand. Search is a fullscreen overlay available from Home and
 Library.
 
+Cold start: the Android 12 system splash (Theme.MusicViz.Splash, MIDNIGHT
+background) hands off to a one-shot BOOT INTRO overlay (~1.4 s ripple rings +
+wordmark, tap skips) drawn above the shell before Home is interactive. Shown
+once per process start (survives rotation via rememberSaveable); the
+"Boot animation" switch in Settings > Look disables it.
+
 ```
 APP SHELL (Scaffold)
 ├── MINI-PLAYER (hidden until media loaded; tap > Now Playing overlay)
@@ -41,7 +47,7 @@ APP SHELL (Scaffold)
 │   └── Textures: [Import images] · per-texture [Use]
 │
 ├── SETTINGS
-│   ├── Look: theme cards · bar opacity
+│   ├── Look: theme cards · boot animation switch · bar opacity
 │   ├── Player: position · corner style
 │   ├── Paths: preset mirror folder (SAF)
 │   ├── Analysis: cache view/clear · preset morph beats · beat threshold

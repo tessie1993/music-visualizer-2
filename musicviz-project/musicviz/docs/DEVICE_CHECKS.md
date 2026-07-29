@@ -62,3 +62,7 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
 15. Back button (v0.13.0 r22): system back collapses Now Playing, then
     closes Search, then pops a Library drill-in, then returns any tab to
     Home, and only exits from Home.
+16. Boot animation (0.13.x): Cold start: system splash hands off to the
+    ripple intro, no flash of unstyled content; tap skips; rotating during
+    the intro does not replay it; the Settings > Look "Boot animation"
+    toggle off disables it on the next cold start.

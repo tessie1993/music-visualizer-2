@@ -40,6 +40,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -79,6 +80,15 @@ fun AppRoot(
     var dest by rememberSaveable { mutableStateOf(0) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
+    // rememberSaveable: rotation/config changes must not replay the intro;
+    // only a fresh process start does.
+    var bootDone by rememberSaveable { mutableStateOf(false) }
+    val bootAnimEnabled =
+        remember {
+            context
+                .getSharedPreferences("musicviz-prefs", android.content.Context.MODE_PRIVATE)
+                .getBoolean("boot_anim", true)
+        }
     val state by viewModel.uiState.collectAsState()
 
     var crashText by remember {
@@ -195,6 +205,10 @@ fun AppRoot(
                         dest = 2
                     },
                 )
+            }
+            // Last overlay in the Box so it draws above everything else.
+            if (bootAnimEnabled && !bootDone) {
+                BootIntro(onDone = { bootDone = true })
             }
         }
     }
@@ -338,6 +352,19 @@ fun SettingsScreen(
                         )
                     }
                 }
+            }
+        }
+        item {
+            // Boot animation toggle (persisted directly; read by AppRoot at start).
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val prefs = remember { ctx.getSharedPreferences("musicviz-prefs", android.content.Context.MODE_PRIVATE) }
+            var bootAnim by remember { mutableStateOf(prefs.getBoolean("boot_anim", true)) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Boot animation", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                Switch(checked = bootAnim, onCheckedChange = {
+                    bootAnim = it
+                    prefs.edit().putBoolean("boot_anim", it).apply()
+                })
             }
         }
         item {
