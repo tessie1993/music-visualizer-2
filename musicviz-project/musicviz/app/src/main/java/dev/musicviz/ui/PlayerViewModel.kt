@@ -1,22 +1,31 @@
 package dev.musicviz.ui
 
 import android.app.Application
+import android.content.ContentUris
 import android.net.Uri
+import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import dev.musicviz.analysis.AnalysisEngine
 import dev.musicviz.analysis.AudioFeatures
+import dev.musicviz.analysis.AudioQualityInfo
 import dev.musicviz.analysis.FeatureTimeline
 import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.analysis.OfflineAnalyzer
+import dev.musicviz.analysis.PlaybackMath
 import dev.musicviz.analysis.SceneSuggester
+import dev.musicviz.audio.AudioFxController
+import dev.musicviz.audio.AudioFxState
 import dev.musicviz.audio.PcmRingBuffer
 import dev.musicviz.audio.PcmTapSink
 import dev.musicviz.audio.TapRenderersFactory
@@ -32,7 +41,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -102,6 +114,16 @@ data class MilkFile(
     val path: String,
 )
 
+/** One row of the device music index (MediaStore). */
+data class DeviceTrack(
+    val uri: String,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val folder: String,
+    val durationMs: Long,
+)
+
 /** Music library + playlists + batch-analysis progress. */
 data class LibraryState(
     val tracks: List<LibraryTrack> = emptyList(),
@@ -131,15 +153,96 @@ class PlayerViewModel(
 ) : AndroidViewModel(application) {
     private val ring = PcmRingBuffer()
     private val engine = AnalysisEngine(ring)
-    private val sink = PcmTapSink(ring) { rate -> engine.sampleRateHz = rate }
+
+    // ---- Audio-quality readout ----
+    // Combines the selected track's source Format (onTracksChanged) with the
+    // decoded output format the read-only tap reports (playback thread), so
+    // the UI can show whether playback is lossless / bit-perfect. Declared
+    // before [sink] on purpose: its callback touches these fields (see the
+    // construction-order note above the init block).
+
+    /** Decoded output format from the tap's flush callback. */
+    private data class TapFormat(
+        val sampleRateHz: Int,
+        val channelCount: Int,
+        val encoding: Int,
+    )
+
+    @Volatile
+    private var tapFormat: TapFormat? = null
+
+    @Volatile
+    private var sourceAudioFormat: Format? = null
+
+    private val _audioQuality = MutableStateFlow<AudioQualityInfo?>(null)
+
+    /** Source vs decoded-output quality of the current track; null when idle. */
+    val audioQuality: StateFlow<AudioQualityInfo?> = _audioQuality
+
+    /** Called from the playback thread on every audio-pipeline reconfigure. */
+    private fun onTapFormat(
+        sampleRateHz: Int,
+        channelCount: Int,
+        encoding: Int,
+    ) {
+        tapFormat = TapFormat(sampleRateHz, channelCount, encoding)
+        recomputeAudioQuality()
+    }
+
+    /** Bits per sample for a Media3 PCM encoding constant; 0 = unknown. */
+    private fun bitDepthOf(pcmEncoding: Int): Int =
+        when (pcmEncoding) {
+            C.ENCODING_PCM_8BIT -> 8
+            C.ENCODING_PCM_16BIT, C.ENCODING_PCM_16BIT_BIG_ENDIAN -> 16
+            C.ENCODING_PCM_24BIT, C.ENCODING_PCM_24BIT_BIG_ENDIAN -> 24
+            C.ENCODING_PCM_32BIT, C.ENCODING_PCM_32BIT_BIG_ENDIAN -> 32
+            C.ENCODING_PCM_FLOAT -> 32
+            else -> 0
+        }
+
+    /** Container guess from the uri's file extension ("" for opaque uris). */
+    private fun containerGuess(): String {
+        val name = currentUri?.lastPathSegment?.substringAfterLast('/') ?: return ""
+        val ext = name.substringAfterLast('.', "")
+        return if (ext.length in 1..4) ext.lowercase() else ""
+    }
+
+    private fun recomputeAudioQuality() {
+        val src = sourceAudioFormat
+        if (src == null) {
+            _audioQuality.value = null
+            return
+        }
+        val tap = tapFormat
+        _audioQuality.value =
+            AudioQualityInfo.classify(
+                mime = src.sampleMimeType,
+                container = containerGuess(),
+                sourceSampleRateHz = src.sampleRate.takeIf { it != Format.NO_VALUE } ?: 0,
+                sourceChannels = src.channelCount.takeIf { it != Format.NO_VALUE } ?: 0,
+                bitDepth = bitDepthOf(src.pcmEncoding),
+                bitrateBps = src.bitrate.takeIf { it != Format.NO_VALUE } ?: 0,
+                outputSampleRateHz = tap?.sampleRateHz ?: 0,
+                outputChannels = tap?.channelCount ?: 0,
+                outputFloat = tap?.encoding == C.ENCODING_PCM_FLOAT,
+            )
+    }
+
+    private val sink =
+        PcmTapSink(ring) { rate, channels, encoding ->
+            engine.sampleRateHz = rate
+            onTapFormat(rate, channels, encoding)
+        }
     private val offlineAnalyzer = OfflineAnalyzer(application)
     private val presetStore = PresetStore(application)
     private val trackLibrary = TrackLibrary(application)
     private val themeStore = ThemeStore(application)
+    private val playerPrefsStore = PlayerPrefsStore(application)
     private val textureStore = TextureStore(application)
     private val lfoStore = LfoStore(application)
     private val musicPlaylists = MusicPlaylistStore(application)
     private val exporter = VideoExporter(application)
+    private val audioFxController = AudioFxController(application)
 
     val player: ExoPlayer =
         ExoPlayer
@@ -204,6 +307,20 @@ class PlayerViewModel(
     private val _library = MutableStateFlow(LibraryState(trackLibrary.list(), musicPlaylists.list()))
     val library: StateFlow<LibraryState> = _library
 
+    /**
+     * App-side metadata overrides keyed by uri, derived from [library].
+     * Screens (and search) join device/MediaStore rows against this map;
+     * every [saveTrackInfo]/import/analysis pass bumps it.
+     */
+    val trackOverrides: StateFlow<Map<String, LibraryTrack>> =
+        _library
+            .map { st -> st.tracks.associateBy { it.uri } }
+            .stateIn(
+                viewModelScope,
+                SharingStarted.Eagerly,
+                _library.value.tracks.associateBy { it.uri },
+            )
+
     private val _theme = MutableStateFlow(themeStore.load())
     val theme: StateFlow<AppTheme> = _theme
 
@@ -228,6 +345,79 @@ class PlayerViewModel(
     fun setTheme(theme: AppTheme) {
         themeStore.save(theme)
         _theme.value = theme
+    }
+
+    // ---- Playback preferences ----
+
+    private val _playerPrefs = MutableStateFlow(playerPrefsStore.load())
+
+    /** Core playback preferences (speed, pitch, skip silence, sleep timer, ...). */
+    val playerPrefs: StateFlow<PlayerPrefs> = _playerPrefs
+
+    /** Applies changed playback prefs to the live player and persists them. */
+    fun setPlayerPrefs(prefs: PlayerPrefs) {
+        val p =
+            prefs.copy(
+                speed = prefs.speed.coerceIn(0.5f, 2f),
+                pitchSemitones = prefs.pitchSemitones.coerceIn(-6f, 6f),
+                sleepTimerMinutes = prefs.sleepTimerMinutes.coerceAtLeast(0),
+            )
+        _playerPrefs.value = p
+        playerPrefsStore.save(p)
+        applyPlaybackPrefs(p)
+    }
+
+    /** Pushes speed/pitch, skip-silence and noisy-handling onto the ExoPlayer. */
+    private fun applyPlaybackPrefs(p: PlayerPrefs) {
+        player.playbackParameters = PlaybackParameters(p.speed, PlaybackMath.semitonesToRatio(p.pitchSemitones))
+        player.skipSilenceEnabled = p.skipSilence
+        player.setHandleAudioBecomingNoisy(p.pauseOnNoisy)
+    }
+
+    /** Mirrors the player's shuffle/repeat state into the persisted prefs. */
+    private fun persistPlayerOptions() {
+        val p = _playerPrefs.value.copy(shuffle = player.shuffleModeEnabled, repeatMode = player.repeatMode)
+        _playerPrefs.value = p
+        playerPrefsStore.save(p)
+    }
+
+    // ---- Equalizer & audio effects ----
+
+    private val _audioFx = MutableStateFlow(audioFxController.snapshot())
+
+    /** Equalizer/bass/loudness chain state for the Settings UI. */
+    val audioFx: StateFlow<AudioFxState> = _audioFx
+
+    private fun refreshAudioFx() {
+        _audioFx.value = audioFxController.snapshot()
+    }
+
+    fun setAudioFxEnabled(enabled: Boolean) {
+        audioFxController.setEnabled(enabled)
+        refreshAudioFx()
+    }
+
+    fun setAudioFxBand(
+        band: Int,
+        levelMb: Int,
+    ) {
+        audioFxController.setBandLevel(band, levelMb)
+        refreshAudioFx()
+    }
+
+    fun useAudioFxPreset(index: Int) {
+        audioFxController.usePreset(index)
+        refreshAudioFx()
+    }
+
+    fun setAudioFxBassBoost(strength: Int) {
+        audioFxController.setBassBoost(strength)
+        refreshAudioFx()
+    }
+
+    fun setAudioFxLoudness(gainMb: Int) {
+        audioFxController.setLoudness(gainMb)
+        refreshAudioFx()
     }
 
     private val _textures = MutableStateFlow(textureStore.list())
@@ -534,6 +724,15 @@ class PlayerViewModel(
     init {
         engine.start(viewModelScope)
         refreshNumericTitles()
+        // Restore persisted playback options onto the freshly built player.
+        // Auto-resume runs BEFORE the listener registers so the startup
+        // preparation never records a phantom play into history (ExoPlayer
+        // only delivers events to listeners registered when they occurred).
+        val pp = _playerPrefs.value
+        player.shuffleModeEnabled = pp.shuffle
+        player.repeatMode = pp.repeatMode
+        applyPlaybackPrefs(pp)
+        if (pp.autoResume) prepareLastPlayed()
         player.addListener(
             object : Player.Listener {
                 override fun onEvents(
@@ -557,8 +756,36 @@ class PlayerViewModel(
                         onTrackChanged()
                     }
                 }
+
+                override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                    // The audiofx chain must follow the sink's session; attach
+                    // rebuilds the effects and restores persisted settings.
+                    audioFxController.attach(audioSessionId)
+                    refreshAudioFx()
+                }
+
+                override fun onTracksChanged(tracks: Tracks) {
+                    // Selected audio track's source Format (mime, sample rate,
+                    // pcm encoding, bitrate) for the quality readout. Defensive
+                    // scan: take the first selected audio track, else null.
+                    var fmt: Format? = null
+                    outer@ for (group in tracks.groups) {
+                        if (group.type != C.TRACK_TYPE_AUDIO) continue
+                        for (i in 0 until group.length) {
+                            if (group.isTrackSelected(i)) {
+                                fmt = group.getTrackFormat(i)
+                                break@outer
+                            }
+                        }
+                    }
+                    sourceAudioFormat = fmt
+                    recomputeAudioQuality()
+                }
             },
         )
+        // The sink may already have a session id (attach ignores UNSET = 0).
+        audioFxController.attach(player.audioSessionId)
+        refreshAudioFx()
         viewModelScope.launch {
             while (true) {
                 refresh()
@@ -597,6 +824,7 @@ class PlayerViewModel(
 
     fun toggleShuffle() {
         player.shuffleModeEnabled = !player.shuffleModeEnabled
+        persistPlayerOptions()
         refresh()
     }
 
@@ -607,7 +835,68 @@ class PlayerViewModel(
                 Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
                 else -> Player.REPEAT_MODE_OFF
             }
+        persistPlayerOptions()
         refresh()
+    }
+
+    /**
+     * Auto-resume: prepares (without playing) the most recent history entry
+     * so the mini-player and the Home resume card can continue it with one
+     * tap. Prepare-only by design - the existing Resume card stays the UI.
+     */
+    private fun prepareLastPlayed() {
+        val last = historyStore.recentlyPlayed(1).firstOrNull() ?: return
+        runCatching {
+            val uri = Uri.parse(last.uri)
+            player.setMediaItems(listOf(mediaItemFor(uri)))
+            player.prepare()
+            currentUri = uri
+        }
+    }
+
+    // ---- Sleep timer ----
+
+    private var sleepTimerJob: Job? = null
+    private val _sleepTimerRemainingMs = MutableStateFlow<Long?>(null)
+
+    /** Remaining sleep-timer time, or null when no timer is running. */
+    val sleepTimerRemainingMs: StateFlow<Long?> = _sleepTimerRemainingMs
+
+    /**
+     * Starts (or restarts) the sleep timer: counts down, fades the volume
+     * over the final 3 s, pauses, then restores full volume for next play.
+     * Persists [minutes] as the last-chosen duration (never a running state).
+     */
+    fun startSleepTimer(minutes: Int) {
+        if (minutes <= 0) {
+            cancelSleepTimer()
+            return
+        }
+        setPlayerPrefs(_playerPrefs.value.copy(sleepTimerMinutes = minutes))
+        sleepTimerJob?.cancel()
+        sleepTimerJob =
+            viewModelScope.launch {
+                val endMs = android.os.SystemClock.elapsedRealtime() + minutes * 60_000L
+                while (true) {
+                    val remaining = endMs - android.os.SystemClock.elapsedRealtime()
+                    if (remaining <= 0L) break
+                    _sleepTimerRemainingMs.value = remaining
+                    player.volume = PlaybackMath.sleepFadeVolume(remaining)
+                    delay(if (remaining <= PlaybackMath.SLEEP_FADE_MS) 100 else 500)
+                }
+                player.pause()
+                player.volume = 1f
+                _sleepTimerRemainingMs.value = null
+                sleepTimerJob = null
+            }
+    }
+
+    /** Cancels a running sleep timer and restores full volume. */
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        _sleepTimerRemainingMs.value = null
+        player.volume = 1f
     }
 
     // ---- Visual playlist ----
@@ -821,22 +1110,125 @@ class PlayerViewModel(
 
     // ---- Music library & playlists ----
 
+    /** Embedded-tag metadata read from a file; fields blank/zero when absent. */
+    private data class FileMeta(
+        val title: String,
+        val artist: String = "",
+        val album: String = "",
+        val genre: String = "",
+        val year: Int = 0,
+        val trackNo: Int = 0,
+    )
+
+    private val _deviceTracks = MutableStateFlow<List<DeviceTrack>>(emptyList())
+
+    /** Device music index (MediaStore); refreshed on demand from the UI. */
+    val deviceTracks: StateFlow<List<DeviceTrack>> = _deviceTracks
+
     /**
-     * Resolves (title, artist) the way real media players do: embedded tags
+     * Re-queries the MediaStore device index on IO. Safe to call from any
+     * screen: without the audio permission it just publishes an empty list.
+     * (The query used to run synchronously inside LibraryScreen composition,
+     * janking the first frame of the Library tab on large collections.)
+     */
+    fun refreshDeviceTracks() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _deviceTracks.value = queryDeviceTracksBlocking()
+        }
+    }
+
+    /** Full MediaStore music query; call on Dispatchers.IO. */
+    private fun queryDeviceTracksBlocking(): List<DeviceTrack> {
+        val app = getApplication<Application>()
+        val permission =
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                android.Manifest.permission.READ_MEDIA_AUDIO
+            } else {
+                android.Manifest.permission.READ_EXTERNAL_STORAGE
+            }
+        val granted =
+            androidx.core.content.ContextCompat
+                .checkSelfPermission(app, permission) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!granted) return emptyList()
+        val out = mutableListOf<DeviceTrack>()
+        val proj =
+            arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.ALBUM,
+                MediaStore.Audio.Media.DURATION,
+                MediaStore.Audio.Media.DATA,
+            )
+        runCatching {
+            app.contentResolver
+                .query(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    proj,
+                    "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+                    null,
+                    "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC",
+                )?.use { c ->
+                    val id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                    val ti = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                    val ar = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                    val al = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                    val du = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                    val da = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+                    while (c.moveToNext()) {
+                        val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, c.getLong(id))
+                        val path = c.getString(da).orEmpty()
+                        out +=
+                            DeviceTrack(
+                                uri = uri.toString(),
+                                title = c.getString(ti) ?: "Unknown",
+                                artist = c.getString(ar) ?: "Unknown artist",
+                                album = c.getString(al) ?: "Unknown album",
+                                folder = path.substringBeforeLast('/', ""),
+                                durationMs = c.getLong(du),
+                            )
+                    }
+                }
+        }
+        return out
+    }
+
+    /**
+     * Resolves tag metadata the way real media players do: embedded tags
      * first (MediaMetadataRetriever), then the provider's display name, and
      * only then the URI path - so content URIs never surface as bare
      * document numbers. Call on Dispatchers.IO; the retriever hits disk.
      */
-    private fun metadataFor(uri: Uri): Pair<String, String> {
+    private fun metadataFor(uri: Uri): FileMeta {
         val app = getApplication<Application>()
         var title: String? = null
         var artist: String? = null
+        var album = ""
+        var genre = ""
+        var year = 0
+        var trackNo = 0
         runCatching {
             val r = android.media.MediaMetadataRetriever()
             try {
                 r.setDataSource(app, uri)
-                title = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE)?.trim()?.ifBlank { null }
-                artist = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST)?.trim()?.ifBlank { null }
+
+                fun tag(key: Int): String? = r.extractMetadata(key)?.trim()?.ifBlank { null }
+                title = tag(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE)
+                artist = tag(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                album = tag(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: ""
+                genre = tag(android.media.MediaMetadataRetriever.METADATA_KEY_GENRE) ?: ""
+                // Year tags arrive as "1997" or full dates; track numbers as "3" or "3/12".
+                year =
+                    tag(android.media.MediaMetadataRetriever.METADATA_KEY_YEAR)
+                        ?.filter { it.isDigit() }
+                        ?.take(4)
+                        ?.toIntOrNull() ?: 0
+                trackNo =
+                    tag(android.media.MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
+                        ?.substringBefore('/')
+                        ?.trim()
+                        ?.toIntOrNull() ?: 0
             } finally {
                 runCatching { r.release() }
             }
@@ -849,10 +1241,31 @@ class PlayerViewModel(
                         ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
                 }.getOrNull()?.substringBeforeLast('.')
         }
-        return (title ?: uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Track") to (artist ?: "")
+        return FileMeta(
+            title = title ?: uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Track",
+            artist = artist ?: "",
+            album = album,
+            genre = genre,
+            year = year,
+            trackNo = trackNo,
+        )
     }
 
-    private fun titleFor(uri: Uri): String = metadataFor(uri).first
+    private fun libraryTrackFor(
+        uriStr: String,
+        m: FileMeta,
+    ): LibraryTrack =
+        LibraryTrack(
+            uri = uriStr,
+            title = m.title,
+            artist = m.artist,
+            album = m.album,
+            genre = m.genre,
+            year = m.year,
+            trackNo = m.trackNo,
+        )
+
+    private fun titleFor(uri: Uri): String = metadataFor(uri).title
 
     /** Imports picked audio files into the library (persist read permission first). */
     fun importTracks(uris: List<Uri>) {
@@ -869,12 +1282,44 @@ class PlayerViewModel(
                             android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
                         )
                     }
-                    metadataFor(uri).let { (t, a) ->
-                        LibraryTrack(uri = uri.toString(), title = t, artist = a)
-                    }
+                    libraryTrackFor(uri.toString(), metadataFor(uri))
                 }
             val merged = trackLibrary.addAll(tracks)
             _library.update { it.copy(tracks = merged) }
+        }
+    }
+
+    /** The stored library/override entry for [uri], if any (imported or user-edited). */
+    fun trackOverride(uri: String): LibraryTrack? = _library.value.tracks.firstOrNull { it.uri == uri }
+
+    /**
+     * Track-info-editor prefill: the stored override when one exists, else
+     * the file's embedded tags (retriever runs on IO).
+     */
+    suspend fun trackInfoFor(uriStr: String): LibraryTrack =
+        trackOverride(uriStr) ?: withContext(Dispatchers.IO) {
+            libraryTrackFor(uriStr, metadataFor(Uri.parse(uriStr)))
+        }
+
+    /**
+     * Saves user-edited track info into the app-side store. Upserts, so it
+     * works for MediaStore tracks that were never imported; the audio file
+     * itself is never modified. Publishing through [_library] (and thus
+     * [trackOverrides]) is what refreshes every observing screen.
+     */
+    fun saveTrackInfo(
+        uri: String,
+        title: String,
+        artist: String,
+        album: String,
+        genre: String,
+        year: Int,
+        trackNo: Int,
+        comment: String,
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val merged = trackLibrary.updateMetadata(uri, title, artist, album, genre, year, trackNo, comment)
+            withContext(Dispatchers.Main) { _library.update { it.copy(tracks = merged) } }
         }
     }
 
@@ -973,10 +1418,7 @@ class PlayerViewModel(
                             f.type?.startsWith("audio/") == true ||
                                 name.substringAfterLast('.', "").lowercase() in AUDIO_EXTS
                         if (isAudio) {
-                            found +=
-                                metadataFor(f.uri).let { (t, a) ->
-                                    LibraryTrack(uri = f.uri.toString(), title = t, artist = a)
-                                }
+                            found += libraryTrackFor(f.uri.toString(), metadataFor(f.uri))
                         }
                     }
                 }
@@ -1595,6 +2037,7 @@ class PlayerViewModel(
 
     override fun onCleared() {
         engine.stop()
+        audioFxController.release()
         player.release()
     }
 }

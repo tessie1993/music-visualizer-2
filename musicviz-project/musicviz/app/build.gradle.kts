@@ -13,8 +13,8 @@ android {
         applicationId = "dev.musicviz"
         minSdk = 26
         targetSdk = 36
-        versionCode = 22
-        versionName = "0.13.0"
+        versionCode = 23
+        versionName = "0.13.1"
         ndk {
             abiFilters += "arm64-v8a"
         }
@@ -42,6 +42,7 @@ kotlin {
 }
 
 dependencies {
+    implementation(libs.core.splashscreen)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.common)
     implementation(libs.documentfile)
@@ -56,6 +57,9 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(kotlin("reflect"))
     testImplementation(libs.junit)
+    // Real org.json for plain (non-Robolectric) unit tests: the mockable
+    // android.jar's org.json classes throw "Stub!" (TrackLibraryMigrationTest).
+    testImplementation(libs.json)
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.test:core-ktx:1.6.1")
     testImplementation("androidx.test.ext:junit-ktx:1.2.1")

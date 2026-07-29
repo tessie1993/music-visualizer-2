@@ -62,3 +62,35 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
 15. Back button (v0.13.0 r22): system back collapses Now Playing, then
     closes Search, then pops a Library drill-in, then returns any tab to
     Home, and only exits from Home.
+16. Chrome translucency (v0.13.x): sweep Settings > Look > Bar opacity —
+    the bottom nav bar, mini player, Now Playing header chip and
+    transport card must visibly change translucency live. Transport
+    never drops below ~25% opacity; the Search overlay stays near-opaque
+    (>= 85%) regardless of the slider. On the LIGHT/PAPER themes the
+    Now Playing header text must remain readable (onSurface, not white).
+17. Appearance (0.13.x): in Settings, every slider/selector must visibly
+    change the UI immediately, no navigation needed — theme cards recolor
+    all surfaces, Accent intensity mutes/vivifies primary accents,
+    Background dim darkens surfaces, Corner style reshapes cards/buttons
+    (sharp/rounded/pill), Compact mini-player slims the bar, player
+    position Top/Bottom moves the bar, and "Follow system light/dark"
+    swaps to the LIGHT theme when the OS is in light mode.
+18. Boot animation (0.13.x): Cold start: system splash hands off to the
+    ripple intro, no flash of unstyled content; tap skips; rotating during
+    the intro does not replay it; the Settings > Look "Boot animation"
+    toggle off disables it on the next cold start.
+19. Water style: select water — beat drops radiate as expanding
+    interfering rings; specular glint tracks ripples; palette retints the
+    pool; export falls back correctly (exportSceneFactory constructs
+    WaterScene).
+20. Ripple overlay (F2): enable "Water ripples" (Fluid tab) on a particle
+    scene, a shader scene, AND a live MilkDrop preset — beat rings must
+    visibly refract each one and the glint must sparkle on crests.
+    Switch scenes mid-beat: the transition keeps the ripples on BOTH the
+    outgoing and incoming image (postFx path). Ripple strength 0 must be
+    zero visible difference. On the WATER style the overlay must NOT
+    double-apply (its own surface already refracts; the renderer guard
+    keeps the overlay off). Export 10 s of MilkDrop + overlay: the mp4
+    must show the same refraction/glint as the live view. Watch frame
+    time on a Min-tier device with overlay + FlowField both on (two
+    extra sims per frame).

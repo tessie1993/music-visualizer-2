@@ -180,6 +180,14 @@ class VisualizerRenderer(
             flowStrength = f(from.flowStrength, to.flowStrength),
             flowForce = f(from.flowForce, to.flowForce),
             flowCurl = f(from.flowCurl, to.flowCurl),
+            waterWaveSpeed = f(from.waterWaveSpeed, to.waterWaveSpeed),
+            waterDamping = f(from.waterDamping, to.waterDamping),
+            waterRippleStrength = f(from.waterRippleStrength, to.waterRippleStrength),
+            waterDepth = f(from.waterDepth, to.waterDepth),
+            waterSpecular = f(from.waterSpecular, to.waterSpecular),
+            waterFlow = f(from.waterFlow, to.waterFlow),
+            rippleOverlayStrength = f(from.rippleOverlayStrength, to.rippleOverlayStrength),
+            rippleOverlaySpecular = f(from.rippleOverlaySpecular, to.rippleOverlaySpecular),
         )
     }
 
@@ -230,6 +238,16 @@ class VisualizerRenderer(
     /** F7 FlowField service + the 1x1 zero texture bound when it's off. */
     private var flowField: dev.musicviz.render.fluid.FlowField? = null
     private var zeroTex = 0
+
+    /** F2 ripple overlay: renderer-owned heightfield refracting ANY style. */
+    private var rippleOverlay: dev.musicviz.render.fluid.RippleSim? = null
+    private val rippleDrops =
+        dev.musicviz.render.fluid
+            .RippleOverlayDrops()
+
+    /** Overlay grid short side: fixed budget tier (WaterScene tier 4-ish);
+     *  the overlay rides on top of a full scene, so it stays cheap. */
+    private val rippleOverlayRes = 256
 
     /** Fresh mono PCM for projectM; set by the UI wiring. */
     @Volatile
@@ -336,6 +354,7 @@ class VisualizerRenderer(
             if (PMBridge.available) add(SceneIds.MILKDROP)
             add(SceneIds.FLUID)
             add(SceneIds.CURLFLOW)
+            add(SceneIds.WATER)
         }
 
     fun submitShader(
@@ -395,6 +414,10 @@ class VisualizerRenderer(
         scenes[SceneIds.CURLFLOW] =
             dev.musicviz.render.fluid
                 .CurlFlowScene(context)
+        scenes[SceneIds.WATER] =
+            dev.musicviz.render.fluid.WaterScene(context).also { water ->
+                water.onShaderError = { onShaderError(it) }
+            }
         if (PMBridge.available) {
             scenes[SceneIds.MILKDROP] =
                 ProjectMScene(
@@ -427,6 +450,17 @@ class VisualizerRenderer(
             dev.musicviz.render.fluid
                 .FlowField(context)
                 .also { it.create() }
+        // Ripple overlay service (F2): handles from a lost EGL context are
+        // dead names, so it is released and rebuilt here like the FlowField.
+        rippleOverlay?.release()
+        rippleOverlay =
+            dev.musicviz.render.fluid
+                .RippleSim(context)
+                .also {
+                    it.create()
+                    it.applyResolution(rippleOverlayRes)
+                }
+        rippleDrops.reset()
         val texIds = IntArray(1)
         GLES30.glGenTextures(1, texIds, 0)
         zeroTex = texIds[0]
@@ -481,6 +515,7 @@ class VisualizerRenderer(
         renderHeight = (height * ss).toInt()
         scenes.values.forEach { it.resize(renderWidth, renderHeight) }
         flowField?.resize(renderWidth, renderHeight)
+        rippleOverlay?.resize(renderWidth, renderHeight)
         fboA.ensure(renderWidth, renderHeight)
         fboB.ensure(renderWidth, renderHeight)
     }
@@ -562,6 +597,23 @@ class VisualizerRenderer(
         val fluidActive = scene is dev.musicviz.render.fluid.FluidScene
         if (p.flowEnabled && ff != null && ff.available && !fluidActive) {
             ff.step(gainAdjusted(features, p), dt, p)
+        }
+        // F2 ripple overlay: advance the shared heightfield (its own tiny
+        // FBOs) before any scene target is bound. When the WATER scene is
+        // active its own sim already refracts the display - never both (one
+        // source of truth, no double-applied refraction), mirroring the
+        // FLUID/FlowField exclusivity above.
+        val ripple = rippleOverlay
+        val waterActive = scene is dev.musicviz.render.fluid.WaterScene
+        val rippleOverlayOn =
+            p.rippleOverlayEnabled && ripple != null && ripple.available && !waterActive
+        if (rippleOverlayOn && ripple != null) {
+            ripple.waveSpeed = 1.2f * p.waterWaveSpeed.coerceIn(0.2f, 2f)
+            ripple.damping = p.waterDamping.coerceIn(0.9f, 0.999f)
+            rippleDrops.tick(gainAdjusted(features, p), ripple.aspect) { x, y, radius, amp ->
+                ripple.queueDrop(x, y, radius, amp)
+            }
+            ripple.step(dt)
         }
         fboA.ensure(renderWidth, renderHeight)
         fboB.ensure(renderWidth, renderHeight)
@@ -654,6 +706,27 @@ class VisualizerRenderer(
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, flowTex)
         GLES30.glUniform1i(cLoc("uFlow"), 2)
         GLES30.glUniform1f(cLoc("uFlowStrength"), flowStrength)
+        // F2 ripple overlay: refraction + glint over any style. The zero
+        // texture keeps the sampler valid when the overlay is off or WATER
+        // is active (whose own display already refracts - see step site).
+        var rippleTex = zeroTex
+        var rippleTexelW = 0f
+        var rippleTexelH = 0f
+        var rippleStrength = 0f
+        var rippleSpecular = 0f
+        if (rippleOverlayOn && ripple != null) {
+            rippleTex = ripple.heightTex
+            rippleTexelW = ripple.texelW
+            rippleTexelH = ripple.texelH
+            rippleStrength = p.rippleOverlayStrength.coerceIn(0f, 1f)
+            rippleSpecular = p.rippleOverlaySpecular.coerceIn(0f, 1f)
+        }
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE3)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, rippleTex)
+        GLES30.glUniform1i(cLoc("uRipple"), 3)
+        GLES30.glUniform2f(cLoc("uRippleTexel"), rippleTexelW, rippleTexelH)
+        GLES30.glUniform1f(cLoc("uRippleStrength"), rippleStrength)
+        GLES30.glUniform1f(cLoc("uRippleSpecular"), rippleSpecular)
         GLES30.glUniform1f(cLoc("uProgress"), progress)
         val style = if (outgoingScene != null) transitionStyle else TransitionStyle.CUT
         GLES30.glUniform1i(cLoc("uStyle"), style.ordinal)
@@ -843,6 +916,9 @@ class VisualizerRenderer(
                         sceneId == SceneIds.CURLFLOW ->
                             dev.musicviz.render.fluid
                                 .CurlFlowScene(context)
+                        sceneId == SceneIds.WATER ->
+                            dev.musicviz.render.fluid
+                                .WaterScene(context)
                         sceneId == SceneIds.MILKDROP && PMBridge.available ->
                             ProjectMScene(
                                 postVertexSrc = loadRaw(R.raw.fade_vert),

@@ -91,6 +91,9 @@ class VideoExporter(
     companion object {
         private const val FPS: Int = 60
         private const val TIMEOUT_US: Long = 10_000
+
+        /** Ripple overlay grid short side - matches the live renderer's. */
+        private const val RIPPLE_OVERLAY_RES = 256
     }
 
     interface SceneFactory {
@@ -256,6 +259,7 @@ class VideoExporter(
         var sceneRef: Scene? = null
         var fxRef: FxCompositor? = null
         var flowFieldRef: dev.musicviz.render.fluid.FlowField? = null
+        var rippleRef: dev.musicviz.render.fluid.RippleSim? = null
         var muxerStarted = false
         try {
             var encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).also { encoderRef = it }
@@ -314,6 +318,26 @@ class VideoExporter(
                 } else {
                     null
                 }
+            // Ripple overlay export parity (F2): run a fresh RippleSim in the
+            // export GL context so the refraction + glint land in exported
+            // frames exactly like the live view. When the export scene IS
+            // water, its own sim already refracts - the overlay stays off
+            // (matches the live renderer's exclusivity guard).
+            val exportWaterScene = scene as? dev.musicviz.render.fluid.WaterScene
+            val rippleOverlay =
+                if (sceneParams.rippleOverlayEnabled && exportWaterScene == null) {
+                    dev.musicviz.render.fluid.RippleSim(context).also {
+                        rippleRef = it
+                        it.create()
+                        it.applyResolution(RIPPLE_OVERLAY_RES)
+                        it.resize(aspect.width, aspect.height)
+                    }
+                } else {
+                    null
+                }
+            val rippleDrops =
+                dev.musicviz.render.fluid
+                    .RippleOverlayDrops()
             // Reproduce the live path's per-frame LFO modulation so automations
             // the user set up appear in the render, not just on screen.
             val lfoEngine = dev.musicviz.render.LfoEngine()
@@ -387,6 +411,19 @@ class VideoExporter(
                         scene.setFlow(flowField.velocityTex, p.flowStrength)
                     }
                 }
+                // Ripple overlay: advance the heightfield before the scene
+                // target is bound (its own FBOs), mirroring the live order.
+                val rippleOn = p.rippleOverlayEnabled && rippleOverlay != null && rippleOverlay.available
+                if (rippleOn && rippleOverlay != null) {
+                    rippleOverlay.waveSpeed = 1.2f * p.waterWaveSpeed.coerceIn(0.2f, 2f)
+                    rippleOverlay.damping = p.waterDamping.coerceIn(0.9f, 0.999f)
+                    rippleDrops.tick(
+                        dev.musicviz.render.scene
+                            .applyBandGains(features, p),
+                        rippleOverlay.aspect,
+                    ) { x, y, radius, amp -> rippleOverlay.queueDrop(x, y, radius, amp) }
+                    rippleOverlay.step(1f / fps)
+                }
                 // Draw the scene into the FX FBO, then composite (with the full
                 // FX chain) onto the encoder surface, matching the live path.
                 fx.bindSceneTarget()
@@ -413,6 +450,7 @@ class VideoExporter(
                         flowField != null && flowField.available -> flowField.velocityTex
                         else -> 0
                     }
+                val rippleTex = if (rippleOn && rippleOverlay != null) rippleOverlay.heightTex else 0
                 fx.composite(
                     timeMs / 1000f,
                     features,
@@ -421,6 +459,11 @@ class VideoExporter(
                     p,
                     flowTex = flowTex,
                     flowStrength = if (flowTex != 0) p.flowStrength else 0f,
+                    rippleTex = rippleTex,
+                    rippleTexelW = if (rippleTex != 0 && rippleOverlay != null) rippleOverlay.texelW else 0f,
+                    rippleTexelH = if (rippleTex != 0 && rippleOverlay != null) rippleOverlay.texelH else 0f,
+                    rippleStrength = if (rippleTex != 0) p.rippleOverlayStrength.coerceIn(0f, 1f) else 0f,
+                    rippleSpecular = if (rippleTex != 0) p.rippleOverlaySpecular.coerceIn(0f, 1f) else 0f,
                 )
                 egl.setPresentationTimeNs(frame * frameDurationNs)
                 egl.swapBuffers()
@@ -477,6 +520,7 @@ class VideoExporter(
             // resource whose creation was never reached.
             runCatching { sceneRef?.release() }
             runCatching { flowFieldRef?.release() }
+            runCatching { rippleRef?.release() }
             runCatching { fxRef?.release() }
             if (muxerStarted) runCatching { muxerRef?.stop() }
             runCatching { muxerRef?.release() }

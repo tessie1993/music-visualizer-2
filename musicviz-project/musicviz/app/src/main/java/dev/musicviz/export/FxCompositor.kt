@@ -198,7 +198,10 @@ internal class FxCompositor(
 
     /** Composites the scene texture (with FX) onto the currently-bound surface.
      *  [flowTex]/[flowStrength] feed the fluidWarp slot so FlowField bending
-     *  appears in exports exactly like the live view (0 = disabled). */
+     *  appears in exports exactly like the live view (0 = disabled).
+     *  [rippleTex]/[rippleTexelW]/[rippleTexelH]/[rippleStrength]/
+     *  [rippleSpecular] feed the F2 ripple overlay slot the same way (0 =
+     *  disabled; the 1x1 empty texture keeps the sampler valid). */
     fun composite(
         timeSeconds: Float,
         features: AudioFeatures,
@@ -207,6 +210,11 @@ internal class FxCompositor(
         params: SceneParams,
         flowTex: Int = 0,
         flowStrength: Float = 0f,
+        rippleTex: Int = 0,
+        rippleTexelW: Float = 0f,
+        rippleTexelH: Float = 0f,
+        rippleStrength: Float = 0f,
+        rippleSpecular: Float = 0f,
     ) {
         // Shader scenes apply all geometric/stylize FX in-shader already;
         // pass neutral values so they aren't applied twice (matches the
@@ -228,6 +236,12 @@ internal class FxCompositor(
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, if (flowTex != 0) flowTex else emptyTex)
         GLES30.glUniform1i(loc("uFlow"), 2)
         GLES30.glUniform1f(loc("uFlowStrength"), if (flowTex != 0) flowStrength else 0f)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE3)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, if (rippleTex != 0) rippleTex else emptyTex)
+        GLES30.glUniform1i(loc("uRipple"), 3)
+        GLES30.glUniform2f(loc("uRippleTexel"), rippleTexelW, rippleTexelH)
+        GLES30.glUniform1f(loc("uRippleStrength"), if (rippleTex != 0) rippleStrength else 0f)
+        GLES30.glUniform1f(loc("uRippleSpecular"), if (rippleTex != 0) rippleSpecular else 0f)
         GLES30.glUniform1f(loc("uProgress"), 1f)
         GLES30.glUniform1i(loc("uStyle"), 0)
         GLES30.glUniform1f(loc("uTime"), timeSeconds)

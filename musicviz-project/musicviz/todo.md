@@ -273,8 +273,9 @@ curl-noise + GPU-particle-lifecycle + emitter/attractor patterns surveyed.
 - [ ] Player panel restructure: canvas bottom bar deleted; icons become
       panel row 4; tap hides whole panel; top/bottom setting moves it as
       one unit. (Structural nav — do first within P6.)
-- [ ] UI opacity slider; touch press feedback; theme polish; player
-      panel size setting. Crystal themes/overlays remain DEFERRED until
+- [x] UI opacity slider consumption (glass translucency), theme polish
+      (theme overhaul), player panel settings. (0.13.x round)
+- [ ] Touch press feedback. Crystal themes/overlays remain DEFERRED until
       the user re-opens them after the overhaul.
 
 ## Always

@@ -502,7 +502,8 @@ private fun CheckRow(
 /**
  * Customize -> Fluid tab (F5). When the FLUID style is active every section
  * is shown, including the force/dye injection shader editors (the section-13
- * extension points). For every other style only the FlowField section
+ * extension points). The WATER style adds its Water section (plus the shared
+ * Journey section); for every other style only the FlowField section
  * appears - the same tab is the one home for "fluid principles" regardless
  * of style, mirroring how the GLSL tab scopes to shader scenes.
  */
@@ -512,10 +513,25 @@ internal fun FluidTab(
     onChange: (SceneParams) -> Unit,
     isFluidScene: Boolean,
     isJourneyScene: Boolean = isFluidScene,
+    isWaterScene: Boolean = false,
     injectionError: String? = null,
     onApplyInjectionShaders: (String?, String?) -> Unit = { _, _ -> },
 ) {
     Column {
+        if (isWaterScene) {
+            SectionHeader("Water")
+            Text(
+                "Heightfield water: beats drop expanding rings, stirrers " +
+                    "carve wakes, the journey decides where they land.",
+                style = MaterialTheme.typography.labelSmall,
+            )
+            LabeledSlider("Wave speed", p.waterWaveSpeed, 0.2f..2f) { onChange(p.copy(waterWaveSpeed = it)) }
+            LabeledSlider("Damping", p.waterDamping, 0.9f..0.999f) { onChange(p.copy(waterDamping = it)) }
+            LabeledSlider("Ripple strength", p.waterRippleStrength, 0f..2f) { onChange(p.copy(waterRippleStrength = it)) }
+            LabeledSlider("Depth", p.waterDepth, 0f..1f) { onChange(p.copy(waterDepth = it)) }
+            LabeledSlider("Specular", p.waterSpecular, 0f..1f) { onChange(p.copy(waterSpecular = it)) }
+            LabeledSlider("Flow drift", p.waterFlow, 0f..1f) { onChange(p.copy(waterFlow = it)) }
+        }
         if (isJourneyScene) {
             SectionHeader("Journey (spawn & catch progression)")
             Text(
@@ -609,6 +625,20 @@ internal fun FluidTab(
             LabeledSlider("Flow force", p.flowForce, 0f..3f) { onChange(p.copy(flowForce = it)) }
             LabeledSlider("Flow curl", p.flowCurl, 0f..50f) { onChange(p.copy(flowCurl = it)) }
             CheckRow("Particles ride the field", p.flowAdvectParticles) { onChange(p.copy(flowAdvectParticles = it)) }
+        }
+        SectionHeader("Water ripples (all styles)")
+        Text(
+            "The water heightfield rides on top of ANY style: beats drop " +
+                "rings that refract the image (particles, shaders, MilkDrop - " +
+                "and exports), treble sprinkles small drops, and glint adds a " +
+                "specular sparkle on the crests. The water style's own surface " +
+                "already refracts, so the overlay stays off there.",
+            style = MaterialTheme.typography.labelSmall,
+        )
+        CheckRow("Water ripples enabled", p.rippleOverlayEnabled) { onChange(p.copy(rippleOverlayEnabled = it)) }
+        if (p.rippleOverlayEnabled) {
+            LabeledSlider("Ripple strength", p.rippleOverlayStrength, 0f..1f) { onChange(p.copy(rippleOverlayStrength = it)) }
+            LabeledSlider("Ripple glint", p.rippleOverlaySpecular, 0f..1f) { onChange(p.copy(rippleOverlaySpecular = it)) }
         }
         if (isFluidScene) {
             SectionHeader("Injection shaders (advanced)")

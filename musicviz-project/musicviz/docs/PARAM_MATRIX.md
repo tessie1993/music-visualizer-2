@@ -58,3 +58,26 @@ dye suction strength in FLUID (emitter suction splats at catch points).
 progress/sectionIndex/sectionCount ride AudioFeatures: live from the
 player position + cached section analysis, export from
 FeatureTimeline.progressionAt - no SceneParams field, not persisted.
+
+Water additions (v0.13.x, unit F1): waterWaveSpeed / waterDamping /
+waterRippleStrength / waterDepth / waterSpecular / waterFlow act on the
+WATER scene only (RippleSim wave character + water_display shading inside
+WaterScene; the Customize Fluid tab shows the Water section only when the
+water style is active). WATER also consumes the shared journey params
+(fluidSpawnPath/Points/Progress, fluidCatchPoints/Pull, and the emitter
+schedule fields fluidBeatPattern/BeatSplats/Stirrers/StirrerSpeed/
+SplatRadius/SplatForce/BassPump/Sparkle/RadiusPulse) to place and time its
+drops, plus fluidQuality/fluidAutoQuality for its grid tier.
+Ripple overlay additions (v0.13.x, unit F2): rippleOverlayEnabled /
+rippleOverlayStrength / rippleOverlaySpecular act on ALL families (C -
+composite ripple slot: a renderer-owned RippleSim heightfield refracts the
+scene fetch and adds specular glint inside postFx, so it applies to shader,
+particle and MilkDrop scenes alike, to BOTH images during transitions, and
+to exports via FxCompositor's ripple params). Exception: on the WATER scene
+the overlay is forced off (its own display already refracts - one source of
+truth, live and export guards match). Strength/specular are lerped and
+LFO-targetable (RIPPLE_OVERLAY targets strength); wave character reuses
+waterWaveSpeed/waterDamping so the overlay and the water style stay one
+system. Drop placement is deterministic (RippleMath.overlayDropPosition
+golden-angle sequence driven by beats/treble via RippleOverlayDrops - no
+RNG, so export re-runs land the same drops for the same feature stream).

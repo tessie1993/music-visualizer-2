@@ -10,6 +10,12 @@ VisualizerView is owned by the shell so renderer state survives
 collapse/expand. Search is a fullscreen overlay available from Home and
 Library.
 
+Cold start: the Android 12 system splash (Theme.MusicViz.Splash, MIDNIGHT
+background) hands off to a one-shot BOOT INTRO overlay (~1.4 s ripple rings +
+wordmark, tap skips) drawn above the shell before Home is interactive. Shown
+once per process start (survives rotation via rememberSaveable); the
+"Boot animation" switch in Settings > Look disables it.
+
 ```
 APP SHELL (Scaffold)
 ├── MINI-PLAYER (hidden until media loaded; tap > Now Playing overlay)
@@ -40,12 +46,15 @@ APP SHELL (Scaffold)
 │   │   per-param locks · LFO/ADSR editors in FX
 │   └── Textures: [Import images] · per-texture [Use]
 │
-├── SETTINGS
-│   ├── Look: theme cards · bar opacity
-│   ├── Player: position · corner style
-│   ├── Paths: preset mirror folder (SAF)
-│   ├── Analysis: cache view/clear · preset morph beats · beat threshold
-│   └── [Export video…] > export host dialog
+├── SETTINGS (collapsible sections; header row toggles, chevron shows state)
+│   ├── Appearance: theme cards · bar opacity · player position · corner style ·
+│   │   boot animation switch
+│   ├── Playback: placeholder (speed/EQ/sleep-timer controls land here)
+│   ├── Library: preset mirror folder (SAF) · pointer to Library › Folders
+│   ├── Visuals & Analysis: preset morph beats · beat threshold ·
+│   │   analysis cache view/clear
+│   └── Export & About: [Export video…] > export dialog (export-only) ·
+│       app name + version
 │
 ├── SEARCH overlay (fullscreen; tracks + visual presets; tap applies/plays)
 │
