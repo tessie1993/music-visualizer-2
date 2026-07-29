@@ -31,6 +31,16 @@ private data class Anchors(
 enum class AppTheme(
     val label: String,
 ) {
+    // Crystal collection - one theme per design-system mockup. Lapis is the
+    // app default.
+    LAPIS("Lapis"),
+    MALACHITE("Malachite"),
+    CLEAR_QUARTZ("Clear Quartz"),
+    ROSE_QUARTZ("Rose Quartz"),
+    SUGILITE("Sugilite"),
+    AMETHYST("Amethyst"),
+    KYANITE("Kyanite"),
+    ONYX("Onyx"),
     MIDNIGHT("Midnight"),
     NEON("Neon"),
     SUNSET("Sunset"),
@@ -53,6 +63,17 @@ enum class AppTheme(
 
     private fun anchors(): Anchors =
         when (this) {
+            // Crystal collection anchors are lifted from the theme mockups:
+            // primary/secondary from the palette accents, background/surface
+            // from the darkest stone + glass panel colors.
+            LAPIS -> Anchors(0xFF2A63FF.toInt(), 0xFFD6B15A.toInt(), 0xFF050A1E.toInt(), 0xFF1A2340.toInt())
+            MALACHITE -> Anchors(0xFF00D1B2.toInt(), 0xFFA4E6D8.toInt(), 0xFF050A09.toInt(), 0xFF0E1514.toInt())
+            CLEAR_QUARTZ -> Anchors(0xFFCFE6FF.toInt(), 0xFFBECDDE.toInt(), 0xFF10141D.toInt(), 0xFF2B3342.toInt())
+            ROSE_QUARTZ -> Anchors(0xFFF8CCD6.toInt(), 0xFFFFCBA8.toInt(), 0xFF140C12.toInt(), 0xFF2A1D23.toInt())
+            SUGILITE -> Anchors(0xFF8C40FF.toInt(), 0xFFFF5CF7.toInt(), 0xFF0B0612.toInt(), 0xFF1E1430.toInt())
+            AMETHYST -> Anchors(0xFFB58BFB.toInt(), 0xFFDB8AFE.toInt(), 0xFF0D0612.toInt(), 0xFF1E1235.toInt())
+            KYANITE -> Anchors(0xFF3D7BFF.toInt(), 0xFF7CABFF.toInt(), 0xFF070E17.toInt(), 0xFF152339.toInt())
+            ONYX -> Anchors(0xFF6FA8FF.toInt(), 0xFFA7B7D1.toInt(), 0xFF0B0D12.toInt(), 0xFF171D26.toInt())
             MIDNIGHT -> Anchors(0xFF7C9CFF.toInt(), 0xFF9DA8C7.toInt(), 0xFF05060B.toInt(), 0xFF0F1320.toInt())
             NEON -> Anchors(0xFF00E5FF.toInt(), 0xFFFF3DDA.toInt(), 0xFF04060A.toInt(), 0xFF10131C.toInt())
             SUNSET -> Anchors(0xFFFF9E57.toInt(), 0xFFFF5E7E.toInt(), 0xFF120A0A.toInt(), 0xFF201412.toInt())
@@ -191,8 +212,8 @@ class ThemeStore(
     private val prefs = context.getSharedPreferences("musicviz-prefs", Context.MODE_PRIVATE)
 
     fun load(): AppTheme =
-        runCatching { AppTheme.valueOf(prefs.getString(KEY, AppTheme.MIDNIGHT.name)!!) }
-            .getOrDefault(AppTheme.MIDNIGHT)
+        runCatching { AppTheme.valueOf(prefs.getString(KEY, AppTheme.LAPIS.name)!!) }
+            .getOrDefault(AppTheme.LAPIS)
 
     fun save(theme: AppTheme) {
         prefs.edit().putString(KEY, theme.name).apply()
