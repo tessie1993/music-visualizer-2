@@ -468,7 +468,7 @@ class PlayerViewModel(
         r("Drift Y") { p.copy(driftY = f(-0.5f, 0.5f)) }
         r("Beat pulse") { p.copy(pulse = f(0f, 1f)) }
         r("Beat shake") { p.copy(shake = f(0f, 0.7f)) }
-        r("Warp") { p.copy(warp = f(0f, 0.8f)) }
+        r("Domain warp") { p.copy(warp = f(0f, 0.8f)) }
         r("Ripple") { p.copy(ripple = f(0f, 0.8f)) }
         r("Twist") { p.copy(twist = f(-0.8f, 0.8f)) }
         r("Tile") { p.copy(tile = f(1f, 4f)) }
@@ -479,7 +479,7 @@ class PlayerViewModel(
         r("Beat response") { p.copy(beatResponse = f(0.3f, 2f)) }
         r("Palette") { p.copy(palette = rnd.nextInt(18)) }
         r("Palette 2") { p.copy(palette2 = rnd.nextInt(18)) }
-        r("Palette mix") { p.copy(paletteMix = f(0f, 1f)) }
+        r("Palette blend") { p.copy(paletteMix = f(0f, 1f)) }
         r("Hue range") { p.copy(hueRange = f(0.5f, 1.5f)) }
         r("Saturation") { p.copy(saturation = f(0.4f, 1.4f)) }
         r("Brightness") { p.copy(brightness = f(0.7f, 1.3f)) }
@@ -490,10 +490,10 @@ class PlayerViewModel(
         r("Chromatic aberration") { p.copy(chromaAb = f(0f, 0.5f)) }
         r("Vignette") { p.copy(vignette = f(0f, 0.6f)) }
         r("Scanlines") { p.copy(scanlines = f(0f, 0.5f)) }
-        r("Grain") { p.copy(grain = f(0f, 0.4f)) }
+        r("Film grain") { p.copy(grain = f(0f, 0.4f)) }
         r("Glitch") { p.copy(glitch = f(0f, 0.4f)) }
         r("Fisheye") { p.copy(fisheye = f(0f, 0.5f)) }
-        r("Flash") { p.copy(flash = f(0f, 0.6f)) }
+        r("Beat flash") { p.copy(flash = f(0f, 0.6f)) }
         // Fluid scene (curated ranges so a roll stays watchable; quality and
         // the FlowField master toggle are deliberately never randomized).
         r("Fluid curl") { p.copy(fluidCurl = f(5f, 45f)) }
@@ -2040,6 +2040,11 @@ class PlayerViewModel(
 
     fun cancelExport() {
         exportCancelled = true
+    }
+
+    /** Clears a finished export's result/error so the next dialog open shows the options again. */
+    fun resetExportState() {
+        if (!_exportState.value.running) _exportState.value = ExportUiState()
     }
 
     override fun onCleared() {
