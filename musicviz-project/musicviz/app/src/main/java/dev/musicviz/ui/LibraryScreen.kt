@@ -1,11 +1,8 @@
 package dev.musicviz.ui
 
 import android.Manifest
-import android.content.ContentUris
-import android.content.Context
 import android.net.Uri
 import android.os.Build
-import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -39,6 +36,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,61 +49,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-
-/** One row of the device music index. */
-data class DeviceTrack(
-    val uri: String,
-    val title: String,
-    val artist: String,
-    val album: String,
-    val folder: String,
-    val durationMs: Long,
-)
-
-/** Queries the whole device music index via MediaStore. */
-private fun queryDeviceTracks(context: Context): List<DeviceTrack> {
-    val out = mutableListOf<DeviceTrack>()
-    val proj =
-        arrayOf(
-            MediaStore.Audio.Media._ID,
-            MediaStore.Audio.Media.TITLE,
-            MediaStore.Audio.Media.ARTIST,
-            MediaStore.Audio.Media.ALBUM,
-            MediaStore.Audio.Media.DURATION,
-            MediaStore.Audio.Media.DATA,
-        )
-    runCatching {
-        context.contentResolver
-            .query(
-                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                proj,
-                "${MediaStore.Audio.Media.IS_MUSIC} != 0",
-                null,
-                "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC",
-            )?.use { c ->
-                val id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-                val ti = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-                val ar = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-                val al = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-                val du = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-                val da = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
-                while (c.moveToNext()) {
-                    val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, c.getLong(id))
-                    val path = c.getString(da).orEmpty()
-                    out +=
-                        DeviceTrack(
-                            uri = uri.toString(),
-                            title = c.getString(ti) ?: "Unknown",
-                            artist = c.getString(ar) ?: "Unknown artist",
-                            album = c.getString(al) ?: "Unknown album",
-                            folder = path.substringBeforeLast('/', ""),
-                            durationMs = c.getLong(du),
-                        )
-                }
-            }
-    }
-    return out
-}
 
 @Composable
 fun LibraryScreen(
@@ -124,7 +67,10 @@ fun LibraryScreen(
     val permLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     var reloadKey by remember { mutableStateOf(0) }
-    val tracks = remember(granted, reloadKey) { if (granted) queryDeviceTracks(context) else emptyList() }
+    val tracks by viewModel.deviceTracks.collectAsState()
+    // The MediaStore query lives in the ViewModel (Dispatchers.IO) so first
+    // composition of this tab no longer blocks on the content resolver.
+    LaunchedEffect(granted, reloadKey) { if (granted) viewModel.refreshDeviceTracks() }
     var tab by rememberSaveable { mutableStateOf(0) }
     val tabs = listOf("Tracks", "Albums", "Artists", "Playlists", "Folders")
 

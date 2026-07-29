@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -58,8 +59,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.musicviz.analysis.SearchMatcher
 import dev.musicviz.render.VisualizerView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
@@ -516,16 +519,77 @@ fun SettingsScreen(
     }
 }
 
+/** One merged track result row (device index or imported library). */
+private data class SearchTrackRow(
+    val uri: String,
+    val title: String,
+    val subtitle: String,
+    val fields: List<String>,
+    val fromDevice: Boolean,
+)
+
 @Composable
 fun SearchScreen(
     viewModel: PlayerViewModel,
     onClose: () -> Unit,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
+    var debounced by rememberSaveable { mutableStateOf("") }
     val library by viewModel.library.collectAsState()
     val viz by viewModel.vizState.collectAsState()
+    val deviceTracks by viewModel.deviceTracks.collectAsState()
+    // The device index may be empty when search opens before the Library tab
+    // has loaded it; refresh is a no-op without the audio permission.
+    LaunchedEffect(Unit) { viewModel.refreshDeviceTracks() }
+    // 250 ms debounce: filtering runs once per typing pause, not per
+    // keystroke. Clearing the field takes effect immediately.
+    LaunchedEffect(query) {
+        if (query.isNotBlank()) delay(250)
+        debounced = query
+    }
     // Back closes the search overlay instead of exiting the app.
     androidx.activity.compose.BackHandler { onClose() }
+
+    val terms = remember(debounced) { SearchMatcher.terms(debounced) }
+    val trackResults =
+        remember(terms, deviceTracks, library.tracks) {
+            val candidates =
+                deviceTracks.map { t ->
+                    SearchTrackRow(
+                        uri = t.uri,
+                        title = t.title,
+                        subtitle = listOf(t.artist, t.album).filter { it.isNotBlank() }.joinToString(" · "),
+                        fields = listOf(t.title, t.artist, t.album, t.folder),
+                        fromDevice = true,
+                    )
+                } +
+                    library.tracks.map { t ->
+                        SearchTrackRow(
+                            uri = t.uri,
+                            title = t.title,
+                            subtitle = t.artist,
+                            // join richer metadata fields here when available
+                            fields = listOf(t.title, t.artist),
+                            fromDevice = false,
+                        )
+                    }
+            SearchMatcher.filterTracks(
+                terms = terms,
+                items = candidates,
+                uriOf = { it.uri },
+                fieldsOf = { it.fields },
+                preferred = { it.fromDevice },
+            )
+        }
+    val playlistResults =
+        remember(terms, library.playlists) {
+            library.playlists.filter { SearchMatcher.matches(terms, listOf(it.name)) }
+        }
+    val presetResults =
+        remember(terms, viz.presets) {
+            viz.presets.filter { SearchMatcher.matches(terms, listOf(it.name)) }
+        }
+
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -533,33 +597,74 @@ fun SearchScreen(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Search tracks & presets") },
+                    placeholder = { Text("Search tracks, playlists & presets") },
                     singleLine = true,
                 )
-                IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.QueueMusic, "Close") }
+                IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "Close search") }
             }
-            val q = query.trim().lowercase()
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (q.isNotEmpty()) {
-                    val tracks = library.tracks.filter { it.title.lowercase().contains(q) }.take(20)
-                    if (tracks.isNotEmpty()) {
-                        item { Text("Tracks", style = MaterialTheme.typography.titleMedium) }
-                        items(tracks) { t ->
-                            Text(
-                                t.title,
+                if (terms.isEmpty()) {
+                    item {
+                        Text(
+                            "Type to search your music",
+                            Modifier.padding(vertical = 16.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    if (trackResults.isNotEmpty()) {
+                        item { Text("Tracks (${trackResults.size})", style = MaterialTheme.typography.titleMedium) }
+                        items(trackResults, key = { "t:${it.uri}" }) { t ->
+                            Row(
                                 Modifier
                                     .fillMaxWidth()
                                     .clickable {
                                         viewModel.playTrack(t.uri)
                                         onClose()
-                                    }.padding(vertical = 8.dp),
-                            )
+                                    },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+                                    Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    if (t.subtitle.isNotBlank()) {
+                                        Text(
+                                            t.subtitle,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                                IconButton(onClick = { viewModel.enqueue(t.uri) }) {
+                                    Icon(Icons.AutoMirrored.Filled.QueueMusic, "Add to queue")
+                                }
+                            }
                         }
                     }
-                    val presets = viz.presets.filter { it.name.lowercase().contains(q) }.take(20)
-                    if (presets.isNotEmpty()) {
-                        item { Text("Visual presets", style = MaterialTheme.typography.titleMedium) }
-                        items(presets) { p ->
+                    if (playlistResults.isNotEmpty()) {
+                        item { Text("Playlists (${playlistResults.size})", style = MaterialTheme.typography.titleMedium) }
+                        items(playlistResults) { pl ->
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.playPlaylist(pl.name)
+                                        onClose()
+                                    }.padding(vertical = 8.dp),
+                            ) {
+                                Text(pl.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    "${pl.trackUris.size} tracks",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                    if (presetResults.isNotEmpty()) {
+                        item { Text("Presets (${presetResults.size})", style = MaterialTheme.typography.titleMedium) }
+                        items(presetResults) { p ->
                             Text(
                                 p.name,
                                 Modifier
@@ -571,8 +676,14 @@ fun SearchScreen(
                             )
                         }
                     }
-                    if (tracks.isEmpty() && presets.isEmpty()) {
-                        item { Text("No results") }
+                    if (trackResults.isEmpty() && playlistResults.isEmpty() && presetResults.isEmpty()) {
+                        item {
+                            Text(
+                                "No results for “$debounced”",
+                                Modifier.padding(vertical = 16.dp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }

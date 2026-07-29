@@ -1,7 +1,9 @@
 package dev.musicviz.ui
 
 import android.app.Application
+import android.content.ContentUris
 import android.net.Uri
+import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -110,6 +112,16 @@ data class VizApply(
 data class MilkFile(
     val name: String,
     val path: String,
+)
+
+/** One row of the device music index (MediaStore). */
+data class DeviceTrack(
+    val uri: String,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val folder: String,
+    val durationMs: Long,
 )
 
 /** Music library + playlists + batch-analysis progress. */
@@ -1107,6 +1119,79 @@ class PlayerViewModel(
         val year: Int = 0,
         val trackNo: Int = 0,
     )
+
+    private val _deviceTracks = MutableStateFlow<List<DeviceTrack>>(emptyList())
+
+    /** Device music index (MediaStore); refreshed on demand from the UI. */
+    val deviceTracks: StateFlow<List<DeviceTrack>> = _deviceTracks
+
+    /**
+     * Re-queries the MediaStore device index on IO. Safe to call from any
+     * screen: without the audio permission it just publishes an empty list.
+     * (The query used to run synchronously inside LibraryScreen composition,
+     * janking the first frame of the Library tab on large collections.)
+     */
+    fun refreshDeviceTracks() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _deviceTracks.value = queryDeviceTracksBlocking()
+        }
+    }
+
+    /** Full MediaStore music query; call on Dispatchers.IO. */
+    private fun queryDeviceTracksBlocking(): List<DeviceTrack> {
+        val app = getApplication<Application>()
+        val permission =
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                android.Manifest.permission.READ_MEDIA_AUDIO
+            } else {
+                android.Manifest.permission.READ_EXTERNAL_STORAGE
+            }
+        val granted =
+            androidx.core.content.ContextCompat.checkSelfPermission(app, permission) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!granted) return emptyList()
+        val out = mutableListOf<DeviceTrack>()
+        val proj =
+            arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.ALBUM,
+                MediaStore.Audio.Media.DURATION,
+                MediaStore.Audio.Media.DATA,
+            )
+        runCatching {
+            app.contentResolver
+                .query(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    proj,
+                    "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+                    null,
+                    "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC",
+                )?.use { c ->
+                    val id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                    val ti = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                    val ar = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                    val al = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                    val du = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                    val da = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+                    while (c.moveToNext()) {
+                        val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, c.getLong(id))
+                        val path = c.getString(da).orEmpty()
+                        out +=
+                            DeviceTrack(
+                                uri = uri.toString(),
+                                title = c.getString(ti) ?: "Unknown",
+                                artist = c.getString(ar) ?: "Unknown artist",
+                                album = c.getString(al) ?: "Unknown album",
+                                folder = path.substringBeforeLast('/', ""),
+                                durationMs = c.getLong(du),
+                            )
+                    }
+                }
+        }
+        return out
+    }
 
     /**
      * Resolves tag metadata the way real media players do: embedded tags
