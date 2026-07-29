@@ -1,0 +1,34 @@
+name: Publish APK to branch
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Workflow run id whose musicviz-debug-apk artifact to publish"
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download APK artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download ${{ inputs.run_id }} -n musicviz-debug-apk -D apk-out -R ${{ github.repository }}
+
+      - name: Push APK to apk-drop branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd apk-out
+          git init -b apk-drop
+          git config user.email noreply@anthropic.com
+          git config user.name Claude
+          git add app-debug.apk
+          git commit -m "MusicViz debug APK from run ${{ inputs.run_id }}"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" apk-drop
