@@ -32,7 +32,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -203,6 +206,20 @@ class PlayerViewModel(
 
     private val _library = MutableStateFlow(LibraryState(trackLibrary.list(), musicPlaylists.list()))
     val library: StateFlow<LibraryState> = _library
+
+    /**
+     * App-side metadata overrides keyed by uri, derived from [library].
+     * Screens (and search) join device/MediaStore rows against this map;
+     * every [saveTrackInfo]/import/analysis pass bumps it.
+     */
+    val trackOverrides: StateFlow<Map<String, LibraryTrack>> =
+        _library
+            .map { st -> st.tracks.associateBy { it.uri } }
+            .stateIn(
+                viewModelScope,
+                SharingStarted.Eagerly,
+                _library.value.tracks.associateBy { it.uri },
+            )
 
     private val _theme = MutableStateFlow(themeStore.load())
     val theme: StateFlow<AppTheme> = _theme
@@ -821,22 +838,51 @@ class PlayerViewModel(
 
     // ---- Music library & playlists ----
 
+    /** Embedded-tag metadata read from a file; fields blank/zero when absent. */
+    private data class FileMeta(
+        val title: String,
+        val artist: String = "",
+        val album: String = "",
+        val genre: String = "",
+        val year: Int = 0,
+        val trackNo: Int = 0,
+    )
+
     /**
-     * Resolves (title, artist) the way real media players do: embedded tags
+     * Resolves tag metadata the way real media players do: embedded tags
      * first (MediaMetadataRetriever), then the provider's display name, and
      * only then the URI path - so content URIs never surface as bare
      * document numbers. Call on Dispatchers.IO; the retriever hits disk.
      */
-    private fun metadataFor(uri: Uri): Pair<String, String> {
+    private fun metadataFor(uri: Uri): FileMeta {
         val app = getApplication<Application>()
         var title: String? = null
         var artist: String? = null
+        var album = ""
+        var genre = ""
+        var year = 0
+        var trackNo = 0
         runCatching {
             val r = android.media.MediaMetadataRetriever()
             try {
                 r.setDataSource(app, uri)
-                title = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE)?.trim()?.ifBlank { null }
-                artist = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST)?.trim()?.ifBlank { null }
+
+                fun tag(key: Int): String? = r.extractMetadata(key)?.trim()?.ifBlank { null }
+                title = tag(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE)
+                artist = tag(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                album = tag(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: ""
+                genre = tag(android.media.MediaMetadataRetriever.METADATA_KEY_GENRE) ?: ""
+                // Year tags arrive as "1997" or full dates; track numbers as "3" or "3/12".
+                year =
+                    tag(android.media.MediaMetadataRetriever.METADATA_KEY_YEAR)
+                        ?.filter { it.isDigit() }
+                        ?.take(4)
+                        ?.toIntOrNull() ?: 0
+                trackNo =
+                    tag(android.media.MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
+                        ?.substringBefore('/')
+                        ?.trim()
+                        ?.toIntOrNull() ?: 0
             } finally {
                 runCatching { r.release() }
             }
@@ -849,10 +895,31 @@ class PlayerViewModel(
                         ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
                 }.getOrNull()?.substringBeforeLast('.')
         }
-        return (title ?: uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Track") to (artist ?: "")
+        return FileMeta(
+            title = title ?: uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Track",
+            artist = artist ?: "",
+            album = album,
+            genre = genre,
+            year = year,
+            trackNo = trackNo,
+        )
     }
 
-    private fun titleFor(uri: Uri): String = metadataFor(uri).first
+    private fun libraryTrackFor(
+        uriStr: String,
+        m: FileMeta,
+    ): LibraryTrack =
+        LibraryTrack(
+            uri = uriStr,
+            title = m.title,
+            artist = m.artist,
+            album = m.album,
+            genre = m.genre,
+            year = m.year,
+            trackNo = m.trackNo,
+        )
+
+    private fun titleFor(uri: Uri): String = metadataFor(uri).title
 
     /** Imports picked audio files into the library (persist read permission first). */
     fun importTracks(uris: List<Uri>) {
@@ -869,12 +936,44 @@ class PlayerViewModel(
                             android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
                         )
                     }
-                    metadataFor(uri).let { (t, a) ->
-                        LibraryTrack(uri = uri.toString(), title = t, artist = a)
-                    }
+                    libraryTrackFor(uri.toString(), metadataFor(uri))
                 }
             val merged = trackLibrary.addAll(tracks)
             _library.update { it.copy(tracks = merged) }
+        }
+    }
+
+    /** The stored library/override entry for [uri], if any (imported or user-edited). */
+    fun trackOverride(uri: String): LibraryTrack? = _library.value.tracks.firstOrNull { it.uri == uri }
+
+    /**
+     * Track-info-editor prefill: the stored override when one exists, else
+     * the file's embedded tags (retriever runs on IO).
+     */
+    suspend fun trackInfoFor(uriStr: String): LibraryTrack =
+        trackOverride(uriStr) ?: withContext(Dispatchers.IO) {
+            libraryTrackFor(uriStr, metadataFor(Uri.parse(uriStr)))
+        }
+
+    /**
+     * Saves user-edited track info into the app-side store. Upserts, so it
+     * works for MediaStore tracks that were never imported; the audio file
+     * itself is never modified. Publishing through [_library] (and thus
+     * [trackOverrides]) is what refreshes every observing screen.
+     */
+    fun saveTrackInfo(
+        uri: String,
+        title: String,
+        artist: String,
+        album: String,
+        genre: String,
+        year: Int,
+        trackNo: Int,
+        comment: String,
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val merged = trackLibrary.updateMetadata(uri, title, artist, album, genre, year, trackNo, comment)
+            withContext(Dispatchers.Main) { _library.update { it.copy(tracks = merged) } }
         }
     }
 
@@ -973,10 +1072,7 @@ class PlayerViewModel(
                             f.type?.startsWith("audio/") == true ||
                                 name.substringAfterLast('.', "").lowercase() in AUDIO_EXTS
                         if (isAudio) {
-                            found +=
-                                metadataFor(f.uri).let { (t, a) ->
-                                    LibraryTrack(uri = f.uri.toString(), title = t, artist = a)
-                                }
+                            found += libraryTrackFor(f.uri.toString(), metadataFor(f.uri))
                         }
                     }
                 }
