@@ -411,6 +411,7 @@ fun SettingsScreen(
         item {
             SettingsSection("Playback") {
                 PlaybackSettingsSection(viewModel)
+                EqualizerSettings(viewModel)
             }
         }
         item {
@@ -509,94 +510,6 @@ fun SettingsScreen(
                 }
             }
         }
-<<<<<<< HEAD
-=======
-        item {
-            Text("Corner style", style = MaterialTheme.typography.labelMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CornerStyle.entries.forEach { c ->
-                    OutlinedButton(onClick = { viewModel.setGuiPrefs(gui.copy(cornerStyle = c)) }) {
-                        Text((if (gui.cornerStyle == c) "● " else "") + c.name.lowercase())
-                    }
-                }
-            }
-        }
-        item { HorizontalDivider() }
-        item { Text("Paths", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
-        item {
-            val ctx = androidx.compose.ui.platform.LocalContext.current
-            val folderPicker =
-                rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-                    if (uri != null) {
-                        ctx.contentResolver.takePersistableUriPermission(
-                            uri,
-                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                                android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                        )
-                        viewModel.setGuiPrefs(gui.copy(presetMirrorUri = uri.toString()))
-                    }
-                }
-            Text(
-                if (gui.presetMirrorUri != null) "Preset folder: chosen — saves are mirrored there" else "Preset folder: internal only",
-                style = MaterialTheme.typography.labelMedium,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { folderPicker.launch(null) }) { Text("Choose preset folder") }
-                if (gui.presetMirrorUri != null) {
-                    TextButton(onClick = { viewModel.setGuiPrefs(gui.copy(presetMirrorUri = null)) }) { Text("Clear") }
-                }
-            }
-        }
-        item { HorizontalDivider() }
-        item { Text("Analysis", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
-        item {
-            val context = androidx.compose.ui.platform.LocalContext.current
-            var cacheInfo by remember { mutableStateOf("…") }
-            var cacheBump by remember { mutableIntStateOf(0) }
-            LaunchedEffect(cacheBump) {
-                cacheInfo =
-                    withContext(Dispatchers.IO) {
-                        val app = context.applicationContext
-                        val n =
-                            dev.musicviz.analysis.AnalysisCache
-                                .entryCount(app)
-                        val mb =
-                            dev.musicviz.analysis.AnalysisCache
-                                .sizeBytes(app) / (1024f * 1024f)
-                        "%d tracks · %.1f MB".format(n, mb)
-                    }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Analysis cache: $cacheInfo", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = {
-                    dev.musicviz.analysis.AnalysisCache
-                        .clear(context.applicationContext)
-                    cacheBump++
-                }) { Text("Clear") }
-            }
-            Text("Preset morph: ${gui.morphBeats} beats (0 = snap)")
-            Slider(
-                value = gui.morphBeats.toFloat(),
-                onValueChange = { viewModel.setGuiPrefs(gui.copy(morphBeats = it.toInt())) },
-                valueRange = 0f..16f,
-                steps = 15,
-            )
-            Text(
-                "Beat threshold  ${"%.1f".format(gui.beatThresholdSigma)}σ (higher = fewer beat flashes)",
-                style = MaterialTheme.typography.labelMedium,
-            )
-            Slider(
-                value = gui.beatThresholdSigma,
-                onValueChange = { viewModel.setGuiPrefs(gui.copy(beatThresholdSigma = it)) },
-                valueRange = 1.5f..4f,
-            )
-        }
-        item { EqualizerSettings(viewModel) }
-        item { HorizontalDivider() }
-        item {
-            Button(onClick = { showExport = true }) { Text("Export video…") }
-        }
->>>>>>> worktree-agent-a6910c5b4d6919959
     }
     if (showExport) {
         ExportHost(viewModel, visualizerView) { showExport = false }
