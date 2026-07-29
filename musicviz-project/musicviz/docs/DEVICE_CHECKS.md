@@ -62,3 +62,14 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
 15. Back button (v0.13.0 r22): system back collapses Now Playing, then
     closes Search, then pops a Library drill-in, then returns any tab to
     Home, and only exits from Home.
+16. Winter style + finger smear (v0.13.1 r23): Styles > Shaders > winter
+    (or apply "winter · Flurry"). Expect icy interference ripples, three
+    parallax snowfall layers (treble twinkles the flakes, beats ring the
+    ice), and voronoi frost glints. Drag a finger on the Now Playing
+    canvas: ripples, frost and snow must swirl along the drag (scene-side
+    uFlow smear + composite fluidWarp) and relax over ~2.5 s. The smear
+    must ALSO work: on any shader scene, on particle scenes (particles
+    ride the field), on MilkDrop/CurlFlow (composite warp), and on FLUID
+    (drags stir the sim AND paint palette ink) - all WITHOUT FlowField
+    enabled (touch-wake) and while music is paused. A plain tap must
+    still toggle the controls, never splat.

@@ -222,6 +222,40 @@ object BuiltInPresets {
         )
 
     /**
+     * Winter launch variant: the combined snow/ripple/frost style with the
+     * FlowField on, so finger smearing and the vector-field drift are live
+     * from the first tap (the style also smears via touch-wake without it).
+     */
+    private val WINTER_VARIANTS: List<Preset> =
+        listOf(
+            Preset(
+                name = "winter · Flurry",
+                sceneId = dev.musicviz.render.scene.SceneIds.WINTER,
+                attack = 0.5f,
+                decay = 0.12f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        palette = 9,
+                        palette2 = 4,
+                        paletteMix = 0.25f,
+                        speed = 0.8f,
+                        sway = 0.4f,
+                        audioDrive = 1.1f,
+                        beatResponse = 0.9f,
+                        saturation = 0.85f,
+                        brightness = 1.05f,
+                        bloom = 0.35f,
+                        vignette = 0.3f,
+                        flowEnabled = true,
+                        flowStrength = 0.55f,
+                        flowCurl = 30f,
+                        paramFadeSec = 1.0f,
+                    ),
+            ),
+        )
+
+    /**
      * The six fluid launch variants: strongly differentiated starting points
      * for the FLUID scene, each leaning on a different part of the system
      * (emitter pattern, particle layer, chromatic aging, look chain).
@@ -447,7 +481,7 @@ object BuiltInPresets {
                     params = look.params,
                 )
             }
-        } + FLUID_VARIANTS
+        } + WINTER_VARIANTS + FLUID_VARIANTS
 
     fun isBuiltIn(name: String): Boolean = name.contains(" · ")
 }

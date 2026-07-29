@@ -2,6 +2,7 @@ package dev.musicviz.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -74,6 +75,22 @@ fun VisualizerScreen(
             .background(Color.Black)
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { controlsVisible = !controlsVisible })
+            }.pointerInput(Unit) {
+                // Finger smear: drags stir the fluid velocity field, so the
+                // visuals can be mixed around by hand. Runs alongside the tap
+                // detector - a real tap never exceeds touch slop, so both
+                // gestures coexist.
+                detectDragGestures { change, _ ->
+                    val w = size.width.toFloat().coerceAtLeast(1f)
+                    val h = size.height.toFloat().coerceAtLeast(1f)
+                    visualizerView.visualizerRenderer.pointerSmear(
+                        change.previousPosition.x / w,
+                        change.previousPosition.y / h,
+                        change.position.x / w,
+                        change.position.y / h,
+                    )
+                    change.consume()
+                }
             },
     ) {
         AndroidView(factory = { visualizerView }, modifier = Modifier.fillMaxSize())

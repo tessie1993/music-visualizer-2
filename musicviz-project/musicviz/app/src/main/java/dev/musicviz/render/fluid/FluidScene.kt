@@ -63,6 +63,52 @@ internal class FluidScene(
         dyeSrc: String?,
     ) = sim.setInjectionShaders(forceSrc, dyeSrc)
 
+    /**
+     * Finger-smear injection: a drag segment in normalized view coords
+     * (y down) becomes a velocity+dye capsule splat, so touching the FLUID
+     * style both stirs the sim and paints ink in the current palette.
+     */
+    fun queueTouchSplat(
+        prevNx: Float,
+        prevNy: Float,
+        curNx: Float,
+        curNy: Float,
+    ) {
+        if (!sim.available) return
+        val a = sim.aspect
+
+        fun sx(n: Float) = (n * 2f - 1f) * a
+
+        fun sy(n: Float) = 1f - n * 2f
+        val px = sx(prevNx)
+        val py = sy(prevNy)
+        val cx = sx(curNx)
+        val cy = sy(curNy)
+        var vx = (cx - px) * 100f
+        var vy = (cy - py) * 100f
+        val len = kotlin.math.sqrt(vx * vx + vy * vy)
+        if (len > 30f) {
+            vx *= 30f / len
+            vy *= 30f / len
+        }
+        val hue = (params.paletteBase + time * 0.02f) % 1f
+        val (r, g, b) = emitters.hsv(hue, 0.7f, 1f)
+        sim.queueSplat(
+            FluidSim.Splat(
+                px,
+                py,
+                cx,
+                cy,
+                params.fluidSplatRadius.coerceIn(0.02f, 0.4f),
+                vx,
+                vy,
+                r * 0.6f,
+                g * 0.6f,
+                b * 0.6f,
+            ),
+        )
+    }
+
     override fun init() {
         sim.onShaderError = { onShaderError(it) }
         sim.create()

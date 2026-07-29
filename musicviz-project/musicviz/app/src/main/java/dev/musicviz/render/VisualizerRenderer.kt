@@ -41,6 +41,7 @@ class VisualizerRenderer(
         /** Fragment-shader scenes: id -> raw resource. Order = UI order. */
         val SHADER_SCENES: Map<String, Int> =
             linkedMapOf(
+                SceneIds.WINTER to R.raw.winter_frag,
                 SceneIds.JULIA to R.raw.julia_frag,
                 SceneIds.TUNNEL to R.raw.tunnel_frag,
                 SceneIds.MANDEL to R.raw.mandel_frag,
@@ -64,6 +65,11 @@ class VisualizerRenderer(
             )
         val PARTICLE_SCENES: List<String> =
             listOf(SceneIds.NEBULA, SceneIds.BURSTS, SceneIds.SWARM, SceneIds.FOUNTAIN, SceneIds.ORBITS)
+
+        /** How long a finger smear keeps the flow pipeline awake, and the
+         *  minimum composite/uFlow warp strength while it is. */
+        private const val TOUCH_WAKE_MS = 2500L
+        private const val TOUCH_FLOW_STRENGTH = 0.55f
     }
 
     @Volatile
@@ -230,6 +236,36 @@ class VisualizerRenderer(
     /** F7 FlowField service + the 1x1 zero texture bound when it's off. */
     private var flowField: dev.musicviz.render.fluid.FlowField? = null
     private var zeroTex = 0
+
+    /** Finger-smear drag segment in normalized view coords (y down). */
+    private class PointerSegment(
+        val prevX: Float,
+        val prevY: Float,
+        val curX: Float,
+        val curY: Float,
+    )
+
+    private val pendingPointer = java.util.concurrent.ConcurrentLinkedQueue<PointerSegment>()
+
+    /** While a finger smeared recently, the flow pipeline runs even with
+     *  FlowField disabled so every style can be mixed around by touch. */
+    @Volatile
+    private var touchWakeUntilMs = 0L
+
+    /**
+     * Queues a finger-smear segment (normalized [0,1] view coords, y down);
+     * safe from the UI thread. Splats velocity into the FLUID scene's own
+     * sim when that scene is active, the shared FlowField otherwise.
+     */
+    fun pointerSmear(
+        prevX: Float,
+        prevY: Float,
+        curX: Float,
+        curY: Float,
+    ) {
+        pendingPointer.add(PointerSegment(prevX, prevY, curX, curY))
+        touchWakeUntilMs = SystemClock.elapsedRealtime() + TOUCH_WAKE_MS
+    }
 
     /** Fresh mono PCM for projectM; set by the UI wiring. */
     @Volatile
@@ -558,9 +594,28 @@ class VisualizerRenderer(
         // F7 FlowField: advance the shared velocity field (its own tiny FBOs)
         // before any scene target is bound. When the FLUID scene is active
         // its own field is reused instead - never both (one source of truth).
+        // A recent finger smear wakes the pipeline even with FlowField off,
+        // and guarantees a visible warp strength while it lasts - so "drag
+        // to mix it up" works out of the box on every style.
         val ff = flowField
         val fluidActive = scene is dev.musicviz.render.fluid.FluidScene
-        if (p.flowEnabled && ff != null && ff.available && !fluidActive) {
+        val touchActive = now < touchWakeUntilMs
+        val flowActive = p.flowEnabled || touchActive
+        val effFlowStrength =
+            if (touchActive) maxOf(p.flowStrength, TOUCH_FLOW_STRENGTH) else p.flowStrength
+        // Finger splats go to whichever velocity field is live this frame.
+        if (pendingPointer.isNotEmpty()) {
+            val fluidScene = scene as? dev.musicviz.render.fluid.FluidScene
+            while (true) {
+                val seg = pendingPointer.poll() ?: break
+                if (fluidScene != null && fluidScene.simAvailable) {
+                    fluidScene.queueTouchSplat(seg.prevX, seg.prevY, seg.curX, seg.curY)
+                } else if (ff != null && ff.available) {
+                    ff.queueTouchSplat(seg.prevX, seg.prevY, seg.curX, seg.curY)
+                }
+            }
+        }
+        if (flowActive && ff != null && ff.available && !fluidActive) {
             ff.step(gainAdjusted(features, p), dt, p)
         }
         fboA.ensure(renderWidth, renderHeight)
@@ -606,7 +661,7 @@ class VisualizerRenderer(
         }
         // FlowField consumers on the active scene: CPU grid for particle
         // scenes (16x16 readback), uFlow sampler for shader scenes.
-        if (p.flowEnabled && ff != null) {
+        if (flowActive && ff != null) {
             if (scene is ParticleSceneBase && p.flowAdvectParticles && ff.available) {
                 ff.readback(ff.velocityTex, ff.flowScale, ff.aspect)
                 scene.flowGrid = ff.cpuGrid
@@ -614,7 +669,7 @@ class VisualizerRenderer(
                 scene.flowGrid = null
             }
             if (scene is ShaderScene) {
-                scene.setFlow(if (ff.available) ff.velocityTex else zeroTex, p.flowStrength)
+                scene.setFlow(if (ff.available) ff.velocityTex else zeroTex, effFlowStrength)
             }
         } else {
             (scene as? ParticleSceneBase)?.flowGrid = null
@@ -640,14 +695,14 @@ class VisualizerRenderer(
         // FlowField service; a 1x1 zero texture keeps the sampler valid off.
         var flowTex = zeroTex
         var flowStrength = 0f
-        if (p.flowEnabled) {
+        if (flowActive) {
             val fluidScene = scene as? dev.musicviz.render.fluid.FluidScene
             if (fluidScene != null && fluidScene.simAvailable) {
                 flowTex = fluidScene.velocityTexture
-                flowStrength = p.flowStrength
+                flowStrength = effFlowStrength
             } else if (ff != null && ff.available) {
                 flowTex = ff.velocityTex
-                flowStrength = p.flowStrength
+                flowStrength = effFlowStrength
             }
         }
         GLES30.glActiveTexture(GLES30.GL_TEXTURE2)

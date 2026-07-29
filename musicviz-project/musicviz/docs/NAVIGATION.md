@@ -51,6 +51,9 @@ APP SHELL (Scaffold)
 │
 └── NOW PLAYING overlay (VisualizerScreen, fullscreen canvas)
     ├── tap canvas: hide/show controls
+    ├── drag canvas: finger smear — stirs the fluid velocity field so any
+    │   style mixes around under the finger (FLUID also paints ink);
+    │   works with FlowField off via a ~2.5 s touch-wake
     ├── collapse chip · title/artist
     ├── transport card: seek · shuffle/prev/play/next/repeat
     └── [Visuals] (> hub) · [Auto: off/random/smart]

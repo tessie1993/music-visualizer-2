@@ -6,6 +6,7 @@ import dev.musicviz.R
 import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.render.scene.GlUtil
 import dev.musicviz.render.scene.SceneParams
+import kotlin.math.sqrt
 
 /**
  * F7 FlowField service per FLUID_SIM v2 section 12: a stripped, velocity-only
@@ -202,6 +203,41 @@ internal class FlowField(
         val simDt = dt.coerceIn(0f, 1f / 30f)
         for (s in emitters.tick(features, simDt, sim.aspect, 0f, 1f)) sim.queueSplat(s)
         sim.step(simDt)
+    }
+
+    /**
+     * Finger-smear injection: converts a drag segment in normalized view
+     * coords (y down) into a velocity capsule splat, so touch stirs the
+     * shared field that warps/advects every style. Velocity-only sim: the
+     * dye color is ignored.
+     */
+    fun queueTouchSplat(
+        prevNx: Float,
+        prevNy: Float,
+        curNx: Float,
+        curNy: Float,
+    ) {
+        if (!sim.available) return
+        val a = sim.aspect
+
+        fun sx(n: Float) = (n * 2f - 1f) * a
+
+        fun sy(n: Float) = 1f - n * 2f
+        val px = sx(prevNx)
+        val py = sy(prevNy)
+        val cx = sx(curNx)
+        val cy = sy(curNy)
+        // Grid-velocity target from the drag delta; clamped to the same
+        // ballpark as the strongest audio emitters so a fast fling swirls
+        // hard without tearing the field.
+        var vx = (cx - px) * 100f
+        var vy = (cy - py) * 100f
+        val len = sqrt(vx * vx + vy * vy)
+        if (len > 30f) {
+            vx *= 30f / len
+            vy *= 30f / len
+        }
+        sim.queueSplat(FluidSim.Splat(px, py, cx, cy, 0.14f, vx, vy, 0f, 0f, 0f))
     }
 
     /**
