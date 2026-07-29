@@ -3,6 +3,7 @@ package dev.musicviz.ui
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -145,7 +147,11 @@ fun AppRoot(
             )
         }
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            // Crystal stone texture behind every screen; the Scaffold above
+            // it is transparent so the glass chrome reads against it.
+            CrystalBackground(effectiveTheme, Modifier.fillMaxSize())
             Scaffold(
+                containerColor = androidx.compose.ui.graphics.Color.Transparent,
                 topBar = {
                     // hasMedia guard: an empty statusBarsPadding box would
                     // still reserve inset height with nothing playing.
@@ -259,7 +265,7 @@ private fun MiniPlayer(
     Column(
         Modifier
             .fillMaxWidth()
-            .glassPanel(barOpacity, MaterialTheme.colorScheme.surfaceVariant)
+            .glassPanel(barOpacity, MaterialTheme.colorScheme.surfaceVariant, glow = MaterialTheme.colorScheme.primary)
             .clickable(onClick = onExpand),
     ) {
         Row(
@@ -416,10 +422,22 @@ fun SettingsScreen(
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(AppTheme.entries.toList()) { t ->
                         val sel = t == appTheme
-                        Card(onClick = { viewModel.setTheme(t) }) {
+                        Card(
+                            onClick = { viewModel.setTheme(t) },
+                            colors =
+                                CardDefaults.cardColors(
+                                    containerColor =
+                                        if (sel) {
+                                            MaterialTheme.colorScheme.primaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceContainerHigh
+                                        },
+                                ),
+                            border = if (sel) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+                        ) {
                             Text(
-                                (if (sel) "● " else "") + t.label,
-                                Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                t.label,
+                                Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }

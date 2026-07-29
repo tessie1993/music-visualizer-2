@@ -95,6 +95,42 @@ enum class AppTheme(
         }
 
     /**
+     * Bright edge-glow accent used by the crystal background and luminous
+     * glass strokes. Crystal themes use the mockup glow swatch; legacy
+     * themes derive one by lifting primary halfway to white.
+     */
+    fun glowArgb(): Int =
+        when (this) {
+            LAPIS -> 0xFF8CA6FF.toInt()
+            MALACHITE -> 0xFF2CFFE1.toInt()
+            CLEAR_QUARTZ -> 0xFFF7FAFF.toInt()
+            ROSE_QUARTZ -> 0xFFF7E6EA.toInt()
+            SUGILITE -> 0xFFD786FF.toInt()
+            AMETHYST -> 0xFFF2F0FF.toInt()
+            KYANITE -> 0xFFD0E6FF.toInt()
+            ONYX -> 0xFFA7B7D1.toInt()
+            else -> ColorDerive.lerpArgb(anchors().primary, 0xFFFFFFFF.toInt(), 0.5f)
+        }
+
+    /**
+     * Mineral vein/texture color for the background: pyrite gold on Lapis,
+     * jade banding on Malachite, orchid on Amethyst, and so on. Legacy
+     * themes fall back to their secondary anchor.
+     */
+    fun veinArgb(): Int =
+        when (this) {
+            LAPIS -> 0xFFD6B15A.toInt()
+            MALACHITE -> 0xFF10A3A3.toInt()
+            CLEAR_QUARTZ -> 0xFFBECDDE.toInt()
+            ROSE_QUARTZ -> 0xFFC9B6E0.toInt()
+            SUGILITE -> 0xFFFF5CF7.toInt()
+            AMETHYST -> 0xFFDB8AFE.toInt()
+            KYANITE -> 0xFF7CABFF.toInt()
+            ONYX -> 0xFFE6E9ED.toInt()
+            else -> anchors().secondary
+        }
+
+    /**
      * Builds the full color scheme. [accentIntensity] (0.5..1.5) scales the
      * saturation of primary/secondary/tertiary; [backgroundDim] (0..0.6)
      * darkens background and surfaces. Both default to identity.
