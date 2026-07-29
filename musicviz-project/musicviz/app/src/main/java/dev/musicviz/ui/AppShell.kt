@@ -649,9 +649,8 @@ fun SearchScreen(
                         SearchTrackRow(
                             uri = t.uri,
                             title = t.title,
-                            subtitle = t.artist,
-                            // join richer metadata fields here when available
-                            fields = listOf(t.title, t.artist),
+                            subtitle = listOf(t.artist, t.album).filter { it.isNotBlank() }.joinToString(" · "),
+                            fields = listOf(t.title, t.artist, t.album, t.genre),
                             fromDevice = false,
                         )
                     }
