@@ -2,6 +2,7 @@ package dev.musicviz.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -45,6 +48,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.Player
+import dev.musicviz.analysis.AudioQualityInfo
 import dev.musicviz.render.VisualizerView
 
 /**
@@ -64,7 +68,9 @@ fun VisualizerScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val autoMode by viewModel.autoMode.collectAsState()
+    val audioQuality by viewModel.audioQuality.collectAsState()
     var controlsVisible by remember { mutableStateOf(true) }
+    var qualityExpanded by remember { mutableStateOf(false) }
 
     BackHandler { onCollapse() }
 
@@ -103,6 +109,13 @@ fun VisualizerScreen(
                             style = MaterialTheme.typography.labelSmall,
                             color = Color.White.copy(alpha = 0.7f),
                             maxLines = 1,
+                        )
+                    }
+                    audioQuality?.let { q ->
+                        AudioQualityRow(
+                            quality = q,
+                            expanded = qualityExpanded,
+                            onToggle = { qualityExpanded = !qualityExpanded },
                         )
                     }
                 }
@@ -215,4 +228,97 @@ fun VisualizerScreen(
 private fun formatTime(ms: Long): String {
     val total = (ms / 1000).coerceAtLeast(0)
     return "%d:%02d".format(total / 60, total % 60)
+}
+
+/**
+ * Audio-quality readout under the artist line: a colored badge (green for
+ * lossless/bit-perfect, amber for lossy) plus the one-line format summary.
+ * Tapping toggles an expanded detail card explaining the playback path.
+ */
+@Composable
+private fun AudioQualityRow(
+    quality: AudioQualityInfo,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    Column(Modifier.clickable(onClick = onToggle)) {
+        Row(
+            Modifier.padding(top = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            val badge =
+                when {
+                    quality.isBitPerfect -> "BIT-PERFECT"
+                    quality.lossless -> "LOSSLESS"
+                    else -> "LOSSY"
+                }
+            val badgeColor = if (quality.lossless) Color(0xFF2E7D32) else Color(0xFFB8860B)
+            Text(
+                badge,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White,
+                maxLines = 1,
+                modifier =
+                    Modifier
+                        .background(badgeColor, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
+            )
+            Text(
+                quality.qualityLine(),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.7f),
+                maxLines = 1,
+            )
+        }
+        if (expanded) {
+            Card(
+                modifier =
+                    Modifier
+                        .padding(top = 6.dp)
+                        .widthIn(max = 320.dp),
+                colors =
+                    CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+                    ),
+            ) {
+                Column(
+                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(quality.label(), style = MaterialTheme.typography.labelMedium)
+                    Text("Codec: ${quality.codec}", style = MaterialTheme.typography.labelSmall)
+                    if (quality.container.isNotEmpty()) {
+                        Text("Container: .${quality.container}", style = MaterialTheme.typography.labelSmall)
+                    }
+                    val src =
+                        buildList {
+                            if (quality.sourceSampleRateHz > 0) add(AudioQualityInfo.formatKhz(quality.sourceSampleRateHz))
+                            if (quality.bitDepth > 0) add("${quality.bitDepth}-bit")
+                            if (quality.sourceChannels > 0) add("${quality.sourceChannels}ch")
+                        }
+                    if (src.isNotEmpty()) {
+                        Text("Source: ${src.joinToString(" · ")}", style = MaterialTheme.typography.labelSmall)
+                    }
+                    if (quality.bitrateBps > 0) {
+                        Text("Bitrate: ${quality.bitrateBps / 1000} kbps", style = MaterialTheme.typography.labelSmall)
+                    }
+                    if (quality.outputSampleRateHz > 0) {
+                        // The tap forwards only 16-bit or float PCM, so the
+                        // non-float case is always 16-bit here.
+                        val out =
+                            AudioQualityInfo.formatKhz(quality.outputSampleRateHz) +
+                                (if (quality.outputChannels > 0) " · ${quality.outputChannels}ch" else "") +
+                                (if (quality.outputFloat) " · float PCM" else " · 16-bit PCM")
+                        Text("Output: $out", style = MaterialTheme.typography.labelSmall)
+                    }
+                    Text(
+                        quality.explanation(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
 }
