@@ -68,3 +68,10 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     never drops below ~25% opacity; the Search overlay stays near-opaque
     (>= 85%) regardless of the slider. On the LIGHT/PAPER themes the
     Now Playing header text must remain readable (onSurface, not white).
+17. Appearance (0.13.x): in Settings, every slider/selector must visibly
+    change the UI immediately, no navigation needed — theme cards recolor
+    all surfaces, Accent intensity mutes/vivifies primary accents,
+    Background dim darkens surfaces, Corner style reshapes cards/buttons
+    (sharp/rounded/pill), Compact mini-player slims the bar, player
+    position Top/Bottom moves the bar, and "Follow system light/dark"
+    swaps to the LIGHT theme when the OS is in light mode.

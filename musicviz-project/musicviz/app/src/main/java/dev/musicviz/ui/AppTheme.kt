@@ -1,15 +1,32 @@
 package dev.musicviz.ui
 
 import android.content.Context
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+
+/** Four anchor colors per theme; every other Material role is derived. */
+private data class Anchors(
+    val primary: Int,
+    val secondary: Int,
+    val background: Int,
+    val surface: Int,
+    val light: Boolean = false,
+)
 
 /**
  * Selectable app themes. Each maps to a Material 3 [ColorScheme]. The
  * visualizer canvas fills the screen behind the controls, so themes mostly
  * affect the control surfaces, dialogs, sliders and accent colors.
+ *
+ * Each theme defines only four anchor colors; containers, surfaces, outline
+ * and tertiary are derived in [colorScheme] by lerping the anchors toward
+ * background/white so every variant keeps its character without hand-picking
+ * dozens of values.
  */
 enum class AppTheme(
     val label: String,
@@ -34,135 +51,77 @@ enum class AppTheme(
     PAPER("Paper"),
     ;
 
-    fun colorScheme(): ColorScheme =
+    private fun anchors(): Anchors =
         when (this) {
-            MIDNIGHT ->
-                darkColorScheme(
-                    primary = Color(0xFF7C9CFF),
-                    secondary = Color(0xFF9DA8C7),
-                    background = Color(0xFF05060B),
-                    surface = Color(0xFF0F1320),
-                )
-            NEON ->
-                darkColorScheme(
-                    primary = Color(0xFF00E5FF),
-                    secondary = Color(0xFFFF3DDA),
-                    background = Color(0xFF04060A),
-                    surface = Color(0xFF10131C),
-                )
-            SUNSET ->
-                darkColorScheme(
-                    primary = Color(0xFFFF9E57),
-                    secondary = Color(0xFFFF5E7E),
-                    background = Color(0xFF120A0A),
-                    surface = Color(0xFF201412),
-                )
-            FOREST ->
-                darkColorScheme(
-                    primary = Color(0xFF67D982),
-                    secondary = Color(0xFFB6D96A),
-                    background = Color(0xFF060D0A),
-                    surface = Color(0xFF101B15),
-                )
-            MONO ->
-                darkColorScheme(
-                    primary = Color(0xFFE0E0E0),
-                    secondary = Color(0xFFBDBDBD),
-                    background = Color(0xFF000000),
-                    surface = Color(0xFF141414),
-                )
-            OCEAN ->
-                darkColorScheme(
-                    primary = Color(0xFF4DD6C1),
-                    secondary = Color(0xFF5AA7E8),
-                    background = Color(0xFF03090C),
-                    surface = Color(0xFF0B1A20),
-                )
-            VIOLET ->
-                darkColorScheme(
-                    primary = Color(0xFFB388FF),
-                    secondary = Color(0xFFEA80FC),
-                    background = Color(0xFF0A0612),
-                    surface = Color(0xFF171024),
-                )
-            EMBER ->
-                darkColorScheme(
-                    primary = Color(0xFFFF6E40),
-                    secondary = Color(0xFFFFC13D),
-                    background = Color(0xFF0F0605),
-                    surface = Color(0xFF1E100C),
-                )
-            CANDY ->
-                darkColorScheme(
-                    primary = Color(0xFFFF80AB),
-                    secondary = Color(0xFF82B1FF),
-                    background = Color(0xFF0C060B),
-                    surface = Color(0xFF1D1120),
-                )
-            SLATE ->
-                darkColorScheme(
-                    primary = Color(0xFF90A4AE),
-                    secondary = Color(0xFF78909C),
-                    background = Color(0xFF090B0D),
-                    surface = Color(0xFF14181B),
-                )
-            ROSE ->
-                darkColorScheme(
-                    primary = Color(0xFFFF7BA9),
-                    secondary = Color(0xFFFFB7CE),
-                    background = Color(0xFF120609),
-                    surface = Color(0xFF221016),
-                )
-            MINT ->
-                darkColorScheme(
-                    primary = Color(0xFF5FE8B8),
-                    secondary = Color(0xFFA8F2D5),
-                    background = Color(0xFF04100B),
-                    surface = Color(0xFF0E1F17),
-                )
-            COBALT ->
-                darkColorScheme(
-                    primary = Color(0xFF4D7CFE),
-                    secondary = Color(0xFF8FB0FF),
-                    background = Color(0xFF040816),
-                    surface = Color(0xFF0D1530),
-                )
-            SAND ->
-                darkColorScheme(
-                    primary = Color(0xFFE8C572),
-                    secondary = Color(0xFFD9B08C),
-                    background = Color(0xFF12100A),
-                    surface = Color(0xFF211D12),
-                )
-            GRAPE ->
-                darkColorScheme(
-                    primary = Color(0xFFB07BFF),
-                    secondary = Color(0xFFD3B4FF),
-                    background = Color(0xFF0C0614),
-                    surface = Color(0xFF1A1026),
-                )
-            INK ->
-                darkColorScheme(
-                    primary = Color(0xFF9FB6C6),
-                    secondary = Color(0xFF6E8494),
-                    background = Color(0xFF000305),
-                    surface = Color(0xFF0A0F14),
-                )
-            LIGHT ->
-                lightColorScheme(
-                    primary = Color(0xFF3355DD),
-                    secondary = Color(0xFF5C6BC0),
-                    background = Color(0xFFF6F7FB),
-                    surface = Color(0xFFFFFFFF),
-                )
-            PAPER ->
-                lightColorScheme(
-                    primary = Color(0xFF8D6E63),
-                    secondary = Color(0xFFA1887F),
-                    background = Color(0xFFFAF6EF),
-                    surface = Color(0xFFFFFDF8),
-                )
+            MIDNIGHT -> Anchors(0xFF7C9CFF.toInt(), 0xFF9DA8C7.toInt(), 0xFF05060B.toInt(), 0xFF0F1320.toInt())
+            NEON -> Anchors(0xFF00E5FF.toInt(), 0xFFFF3DDA.toInt(), 0xFF04060A.toInt(), 0xFF10131C.toInt())
+            SUNSET -> Anchors(0xFFFF9E57.toInt(), 0xFFFF5E7E.toInt(), 0xFF120A0A.toInt(), 0xFF201412.toInt())
+            FOREST -> Anchors(0xFF67D982.toInt(), 0xFFB6D96A.toInt(), 0xFF060D0A.toInt(), 0xFF101B15.toInt())
+            MONO -> Anchors(0xFFE0E0E0.toInt(), 0xFFBDBDBD.toInt(), 0xFF000000.toInt(), 0xFF141414.toInt())
+            OCEAN -> Anchors(0xFF4DD6C1.toInt(), 0xFF5AA7E8.toInt(), 0xFF03090C.toInt(), 0xFF0B1A20.toInt())
+            VIOLET -> Anchors(0xFFB388FF.toInt(), 0xFFEA80FC.toInt(), 0xFF0A0612.toInt(), 0xFF171024.toInt())
+            EMBER -> Anchors(0xFFFF6E40.toInt(), 0xFFFFC13D.toInt(), 0xFF0F0605.toInt(), 0xFF1E100C.toInt())
+            CANDY -> Anchors(0xFFFF80AB.toInt(), 0xFF82B1FF.toInt(), 0xFF0C060B.toInt(), 0xFF1D1120.toInt())
+            SLATE -> Anchors(0xFF90A4AE.toInt(), 0xFF78909C.toInt(), 0xFF090B0D.toInt(), 0xFF14181B.toInt())
+            ROSE -> Anchors(0xFFFF7BA9.toInt(), 0xFFFFB7CE.toInt(), 0xFF120609.toInt(), 0xFF221016.toInt())
+            MINT -> Anchors(0xFF5FE8B8.toInt(), 0xFFA8F2D5.toInt(), 0xFF04100B.toInt(), 0xFF0E1F17.toInt())
+            COBALT -> Anchors(0xFF4D7CFE.toInt(), 0xFF8FB0FF.toInt(), 0xFF040816.toInt(), 0xFF0D1530.toInt())
+            SAND -> Anchors(0xFFE8C572.toInt(), 0xFFD9B08C.toInt(), 0xFF12100A.toInt(), 0xFF211D12.toInt())
+            GRAPE -> Anchors(0xFFB07BFF.toInt(), 0xFFD3B4FF.toInt(), 0xFF0C0614.toInt(), 0xFF1A1026.toInt())
+            INK -> Anchors(0xFF9FB6C6.toInt(), 0xFF6E8494.toInt(), 0xFF000305.toInt(), 0xFF0A0F14.toInt())
+            LIGHT -> Anchors(0xFF3355DD.toInt(), 0xFF5C6BC0.toInt(), 0xFFF6F7FB.toInt(), 0xFFFFFFFF.toInt(), light = true)
+            PAPER -> Anchors(0xFF8D6E63.toInt(), 0xFFA1887F.toInt(), 0xFFFAF6EF.toInt(), 0xFFFFFDF8.toInt(), light = true)
         }
+
+    /**
+     * Builds the full color scheme. [accentIntensity] (0.5..1.5) scales the
+     * saturation of primary/secondary/tertiary; [backgroundDim] (0..0.6)
+     * darkens background and surfaces. Both default to identity.
+     */
+    fun colorScheme(
+        accentIntensity: Float = 1f,
+        backgroundDim: Float = 0f,
+    ): ColorScheme {
+        val a = anchors()
+        val white = 0xFFFFFFFF.toInt()
+        val black = 0xFF000000.toInt()
+        val primary = ColorDerive.scaleSaturation(a.primary, accentIntensity)
+        val secondary = ColorDerive.scaleSaturation(a.secondary, accentIntensity)
+        val tertiary = ColorDerive.lerpArgb(primary, secondary, 0.5f)
+        val background = ColorDerive.dim(a.background, backgroundDim)
+        val surface = ColorDerive.dim(a.surface, backgroundDim)
+        return if (a.light) {
+            lightColorScheme(
+                primary = Color(primary),
+                secondary = Color(secondary),
+                tertiary = Color(tertiary),
+                background = Color(background),
+                surface = Color(surface),
+                surfaceVariant = Color(ColorDerive.lerpArgb(surface, primary, 0.06f)),
+                surfaceContainer = Color(ColorDerive.lerpArgb(surface, primary, 0.04f)),
+                surfaceContainerHigh = Color(ColorDerive.lerpArgb(surface, primary, 0.08f)),
+                primaryContainer = Color(ColorDerive.lerpArgb(primary, white, 0.8f)),
+                onPrimaryContainer = Color(ColorDerive.lerpArgb(primary, black, 0.55f)),
+                secondaryContainer = Color(ColorDerive.lerpArgb(secondary, white, 0.8f)),
+                outline = Color(ColorDerive.lerpArgb(secondary, surface, 0.35f)),
+            )
+        } else {
+            darkColorScheme(
+                primary = Color(primary),
+                secondary = Color(secondary),
+                tertiary = Color(tertiary),
+                background = Color(background),
+                surface = Color(surface),
+                surfaceVariant = Color(ColorDerive.lerpArgb(surface, primary, 0.10f)),
+                surfaceContainer = Color(ColorDerive.lerpArgb(surface, white, 0.04f)),
+                surfaceContainerHigh = Color(ColorDerive.lerpArgb(surface, white, 0.08f)),
+                primaryContainer = Color(ColorDerive.lerpArgb(primary, background, 0.65f)),
+                onPrimaryContainer = Color(ColorDerive.lerpArgb(primary, white, 0.75f)),
+                secondaryContainer = Color(ColorDerive.lerpArgb(secondary, background, 0.65f)),
+                outline = Color(ColorDerive.lerpArgb(secondary, surface, 0.45f)),
+            )
+        }
+    }
 }
 
 /** Where the music player bar sits on screen; controls sit on the other side. */
@@ -182,6 +141,28 @@ enum class CornerStyle(
     PILL("Pill"),
 }
 
+/** Maps the corner style to Material [Shapes] applied at the theme root. */
+fun CornerStyle.shapes(): Shapes =
+    when (this) {
+        CornerStyle.SHARP ->
+            Shapes(
+                extraSmall = RoundedCornerShape(0.dp),
+                small = RoundedCornerShape(0.dp),
+                medium = RoundedCornerShape(0.dp),
+                large = RoundedCornerShape(0.dp),
+                extraLarge = RoundedCornerShape(0.dp),
+            )
+        CornerStyle.ROUNDED -> Shapes()
+        CornerStyle.PILL ->
+            Shapes(
+                extraSmall = RoundedCornerShape(12.dp),
+                small = RoundedCornerShape(16.dp),
+                medium = RoundedCornerShape(24.dp),
+                large = RoundedCornerShape(28.dp),
+                extraLarge = RoundedCornerShape(32.dp),
+            )
+    }
+
 /** GUI layout/appearance preferences beyond the color theme. */
 data class GuiPrefs(
     val playerPosition: PlayerPosition = PlayerPosition.BOTTOM,
@@ -193,6 +174,14 @@ data class GuiPrefs(
     val presetMirrorUri: String? = null,
     /** Preset morphing: params interpolate over this many beats on apply (0 = snap). */
     val morphBeats: Int = 4,
+    /** Scales primary/secondary saturation (0.5 muted .. 1.5 vivid). */
+    val accentIntensity: Float = 1f,
+    /** Darkens background/surface colors (0 = off .. 0.6). */
+    val backgroundDim: Float = 0f,
+    /** Slimmer mini-player bar. */
+    val compactPlayer: Boolean = false,
+    /** When the system is in light mode, switch to the LIGHT theme automatically. */
+    val followSystemDark: Boolean = false,
 )
 
 /** Persists the chosen [AppTheme] in shared preferences. */
@@ -221,6 +210,10 @@ class ThemeStore(
             beatThresholdSigma = prefs.getFloat("beat_sigma", 2.5f),
             presetMirrorUri = prefs.getString("preset_mirror_uri", null),
             morphBeats = prefs.getInt("morph_beats", 4),
+            accentIntensity = prefs.getFloat(KEY_ACCENT, 1f),
+            backgroundDim = prefs.getFloat(KEY_DIM, 0f),
+            compactPlayer = prefs.getBoolean(KEY_COMPACT, false),
+            followSystemDark = prefs.getBoolean(KEY_FOLLOW_DARK, false),
         )
 
     fun saveGui(gui: GuiPrefs) {
@@ -232,6 +225,10 @@ class ThemeStore(
             .putFloat("beat_sigma", gui.beatThresholdSigma)
             .putString("preset_mirror_uri", gui.presetMirrorUri)
             .putInt("morph_beats", gui.morphBeats)
+            .putFloat(KEY_ACCENT, gui.accentIntensity)
+            .putFloat(KEY_DIM, gui.backgroundDim)
+            .putBoolean(KEY_COMPACT, gui.compactPlayer)
+            .putBoolean(KEY_FOLLOW_DARK, gui.followSystemDark)
             .apply()
     }
 
@@ -240,5 +237,9 @@ class ThemeStore(
         const val KEY_POS = "gui_player_pos"
         const val KEY_CORNER = "gui_corner"
         const val KEY_OPACITY = "gui_opacity"
+        const val KEY_ACCENT = "gui_accent_intensity"
+        const val KEY_DIM = "gui_background_dim"
+        const val KEY_COMPACT = "gui_compact_player"
+        const val KEY_FOLLOW_DARK = "gui_follow_system_dark"
     }
 }

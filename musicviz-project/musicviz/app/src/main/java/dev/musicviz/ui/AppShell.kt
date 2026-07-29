@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -43,6 +45,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -81,11 +84,15 @@ fun AppRoot(
     val context = LocalContext.current
     val visualizerView = remember { VisualizerView(context) }
     val appTheme by viewModel.theme.collectAsState()
+    val gui by viewModel.guiPrefs.collectAsState()
+    val systemDark = isSystemInDarkTheme()
+    // Follow-system-dark: when the OS is in light mode, swap to the LIGHT
+    // theme; otherwise keep the user's picked theme.
+    val effectiveTheme = if (gui.followSystemDark && !systemDark) AppTheme.LIGHT else appTheme
     var dest by rememberSaveable { mutableStateOf(0) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     val state by viewModel.uiState.collectAsState()
-    val gui by viewModel.guiPrefs.collectAsState()
 
     var crashText by remember {
         mutableStateOf(
@@ -102,30 +109,44 @@ fun AppRoot(
     // the last-composed enabled handler, unwinding overlays in the right
     // order: visualizer > search > drill-in > tab > exit.
     androidx.activity.compose.BackHandler(enabled = dest != 0) { dest = 0 }
-    MaterialTheme(colorScheme = appTheme.colorScheme()) {
+    MaterialTheme(
+        colorScheme = effectiveTheme.colorScheme(gui.accentIntensity, gui.backgroundDim),
+        shapes = gui.cornerStyle.shapes(),
+    ) {
+        val miniPlayer: @Composable () -> Unit = {
+            MiniPlayer(
+                title =
+                    listOfNotNull(
+                        state.title,
+                        state.artist?.takeIf { it.isNotBlank() },
+                    ).joinToString(" \u2014 ").ifBlank { null },
+                isPlaying = state.isPlaying,
+                hasMedia = state.hasMedia,
+                progress =
+                    if (state.durationMs > 0) {
+                        state.positionMs / state.durationMs.toFloat()
+                    } else {
+                        0f
+                    },
+                compact = gui.compactPlayer,
+                barOpacity = gui.barOpacity,
+                onExpand = { expanded = true },
+                onPlayPause = viewModel::togglePlayPause,
+                onNext = viewModel::next,
+            )
+        }
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             Scaffold(
+                topBar = {
+                    // hasMedia guard: an empty statusBarsPadding box would
+                    // still reserve inset height with nothing playing.
+                    if (gui.playerPosition == PlayerPosition.TOP && state.hasMedia) {
+                        Box(Modifier.statusBarsPadding()) { miniPlayer() }
+                    }
+                },
                 bottomBar = {
                     Column {
-                        MiniPlayer(
-                            title =
-                                listOfNotNull(
-                                    state.title,
-                                    state.artist?.takeIf { it.isNotBlank() },
-                                ).joinToString(" \u2014 ").ifBlank { null },
-                            isPlaying = state.isPlaying,
-                            hasMedia = state.hasMedia,
-                            progress =
-                                if (state.durationMs > 0) {
-                                    state.positionMs / state.durationMs.toFloat()
-                                } else {
-                                    0f
-                                },
-                            barOpacity = gui.barOpacity,
-                            onExpand = { expanded = true },
-                            onPlayPause = viewModel::togglePlayPause,
-                            onNext = viewModel::next,
-                        )
+                        if (gui.playerPosition == PlayerPosition.BOTTOM) miniPlayer()
                         NavigationBar(
                             containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = gui.barOpacity),
                         ) {
@@ -216,6 +237,7 @@ private fun MiniPlayer(
     hasMedia: Boolean,
     progress: Float,
     barOpacity: Float,
+    compact: Boolean,
     onExpand: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
@@ -228,10 +250,15 @@ private fun MiniPlayer(
             .clickable(onClick = onExpand),
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = if (compact) 0.dp else 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Filled.MusicNote, null, Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
+            Icon(
+                Icons.Filled.MusicNote,
+                null,
+                Modifier.size(if (compact) 20.dp else 28.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
             Text(
                 title ?: "Now playing",
                 modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
@@ -413,7 +440,32 @@ fun SettingsScreen(
                         }
                     }
                 }
-                // Extended appearance options land here (unit U8).
+                Text("Accent intensity  ${(gui.accentIntensity * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
+                Slider(
+                    value = gui.accentIntensity,
+                    onValueChange = { viewModel.setGuiPrefs(gui.copy(accentIntensity = it)) },
+                    valueRange = 0.5f..1.5f,
+                )
+                Text("Background dim  ${(gui.backgroundDim * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
+                Slider(
+                    value = gui.backgroundDim,
+                    onValueChange = { viewModel.setGuiPrefs(gui.copy(backgroundDim = it)) },
+                    valueRange = 0f..0.6f,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Follow system light/dark", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(
+                        checked = gui.followSystemDark,
+                        onCheckedChange = { viewModel.setGuiPrefs(gui.copy(followSystemDark = it)) },
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Compact mini-player", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(
+                        checked = gui.compactPlayer,
+                        onCheckedChange = { viewModel.setGuiPrefs(gui.copy(compactPlayer = it)) },
+                    )
+                }
             }
         }
         item {
