@@ -20,6 +20,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
@@ -314,7 +316,43 @@ private fun HistoryChip(
     }
 }
 
-/** Settings as a nav destination; export lives in the existing dialog. */
+/**
+ * A collapsible settings group: header row with title and chevron toggles
+ * the section body; expanded state is remembered per section.
+ */
+@Composable
+private fun SettingsSection(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(true) }
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                title,
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Icon(
+                if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                if (expanded) "Collapse" else "Expand",
+            )
+        }
+        if (expanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
+        }
+        HorizontalDivider(Modifier.padding(top = 10.dp))
+    }
+}
+
+/** Settings as a nav destination; export lives in the export dialog. */
 @Composable
 fun SettingsScreen(
     viewModel: PlayerViewModel,
@@ -325,119 +363,152 @@ fun SettingsScreen(
     var showExport by remember { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Settings", style = MaterialTheme.typography.headlineSmall) }
-        item { Text("Look", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
         item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(AppTheme.entries.toList()) { t ->
-                    val sel = t == appTheme
-                    Card(onClick = { viewModel.setTheme(t) }) {
-                        Text(
-                            (if (sel) "● " else "") + t.label,
-                            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+            SettingsSection("Appearance") {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(AppTheme.entries.toList()) { t ->
+                        val sel = t == appTheme
+                        Card(onClick = { viewModel.setTheme(t) }) {
+                            Text(
+                                (if (sel) "● " else "") + t.label,
+                                Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
+                }
+                Column {
+                    Text("Bar opacity  ${(gui.barOpacity * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
+                    Slider(
+                        value = gui.barOpacity,
+                        onValueChange = { viewModel.setGuiPrefs(gui.copy(barOpacity = it)) },
+                        valueRange = 0.2f..1f,
+                    )
+                }
+                Column {
+                    Text("Player position", style = MaterialTheme.typography.labelMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PlayerPosition.entries.forEach { pos ->
+                            OutlinedButton(onClick = { viewModel.setGuiPrefs(gui.copy(playerPosition = pos)) }) {
+                                Text((if (gui.playerPosition == pos) "● " else "") + pos.name.lowercase())
+                            }
+                        }
+                    }
+                }
+                Column {
+                    Text("Corner style", style = MaterialTheme.typography.labelMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CornerStyle.entries.forEach { c ->
+                            OutlinedButton(onClick = { viewModel.setGuiPrefs(gui.copy(cornerStyle = c)) }) {
+                                Text((if (gui.cornerStyle == c) "● " else "") + c.name.lowercase())
+                            }
+                        }
+                    }
+                }
+                // Extended appearance options land here (unit U8).
+            }
+        }
+        item {
+            SettingsSection("Playback") {
+                // Playback settings land here (units U2/U3): speed, EQ, sleep timer.
+                Text("More playback settings are coming soon.", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        item {
+            SettingsSection("Library") {
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                val folderPicker =
+                    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+                        if (uri != null) {
+                            ctx.contentResolver.takePersistableUriPermission(
+                                uri,
+                                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                    android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                            )
+                            viewModel.setGuiPrefs(gui.copy(presetMirrorUri = uri.toString()))
+                        }
+                    }
+                Column {
+                    Text(
+                        if (gui.presetMirrorUri != null) {
+                            "Preset folder: chosen — saves are mirrored there"
+                        } else {
+                            "Preset folder: internal only"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { folderPicker.launch(null) }) { Text("Choose preset folder") }
+                        if (gui.presetMirrorUri != null) {
+                            TextButton(onClick = { viewModel.setGuiPrefs(gui.copy(presetMirrorUri = null)) }) { Text("Clear") }
+                        }
+                    }
+                }
+                Text(
+                    "Music folders are managed in Library › Folders.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        item {
+            SettingsSection("Visuals & Analysis") {
+                Column {
+                    Text("Preset morph: ${gui.morphBeats} beats (0 = snap)")
+                    Slider(
+                        value = gui.morphBeats.toFloat(),
+                        onValueChange = { viewModel.setGuiPrefs(gui.copy(morphBeats = it.toInt())) },
+                        valueRange = 0f..16f,
+                        steps = 15,
+                    )
+                }
+                Column {
+                    Text(
+                        "Beat threshold  ${"%.1f".format(gui.beatThresholdSigma)}σ (higher = fewer beat flashes)",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    Slider(
+                        value = gui.beatThresholdSigma,
+                        onValueChange = { viewModel.setGuiPrefs(gui.copy(beatThresholdSigma = it)) },
+                        valueRange = 1.5f..4f,
+                    )
+                }
+                val context = androidx.compose.ui.platform.LocalContext.current
+                var cacheInfo by remember { mutableStateOf("…") }
+                var cacheBump by remember { mutableIntStateOf(0) }
+                LaunchedEffect(cacheBump) {
+                    cacheInfo =
+                        withContext(Dispatchers.IO) {
+                            val app = context.applicationContext
+                            val n =
+                                dev.musicviz.analysis.AnalysisCache
+                                    .entryCount(app)
+                            val mb =
+                                dev.musicviz.analysis.AnalysisCache
+                                    .sizeBytes(app) / (1024f * 1024f)
+                            "%d tracks · %.1f MB".format(n, mb)
+                        }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Analysis cache: $cacheInfo", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = {
+                        dev.musicviz.analysis.AnalysisCache
+                            .clear(context.applicationContext)
+                        cacheBump++
+                    }) { Text("Clear") }
                 }
             }
         }
         item {
-            Text("Bar opacity  ${(gui.barOpacity * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
-            Slider(value = gui.barOpacity, onValueChange = { viewModel.setGuiPrefs(gui.copy(barOpacity = it)) }, valueRange = 0.2f..1f)
-        }
-        item { HorizontalDivider() }
-        item { Text("Player", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PlayerPosition.entries.forEach { pos ->
-                    OutlinedButton(onClick = { viewModel.setGuiPrefs(gui.copy(playerPosition = pos)) }) {
-                        Text((if (gui.playerPosition == pos) "● " else "") + pos.name.lowercase())
-                    }
+            SettingsSection("Export & About") {
+                Button(onClick = { showExport = true }) { Text("Export video…") }
+                Column {
+                    // TODO(coordinator): switch to BuildConfig.VERSION_NAME once
+                    // buildFeatures.buildConfig is enabled — BuildConfig is not
+                    // generated or referenced anywhere in the app today.
+                    Text("MusicViz", style = MaterialTheme.typography.titleSmall)
+                    Text("Version 0.13.0", style = MaterialTheme.typography.bodySmall)
                 }
             }
-        }
-        item {
-            Text("Corner style", style = MaterialTheme.typography.labelMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CornerStyle.entries.forEach { c ->
-                    OutlinedButton(onClick = { viewModel.setGuiPrefs(gui.copy(cornerStyle = c)) }) {
-                        Text((if (gui.cornerStyle == c) "● " else "") + c.name.lowercase())
-                    }
-                }
-            }
-        }
-        item { HorizontalDivider() }
-        item { Text("Paths", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
-        item {
-            val ctx = androidx.compose.ui.platform.LocalContext.current
-            val folderPicker =
-                rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-                    if (uri != null) {
-                        ctx.contentResolver.takePersistableUriPermission(
-                            uri,
-                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                                android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                        )
-                        viewModel.setGuiPrefs(gui.copy(presetMirrorUri = uri.toString()))
-                    }
-                }
-            Text(
-                if (gui.presetMirrorUri != null) "Preset folder: chosen — saves are mirrored there" else "Preset folder: internal only",
-                style = MaterialTheme.typography.labelMedium,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { folderPicker.launch(null) }) { Text("Choose preset folder") }
-                if (gui.presetMirrorUri != null) {
-                    TextButton(onClick = { viewModel.setGuiPrefs(gui.copy(presetMirrorUri = null)) }) { Text("Clear") }
-                }
-            }
-        }
-        item { HorizontalDivider() }
-        item { Text("Analysis", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
-        item {
-            val context = androidx.compose.ui.platform.LocalContext.current
-            var cacheInfo by remember { mutableStateOf("…") }
-            var cacheBump by remember { mutableIntStateOf(0) }
-            LaunchedEffect(cacheBump) {
-                cacheInfo =
-                    withContext(Dispatchers.IO) {
-                        val app = context.applicationContext
-                        val n =
-                            dev.musicviz.analysis.AnalysisCache
-                                .entryCount(app)
-                        val mb =
-                            dev.musicviz.analysis.AnalysisCache
-                                .sizeBytes(app) / (1024f * 1024f)
-                        "%d tracks · %.1f MB".format(n, mb)
-                    }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Analysis cache: $cacheInfo", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = {
-                    dev.musicviz.analysis.AnalysisCache
-                        .clear(context.applicationContext)
-                    cacheBump++
-                }) { Text("Clear") }
-            }
-            Text("Preset morph: ${gui.morphBeats} beats (0 = snap)")
-            Slider(
-                value = gui.morphBeats.toFloat(),
-                onValueChange = { viewModel.setGuiPrefs(gui.copy(morphBeats = it.toInt())) },
-                valueRange = 0f..16f,
-                steps = 15,
-            )
-            Text(
-                "Beat threshold  ${"%.1f".format(gui.beatThresholdSigma)}σ (higher = fewer beat flashes)",
-                style = MaterialTheme.typography.labelMedium,
-            )
-            Slider(
-                value = gui.beatThresholdSigma,
-                onValueChange = { viewModel.setGuiPrefs(gui.copy(beatThresholdSigma = it)) },
-                valueRange = 1.5f..4f,
-            )
-        }
-        item { HorizontalDivider() }
-        item {
-            Button(onClick = { showExport = true }) { Text("Export video…") }
         }
     }
     if (showExport) {

@@ -28,19 +28,15 @@ import dev.musicviz.export.ExportQuality
 import dev.musicviz.export.ExportRatio
 
 /**
- * Settings menu. Currently hosts the video export section: quality tier,
- * aspect ratio, render, and share/upload (system share sheet, which includes
- * Google Drive when installed) for the finished file.
+ * Video export dialog: quality tier, frame rate, aspect ratio, render, and
+ * share/upload (system share sheet, which includes Google Drive when
+ * installed) for the finished file. All other settings live in the Settings
+ * destination (AppShell.SettingsScreen).
  */
 @Composable
 fun SettingsDialog(
     export: ExportUiState,
     hasMedia: Boolean,
-    currentTheme: AppTheme,
-    onThemeChange: (AppTheme) -> Unit,
-    guiPrefs: GuiPrefs,
-    onGuiPrefsChange: (GuiPrefs) -> Unit,
-    onPickPresetFolder: () -> Unit,
     onStart: (ExportAspect, Int) -> Unit,
     onStartToDestination: (ExportAspect, Int) -> Unit,
     onCancel: () -> Unit,
@@ -52,69 +48,9 @@ fun SettingsDialog(
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Settings") },
+        title = { Text("Export") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Layout", style = MaterialTheme.typography.titleSmall)
-                Text("Player position", style = MaterialTheme.typography.labelMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    PlayerPosition.entries.forEach { pos ->
-                        QualityChip(pos.label, guiPrefs.playerPosition == pos) {
-                            onGuiPrefsChange(guiPrefs.copy(playerPosition = pos))
-                        }
-                    }
-                }
-                Text("Corner style", style = MaterialTheme.typography.labelMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    CornerStyle.entries.forEach { c ->
-                        QualityChip(c.label, guiPrefs.cornerStyle == c) {
-                            onGuiPrefsChange(guiPrefs.copy(cornerStyle = c))
-                        }
-                    }
-                }
-                Text("Bar opacity", style = MaterialTheme.typography.labelMedium)
-                androidx.compose.material3.Slider(
-                    value = guiPrefs.barOpacity,
-                    onValueChange = { onGuiPrefsChange(guiPrefs.copy(barOpacity = it)) },
-                    valueRange = 0.35f..1f,
-                )
-                Text("Analysis", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    "Beat threshold - raise if visuals flicker on busy tracks",
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                androidx.compose.material3.Slider(
-                    value = guiPrefs.beatThresholdSigma,
-                    onValueChange = { onGuiPrefsChange(guiPrefs.copy(beatThresholdSigma = it)) },
-                    valueRange = 1.5f..4f,
-                )
-                Text("Paths", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    if (guiPrefs.presetMirrorUri != null) {
-                        "Preset folder: chosen - saves are mirrored there"
-                    } else {
-                        "Preset folder: internal only"
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedButton(onClick = onPickPresetFolder) { Text("Choose preset folder") }
-                    if (guiPrefs.presetMirrorUri != null) {
-                        TextButton(onClick = { onGuiPrefsChange(guiPrefs.copy(presetMirrorUri = null)) }) {
-                            Text("Clear")
-                        }
-                    }
-                }
-                Text("Theme", style = MaterialTheme.typography.titleSmall)
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    AppTheme.entries.forEach { t ->
-                        QualityChip(t.label, currentTheme == t) { onThemeChange(t) }
-                    }
-                }
-                Text("Export video", style = MaterialTheme.typography.titleSmall)
                 when {
                     export.running -> {
                         Text("Rendering offline...")
@@ -190,7 +126,7 @@ fun SettingsDialog(
                             enabled = hasMedia,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text("Render to chosen folder\u2026")
+                            Text("Render to chosen folder…")
                         }
                     }
                 }

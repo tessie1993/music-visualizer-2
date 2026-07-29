@@ -45,7 +45,9 @@ class AppSmokeTest {
         navTo("Visuals")
         compose.onAllNodesWithText("Presets").onFirst().assertExists()
         navTo("Settings")
-        compose.onNodeWithText("Look").assertExists()
+        // First collapsible section header; later ones may sit below the fold
+        // of the lazy list on the small Robolectric display.
+        compose.onNodeWithText("Appearance").assertExists()
         navTo("Home")
     }
 
