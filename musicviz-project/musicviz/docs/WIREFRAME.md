@@ -3,6 +3,19 @@
 Structure only; GUI/visual design is a later pass. Sheets slide from the
 bottom, ~60% height, glass background (opacity = Settings slider).
 
+Glass status (implemented, v0.13.x): the shell chrome is alpha glass
+driven by the Settings "Bar opacity" slider (range 0.2–1.0, stored as
+`GuiPrefs.barOpacity`). Surfaces that respect the slider: the bottom
+navigation bar, the mini player (glassPanel with hairline top border),
+the Now Playing header chip and transport card (clamped to >= 0.25 so
+controls stay readable; a bottom scrim gradient aids legibility over
+bright visuals), and the Search overlay background (clamped to >= 0.85
+— a fullscreen overlay needs more opacity). This is flat alpha glass:
+no backdrop blur, and outside Now Playing the translucency reveals the
+theme background color, since the GL canvas only lives behind the Now
+Playing overlay in v1. Helpers: `ui/Glass.kt` (`glassPanel`,
+`glassScrim`).
+
 ## Main screen — single glass player panel, canvas is the app
 ```
 ┌─────────────────────────────────┐ ← themed border
