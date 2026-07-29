@@ -435,6 +435,7 @@ fun SettingsScreen(
                 valueRange = 1.5f..4f,
             )
         }
+        item { EqualizerSettings(viewModel) }
         item { HorizontalDivider() }
         item {
             Button(onClick = { showExport = true }) { Text("Export video…") }

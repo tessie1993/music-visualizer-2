@@ -17,6 +17,8 @@ import dev.musicviz.analysis.FeatureTimeline
 import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.analysis.OfflineAnalyzer
 import dev.musicviz.analysis.SceneSuggester
+import dev.musicviz.audio.AudioFxController
+import dev.musicviz.audio.AudioFxState
 import dev.musicviz.audio.PcmRingBuffer
 import dev.musicviz.audio.PcmTapSink
 import dev.musicviz.audio.TapRenderersFactory
@@ -140,6 +142,7 @@ class PlayerViewModel(
     private val lfoStore = LfoStore(application)
     private val musicPlaylists = MusicPlaylistStore(application)
     private val exporter = VideoExporter(application)
+    private val audioFxController = AudioFxController(application)
 
     val player: ExoPlayer =
         ExoPlayer
@@ -228,6 +231,45 @@ class PlayerViewModel(
     fun setTheme(theme: AppTheme) {
         themeStore.save(theme)
         _theme.value = theme
+    }
+
+    // ---- Equalizer & audio effects ----
+
+    private val _audioFx = MutableStateFlow(audioFxController.snapshot())
+
+    /** Equalizer/bass/loudness chain state for the Settings UI. */
+    val audioFx: StateFlow<AudioFxState> = _audioFx
+
+    private fun refreshAudioFx() {
+        _audioFx.value = audioFxController.snapshot()
+    }
+
+    fun setAudioFxEnabled(enabled: Boolean) {
+        audioFxController.setEnabled(enabled)
+        refreshAudioFx()
+    }
+
+    fun setAudioFxBand(
+        band: Int,
+        levelMb: Int,
+    ) {
+        audioFxController.setBandLevel(band, levelMb)
+        refreshAudioFx()
+    }
+
+    fun useAudioFxPreset(index: Int) {
+        audioFxController.usePreset(index)
+        refreshAudioFx()
+    }
+
+    fun setAudioFxBassBoost(strength: Int) {
+        audioFxController.setBassBoost(strength)
+        refreshAudioFx()
+    }
+
+    fun setAudioFxLoudness(gainMb: Int) {
+        audioFxController.setLoudness(gainMb)
+        refreshAudioFx()
     }
 
     private val _textures = MutableStateFlow(textureStore.list())
@@ -557,8 +599,18 @@ class PlayerViewModel(
                         onTrackChanged()
                     }
                 }
+
+                override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                    // The audiofx chain must follow the sink's session; attach
+                    // rebuilds the effects and restores persisted settings.
+                    audioFxController.attach(audioSessionId)
+                    refreshAudioFx()
+                }
             },
         )
+        // The sink may already have a session id (attach ignores UNSET = 0).
+        audioFxController.attach(player.audioSessionId)
+        refreshAudioFx()
         viewModelScope.launch {
             while (true) {
                 refresh()
@@ -1595,6 +1647,7 @@ class PlayerViewModel(
 
     override fun onCleared() {
         engine.stop()
+        audioFxController.release()
         player.release()
     }
 }
