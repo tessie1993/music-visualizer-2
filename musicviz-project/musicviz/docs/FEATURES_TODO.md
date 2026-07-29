@@ -28,9 +28,11 @@ first → everything else. GUI polish is a later pass.
 - [ ] Canvas bottom bar REMOVED; its icons become row 4 of the player panel
       (Style · Customize · Presets · Library · Random). Panel hides on tap,
       honors top/bottom position setting. (DECIDED in-thread.)
-- [ ] UI opacity setting slider (glass panels/sheets).
+- [x] UI opacity setting slider (glass panels/sheets). (0.13.x round:
+      consumed by the glass translucency unit)
 - [ ] Touch animation feedback (press glow/ripple).
-- [ ] Media player preferences: theme, panel placement and size.
+- [x] Media player preferences: theme, panel placement and size. (0.13.x
+      round: settings restructure + theme overhaul + playback settings)
 - [ ] Crystal themes/colors + full-screen crystal overlay images with
       opacity: OPEN QUESTION — answered "ignore for now" in-thread, but the
       re-sent brief still lists it. Awaiting confirmation; only the opacity

@@ -83,3 +83,21 @@ ripples, scope (covered by hexgrid, waves, ring/liss).
   real folder path; files in it are read AND analyzed; imports dedupe.
 - Google Drive: ONE user-picked folder; download-or-stream; last.
 - New styles: be creative, grounded in milkdrop research (above).
+
+## 0.13.x feature round (parallel units, in flight)
+Thirteen units built by parallel sessions off the v0.13.0 (code 22) base:
+- Settings restructure: sections Appearance / Playback / Library /
+  Visuals & Analysis / Export & About.
+- Playback settings: speed, pitch, skip-silence, sleep timer.
+- Equalizer.
+- Audio-quality readout.
+- Metadata editor (edit track tags).
+- Search overhaul.
+- Glass translucency (consumes the UI opacity slider for panels/sheets).
+- Theme overhaul (includes the P6 theme polish).
+- Boot animation.
+- Water fluid scene.
+- Ripple overlay.
+- Wireframe.
+- Docs & debug sweep (this doc round: changelog fix, dead-code removal,
+  todo/plan annotations).
