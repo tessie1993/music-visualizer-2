@@ -1489,9 +1489,22 @@ class PlayerViewModel(
     }
 
     fun applyPreset(preset: Preset) {
-        setReactivity(preset.attack, preset.decay)
-        selectScene(preset.sceneId)
-        setSceneParams(preset.params)
+        // One atomic state update (was setReactivity + selectScene +
+        // setSceneParams: three emissions + three disk persists). The engine
+        // bindings observe sceneId and params through separate effects, so
+        // separate emissions could land the scene switch a frame before the
+        // new params - the new scene flashed in wearing the old look.
+        engine.smoother.attack = preset.attack
+        engine.smoother.decay = preset.decay
+        _vizState.update {
+            it.copy(
+                sceneId = preset.sceneId,
+                params = preset.params,
+                attack = preset.attack,
+                decay = preset.decay,
+            )
+        }
+        persistVizState()
         emitPresetMorph()
         // Every apply path must push the preset's custom shader; returning it
         // for the caller to forward let two call sites (quick-preset swipe,

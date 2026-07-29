@@ -52,3 +52,13 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     section data while the export always detects sections offline - the
     progress journey still matches, only the golden-angle re-seats
     differ. Verify with an analyzed track.
+14. Transition flash fix (v0.13.0 r22): set Vignette + Chromatic
+    aberration + Scanlines high, then switch scenes/presets under every
+    transition style (fade/melt/slide/zoom). The screen FX must stay
+    applied to BOTH the outgoing and incoming image for the whole
+    transition — no brightness pop at transition start/end. Apply a
+    preset with a different palette while a transition is running: the
+    OUTGOING scene must keep its old colors (frozen params) as it fades.
+15. Back button (v0.13.0 r22): system back collapses Now Playing, then
+    closes Search, then pops a Library drill-in, then returns any tab to
+    Home, and only exits from Home.

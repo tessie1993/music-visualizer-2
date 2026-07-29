@@ -225,6 +225,9 @@ private fun GroupList(
 ) {
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     val sel = open
+    // System back mirrors the on-screen "‹ Back": pop the drill-in level
+    // before falling through to the shell's tab/exit handling.
+    androidx.activity.compose.BackHandler(enabled = sel != null) { open = null }
     if (sel != null && groups.containsKey(sel)) {
         Column {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {

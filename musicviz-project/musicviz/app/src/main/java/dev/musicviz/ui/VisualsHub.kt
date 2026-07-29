@@ -215,6 +215,12 @@ private fun StylesTab(
 ) {
     var sub by rememberSaveable { mutableStateOf(0) }
     val viz by viewModel.vizState.collectAsState()
+    // Single pick path: selectScene updates vizState and the engine bindings
+    // (EnginePlumbing) push requestedSceneId to the renderer. The old code
+    // ALSO wrote requestedSceneId directly here - two writers for the same
+    // renderer field, and the direct write bypassed the transition-aware
+    // state flow. One source of truth is what keeps switching stable.
+    val pickScene: (String) -> Unit = { viewModel.selectScene(it) }
     Column(Modifier.fillMaxSize()) {
         ScrollableTabRow(selectedTabIndex = sub, edgePadding = 8.dp) {
             listOf("Particles", "Shaders", "Fluid", "MilkDrop").forEachIndexed { i, t ->
@@ -222,27 +228,9 @@ private fun StylesTab(
             }
         }
         when (sub) {
-            0 ->
-                SceneList(VisualizerRenderer.PARTICLE_SCENES, viz.sceneId) {
-                    viewModel.selectScene(it)
-                    visualizerView.visualizerRenderer.requestedSceneId = it
-                }
-            1 ->
-                SceneList(VisualizerRenderer.SHADER_SCENES.keys.toList(), viz.sceneId) {
-                    viewModel.selectScene(it)
-                    visualizerView.visualizerRenderer.requestedSceneId = it
-                }
-            2 ->
-                SceneList(
-                    listOf(
-                        dev.musicviz.render.scene.SceneIds.FLUID,
-                        dev.musicviz.render.scene.SceneIds.CURLFLOW,
-                    ),
-                    viz.sceneId,
-                ) {
-                    viewModel.selectScene(it)
-                    visualizerView.visualizerRenderer.requestedSceneId = it
-                }
+            0 -> SceneList(VisualizerRenderer.PARTICLE_SCENES, viz.sceneId, pickScene)
+            1 -> SceneList(VisualizerRenderer.SHADER_SCENES.keys.toList(), viz.sceneId, pickScene)
+            2 -> SceneList(listOf(SceneIds.FLUID, SceneIds.CURLFLOW), viz.sceneId, pickScene)
             3 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
         }
     }
@@ -311,8 +299,9 @@ private fun selectMilk(
     visualizerView: VisualizerView,
     path: String,
 ) {
+    // Scene switch flows through vizState -> EnginePlumbing like every other
+    // pick; only the .milk load itself talks to the renderer directly.
     viewModel.selectScene(SceneIds.MILKDROP)
-    visualizerView.visualizerRenderer.requestedSceneId = SceneIds.MILKDROP
     visualizerView.visualizerRenderer.loadMilkPreset(path)
     viewModel.noteMilkPreset(path)
 }

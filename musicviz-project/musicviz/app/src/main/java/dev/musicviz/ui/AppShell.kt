@@ -90,6 +90,12 @@ fun AppRoot(
         )
     }
     VisualizerEngineBindings(viewModel, visualizerView)
+    // System back: non-Home tabs return Home before the app exits. Composed
+    // FIRST so handlers composed later (library drill-in, search overlay,
+    // expanded visualizer) take priority - Compose gives the back event to
+    // the last-composed enabled handler, unwinding overlays in the right
+    // order: visualizer > search > drill-in > tab > exit.
+    androidx.activity.compose.BackHandler(enabled = dest != 0) { dest = 0 }
     MaterialTheme(colorScheme = appTheme.colorScheme()) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             Scaffold(
@@ -447,6 +453,8 @@ fun SearchScreen(
     var query by rememberSaveable { mutableStateOf("") }
     val library by viewModel.library.collectAsState()
     val viz by viewModel.vizState.collectAsState()
+    // Back closes the search overlay instead of exiting the app.
+    androidx.activity.compose.BackHandler { onClose() }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
