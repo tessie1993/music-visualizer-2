@@ -10,7 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import dev.musicviz.render.VisualizerView
 
-/** Hosts the existing export/settings dialog from the Settings destination. */
+/** Hosts the export dialog from the Settings destination. */
 @Composable
 fun ExportHost(
     viewModel: PlayerViewModel,
@@ -20,8 +20,6 @@ fun ExportHost(
     val state by viewModel.uiState.collectAsState()
     val viz by viewModel.vizState.collectAsState()
     val export by viewModel.exportState.collectAsState()
-    val appTheme by viewModel.theme.collectAsState()
-    val gui by viewModel.guiPrefs.collectAsState()
     var pendingExport by remember { mutableStateOf<Triple<dev.musicviz.export.ExportAspect, Int, String>?>(null) }
     val destinationPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { dest ->
@@ -36,26 +34,9 @@ fun ExportHost(
                 )
             }
         }
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val presetFolderPicker =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-            if (uri != null) {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                        android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                )
-                viewModel.setGuiPrefs(viewModel.guiPrefs.value.copy(presetMirrorUri = uri.toString()))
-            }
-        }
     SettingsDialog(
         export = export,
         hasMedia = state.hasMedia,
-        currentTheme = appTheme,
-        onThemeChange = viewModel::setTheme,
-        guiPrefs = gui,
-        onGuiPrefsChange = viewModel::setGuiPrefs,
-        onPickPresetFolder = { presetFolderPicker.launch(null) },
         onStart = { aspect, fps ->
             viewModel.startExport(aspect, fps, visualizerView.visualizerRenderer.exportSceneFactory(viz.sceneId))
         },
