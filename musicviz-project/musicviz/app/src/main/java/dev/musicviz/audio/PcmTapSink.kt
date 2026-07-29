@@ -15,7 +15,7 @@ import java.nio.ByteOrder
 @OptIn(UnstableApi::class)
 class PcmTapSink(
     private val ring: PcmRingBuffer,
-    private val onFormat: (sampleRateHz: Int) -> Unit,
+    private val onFormat: (sampleRateHz: Int, channelCount: Int, encoding: Int) -> Unit,
 ) : TeeAudioProcessor.AudioBufferSink {
     private var channelCount: Int = 2
     private var encoding: Int = C.ENCODING_PCM_16BIT
@@ -28,7 +28,7 @@ class PcmTapSink(
     ) {
         this.channelCount = channelCount
         this.encoding = encoding
-        onFormat(sampleRateHz)
+        onFormat(sampleRateHz, channelCount, encoding)
     }
 
     override fun handleBuffer(buffer: ByteBuffer) {

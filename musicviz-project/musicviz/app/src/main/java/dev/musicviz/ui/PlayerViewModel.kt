@@ -7,13 +7,16 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import dev.musicviz.analysis.AnalysisEngine
 import dev.musicviz.analysis.AudioFeatures
+import dev.musicviz.analysis.AudioQualityInfo
 import dev.musicviz.analysis.FeatureTimeline
 import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.analysis.OfflineAnalyzer
@@ -135,7 +138,86 @@ class PlayerViewModel(
 ) : AndroidViewModel(application) {
     private val ring = PcmRingBuffer()
     private val engine = AnalysisEngine(ring)
-    private val sink = PcmTapSink(ring) { rate -> engine.sampleRateHz = rate }
+
+    // ---- Audio-quality readout ----
+    // Combines the selected track's source Format (onTracksChanged) with the
+    // decoded output format the read-only tap reports (playback thread), so
+    // the UI can show whether playback is lossless / bit-perfect. Declared
+    // before [sink] on purpose: its callback touches these fields (see the
+    // construction-order note above the init block).
+
+    /** Decoded output format from the tap's flush callback. */
+    private data class TapFormat(
+        val sampleRateHz: Int,
+        val channelCount: Int,
+        val encoding: Int,
+    )
+
+    @Volatile
+    private var tapFormat: TapFormat? = null
+
+    @Volatile
+    private var sourceAudioFormat: Format? = null
+
+    private val _audioQuality = MutableStateFlow<AudioQualityInfo?>(null)
+
+    /** Source vs decoded-output quality of the current track; null when idle. */
+    val audioQuality: StateFlow<AudioQualityInfo?> = _audioQuality
+
+    /** Called from the playback thread on every audio-pipeline reconfigure. */
+    private fun onTapFormat(
+        sampleRateHz: Int,
+        channelCount: Int,
+        encoding: Int,
+    ) {
+        tapFormat = TapFormat(sampleRateHz, channelCount, encoding)
+        recomputeAudioQuality()
+    }
+
+    /** Bits per sample for a Media3 PCM encoding constant; 0 = unknown. */
+    private fun bitDepthOf(pcmEncoding: Int): Int =
+        when (pcmEncoding) {
+            C.ENCODING_PCM_8BIT -> 8
+            C.ENCODING_PCM_16BIT, C.ENCODING_PCM_16BIT_BIG_ENDIAN -> 16
+            C.ENCODING_PCM_24BIT, C.ENCODING_PCM_24BIT_BIG_ENDIAN -> 24
+            C.ENCODING_PCM_32BIT, C.ENCODING_PCM_32BIT_BIG_ENDIAN -> 32
+            C.ENCODING_PCM_FLOAT -> 32
+            else -> 0
+        }
+
+    /** Container guess from the uri's file extension ("" for opaque uris). */
+    private fun containerGuess(): String {
+        val name = currentUri?.lastPathSegment?.substringAfterLast('/') ?: return ""
+        val ext = name.substringAfterLast('.', "")
+        return if (ext.length in 1..4) ext.lowercase() else ""
+    }
+
+    private fun recomputeAudioQuality() {
+        val src = sourceAudioFormat
+        if (src == null) {
+            _audioQuality.value = null
+            return
+        }
+        val tap = tapFormat
+        _audioQuality.value =
+            AudioQualityInfo.classify(
+                mime = src.sampleMimeType,
+                container = containerGuess(),
+                sourceSampleRateHz = src.sampleRate.takeIf { it != Format.NO_VALUE } ?: 0,
+                sourceChannels = src.channelCount.takeIf { it != Format.NO_VALUE } ?: 0,
+                bitDepth = bitDepthOf(src.pcmEncoding),
+                bitrateBps = src.bitrate.takeIf { it != Format.NO_VALUE } ?: 0,
+                outputSampleRateHz = tap?.sampleRateHz ?: 0,
+                outputChannels = tap?.channelCount ?: 0,
+                outputFloat = tap?.encoding == C.ENCODING_PCM_FLOAT,
+            )
+    }
+
+    private val sink =
+        PcmTapSink(ring) { rate, channels, encoding ->
+            engine.sampleRateHz = rate
+            onTapFormat(rate, channels, encoding)
+        }
     private val offlineAnalyzer = OfflineAnalyzer(application)
     private val presetStore = PresetStore(application)
     private val trackLibrary = TrackLibrary(application)
@@ -651,6 +733,24 @@ class PlayerViewModel(
                     // rebuilds the effects and restores persisted settings.
                     audioFxController.attach(audioSessionId)
                     refreshAudioFx()
+                }
+
+                override fun onTracksChanged(tracks: Tracks) {
+                    // Selected audio track's source Format (mime, sample rate,
+                    // pcm encoding, bitrate) for the quality readout. Defensive
+                    // scan: take the first selected audio track, else null.
+                    var fmt: Format? = null
+                    outer@ for (group in tracks.groups) {
+                        if (group.type != C.TRACK_TYPE_AUDIO) continue
+                        for (i in 0 until group.length) {
+                            if (group.isTrackSelected(i)) {
+                                fmt = group.getTrackFormat(i)
+                                break@outer
+                            }
+                        }
+                    }
+                    sourceAudioFormat = fmt
+                    recomputeAudioQuality()
                 }
             },
         )
