@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,17 +23,13 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -85,17 +82,11 @@ fun LibraryScreen(
         if (!granted) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Grant music access to browse everything on this device.")
-                Button(onClick = { permLauncher.launch(permission) }) { Text("Allow music access") }
+                CrystalButton("Allow music access", onClick = { permLauncher.launch(permission) })
             }
             return
         }
-        ScrollableTabRow(
-            selectedTabIndex = tab,
-            edgePadding = 8.dp,
-            containerColor = androidx.compose.ui.graphics.Color.Transparent,
-        ) {
-            tabs.forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) }) }
-        }
+        CrystalTabRow(tabs, tab, onSelect = { tab = it })
         when (tab) {
             0 -> TrackList(tracks, viewModel)
             1 -> GroupList(tracks.groupBy { it.album }, viewModel)
@@ -140,40 +131,33 @@ private fun TrackRow(
             ).filter { it.isNotBlank() }.joinToString(" \u00b7 ")
     var menu by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
-    Row(
-        Modifier.fillMaxWidth().clickable { viewModel.playTrack(t.uri) }.padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    CrystalListRow(
+        title = title,
+        subtitle = subtitle.takeIf { it.isNotBlank() },
+        onClick = { viewModel.playTrack(t.uri) },
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 3.dp),
+        thumbSeed = title + t.uri,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (subtitle.isNotBlank()) {
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+        Box {
+            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(text = { Text("Play next") }, onClick = {
+                    viewModel.playNext(t.uri)
+                    menu = false
+                })
+                DropdownMenuItem(text = { Text("Add to queue") }, onClick = {
+                    viewModel.enqueue(t.uri)
+                    menu = false
+                })
+                DropdownMenuItem(text = { Text("Add to library list") }, onClick = {
+                    viewModel.importTracks(listOf(Uri.parse(t.uri)))
+                    menu = false
+                })
+                DropdownMenuItem(text = { Text("Edit track info") }, onClick = {
+                    editing = true
+                    menu = false
+                })
             }
-        }
-        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            DropdownMenuItem(text = { Text("Play next") }, onClick = {
-                viewModel.playNext(t.uri)
-                menu = false
-            })
-            DropdownMenuItem(text = { Text("Add to queue") }, onClick = {
-                viewModel.enqueue(t.uri)
-                menu = false
-            })
-            DropdownMenuItem(text = { Text("Add to library list") }, onClick = {
-                viewModel.importTracks(listOf(Uri.parse(t.uri)))
-                menu = false
-            })
-            DropdownMenuItem(text = { Text("Edit track info") }, onClick = {
-                editing = true
-                menu = false
-            })
         }
     }
     if (editing) {
@@ -198,9 +182,18 @@ private fun GroupList(
                 Text("‹ Back", Modifier.clickable { open = null }.padding(end = 12.dp), color = MaterialTheme.colorScheme.primary)
                 Text(sel, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { viewModel.openStringsPublic(groups.getValue(sel).map { it.uri }) }) { Text("Play all") }
-                Button(onClick = { viewModel.openStringsPublic(groups.getValue(sel).map { it.uri }.shuffled()) }) { Text("Shuffle") }
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CrystalButton(
+                    "Play All",
+                    icon = Icons.Filled.PlayArrow,
+                    onClick = { viewModel.openStringsPublic(groups.getValue(sel).map { it.uri }) },
+                )
+                CrystalButton(
+                    "Shuffle",
+                    icon = Icons.Filled.Shuffle,
+                    kind = CrystalButtonKind.SECONDARY,
+                    onClick = { viewModel.openStringsPublic(groups.getValue(sel).map { it.uri }.shuffled()) },
+                )
             }
             LazyColumn(Modifier.fillMaxSize()) {
                 items(groups.getValue(sel), key = { it.uri }) { t -> TrackRow(t, viewModel, subtitleOverride = t.album) }
@@ -209,15 +202,13 @@ private fun GroupList(
     } else {
         LazyColumn(Modifier.fillMaxSize()) {
             items(groups.keys.sorted()) { g ->
-                Row(
-                    Modifier.fillMaxWidth().clickable { open = g }.padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(g.ifEmpty { "(no name)" }, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${groups.getValue(g).size} tracks", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
+                CrystalListRow(
+                    title = g.ifEmpty { "(no name)" },
+                    subtitle = "${groups.getValue(g).size} tracks",
+                    onClick = { open = g },
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 3.dp),
+                    thumbSeed = g,
+                )
             }
         }
     }
@@ -232,23 +223,19 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
     LazyColumn(Modifier.fillMaxSize()) {
         items(library.playlists) { pl ->
             Column(Modifier.fillMaxWidth()) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { expanded = if (expanded == pl.name) null else pl.name }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                CrystalListRow(
+                    title = pl.name,
+                    subtitle = "${pl.trackUris.size} tracks",
+                    onClick = { expanded = if (expanded == pl.name) null else pl.name },
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 3.dp),
+                    thumbSeed = pl.name,
                 ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(pl.name)
-                        Text("${pl.trackUris.size} tracks", style = MaterialTheme.typography.bodySmall)
-                    }
                     IconButton(onClick = {
                         renaming = pl.name
                         renameText = pl.name
                     }) { Icon(Icons.Filled.Edit, "Rename") }
                     IconButton(onClick = { viewModel.playPlaylist(pl.name) }) {
-                        Icon(Icons.Filled.PlayArrow, "Play")
+                        Icon(Icons.Filled.PlayArrow, "Play", tint = MaterialTheme.colorScheme.primary)
                     }
                 }
                 if (expanded == pl.name) {
@@ -285,13 +272,14 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
     renaming?.let { old ->
         AlertDialog(
             onDismissRequest = { renaming = null },
+            containerColor = MaterialTheme.colorScheme.surface,
             title = { Text("Rename playlist") },
-            text = { OutlinedTextField(value = renameText, onValueChange = { renameText = it }, singleLine = true) },
+            text = { CrystalTextField(value = renameText, onValueChange = { renameText = it }) },
             confirmButton = {
-                Button(onClick = {
+                CrystalButton("Rename", onClick = {
                     viewModel.renameMusicPlaylist(old, renameText)
                     renaming = null
-                }) { Text("Rename") }
+                })
             },
             dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
         )
@@ -310,11 +298,7 @@ private fun FoldersTab(
             if (uri != null) viewModel.importFolder(uri)
         }
     Column {
-        Text(
-            "Library folders",
-            Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.titleSmall,
-        )
+        CrystalOverline("Library folders", Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         roots.sorted().forEach { root ->
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -335,13 +319,16 @@ private fun FoldersTab(
             }
         }
         Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            OutlinedButton(onClick = { folderPicker.launch(null) }) { Text("Add folder") }
-            OutlinedButton(onClick = viewModel::rescanMediaRoots, enabled = roots.isNotEmpty() && !scanning) {
-                Text(if (scanning) "Scanning…" else "Rescan")
-            }
+            CrystalButton("Add folder", kind = CrystalButtonKind.SECONDARY, onClick = { folderPicker.launch(null) })
+            CrystalButton(
+                if (scanning) "Scanning…" else "Rescan",
+                kind = CrystalButtonKind.GHOST,
+                enabled = roots.isNotEmpty() && !scanning,
+                onClick = viewModel::rescanMediaRoots,
+            )
         }
         Text(
             "Device folders · Google Drive coming soon",
