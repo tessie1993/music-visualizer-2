@@ -1,3 +1,4 @@
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import java.util.Properties
 
 plugins {
@@ -155,7 +156,65 @@ kotlin {
     }
 }
 
+// --- Robolectric runtime jars, resolved by Gradle instead of at test time ----
+//
+// Robolectric does not get its `android-all` runtime jar from the test
+// classpath. Unless told otherwise it downloads it, mid-test, with its own
+// bundled Maven client (`MavenArtifactFetcher`) into ~/.m2/repository — a
+// directory the CI Gradle cache does not restore, so every CI run re-fetched
+// ~200 MB over the network while the tests were already running. That fetcher
+// has no retry: one transient HTTP error fails *every* Robolectric test at
+// once. That is exactly what happened on run 30590147361 attempt 1, where all
+// 38 Robolectric tests failed with `AssertionError at
+// MavenArtifactFetcher.java:129` / `Caused by: IOException` while the byte-
+// identical tree passed on attempt 2 and on the branch run before it.
+//
+// Declaring the jars as ordinary Gradle dependencies moves the download into
+// normal dependency resolution: cached in ~/.gradle/caches (which CI *does*
+// restore), retried and checksum-verified by Gradle, and reported as a plain
+// resolution error rather than as 38 mystery test failures. The tests
+// themselves then run with no network access at all.
+//
+// One entry is needed per SDK level named in an `@Config(sdk = [...])` under
+// src/test. Version strings are the ones Robolectric 4.14.1 asks for
+// (org.robolectric.plugins.DefaultSdkProvider): sdk 34 -> Android 14 build
+// 10818077, sdk 35 -> Android 15 build 12650502, with the `-i7`
+// preinstrumented-jar revision this Robolectric release pins. Adding a test on
+// a new SDK level means adding its jar here; Robolectric will otherwise fail
+// loudly with "Unable to locate dependency".
+val robolectricSdks by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    isTransitive = false
+}
+
+val robolectricSdkDir = layout.buildDirectory.dir("robolectric-sdks")
+
+val stageRobolectricSdks =
+    tasks.register<Sync>("stageRobolectricSdks") {
+        description = "Stages Robolectric's android-all jars so unit tests never hit the network."
+        from(robolectricSdks)
+        into(robolectricSdkDir)
+    }
+
+tasks.withType<Test>().configureEach {
+    dependsOn(stageRobolectricSdks)
+    systemProperty("robolectric.offline", "true")
+    systemProperty("robolectric.dependency.dir", robolectricSdkDir.get().asFile.absolutePath)
+    // The default failure output prints only "AssertionError at Foo.java:12"
+    // with no message, which is what made the flake above so hard to read.
+    testLogging {
+        events("failed")
+        exceptionFormat = TestExceptionFormat.SHORT
+        showCauses = true
+        showExceptions = true
+    }
+}
+
 dependencies {
+    robolectricSdks("org.robolectric:android-all-instrumented:14-robolectric-10818077-i7")
+    robolectricSdks("org.robolectric:android-all-instrumented:15-robolectric-12650502-i7")
+
     implementation(libs.core.splashscreen)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.common)
