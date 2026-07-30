@@ -122,3 +122,24 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     upload the new uniforms yet, so an exported fluid clip is ungraded
     while the live view is graded. Exports of every other style must be
     unchanged.
+27. Hue shift applied ONCE on the fluid family: on FLUID, Curl Flow and
+    Water, with Color cycle off, walk "Hue shift" 0 -> 0.25 -> 0.5 ->
+    0.75 -> 1. Each quarter step must advance the image a quarter turn of
+    the wheel — ONE full turn across the whole slider, not two. If 0.5
+    already lands back on the starting colours, a scene is folding the
+    shift into its palette base on top of the composite's rotation again.
+    Dye splats and the particle layer must move together, with no jump at
+    the wrap, and 1.0 must land back exactly on the 0 colours.
+    Then turn Color cycle ON with Cycle speed mid-scale and time one full
+    trip round the wheel: it must take the SAME time as on a shader style
+    (julia/plasma) at the same setting, not half. With Color cycle off,
+    the fluid-only "Palette cycle" slider (Fluid tab) must still drift the
+    dye on its own.
+    Palette and "Hue range" must keep changing the CHARACTER of the ink as
+    in item 21 — palette identity stays scene-side, only the rotation
+    moved to the composite.
+    Export note: until FxCompositor uploads the grading uniforms (item 23's
+    known gap), an exported FLUID clip now renders with Hue shift / Color
+    cycle neutral instead of baked into the dye — the same state Curl Flow
+    and Water exports are already in. Live view is the gate here; Palette
+    and Hue range must still show in the export.
