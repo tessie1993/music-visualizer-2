@@ -104,6 +104,22 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     jump at the wrap). Pull "Hue range" to 0 — colours must narrow to a
     tight band but never collapse to one flat colour. Repeat with a
     user-made custom palette selected.
+22. Water customization gaps: on the WATER style, with Catch points >= 1,
+    sweep "Catch radius" (Journey) — the drain dimples on the pool must
+    visibly grow/shrink with the slider (they used to be inert), and each
+    well must read as a DIP that radiates rings, not as a splash. Then
+    sweep "Hue shift" (Color) — the whole pool must retint continuously
+    and wrap around the hue circle without a jump; at Hue shift 0 the
+    pool must look exactly as it did before this change (palette base
+    only). Check both against a saved preset roundtrip, and confirm a
+    10 s export matches the live view for both sliders.
+    Brightness/Intensity: the water display pass no longer applies these
+    (the composite grade owns them for the whole fluid family), so sweep
+    Brightness and Intensity on WATER and confirm the response is smooth
+    and LINEAR — no sudden blow-out in the top third, which is what the
+    old double-apply looked like — and that Water tracks Fluid and Curl
+    Flow at the same slider value. Both sliders at minimum must dim the
+    pool rather than leave it fully lit.
 23. Composite grading + geometry (fluid styles): on Fluid, Curl Flow AND
     Water, sweep Zoom, Rotation, Saturation, Brightness, Contrast, Gamma,
     Hue shift, Intensity, Color cycle, Mirror and Invert — every one must
@@ -122,6 +138,20 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     upload the new uniforms yet, so an exported fluid clip is ungraded
     while the live view is graded. Exports of every other style must be
     unchanged.
+26. Beat sensitivity for slow tracks: play a slow, sparse track (ballad,
+    ambient, ~60-80 BPM) on a beat-reactive style (flash/pulse/strobe).
+    At the shipped defaults note how often it flashes. Drag "Beat
+    sensitivity" toward 6.0σ — flashes must get RARER, not denser, and
+    the top of the range must be reachable (it used to stop at 4.0σ).
+    Then drag "Minimum gap between beats" to 1200 ms: flashes must be at
+    least ~1.2 s apart no matter how busy the track gets. Tap "Slow
+    track": both sliders jump to 4.5σ / 700 ms and the visual should
+    pulse on the kick only. Tap "Default": back to 2.5σ / 333 ms.
+    REGRESSION SIDE — on a busy dance track at the defaults the beat
+    response must look EXACTLY as before this change. Kill and relaunch
+    the app after each change: both values must persist, and a profile
+    that last stored a sigma under the old 1.5-4.0 range must reload at
+    that same value with the slider thumb sitting on it (not snapped).
 27. Hue shift applied ONCE on the fluid family: on FLUID, Curl Flow and
     Water, with Color cycle off, walk "Hue shift" 0 -> 0.25 -> 0.5 ->
     0.75 -> 1. Each quarter step must advance the image a quarter turn of
