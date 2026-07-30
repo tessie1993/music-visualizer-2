@@ -140,11 +140,17 @@ class CurlFlowCustomizeTest {
         // owns rotation (colorShift + cycle phase). Folding colorShift into
         // the scene's base too would advance the hue twice per slider unit.
         val p = SceneParams(palette = 7, colorShift = 0.3f)
-        // Folding the shift into the scene's base would land on a DIFFERENT
-        // hue from the palette base the scene must pass, and the composite
-        // would then rotate that again - the double-apply this pins against.
-        assertTrue(FluidHue.base(p.paletteBase, p.colorShift) != p.paletteBase)
-        assertEquals("an unrotated base is the palette's own", p.paletteBase, FluidHue.base(p.paletteBase, 0f), 1e-6f)
+        // FluidHue.base takes no colorShift at all: the scene's emission hue
+        // is the palette's own base, so the same palette resolves to the same
+        // base whatever the slider says, and only the composite rotates it.
+        val unshifted = SceneParams(palette = 7, colorShift = 0f)
+        assertEquals(
+            "the scene's base must not move with the shift",
+            FluidHue.base(unshifted.paletteBase),
+            FluidHue.base(p.paletteBase),
+            1e-6f,
+        )
+        assertEquals("an unrotated base is the palette's own", p.paletteBase, FluidHue.base(p.paletteBase), 1e-6f)
         // The half of the wiring the scene DOES own is untouched by the shift.
         assertEquals(
             FluidHue.span(SceneParams(palette = 7, colorShift = 0f).hueRange, p.paletteRange),
