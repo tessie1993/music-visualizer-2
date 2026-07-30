@@ -113,3 +113,10 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     pool must look exactly as it did before this change (palette base
     only). Check both against a saved preset roundtrip, and confirm a
     10 s export matches the live view for both sliders.
+    Brightness/Intensity: the water display pass no longer applies these
+    (the composite grade owns them for the whole fluid family), so sweep
+    Brightness and Intensity on WATER and confirm the response is smooth
+    and LINEAR — no sudden blow-out in the top third, which is what the
+    old double-apply looked like — and that Water tracks Fluid and Curl
+    Flow at the same slider value. Both sliders at minimum must dim the
+    pool rather than leave it fully lit.

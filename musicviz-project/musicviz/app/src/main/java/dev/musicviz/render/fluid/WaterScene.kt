@@ -21,8 +21,9 @@ import kotlin.math.abs
  * splats become drains: wells that dip the surface down over "Catch radius"
  * sim units ([WaterMath]). The display pass refracts a palette-tinted
  * depth-graded pool through the surface with Blinn specular, fresnel rim
- * and treble glints (water_display_frag), tinted by the palette base plus
- * the Hue shift slider.
+ * and treble glints (water_display_frag), tinted by [FluidHue] (palette base
+ * + Hue shift, palette span). Brightness/Intensity are NOT applied here: the
+ * composite pass grades the whole fluid family.
  *
  * FluidScene's defensive conventions apply: GlUtil.resetFrameState() at
  * draw entry, framebuffer/viewport/blend snapshot-restore around the sim
@@ -238,8 +239,8 @@ internal class WaterScene(
         choreography.tick(f, simDt, sim.aspect)
         val rippleStrength = p.waterRippleStrength.coerceIn(0f, 2f)
         val catchRadius = WaterMath.catchWellRadius(p.fluidCatchRadius)
-        val baseHue = WaterMath.baseHue(p.paletteBase, p.colorShift)
-        for (s in emitters.tick(f, simDt, sim.aspect, baseHue, p.hueRange.coerceIn(0.1f, 1f))) {
+        val baseHue = FluidHue.base(p.paletteBase, p.colorShift)
+        for (s in emitters.tick(f, simDt, sim.aspect, baseHue, p.hueRange.coerceIn(FluidHue.MIN_HUE_RANGE, 1f))) {
             val speed = kotlin.math.sqrt(s.velX * s.velX + s.velY * s.velY) / FluidEmitters.BASE_SPEED
             if (WaterMath.isCatchWell(s.r, s.g, s.b)) {
                 // Catch points are drains, not splashes: they dimple the pool
@@ -271,13 +272,16 @@ internal class WaterScene(
         GLES30.glUniform1f(dLoc("uAspect"), sim.aspect)
         GLES30.glUniform1f(dLoc("uTime"), time)
         GLES30.glUniform1f(dLoc("uBaseHue"), baseHue)
-        GLES30.glUniform1f(dLoc("uHueSpan"), p.hueRange.coerceIn(0.1f, 1f) * p.paletteRange)
+        GLES30.glUniform1f(dLoc("uHueSpan"), FluidHue.span(p.hueRange, p.paletteRange))
         GLES30.glUniform1f(dLoc("uDepth"), p.waterDepth.coerceIn(0f, 1f))
         GLES30.glUniform1f(dLoc("uSpecular"), p.waterSpecular.coerceIn(0f, 1f))
         GLES30.glUniform1f(dLoc("uFlowDrift"), p.waterFlow.coerceIn(0f, 1f))
         GLES30.glUniform1f(dLoc("uRefract"), 0.9f)
         GLES30.glUniform1f(dLoc("uTreble"), f.treble.coerceIn(0f, 2f))
-        GLES30.glUniform1f(dLoc("uBrightness"), p.brightness.coerceIn(0.2f, 2f) * p.intensity.coerceIn(0.2f, 2f))
+        // Neutral on purpose - see WaterMath.DISPLAY_BRIGHTNESS. Brightness
+        // and Intensity are Color-tab grading params and the composite pass
+        // owns them for every scene that doesn't grade itself, WATER included.
+        GLES30.glUniform1f(dLoc("uBrightness"), WaterMath.DISPLAY_BRIGHTNESS)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, sim.heightTex)
         GLES30.glUniform1i(dLoc("uHeight"), 0)
@@ -343,9 +347,11 @@ internal class WaterScene(
 /**
  * Pure-Kotlin mirror of the WATER style's Customize -> sim parameter mapping
  * (RippleMath.kt convention: the maths lives in a headless-testable object
- * and the GL code only wires it up). Covers the two sliders WaterScene used
- * to silently ignore - "Catch radius" and "Hue shift" - so the gate can
- * prove they are not no-ops on this style.
+ * and the GL code only wires it up). Covers the "Catch radius" slider this
+ * scene used to silently ignore, and the display pass' brightness factor,
+ * which must stay neutral now that the composite pass grades the fluid
+ * family. Hue arithmetic is shared with the other fluid scenes in
+ * [FluidHue].
  */
 internal object WaterMath {
     /** "Catch radius" slider domain (CustomizeDialog, shared with FLUID). */
@@ -394,12 +400,26 @@ internal object WaterMath {
     }
 
     /**
-     * Display-pass base hue: the palette's base plus the "Hue shift" slider,
-     * wrapped into [0,1). Same fold as ParticleSceneBase/ShaderScene, so one
-     * Hue shift setting reads identically across scene families.
+     * The water display pass' own brightness factor: NEUTRAL, deliberately.
+     *
+     * Brightness and Intensity are Color-tab grading params, and the
+     * composite pass grades every scene that does not grade itself - the
+     * fluid family, WATER included - by `brightness * intensity`. This pass
+     * used to fold the same product into its own uBrightness, so once the
+     * composite grade landed both passes applied it and the response went
+     * quadratic (blown out at the top of either slider). One pass owns it
+     * now, and it is not this one.
      */
-    fun baseHue(
-        paletteBase: Float,
-        colorShift: Float,
-    ): Float = ((paletteBase + colorShift) % 1f + 1f) % 1f
+    const val DISPLAY_BRIGHTNESS = 1f
+
+    /**
+     * End-to-end brightness the pool receives: this pass' factor times the
+     * composite grade's `brightness * intensity`. Exists so the gate can
+     * prove the product is applied exactly ONCE - doubling either slider
+     * must double the output, not quadruple it.
+     */
+    fun effectiveBrightness(
+        brightness: Float,
+        intensity: Float,
+    ): Float = DISPLAY_BRIGHTNESS * brightness * intensity
 }

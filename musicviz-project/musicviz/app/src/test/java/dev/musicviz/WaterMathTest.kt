@@ -3,6 +3,7 @@ package dev.musicviz
 import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.render.fluid.FluidChoreography
 import dev.musicviz.render.fluid.FluidEmitters
+import dev.musicviz.render.fluid.FluidHue
 import dev.musicviz.render.fluid.RippleMath
 import dev.musicviz.render.fluid.WaterMath
 import org.junit.Assert.assertEquals
@@ -23,9 +24,14 @@ import kotlin.random.Random
  *    heightfield, and that the well dips DOWN - what distinguishes a drain
  *    from an ordinary drop.
  *  - "Hue shift" (colorShift) was read by no fluid scene at all. It now
- *    folds into the display pass's base hue exactly the way
- *    ParticleSceneBase/ShaderScene fold it, so one slider means one thing
- *    across every scene family.
+ *    folds into the display pass's base hue through the shared [FluidHue]
+ *    helper, the same way ParticleSceneBase/ShaderScene fold it, so one
+ *    slider means one thing across every scene family.
+ *
+ * Plus one guard in the other direction: Brightness and Intensity are graded
+ * by the COMPOSITE pass for every scene that does not grade itself, WATER
+ * included, so this scene's own display pass must contribute a neutral
+ * factor. Folding them in here too made the response quadratic.
  *
  * The classification test guards the coupling this rests on: WaterScene
  * recognizes a drain by its zero dye, a contract owned by FluidEmitters.
@@ -123,18 +129,42 @@ class WaterMathTest {
 
     @Test
     fun hueShiftMovesTheBaseHueAndWraps() {
-        // Zero shift is the identity: existing presets keep their look.
-        assertEquals(0.5f, WaterMath.baseHue(0.5f, 0f), 1e-6f)
-        // The slider must actually move the hue (the reported bug).
-        assertEquals(0.75f, WaterMath.baseHue(0.5f, 0.25f), 1e-6f)
-        // Wrapping stays inside the hue circle in both directions.
-        assertEquals(0.2f, WaterMath.baseHue(0.9f, 0.3f), 1e-6f)
-        assertEquals(0.9f, WaterMath.baseHue(0.1f, -0.2f), 1e-6f)
+        // WaterScene folds the slider in through the shared fluid helper, so
+        // Water, Fluid and Curl Flow cannot drift apart. Zero shift is the
+        // identity (existing presets keep their look); the slider must
+        // actually move the hue (the reported bug); wrapping stays inside the
+        // circle in both directions, including past the slider's own range
+        // (an LFO can drive colorShift beyond 0..1).
+        assertEquals(0.5f, FluidHue.base(0.5f, 0f), 1e-6f)
+        assertEquals(0.75f, FluidHue.base(0.5f, 0.25f), 1e-6f)
+        assertEquals(0.2f, FluidHue.base(0.9f, 0.3f), 1e-6f)
+        assertEquals(0.9f, FluidHue.base(0.1f, -0.2f), 1e-6f)
         for (shift in floatArrayOf(-3.4f, -1f, 0f, 0.37f, 1f, 2.8f)) {
             for (base in floatArrayOf(0f, 0.33f, 0.97f)) {
-                val h = WaterMath.baseHue(base, shift)
+                val h = FluidHue.base(base, shift)
                 assertTrue("hue $h out of [0,1) for base=$base shift=$shift", h >= 0f && h < 1f)
             }
         }
+    }
+
+    @Test
+    fun brightnessIsAppliedOnceSoTheResponseStaysLinear() {
+        // The display pass must contribute NOTHING to the grade: the
+        // composite pass multiplies by brightness * intensity for every
+        // scene that does not grade itself, and WATER is one of those. When
+        // both passes applied it the response was quadratic and the pool
+        // blew out at the top of either slider.
+        assertEquals(1f, WaterMath.DISPLAY_BRIGHTNESS, 0f)
+        assertEquals(1f, WaterMath.effectiveBrightness(1f, 1f), 1e-6f)
+        // Linear in each slider independently: 2x in, 2x out (4x = the bug).
+        val base = WaterMath.effectiveBrightness(0.6f, 0.9f)
+        assertEquals(2f * base, WaterMath.effectiveBrightness(1.2f, 0.9f), 1e-5f)
+        assertEquals(2f * base, WaterMath.effectiveBrightness(0.6f, 1.8f), 1e-5f)
+        // Explicitly not the squared response the double-apply produced.
+        val b = 1.8f
+        val i = 1.6f
+        val once = WaterMath.effectiveBrightness(b, i)
+        assertEquals(b * i, once, 1e-5f)
+        assertTrue("brightness must not be squared (got $once)", once < (b * i) * (b * i) - 1e-3f)
     }
 }
