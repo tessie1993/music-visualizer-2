@@ -184,7 +184,11 @@ private fun TrackRow(
             ).filter { it.isNotBlank() }.joinToString(" \u00b7 ")
     var menu by remember { mutableStateOf(false) }
     Row(
-        Modifier.fillMaxWidth().clickable { viewModel.playTrack(t.uri) }.padding(horizontal = 16.dp, vertical = 8.dp),
+        Modifier
+            .fillMaxWidth()
+            .pressGlow()
+            .clickable { viewModel.playTrack(t.uri) }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -246,7 +250,11 @@ private fun GroupList(
         LazyColumn(Modifier.fillMaxSize()) {
             items(groups.keys.sorted()) { g ->
                 Row(
-                    Modifier.fillMaxWidth().clickable { open = g }.padding(horizontal = 16.dp, vertical = 10.dp),
+                    Modifier
+                        .fillMaxWidth()
+                        .pressGlow()
+                        .clickable { open = g }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {

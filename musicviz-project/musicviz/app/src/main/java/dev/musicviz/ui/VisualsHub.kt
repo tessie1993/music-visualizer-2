@@ -61,7 +61,7 @@ fun VisualsHub(
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Visuals", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-            OutlinedButton(onClick = onOpenNowPlaying) { Text("View live") }
+            OutlinedButton(onClick = onOpenNowPlaying, modifier = Modifier.pressGlow()) { Text("View live") }
         }
         ScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
             tabs.forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) }) }
@@ -125,7 +125,7 @@ private fun PresetsTreeTab(
             items(inFolder, key = { "p_${it.name}" }) { p ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(p.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    IconButton(onClick = { applyPresetLive(viewModel, visualizerView, p) }) {
+                    IconButton(onClick = { applyPresetLive(viewModel, visualizerView, p) }, modifier = Modifier.pressGlow()) {
                         Icon(Icons.Filled.PlayArrow, "Apply", tint = MaterialTheme.colorScheme.primary)
                     }
                     IconButton(
@@ -154,7 +154,7 @@ private fun PresetsTreeTab(
         items(viz.presets.filter { BuiltInPresets.isBuiltIn(it.name) && it.sceneId == viz.sceneId }, key = { "b_${it.name}" }) { p ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(p.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                IconButton(onClick = { applyPresetLive(viewModel, visualizerView, p) }) {
+                IconButton(onClick = { applyPresetLive(viewModel, visualizerView, p) }, modifier = Modifier.pressGlow()) {
                     Icon(Icons.Filled.PlayArrow, "Apply", tint = MaterialTheme.colorScheme.primary)
                 }
             }
@@ -246,7 +246,11 @@ private fun SceneList(
         items(ids) { id ->
             Text(
                 (if (id == current) "● " else "") + id,
-                Modifier.fillMaxWidth().clickable { onPick(id) }.padding(horizontal = 16.dp, vertical = 10.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .pressGlow()
+                    .clickable { onPick(id) }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
             )
         }
     }
@@ -288,7 +292,11 @@ private fun MilkDropTab(
         milkFiles.forEach { f ->
             Text(
                 f.nameWithoutExtension,
-                Modifier.fillMaxWidth().clickable { selectMilk(viewModel, visualizerView, f.absolutePath) }.padding(vertical = 8.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .pressGlow()
+                    .clickable { selectMilk(viewModel, visualizerView, f.absolutePath) }
+                    .padding(vertical = 8.dp),
             )
         }
     }
@@ -323,7 +331,7 @@ private fun CustomizeHubTab(
             tabs.forEachIndexed { i, t -> Tab(selected = sub == i, onClick = { sub = i }, text = { Text(t) }) }
         }
         Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-            Button(onClick = viewModel::randomizeParams) { Text("⚄ Randomize unlocked") }
+            Button(onClick = viewModel::randomizeParams, modifier = Modifier.pressGlow()) { Text("⚄ Randomize unlocked") }
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             val locked by viewModel.lockedParams.collectAsState()

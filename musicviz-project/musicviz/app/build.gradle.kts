@@ -13,8 +13,8 @@ android {
         applicationId = "dev.musicviz"
         minSdk = 26
         targetSdk = 36
-        versionCode = 23
-        versionName = "0.13.1"
+        versionCode = 24
+        versionName = "0.13.2"
         ndk {
             abiFilters += "arm64-v8a"
         }

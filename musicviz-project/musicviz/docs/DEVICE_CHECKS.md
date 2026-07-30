@@ -73,3 +73,17 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     (drags stir the sim AND paint palette ink) - all WITHOUT FlowField
     enabled (touch-wake) and while music is paused. A plain tap must
     still toggle the controls, never splat.
+17. Crystal themes + press animations (v0.13.2 r24): Settings > Look —
+    the first 8 theme chips are the design-sheet crystal themes (Rose
+    Quartz, Sugilite, Lapis Lazuli, Malachite, Kyanite, Amethyst, Onyx,
+    Clear Quartz); each must recolor the whole shell (gradient backdrop,
+    bars, accents) to its sheet palette, with the original themes still
+    after them. First run defaults to Kyanite. Pressing ANY card, chip,
+    nav item, scene row or transport button must spring it down ~6% and
+    bounce back on release. Corner style (sharp/rounded/pill) must
+    visibly change component radii; Bar opacity must fade the mini
+    player + nav bar over the backdrop.
+18. Font color (v0.13.2 r24): Settings > Look > Font color — Auto
+    follows the theme; each swatch (Frost, Silver, Gold, Rose, Cyan,
+    Violet, Mint) recolors UI text app-wide on any theme, persists
+    across restart, and stays readable on dialogs and the nav bar.

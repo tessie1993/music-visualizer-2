@@ -76,6 +76,7 @@ fun AppRoot(
     val context = LocalContext.current
     val visualizerView = remember { VisualizerView(context) }
     val appTheme by viewModel.theme.collectAsState()
+    val gui by viewModel.guiPrefs.collectAsState()
     var dest by rememberSaveable { mutableStateOf(0) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
@@ -96,9 +97,27 @@ fun AppRoot(
     // the last-composed enabled handler, unwinding overlays in the right
     // order: visualizer > search > drill-in > tab > exit.
     androidx.activity.compose.BackHandler(enabled = dest != 0) { dest = 0 }
-    MaterialTheme(colorScheme = appTheme.colorScheme()) {
-        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    // Crystal look: the theme's scheme (with the user's font-color override),
+    // the corner-style radius scale, and a soft primary-tinted gradient
+    // backdrop behind translucent surfaces - the sheets' "crystal glass over
+    // depth" material, approximated in Material 3.
+    val scheme = remember(appTheme, gui.fontColor) { gui.fontColor.apply(appTheme.colorScheme()) }
+    val backdrop =
+        remember(scheme) {
+            androidx.compose.ui.graphics.Brush.verticalGradient(
+                listOf(
+                    androidx.compose.ui.graphics
+                        .lerp(scheme.background, scheme.primary, 0.10f),
+                    scheme.background,
+                    androidx.compose.ui.graphics
+                        .lerp(scheme.background, scheme.primary, 0.05f),
+                ),
+            )
+        }
+    MaterialTheme(colorScheme = scheme, shapes = gui.cornerStyle.shapes()) {
+        Box(Modifier.fillMaxSize().background(backdrop)) {
             Scaffold(
+                containerColor = androidx.compose.ui.graphics.Color.Transparent,
                 bottomBar = {
                     Column {
                         MiniPlayer(
@@ -115,34 +134,41 @@ fun AppRoot(
                                 } else {
                                     0f
                                 },
+                            barOpacity = gui.barOpacity,
                             onExpand = { expanded = true },
                             onPlayPause = viewModel::togglePlayPause,
                             onNext = viewModel::next,
                         )
-                        NavigationBar {
+                        NavigationBar(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = gui.barOpacity),
+                        ) {
                             NavigationBarItem(
                                 selected = dest == 0,
                                 onClick = { dest = 0 },
                                 icon = { Icon(Icons.Filled.Home, "Home") },
                                 label = { Text("Home") },
+                                modifier = Modifier.pressGlow(),
                             )
                             NavigationBarItem(
                                 selected = dest == 1,
                                 onClick = { dest = 1 },
                                 icon = { Icon(Icons.Filled.LibraryMusic, "Library") },
                                 label = { Text("Library") },
+                                modifier = Modifier.pressGlow(),
                             )
                             NavigationBarItem(
                                 selected = dest == 2,
                                 onClick = { dest = 2 },
                                 icon = { Icon(Icons.Filled.MusicNote, "Visuals") },
                                 label = { Text("Visuals") },
+                                modifier = Modifier.pressGlow(),
                             )
                             NavigationBarItem(
                                 selected = dest == 3,
                                 onClick = { dest = 3 },
                                 icon = { Icon(Icons.Filled.Settings, "Settings") },
                                 label = { Text("Settings") },
+                                modifier = Modifier.pressGlow(),
                             )
                         }
                     }
@@ -206,6 +232,7 @@ private fun MiniPlayer(
     isPlaying: Boolean,
     hasMedia: Boolean,
     progress: Float,
+    barOpacity: Float,
     onExpand: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
@@ -214,7 +241,7 @@ private fun MiniPlayer(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = barOpacity))
             .clickable(onClick = onExpand),
     ) {
         Row(
@@ -260,7 +287,7 @@ fun HomeScreen(
         }
         if (state.hasMedia) {
             item {
-                Card(Modifier.fillMaxWidth().clickable(onClick = onExpand)) {
+                Card(Modifier.fillMaxWidth().pressGlow().clickable(onClick = onExpand)) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.PlayArrow, null, tint = MaterialTheme.colorScheme.primary)
                         Column(Modifier.padding(start = 10.dp)) {
@@ -272,9 +299,11 @@ fun HomeScreen(
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = viewModel::shuffleAllHistory) { Text("Shuffle all") }
-            }
+            // Full-width pill like the crystal sheets' "Shuffle All" button.
+            Button(
+                onClick = viewModel::shuffleAllHistory,
+                modifier = Modifier.fillMaxWidth().pressGlow(),
+            ) { Text("⇄  Shuffle all") }
         }
         if (recent.isNotEmpty()) {
             item { Text("Recently played", style = MaterialTheme.typography.titleMedium) }
@@ -303,7 +332,7 @@ private fun HistoryChip(
     label: String,
     onClick: () -> Unit,
 ) {
-    Card(onClick = onClick) {
+    Card(onClick = onClick, modifier = Modifier.pressGlow()) {
         Text(
             label,
             Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -330,12 +359,42 @@ fun SettingsScreen(
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(AppTheme.entries.toList()) { t ->
                     val sel = t == appTheme
-                    Card(onClick = { viewModel.setTheme(t) }) {
+                    Card(onClick = { viewModel.setTheme(t) }, modifier = Modifier.pressGlow()) {
                         Text(
                             (if (sel) "● " else "") + t.label,
                             Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                             style = MaterialTheme.typography.bodySmall,
                         )
+                    }
+                }
+            }
+        }
+        item {
+            Text("Font color", style = MaterialTheme.typography.labelMedium)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(FontColor.entries.toList()) { f ->
+                    val sel = f == gui.fontColor
+                    Card(
+                        onClick = { viewModel.setGuiPrefs(gui.copy(fontColor = f)) },
+                        modifier = Modifier.pressGlow(),
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(12.dp)
+                                    .background(
+                                        f.tint ?: MaterialTheme.colorScheme.onSurface,
+                                        androidx.compose.foundation.shape.CircleShape,
+                                    ),
+                            )
+                            Text(
+                                (if (sel) " ● " else " ") + f.label,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
                 }
             }
@@ -349,7 +408,10 @@ fun SettingsScreen(
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PlayerPosition.entries.forEach { pos ->
-                    OutlinedButton(onClick = { viewModel.setGuiPrefs(gui.copy(playerPosition = pos)) }) {
+                    OutlinedButton(
+                        onClick = { viewModel.setGuiPrefs(gui.copy(playerPosition = pos)) },
+                        modifier = Modifier.pressGlow(),
+                    ) {
                         Text((if (gui.playerPosition == pos) "● " else "") + pos.name.lowercase())
                     }
                 }
@@ -359,7 +421,10 @@ fun SettingsScreen(
             Text("Corner style", style = MaterialTheme.typography.labelMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CornerStyle.entries.forEach { c ->
-                    OutlinedButton(onClick = { viewModel.setGuiPrefs(gui.copy(cornerStyle = c)) }) {
+                    OutlinedButton(
+                        onClick = { viewModel.setGuiPrefs(gui.copy(cornerStyle = c)) },
+                        modifier = Modifier.pressGlow(),
+                    ) {
                         Text((if (gui.cornerStyle == c) "● " else "") + c.name.lowercase())
                     }
                 }
@@ -437,7 +502,7 @@ fun SettingsScreen(
         }
         item { HorizontalDivider() }
         item {
-            Button(onClick = { showExport = true }) { Text("Export video…") }
+            Button(onClick = { showExport = true }, modifier = Modifier.pressGlow()) { Text("Export video…") }
         }
     }
     if (showExport) {
@@ -478,6 +543,7 @@ fun SearchScreen(
                                 t.title,
                                 Modifier
                                     .fillMaxWidth()
+                                    .pressGlow()
                                     .clickable {
                                         viewModel.playTrack(t.uri)
                                         onClose()
@@ -493,6 +559,7 @@ fun SearchScreen(
                                 p.name,
                                 Modifier
                                     .fillMaxWidth()
+                                    .pressGlow()
                                     .clickable {
                                         viewModel.applyPreset(p)
                                         onClose()

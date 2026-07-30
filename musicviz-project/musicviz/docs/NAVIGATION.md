@@ -41,7 +41,10 @@ APP SHELL (Scaffold)
 │   └── Textures: [Import images] · per-texture [Use]
 │
 ├── SETTINGS
-│   ├── Look: theme cards · bar opacity
+│   ├── Look: theme chips (8 crystal design-sheet themes first — Rose
+│   │   Quartz, Sugilite, Lapis Lazuli, Malachite, Kyanite, Amethyst,
+│   │   Onyx, Clear Quartz — then the original set) · font color
+│   │   swatches (Auto + 7 fixed) · bar opacity
 │   ├── Player: position · corner style
 │   ├── Paths: preset mirror folder (SAF)
 │   ├── Analysis: cache view/clear · preset morph beats · beat threshold

@@ -104,7 +104,7 @@ fun VisualizerScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                FilledTonalIconButton(onClick = onCollapse) {
+                FilledTonalIconButton(onClick = onCollapse, modifier = Modifier.pressGlow()) {
                     Icon(Icons.Filled.KeyboardArrowDown, "Collapse")
                 }
                 Column {
@@ -162,7 +162,7 @@ fun VisualizerScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceEvenly,
                     ) {
-                        IconButton(onClick = viewModel::toggleShuffle) {
+                        IconButton(onClick = viewModel::toggleShuffle, modifier = Modifier.pressGlow()) {
                             Icon(
                                 Icons.Filled.Shuffle,
                                 "Shuffle",
@@ -174,19 +174,23 @@ fun VisualizerScreen(
                                     },
                             )
                         }
-                        IconButton(onClick = viewModel::previous, enabled = state.hasMedia) {
+                        IconButton(onClick = viewModel::previous, enabled = state.hasMedia, modifier = Modifier.pressGlow()) {
                             Icon(Icons.Filled.SkipPrevious, "Previous")
                         }
-                        FilledTonalIconButton(onClick = viewModel::togglePlayPause, enabled = state.hasMedia) {
+                        FilledTonalIconButton(
+                            onClick = viewModel::togglePlayPause,
+                            enabled = state.hasMedia,
+                            modifier = Modifier.pressGlow(),
+                        ) {
                             Icon(
                                 if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                                 if (state.isPlaying) "Pause" else "Play",
                             )
                         }
-                        IconButton(onClick = viewModel::next, enabled = state.hasMedia) {
+                        IconButton(onClick = viewModel::next, enabled = state.hasMedia, modifier = Modifier.pressGlow()) {
                             Icon(Icons.Filled.SkipNext, "Next")
                         }
-                        IconButton(onClick = viewModel::cycleRepeatMode) {
+                        IconButton(onClick = viewModel::cycleRepeatMode, modifier = Modifier.pressGlow()) {
                             Icon(
                                 if (state.repeatMode == Player.REPEAT_MODE_ONE) {
                                     Icons.Filled.RepeatOne
@@ -208,11 +212,11 @@ fun VisualizerScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        TextButton(onClick = onOpenVisuals) {
+                        TextButton(onClick = onOpenVisuals, modifier = Modifier.pressGlow()) {
                             Icon(Icons.Filled.Tune, null)
                             Text("  Visuals")
                         }
-                        TextButton(onClick = viewModel::cycleAutoMode) {
+                        TextButton(onClick = viewModel::cycleAutoMode, modifier = Modifier.pressGlow()) {
                             Icon(Icons.AutoMirrored.Filled.QueueMusic, null)
                             Text(
                                 when (autoMode) {
