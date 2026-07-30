@@ -17,12 +17,17 @@ Architecture digest:
   uniforms), Lfo.kt (LfoEngine: configs / tick() / companion apply() —
   the ADSR engine must mirror this shape), scene/ (ShaderScene ×20 frags
   with shared prelude view()/pal()/grade(), ParticleSceneBase ×5,
-  ProjectMScene + PMBridge JNI, SceneParams = 57-field data class).
+  ProjectMScene + PMBridge JNI, SceneParams = 117-field data class,
+  ParamRandomizer), fluid/ (FluidScene, CurlFlowScene, WaterScene + the
+  pure CPU mirrors FluidMath/FluidHue/CurlFlowMath/WaterMath/RippleMath).
+  Which family reads which param: docs/PARAM_MATRIX.md.
 - export/    VideoExporter + FxCompositor (mirrors live composite; every
   live-path modulator must also run here), AudioTranscoder.
 - ui/        PlayerViewModel (~1000 lines — split as it grows),
-  VisualizerScreen, CustomizeDialog, SettingsDialog, BrowserDialog,
-  MusicLibraryDialog, PresetStore (JSON), BuiltInPresets, TextureStore.
+  VisualizerScreen, VisualsHub (the ONE customization surface; hosts the
+  tab composables that live in CustomizeDialog.kt), SettingsDialog,
+  PresetStore (JSON), BuiltInPresets, PaletteStore/PaletteMaker,
+  TextureStore.
 - res/raw/   shader sources; composite_frag.glsl is the FX chain.
 
 ## Working rules
@@ -277,6 +282,71 @@ curl-noise + GPU-particle-lifecycle + emitter/attractor patterns surveyed.
       (theme overhaul), player panel settings. (0.13.x round)
 - [ ] Touch press feedback. Crystal themes/overlays remain DEFERRED until
       the user re-opens them after the overhaul.
+
+## Known gaps — visual/customization audit (v0.14.0)
+Re-derived against the merged tree; the full evidence is in
+docs/PARAM_MATRIX.md ("Notes" + "Divergences worth knowing"). Everything
+listed here is a real gap that was NOT closed in this round, with the reason
+it was left and what closing it involves.
+
+- [ ] **Beat sensitivity does not reach the offline analyzer.**
+      `OfflineAnalyzer.StreamingPipeline` builds its own `FeatureExtractor`
+      (analysis/OfflineAnalyzer.kt:137) and never assigns
+      `beatThresholdSigma` / `beatMinIntervalMs`, so every cached beat grid —
+      and therefore every export and every section-driven intelligence
+      decision — runs at the shipped defaults (2.5σ / 333 ms) no matter where
+      the user leaves the sliders. Pre-existing; predates the v0.14 beat
+      work. Closing it is NOT a one-liner: the two values have to be
+      threaded from GuiPrefs into `OfflineAnalyzer.analyze`, AND
+      `AnalysisCache` must stop serving a timeline analysed at other
+      settings — its key is a SHA-1 of the URI alone
+      (analysis/AnalysisCache.kt:36-40) with no sensitivity in the key or the
+      header. Either fold both values into the key or bump `VERSION`, store
+      them in the header and reject mismatches. Decide first whether beat
+      grids SHOULD follow a live-visuals slider at all, or whether the
+      offline detector wants its own (probably stricter) setting.
+- [ ] **`pulse` ("Beat pulse") has no reader on MilkDrop or the fluid
+      family.** Shader scenes use `uPulse`, particle scenes swell their point
+      size; the composite pass declares no beat pulse at all, so the slider
+      is inert on MD/FL/CF/WA. Closing it means a new `uPostPulse` uniform
+      (a beat-driven zoom/scale nudge inside `geo()`), the matching upload in
+      `VisualizerRenderer` and `FxCompositor`, and a `CompositeGrade` mirror
+      + headless test — the same shape as the v0.14 grading work. Pick the
+      curve so it matches what shader scenes already do at the same value.
+- [ ] **`audioDrive` / `beatResponse` have no reader on Fluid, Water (and
+      `audioDrive` none on MilkDrop).** Those scenes consume `AudioFeatures`
+      straight after `applyBandGains`, so the per-band faders work but the
+      two master reactivity sliders do nothing. Curl Flow reads `audioDrive`
+      (CurlFlowScene.kt:170) and still ignores `beatResponse`. Do NOT fix by
+      folding `audioDrive` into `applyBandGains` — shader and particle scenes
+      apply it themselves and would double-apply. The honest fix is to scale
+      the emitter/choreography drive terms in FluidScene/WaterScene, which
+      needs on-device tuning to avoid blowing the sim out at 2.5x.
+- [ ] **Shader-only params are shown on every style.** `morph`,
+      `palette2`, `paletteMix` and `duotone` are read only by `ShaderScene`
+      (by design — they need the fragment palette/pattern machinery), but
+      since the Customize panel moved into `VisualsHub` the Shape and Color
+      tabs render unconditionally, so four live sliders do nothing on
+      particle, MilkDrop and fluid styles. Same class of bug the Fluid tab
+      gating fixed. Closing it: plumb `sceneId` into `ShapeTab`/`ColorTab`,
+      add `isShaderSceneId`-style predicates next to the fluid ones in
+      VisualsHub.kt:372-400, and pin them the way `FluidTabGatingTest` pins
+      the fluid slices. Decide the policy first — hide, or show disabled
+      with a "shader styles only" note (the `trails` slider takes the second
+      route today, labelled "Trails (particle scenes)").
+- [ ] `endlessZoom` is shown on the fluid styles, which have no respawn/
+      outflow behaviour to drive. Same fix shape as the item above; low
+      priority because the checkbox is cheap and harmless.
+- [ ] `hueRange` is clamped to 0.1..1 on the fluid family (`FluidHue.span`)
+      but multiplied raw on shader/particle scenes, so the slider's 1.0-1.5
+      band is flat on three of six families. Intentional today (a 0 span
+      kills the fluid look). If it is ever unified, do it in `FluidHue` so
+      all three fluid styles move together.
+- [ ] ADSR card labels "Attack"/"Decay" collide with the Behavior tab's
+      reactivity envelope sliders of the same name. Harmless right now —
+      neither is a `ParamRandomizer` key, so the shared lock chip only
+      mirrors a highlight — but it becomes a real collision the moment
+      either gets randomized. Rename to "Env attack"/"Env decay" if so.
 
 ## Always
 - [ ] Update docs (NAVIGATION.md, WIREFRAME.md, PARAM_MATRIX.md) when

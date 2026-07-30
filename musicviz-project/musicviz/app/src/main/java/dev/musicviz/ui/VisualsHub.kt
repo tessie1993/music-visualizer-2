@@ -362,6 +362,43 @@ private fun selectMilk(
 
 // ---------------------------------------------------------------- Customize
 
+// Fluid-tab gating. The fluid styles each read a DIFFERENT slice of the
+// fluid params, so the tab is gated per slice rather than per style:
+// showing a control the active style ignores is as much of a bug as hiding
+// one it reads. Kept as plain functions (not inline expressions) so the
+// slices are unit-testable and documented in one place.
+
+/** Only FluidScene runs the Navier-Stokes solver, dye/ink and its look passes. */
+internal fun isFluidSceneId(sceneId: String): Boolean = sceneId == SceneIds.FLUID
+
+/** Styles driven by FluidChoreography's spawn/catch journey progression. */
+internal fun isJourneySceneId(sceneId: String): Boolean =
+    sceneId == SceneIds.FLUID ||
+        sceneId == SceneIds.CURLFLOW ||
+        sceneId == SceneIds.WATER
+
+/**
+ * Styles that run the shared FluidEmitters splat schedule and the
+ * FluidQuality tiers. WaterScene reuses the emitter schedule verbatim
+ * (WaterScene.kt "Emitter schedule reused verbatim") and its own quality
+ * tiers key off fluidQuality/fluidAutoQuality, so those controls belong on
+ * Water even though the solver ones do not.
+ */
+internal fun isEmitterSceneId(sceneId: String): Boolean = sceneId == SceneIds.FLUID || sceneId == SceneIds.WATER
+
+/** Only WaterScene reads the heightfield surface params. */
+internal fun isWaterSceneId(sceneId: String): Boolean = sceneId == SceneIds.WATER
+
+/**
+ * Styles that run the shared FluidParticles lifecycle layer, i.e. the ones
+ * that read `fluidParticleDrag`. CURLFLOW *is* that layer (CurlFlowScene's
+ * "particles.drag = params.fluidParticleDrag"), yet the drag slider used to
+ * live in the FLUID-only Particles section AND behind `fluidParticlesEnabled`,
+ * a param CurlFlow never reads - so a control the style genuinely consumes was
+ * unreachable on it. WATER has no particle layer at all.
+ */
+internal fun isParticleLayerSceneId(sceneId: String): Boolean = sceneId == SceneIds.FLUID || sceneId == SceneIds.CURLFLOW
+
 @Composable
 private fun CustomizeHubTab(
     viewModel: PlayerViewModel,
@@ -420,13 +457,12 @@ private fun CustomizeHubTab(
                         FluidTab(
                             p,
                             onChange,
-                            isFluidScene = viz.sceneId == dev.musicviz.render.scene.SceneIds.FLUID,
-                            isJourneyScene =
-                                viz.sceneId == dev.musicviz.render.scene.SceneIds.FLUID ||
-                                    viz.sceneId == dev.musicviz.render.scene.SceneIds.CURLFLOW ||
-                                    viz.sceneId == dev.musicviz.render.scene.SceneIds.WATER,
-                            isWaterScene = viz.sceneId == dev.musicviz.render.scene.SceneIds.WATER,
-                            injectionError = if (viz.sceneId == dev.musicviz.render.scene.SceneIds.FLUID) viz.shaderError else null,
+                            isFluidScene = isFluidSceneId(viz.sceneId),
+                            isJourneyScene = isJourneySceneId(viz.sceneId),
+                            isWaterScene = isWaterSceneId(viz.sceneId),
+                            isEmitterScene = isEmitterSceneId(viz.sceneId),
+                            isParticleLayerScene = isParticleLayerSceneId(viz.sceneId),
+                            injectionError = if (isFluidSceneId(viz.sceneId)) viz.shaderError else null,
                             onApplyInjectionShaders = { force, dye ->
                                 visualizerView.visualizerRenderer.submitFluidInjectionShaders(force, dye)
                             },

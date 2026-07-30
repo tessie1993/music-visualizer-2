@@ -63,11 +63,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.musicviz.analysis.FeatureExtractor
 import dev.musicviz.analysis.SearchMatcher
 import dev.musicviz.render.VisualizerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 /**
  * Navigation-v2 app shell: bottom nav (Home / Library / Visuals / Settings)
@@ -120,7 +122,7 @@ fun AppRoot(
     // order: visualizer > search > drill-in > tab > exit.
     androidx.activity.compose.BackHandler(enabled = dest != 0) { dest = 0 }
     MaterialTheme(
-        colorScheme = effectiveTheme.colorScheme(gui.accentIntensity, gui.backgroundDim),
+        colorScheme = effectiveTheme.colorScheme(gui.accentIntensity, gui.backgroundDim, gui.whiteFont),
         shapes = gui.cornerStyle.shapes(),
         typography = crystalTypography(),
     ) {
@@ -552,6 +554,20 @@ fun SettingsScreen(
                         onCheckedChange = { viewModel.setGuiPrefs(gui.copy(followSystemDark = it)) },
                     )
                 }
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("White font", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Switch(
+                            checked = gui.whiteFont,
+                            onCheckedChange = { viewModel.setGuiPrefs(gui.copy(whiteFont = it)) },
+                        )
+                    }
+                    Text(
+                        "Forces labels and body text to pure white. No effect on light themes, where it would be unreadable.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Compact mini-player", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Switch(
@@ -641,14 +657,49 @@ fun SettingsScreen(
                 }
                 Column {
                     Text(
-                        "Beat threshold  ${"%.1f".format(gui.beatThresholdSigma)}σ (higher = fewer beat flashes)",
+                        "Beat sensitivity  ${"%.1f".format(gui.beatThresholdSigma)}σ " +
+                            "— drag right for LESS sensitive (fewer beat flashes)",
                         style = MaterialTheme.typography.labelMedium,
                     )
+                    // Range comes from the extractor so the slider can never
+                    // saturate against a tighter clamp in AnalysisEngine.
                     Slider(
                         value = gui.beatThresholdSigma,
                         onValueChange = { viewModel.setGuiPrefs(gui.copy(beatThresholdSigma = it)) },
-                        valueRange = 1.5f..4f,
+                        valueRange = FeatureExtractor.SIGMA_MIN..FeatureExtractor.SIGMA_MAX,
                     )
+                    Text(
+                        "Minimum gap between beats  ${gui.beatMinIntervalMs.roundToInt()} ms " +
+                            "— never flash faster than ${(60_000f / gui.beatMinIntervalMs).roundToInt()} BPM",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    Slider(
+                        value = gui.beatMinIntervalMs,
+                        onValueChange = { viewModel.setGuiPrefs(gui.copy(beatMinIntervalMs = it)) },
+                        valueRange = FeatureExtractor.INTERVAL_MS_MIN..FeatureExtractor.INTERVAL_MS_MAX,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.setGuiPrefs(
+                                    gui.copy(
+                                        beatThresholdSigma = FeatureExtractor.SLOW_SIGMA,
+                                        beatMinIntervalMs = FeatureExtractor.SLOW_INTERVAL_MS,
+                                    ),
+                                )
+                            },
+                        ) { Text("Slow track") }
+                        TextButton(
+                            onClick = {
+                                viewModel.setGuiPrefs(
+                                    gui.copy(
+                                        beatThresholdSigma = FeatureExtractor.SIGMA_DEFAULT,
+                                        beatMinIntervalMs = FeatureExtractor.INTERVAL_MS_DEFAULT,
+                                    ),
+                                )
+                            },
+                        ) { Text("Default") }
+                    }
                 }
                 val context = androidx.compose.ui.platform.LocalContext.current
                 var cacheInfo by remember { mutableStateOf("…") }

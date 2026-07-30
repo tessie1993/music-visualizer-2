@@ -30,7 +30,14 @@ class AnalysisEngine(
     var beatThresholdSigma: Float
         get() = extractor.beatThresholdSigma
         set(value) {
-            extractor.beatThresholdSigma = value.coerceIn(1.5f, 4f)
+            extractor.beatThresholdSigma = value.coerceIn(FeatureExtractor.SIGMA_MIN, FeatureExtractor.SIGMA_MAX)
+        }
+
+    /** Minimum gap between beat flags, in ms; the rate cap for slow tracks. */
+    var beatMinIntervalMs: Float
+        get() = extractor.beatMinIntervalMs
+        set(value) {
+            extractor.beatMinIntervalMs = value.coerceIn(FeatureExtractor.INTERVAL_MS_MIN, FeatureExtractor.INTERVAL_MS_MAX)
         }
     private val _features = MutableStateFlow(AudioFeatures.empty(processor.bandCount))
     val features: StateFlow<AudioFeatures> = _features

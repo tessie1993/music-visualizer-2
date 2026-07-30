@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -20,19 +19,13 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -40,139 +33,36 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.render.LfoConfig
 import dev.musicviz.render.LfoTarget
 import dev.musicviz.render.LfoWave
 import dev.musicviz.render.scene.SceneParams
 
+/*
+ * The scene customization panel's TABS. They are hosted by
+ * `VisualsHub.CustomizeHubTab` (Visuals > Customize), which owns the tab row,
+ * the Randomize button and the lock set; the dialog wrapper that used to live
+ * here was orphaned by the navigation refactor and has been deleted rather
+ * than left as a second, Fluid-less copy of the same panel.
+ *
+ * Tabs group controls the way a VJ thinks about them: Motion (how it moves),
+ * Shape (geometry and distortion), Behavior (audio reactivity), Color
+ * (palettes and grading), FX (screen effects, settings fade, ADSR envelopes
+ * and the assignable LFO automations), Fluid (the fluid family plus the
+ * all-styles FlowField / water-ripple overlays) and GLSL (raw shader editing
+ * on shader scenes). Sections inside each tab carry small headers so long
+ * lists stay scannable. All changes apply live.
+ */
+
 /**
- * Full-screen scene customization panel. Six tabs group controls the way a
- * VJ thinks about them: Motion (how it moves), Shape (geometry and
- * distortion), Behavior (audio reactivity), Color (palettes and grading),
- * FX (screen effects, settings fade, and the assignable LFO automations),
- * and GLSL (raw shader editing on shader scenes). Sections inside each tab
- * carry small headers so long lists stay scannable. All changes apply live.
+ * Lock set + toggle for the "Randomize unlocked" button, provided by the
+ * hosting screen. Keys are the CONTROL LABEL strings rendered by
+ * [LabeledSlider] / [LabeledIntSlider] / [CheckRow] / [LockableChipLabel] -
+ * see `ParamRandomizer`, whose keys must match them verbatim.
  */
 val LocalParamLocks =
     androidx.compose.runtime.compositionLocalOf<Pair<Set<String>, (String) -> Unit>> { emptySet<String>() to {} }
-
-@Composable
-fun CustomizeDialog(
-    params: SceneParams,
-    onParamsChange: (SceneParams) -> Unit,
-    lockedParams: Set<String> = emptySet(),
-    onToggleLock: (String) -> Unit = {},
-    onRandomize: () -> Unit = {},
-    adsr: List<dev.musicviz.render.AdsrConfig> = emptyList(),
-    onAdsrChange: (Int, dev.musicviz.render.AdsrConfig) -> Unit = { _, _ -> },
-    attack: Float,
-    decay: Float,
-    onReactivityChange: (Float, Float) -> Unit,
-    intelligenceMode: IntelligenceMode,
-    onIntelligenceModeChange: (IntelligenceMode) -> Unit,
-    lfos: List<LfoConfig>,
-    onLfoChange: (Int, LfoConfig) -> Unit,
-    shaderSource: String?,
-    shaderError: String?,
-    onApplyShader: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var tab by remember { mutableIntStateOf(0) }
-    var source by remember(shaderSource) { mutableStateOf(shaderSource.orEmpty()) }
-    val hasAdvanced = shaderSource != null
-    val tabs =
-        if (hasAdvanced) {
-            listOf("Motion", "Shape", "Behavior", "Color", "FX", "GLSL")
-        } else {
-            listOf("Motion", "Shape", "Behavior", "Color", "FX")
-        }
-    val glslIndex = 5
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxSize(0.96f),
-            shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surface,
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Customize scene",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = { onParamsChange(SceneParams.DEFAULT) }) { Text("Reset") }
-                    TextButton(onClick = onDismiss) { Text("Done") }
-                }
-                ScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp) {
-                    tabs.forEachIndexed { index, title ->
-                        Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) })
-                    }
-                }
-                Column(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .verticalScroll(rememberScrollState())
-                            .padding(top = 6.dp),
-                ) {
-                    androidx.compose.runtime.CompositionLocalProvider(
-                        LocalParamLocks provides (lockedParams to onToggleLock),
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = onRandomize) { Text("Randomize (skips locked)") }
-                        }
-                        when (tab) {
-                            0 -> MotionTab(params, onParamsChange)
-                            1 -> ShapeTab(params, onParamsChange)
-                            2 ->
-                                BehaviorTab(
-                                    params,
-                                    onParamsChange,
-                                    attack,
-                                    decay,
-                                    onReactivityChange,
-                                    intelligenceMode,
-                                    onIntelligenceModeChange,
-                                )
-                            3 -> ColorTab(params, onParamsChange)
-                            4 -> FxTab(params, onParamsChange, lfos, onLfoChange, adsr, onAdsrChange)
-                            else -> {
-                                OutlinedTextField(
-                                    value = source,
-                                    onValueChange = { source = it },
-                                    modifier = Modifier.fillMaxWidth().height(360.dp),
-                                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                )
-                                if (shaderError != null) {
-                                    Text(
-                                        text = shaderError,
-                                        color = MaterialTheme.colorScheme.error,
-                                        style = MaterialTheme.typography.labelSmall,
-                                    )
-                                }
-                                TextButton(onClick = { onApplyShader(source) }) { Text("Apply shader") }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // Suppress the unused warning when GLSL tab is hidden.
-    LaunchedEffect(hasAdvanced) {
-        // Writing state directly during composition is illegal; reset the tab
-        // as an effect when the GLSL tab disappears (scene switched to one
-        // without an editable shader).
-        if (tab >= glslIndex && !hasAdvanced) tab = 0
-    }
-}
 
 @Composable
 private fun SectionHeader(title: String) {
@@ -230,6 +120,7 @@ internal fun ShapeTab(
         LabeledSlider("Pixelate", p.pixelate, 0f..1f) { onChange(p.copy(pixelate = it)) }
         LabeledSlider("Posterize", p.posterize, 0f..1f) { onChange(p.copy(posterize = it)) }
         SectionHeader("Particles")
+        LockableChipLabel("Particle shape")
         ChipRow(SceneParams.PARTICLE_SHAPES, p.particleShape) { onChange(p.copy(particleShape = it)) }
         LabeledSlider("Particle size", p.particleSize, 0.3f..2.5f) { onChange(p.copy(particleSize = it)) }
     }
@@ -299,14 +190,18 @@ internal fun ColorTab(
     p: SceneParams,
     onChange: (SceneParams) -> Unit,
 ) {
+    val palettes = rememberSavedPalettes()
     Column {
         SectionHeader("Palettes")
-        ChipRow(SceneParams.PALETTES.map { it.first }, p.palette) { onChange(p.copy(palette = it)) }
+        LockableChipLabel("Palette")
+        PaletteSlotSelector(p, onChange, palettes)
         LabeledSlider("Palette blend", p.paletteMix, 0f..1f) { onChange(p.copy(paletteMix = it)) }
         if (p.paletteMix > 0.001f) {
-            Text("Second palette", style = MaterialTheme.typography.labelSmall)
-            ChipRow(SceneParams.PALETTES.map { it.first }, p.palette2) { onChange(p.copy(palette2 = it)) }
+            LockableChipLabel("Palette 2")
+            PaletteSlotSelector(p, onChange, palettes, second = true)
         }
+        SectionHeader("Gradient & palette maker")
+        PaletteMakerCard(p, onChange, palettes)
         SectionHeader("Hue")
         LabeledSlider("Hue shift", p.colorShift, 0f..1f) { onChange(p.copy(colorShift = it)) }
         LabeledSlider("Hue range", p.hueRange, 0f..1.5f) { onChange(p.copy(hueRange = it)) }
@@ -408,7 +303,11 @@ private fun LfoCard(
             } else {
                 LabeledSlider("Rate (Hz)", config.rateHz, 0.02f..8f) { onChange(config.copy(rateHz = it)) }
             }
-            LabeledSlider("Depth", config.depth, 0f..1f) { onChange(config.copy(depth = it)) }
+            // "LFO depth", not "Depth": lock keys are label strings and the
+            // Water section's "Depth" (waterDepth) IS a randomizer key, so the
+            // bare label made locking this modulation slider silently freeze
+            // the water depth roll as well.
+            LabeledSlider("LFO depth", config.depth, 0f..1f) { onChange(config.copy(depth = it)) }
         }
     }
     if (showTargetPicker) {
@@ -487,6 +386,34 @@ private fun LabeledSlider(
     }
 }
 
+/**
+ * Header for a chip selector, carrying the same lock chip [LabeledSlider]
+ * renders. [label] IS the lock key (see `ParamRandomizer`, whose keys are
+ * control-label strings), so a chip-driven param - Palette, Palette 2,
+ * Particle shape, Beat pattern, Path - can be held against "Randomize
+ * unlocked" like every slider and checkbox. Chip rows used to render a plain
+ * [Text] (or no label at all), which made those five the only rolled params a
+ * user could not protect: every roll re-picked the palette they had chosen.
+ */
+@Composable
+private fun LockableChipLabel(label: String) {
+    val (locked, toggle) = LocalParamLocks.current
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.labelSmall)
+        Text(
+            if (label in locked) "locked" else "lock",
+            style = MaterialTheme.typography.labelSmall,
+            color =
+                if (label in locked) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                },
+            modifier = Modifier.clickable { toggle(label) },
+        )
+    }
+}
+
 @Composable
 private fun CheckRow(
     label: String,
@@ -500,11 +427,27 @@ private fun CheckRow(
 }
 
 /**
- * Customize -> Fluid tab (F5). When the FLUID style is active every section
- * is shown, including the force/dye injection shader editors (the section-13
- * extension points). The WATER style adds its Water section (plus the shared
- * Journey section); for every other style only the FlowField section
- * appears - the same tab is the one home for "fluid principles" regardless
+ * Customize -> Fluid tab (F5). Sections are gated by what the ACTIVE style
+ * actually reads, not by style name, because the fluid styles overlap only
+ * partially:
+ * - [isFluidScene]: FLUID alone - the Navier-Stokes solver, the ink/dye and
+ *   look passes, and the force/dye injection shader editors (the section-13
+ *   extension points).
+ * - [isEmitterScene]: FLUID + WATER - the shared FluidEmitters splat
+ *   schedule and the FluidQuality tiers. WaterScene reuses both verbatim
+ *   (see WaterScene.applyQualityTier and its "Emitter schedule reused
+ *   verbatim" block), so hiding these on Water left it running on whatever
+ *   values the params happened to hold.
+ * - [isJourneyScene]: FLUID + CURLFLOW + WATER - the shared spawn/catch
+ *   progression.
+ * - [isParticleLayerScene]: FLUID + CURLFLOW - the shared FluidParticles
+ *   lifecycle layer, i.e. the styles that read `fluidParticleDrag`. CurlFlow
+ *   IS that layer, so hiding the drag slider behind the FLUID-only section
+ *   (and behind `fluidParticlesEnabled`, which CurlFlow never reads) made a
+ *   control the style genuinely consumes unreachable.
+ * - [isWaterScene]: WATER alone - the heightfield surface.
+ * For every other style only the FlowField / water-ripple overlay sections
+ * appear - the same tab is the one home for "fluid principles" regardless
  * of style, mirroring how the GLSL tab scopes to shader scenes.
  */
 @Composable
@@ -514,6 +457,8 @@ internal fun FluidTab(
     isFluidScene: Boolean,
     isJourneyScene: Boolean = isFluidScene,
     isWaterScene: Boolean = false,
+    isEmitterScene: Boolean = isFluidScene,
+    isParticleLayerScene: Boolean = isFluidScene,
     injectionError: String? = null,
     onApplyInjectionShaders: (String?, String?) -> Unit = { _, _ -> },
 ) {
@@ -541,7 +486,7 @@ internal fun FluidTab(
                     "advance the bloom.",
                 style = MaterialTheme.typography.labelSmall,
             )
-            Text("Path", style = MaterialTheme.typography.labelSmall)
+            LockableChipLabel("Path")
             ChipRow(SceneParams.FLUID_PATHS, p.fluidSpawnPath.coerceIn(0, SceneParams.FLUID_PATHS.size - 1)) {
                 onChange(p.copy(fluidSpawnPath = it))
             }
@@ -554,7 +499,9 @@ internal fun FluidTab(
             }
             LabeledSlider("Particle life (s)", p.fluidParticleLife, 1f..20f) { onChange(p.copy(fluidParticleLife = it)) }
         }
-        if (isFluidScene) {
+        if (isEmitterScene) {
+            // Quality tiers: FluidScene sizes its sim/dye/particle buffers
+            // from them, WaterScene its ripple grid (WaterScene.gridResFor).
             SectionHeader("Quality")
             ChipRow(
                 dev.musicviz.render.fluid.FluidQuality.LABELS,
@@ -563,15 +510,25 @@ internal fun FluidTab(
             CheckRow("Auto quality (downgrade on sustained low FPS)", p.fluidAutoQuality) {
                 onChange(p.copy(fluidAutoQuality = it))
             }
-            LabeledIntSlider("Solver iterations", p.fluidIterations, 8..40) { onChange(p.copy(fluidIterations = it)) }
+            if (isFluidScene) {
+                // Pressure-projection sweeps: WATER's wave equation has no
+                // pressure solve, so the knob would do nothing there.
+                LabeledIntSlider("Solver iterations", p.fluidIterations, 8..40) { onChange(p.copy(fluidIterations = it)) }
+            }
+        }
+        if (isFluidScene) {
             SectionHeader("Character")
             LabeledSlider("Fluid curl", p.fluidCurl, 0f..50f) { onChange(p.copy(fluidCurl = it)) }
             LabeledSlider("Motion fade", p.fluidVelocityDissipation, 0f..4f) { onChange(p.copy(fluidVelocityDissipation = it)) }
             LabeledSlider("Fluid fade", p.fluidDensityDissipation, 0f..4f) { onChange(p.copy(fluidDensityDissipation = it)) }
             LabeledSlider("Chromatic aging", p.fluidChromaticAging, 0f..1f) { onChange(p.copy(fluidChromaticAging = it)) }
             LabeledSlider("Pressure", p.fluidPressure, 0f..1f) { onChange(p.copy(fluidPressure = it)) }
+        }
+        if (isEmitterScene) {
+            // The splat schedule is shared: FluidScene injects the splats as
+            // velocity/dye, WaterScene converts each one into a drop.
             SectionHeader("Emitters")
-            Text("Beat pattern", style = MaterialTheme.typography.labelSmall)
+            LockableChipLabel("Beat pattern")
             ChipRow(SceneParams.FLUID_PATTERNS, p.fluidBeatPattern.coerceIn(0, 3)) {
                 onChange(p.copy(fluidBeatPattern = it))
             }
@@ -579,18 +536,40 @@ internal fun FluidTab(
             LabeledIntSlider("Stirrers", p.fluidStirrers, 0..4) { onChange(p.copy(fluidStirrers = it)) }
             LabeledSlider("Stirrer speed", p.fluidStirrerSpeed, 0f..2f) { onChange(p.copy(fluidStirrerSpeed = it)) }
             LabeledSlider("Fluid splat radius", p.fluidSplatRadius, 0.02f..0.4f) { onChange(p.copy(fluidSplatRadius = it)) }
+            // Lives with the radius it modulates; both feed FluidEmitters,
+            // which WATER drives too (emitters.radiusPulse).
+            LabeledSlider("Radius on beat", p.fluidRadiusPulse, 0f..1f) { onChange(p.copy(fluidRadiusPulse = it)) }
             LabeledSlider("Fluid splat force", p.fluidSplatForce, 0f..3f) { onChange(p.copy(fluidSplatForce = it)) }
             CheckRow("Bass pump", p.fluidBassPump) { onChange(p.copy(fluidBassPump = it)) }
             CheckRow("Treble sparkle", p.fluidSparkle) { onChange(p.copy(fluidSparkle = it)) }
-            LabeledSlider("Palette cycle", p.fluidPaletteCycleSpeed, 0f..2f) { onChange(p.copy(fluidPaletteCycleSpeed = it)) }
+            if (isFluidScene) {
+                // Tints the dye a splat carries; WATER discards splat colour
+                // (it keeps only position/radius/velocity), so FLUID only.
+                LabeledSlider("Palette cycle", p.fluidPaletteCycleSpeed, 0f..2f) { onChange(p.copy(fluidPaletteCycleSpeed = it)) }
+            }
+        }
+        if (isParticleLayerScene) {
             SectionHeader("Particles")
-            CheckRow("Particle layer", p.fluidParticlesEnabled) { onChange(p.copy(fluidParticlesEnabled = it)) }
-            if (p.fluidParticlesEnabled) {
+            if (isFluidScene) {
+                // The on/off switch is FluidScene's - CURLFLOW *is* the
+                // particle layer, so there is nothing to switch off there
+                // (it never reads fluidParticlesEnabled).
+                CheckRow("Particle layer", p.fluidParticlesEnabled) { onChange(p.copy(fluidParticlesEnabled = it)) }
+            }
+            // Drag is read wherever the lifecycle layer actually steps:
+            // FluidScene behind its toggle, CurlFlowScene unconditionally.
+            if (!isFluidScene || p.fluidParticlesEnabled) {
                 LabeledSlider("Particle drag", p.fluidParticleDrag, 0.02f..1f) { onChange(p.copy(fluidParticleDrag = it)) }
+            }
+            if (isFluidScene && p.fluidParticlesEnabled) {
+                // CURLFLOW colours its points from the beat pulse and the
+                // composite exposure instead, so this one stays FLUID-only.
                 LabeledSlider("Particle brightness", p.fluidParticleBrightness, 0f..2f) {
                     onChange(p.copy(fluidParticleBrightness = it))
                 }
             }
+        }
+        if (isFluidScene) {
             CheckRow("Ink layer", p.fluidDyeEnabled) { onChange(p.copy(fluidDyeEnabled = it)) }
             SectionHeader("Look")
             CheckRow("Shading (embossed ink)", p.fluidShading) { onChange(p.copy(fluidShading = it)) }
@@ -609,7 +588,6 @@ internal fun FluidTab(
             LabeledSlider("Curl from mids", p.fluidCurlAudio, 0f..1f) { onChange(p.copy(fluidCurlAudio = it)) }
             LabeledSlider("Glow from loudness", p.fluidBloomAudio, 0f..1f) { onChange(p.copy(fluidBloomAudio = it)) }
             LabeledSlider("Fade when quiet", p.fluidFadeAudio, 0f..1f) { onChange(p.copy(fluidFadeAudio = it)) }
-            LabeledSlider("Radius on beat", p.fluidRadiusPulse, 0f..1f) { onChange(p.copy(fluidRadiusPulse = it)) }
         }
         SectionHeader("FlowField (all styles)")
         Text(
@@ -637,7 +615,13 @@ internal fun FluidTab(
         )
         CheckRow("Water ripples enabled", p.rippleOverlayEnabled) { onChange(p.copy(rippleOverlayEnabled = it)) }
         if (p.rippleOverlayEnabled) {
-            LabeledSlider("Ripple strength", p.rippleOverlayStrength, 0f..1f) { onChange(p.copy(rippleOverlayStrength = it)) }
+            // NOT "Ripple strength": that is the Water section's own slider
+            // (waterRippleStrength, 0..2). Lock keys are label strings, so
+            // sharing the label made one lock chip freeze both params and one
+            // roll write both - two different controls behind one switch.
+            LabeledSlider("Ripple overlay strength", p.rippleOverlayStrength, 0f..1f) {
+                onChange(p.copy(rippleOverlayStrength = it))
+            }
             LabeledSlider("Ripple glint", p.rippleOverlaySpecular, 0f..1f) { onChange(p.copy(rippleOverlaySpecular = it)) }
         }
         if (isFluidScene) {

@@ -8,6 +8,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import dev.musicviz.analysis.FeatureExtractor
 
 /** Four anchor colors per theme; every other Material role is derived. */
 private data class Anchors(
@@ -98,10 +99,15 @@ enum class AppTheme(
      * Builds the full color scheme. [accentIntensity] (0.5..1.5) scales the
      * saturation of primary/secondary/tertiary; [backgroundDim] (0..0.6)
      * darkens background and surfaces. Both default to identity.
+     *
+     * [whiteFont] forces every body/label text role to pure white. It is
+     * deliberately ignored on the light themes (Light, Paper): white text on
+     * a near-white surface would make the whole UI invisible.
      */
     fun colorScheme(
         accentIntensity: Float = 1f,
         backgroundDim: Float = 0f,
+        whiteFont: Boolean = false,
     ): ColorScheme {
         val a = anchors()
         val white = 0xFFFFFFFF.toInt()
@@ -111,39 +117,55 @@ enum class AppTheme(
         val tertiary = ColorDerive.lerpArgb(primary, secondary, 0.5f)
         val background = ColorDerive.dim(a.background, backgroundDim)
         val surface = ColorDerive.dim(a.surface, backgroundDim)
-        return if (a.light) {
-            lightColorScheme(
-                primary = Color(primary),
-                secondary = Color(secondary),
-                tertiary = Color(tertiary),
-                background = Color(background),
-                surface = Color(surface),
-                surfaceVariant = Color(ColorDerive.lerpArgb(surface, primary, 0.06f)),
-                surfaceContainer = Color(ColorDerive.lerpArgb(surface, primary, 0.04f)),
-                surfaceContainerHigh = Color(ColorDerive.lerpArgb(surface, primary, 0.08f)),
-                primaryContainer = Color(ColorDerive.lerpArgb(primary, white, 0.8f)),
-                onPrimaryContainer = Color(ColorDerive.lerpArgb(primary, black, 0.55f)),
-                secondaryContainer = Color(ColorDerive.lerpArgb(secondary, white, 0.8f)),
-                outline = Color(ColorDerive.lerpArgb(secondary, surface, 0.35f)),
-            )
-        } else {
-            darkColorScheme(
-                primary = Color(primary),
-                secondary = Color(secondary),
-                tertiary = Color(tertiary),
-                background = Color(background),
-                surface = Color(surface),
-                surfaceVariant = Color(ColorDerive.lerpArgb(surface, primary, 0.10f)),
-                surfaceContainer = Color(ColorDerive.lerpArgb(surface, white, 0.04f)),
-                surfaceContainerHigh = Color(ColorDerive.lerpArgb(surface, white, 0.08f)),
-                primaryContainer = Color(ColorDerive.lerpArgb(primary, background, 0.65f)),
-                onPrimaryContainer = Color(ColorDerive.lerpArgb(primary, white, 0.75f)),
-                secondaryContainer = Color(ColorDerive.lerpArgb(secondary, background, 0.65f)),
-                outline = Color(ColorDerive.lerpArgb(secondary, surface, 0.45f)),
-            )
-        }
+        val base =
+            if (a.light) {
+                lightColorScheme(
+                    primary = Color(primary),
+                    secondary = Color(secondary),
+                    tertiary = Color(tertiary),
+                    background = Color(background),
+                    surface = Color(surface),
+                    surfaceVariant = Color(ColorDerive.lerpArgb(surface, primary, 0.06f)),
+                    surfaceContainer = Color(ColorDerive.lerpArgb(surface, primary, 0.04f)),
+                    surfaceContainerHigh = Color(ColorDerive.lerpArgb(surface, primary, 0.08f)),
+                    primaryContainer = Color(ColorDerive.lerpArgb(primary, white, 0.8f)),
+                    onPrimaryContainer = Color(ColorDerive.lerpArgb(primary, black, 0.55f)),
+                    secondaryContainer = Color(ColorDerive.lerpArgb(secondary, white, 0.8f)),
+                    outline = Color(ColorDerive.lerpArgb(secondary, surface, 0.35f)),
+                )
+            } else {
+                darkColorScheme(
+                    primary = Color(primary),
+                    secondary = Color(secondary),
+                    tertiary = Color(tertiary),
+                    background = Color(background),
+                    surface = Color(surface),
+                    surfaceVariant = Color(ColorDerive.lerpArgb(surface, primary, 0.10f)),
+                    surfaceContainer = Color(ColorDerive.lerpArgb(surface, white, 0.04f)),
+                    surfaceContainerHigh = Color(ColorDerive.lerpArgb(surface, white, 0.08f)),
+                    primaryContainer = Color(ColorDerive.lerpArgb(primary, background, 0.65f)),
+                    onPrimaryContainer = Color(ColorDerive.lerpArgb(primary, white, 0.75f)),
+                    secondaryContainer = Color(ColorDerive.lerpArgb(secondary, background, 0.65f)),
+                    outline = Color(ColorDerive.lerpArgb(secondary, surface, 0.45f)),
+                )
+            }
+        // Light themes opt out: white body text on a near-white surface would
+        // make the whole UI unreadable.
+        return if (whiteFont && !a.light) base.whiteText() else base
     }
 }
+
+/**
+ * Repaints the text-on-surface roles pure white for the "White font"
+ * appearance option. Accent, container and surface roles are untouched, so
+ * only text changes. [AppTheme.colorScheme] applies this to dark schemes only.
+ */
+private fun ColorScheme.whiteText(): ColorScheme =
+    copy(
+        onBackground = Color.White,
+        onSurface = Color.White,
+        onSurfaceVariant = Color.White,
+    )
 
 /** Where the music player bar sits on screen; controls sit on the other side. */
 enum class PlayerPosition(
@@ -189,7 +211,10 @@ data class GuiPrefs(
     val playerPosition: PlayerPosition = PlayerPosition.BOTTOM,
     val cornerStyle: CornerStyle = CornerStyle.ROUNDED,
     val barOpacity: Float = 0.72f,
-    val beatThresholdSigma: Float = 2.5f,
+    /** Beat-detection threshold in sigmas; higher = less sensitive. */
+    val beatThresholdSigma: Float = FeatureExtractor.SIGMA_DEFAULT,
+    /** Minimum gap between beat flags in ms; higher = fewer flashes on slow tracks. */
+    val beatMinIntervalMs: Float = FeatureExtractor.INTERVAL_MS_DEFAULT,
     /** SAF tree the user picked as their preset folder; presets are mirrored
      *  there on save so their own sorting is visible in any file manager. */
     val presetMirrorUri: String? = null,
@@ -206,6 +231,9 @@ data class GuiPrefs(
     /** Visuals hub renders as a text-only clear overlay on the live canvas,
      *  so adjustments are visible on the visuals while being adjusted. */
     val clearVisualsMenu: Boolean = false,
+    /** Forces body/label text to pure white (dark themes only). Off keeps the
+     *  theme-derived text colors, so existing users see no change. */
+    val whiteFont: Boolean = false,
 )
 
 /** Persists the chosen [AppTheme] in shared preferences. */
@@ -231,7 +259,18 @@ class ThemeStore(
                 runCatching { CornerStyle.valueOf(prefs.getString(KEY_CORNER, CornerStyle.ROUNDED.name)!!) }
                     .getOrDefault(CornerStyle.ROUNDED),
             barOpacity = prefs.getFloat(KEY_OPACITY, 0.72f),
-            beatThresholdSigma = prefs.getFloat("beat_sigma", 2.5f),
+            // Coerced on read: values persisted before the range was widened
+            // are still valid, but a stored value must never fall outside the
+            // slider's range or Compose would clamp the thumb and the shown
+            // number would disagree with what the engine is using.
+            beatThresholdSigma =
+                prefs
+                    .getFloat("beat_sigma", FeatureExtractor.SIGMA_DEFAULT)
+                    .coerceIn(FeatureExtractor.SIGMA_MIN, FeatureExtractor.SIGMA_MAX),
+            beatMinIntervalMs =
+                prefs
+                    .getFloat(KEY_BEAT_INTERVAL, FeatureExtractor.INTERVAL_MS_DEFAULT)
+                    .coerceIn(FeatureExtractor.INTERVAL_MS_MIN, FeatureExtractor.INTERVAL_MS_MAX),
             presetMirrorUri = prefs.getString("preset_mirror_uri", null),
             morphBeats = prefs.getInt("morph_beats", 4),
             accentIntensity = prefs.getFloat(KEY_ACCENT, 1f),
@@ -239,6 +278,7 @@ class ThemeStore(
             compactPlayer = prefs.getBoolean(KEY_COMPACT, false),
             followSystemDark = prefs.getBoolean(KEY_FOLLOW_DARK, false),
             clearVisualsMenu = prefs.getBoolean(KEY_CLEAR_VIZ_MENU, false),
+            whiteFont = prefs.getBoolean(KEY_WHITE_FONT, false),
         )
 
     fun saveGui(gui: GuiPrefs) {
@@ -248,6 +288,7 @@ class ThemeStore(
             .putString(KEY_CORNER, gui.cornerStyle.name)
             .putFloat(KEY_OPACITY, gui.barOpacity)
             .putFloat("beat_sigma", gui.beatThresholdSigma)
+            .putFloat(KEY_BEAT_INTERVAL, gui.beatMinIntervalMs)
             .putString("preset_mirror_uri", gui.presetMirrorUri)
             .putInt("morph_beats", gui.morphBeats)
             .putFloat(KEY_ACCENT, gui.accentIntensity)
@@ -255,6 +296,7 @@ class ThemeStore(
             .putBoolean(KEY_COMPACT, gui.compactPlayer)
             .putBoolean(KEY_FOLLOW_DARK, gui.followSystemDark)
             .putBoolean(KEY_CLEAR_VIZ_MENU, gui.clearVisualsMenu)
+            .putBoolean(KEY_WHITE_FONT, gui.whiteFont)
             .apply()
     }
 
@@ -268,5 +310,7 @@ class ThemeStore(
         const val KEY_COMPACT = "gui_compact_player"
         const val KEY_FOLLOW_DARK = "gui_follow_system_dark"
         const val KEY_CLEAR_VIZ_MENU = "gui_clear_visuals_menu"
+        const val KEY_WHITE_FONT = "gui_white_font"
+        const val KEY_BEAT_INTERVAL = "beat_min_interval_ms"
     }
 }

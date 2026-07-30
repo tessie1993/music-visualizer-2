@@ -40,6 +40,22 @@ uniform float uPostShake;
 uniform float uPostFlash;
 uniform float uPostTemp;
 uniform float uPostSolarize;
+// Universal grading + zoom/rotation for scenes that grade NOTHING themselves
+// (the fluid family: Fluid, Curl Flow, Water). Shader scenes grade in
+// view()/grade(), particle scenes in particle_vert/particle_frag and milkdrop
+// in pm_post_frag, so for those the renderer uploads uPostGrade = 0 and the
+// whole block below is skipped - a bitwise no-op, never a double grade.
+// The flag is required (not just neutral values) because the neutral value of
+// these uniforms is 1.0, not 0.0: a program that never uploads them would
+// otherwise read the GL default 0 and render black at 20x zoom.
+uniform float uPostGrade;
+uniform float uPostZoom;
+uniform float uPostRotation; // already-integrated angle (renderer sums rot*dt)
+uniform float uPostSat;
+uniform float uPostBright;   // brightness * intensity, as everywhere else
+uniform float uPostContrast;
+uniform float uPostGamma;
+uniform float uPostHue;
 // FlowField fluidWarp: the shared fluid velocity field bends the sampling
 // coordinate of ANY scene's output (particles, shaders, milkdrop) before the
 // scene-texture fetch. A 1x1 zero texture is bound when disabled so the
@@ -63,15 +79,36 @@ float hash12(vec2 p) {
     return fract((p3.x + p3.y) * p3.z);
 }
 
+// Hue rotation about the grey axis, byte-for-byte the same formula as
+// pm_post_frag's hueRotate (and mirrored by CompositeGrade.hueRotate).
+vec3 hueRotate(vec3 c, float a) {
+    const vec3 w = vec3(0.299, 0.587, 0.114);
+    float angle = a * 6.2831;
+    float cs = cos(angle);
+    float sn = sin(angle);
+    return vec3(dot(c, w)) + (c - vec3(dot(c, w))) * cs + cross(vec3(0.57735), c) * sn;
+}
+
 // Applies geometric transforms to a [0,1] uv, operating in centered space.
 vec2 geo(vec2 uv) {
     vec2 c = uv - 0.5;
-    if (abs(uPostSway) > 0.001) {
-        float sa = uPostSway * 0.35 * sin(uTime * 0.7);
+    // Rotation and sway share one angle, exactly like plasma_frag's view()
+    // (a = uRotation + uSway * 0.35 * sin(uTime * 0.7)). uPostRotation is an
+    // angle, not a rate: the renderer integrates rotation * dt so the slider
+    // stays a SPEED here, matching ShaderScene/ParticleSceneBase/ProjectMScene.
+    float sa = uPostRotation;
+    if (abs(uPostSway) > 0.001) sa += uPostSway * 0.35 * sin(uTime * 0.7);
+    if (abs(sa) > 0.0001) {
         c = mat2(cos(sa), -sin(sa), sin(sa), cos(sa)) * c;
     }
     if (uPostShake > 0.001) {
         c += uPostShake * uBeat * 0.03 * vec2(sin(uTime * 91.7), cos(uTime * 77.3));
+    }
+    // Zoom about the centre, same form as the shader scenes and the milkdrop
+    // post pass (uv /= max(z, 0.05)), so a given slider value magnifies by the
+    // same amount on a fluid style as on julia/mandel.
+    if (uPostGrade > 0.5 && abs(uPostZoom - 1.0) > 0.0001) {
+        c /= max(uPostZoom, 0.05);
     }
     if (uPostMirror > 0.5) c.x = abs(c.x);
     if (uPostKaleido > 0.5 && uPostSymmetry >= 2.0) {
@@ -177,6 +214,19 @@ vec3 postFx(sampler2D tex, vec2 uv, vec3 fallback) {
         float levels = mix(24.0, 3.0, uPostPosterize);
         col = floor(col * levels + 0.5) / levels;
     }
+    // Colour grade: identical chain and order to plasma_frag's grade() and
+    // pm_post_frag (hue -> saturation -> contrast -> gamma, brightness last,
+    // just before invert), so a slider value lands the same on every style.
+    // Mirrored on the CPU by CompositeGrade for the headless test.
+    if (uPostGrade > 0.5) {
+        if (abs(uPostHue) > 0.0001) col = hueRotate(col, uPostHue);
+        if (abs(uPostSat - 1.0) > 0.0001) {
+            float lum = dot(col, vec3(0.299, 0.587, 0.114));
+            col = mix(vec3(lum), col, uPostSat);
+        }
+        if (abs(uPostContrast - 1.0) > 0.0001) col = (col - 0.5) * uPostContrast + 0.5;
+        if (abs(uPostGamma - 1.0) > 0.0001) col = pow(max(col, 0.0), vec3(1.0 / max(uPostGamma, 0.05)));
+    }
     if (uScanline > 0.001) {
         col *= 1.0 - uScanline * 0.35 * (0.5 + 0.5 * sin(p.y * 900.0));
     }
@@ -194,6 +244,7 @@ vec3 postFx(sampler2D tex, vec2 uv, vec3 fallback) {
     col.b -= uPostTemp * 0.12;
     if (uPostSolarize > 0.5) col = abs(1.0 - 2.0 * col);
     col += uPostFlash * uBeat * 0.6;
+    if (uPostGrade > 0.5) col *= uPostBright;
     if (uPostInvert > 0.5) col = max(vec3(1.0) - col, 0.0);
     return col;
 }

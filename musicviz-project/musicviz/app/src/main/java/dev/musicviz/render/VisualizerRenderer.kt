@@ -7,6 +7,7 @@ import android.os.SystemClock
 import dev.musicviz.R
 import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.export.VideoExporter
+import dev.musicviz.render.fluid.CurlFlowMath
 import dev.musicviz.render.scene.BurstScene
 import dev.musicviz.render.scene.FountainScene
 import dev.musicviz.render.scene.GlUtil
@@ -102,6 +103,17 @@ class VisualizerRenderer(
 
     /** Final params of the current frame (after fade + LFO), for the composite FX pass. */
     private var lastFinalParams: SceneParams = SceneParams.DEFAULT
+
+    /** Composite-pass rotation angle. Rotation is a SPEED in every scene
+     *  (`rotationAngle += p.rotation * dt`), so the pass that rotates the
+     *  fluid family has to integrate its own angle rather than feed the raw
+     *  slider through as a static offset. */
+    private var postRotationAngle = 0f
+
+    /** Composite-pass colour-cycle phase, integrated like ShaderScene's, so
+     *  the hue uploaded below is `colorShift + cyclePhase` exactly as every
+     *  self-grading scene computes it. */
+    private var postCyclePhase = 0f
 
     /** Exponential lerp between param sets; toggles and choices snap to target. */
     private fun lerpParams(
@@ -588,6 +600,8 @@ class VisualizerRenderer(
         var p = LfoEngine.apply(displayedParams, lfoEngine.configs, lfoValues)
         p = AdsrEngine.apply(p, adsrEngine.configs, envValues)
         lastFinalParams = p
+        postRotationAngle = CompositeGrade.integrateRotation(postRotationAngle, p.rotation, dt)
+        postCyclePhase = CompositeGrade.integrateCyclePhase(postCyclePhase, p.cycleSpeed, dt, p.colorCycle)
         if (fluidInjectionDirty) {
             fluidInjectionDirty = false
             (scenes[SceneIds.FLUID] as? dev.musicviz.render.fluid.FluidScene)
@@ -642,16 +656,20 @@ class VisualizerRenderer(
         // Active scene renders into FBO A (fade instead of clear for trails).
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboA.fbo)
         GLES30.glViewport(0, 0, renderWidth, renderHeight)
-        // Curl Flow's look is DEFINED by canvas persistence: bare GL_POINTS
-        // on a hard-cleared canvas read as strobing dots, not streams. It
-        // always fades (echo trails) regardless of the trails toggle, and
-        // honors trailZoom/trailWarp + trailLength like particle scenes.
-        val curlPersist = scene is dev.musicviz.render.fluid.CurlFlowScene && !sceneJustSwitched
-        if ((p.trails && scene is ParticleSceneBase && !sceneJustSwitched) || curlPersist) {
+        // Curl Flow persists like a particle scene: it draws bare GL_POINTS,
+        // which need canvas echo to read as streams rather than strobing
+        // dots. That used to be forced ON regardless of the Trails toggle
+        // (and floored Trail length at 0.85), which made both controls inert
+        // on the style. Now it HONORS Trails, and while trails are on it
+        // remaps Trail length onto CurlFlowMath's usable band - a floor the
+        // user can still override by switching Trails off, with the whole
+        // slider staying live above it.
+        val isCurl = scene is dev.musicviz.render.fluid.CurlFlowScene
+        if (p.trails && (scene is ParticleSceneBase || isCurl) && !sceneJustSwitched) {
+            val keep = if (isCurl) CurlFlowMath.retention(p.trailLength) else p.trailLength
             if (p.trailZoom != 0f || p.trailWarp > 0f) {
-                drawTrailWarp(p, timeSeconds, dt)
+                drawTrailWarp(p, keep, timeSeconds, dt)
             } else {
-                val keep = if (curlPersist) p.trailLength.coerceAtLeast(0.85f) else p.trailLength
                 // Retention^(dt*60): same look as the old per-frame constant
                 // at 60 Hz, but trail length no longer halves on 120 Hz panels.
                 drawFadeQuad(1f - (keep * 0.97f).pow(dt * 60f))
@@ -775,10 +793,40 @@ class VisualizerRenderer(
             if (applyGeo && fx.solarize) 1f else 0f,
         )
         // Mirror/invert: shader scenes AND the milkdrop post pass handle these
-        // themselves; only particle scenes need them here.
-        val isParticle = activeScene is ParticleSceneBase
-        GLES30.glUniform1f(cLoc("uPostMirror"), if (isParticle && fx.mirror) 1f else 0f)
-        GLES30.glUniform1f(cLoc("uPostInvert"), if (isParticle && fx.invert) 1f else 0f)
+        // themselves. Everything else needs them here - particle scenes (whose
+        // fragment shader explicitly defers invert to this pass) and the fluid
+        // family, which was previously excluded and so had no mirror/invert at
+        // all.
+        val ownsMirrorInvert = activeScene is ShaderScene || activeScene is ProjectMScene
+        GLES30.glUniform1f(cLoc("uPostMirror"), if (!ownsMirrorInvert && fx.mirror) 1f else 0f)
+        GLES30.glUniform1f(cLoc("uPostInvert"), if (!ownsMirrorInvert && fx.invert) 1f else 0f)
+        // Universal grading + zoom/rotation, same gate idiom as applyGeo above
+        // but for a SMALLER set of scenes: ShaderScene (view()/grade()), the
+        // particle pipeline (particle_vert's uZoom/uRotation, particle_frag's
+        // uSat/uBright/uContrast/uGamma) and the milkdrop post pass all apply
+        // these in their OWN pass, so they get the neutral identity here -
+        // otherwise every one of them would be zoomed twice and graded twice
+        // (squared brightness, doubled contrast). Only scenes that grade
+        // nothing themselves - the fluid family (Fluid, Curl Flow, Water) -
+        // are graded here, which is what made Zoom/Rotation/Saturation/
+        // Brightness/Contrast/Gamma/Hue/Intensity dead on those styles.
+        // uPostGrade switches the shader block off wholesale, so the neutral
+        // case is an exact no-op and any program that never uploads these
+        // uniforms (the export FxCompositor) keeps its current output.
+        val gradesItself = activeScene is ShaderScene || activeScene is ParticleSceneBase || activeScene is ProjectMScene
+
+        fun gradeF(
+            value: Float,
+            neutral: Float,
+        ) = if (gradesItself) neutral else value
+        GLES30.glUniform1f(cLoc("uPostGrade"), if (gradesItself) 0f else 1f)
+        GLES30.glUniform1f(cLoc("uPostZoom"), gradeF(fx.zoom, 1f))
+        GLES30.glUniform1f(cLoc("uPostRotation"), gradeF(postRotationAngle, 0f))
+        GLES30.glUniform1f(cLoc("uPostSat"), gradeF(fx.saturation, 1f))
+        GLES30.glUniform1f(cLoc("uPostBright"), gradeF(CompositeGrade.brightness(fx.brightness, fx.intensity), 1f))
+        GLES30.glUniform1f(cLoc("uPostContrast"), gradeF(fx.contrast, 1f))
+        GLES30.glUniform1f(cLoc("uPostGamma"), gradeF(fx.gamma, 1f))
+        GLES30.glUniform1f(cLoc("uPostHue"), gradeF(fx.colorShift + postCyclePhase, 0f))
         GLES30.glBindVertexArray(quadVao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)
@@ -790,15 +838,21 @@ class VisualizerRenderer(
      * into the scene FBO slightly zoomed/warped and decayed (blend off - the
      * resample is the new base). Falls back to the plain fade when the trail
      * buffer can't be sized.
+     *
+     * [retention] is the caller's frame-retention factor, normally
+     * `p.trailLength` but remapped for styles with their own persistence band
+     * (see CurlFlowMath), so the warp path decays at the same rate as the plain
+     * fade path.
      */
     private fun drawTrailWarp(
         p: SceneParams,
+        retention: Float,
         timeSeconds: Float,
         dt: Float,
     ) {
         ensureTrailBuffer()
         if (trailFbo == 0) {
-            drawFadeQuad(1f - (p.trailLength * 0.97f).pow(dt * 60f))
+            drawFadeQuad(1f - (retention * 0.97f).pow(dt * 60f))
             return
         }
         GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, fboA.fbo)
@@ -824,10 +878,12 @@ class VisualizerRenderer(
 
         fun tLoc(n: String) = trailLocs.getOrPut(n) { GLES30.glGetUniformLocation(trailWarpProgram, n) }
         GLES30.glUniform1i(tLoc("uPrev"), 0)
-        GLES30.glUniform1f(
-            tLoc("uDecay"),
-            (p.trailLength * 0.97f + 0.02f).coerceIn(0f, 0.99f).pow(dt * 60f),
-        )
+        // [retention], NOT p.trailLength: styles with their own persistence
+        // band (Curl Flow) hand in a remapped value, and reading the raw
+        // slider here made the warp path decay faster than the fade path -
+        // Curl Flow's streams broke into strobing dots the moment Trail zoom
+        // or Trail warp went non-zero.
+        GLES30.glUniform1f(tLoc("uDecay"), CurlFlowMath.warpDecay(retention, dt))
         GLES30.glUniform1f(tLoc("uZoom"), p.trailZoom)
         GLES30.glUniform1f(tLoc("uWarp"), p.trailWarp)
         GLES30.glUniform1f(tLoc("uTime"), timeSeconds)
