@@ -1,0 +1,57 @@
+name: Build APK
+
+on:
+  push:
+    branches:
+      - main
+      - 'claude/**'
+  workflow_dispatch:
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: musicviz-project/musicviz
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      # Upload immediately after the build so the APK is available even if
+      # the verify steps below fail.
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: musicviz-debug-apk
+          path: musicviz-project/musicviz/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Verify (ktlint + unit tests)
+        run: ./gradlew ktlintCheck testDebugUnitTest
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: musicviz-project/musicviz/app/build/reports
+          if-no-files-found: ignore
+          retention-days: 7
