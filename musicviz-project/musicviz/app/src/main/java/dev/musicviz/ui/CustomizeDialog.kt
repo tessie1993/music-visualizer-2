@@ -516,6 +516,11 @@ private fun CheckRow(
  *   values the params happened to hold.
  * - [isJourneyScene]: FLUID + CURLFLOW + WATER - the shared spawn/catch
  *   progression.
+ * - [isParticleLayerScene]: FLUID + CURLFLOW - the shared FluidParticles
+ *   lifecycle layer, i.e. the styles that read `fluidParticleDrag`. CurlFlow
+ *   IS that layer, so hiding the drag slider behind the FLUID-only section
+ *   (and behind `fluidParticlesEnabled`, which CurlFlow never reads) made a
+ *   control the style genuinely consumes unreachable.
  * - [isWaterScene]: WATER alone - the heightfield surface.
  * For every other style only the FlowField / water-ripple overlay sections
  * appear - the same tab is the one home for "fluid principles" regardless
@@ -529,6 +534,7 @@ internal fun FluidTab(
     isJourneyScene: Boolean = isFluidScene,
     isWaterScene: Boolean = false,
     isEmitterScene: Boolean = isFluidScene,
+    isParticleLayerScene: Boolean = isFluidScene,
     injectionError: String? = null,
     onApplyInjectionShaders: (String?, String?) -> Unit = { _, _ -> },
 ) {
@@ -618,15 +624,28 @@ internal fun FluidTab(
                 LabeledSlider("Palette cycle", p.fluidPaletteCycleSpeed, 0f..2f) { onChange(p.copy(fluidPaletteCycleSpeed = it)) }
             }
         }
-        if (isFluidScene) {
+        if (isParticleLayerScene) {
             SectionHeader("Particles")
-            CheckRow("Particle layer", p.fluidParticlesEnabled) { onChange(p.copy(fluidParticlesEnabled = it)) }
-            if (p.fluidParticlesEnabled) {
+            if (isFluidScene) {
+                // The on/off switch is FluidScene's - CURLFLOW *is* the
+                // particle layer, so there is nothing to switch off there
+                // (it never reads fluidParticlesEnabled).
+                CheckRow("Particle layer", p.fluidParticlesEnabled) { onChange(p.copy(fluidParticlesEnabled = it)) }
+            }
+            // Drag is read wherever the lifecycle layer actually steps:
+            // FluidScene behind its toggle, CurlFlowScene unconditionally.
+            if (!isFluidScene || p.fluidParticlesEnabled) {
                 LabeledSlider("Particle drag", p.fluidParticleDrag, 0.02f..1f) { onChange(p.copy(fluidParticleDrag = it)) }
+            }
+            if (isFluidScene && p.fluidParticlesEnabled) {
+                // CURLFLOW colours its points from the beat pulse and the
+                // composite exposure instead, so this one stays FLUID-only.
                 LabeledSlider("Particle brightness", p.fluidParticleBrightness, 0f..2f) {
                     onChange(p.copy(fluidParticleBrightness = it))
                 }
             }
+        }
+        if (isFluidScene) {
             CheckRow("Ink layer", p.fluidDyeEnabled) { onChange(p.copy(fluidDyeEnabled = it)) }
             SectionHeader("Look")
             CheckRow("Shading (embossed ink)", p.fluidShading) { onChange(p.copy(fluidShading = it)) }

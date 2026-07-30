@@ -12,6 +12,7 @@ import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import dev.musicviz.analysis.FeatureTimeline
+import dev.musicviz.render.fluid.CurlFlowMath
 import dev.musicviz.render.scene.Scene
 import dev.musicviz.render.scene.SceneParams
 import kotlinx.coroutines.Dispatchers
@@ -431,13 +432,14 @@ class VideoExporter(
                 // Draw the scene into the FX FBO, then composite (with the full
                 // FX chain) onto the encoder surface, matching the live path.
                 fx.bindSceneTarget()
-                if (((p.trails && isParticle) || isCurlFlow) && frame > 0) {
-                    // Mirror the live curlPersist rule: keep >= 0.85 - but only
-                    // in the plain-fade branch; the live path passes the raw
-                    // trailLength to the trail-warp pass.
+                if (p.trails && (isParticle || isCurlFlow) && frame > 0) {
+                    // Mirror the live trails gate (VisualizerRenderer): Curl
+                    // Flow HONORS the Trails toggle, and while trails are on it
+                    // remaps Trail length onto its own persistence band - the
+                    // same remap in the plain-fade and the trail-warp branch.
                     val fadeParams =
-                        if (isCurlFlow && p.trailZoom == 0f && p.trailWarp <= 0f) {
-                            p.copy(trailLength = p.trailLength.coerceAtLeast(0.85f))
+                        if (isCurlFlow) {
+                            p.copy(trailLength = CurlFlowMath.retention(p.trailLength))
                         } else {
                             p
                         }

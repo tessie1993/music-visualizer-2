@@ -7,6 +7,7 @@ import android.os.SystemClock
 import dev.musicviz.R
 import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.export.VideoExporter
+import dev.musicviz.render.fluid.CurlFlowMath
 import dev.musicviz.render.scene.BurstScene
 import dev.musicviz.render.scene.FountainScene
 import dev.musicviz.render.scene.GlUtil
@@ -655,16 +656,20 @@ class VisualizerRenderer(
         // Active scene renders into FBO A (fade instead of clear for trails).
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboA.fbo)
         GLES30.glViewport(0, 0, renderWidth, renderHeight)
-        // Curl Flow's look is DEFINED by canvas persistence: bare GL_POINTS
-        // on a hard-cleared canvas read as strobing dots, not streams. It
-        // always fades (echo trails) regardless of the trails toggle, and
-        // honors trailZoom/trailWarp + trailLength like particle scenes.
-        val curlPersist = scene is dev.musicviz.render.fluid.CurlFlowScene && !sceneJustSwitched
-        if ((p.trails && scene is ParticleSceneBase && !sceneJustSwitched) || curlPersist) {
+        // Curl Flow persists like a particle scene: it draws bare GL_POINTS,
+        // which need canvas echo to read as streams rather than strobing
+        // dots. That used to be forced ON regardless of the Trails toggle
+        // (and floored Trail length at 0.85), which made both controls inert
+        // on the style. Now it HONORS Trails, and while trails are on it
+        // remaps Trail length onto CurlFlowMath's usable band - a floor the
+        // user can still override by switching Trails off, with the whole
+        // slider staying live above it.
+        val isCurl = scene is dev.musicviz.render.fluid.CurlFlowScene
+        if (p.trails && (scene is ParticleSceneBase || isCurl) && !sceneJustSwitched) {
+            val keep = if (isCurl) CurlFlowMath.retention(p.trailLength) else p.trailLength
             if (p.trailZoom != 0f || p.trailWarp > 0f) {
-                drawTrailWarp(p, timeSeconds, dt)
+                drawTrailWarp(p, keep, timeSeconds, dt)
             } else {
-                val keep = if (curlPersist) p.trailLength.coerceAtLeast(0.85f) else p.trailLength
                 // Retention^(dt*60): same look as the old per-frame constant
                 // at 60 Hz, but trail length no longer halves on 120 Hz panels.
                 drawFadeQuad(1f - (keep * 0.97f).pow(dt * 60f))
@@ -833,15 +838,21 @@ class VisualizerRenderer(
      * into the scene FBO slightly zoomed/warped and decayed (blend off - the
      * resample is the new base). Falls back to the plain fade when the trail
      * buffer can't be sized.
+     *
+     * [retention] is the caller's frame-retention factor, normally
+     * `p.trailLength` but remapped for styles with their own persistence band
+     * (see CurlFlowMath), so the warp path decays at the same rate as the plain
+     * fade path.
      */
     private fun drawTrailWarp(
         p: SceneParams,
+        retention: Float,
         timeSeconds: Float,
         dt: Float,
     ) {
         ensureTrailBuffer()
         if (trailFbo == 0) {
-            drawFadeQuad(1f - (p.trailLength * 0.97f).pow(dt * 60f))
+            drawFadeQuad(1f - (retention * 0.97f).pow(dt * 60f))
             return
         }
         GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, fboA.fbo)

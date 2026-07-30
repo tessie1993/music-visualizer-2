@@ -389,6 +389,16 @@ internal fun isEmitterSceneId(sceneId: String): Boolean = sceneId == SceneIds.FL
 /** Only WaterScene reads the heightfield surface params. */
 internal fun isWaterSceneId(sceneId: String): Boolean = sceneId == SceneIds.WATER
 
+/**
+ * Styles that run the shared FluidParticles lifecycle layer, i.e. the ones
+ * that read `fluidParticleDrag`. CURLFLOW *is* that layer (CurlFlowScene's
+ * "particles.drag = params.fluidParticleDrag"), yet the drag slider used to
+ * live in the FLUID-only Particles section AND behind `fluidParticlesEnabled`,
+ * a param CurlFlow never reads - so a control the style genuinely consumes was
+ * unreachable on it. WATER has no particle layer at all.
+ */
+internal fun isParticleLayerSceneId(sceneId: String): Boolean = sceneId == SceneIds.FLUID || sceneId == SceneIds.CURLFLOW
+
 @Composable
 private fun CustomizeHubTab(
     viewModel: PlayerViewModel,
@@ -451,6 +461,7 @@ private fun CustomizeHubTab(
                             isJourneyScene = isJourneySceneId(viz.sceneId),
                             isWaterScene = isWaterSceneId(viz.sceneId),
                             isEmitterScene = isEmitterSceneId(viz.sceneId),
+                            isParticleLayerScene = isParticleLayerSceneId(viz.sceneId),
                             injectionError = if (isFluidSceneId(viz.sceneId)) viz.shaderError else null,
                             onApplyInjectionShaders = { force, dye ->
                                 visualizerView.visualizerRenderer.submitFluidInjectionShaders(force, dye)

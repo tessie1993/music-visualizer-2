@@ -138,6 +138,28 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     upload the new uniforms yet, so an exported fluid clip is ungraded
     while the live view is graded. Exports of every other style must be
     unchanged.
+24. Curl Flow customization: on the CURL FLOW style, (a) sweep Color >
+    Palette — each palette must change the CHARACTER of the streams, not
+    just their tint (Fire/Cherry/Copper stay in one narrow hot band,
+    Spectrum/Aurora/Galaxy sweep across the wheel within a single frame);
+    pull "Hue range" to 0 and the band must narrow without collapsing to
+    one flat colour. (b) Toggle Motion > Trails OFF — the streams must
+    turn into crisp per-frame points with no echo (it used to be
+    impossible to switch off); toggle it back ON and sweep "Trail length"
+    across its WHOLE range — the echo must lengthen continuously, with
+    the shortest setting still reading as streams rather than strobing
+    dots. Also check Trails on + Trail zoom/warp: the warp path must
+    decay at the same rate as the plain fade, no sudden pop. (c) Fluid
+    tab > Particles: "Particle drag" must now be VISIBLE on Curl Flow
+    (there is no "Particle layer" checkbox or "Particle brightness" there
+    — Curl Flow ignores both) and dragging it must visibly change how
+    fast the streams settle into the flow; "Particle life (s)" in the
+    Journey section must still work. On FLUID nothing changes: the layer
+    checkbox still gates drag and brightness. On WATER the Particles
+    section stays absent. (d) Sweep Intensity 0 -> 2: brightness must
+    rise SMOOTHLY and linearly, not ramp away (it used to be applied
+    twice, once in the scene and once in the composite grade), and the
+    streams must never render black at any setting.
 26. Beat sensitivity for slow tracks: play a slow, sparse track (ballad,
     ambient, ~60-80 BPM) on a beat-reactive style (flash/pulse/strobe).
     At the shipped defaults note how often it flashes. Drag "Beat
