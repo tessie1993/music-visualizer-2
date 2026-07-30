@@ -89,14 +89,18 @@ jobs:
       - name: Verify 16 KB alignment
         run: |
           set -euo pipefail
-          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -lW out/*.so \
-            | tee /tmp/segments.txt
-          # Every LOAD segment must be aligned to 0x4000 (16384) or larger.
-          if grep -E '^\s+LOAD' /tmp/segments.txt | grep -vE '0x(4000|8000|10000)$'; then
-            echo "::error::found LOAD segments that are not 16 KB aligned"
-            exit 1
-          fi
-          echo "All LOAD segments are 16 KB aligned."
+          fail=0
+          for so in out/*.so; do
+            readelf -lW "$so" | awk '$1 == "LOAD"'
+            for a in $(readelf -lW "$so" | awk '$1 == "LOAD" { print $NF }'); do
+              if [ "$((a))" -lt 16384 ]; then
+                echo "::error file=$so::LOAD segment aligned to $a, needs >= 16384"
+                fail=1
+              fi
+            done
+          done
+          [ "$fail" -eq 0 ] && echo "All LOAD segments are 16 KB aligned."
+          exit "$fail"
 
       - name: Upload native libs
         uses: actions/upload-artifact@v4

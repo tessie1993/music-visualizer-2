@@ -68,6 +68,25 @@ jobs:
           [ "$bad" -eq 0 ] && echo "All native libs are 16 KB aligned."
           exit 0
 
+      # The privacy policy and the Play data-safety answers both rest on the
+      # claim that MusicViz cannot talk to the network. Assert it against the
+      # merged manifest so a future dependency cannot quietly add the
+      # permission and make those statements false.
+      - name: Assert no INTERNET permission
+        working-directory: musicviz-project/musicviz/app/build/intermediates
+        run: |
+          set -euo pipefail
+          manifests=$(find . -name AndroidManifest.xml -path '*merged_manifest*')
+          if [ -z "$manifests" ]; then
+            echo "::error::no merged manifest found — check the intermediates path"
+            exit 1
+          fi
+          if grep -l 'android.permission.INTERNET' $manifests; then
+            echo "::error::INTERNET permission appeared in the merged manifest; update docs/PRIVACY_POLICY.md and the Play data-safety answers before shipping"
+            exit 1
+          fi
+          echo "No INTERNET permission in the merged manifest."
+
       - name: Lint
         run: ./gradlew lint --stacktrace
 
