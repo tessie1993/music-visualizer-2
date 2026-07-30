@@ -44,6 +44,29 @@ data class SceneParams(
     val palette: Int = 0,
     val palette2: Int = 1,
     val paletteMix: Float = 0f,
+    // Custom palettes (palette/gradient maker). Each colour slot can be driven
+    // by a user-made palette instead of the built-in PALETTES table.
+    //
+    // SENTINEL CONVENTION (read this before wiring UI to these fields):
+    //   an override is ACTIVE when it is >= 0f and INACTIVE when negative.
+    //   UNSET_OVERRIDE (-1f) is the canonical "not set" value - clear an
+    //   override by writing UNSET_OVERRIDE back, never by writing 0f (0f is a
+    //   legitimate base hue: red).
+    // Built-in bases live in 0..1 and spans in 0..1, so no real palette value
+    // is ever negative. While inactive, paletteBase/paletteRange resolve
+    // exactly as before, straight out of PALETTES[palette].
+    // Base and range are independent: a gradient maker may override only the
+    // hue span and keep the built-in base, or vice versa.
+    val paletteBaseOverride: Float = UNSET_OVERRIDE,
+    val paletteRangeOverride: Float = UNSET_OVERRIDE,
+    val palette2BaseOverride: Float = UNSET_OVERRIDE,
+    val palette2RangeOverride: Float = UNSET_OVERRIDE,
+    // Id of the saved custom palette backing each slot; NO_CUSTOM_PALETTE ("")
+    // means "built-in". Bookkeeping for the palette maker/PaletteStore so the
+    // UI can show which saved palette a preset uses and re-resolve it after an
+    // edit; rendering only ever reads the *Override floats above.
+    val customPaletteId: String = NO_CUSTOM_PALETTE,
+    val customPalette2Id: String = NO_CUSTOM_PALETTE,
     val colorShift: Float = 0f,
     val hueRange: Float = 1f,
     val saturation: Float = 1f,
@@ -180,9 +203,21 @@ data class SceneParams(
     val rippleOverlaySpecular: Float = 0.3f,
 ) {
     companion object {
+        /** "No override" sentinel for the palette*Override fields (any negative value counts as unset). */
+        const val UNSET_OVERRIDE: Float = -1f
+
+        /** "No saved custom palette" sentinel for customPaletteId/customPalette2Id. */
+        const val NO_CUSTOM_PALETTE: String = ""
+
         val DEFAULT: SceneParams = SceneParams()
 
-        /** Palette definitions: name, base hue, hue span multiplier. */
+        /**
+         * Palette definitions: name, base hue, hue span multiplier.
+         *
+         * APPEND ONLY. Presets persist `palette`/`palette2` as indices into
+         * this list, so inserting or reordering an entry silently repaints
+         * every preset a user has already saved. New palettes go at the end.
+         */
         val PALETTES: List<Triple<String, Float, Float>> =
             listOf(
                 Triple("Spectrum", 0.0f, 1.0f),
@@ -203,6 +238,11 @@ data class SceneParams(
                 Triple("Mint", 0.4f, 0.12f),
                 Triple("Galaxy", 0.65f, 0.5f),
                 Triple("Cherry", 0.97f, 0.08f),
+                // Appended in v0.14: pure secondary hues, narrow spans so they
+                // read as the named colour (cf. Fire/Ocean) rather than a wash.
+                Triple("Cyan", 0.5f, 0.08f),
+                Triple("Magenta", 0.833f, 0.08f),
+                Triple("Yellow", 0.167f, 0.08f),
             )
 
         /** Particle shape names for the shape selector. */
@@ -218,10 +258,27 @@ data class SceneParams(
         val FLUID_PATHS: List<String> = listOf("Orbit", "Lissajous", "Rose", "Bloom", "Drift")
     }
 
-    val paletteBase: Float get() = PALETTES[palette.coerceIn(0, PALETTES.size - 1)].second
-    val paletteRange: Float get() = PALETTES[palette.coerceIn(0, PALETTES.size - 1)].third
-    val palette2Base: Float get() = PALETTES[palette2.coerceIn(0, PALETTES.size - 1)].second
-    val palette2Range: Float get() = PALETTES[palette2.coerceIn(0, PALETTES.size - 1)].third
+    /** True when this slot renders a user-made palette rather than a PALETTES entry. */
+    val usesCustomPalette: Boolean
+        get() = paletteBaseOverride >= 0f || paletteRangeOverride >= 0f
+
+    /** True when the second slot renders a user-made palette rather than a PALETTES entry. */
+    val usesCustomPalette2: Boolean
+        get() = palette2BaseOverride >= 0f || palette2RangeOverride >= 0f
+
+    // An active override (>= 0f, see UNSET_OVERRIDE) wins over the built-in
+    // table; anything negative falls through to PALETTES exactly as before.
+    val paletteBase: Float
+        get() = if (paletteBaseOverride >= 0f) paletteBaseOverride else PALETTES[palette.coerceIn(0, PALETTES.size - 1)].second
+
+    val paletteRange: Float
+        get() = if (paletteRangeOverride >= 0f) paletteRangeOverride else PALETTES[palette.coerceIn(0, PALETTES.size - 1)].third
+
+    val palette2Base: Float
+        get() = if (palette2BaseOverride >= 0f) palette2BaseOverride else PALETTES[palette2.coerceIn(0, PALETTES.size - 1)].second
+
+    val palette2Range: Float
+        get() = if (palette2RangeOverride >= 0f) palette2RangeOverride else PALETTES[palette2.coerceIn(0, PALETTES.size - 1)].third
 }
 
 /**
