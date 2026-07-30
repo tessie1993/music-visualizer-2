@@ -98,10 +98,15 @@ enum class AppTheme(
      * Builds the full color scheme. [accentIntensity] (0.5..1.5) scales the
      * saturation of primary/secondary/tertiary; [backgroundDim] (0..0.6)
      * darkens background and surfaces. Both default to identity.
+     *
+     * [whiteFont] forces every body/label text role to pure white. It is
+     * deliberately ignored on the light themes (Light, Paper): white text on
+     * a near-white surface would make the whole UI invisible.
      */
     fun colorScheme(
         accentIntensity: Float = 1f,
         backgroundDim: Float = 0f,
+        whiteFont: Boolean = false,
     ): ColorScheme {
         val a = anchors()
         val white = 0xFFFFFFFF.toInt()
@@ -111,39 +116,55 @@ enum class AppTheme(
         val tertiary = ColorDerive.lerpArgb(primary, secondary, 0.5f)
         val background = ColorDerive.dim(a.background, backgroundDim)
         val surface = ColorDerive.dim(a.surface, backgroundDim)
-        return if (a.light) {
-            lightColorScheme(
-                primary = Color(primary),
-                secondary = Color(secondary),
-                tertiary = Color(tertiary),
-                background = Color(background),
-                surface = Color(surface),
-                surfaceVariant = Color(ColorDerive.lerpArgb(surface, primary, 0.06f)),
-                surfaceContainer = Color(ColorDerive.lerpArgb(surface, primary, 0.04f)),
-                surfaceContainerHigh = Color(ColorDerive.lerpArgb(surface, primary, 0.08f)),
-                primaryContainer = Color(ColorDerive.lerpArgb(primary, white, 0.8f)),
-                onPrimaryContainer = Color(ColorDerive.lerpArgb(primary, black, 0.55f)),
-                secondaryContainer = Color(ColorDerive.lerpArgb(secondary, white, 0.8f)),
-                outline = Color(ColorDerive.lerpArgb(secondary, surface, 0.35f)),
-            )
-        } else {
-            darkColorScheme(
-                primary = Color(primary),
-                secondary = Color(secondary),
-                tertiary = Color(tertiary),
-                background = Color(background),
-                surface = Color(surface),
-                surfaceVariant = Color(ColorDerive.lerpArgb(surface, primary, 0.10f)),
-                surfaceContainer = Color(ColorDerive.lerpArgb(surface, white, 0.04f)),
-                surfaceContainerHigh = Color(ColorDerive.lerpArgb(surface, white, 0.08f)),
-                primaryContainer = Color(ColorDerive.lerpArgb(primary, background, 0.65f)),
-                onPrimaryContainer = Color(ColorDerive.lerpArgb(primary, white, 0.75f)),
-                secondaryContainer = Color(ColorDerive.lerpArgb(secondary, background, 0.65f)),
-                outline = Color(ColorDerive.lerpArgb(secondary, surface, 0.45f)),
-            )
-        }
+        val base =
+            if (a.light) {
+                lightColorScheme(
+                    primary = Color(primary),
+                    secondary = Color(secondary),
+                    tertiary = Color(tertiary),
+                    background = Color(background),
+                    surface = Color(surface),
+                    surfaceVariant = Color(ColorDerive.lerpArgb(surface, primary, 0.06f)),
+                    surfaceContainer = Color(ColorDerive.lerpArgb(surface, primary, 0.04f)),
+                    surfaceContainerHigh = Color(ColorDerive.lerpArgb(surface, primary, 0.08f)),
+                    primaryContainer = Color(ColorDerive.lerpArgb(primary, white, 0.8f)),
+                    onPrimaryContainer = Color(ColorDerive.lerpArgb(primary, black, 0.55f)),
+                    secondaryContainer = Color(ColorDerive.lerpArgb(secondary, white, 0.8f)),
+                    outline = Color(ColorDerive.lerpArgb(secondary, surface, 0.35f)),
+                )
+            } else {
+                darkColorScheme(
+                    primary = Color(primary),
+                    secondary = Color(secondary),
+                    tertiary = Color(tertiary),
+                    background = Color(background),
+                    surface = Color(surface),
+                    surfaceVariant = Color(ColorDerive.lerpArgb(surface, primary, 0.10f)),
+                    surfaceContainer = Color(ColorDerive.lerpArgb(surface, white, 0.04f)),
+                    surfaceContainerHigh = Color(ColorDerive.lerpArgb(surface, white, 0.08f)),
+                    primaryContainer = Color(ColorDerive.lerpArgb(primary, background, 0.65f)),
+                    onPrimaryContainer = Color(ColorDerive.lerpArgb(primary, white, 0.75f)),
+                    secondaryContainer = Color(ColorDerive.lerpArgb(secondary, background, 0.65f)),
+                    outline = Color(ColorDerive.lerpArgb(secondary, surface, 0.45f)),
+                )
+            }
+        // Light themes opt out: white body text on a near-white surface would
+        // make the whole UI unreadable.
+        return if (whiteFont && !a.light) base.whiteText() else base
     }
 }
+
+/**
+ * Repaints the text-on-surface roles pure white for the "White font"
+ * appearance option. Accent, container and surface roles are untouched, so
+ * only text changes. [AppTheme.colorScheme] applies this to dark schemes only.
+ */
+private fun ColorScheme.whiteText(): ColorScheme =
+    copy(
+        onBackground = Color.White,
+        onSurface = Color.White,
+        onSurfaceVariant = Color.White,
+    )
 
 /** Where the music player bar sits on screen; controls sit on the other side. */
 enum class PlayerPosition(
@@ -206,6 +227,9 @@ data class GuiPrefs(
     /** Visuals hub renders as a text-only clear overlay on the live canvas,
      *  so adjustments are visible on the visuals while being adjusted. */
     val clearVisualsMenu: Boolean = false,
+    /** Forces body/label text to pure white (dark themes only). Off keeps the
+     *  theme-derived text colors, so existing users see no change. */
+    val whiteFont: Boolean = false,
 )
 
 /** Persists the chosen [AppTheme] in shared preferences. */
@@ -239,6 +263,7 @@ class ThemeStore(
             compactPlayer = prefs.getBoolean(KEY_COMPACT, false),
             followSystemDark = prefs.getBoolean(KEY_FOLLOW_DARK, false),
             clearVisualsMenu = prefs.getBoolean(KEY_CLEAR_VIZ_MENU, false),
+            whiteFont = prefs.getBoolean(KEY_WHITE_FONT, false),
         )
 
     fun saveGui(gui: GuiPrefs) {
@@ -255,6 +280,7 @@ class ThemeStore(
             .putBoolean(KEY_COMPACT, gui.compactPlayer)
             .putBoolean(KEY_FOLLOW_DARK, gui.followSystemDark)
             .putBoolean(KEY_CLEAR_VIZ_MENU, gui.clearVisualsMenu)
+            .putBoolean(KEY_WHITE_FONT, gui.whiteFont)
             .apply()
     }
 
@@ -268,5 +294,6 @@ class ThemeStore(
         const val KEY_COMPACT = "gui_compact_player"
         const val KEY_FOLLOW_DARK = "gui_follow_system_dark"
         const val KEY_CLEAR_VIZ_MENU = "gui_clear_visuals_menu"
+        const val KEY_WHITE_FONT = "gui_white_font"
     }
 }

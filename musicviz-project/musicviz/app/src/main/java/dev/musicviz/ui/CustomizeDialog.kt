@@ -299,14 +299,17 @@ internal fun ColorTab(
     p: SceneParams,
     onChange: (SceneParams) -> Unit,
 ) {
+    val palettes = rememberSavedPalettes()
     Column {
         SectionHeader("Palettes")
-        ChipRow(SceneParams.PALETTES.map { it.first }, p.palette) { onChange(p.copy(palette = it)) }
+        PaletteSlotSelector(p, onChange, palettes)
         LabeledSlider("Palette blend", p.paletteMix, 0f..1f) { onChange(p.copy(paletteMix = it)) }
         if (p.paletteMix > 0.001f) {
             Text("Second palette", style = MaterialTheme.typography.labelSmall)
-            ChipRow(SceneParams.PALETTES.map { it.first }, p.palette2) { onChange(p.copy(palette2 = it)) }
+            PaletteSlotSelector(p, onChange, palettes, second = true)
         }
+        SectionHeader("Gradient & palette maker")
+        PaletteMakerCard(p, onChange, palettes)
         SectionHeader("Hue")
         LabeledSlider("Hue shift", p.colorShift, 0f..1f) { onChange(p.copy(colorShift = it)) }
         LabeledSlider("Hue range", p.hueRange, 0f..1.5f) { onChange(p.copy(hueRange = it)) }
@@ -500,11 +503,22 @@ private fun CheckRow(
 }
 
 /**
- * Customize -> Fluid tab (F5). When the FLUID style is active every section
- * is shown, including the force/dye injection shader editors (the section-13
- * extension points). The WATER style adds its Water section (plus the shared
- * Journey section); for every other style only the FlowField section
- * appears - the same tab is the one home for "fluid principles" regardless
+ * Customize -> Fluid tab (F5). Sections are gated by what the ACTIVE style
+ * actually reads, not by style name, because the fluid styles overlap only
+ * partially:
+ * - [isFluidScene]: FLUID alone - the Navier-Stokes solver, the ink/dye and
+ *   look passes, and the force/dye injection shader editors (the section-13
+ *   extension points).
+ * - [isEmitterScene]: FLUID + WATER - the shared FluidEmitters splat
+ *   schedule and the FluidQuality tiers. WaterScene reuses both verbatim
+ *   (see WaterScene.applyQualityTier and its "Emitter schedule reused
+ *   verbatim" block), so hiding these on Water left it running on whatever
+ *   values the params happened to hold.
+ * - [isJourneyScene]: FLUID + CURLFLOW + WATER - the shared spawn/catch
+ *   progression.
+ * - [isWaterScene]: WATER alone - the heightfield surface.
+ * For every other style only the FlowField / water-ripple overlay sections
+ * appear - the same tab is the one home for "fluid principles" regardless
  * of style, mirroring how the GLSL tab scopes to shader scenes.
  */
 @Composable
@@ -514,6 +528,7 @@ internal fun FluidTab(
     isFluidScene: Boolean,
     isJourneyScene: Boolean = isFluidScene,
     isWaterScene: Boolean = false,
+    isEmitterScene: Boolean = isFluidScene,
     injectionError: String? = null,
     onApplyInjectionShaders: (String?, String?) -> Unit = { _, _ -> },
 ) {
@@ -554,7 +569,9 @@ internal fun FluidTab(
             }
             LabeledSlider("Particle life (s)", p.fluidParticleLife, 1f..20f) { onChange(p.copy(fluidParticleLife = it)) }
         }
-        if (isFluidScene) {
+        if (isEmitterScene) {
+            // Quality tiers: FluidScene sizes its sim/dye/particle buffers
+            // from them, WaterScene its ripple grid (WaterScene.gridResFor).
             SectionHeader("Quality")
             ChipRow(
                 dev.musicviz.render.fluid.FluidQuality.LABELS,
@@ -563,13 +580,23 @@ internal fun FluidTab(
             CheckRow("Auto quality (downgrade on sustained low FPS)", p.fluidAutoQuality) {
                 onChange(p.copy(fluidAutoQuality = it))
             }
-            LabeledIntSlider("Solver iterations", p.fluidIterations, 8..40) { onChange(p.copy(fluidIterations = it)) }
+            if (isFluidScene) {
+                // Pressure-projection sweeps: WATER's wave equation has no
+                // pressure solve, so the knob would do nothing there.
+                LabeledIntSlider("Solver iterations", p.fluidIterations, 8..40) { onChange(p.copy(fluidIterations = it)) }
+            }
+        }
+        if (isFluidScene) {
             SectionHeader("Character")
             LabeledSlider("Fluid curl", p.fluidCurl, 0f..50f) { onChange(p.copy(fluidCurl = it)) }
             LabeledSlider("Motion fade", p.fluidVelocityDissipation, 0f..4f) { onChange(p.copy(fluidVelocityDissipation = it)) }
             LabeledSlider("Fluid fade", p.fluidDensityDissipation, 0f..4f) { onChange(p.copy(fluidDensityDissipation = it)) }
             LabeledSlider("Chromatic aging", p.fluidChromaticAging, 0f..1f) { onChange(p.copy(fluidChromaticAging = it)) }
             LabeledSlider("Pressure", p.fluidPressure, 0f..1f) { onChange(p.copy(fluidPressure = it)) }
+        }
+        if (isEmitterScene) {
+            // The splat schedule is shared: FluidScene injects the splats as
+            // velocity/dye, WaterScene converts each one into a drop.
             SectionHeader("Emitters")
             Text("Beat pattern", style = MaterialTheme.typography.labelSmall)
             ChipRow(SceneParams.FLUID_PATTERNS, p.fluidBeatPattern.coerceIn(0, 3)) {
@@ -579,10 +606,19 @@ internal fun FluidTab(
             LabeledIntSlider("Stirrers", p.fluidStirrers, 0..4) { onChange(p.copy(fluidStirrers = it)) }
             LabeledSlider("Stirrer speed", p.fluidStirrerSpeed, 0f..2f) { onChange(p.copy(fluidStirrerSpeed = it)) }
             LabeledSlider("Fluid splat radius", p.fluidSplatRadius, 0.02f..0.4f) { onChange(p.copy(fluidSplatRadius = it)) }
+            // Lives with the radius it modulates; both feed FluidEmitters,
+            // which WATER drives too (emitters.radiusPulse).
+            LabeledSlider("Radius on beat", p.fluidRadiusPulse, 0f..1f) { onChange(p.copy(fluidRadiusPulse = it)) }
             LabeledSlider("Fluid splat force", p.fluidSplatForce, 0f..3f) { onChange(p.copy(fluidSplatForce = it)) }
             CheckRow("Bass pump", p.fluidBassPump) { onChange(p.copy(fluidBassPump = it)) }
             CheckRow("Treble sparkle", p.fluidSparkle) { onChange(p.copy(fluidSparkle = it)) }
-            LabeledSlider("Palette cycle", p.fluidPaletteCycleSpeed, 0f..2f) { onChange(p.copy(fluidPaletteCycleSpeed = it)) }
+            if (isFluidScene) {
+                // Tints the dye a splat carries; WATER discards splat colour
+                // (it keeps only position/radius/velocity), so FLUID only.
+                LabeledSlider("Palette cycle", p.fluidPaletteCycleSpeed, 0f..2f) { onChange(p.copy(fluidPaletteCycleSpeed = it)) }
+            }
+        }
+        if (isFluidScene) {
             SectionHeader("Particles")
             CheckRow("Particle layer", p.fluidParticlesEnabled) { onChange(p.copy(fluidParticlesEnabled = it)) }
             if (p.fluidParticlesEnabled) {
@@ -609,7 +645,6 @@ internal fun FluidTab(
             LabeledSlider("Curl from mids", p.fluidCurlAudio, 0f..1f) { onChange(p.copy(fluidCurlAudio = it)) }
             LabeledSlider("Glow from loudness", p.fluidBloomAudio, 0f..1f) { onChange(p.copy(fluidBloomAudio = it)) }
             LabeledSlider("Fade when quiet", p.fluidFadeAudio, 0f..1f) { onChange(p.copy(fluidFadeAudio = it)) }
-            LabeledSlider("Radius on beat", p.fluidRadiusPulse, 0f..1f) { onChange(p.copy(fluidRadiusPulse = it)) }
         }
         SectionHeader("FlowField (all styles)")
         Text(
