@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ (cloud backup and device-to-device transfer). Same shape as
+     backup_rules.xml: keep user-authored data, drop the rebuildable cache and
+     the crash file. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude
+            domain="file"
+            path="analysis" />
+        <exclude
+            domain="file"
+            path="crash-latest.txt" />
+        <exclude
+            domain="file"
+            path="milk/generated" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude
+            domain="file"
+            path="crash-latest.txt" />
+    </device-transfer>
+</data-extraction-rules>

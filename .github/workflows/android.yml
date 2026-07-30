@@ -33,14 +33,59 @@ jobs:
       - name: Set up Gradle (with caching)
         uses: gradle/actions/setup-gradle@v4
 
-      - name: ktlint
-        run: ./gradlew ktlintCheck --stacktrace
+      - name: ktlint + bundled-notices freshness
+        run: ./gradlew ktlintCheck checkThirdPartyNotices --stacktrace
 
       - name: Unit tests (incl. Robolectric UI tests)
         run: ./gradlew testDebugUnitTest --stacktrace
 
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --stacktrace
+
+      # Exercises R8/resource shrinking on every push so a broken keep rule is
+      # caught here rather than at upload time. Unsigned unless the signing
+      # secrets are present.
+      - name: Bundle release AAB
+        run: ./gradlew bundleRelease --stacktrace
+
+      - name: Check native libs for 16 KB page alignment
+        working-directory: musicviz-project/musicviz/app/src/main/jniLibs
+        run: |
+          set -uo pipefail
+          # Play requires 16 KB page-size support for targetSdk 35+. Warn here;
+          # release.yml turns the same check into a hard gate.
+          bad=0
+          for so in $(find . -name '*.so'); do
+            aligns=$(readelf -lW "$so" | awk '$1 == "LOAD" { print $NF }')
+            for a in $aligns; do
+              if [ "$((a))" -lt 16384 ]; then
+                echo "::warning file=$so::LOAD segment aligned to $a, needs >= 0x4000 (16384). Rebuild via the native-libs workflow."
+                bad=1
+                break
+              fi
+            done
+          done
+          [ "$bad" -eq 0 ] && echo "All native libs are 16 KB aligned."
+          exit 0
+
+      # The privacy policy and the Play data-safety answers both rest on the
+      # claim that MusicViz cannot talk to the network. Assert it against the
+      # merged manifest so a future dependency cannot quietly add the
+      # permission and make those statements false.
+      - name: Assert no INTERNET permission
+        working-directory: musicviz-project/musicviz/app/build/intermediates
+        run: |
+          set -euo pipefail
+          manifests=$(find . -name AndroidManifest.xml -path '*merged_manifest*')
+          if [ -z "$manifests" ]; then
+            echo "::error::no merged manifest found — check the intermediates path"
+            exit 1
+          fi
+          if grep -l 'android.permission.INTERNET' $manifests; then
+            echo "::error::INTERNET permission appeared in the merged manifest; update docs/PRIVACY_POLICY.md and the Play data-safety answers before shipping"
+            exit 1
+          fi
+          echo "No INTERNET permission in the merged manifest."
 
       - name: Lint
         run: ./gradlew lint --stacktrace
