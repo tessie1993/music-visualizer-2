@@ -7,10 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.Card
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,76 +23,82 @@ import dev.musicviz.audio.AudioFxFormat
  * horizontal slider per band (vertical sliders are awkward in plain Compose),
  * plus bass boost and loudness. Everything greys out while the chain is off,
  * and the whole card degrades to a "not supported" note on devices whose
- * audiofx constructors fail (common on emulators).
+ * audiofx constructors fail (common on emulators). Rendered as a crystal
+ * glass panel per the design mockups.
  */
 @Composable
 fun EqualizerSettings(viewModel: PlayerViewModel) {
     val fx by viewModel.audioFx.collectAsState()
-    Card {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Equalizer", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                Switch(
-                    checked = fx.enabled && fx.available,
-                    onCheckedChange = { viewModel.setAudioFxEnabled(it) },
-                    enabled = fx.available,
-                )
-            }
-            if (!fx.available) {
-                Text(
-                    "Not supported on this device",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                return@Column
-            }
-            val controlsOn = fx.enabled
-            if (fx.presets.isNotEmpty()) {
-                Text("Preset", style = MaterialTheme.typography.labelMedium)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    itemsIndexed(fx.presets) { i, name ->
-                        FilterChip(
-                            selected = fx.presetIndex == i,
-                            onClick = { viewModel.useAudioFxPreset(i) },
-                            label = { Text(name) },
-                            enabled = controlsOn,
-                        )
-                    }
-                }
-                if (fx.presetIndex < 0) {
-                    Text(
-                        "Custom",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    val cs = MaterialTheme.colorScheme
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .crystalPanel(0.25f, cs.surfaceVariant, cs.primary, corner = 18.dp, glowStrength = 0.4f)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CrystalOverline("Equalizer", Modifier.weight(1f))
+            Switch(
+                checked = fx.enabled && fx.available,
+                onCheckedChange = { viewModel.setAudioFxEnabled(it) },
+                enabled = fx.available,
+                colors = crystalSwitchColors(),
+            )
+        }
+        if (!fx.available) {
+            Text(
+                "Not supported on this device",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return@Column
+        }
+        val controlsOn = fx.enabled
+        if (fx.presets.isNotEmpty()) {
+            Text("Preset", style = MaterialTheme.typography.labelMedium)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                itemsIndexed(fx.presets) { i, name ->
+                    CrystalChip(
+                        name,
+                        selected = fx.presetIndex == i,
+                        onClick = { if (controlsOn) viewModel.useAudioFxPreset(i) },
                     )
                 }
             }
-            fx.bands.forEachIndexed { i, band ->
+            if (fx.presetIndex < 0) {
                 Text(
-                    "${band.label}  ${AudioFxFormat.dbLabel(band.levelMb)}",
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                Slider(
-                    value = band.levelMb.toFloat(),
-                    onValueChange = { viewModel.setAudioFxBand(i, it.toInt()) },
-                    valueRange = band.minMb.toFloat()..band.maxMb.toFloat(),
-                    enabled = controlsOn,
+                    "Custom",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text("Bass boost  ${fx.bassBoost / 10}%", style = MaterialTheme.typography.labelMedium)
-            Slider(
-                value = fx.bassBoost.toFloat(),
-                onValueChange = { viewModel.setAudioFxBassBoost(it.toInt()) },
-                valueRange = 0f..1000f,
-                enabled = controlsOn,
-            )
-            Text("Loudness  ${AudioFxFormat.dbLabel(fx.loudness)}", style = MaterialTheme.typography.labelMedium)
-            Slider(
-                value = fx.loudness.toFloat(),
-                onValueChange = { viewModel.setAudioFxLoudness(it.toInt()) },
-                valueRange = 0f..1000f,
+        }
+        fx.bands.forEachIndexed { i, band ->
+            CrystalSliderRow(
+                band.label,
+                band.levelMb.toFloat(),
+                band.minMb.toFloat()..band.maxMb.toFloat(),
+                onChange = { viewModel.setAudioFxBand(i, it.toInt()) },
+                valueText = AudioFxFormat.dbLabel(band.levelMb),
                 enabled = controlsOn,
             )
         }
+        CrystalSliderRow(
+            "Bass boost",
+            fx.bassBoost.toFloat(),
+            0f..1000f,
+            onChange = { viewModel.setAudioFxBassBoost(it.toInt()) },
+            valueText = "${fx.bassBoost / 10}%",
+            enabled = controlsOn,
+        )
+        CrystalSliderRow(
+            "Loudness",
+            fx.loudness.toFloat(),
+            0f..1000f,
+            onChange = { viewModel.setAudioFxLoudness(it.toInt()) },
+            valueText = AudioFxFormat.dbLabel(fx.loudness),
+            enabled = controlsOn,
+        )
     }
 }

@@ -9,10 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -48,6 +46,7 @@ fun SettingsDialog(
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
         title = { Text("Export") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -114,20 +113,19 @@ fun SettingsDialog(
                                 style = MaterialTheme.typography.labelSmall,
                             )
                         }
-                        Button(
+                        CrystalButton(
+                            "Render ${quality.shortSide}p ${ratio.label} ${fps}fps",
                             onClick = { onStart(ExportAspect.of(quality, ratio), fps) },
                             enabled = hasMedia,
                             modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text("Render ${quality.shortSide}p ${ratio.label} ${fps}fps")
-                        }
-                        OutlinedButton(
+                        )
+                        CrystalButton(
+                            "Render to chosen folder…",
                             onClick = { onStartToDestination(ExportAspect.of(quality, ratio), fps) },
                             enabled = hasMedia,
+                            kind = CrystalButtonKind.SECONDARY,
                             modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text("Render to chosen folder…")
-                        }
+                        )
                     }
                 }
             }
@@ -148,9 +146,5 @@ private fun QualityChip(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-    )
+    CrystalChip(label, selected = selected, onClick = onClick)
 }
