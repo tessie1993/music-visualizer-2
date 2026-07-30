@@ -7,16 +7,20 @@ import kotlin.math.floor
  * kept out of the GL classes so the headless gate can pin it (same pattern
  * as [FluidMath]).
  *
- * Three Customize controls decide a fluid scene's colours and all three have
- * to be folded in here:
- * - the palette's BASE hue (`paletteBase`), where on the wheel the style sits;
- * - the palette's SPAN multiplier (`paletteRange`), how much of the wheel it
- *   covers - the difference between Fire (0.14, one hot ember band) and
- *   Aurora (0.7, a wide sweep). Dropping it made every palette read as the
- *   same look in a different tint, which is exactly the "colours don't
- *   change on fluid" report;
- * - the "Hue shift" slider (`colorShift`), which the fluid scenes were not
- *   reading at all.
+ * Ownership rule for the fluid family, so no control is applied twice:
+ * - the SCENE owns palette IDENTITY, which is what this object computes: the
+ *   palette's BASE hue (`paletteBase`), where on the wheel the style sits,
+ *   and its SPAN multiplier (`paletteRange`), how much of the wheel it covers
+ *   - the difference between Fire (0.14, one hot ember band) and Aurora (0.7,
+ *   a wide sweep). Dropping the span made every palette read as the same look
+ *   in a different tint, which is exactly the "colours don't change on fluid"
+ *   report. Both decide the dye at emission time and cannot be recovered by a
+ *   screen-space rotation, so they have to live here;
+ * - the COMPOSITE owns hue ROTATION: the "Hue shift" slider (`colorShift`)
+ *   and the colour-cycle phase are uploaded as `uPostHue` by
+ *   `VisualizerRenderer` for every scene that doesn't grade itself, i.e. this
+ *   whole family. Folding either of them in here as well made one slider unit
+ *   turn the wheel twice.
  */
 internal object FluidHue {
     /**
@@ -24,6 +28,9 @@ internal object FluidHue {
      * families: a span of 0 collapses the style to one flat colour.
      */
     const val MIN_HUE_RANGE = 0.1f
+
+    /** Upper clamp on the fluid-only "Palette cycle" slider. */
+    const val MAX_PALETTE_CYCLE = 2f
 
     /**
      * Wraps a hue into [0,1), mirroring GLSL `fract()` (the fluid particle
@@ -37,14 +44,28 @@ internal object FluidHue {
     }
 
     /**
-     * Base hue for a fluid scene: the palette's base plus the Hue shift
-     * slider, wrapped - the same `paletteBase + colorShift` convention the
-     * particle and shader families use.
+     * Base hue for a fluid scene: the palette's own base, wrapped into the
+     * unit interval (a user-made palette can arrive from the palette maker
+     * with a base outside [0,1)).
+     *
+     * `colorShift` is deliberately not a parameter. The composite pass
+     * rotates the whole fluid frame by `colorShift + cyclePhase`, so a scene
+     * that also offset its emission hue would move twice per slider unit.
      */
-    fun base(
-        paletteBase: Float,
-        colorShift: Float,
-    ): Float = wrap01(paletteBase + colorShift)
+    fun base(paletteBase: Float): Float = wrap01(paletteBase)
+
+    /**
+     * Emitter palette-drift speed: the fluid-only "Palette cycle" slider on
+     * its own, clamped to its Customize range.
+     *
+     * The global Colour cycle toggle and Cycle speed slider used to be added
+     * in here as `cycleSpeed * 20` (0.05 per unit per second inside the
+     * emitters, i.e. exactly one turn per second per unit). The composite
+     * pass now integrates that same phase and rotates the frame by it, so
+     * keeping the emission-side term would cycle the fluid twice as fast as
+     * every other style.
+     */
+    fun paletteCycleSpeed(fluidPaletteCycleSpeed: Float): Float = fluidPaletteCycleSpeed.coerceIn(0f, MAX_PALETTE_CYCLE)
 
     /**
      * Slice of the hue wheel a fluid scene spans: the Hue range slider scaled

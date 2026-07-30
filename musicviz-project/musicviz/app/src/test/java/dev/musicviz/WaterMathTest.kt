@@ -23,10 +23,13 @@ import kotlin.random.Random
  *    slider setting really does widen the well's footprint on the
  *    heightfield, and that the well dips DOWN - what distinguishes a drain
  *    from an ordinary drop.
- *  - "Hue shift" (colorShift) was read by no fluid scene at all. It now
- *    folds into the display pass's base hue through the shared [FluidHue]
- *    helper, the same way ParticleSceneBase/ShaderScene fold it, so one
- *    slider means one thing across every scene family.
+ *  - "Hue shift" (colorShift) was read by no fluid scene at all. It is
+ *    delivered by the COMPOSITE pass now (`uPostHue = colorShift +
+ *    cyclePhase`, uploaded for every scene that does not grade itself), so
+ *    one slider means one thing across every scene family. This pass keeps
+ *    palette IDENTITY only - base hue and span through the shared [FluidHue]
+ *    helper - because folding the shift in here as well rotated the pool
+ *    twice per slider unit. FluidHueTest pins the once-only arithmetic.
  *
  * Plus one guard in the other direction: Brightness and Intensity are graded
  * by the COMPOSITE pass for every scene that does not grade itself, WATER
@@ -128,23 +131,21 @@ class WaterMathTest {
     }
 
     @Test
-    fun hueShiftMovesTheBaseHueAndWraps() {
-        // WaterScene folds the slider in through the shared fluid helper, so
-        // Water, Fluid and Curl Flow cannot drift apart. Zero shift is the
-        // identity (existing presets keep their look); the slider must
-        // actually move the hue (the reported bug); wrapping stays inside the
-        // circle in both directions, including past the slider's own range
-        // (an LFO can drive colorShift beyond 0..1).
-        assertEquals(0.5f, FluidHue.base(0.5f, 0f), 1e-6f)
-        assertEquals(0.75f, FluidHue.base(0.5f, 0.25f), 1e-6f)
-        assertEquals(0.2f, FluidHue.base(0.9f, 0.3f), 1e-6f)
-        assertEquals(0.9f, FluidHue.base(0.1f, -0.2f), 1e-6f)
-        for (shift in floatArrayOf(-3.4f, -1f, 0f, 0.37f, 1f, 2.8f)) {
-            for (base in floatArrayOf(0f, 0.33f, 0.97f)) {
-                val h = FluidHue.base(base, shift)
-                assertTrue("hue $h out of [0,1) for base=$base shift=$shift", h >= 0f && h < 1f)
-            }
+    fun theDisplayBaseHueIsPaletteIdentityOnly() {
+        // WaterScene tints through the shared fluid helper, so Water, Fluid
+        // and Curl Flow cannot drift apart - and that helper carries palette
+        // identity ONLY. Hue shift reaches the pool through the composite's
+        // uPostHue, so this pass must be the identity at every slider value;
+        // applying it here too rotated the pool twice per unit.
+        assertEquals(0.5f, FluidHue.base(0.5f), 1e-6f)
+        assertEquals(0.9f, FluidHue.base(0.9f), 1e-6f)
+        // A user-made palette can arrive outside [0,1): wrap, never clamp.
+        for (base in floatArrayOf(-3.4f, -1f, 0f, 0.33f, 0.97f, 1f, 2.8f)) {
+            val h = FluidHue.base(base)
+            assertTrue("hue $h out of [0,1) for base=$base", h >= 0f && h < 1f)
         }
+        // The span is the other half of the identity and stays scene-side.
+        assertEquals(0.35f, FluidHue.span(0.5f, 0.7f), 1e-6f)
     }
 
     @Test

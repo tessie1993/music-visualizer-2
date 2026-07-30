@@ -22,8 +22,10 @@ import kotlin.math.abs
  * sim units ([WaterMath]). The display pass refracts a palette-tinted
  * depth-graded pool through the surface with Blinn specular, fresnel rim
  * and treble glints (water_display_frag), tinted by [FluidHue] (palette base
- * + Hue shift, palette span). Brightness/Intensity are NOT applied here: the
- * composite pass grades the whole fluid family.
+ * and palette span - the identity this pass owns). Hue shift, the colour
+ * cycle, Brightness and Intensity are NOT applied here: the composite pass
+ * grades the whole fluid family, and applying them in both places moved the
+ * hue twice per slider unit.
  *
  * FluidScene's defensive conventions apply: GlUtil.resetFrameState() at
  * draw entry, framebuffer/viewport/blend snapshot-restore around the sim
@@ -239,7 +241,10 @@ internal class WaterScene(
         choreography.tick(f, simDt, sim.aspect)
         val rippleStrength = p.waterRippleStrength.coerceIn(0f, 2f)
         val catchRadius = WaterMath.catchWellRadius(p.fluidCatchRadius)
-        val baseHue = FluidHue.base(p.paletteBase, p.colorShift)
+        // Palette identity only. Hue shift rides the composite pass' uPostHue
+        // for this whole family, so folding it in here as well rotated the
+        // pool twice per slider unit.
+        val baseHue = FluidHue.base(p.paletteBase)
         for (s in emitters.tick(f, simDt, sim.aspect, baseHue, p.hueRange.coerceIn(FluidHue.MIN_HUE_RANGE, 1f))) {
             val speed = kotlin.math.sqrt(s.velX * s.velX + s.velY * s.velY) / FluidEmitters.BASE_SPEED
             if (WaterMath.isCatchWell(s.r, s.g, s.b)) {
