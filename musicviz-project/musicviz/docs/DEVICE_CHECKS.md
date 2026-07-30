@@ -120,3 +120,21 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     old double-apply looked like — and that Water tracks Fluid and Curl
     Flow at the same slider value. Both sliders at minimum must dim the
     pool rather than leave it fully lit.
+23. Composite grading + geometry (fluid styles): on Fluid, Curl Flow AND
+    Water, sweep Zoom, Rotation, Saturation, Brightness, Contrast, Gamma,
+    Hue shift, Intensity, Color cycle, Mirror and Invert — every one must
+    now visibly change the image (they were dead: the fluid family grades
+    nothing itself and the composite pass declared no grading uniforms).
+    Rotation must SPIN continuously (it is a speed, not a static offset)
+    and Zoom must magnify about the screen centre.
+    REGRESSION SIDE — the same sweep on a shader style (julia/plasma), a
+    particle style (nebula/orbits) and a live MilkDrop preset must look
+    EXACTLY as before: those grade themselves, so the composite sends the
+    neutral identity (uPostGrade = 0). Anything twice as bright, twice as
+    contrasty or twice as zoomed as before means the gate regressed.
+    Switch fluid <-> shader mid-sweep and watch the transition for a
+    grading pop on the outgoing image.
+    Known gap (follow-up): the export compositor (FxCompositor) does not
+    upload the new uniforms yet, so an exported fluid clip is ungraded
+    while the live view is graded. Exports of every other style must be
+    unchanged.

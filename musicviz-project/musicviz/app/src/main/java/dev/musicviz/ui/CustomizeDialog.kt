@@ -299,14 +299,17 @@ internal fun ColorTab(
     p: SceneParams,
     onChange: (SceneParams) -> Unit,
 ) {
+    val palettes = rememberSavedPalettes()
     Column {
         SectionHeader("Palettes")
-        ChipRow(SceneParams.PALETTES.map { it.first }, p.palette) { onChange(p.copy(palette = it)) }
+        PaletteSlotSelector(p, onChange, palettes)
         LabeledSlider("Palette blend", p.paletteMix, 0f..1f) { onChange(p.copy(paletteMix = it)) }
         if (p.paletteMix > 0.001f) {
             Text("Second palette", style = MaterialTheme.typography.labelSmall)
-            ChipRow(SceneParams.PALETTES.map { it.first }, p.palette2) { onChange(p.copy(palette2 = it)) }
+            PaletteSlotSelector(p, onChange, palettes, second = true)
         }
+        SectionHeader("Gradient & palette maker")
+        PaletteMakerCard(p, onChange, palettes)
         SectionHeader("Hue")
         LabeledSlider("Hue shift", p.colorShift, 0f..1f) { onChange(p.copy(colorShift = it)) }
         LabeledSlider("Hue range", p.hueRange, 0f..1.5f) { onChange(p.copy(hueRange = it)) }
