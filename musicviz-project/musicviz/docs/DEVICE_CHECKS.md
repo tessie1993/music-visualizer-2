@@ -122,3 +122,17 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     upload the new uniforms yet, so an exported fluid clip is ungraded
     while the live view is graded. Exports of every other style must be
     unchanged.
+26. Beat sensitivity for slow tracks: play a slow, sparse track (ballad,
+    ambient, ~60-80 BPM) on a beat-reactive style (flash/pulse/strobe).
+    At the shipped defaults note how often it flashes. Drag "Beat
+    sensitivity" toward 6.0σ — flashes must get RARER, not denser, and
+    the top of the range must be reachable (it used to stop at 4.0σ).
+    Then drag "Minimum gap between beats" to 1200 ms: flashes must be at
+    least ~1.2 s apart no matter how busy the track gets. Tap "Slow
+    track": both sliders jump to 4.5σ / 700 ms and the visual should
+    pulse on the kick only. Tap "Default": back to 2.5σ / 333 ms.
+    REGRESSION SIDE — on a busy dance track at the defaults the beat
+    response must look EXACTLY as before this change. Kill and relaunch
+    the app after each change: both values must persist, and a profile
+    that last stored a sigma under the old 1.5-4.0 range must reload at
+    that same value with the slider thumb sitting on it (not snapped).
