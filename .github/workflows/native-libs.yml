@@ -1,0 +1,110 @@
+name: Rebuild native libs (16 KB aligned)
+
+# Google Play requires 16 KB page-size support for apps targeting Android 15+
+# (API 35 and above). The .so files checked into app/src/main/jniLibs must
+# therefore have ELF LOAD segments aligned to 16384, which means rebuilding
+# libprojectM and the JNI bridge with NDK r28 (16 KB is its default) plus the
+# explicit max-page-size linker flag.
+#
+# Run this manually, download the artifact, drop both .so into
+# app/src/main/jniLibs/arm64-v8a/ and commit. The alignment guard in
+# android.yml then verifies every push.
+
+on:
+  workflow_dispatch:
+    inputs:
+      projectm_tag:
+        description: projectM release tag to build
+        default: v4.1.7
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # NDK r28 defaults to 16 KB-aligned shared objects.
+      NDK_VERSION: 28.0.13004108
+      ABI: arm64-v8a
+      API: 26
+      PAGE_FLAGS: -Wl,-z,max-page-size=16384,-z,common-page-size=16384
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install NDK ${{ env.NDK_VERSION }}
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;${NDK_VERSION}"
+          echo "NDK=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
+
+      - name: Clone projectM ${{ inputs.projectm_tag }}
+        run: |
+          set -euo pipefail
+          # Build from a release tag, never master: master carries experimental
+          # GL bootstrap code that breaks Android rendering (tools/build-projectm.md).
+          git clone --branch "${{ inputs.projectm_tag }}" --depth 1 --recurse-submodules \
+            https://github.com/projectM-visualizer/projectm.git projectm
+
+      - name: Apply render-to-FBO backport
+        working-directory: projectm
+        run: |
+          set -euo pipefail
+          git apply --verbose \
+            ../musicviz-project/musicviz/tools/projectm-v417-render-fbo-backport.patch
+
+      - name: Build libprojectM-4.so
+        run: |
+          set -euo pipefail
+          cmake -B build-android -S projectm \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI="$ABI" \
+            -DANDROID_PLATFORM="android-$API" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DENABLE_PLAYLIST=ON \
+            -DCMAKE_SHARED_LINKER_FLAGS="$PAGE_FLAGS" \
+            -G Ninja
+          ninja -C build-android
+
+      - name: Build libprojectmjni.so
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          find build-android -name 'libprojectM-4.so' -exec cp {} out/ \;
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          "$TOOLCHAIN/bin/aarch64-linux-android$API-clang" \
+            -shared -fPIC -O2 \
+            -o out/libprojectmjni.so \
+            musicviz-project/musicviz/tools/pm_jni.c \
+            -I projectm/src/api/include \
+            -L out -lprojectM-4 -llog \
+            $PAGE_FLAGS
+
+      - name: Verify 16 KB alignment
+        run: |
+          set -euo pipefail
+          fail=0
+          for so in out/*.so; do
+            readelf -lW "$so" | awk '$1 == "LOAD"'
+            for a in $(readelf -lW "$so" | awk '$1 == "LOAD" { print $NF }'); do
+              if [ "$((a))" -lt 16384 ]; then
+                echo "::error file=$so::LOAD segment aligned to $a, needs >= 16384"
+                fail=1
+              fi
+            done
+          done
+          [ "$fail" -eq 0 ] && echo "All LOAD segments are 16 KB aligned."
+          exit "$fail"
+
+      - name: Upload native libs
+        uses: actions/upload-artifact@v4
+        with:
+          name: jniLibs-arm64-v8a-16k
+          path: out/*.so
+          retention-days: 30
