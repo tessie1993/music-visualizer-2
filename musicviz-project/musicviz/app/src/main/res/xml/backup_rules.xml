@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and below (auto backup). Presets, playlists, the track library
+     and preferences are worth restoring; the analysis cache is large and
+     rebuildable, and the crash file is device-local debug output. -->
+<full-backup-content>
+    <exclude
+        domain="file"
+        path="analysis" />
+    <exclude
+        domain="file"
+        path="crash-latest.txt" />
+    <exclude
+        domain="file"
+        path="milk/generated" />
+</full-backup-content>

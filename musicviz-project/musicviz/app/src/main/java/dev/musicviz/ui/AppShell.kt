@@ -679,13 +679,7 @@ fun SettingsScreen(
         item {
             SettingsSection("Export & About") {
                 Button(onClick = { showExport = true }) { Text("Export video…") }
-                Column {
-                    // TODO(coordinator): switch to BuildConfig.VERSION_NAME once
-                    // buildFeatures.buildConfig is enabled — BuildConfig is not
-                    // generated or referenced anywhere in the app today.
-                    Text("MusicViz", style = MaterialTheme.typography.titleSmall)
-                    Text("Version 0.13.1", style = MaterialTheme.typography.bodySmall)
-                }
+                AboutSection()
             }
         }
     }

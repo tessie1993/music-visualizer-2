@@ -1,9 +1,37 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ktlint)
 }
+
+// Upload-key material for the Play Store build. Resolved from (in order):
+//   1) keystore.properties next to settings.gradle.kts (local dev; git-ignored)
+//   2) MUSICVIZ_KEYSTORE / _PASSWORD / _KEY_ALIAS / _KEY_PASSWORD env vars (CI)
+// When neither is present, the release build type is left unsigned so that
+// `assembleRelease` still works for local smoke tests.
+val keystoreProps =
+    Properties().apply {
+        val f = rootProject.file("keystore.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+
+fun releaseSecret(
+    propKey: String,
+    envKey: String,
+): String? = keystoreProps.getProperty(propKey) ?: System.getenv(envKey)
+
+val releaseStorePath = releaseSecret("storeFile", "MUSICVIZ_KEYSTORE")
+val releaseStorePassword = releaseSecret("storePassword", "MUSICVIZ_KEYSTORE_PASSWORD")
+val releaseKeyAlias = releaseSecret("keyAlias", "MUSICVIZ_KEY_ALIAS")
+val releaseKeyPassword = releaseSecret("keyPassword", "MUSICVIZ_KEY_PASSWORD")
+val hasReleaseSigning =
+    releaseStorePath != null &&
+        releaseStorePassword != null &&
+        releaseKeyAlias != null &&
+        releaseKeyPassword != null
 
 android {
     namespace = "dev.musicviz"
@@ -13,10 +41,59 @@ android {
         applicationId = "dev.musicviz"
         minSdk = 26
         targetSdk = 36
-        versionCode = 23
-        versionName = "0.13.1"
+        versionCode = 24
+        versionName = "1.0.0"
         ndk {
             abiFilters += "arm64-v8a"
+        }
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStorePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                enableV1Signing = false
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = false
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
+        }
+        debug {
+            // Keep debug installable next to a Play build of the same app.
+            isMinifyEnabled = false
+        }
+    }
+
+    packaging {
+        jniLibs {
+            // Uncompressed + page-aligned .so in the APK/AAB. Required for the
+            // 16 KB page-size devices Play mandates support for; also lets the
+            // loader mmap libprojectM instead of extracting it.
+            useLegacyPackaging = false
+        }
+    }
+
+    bundle {
+        // MusicViz ships a single locale and its own GL assets; splitting by
+        // language/density only adds ways for a device to end up missing
+        // resources at runtime.
+        language {
+            enableSplit = false
         }
     }
 
@@ -30,10 +107,47 @@ android {
         }
     }
 
+    lint {
+        // A release upload that fails lint is a wasted review cycle.
+        checkReleaseBuilds = true
+        abortOnError = true
+    }
+
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
+
+// LGPL-2.1 (libprojectM) requires the notice to reach the user, not just sit in
+// the repository, so app/src/main/assets/third_party_notices.txt ships a copy of
+// the root THIRD_PARTY_NOTICES for the in-app "Open source licenses" screen.
+// This task refreshes that copy; `checkThirdPartyNotices` (also run in CI)
+// fails the build if the two ever drift.
+tasks.register<Copy>("syncThirdPartyNotices") {
+    description = "Refreshes the bundled copy of THIRD_PARTY_NOTICES."
+    from(rootProject.file("THIRD_PARTY_NOTICES")) {
+        rename { "third_party_notices.txt" }
+    }
+    into(file("src/main/assets"))
+}
+
+tasks.register("checkThirdPartyNotices") {
+    description = "Fails if the bundled notices asset has drifted from THIRD_PARTY_NOTICES."
+    val source = rootProject.file("THIRD_PARTY_NOTICES")
+    val bundled = file("src/main/assets/third_party_notices.txt")
+    inputs.file(source)
+    inputs.file(bundled)
+    doLast {
+        if (source.readText() != bundled.readText()) {
+            throw GradleException(
+                "third_party_notices.txt is out of date — run ./gradlew :app:syncThirdPartyNotices",
+            )
+        }
+    }
+}
+
+tasks.named("check") { dependsOn("checkThirdPartyNotices") }
 
 kotlin {
     compilerOptions {
