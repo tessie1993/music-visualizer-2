@@ -103,6 +103,17 @@ class VisualizerRenderer(
     /** Final params of the current frame (after fade + LFO), for the composite FX pass. */
     private var lastFinalParams: SceneParams = SceneParams.DEFAULT
 
+    /** Composite-pass rotation angle. Rotation is a SPEED in every scene
+     *  (`rotationAngle += p.rotation * dt`), so the pass that rotates the
+     *  fluid family has to integrate its own angle rather than feed the raw
+     *  slider through as a static offset. */
+    private var postRotationAngle = 0f
+
+    /** Composite-pass colour-cycle phase, integrated like ShaderScene's, so
+     *  the hue uploaded below is `colorShift + cyclePhase` exactly as every
+     *  self-grading scene computes it. */
+    private var postCyclePhase = 0f
+
     /** Exponential lerp between param sets; toggles and choices snap to target. */
     private fun lerpParams(
         from: SceneParams,
@@ -588,6 +599,8 @@ class VisualizerRenderer(
         var p = LfoEngine.apply(displayedParams, lfoEngine.configs, lfoValues)
         p = AdsrEngine.apply(p, adsrEngine.configs, envValues)
         lastFinalParams = p
+        postRotationAngle = CompositeGrade.integrateRotation(postRotationAngle, p.rotation, dt)
+        postCyclePhase = CompositeGrade.integrateCyclePhase(postCyclePhase, p.cycleSpeed, dt, p.colorCycle)
         if (fluidInjectionDirty) {
             fluidInjectionDirty = false
             (scenes[SceneIds.FLUID] as? dev.musicviz.render.fluid.FluidScene)
@@ -775,10 +788,40 @@ class VisualizerRenderer(
             if (applyGeo && fx.solarize) 1f else 0f,
         )
         // Mirror/invert: shader scenes AND the milkdrop post pass handle these
-        // themselves; only particle scenes need them here.
-        val isParticle = activeScene is ParticleSceneBase
-        GLES30.glUniform1f(cLoc("uPostMirror"), if (isParticle && fx.mirror) 1f else 0f)
-        GLES30.glUniform1f(cLoc("uPostInvert"), if (isParticle && fx.invert) 1f else 0f)
+        // themselves. Everything else needs them here - particle scenes (whose
+        // fragment shader explicitly defers invert to this pass) and the fluid
+        // family, which was previously excluded and so had no mirror/invert at
+        // all.
+        val ownsMirrorInvert = activeScene is ShaderScene || activeScene is ProjectMScene
+        GLES30.glUniform1f(cLoc("uPostMirror"), if (!ownsMirrorInvert && fx.mirror) 1f else 0f)
+        GLES30.glUniform1f(cLoc("uPostInvert"), if (!ownsMirrorInvert && fx.invert) 1f else 0f)
+        // Universal grading + zoom/rotation, same gate idiom as applyGeo above
+        // but for a SMALLER set of scenes: ShaderScene (view()/grade()), the
+        // particle pipeline (particle_vert's uZoom/uRotation, particle_frag's
+        // uSat/uBright/uContrast/uGamma) and the milkdrop post pass all apply
+        // these in their OWN pass, so they get the neutral identity here -
+        // otherwise every one of them would be zoomed twice and graded twice
+        // (squared brightness, doubled contrast). Only scenes that grade
+        // nothing themselves - the fluid family (Fluid, Curl Flow, Water) -
+        // are graded here, which is what made Zoom/Rotation/Saturation/
+        // Brightness/Contrast/Gamma/Hue/Intensity dead on those styles.
+        // uPostGrade switches the shader block off wholesale, so the neutral
+        // case is an exact no-op and any program that never uploads these
+        // uniforms (the export FxCompositor) keeps its current output.
+        val gradesItself = activeScene is ShaderScene || activeScene is ParticleSceneBase || activeScene is ProjectMScene
+
+        fun gradeF(
+            value: Float,
+            neutral: Float,
+        ) = if (gradesItself) neutral else value
+        GLES30.glUniform1f(cLoc("uPostGrade"), if (gradesItself) 0f else 1f)
+        GLES30.glUniform1f(cLoc("uPostZoom"), gradeF(fx.zoom, 1f))
+        GLES30.glUniform1f(cLoc("uPostRotation"), gradeF(postRotationAngle, 0f))
+        GLES30.glUniform1f(cLoc("uPostSat"), gradeF(fx.saturation, 1f))
+        GLES30.glUniform1f(cLoc("uPostBright"), gradeF(CompositeGrade.brightness(fx.brightness, fx.intensity), 1f))
+        GLES30.glUniform1f(cLoc("uPostContrast"), gradeF(fx.contrast, 1f))
+        GLES30.glUniform1f(cLoc("uPostGamma"), gradeF(fx.gamma, 1f))
+        GLES30.glUniform1f(cLoc("uPostHue"), gradeF(fx.colorShift + postCyclePhase, 0f))
         GLES30.glBindVertexArray(quadVao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)
