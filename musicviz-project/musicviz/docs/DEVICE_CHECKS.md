@@ -205,8 +205,9 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     "Beat sensitivity does not reach the offline analyzer".
 27. Randomize locks + Customize labels (v0.14.0): open Visuals >
     Customize. Every control must show a "lock"/"locked" affordance,
-    INCLUDING the chip selectors — Palette, Palette 2 (visible once
-    Palette blend > 0), Particle shape (Shape tab), and Beat pattern /
+    INCLUDING the chip selectors — Palette, Palette 2 (on a SHADER style
+    only, and only once Palette blend > 0 — see check 29), Particle shape
+    (Shape tab), and Beat pattern /
     Path (Fluid tab, on a fluid style). Lock Palette, pick a palette you
     like — including a user-made one from the palette maker — then press
     "⚄ Randomize unlocked" ten times: the palette and its gradient must
@@ -220,3 +221,26 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     independently. Finally, Visuals > Customize must be the only
     customization surface: there is no second full-screen dialog to reach
     from anywhere in the app.
+29. Shape/Color controls only where they work (v1.1.0): the rule is "if
+    you can see it, it works". Pick a SHADER style (Visuals > Styles >
+    Shaders > julia). Customize > Shape must show "Morph"; drag it and
+    the pattern must fold toward polar. Customize > Color must show
+    "Palette blend"; raise it above 0 and a "Palette 2" chip row must
+    appear underneath, and picking a second palette must visibly mix.
+    "Duotone" (Color > Effects) must be there and must flatten the image
+    onto the palette. Now switch to a PARTICLE style (nebula), then
+    MilkDrop, then each fluid style (fluid, curlflow, water): on all of
+    them "Morph", "Palette blend", "Palette 2" and "Duotone" must be
+    GONE — no greyed rows, no empty gaps, and the sections around them
+    ("Distortion", "Palettes", "Effects") must still read as complete
+    lists. Everything else in those two tabs must stay visible AND keep
+    working on every style: Domain warp, Ripple, Twist, Kaleidoscope +
+    Folds, Tile, Pixelate, Posterize, Palette, the gradient/palette
+    maker, Hue shift, Hue range, Color cycle, Saturation, Brightness,
+    Contrast, Gamma, Intensity, Temperature, Bloom, Solarize, Invert —
+    move each one on a particle style and confirm it bites. Switch back
+    to julia: the four must return with the values they had. Finally,
+    save a preset on julia with Morph high, Palette blend 0.5 and
+    Duotone on, switch to nebula, re-apply it (no visible change is
+    correct there), switch back to julia and re-apply: the look must
+    come back intact — hiding a control must never drop its value.
