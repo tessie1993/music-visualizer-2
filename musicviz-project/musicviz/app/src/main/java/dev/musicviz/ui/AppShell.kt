@@ -120,7 +120,7 @@ fun AppRoot(
     // order: visualizer > search > drill-in > tab > exit.
     androidx.activity.compose.BackHandler(enabled = dest != 0) { dest = 0 }
     MaterialTheme(
-        colorScheme = effectiveTheme.colorScheme(gui.accentIntensity, gui.backgroundDim),
+        colorScheme = effectiveTheme.colorScheme(gui.accentIntensity, gui.backgroundDim, gui.whiteFont),
         shapes = gui.cornerStyle.shapes(),
         typography = crystalTypography(),
     ) {
@@ -550,6 +550,20 @@ fun SettingsScreen(
                     Switch(
                         checked = gui.followSystemDark,
                         onCheckedChange = { viewModel.setGuiPrefs(gui.copy(followSystemDark = it)) },
+                    )
+                }
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("White font", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Switch(
+                            checked = gui.whiteFont,
+                            onCheckedChange = { viewModel.setGuiPrefs(gui.copy(whiteFont = it)) },
+                        )
+                    }
+                    Text(
+                        "Forces labels and body text to pure white. No effect on light themes, where it would be unreadable.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
