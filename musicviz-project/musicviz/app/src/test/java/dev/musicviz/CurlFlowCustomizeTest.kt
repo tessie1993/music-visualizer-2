@@ -1,0 +1,197 @@
+package dev.musicviz
+
+import dev.musicviz.render.CompositeGrade
+import dev.musicviz.render.fluid.CurlFlowMath
+import dev.musicviz.render.fluid.FluidHue
+import dev.musicviz.render.scene.SceneIds
+import dev.musicviz.render.scene.SceneParams
+import dev.musicviz.ui.isFluidSceneId
+import dev.musicviz.ui.isJourneySceneId
+import dev.musicviz.ui.isParticleLayerSceneId
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import kotlin.math.pow
+
+/**
+ * Headless gate for the Curl Flow style's Customize wiring. Four shipped bugs
+ * it guards, all reported as "customizations don't work on the fluid styles":
+ *
+ * 1. The Trails toggle was inert: the renderer forced canvas persistence on
+ *    for this scene regardless of the setting, and floored Trail length at
+ *    0.85 on top, so most of that slider did nothing either.
+ * 2. The palette's SPAN multiplier was dropped - the scene passed the raw Hue
+ *    range slider where every other family passes `hueRange * paletteRange` -
+ *    so switching palette only retinted the streams instead of changing how
+ *    much of the wheel they cover.
+ * 3. "Particle drag" was unreachable: the scene reads `fluidParticleDrag`
+ *    every frame, but the slider sat in the FLUID-only Particles section,
+ *    nested behind `fluidParticlesEnabled`, a param Curl Flow never reads.
+ * 4. Intensity was quadratic: the scene multiplied its own point brightness by
+ *    `intensity` while the composite grading pass - which grades this style -
+ *    multiplies by `brightness * intensity` again.
+ */
+class CurlFlowCustomizeTest {
+    private val dt = 1f / 60f
+
+    /** The slider's real UI range (CustomizeDialog "Trail length"). */
+    private val sliderRange = listOf(0.05f, 0.2f, 0.4f, 0.5f, 0.75f, 0.9f, 0.98f)
+
+    /**
+     * Mirror of the Fluid tab's visibility rule for the "Particle drag" row:
+     * shown wherever the lifecycle particle layer actually runs, which on
+     * FLUID means behind its layer toggle and on CURLFLOW means always.
+     */
+    private fun dragRowVisible(
+        sceneId: String,
+        particlesEnabled: Boolean,
+    ): Boolean = isParticleLayerSceneId(sceneId) && (!isFluidSceneId(sceneId) || particlesEnabled)
+
+    @Test
+    fun trailsToggleActuallyChangesCurlFlowPersistence() {
+        // The bug: persistence was forced on, so both of these were equal.
+        val off = CurlFlowMath.fadeAlpha(trails = false, trailLength = 0.5f, dt = dt)
+        val on = CurlFlowMath.fadeAlpha(trails = true, trailLength = 0.5f, dt = dt)
+        assertEquals("Trails off must wipe the canvas outright", 1f, off, 1e-6f)
+        assertTrue("Trails on must keep most of the previous frame", on < 0.5f)
+        assertTrue("the toggle must change the frame", off - on > 0.4f)
+        // Even at the extremes of the slider the toggle still separates them.
+        for (len in sliderRange) {
+            assertTrue(
+                "trailLength=$len",
+                CurlFlowMath.fadeAlpha(trails = true, trailLength = len, dt = dt) <
+                    CurlFlowMath.fadeAlpha(trails = false, trailLength = len, dt = dt),
+            )
+        }
+    }
+
+    @Test
+    fun trailLengthStaysLiveOverTheWholeSlider() {
+        // The bug: coerceAtLeast(0.85f) flattened everything below 0.85.
+        var prev = -1f
+        for (len in sliderRange) {
+            val keep = CurlFlowMath.retention(len)
+            assertTrue("retention must rise with the slider at $len", keep > prev)
+            prev = keep
+            assertTrue("retention out of band at $len", keep >= CurlFlowMath.MIN_RETENTION && keep <= 1f)
+        }
+        // Longer trails must mean a gentler fade, monotonically.
+        var prevAlpha = Float.MAX_VALUE
+        for (len in sliderRange) {
+            val a = CurlFlowMath.fadeAlpha(trails = true, trailLength = len, dt = dt)
+            assertTrue("fade must soften as the slider rises at $len", a < prevAlpha)
+            prevAlpha = a
+        }
+    }
+
+    @Test
+    fun retentionKeepsTheStreamFloorAndClampsOutOfRangeInput() {
+        // The floor is why the style still reads as streams rather than
+        // strobing dots; the user overrides it by switching Trails OFF.
+        assertEquals(CurlFlowMath.MIN_RETENTION, CurlFlowMath.retention(0f), 1e-6f)
+        assertEquals(CurlFlowMath.MIN_RETENTION, CurlFlowMath.retention(-2f), 1e-6f)
+        assertEquals(1f, CurlFlowMath.retention(1f), 1e-6f)
+        assertEquals(1f, CurlFlowMath.retention(4f), 1e-6f)
+    }
+
+    @Test
+    fun fadeIsFramerateIndependent() {
+        // Retention^(dt*60): one second of decay is the same on a 60 Hz and a
+        // 120 Hz panel, so trail length does not halve on fast displays.
+        fun keptAfterOneSecond(frames: Int): Float {
+            val step = 1f / frames
+            val perFrame = 1f - CurlFlowMath.fadeAlpha(trails = true, trailLength = 0.98f, dt = step)
+            return perFrame.pow(frames)
+        }
+        assertEquals(keptAfterOneSecond(60), keptAfterOneSecond(120), 1e-4f)
+        // A meaningful amount must survive the second, or the check is vacuous.
+        assertTrue(keptAfterOneSecond(60) > 0.02f)
+    }
+
+    @Test
+    fun paletteSpanSurvivesOnCurlFlow() {
+        // The bug: the scene passed hueRange alone, so these were identical.
+        val fire = SceneParams(palette = 2)
+        val aurora = SceneParams(palette = 7)
+        val fireSpan = FluidHue.span(fire.hueRange, fire.paletteRange)
+        val auroraSpan = FluidHue.span(aurora.hueRange, aurora.paletteRange)
+        assertTrue("a narrow and a wide palette must not span the same wheel", fireSpan != auroraSpan)
+        assertTrue(fireSpan < auroraSpan)
+        for (i in SceneParams.PALETTES.indices) {
+            val sp = SceneParams(palette = i)
+            assertEquals(
+                sp.hueRange.coerceIn(FluidHue.MIN_HUE_RANGE, 1f) * sp.paletteRange,
+                FluidHue.span(sp.hueRange, sp.paletteRange),
+                1e-6f,
+            )
+        }
+        // Hue range still scales the span, and never collapses it to a point.
+        val wide = SceneParams(palette = 7, hueRange = 1f)
+        val narrow = SceneParams(palette = 7, hueRange = 0.3f)
+        assertTrue(FluidHue.span(narrow.hueRange, narrow.paletteRange) < FluidHue.span(wide.hueRange, wide.paletteRange))
+        assertTrue(FluidHue.span(0f, wide.paletteRange) > 0f)
+    }
+
+    @Test
+    fun hueRotationBelongsToTheCompositeNotTheScene() {
+        // The split the fluid family standardised on: the SCENE owns palette
+        // identity (base hue + span, fixed at emission time), the COMPOSITE
+        // owns rotation (colorShift + cycle phase). Folding colorShift into
+        // the scene's base too would advance the hue twice per slider unit.
+        val p = SceneParams(palette = 7, colorShift = 0.3f)
+        // Folding the shift into the scene's base would land on a DIFFERENT
+        // hue from the palette base the scene must pass, and the composite
+        // would then rotate that again - the double-apply this pins against.
+        assertTrue(FluidHue.base(p.paletteBase, p.colorShift) != p.paletteBase)
+        assertEquals("an unrotated base is the palette's own", p.paletteBase, FluidHue.base(p.paletteBase, 0f), 1e-6f)
+        // The half of the wiring the scene DOES own is untouched by the shift.
+        assertEquals(
+            FluidHue.span(SceneParams(palette = 7, colorShift = 0f).hueRange, p.paletteRange),
+            FluidHue.span(p.hueRange, p.paletteRange),
+            1e-6f,
+        )
+    }
+
+    @Test
+    fun intensityResponseIsLinearNotQuadratic() {
+        // Exposure is the composite pass's job. The scene contributes only its
+        // beat pulse, so doubling Intensity must double the screen brightness.
+        fun onScreen(intensity: Float) = CurlFlowMath.particleBrightness(0f) * CompositeGrade.brightness(1f, intensity)
+
+        // The old wiring - scene intensity AND composite intensity - squared it.
+        fun doubleApplied(intensity: Float) = onScreen(intensity) * intensity
+
+        assertEquals(2f, onScreen(2f) / onScreen(1f), 1e-4f)
+        assertEquals(0.5f, onScreen(0.5f) / onScreen(1f), 1e-4f)
+        assertEquals(4f, doubleApplied(2f) / doubleApplied(1f), 1e-4f)
+        // The uniform is still uploaded at a live, non-zero value: an unset GL
+        // uniform reads 0 and would render the streams black.
+        assertTrue(CurlFlowMath.particleBrightness(0f) > 0f)
+        assertTrue("a beat must still lift the points", CurlFlowMath.particleBrightness(1f) > CurlFlowMath.particleBrightness(0f))
+        assertEquals(CurlFlowMath.BASE_BRIGHTNESS, CurlFlowMath.particleBrightness(-1f), 1e-6f)
+        assertEquals(CurlFlowMath.BASE_BRIGHTNESS + CurlFlowMath.BEAT_BRIGHTNESS, CurlFlowMath.particleBrightness(3f), 1e-6f)
+    }
+
+    @Test
+    fun particleDragIsReachableOnCurlFlow() {
+        // The bug: the row was FLUID-only and nested behind a param CurlFlow
+        // never reads, so the style consumed a slider the user could not see.
+        assertTrue(isParticleLayerSceneId(SceneIds.CURLFLOW))
+        assertTrue(isParticleLayerSceneId(SceneIds.FLUID))
+        assertFalse("WATER has no particle layer", isParticleLayerSceneId(SceneIds.WATER))
+        assertFalse(isParticleLayerSceneId(SceneIds.NEBULA))
+        assertTrue("CurlFlow reads drag unconditionally", dragRowVisible(SceneIds.CURLFLOW, particlesEnabled = false))
+        assertTrue(dragRowVisible(SceneIds.CURLFLOW, particlesEnabled = true))
+        assertTrue(dragRowVisible(SceneIds.FLUID, particlesEnabled = true))
+        assertFalse("FLUID stops stepping particles when the layer is off", dragRowVisible(SceneIds.FLUID, particlesEnabled = false))
+        assertFalse(dragRowVisible(SceneIds.WATER, particlesEnabled = true))
+    }
+
+    @Test
+    fun particleLifeIsReachableOnCurlFlowToo() {
+        // The other particle param the scene reads lives in the Journey
+        // section, which already covers CURLFLOW - keep it that way.
+        assertTrue(isJourneySceneId(SceneIds.CURLFLOW))
+    }
+}

@@ -25,7 +25,12 @@ import dev.musicviz.render.scene.SceneParams
  * exponential release), bass pulls toward the catch points. Existing
  * Customize controls map on: Speed = morph rate, Turbulence = spatial
  * frequency, Audio drive = flow strength, Particle size/Palette/Hue range =
- * rendering, plus the shared fluid spawn/catch params.
+ * rendering (the palette span via [FluidHue], shared with the other fluid
+ * styles), Trails/Trail length = canvas persistence (via [CurlFlowMath]),
+ * Particle drag/Particle life = the lifecycle layer, plus the shared fluid
+ * spawn/catch params. Grading and hue rotation (Brightness, Intensity,
+ * Contrast, Gamma, Hue shift, Zoom, Rotation) belong to the composite pass,
+ * which grades this style - the scene must not apply them a second time.
  */
 internal class CurlFlowScene(
     private val context: Context,
@@ -191,15 +196,23 @@ internal class CurlFlowScene(
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
         GLES30.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3])
         val dpiScale = (prevViewport[3].coerceAtLeast(1) / 1080f).coerceIn(0.75f, 2.5f)
+        // Colour split, shared by the whole fluid family: the SCENE owns
+        // palette identity (base hue + the palette's own span, which decides
+        // the colours at emission time), the COMPOSITE owns hue rotation
+        // (colorShift + colour-cycle phase, which it already applies to this
+        // style). The span used to be dropped here - raw hueRange - so every
+        // palette painted the same streams in a different tint.
         particles.draw(
             aspect,
             params.particleSize.coerceIn(0.4f, 4f) * dpiScale,
             params.paletteBase,
-            params.hueRange.coerceIn(0.1f, 1f),
+            FluidHue.span(params.hueRange, params.paletteRange),
             // Beat response lives in the FIELD kick (uAmp); keeping the
             // brightness pulse gentle stops the compound amp+brightness+size
-            // jump from reading as a strobe on busy tracks.
-            (0.85f + beatEnv * 0.35f) * params.intensity.coerceIn(0.2f, 2f),
+            // jump from reading as a strobe on busy tracks. Exposure
+            // (brightness * intensity) is the composite pass's job - folding
+            // intensity in here too made that slider quadratic.
+            CurlFlowMath.particleBrightness(beatEnv),
         )
     }
 
