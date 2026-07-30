@@ -31,6 +31,10 @@ import kotlin.math.pow
  * 4. Intensity was quadratic: the scene multiplied its own point brightness by
  *    `intensity` while the composite grading pass - which grades this style -
  *    multiplies by `brightness * intensity` again.
+ * 5. The feedback-trail WARP path (Trail zoom / Trail warp non-zero) read the
+ *    raw Trail length slider for its decay while the plain fade path read the
+ *    remapped retention, so turning either knob on collapsed the streams back
+ *    into strobing dots at settings the fade path kept smooth.
  */
 class CurlFlowCustomizeTest {
     private val dt = 1f / 60f
@@ -93,6 +97,25 @@ class CurlFlowCustomizeTest {
         assertEquals(CurlFlowMath.MIN_RETENTION, CurlFlowMath.retention(-2f), 1e-6f)
         assertEquals(1f, CurlFlowMath.retention(1f), 1e-6f)
         assertEquals(1f, CurlFlowMath.retention(4f), 1e-6f)
+    }
+
+    @Test
+    fun trailWarpPathKeepsTheSameFrameAsThePlainFade() {
+        // The bug: drawTrailWarp accepted the REMAPPED retention but computed
+        // uDecay from the raw Trail length slider, so turning Trail zoom or
+        // Trail warp on dropped Curl Flow below its stream floor while the
+        // plain fade path stayed above it - same slider, two decay rates.
+        for (len in sliderRange) {
+            val keep = CurlFlowMath.retention(len)
+            val warpKept = CurlFlowMath.warpDecay(keep, dt)
+            val fadeKept = 1f - CurlFlowMath.fadeAlpha(trails = true, trailLength = len, dt = dt)
+            assertEquals("warp and fade must retain alike at $len", fadeKept, warpKept, 0.03f)
+            assertTrue(
+                "the raw slider decays faster than the remapped band at $len",
+                warpKept >= CurlFlowMath.warpDecay(len, dt),
+            )
+            assertTrue("uDecay must stay a usable retention at $len", warpKept > 0f && warpKept < 1f)
+        }
     }
 
     @Test

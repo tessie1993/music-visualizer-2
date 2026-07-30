@@ -102,26 +102,14 @@ class PaletteStore(
 
         /**
          * Drops a slot's override so it resolves from [SceneParams.PALETTES]
-         * again. Clearing writes [SceneParams.UNSET_OVERRIDE], never 0f - 0f is
-         * a legitimate base hue (red) and would keep the override active.
+         * again - the palette-UI spelling of
+         * [SceneParams.withoutCustomPalette], which owns the sentinel rule so
+         * `render.scene` never has to reach into `ui` for it.
          */
         fun clear(
             p: SceneParams,
             second: Boolean = false,
-        ): SceneParams =
-            if (second) {
-                p.copy(
-                    palette2BaseOverride = SceneParams.UNSET_OVERRIDE,
-                    palette2RangeOverride = SceneParams.UNSET_OVERRIDE,
-                    customPalette2Id = SceneParams.NO_CUSTOM_PALETTE,
-                )
-            } else {
-                p.copy(
-                    paletteBaseOverride = SceneParams.UNSET_OVERRIDE,
-                    paletteRangeOverride = SceneParams.UNSET_OVERRIDE,
-                    customPaletteId = SceneParams.NO_CUSTOM_PALETTE,
-                )
-            }
+        ): SceneParams = p.withoutCustomPalette(second)
 
         /**
          * Repairs params after a saved palette is deleted, for either slot.

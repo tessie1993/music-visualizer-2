@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -20,19 +19,13 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -40,139 +33,36 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.render.LfoConfig
 import dev.musicviz.render.LfoTarget
 import dev.musicviz.render.LfoWave
 import dev.musicviz.render.scene.SceneParams
 
+/*
+ * The scene customization panel's TABS. They are hosted by
+ * `VisualsHub.CustomizeHubTab` (Visuals > Customize), which owns the tab row,
+ * the Randomize button and the lock set; the dialog wrapper that used to live
+ * here was orphaned by the navigation refactor and has been deleted rather
+ * than left as a second, Fluid-less copy of the same panel.
+ *
+ * Tabs group controls the way a VJ thinks about them: Motion (how it moves),
+ * Shape (geometry and distortion), Behavior (audio reactivity), Color
+ * (palettes and grading), FX (screen effects, settings fade, ADSR envelopes
+ * and the assignable LFO automations), Fluid (the fluid family plus the
+ * all-styles FlowField / water-ripple overlays) and GLSL (raw shader editing
+ * on shader scenes). Sections inside each tab carry small headers so long
+ * lists stay scannable. All changes apply live.
+ */
+
 /**
- * Full-screen scene customization panel. Six tabs group controls the way a
- * VJ thinks about them: Motion (how it moves), Shape (geometry and
- * distortion), Behavior (audio reactivity), Color (palettes and grading),
- * FX (screen effects, settings fade, and the assignable LFO automations),
- * and GLSL (raw shader editing on shader scenes). Sections inside each tab
- * carry small headers so long lists stay scannable. All changes apply live.
+ * Lock set + toggle for the "Randomize unlocked" button, provided by the
+ * hosting screen. Keys are the CONTROL LABEL strings rendered by
+ * [LabeledSlider] / [LabeledIntSlider] / [CheckRow] / [LockableChipLabel] -
+ * see `ParamRandomizer`, whose keys must match them verbatim.
  */
 val LocalParamLocks =
     androidx.compose.runtime.compositionLocalOf<Pair<Set<String>, (String) -> Unit>> { emptySet<String>() to {} }
-
-@Composable
-fun CustomizeDialog(
-    params: SceneParams,
-    onParamsChange: (SceneParams) -> Unit,
-    lockedParams: Set<String> = emptySet(),
-    onToggleLock: (String) -> Unit = {},
-    onRandomize: () -> Unit = {},
-    adsr: List<dev.musicviz.render.AdsrConfig> = emptyList(),
-    onAdsrChange: (Int, dev.musicviz.render.AdsrConfig) -> Unit = { _, _ -> },
-    attack: Float,
-    decay: Float,
-    onReactivityChange: (Float, Float) -> Unit,
-    intelligenceMode: IntelligenceMode,
-    onIntelligenceModeChange: (IntelligenceMode) -> Unit,
-    lfos: List<LfoConfig>,
-    onLfoChange: (Int, LfoConfig) -> Unit,
-    shaderSource: String?,
-    shaderError: String?,
-    onApplyShader: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var tab by remember { mutableIntStateOf(0) }
-    var source by remember(shaderSource) { mutableStateOf(shaderSource.orEmpty()) }
-    val hasAdvanced = shaderSource != null
-    val tabs =
-        if (hasAdvanced) {
-            listOf("Motion", "Shape", "Behavior", "Color", "FX", "GLSL")
-        } else {
-            listOf("Motion", "Shape", "Behavior", "Color", "FX")
-        }
-    val glslIndex = 5
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxSize(0.96f),
-            shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surface,
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Customize scene",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = { onParamsChange(SceneParams.DEFAULT) }) { Text("Reset") }
-                    TextButton(onClick = onDismiss) { Text("Done") }
-                }
-                ScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp) {
-                    tabs.forEachIndexed { index, title ->
-                        Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) })
-                    }
-                }
-                Column(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .verticalScroll(rememberScrollState())
-                            .padding(top = 6.dp),
-                ) {
-                    androidx.compose.runtime.CompositionLocalProvider(
-                        LocalParamLocks provides (lockedParams to onToggleLock),
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = onRandomize) { Text("Randomize (skips locked)") }
-                        }
-                        when (tab) {
-                            0 -> MotionTab(params, onParamsChange)
-                            1 -> ShapeTab(params, onParamsChange)
-                            2 ->
-                                BehaviorTab(
-                                    params,
-                                    onParamsChange,
-                                    attack,
-                                    decay,
-                                    onReactivityChange,
-                                    intelligenceMode,
-                                    onIntelligenceModeChange,
-                                )
-                            3 -> ColorTab(params, onParamsChange)
-                            4 -> FxTab(params, onParamsChange, lfos, onLfoChange, adsr, onAdsrChange)
-                            else -> {
-                                OutlinedTextField(
-                                    value = source,
-                                    onValueChange = { source = it },
-                                    modifier = Modifier.fillMaxWidth().height(360.dp),
-                                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                )
-                                if (shaderError != null) {
-                                    Text(
-                                        text = shaderError,
-                                        color = MaterialTheme.colorScheme.error,
-                                        style = MaterialTheme.typography.labelSmall,
-                                    )
-                                }
-                                TextButton(onClick = { onApplyShader(source) }) { Text("Apply shader") }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // Suppress the unused warning when GLSL tab is hidden.
-    LaunchedEffect(hasAdvanced) {
-        // Writing state directly during composition is illegal; reset the tab
-        // as an effect when the GLSL tab disappears (scene switched to one
-        // without an editable shader).
-        if (tab >= glslIndex && !hasAdvanced) tab = 0
-    }
-}
 
 @Composable
 private fun SectionHeader(title: String) {
@@ -230,6 +120,7 @@ internal fun ShapeTab(
         LabeledSlider("Pixelate", p.pixelate, 0f..1f) { onChange(p.copy(pixelate = it)) }
         LabeledSlider("Posterize", p.posterize, 0f..1f) { onChange(p.copy(posterize = it)) }
         SectionHeader("Particles")
+        LockableChipLabel("Particle shape")
         ChipRow(SceneParams.PARTICLE_SHAPES, p.particleShape) { onChange(p.copy(particleShape = it)) }
         LabeledSlider("Particle size", p.particleSize, 0.3f..2.5f) { onChange(p.copy(particleSize = it)) }
     }
@@ -302,10 +193,11 @@ internal fun ColorTab(
     val palettes = rememberSavedPalettes()
     Column {
         SectionHeader("Palettes")
+        LockableChipLabel("Palette")
         PaletteSlotSelector(p, onChange, palettes)
         LabeledSlider("Palette blend", p.paletteMix, 0f..1f) { onChange(p.copy(paletteMix = it)) }
         if (p.paletteMix > 0.001f) {
-            Text("Second palette", style = MaterialTheme.typography.labelSmall)
+            LockableChipLabel("Palette 2")
             PaletteSlotSelector(p, onChange, palettes, second = true)
         }
         SectionHeader("Gradient & palette maker")
@@ -411,7 +303,11 @@ private fun LfoCard(
             } else {
                 LabeledSlider("Rate (Hz)", config.rateHz, 0.02f..8f) { onChange(config.copy(rateHz = it)) }
             }
-            LabeledSlider("Depth", config.depth, 0f..1f) { onChange(config.copy(depth = it)) }
+            // "LFO depth", not "Depth": lock keys are label strings and the
+            // Water section's "Depth" (waterDepth) IS a randomizer key, so the
+            // bare label made locking this modulation slider silently freeze
+            // the water depth roll as well.
+            LabeledSlider("LFO depth", config.depth, 0f..1f) { onChange(config.copy(depth = it)) }
         }
     }
     if (showTargetPicker) {
@@ -490,6 +386,34 @@ private fun LabeledSlider(
     }
 }
 
+/**
+ * Header for a chip selector, carrying the same lock chip [LabeledSlider]
+ * renders. [label] IS the lock key (see `ParamRandomizer`, whose keys are
+ * control-label strings), so a chip-driven param - Palette, Palette 2,
+ * Particle shape, Beat pattern, Path - can be held against "Randomize
+ * unlocked" like every slider and checkbox. Chip rows used to render a plain
+ * [Text] (or no label at all), which made those five the only rolled params a
+ * user could not protect: every roll re-picked the palette they had chosen.
+ */
+@Composable
+private fun LockableChipLabel(label: String) {
+    val (locked, toggle) = LocalParamLocks.current
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.labelSmall)
+        Text(
+            if (label in locked) "locked" else "lock",
+            style = MaterialTheme.typography.labelSmall,
+            color =
+                if (label in locked) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                },
+            modifier = Modifier.clickable { toggle(label) },
+        )
+    }
+}
+
 @Composable
 private fun CheckRow(
     label: String,
@@ -562,7 +486,7 @@ internal fun FluidTab(
                     "advance the bloom.",
                 style = MaterialTheme.typography.labelSmall,
             )
-            Text("Path", style = MaterialTheme.typography.labelSmall)
+            LockableChipLabel("Path")
             ChipRow(SceneParams.FLUID_PATHS, p.fluidSpawnPath.coerceIn(0, SceneParams.FLUID_PATHS.size - 1)) {
                 onChange(p.copy(fluidSpawnPath = it))
             }
@@ -604,7 +528,7 @@ internal fun FluidTab(
             // The splat schedule is shared: FluidScene injects the splats as
             // velocity/dye, WaterScene converts each one into a drop.
             SectionHeader("Emitters")
-            Text("Beat pattern", style = MaterialTheme.typography.labelSmall)
+            LockableChipLabel("Beat pattern")
             ChipRow(SceneParams.FLUID_PATTERNS, p.fluidBeatPattern.coerceIn(0, 3)) {
                 onChange(p.copy(fluidBeatPattern = it))
             }
@@ -691,7 +615,13 @@ internal fun FluidTab(
         )
         CheckRow("Water ripples enabled", p.rippleOverlayEnabled) { onChange(p.copy(rippleOverlayEnabled = it)) }
         if (p.rippleOverlayEnabled) {
-            LabeledSlider("Ripple strength", p.rippleOverlayStrength, 0f..1f) { onChange(p.copy(rippleOverlayStrength = it)) }
+            // NOT "Ripple strength": that is the Water section's own slider
+            // (waterRippleStrength, 0..2). Lock keys are label strings, so
+            // sharing the label made one lock chip freeze both params and one
+            // roll write both - two different controls behind one switch.
+            LabeledSlider("Ripple overlay strength", p.rippleOverlayStrength, 0f..1f) {
+                onChange(p.copy(rippleOverlayStrength = it))
+            }
             LabeledSlider("Ripple glint", p.rippleOverlaySpecular, 0f..1f) { onChange(p.copy(rippleOverlaySpecular = it)) }
         }
         if (isFluidScene) {

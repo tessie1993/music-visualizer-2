@@ -279,6 +279,33 @@ data class SceneParams(
 
     val palette2Range: Float
         get() = if (palette2RangeOverride >= 0f) palette2RangeOverride else PALETTES[palette2.coerceIn(0, PALETTES.size - 1)].third
+
+    /**
+     * Drops a palette slot's custom override so it resolves from [PALETTES]
+     * again. Clearing writes [UNSET_OVERRIDE], never 0f - 0f is a legitimate
+     * base hue (red) and would leave the override ACTIVE.
+     *
+     * The sentinel rule lives here, next to the fields and the resolvers it
+     * governs, because both layers that need it already depend on
+     * SceneParams: the Customize palette chips (`ui`) and `ParamRandomizer`
+     * (`render.scene`). While it lived on `ui.PaletteStore` the randomizer had
+     * to import `ui`, the only `render.scene -> ui` edge in the tree.
+     * `PaletteStore.clear` now delegates here.
+     */
+    fun withoutCustomPalette(second: Boolean = false): SceneParams =
+        if (second) {
+            copy(
+                palette2BaseOverride = UNSET_OVERRIDE,
+                palette2RangeOverride = UNSET_OVERRIDE,
+                customPalette2Id = NO_CUSTOM_PALETTE,
+            )
+        } else {
+            copy(
+                paletteBaseOverride = UNSET_OVERRIDE,
+                paletteRangeOverride = UNSET_OVERRIDE,
+                customPaletteId = NO_CUSTOM_PALETTE,
+            )
+        }
 }
 
 /**

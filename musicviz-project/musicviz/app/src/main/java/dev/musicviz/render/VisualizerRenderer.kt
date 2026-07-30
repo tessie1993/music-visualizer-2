@@ -878,10 +878,12 @@ class VisualizerRenderer(
 
         fun tLoc(n: String) = trailLocs.getOrPut(n) { GLES30.glGetUniformLocation(trailWarpProgram, n) }
         GLES30.glUniform1i(tLoc("uPrev"), 0)
-        GLES30.glUniform1f(
-            tLoc("uDecay"),
-            (p.trailLength * 0.97f + 0.02f).coerceIn(0f, 0.99f).pow(dt * 60f),
-        )
+        // [retention], NOT p.trailLength: styles with their own persistence
+        // band (Curl Flow) hand in a remapped value, and reading the raw
+        // slider here made the warp path decay faster than the fade path -
+        // Curl Flow's streams broke into strobing dots the moment Trail zoom
+        // or Trail warp went non-zero.
+        GLES30.glUniform1f(tLoc("uDecay"), CurlFlowMath.warpDecay(retention, dt))
         GLES30.glUniform1f(tLoc("uZoom"), p.trailZoom)
         GLES30.glUniform1f(tLoc("uWarp"), p.trailWarp)
         GLES30.glUniform1f(tLoc("uTime"), timeSeconds)
