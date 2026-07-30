@@ -220,3 +220,27 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     independently. Finally, Visuals > Customize must be the only
     customization surface: there is no second full-screen dialog to reach
     from anywhere in the app.
+31. "Beat pulse" on the styles that never read it: play a track with a
+    clear kick and open Visuals > Customize > Motion. On FLUID, CURL
+    FLOW, WATER and on a live MilkDrop preset, drag "Beat pulse" from 0
+    to 1 — the whole frame must now swell on each beat (a zoom-in of a
+    few percent that falls away in about a third of a second) and settle
+    back to still when the slider returns to 0. Before this change the
+    slider did nothing at all on those four. Check the swell is centred:
+    the middle of the screen must not drift while it pulses. Then set
+    Zoom well above 1 on a fluid style and pulse again — the two must
+    compound (pulse on top of the zoom), not fight.
+    REGRESSION SIDE — on a shader style (julia/plasma) and on a particle
+    style the slider must feel EXACTLY as before: those pulse in their
+    own pipeline (uPulse / a point-size swell) and are excluded from the
+    composite pulse, so a doubled swell — roughly twice the magnification
+    on a shader style, or particles that both grow AND zoom — means the
+    exclusion set is wrong. Note MilkDrop is excluded from the composite
+    GRADING block but deliberately NOT from this one.
+    EXPORT SIDE — with "Beat pulse" at ~0.8 on a fluid style and again
+    on a MilkDrop preset, record a ~10 s clip and play the mp4 next to
+    the live view: the swells must land on the same beats and be the
+    same depth. Record the same settings at 30 fps and at 60 fps — the
+    decay must look identical in both files; a 30 fps clip whose pulses
+    hang around twice as long means the envelope is not running on the
+    export's own frame delta.
