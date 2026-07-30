@@ -1012,16 +1012,17 @@ class PlayerViewModel(
         applyVizEntry(pick)
         if (s.randomizeColors) {
             val cur = _vizState.value
-            _vizState.value =
-                cur.copy(
-                    params =
-                        cur.params.copy(
-                            palette = randomRng.nextInt(SceneParams.PALETTES.size),
-                            palette2 = randomRng.nextInt(SceneParams.PALETTES.size),
-                            paletteMix = if (randomRng.nextBoolean()) randomRng.nextFloat() * 0.6f else 0f,
-                            colorShift = randomRng.nextFloat(),
-                        ),
+            val rolled =
+                cur.params.copy(
+                    palette = randomRng.nextInt(SceneParams.PALETTES.size),
+                    palette2 = randomRng.nextInt(SceneParams.PALETTES.size),
+                    paletteMix = if (randomRng.nextBoolean()) randomRng.nextFloat() * 0.6f else 0f,
+                    colorShift = randomRng.nextFloat(),
                 )
+            // A custom-palette override outranks the PALETTES lookup, so the
+            // new indices stay invisible unless both slots are cleared too.
+            _vizState.value =
+                cur.copy(params = PaletteStore.clear(PaletteStore.clear(rolled), second = true))
         }
     }
 

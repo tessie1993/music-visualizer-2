@@ -3,9 +3,14 @@ package dev.musicviz
 import dev.musicviz.render.scene.ParamRandomizer
 import dev.musicviz.render.scene.SceneParams
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.File
 import kotlin.random.Random
 
@@ -23,9 +28,14 @@ import kotlin.random.Random
  *     of quietly unprotecting a parameter.
  *
  * It also pins the roll inside each slider's range (a roll the user cannot
- * reproduce or undo by hand is a bug) and pins the fields the randomizer must
- * never touch, most importantly the custom-palette overrides.
+ * reproduce or undo by hand is a bug), pins the settings the randomizer must
+ * never touch, and pins both halves of the custom-palette rule: a roll never
+ * *invents* override hues, but rolling a slot's built-in index does clear
+ * that slot's override - otherwise the roll is invisible to every user who
+ * made their own palette, since an override outranks the PALETTES lookup.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class ParamRandomizerFluidTest {
     private class Knob(
         val key: String,
@@ -148,18 +158,71 @@ class ParamRandomizerFluidTest {
         }
     }
 
+    /**
+     * A user-made palette, applied through the override fields. The hues are
+     * chosen to appear nowhere in [SceneParams.PALETTES] so "the override is
+     * gone" is observable in the resolved [SceneParams.paletteBase].
+     */
+    private fun withCustomPalettes(): SceneParams =
+        SceneParams.DEFAULT.copy(
+            paletteBaseOverride = 0.123f,
+            paletteRangeOverride = 0.077f,
+            palette2BaseOverride = 0.311f,
+            palette2RangeOverride = 0.019f,
+            customPaletteId = "my-palette",
+            customPalette2Id = "my-other-palette",
+        )
+
     @Test
-    fun custom_palette_overrides_and_structural_toggles_are_never_rolled() {
-        // A user who built and saved a custom palette must keep it: an
-        // override is active at >= 0f, UNSET_OVERRIDE (-1f) means "off".
+    fun custom_palette_overrides_are_never_given_random_values() {
+        // A roll must not invent hues for a palette the user built and saved.
+        // With both palette slots locked, the override has to survive intact.
+        val base = withCustomPalettes()
+        val rng = Random(31)
+        val locked = setOf("Palette", "Palette 2")
+        repeat(200) {
+            val p = ParamRandomizer.randomize(base, locked, rng)
+            assertEquals(base.paletteBaseOverride, p.paletteBaseOverride, 0f)
+            assertEquals(base.paletteRangeOverride, p.paletteRangeOverride, 0f)
+            assertEquals(base.palette2BaseOverride, p.palette2BaseOverride, 0f)
+            assertEquals(base.palette2RangeOverride, p.palette2RangeOverride, 0f)
+            assertEquals(base.customPaletteId, p.customPaletteId)
+            assertEquals(base.customPalette2Id, p.customPalette2Id)
+            assertTrue("a locked custom palette must stay in use", p.usesCustomPalette)
+            assertTrue("a locked custom palette must stay in use", p.usesCustomPalette2)
+        }
+    }
+
+    @Test
+    fun randomizing_a_palette_clears_that_slots_custom_override() {
+        // An active override outranks the PALETTES lookup, so rolling the
+        // index alone would be invisible to anyone using a custom palette.
+        val base = withCustomPalettes()
+        val rng = Random(37)
+        repeat(200) {
+            val p = ParamRandomizer.randomize(base, emptySet(), rng)
+            assertFalse("slot 1 override survived a palette roll", p.usesCustomPalette)
+            assertFalse("slot 2 override survived a palette roll", p.usesCustomPalette2)
+            assertEquals(SceneParams.UNSET_OVERRIDE, p.paletteBaseOverride, 0f)
+            assertEquals(SceneParams.UNSET_OVERRIDE, p.paletteRangeOverride, 0f)
+            assertEquals(SceneParams.UNSET_OVERRIDE, p.palette2BaseOverride, 0f)
+            assertEquals(SceneParams.UNSET_OVERRIDE, p.palette2RangeOverride, 0f)
+            assertEquals(SceneParams.NO_CUSTOM_PALETTE, p.customPaletteId)
+            assertEquals(SceneParams.NO_CUSTOM_PALETTE, p.customPalette2Id)
+            // The resolved hues now come from the rolled PALETTES entry.
+            assertNotEquals(base.paletteBase, p.paletteBase)
+            assertNotEquals(base.paletteRange, p.paletteRange)
+            assertNotEquals(base.palette2Base, p.palette2Base)
+            assertNotEquals(base.palette2Range, p.palette2Range)
+            assertEquals(SceneParams.PALETTES[p.palette].second, p.paletteBase, 0f)
+            assertEquals(SceneParams.PALETTES[p.palette].third, p.paletteRange, 0f)
+        }
+    }
+
+    @Test
+    fun structural_and_performance_settings_are_never_rolled() {
         val base =
             SceneParams.DEFAULT.copy(
-                paletteBaseOverride = 0.42f,
-                paletteRangeOverride = 0.17f,
-                palette2BaseOverride = 0.61f,
-                palette2RangeOverride = 0.09f,
-                customPaletteId = "my-palette",
-                customPalette2Id = "my-other-palette",
                 fluidQuality = 4,
                 fluidAutoQuality = false,
                 fluidParticlesEnabled = false,
@@ -169,15 +232,9 @@ class ParamRandomizerFluidTest {
                 fluidSpawnProgress = 0.25f,
                 paramFadeSec = 2.5f,
             )
-        val rng = Random(31)
+        val rng = Random(41)
         repeat(200) {
             val p = ParamRandomizer.randomize(base, emptySet(), rng)
-            assertEquals(base.paletteBaseOverride, p.paletteBaseOverride, 0f)
-            assertEquals(base.paletteRangeOverride, p.paletteRangeOverride, 0f)
-            assertEquals(base.palette2BaseOverride, p.palette2BaseOverride, 0f)
-            assertEquals(base.palette2RangeOverride, p.palette2RangeOverride, 0f)
-            assertEquals(base.customPaletteId, p.customPaletteId)
-            assertEquals(base.customPalette2Id, p.customPalette2Id)
             assertEquals(base.fluidQuality, p.fluidQuality)
             assertEquals(base.fluidAutoQuality, p.fluidAutoQuality)
             assertEquals(base.fluidParticlesEnabled, p.fluidParticlesEnabled)

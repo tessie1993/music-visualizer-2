@@ -1,5 +1,6 @@
 package dev.musicviz.render.scene
 
+import dev.musicviz.ui.PaletteStore
 import kotlin.random.Random
 
 /**
@@ -25,7 +26,11 @@ import kotlin.random.Random
  * Deliberately never randomized:
  *  - the custom-palette override fields (`paletteBaseOverride` and friends,
  *    plus `customPaletteId`/`customPalette2Id`) - a roll must not hijack a
- *    palette the user built and saved;
+ *    palette the user built and saved by inventing hues for it. Rolling a
+ *    slot's *built-in* index does [PaletteStore.clear] that slot, because an
+ *    active override outranks the `PALETTES` lookup: without the clear, a
+ *    rolled index would be invisible to anyone using a custom palette. That
+ *    clear always writes `UNSET_OVERRIDE`, never 0f (0f is red);
  *  - performance settings (fluid quality / auto quality) and `paramFadeSec`;
  *  - the FlowField and water-ripple master toggles, and the fluid particle/ink
  *    layer toggles - switching both fluid layers off yields a blank screen, so
@@ -146,8 +151,14 @@ object ParamRandomizer {
         r("Trail warp (liquid echo)") { it.copy(trailWarp = sometimes(0.3f, 0.1f, 0.6f)) }
 
         // ---- Color ----
-        r("Palette") { it.copy(palette = rng.nextInt(SceneParams.PALETTES.size)) }
-        r("Palette 2") { it.copy(palette2 = rng.nextInt(SceneParams.PALETTES.size)) }
+        // Clearing the slot's custom-palette override is what makes the rolled
+        // index visible; an override otherwise wins over the PALETTES lookup.
+        r("Palette") {
+            PaletteStore.clear(it.copy(palette = rng.nextInt(SceneParams.PALETTES.size)))
+        }
+        r("Palette 2") {
+            PaletteStore.clear(it.copy(palette2 = rng.nextInt(SceneParams.PALETTES.size)), second = true)
+        }
         r("Palette blend") { it.copy(paletteMix = sometimes(0.5f, 0.2f, 0.8f)) }
         r("Hue shift") { it.copy(colorShift = f(0f, 1f)) }
         r("Hue range") { it.copy(hueRange = f(0.5f, 1.5f)) }
