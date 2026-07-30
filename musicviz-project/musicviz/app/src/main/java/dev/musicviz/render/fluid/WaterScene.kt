@@ -8,6 +8,7 @@ import dev.musicviz.render.scene.GlUtil
 import dev.musicviz.render.scene.Scene
 import dev.musicviz.render.scene.SceneIds
 import dev.musicviz.render.scene.SceneParams
+import kotlin.math.abs
 
 /**
  * The WATER style: a pool whose surface is the [RippleSim] heightfield.
@@ -16,9 +17,13 @@ import dev.musicviz.render.scene.SceneParams
  * FLUID/CURLFLOW), and [FluidEmitters]' splat schedule decides WHEN: beat
  * splats become expanding interfering rings, stirrer splats become trails
  * of small drops (wakes flowing across the screen), suction/sparkle/pump
- * splats keep their triggers as smaller ripples. The display pass refracts
- * a palette-tinted depth-graded pool through the surface with Blinn
- * specular, fresnel rim and treble glints (water_display_frag).
+ * splats keep their triggers as smaller ripples, and catch-point suction
+ * splats become drains: wells that dip the surface down over "Catch radius"
+ * sim units ([WaterMath]). The display pass refracts a palette-tinted
+ * depth-graded pool through the surface with Blinn specular, fresnel rim
+ * and treble glints (water_display_frag), tinted by [FluidHue] (palette base
+ * + Hue shift, palette span). Brightness/Intensity are NOT applied here: the
+ * composite pass grades the whole fluid family.
  *
  * FluidScene's defensive conventions apply: GlUtil.resetFrameState() at
  * draw entry, framebuffer/viewport/blend snapshot-restore around the sim
@@ -233,13 +238,24 @@ internal class WaterScene(
         val simDt = lastDt.coerceIn(0f, 1f / 30f)
         choreography.tick(f, simDt, sim.aspect)
         val rippleStrength = p.waterRippleStrength.coerceIn(0f, 2f)
-        for (s in emitters.tick(f, simDt, sim.aspect, p.paletteBase, p.hueRange.coerceIn(0.1f, 1f))) {
+        val catchRadius = WaterMath.catchWellRadius(p.fluidCatchRadius)
+        val baseHue = FluidHue.base(p.paletteBase, p.colorShift)
+        for (s in emitters.tick(f, simDt, sim.aspect, baseHue, p.hueRange.coerceIn(FluidHue.MIN_HUE_RANGE, 1f))) {
+            val speed = kotlin.math.sqrt(s.velX * s.velX + s.velY * s.velY) / FluidEmitters.BASE_SPEED
+            if (WaterMath.isCatchWell(s.r, s.g, s.b)) {
+                // Catch points are drains, not splashes: they dimple the pool
+                // DOWN across "Catch radius" sim units, which is what makes
+                // that slider mean the same thing here as the particle
+                // capture radius does on FLUID/CURLFLOW.
+                val well = WaterMath.catchWellAmplitude(speed, catchRadius, rippleStrength)
+                if (abs(well) > 1e-4f) sim.queueDrop(s.curX, s.curY, catchRadius, well)
+                continue
+            }
             // Splat -> drop: position lands at the capsule head, velocity
             // magnitude scales amplitude (x waterRippleStrength), radius
             // carries over tightened. Stirrer splats arrive every frame from
             // moving anchors, so their small drops naturally trail into
             // wakes that flow across the pool.
-            val speed = kotlin.math.sqrt(s.velX * s.velX + s.velY * s.velY) / FluidEmitters.BASE_SPEED
             val amp = (0.06f + 0.5f * speed.coerceAtMost(2f)) * rippleStrength
             if (amp > 1e-4f) sim.queueDrop(s.curX, s.curY, s.radius * 0.6f, amp)
         }
@@ -255,14 +271,17 @@ internal class WaterScene(
         GLES30.glUniform2f(dLoc("uInvRes"), sim.texelW, sim.texelH)
         GLES30.glUniform1f(dLoc("uAspect"), sim.aspect)
         GLES30.glUniform1f(dLoc("uTime"), time)
-        GLES30.glUniform1f(dLoc("uBaseHue"), p.paletteBase)
-        GLES30.glUniform1f(dLoc("uHueSpan"), p.hueRange.coerceIn(0.1f, 1f) * p.paletteRange)
+        GLES30.glUniform1f(dLoc("uBaseHue"), baseHue)
+        GLES30.glUniform1f(dLoc("uHueSpan"), FluidHue.span(p.hueRange, p.paletteRange))
         GLES30.glUniform1f(dLoc("uDepth"), p.waterDepth.coerceIn(0f, 1f))
         GLES30.glUniform1f(dLoc("uSpecular"), p.waterSpecular.coerceIn(0f, 1f))
         GLES30.glUniform1f(dLoc("uFlowDrift"), p.waterFlow.coerceIn(0f, 1f))
         GLES30.glUniform1f(dLoc("uRefract"), 0.9f)
         GLES30.glUniform1f(dLoc("uTreble"), f.treble.coerceIn(0f, 2f))
-        GLES30.glUniform1f(dLoc("uBrightness"), p.brightness.coerceIn(0.2f, 2f) * p.intensity.coerceIn(0.2f, 2f))
+        // Neutral on purpose - see WaterMath.DISPLAY_BRIGHTNESS. Brightness
+        // and Intensity are Color-tab grading params and the composite pass
+        // owns them for every scene that doesn't grade itself, WATER included.
+        GLES30.glUniform1f(dLoc("uBrightness"), WaterMath.DISPLAY_BRIGHTNESS)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, sim.heightTex)
         GLES30.glUniform1i(dLoc("uHeight"), 0)
@@ -323,4 +342,84 @@ internal class WaterScene(
             .openRawResource(resId)
             .bufferedReader()
             .use { it.readText() }
+}
+
+/**
+ * Pure-Kotlin mirror of the WATER style's Customize -> sim parameter mapping
+ * (RippleMath.kt convention: the maths lives in a headless-testable object
+ * and the GL code only wires it up). Covers the "Catch radius" slider this
+ * scene used to silently ignore, and the display pass' brightness factor,
+ * which must stay neutral now that the composite pass grades the fluid
+ * family. Hue arithmetic is shared with the other fluid scenes in
+ * [FluidHue].
+ */
+internal object WaterMath {
+    /** "Catch radius" slider domain (CustomizeDialog, shared with FLUID). */
+    const val MIN_CATCH_RADIUS = 0.03f
+    const val MAX_CATCH_RADIUS = 0.3f
+
+    /** SceneParams.fluidCatchRadius default: the well-depth reference. */
+    const val REF_CATCH_RADIUS = 0.12f
+
+    /** Spread compensation bounds, so extreme radii stay in a usable range. */
+    private const val MIN_SPREAD = 0.4f
+    private const val MAX_SPREAD = 2.5f
+
+    /**
+     * True when a splat carries no dye at all. [FluidEmitters] uses that
+     * exclusively for catch-point suction splats: every other emitter
+     * multiplies a full-value HSV colour (max channel 1) by a strictly
+     * positive gain, so a black splat is unambiguously a drain.
+     */
+    fun isCatchWell(
+        r: Float,
+        g: Float,
+        b: Float,
+    ): Boolean = maxOf(r, g, b) <= 0f
+
+    /** Gaussian radius of a catch well in sim units, clamped to the slider. */
+    fun catchWellRadius(catchRadius: Float): Float = catchRadius.coerceIn(MIN_CATCH_RADIUS, MAX_CATCH_RADIUS)
+
+    /**
+     * Height amplitude of a catch well: NEGATIVE, so the drain visibly sucks
+     * the surface down instead of splashing like an ordinary drop (the ring
+     * it radiates is the inverted-phase twin of a drop's). [speed] is the
+     * suction capsule's normalized velocity, which already carries the
+     * "Catch pull" slider and the bass envelope. The magnitude tapers as the
+     * well widens (referenced to [REF_CATCH_RADIUS]) so a wide drain reads
+     * as a broad shallow dip rather than a deep crater.
+     */
+    fun catchWellAmplitude(
+        speed: Float,
+        catchRadius: Float,
+        rippleStrength: Float,
+    ): Float {
+        val r = catchWellRadius(catchRadius)
+        val spread = (REF_CATCH_RADIUS / r).coerceIn(MIN_SPREAD, MAX_SPREAD)
+        return -(0.06f + 0.5f * speed.coerceIn(0f, 2f)) * spread * rippleStrength.coerceIn(0f, 2f)
+    }
+
+    /**
+     * The water display pass' own brightness factor: NEUTRAL, deliberately.
+     *
+     * Brightness and Intensity are Color-tab grading params, and the
+     * composite pass grades every scene that does not grade itself - the
+     * fluid family, WATER included - by `brightness * intensity`. This pass
+     * used to fold the same product into its own uBrightness, so once the
+     * composite grade landed both passes applied it and the response went
+     * quadratic (blown out at the top of either slider). One pass owns it
+     * now, and it is not this one.
+     */
+    const val DISPLAY_BRIGHTNESS = 1f
+
+    /**
+     * End-to-end brightness the pool receives: this pass' factor times the
+     * composite grade's `brightness * intensity`. Exists so the gate can
+     * prove the product is applied exactly ONCE - doubling either slider
+     * must double the output, not quadruple it.
+     */
+    fun effectiveBrightness(
+        brightness: Float,
+        intensity: Float,
+    ): Float = DISPLAY_BRIGHTNESS * brightness * intensity
 }
