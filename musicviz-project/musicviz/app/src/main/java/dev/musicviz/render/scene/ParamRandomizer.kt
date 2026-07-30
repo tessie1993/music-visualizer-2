@@ -1,18 +1,19 @@
 package dev.musicviz.render.scene
 
-import dev.musicviz.ui.PaletteStore
 import kotlin.random.Random
 
 /**
  * One-tap randomization of the Customize parameters ("Randomize unlocked").
  *
- * Locks are keyed by the **slider label string** shown in the Customize panel
- * (`CustomizeDialog`'s `LabeledSlider` / `LabeledIntSlider` / `CheckRow`),
- * because that label is exactly what the lock chip next to each control
- * persists. Every key used here therefore has to match its label verbatim - a
- * typo silently turns the lock into a no-op, which is the regression
- * `ParamRandomizerFluidTest` guards by parsing the labels back out of
- * `CustomizeDialog.kt`.
+ * Locks are keyed by the **control label string** shown in the Customize panel
+ * (`CustomizeDialog`'s `LabeledSlider` / `LabeledIntSlider` / `CheckRow` /
+ * `LockableChipLabel`), because that label is exactly what the lock chip next
+ * to each control persists. Every key used here therefore has to match its
+ * label verbatim - a typo silently turns the lock into a no-op, which is the
+ * regression `ParamRandomizerFluidTest` guards by parsing the labels back out
+ * of `CustomizeDialog.kt`. Chip selectors (Palette, Palette 2, Particle shape,
+ * Beat pattern, Path) render `LockableChipLabel` for exactly that reason:
+ * without it they were the only rolled params a user could not protect.
  *
  * Ranges are curated subsets of each slider's range rather than the full span,
  * so a roll is always watchable *and* always reproducible by hand: nothing is
@@ -27,10 +28,10 @@ import kotlin.random.Random
  *  - the custom-palette override fields (`paletteBaseOverride` and friends,
  *    plus `customPaletteId`/`customPalette2Id`) - a roll must not hijack a
  *    palette the user built and saved by inventing hues for it. Rolling a
- *    slot's *built-in* index does [PaletteStore.clear] that slot, because an
- *    active override outranks the `PALETTES` lookup: without the clear, a
- *    rolled index would be invisible to anyone using a custom palette. That
- *    clear always writes `UNSET_OVERRIDE`, never 0f (0f is red);
+ *    slot's *built-in* index does [SceneParams.withoutCustomPalette] on that
+ *    slot, because an active override outranks the `PALETTES` lookup: without
+ *    the clear, a rolled index would be invisible to anyone using a custom
+ *    palette. That clear always writes `UNSET_OVERRIDE`, never 0f (0f is red);
  *  - performance settings (fluid quality / auto quality) and `paramFadeSec`;
  *  - the FlowField and water-ripple master toggles, and the fluid particle/ink
  *    layer toggles - switching both fluid layers off yields a blank screen, so
@@ -38,21 +39,6 @@ import kotlin.random.Random
  *  - `fluidSpawnProgress`, which expresses how much the song drives the look.
  */
 object ParamRandomizer {
-    /**
-     * Keys whose Customize control is a chip selector (`ChipRow`) rather than a
-     * slider or checkbox. Chip rows carry no lock chip yet, so these keys can
-     * never show up in the locked set; they are listed separately so the
-     * label-match test can tell a deliberate gap from a typo.
-     */
-    val KEYS_WITHOUT_LOCK_CHIP: Set<String> =
-        setOf(
-            "Palette",
-            "Palette 2",
-            "Particle shape",
-            "Beat pattern",
-            "Path",
-        )
-
     /** Randomizes every unlocked parameter within its slider range. */
     fun randomize(
         current: SceneParams,
@@ -154,10 +140,10 @@ object ParamRandomizer {
         // Clearing the slot's custom-palette override is what makes the rolled
         // index visible; an override otherwise wins over the PALETTES lookup.
         r("Palette") {
-            PaletteStore.clear(it.copy(palette = rng.nextInt(SceneParams.PALETTES.size)))
+            it.copy(palette = rng.nextInt(SceneParams.PALETTES.size)).withoutCustomPalette()
         }
         r("Palette 2") {
-            PaletteStore.clear(it.copy(palette2 = rng.nextInt(SceneParams.PALETTES.size)), second = true)
+            it.copy(palette2 = rng.nextInt(SceneParams.PALETTES.size)).withoutCustomPalette(second = true)
         }
         r("Palette blend") { it.copy(paletteMix = sometimes(0.5f, 0.2f, 0.8f)) }
         r("Hue shift") { it.copy(colorShift = f(0f, 1f)) }
@@ -238,18 +224,15 @@ object ParamRandomizer {
         // ---- Water + the all-styles ripple overlay ----
         r("Wave speed") { it.copy(waterWaveSpeed = f(0.5f, 1.6f)) }
         r("Damping") { it.copy(waterDamping = f(0.96f, 0.995f)) }
-        // One label, two sliders: the Water section and the all-styles ripple
-        // overlay both call theirs "Ripple strength", so a single lock covers
-        // both - each still rolls inside its own range (0..2 vs 0..1).
-        r("Ripple strength") {
-            it.copy(
-                waterRippleStrength = f(0.5f, 1.6f),
-                rippleOverlayStrength = f(0.15f, 0.7f),
-            )
-        }
+        // Two distinct controls, two keys: the WATER style's own wave
+        // amplitude (0..2) and the all-styles ripple overlay (0..1). They used
+        // to share the label "Ripple strength", so one lock chip froze both
+        // and one roll wrote both.
+        r("Ripple strength") { it.copy(waterRippleStrength = f(0.5f, 1.6f)) }
         r("Depth") { it.copy(waterDepth = f(0.3f, 0.9f)) }
         r("Specular") { it.copy(waterSpecular = f(0.3f, 0.9f)) }
         r("Flow drift") { it.copy(waterFlow = f(0.05f, 0.6f)) }
+        r("Ripple overlay strength") { it.copy(rippleOverlayStrength = f(0.15f, 0.7f)) }
         r("Ripple glint") { it.copy(rippleOverlaySpecular = f(0.1f, 0.6f)) }
 
         return s

@@ -45,9 +45,10 @@ class ParamRandomizerFluidTest {
     /**
      * Fluid-family float knobs: key, accessor, and the slider's own range.
      *
-     * "Ripple strength" appears twice on purpose: it is one label in front of
-     * two sliders (the Water section and the all-styles ripple overlay), so a
-     * single lock covers both while each still rolls inside its own range.
+     * "Ripple strength" (Water, 0..2) and "Ripple overlay strength"
+     * (all-styles overlay, 0..1) are separate keys: they used to share a
+     * label, which meant one lock chip froze both params and one roll wrote
+     * both - see [locking_a_fluid_key_freezes_exactly_its_parameter].
      */
     private val floatKnobs: List<Triple<String, (SceneParams) -> Float, ClosedFloatingPointRange<Float>>> =
         listOf(
@@ -82,7 +83,7 @@ class ParamRandomizerFluidTest {
             Triple("Flow drift", { p: SceneParams -> p.waterFlow }, 0f..1f),
             Triple("Ripple glint", { p: SceneParams -> p.rippleOverlaySpecular }, 0f..1f),
             Triple("Ripple strength", { p: SceneParams -> p.waterRippleStrength }, 0f..2f),
-            Triple("Ripple strength", { p: SceneParams -> p.rippleOverlayStrength }, 0f..1f),
+            Triple("Ripple overlay strength", { p: SceneParams -> p.rippleOverlayStrength }, 0f..1f),
         )
 
     /** Fluid-family integer knobs: key, accessor, and the slider's own range. */
@@ -257,11 +258,25 @@ class ParamRandomizerFluidTest {
     fun every_lock_key_matches_a_customize_label() {
         val labels = lockableLabels()
         assertTrue("parsed too few Customize labels ($labels)", labels.size > 40)
-        val missing =
-            ParamRandomizer.KEYS.filter {
-                it !in labels && it !in ParamRandomizer.KEYS_WITHOUT_LOCK_CHIP
-            }
+        val missing = ParamRandomizer.KEYS.filter { it !in labels }
         assertEquals("randomizer lock keys with no matching Customize label", emptyList<String>(), missing)
+    }
+
+    /**
+     * Every key the randomizer rolls must be lockable. The chip selectors
+     * (Palette, Palette 2, Particle shape, Beat pattern, Path) rendered a
+     * plain label with no lock chip, so those five params were rolled on every
+     * press with no way to hold them - a user could not keep the palette they
+     * had just chosen. They now render `LockableChipLabel`, which is why the
+     * regex below accepts it as a lockable control.
+     */
+    @Test
+    fun chip_selector_keys_are_lockable_too() {
+        val labels = lockableLabels()
+        for (key in listOf("Palette", "Palette 2", "Particle shape", "Beat pattern", "Path")) {
+            assertTrue("chip selector \"$key\" renders no lock chip", key in labels)
+            assertTrue("\"$key\" is not rolled at all", key in ParamRandomizer.KEYS)
+        }
     }
 
     @Test
@@ -273,7 +288,7 @@ class ParamRandomizerFluidTest {
 
     /** Labels of every Customize control that renders a lock chip. */
     private fun lockableLabels(): Set<String> {
-        val regex = Regex("(?:LabeledSlider|LabeledIntSlider|CheckRow)\\(\\s*\"([^\"]+)\"")
+        val regex = Regex("(?:LabeledSlider|LabeledIntSlider|CheckRow|LockableChipLabel)\\(\\s*\"([^\"]+)\"")
         return regex
             .findAll(customizeDialogSource())
             .map { it.groupValues[1] }

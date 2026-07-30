@@ -1,83 +1,190 @@
-# Param × Scene-Family Matrix (P0 verification, v0.9.6)
+# Param × Scene-Family Matrix (v0.14.0)
 
-Method: static trace of every SceneParams field through ShaderScene uploads,
-particle-family files, the renderer's composite pass (uPost*, guarded by
-applyGeo = scene !is ShaderScene), and ProjectMScene/pm_post. Mechanism key:
-S=in-shader (prelude view()/pal()/grade()), P=particle CPU/vertex pipeline,
-C=composite pass, PM=pm_post shader, R=renderer, G=global (applyBandGains).
+Authoritative record of what every Customize parameter actually does on every
+scene family. Re-derived from the merged tree by tracing each `SceneParams`
+field through the scene classes, the composite pass and the export compositor —
+not from any earlier revision of this file.
 
-| Field | Shader | Particle | MilkDrop |
-|---|---|---|---|
-| speed, zoom, rotation | S | P | PM(zoom/rot) / C |
-| endlessZoom(+Speed) | S | P (all 5 scenes as of v0.9.6) | PM (triangle-wave, no pop) |
-| attack, decay | R (feature smoothing) | R | R + PM beat sensitivity |
-| audioDrive, beatResponse | S | P | PM (PCM level) / C pulse |
-| bassGain, midGain, trebGain | G | G | G |
-| pulse | S | P point-size swell (v0.9.6) | C |
-| flash, temperature, solarize | S | C | C |
-| sway, driftX/Y, shake | S | C | C |
-| warp, ripple, twist, tile | S | C | C |
-| kaleidoscope, symmetry | S | C | C |
-| pixelate, posterize, bloom | S | C | C |
-| mirror, invert | S | C (single owner) | PM mirror; C invert |
-| chromaAb, vignette, scanlines, grain, glitch, fisheye, strobe | C (screen-space, all families) | C | C |
-| saturation, brightness, contrast, intensity | S | P(uSat)+C | PM+C |
-| palette (index→base/range), colorShift, hueRange, colorCycle, cycleSpeed | S | P (hue span coloring) | — (preset-authored colors) |
-| palette2, paletteMix, duotone | S | BY DESIGN shader-only¹ | BY DESIGN¹ |
-| morph | S | BY DESIGN shader-only² | BY DESIGN² |
-| turbulence | S | P | — |
-| density, particleShape, particleSize, trails, trailLength | — (particle-only by design) | P | — |
-| paramFadeSec | R (all families) | R | R |
+## Families
 
-¹ Dual-palette blending/duotone needs the fragment palette machinery;
-particles color by single hue span, milkdrop colors are preset-authored.
-Candidate for a later composite palette LUT — not a silent no-op: the
-Customize UI only shows these on shader scenes.
-² Morph deforms scene geometry inside each shader's pattern; there is no
-meaningful post-hoc equivalent. UI hides it off shader scenes.
+| Key | Family | Classes |
+|---|---|---|
+| **SH** | Shader | `ShaderScene` (one class, ~20 fragment programs) |
+| **PT** | Particle | `ParticleSceneBase` → Burst / Fountain / Nebula / Orbit / Swarm |
+| **MD** | MilkDrop | `ProjectMScene` (+ `pm_post_frag`) |
+| **FL** | Fluid | `render/fluid/FluidScene` |
+| **CF** | Curl Flow | `render/fluid/CurlFlowScene` |
+| **WA** | Water | `render/fluid/WaterScene` |
 
-v0.9.6 fixes from this audit: pulse now works on particles (beat size
-swell); endlessZoom added to Swarm/Fountain (outward flow) and Orbit
-(radius drift with respawn) so all five particle scenes honor it.
+## Mechanism key
 
-Fluid additions (v0.12.0): the fluid* fields act on the FLUID scene only
-(sim/emitters/look inside FluidScene; documented no-ops elsewhere by tab
-scoping - the Fluid tab shows only the FlowField section on other styles).
-flow* fields are global: flowStrength/flowCurl/flowForce drive the shared
-FlowField consumed by the composite fluidWarp slot (C, all families incl.
-MilkDrop + export), flowAdvectParticles by the particle CPU pipeline (P),
-and uFlow/uFlowStrength by shader scenes (S, opt-in sampling).
+| Code | Meaning |
+|---|---|
+| **S** | in-shader, via the `res/raw` prelude (`view()` / `pal()` / `grade()`) |
+| **P** | particle CPU/vertex pipeline (`ParticleSceneBase`, `particle_vert/frag`) |
+| **PM** | the MilkDrop post pass (`pm_post_frag`) |
+| **C** | composite pass (`composite_frag.glsl` `uPost*`), also mirrored by `FxCompositor` for exports |
+| **R** | renderer-level, outside any scene (fade/trail path, param fade, LFO/ADSR) |
+| **G** | global feature transform (`applyBandGains`, `SceneParams.kt:289`) |
+| **—** | genuinely ignored by that family (reason in the notes) |
 
-Journey additions (v0.13.0): fluidSpawnPath / fluidSpawnPoints /
-fluidSpawnProgress / fluidCatchPoints / fluidCatchPull / fluidCatchRadius /
-fluidParticleLife / fluidSparkle act on BOTH FLUID and CURLFLOW (the shared
-FluidChoreography spawn/catch progression + lifecycle particle layer; the
-Customize Fluid tab shows the Journey section for both styles, the
-remaining fluid* sections for FLUID only). fluidCatchPull doubles as the
-dye suction strength in FLUID (emitter suction splats at catch points).
-progress/sectionIndex/sectionCount ride AudioFeatures: live from the
-player position + cached section analysis, export from
-FeatureTimeline.progressionAt - no SceneParams field, not persisted.
+The three composite gates, all in `VisualizerRenderer.kt`:
 
-Water additions (v0.13.x, unit F1): waterWaveSpeed / waterDamping /
-waterRippleStrength / waterDepth / waterSpecular / waterFlow act on the
-WATER scene only (RippleSim wave character + water_display shading inside
-WaterScene; the Customize Fluid tab shows the Water section only when the
-water style is active). WATER also consumes the shared journey params
-(fluidSpawnPath/Points/Progress, fluidCatchPoints/Pull, and the emitter
-schedule fields fluidBeatPattern/BeatSplats/Stirrers/StirrerSpeed/
-SplatRadius/SplatForce/BassPump/Sparkle/RadiusPulse) to place and time its
-drops, plus fluidQuality/fluidAutoQuality for its grid tier.
-Ripple overlay additions (v0.13.x, unit F2): rippleOverlayEnabled /
-rippleOverlayStrength / rippleOverlaySpecular act on ALL families (C -
-composite ripple slot: a renderer-owned RippleSim heightfield refracts the
-scene fetch and adds specular glint inside postFx, so it applies to shader,
-particle and MilkDrop scenes alike, to BOTH images during transitions, and
-to exports via FxCompositor's ripple params). Exception: on the WATER scene
-the overlay is forced off (its own display already refracts - one source of
-truth, live and export guards match). Strength/specular are lerped and
-LFO-targetable (RIPPLE_OVERLAY targets strength); wave character reuses
-waterWaveSpeed/waterDamping so the overlay and the water style stay one
-system. Drop placement is deterministic (RippleMath.overlayDropPosition
-golden-angle sequence driven by beats/treble via RippleOverlayDrops - no
-RNG, so export re-runs land the same drops for the same feature stream).
+* `applyGeo = activeScene !is ShaderScene` (`:770`) — geometry/stylize `uPost*`.
+  Shader scenes do these in-shader, so they get 0; **everything else**,
+  including the whole fluid family, is served by the composite.
+* `ownsMirrorInvert = ShaderScene || ProjectMScene` (`:800`) — mirror/invert.
+* `gradesItself = ShaderScene || ParticleSceneBase || ProjectMScene` (`:816`) —
+  zoom/rotation + the colour grade, switched wholesale by `uPostGrade`
+  (`:822`). Only the fluid family (FL/CF/WA) is graded by the composite; the
+  flag exists because the neutral value of these uniforms is 1.0, not the GL
+  default 0.0 (`composite_frag.glsl:43-58`).
+
+`FxCompositor.kt:324/378/388` reproduces all three gates so exports match.
+
+## The matrix
+
+### Motion
+
+| Param | SH | PT | MD | FL | CF | WA |
+|---|---|---|---|---|---|---|
+| `speed` | S `ShaderScene.kt:121` | P (each scene) | — ¹ | FL `FluidScene.kt:225,230` | CF `CurlFlowScene.kt:150,157` | WA `WaterScene.kt:226,232` |
+| `zoom` | S `:181` | P `ParticleSceneBase.kt:143` | PM `ProjectMScene.kt:220` | C `:823` | C | C |
+| `rotation` | S `:182` | P `:144` | PM `:221` | C ² | C ² | C ² |
+| `endlessZoom` / `endlessZoomSpeed` | S `:123` | P (all five) | PM `:165` | — ³ | — ³ | — ³ |
+| `sway` | S `:207` | C | C | C | C | C |
+| `pulse` | S `:208` | P point-size swell `:152` | **— ⁴** | **— ⁴** | **— ⁴** | **— ⁴** |
+| `driftX` / `driftY` | S `:210-211` | C | C | C | C | C |
+| `shake` | S `:212` | C | C | C | C | C |
+
+### Behaviour
+
+| Param | SH | PT | MD | FL | CF | WA |
+|---|---|---|---|---|---|---|
+| `audioDrive` | S `:125-128` | P (each scene) | **— ⁵** | **— ⁵** | CF `CurlFlowScene.kt:170` | **— ⁵** |
+| `beatResponse` | S `:191` | P `:143` + scenes | PM beat sensitivity `:197,220` | **— ⁵** | **— ⁵** | **— ⁵** |
+| `bassGain` / `midGain` / `trebGain` | G | G | G | G | G | G |
+| `turbulence` | S `:192` | P (each scene) | — | — | CF `:166` | — |
+| `density` | — ⁶ | P `ParticleSceneBase.kt:122` | — | FL point exposure `FluidScene.kt:325` | — | — |
+| `trails` / `trailLength` | — ⁷ | R `VisualizerRenderer.kt:668` | — ⁷ | — ⁷ | R `:667-669` (remapped, `CurlFlowMath.retention`) | — ⁷ |
+| `trailZoom` / `trailWarp` | — ⁷ | R `drawTrailWarp` `:847` | — ⁷ | — ⁷ | R (same, `CurlFlowMath.warpDecay`) | — ⁷ |
+| `mirror` | S `:190` | C `:801` | PM `:223` | C | C | C |
+| `flash` | S `:217` | C | C | C | C | C |
+
+### Shape
+
+| Param | SH | PT | MD | FL | CF | WA |
+|---|---|---|---|---|---|---|
+| `warp`, `ripple`, `twist`, `tile` | S `:200-201,213-214` | C | C | C | C | C |
+| `kaleidoscope` + `symmetry` | S `:202-203` | C | C | C | C | C |
+| `pixelate`, `posterize` | S `:205-206` | C | C | C | C | C |
+| `morph` | S `:204` | — ⁸ | — ⁸ | — ⁸ | — ⁸ | — ⁸ |
+| `particleShape` | — | P `:149` | — | — | — | — |
+| `particleSize` | — | P `:152` | — | FL `FluidScene.kt:320` | CF `CurlFlowScene.kt:207` | — |
+
+### Colour
+
+| Param | SH | PT | MD | FL | CF | WA |
+|---|---|---|---|---|---|---|
+| `palette` → `paletteBase`/`paletteRange` | S `:193-194` | P `ParticleSceneBase.kt:123-124` | — ⁹ | FL `FluidScene.kt:258-259` | CF `CurlFlowScene.kt:208-209` | WA `WaterScene.kt:247,280` |
+| `hueRange` | S `:185` | P `:124` | — ⁹ | FL (via `FluidHue.span`) | CF (same) | WA (same) |
+| `palette*Override` / `customPalette*Id` | resolved inside `paletteBase`/`paletteRange` (`SceneParams.kt:271-281`) — every family that reads a palette reads overrides for free | | | | | |
+| `colorShift` | S `:184` | P `:123` | PM `:224` | C `:829` | C | C |
+| `colorCycle` / `cycleSpeed` | S `:124,184` | P `:88,123` | PM `:166,224` | C (`postCyclePhase`) | C | C |
+| `saturation`, `contrast`, `gamma` | S `:186,218-219` | P `:145,147-148` | PM `:225,227-228` | C `:825,827-828` | C | C |
+| `brightness` × `intensity` | S `:187,189` | P `:146` | PM `:226,230` | C `:826` (`CompositeGrade.brightness`) | C | C |
+| `invert` | S `:188` | C `:802` | PM `:229` | C | C | C |
+| `palette2`, `paletteMix`, `duotone` | S `:195-198` | **— ⁸** | **— ⁸** | **— ⁸** | **— ⁸** | **— ⁸** |
+| `bloom` | S `:199` | C | C | C | C | C |
+| `temperature`, `solarize` | S `:215-216` | C | C | C | C | C |
+
+### Screen FX, automation
+
+| Param | All six families |
+|---|---|
+| `chromaAb`, `vignette`, `scanlines`, `grain`, `glitch`, `fisheye`, `strobe` | C — screen-space, ungated, applied to BOTH images during a transition |
+| `paramFadeSec` | R (`VisualizerRenderer.lerpParams`, `:119`) |
+| LFO / ADSR targets | R, applied on top of the faded params before any scene sees them |
+
+`lerpParams` starts from `to.copy(...)`, so any field it does not name **snaps**
+to the target. That is deliberate for choices/toggles and for the palette
+override floats: lerping `paletteBaseOverride` from `UNSET_OVERRIDE` (-1) to a
+real hue would cross zero and flicker the slot between built-in and custom.
+
+### Fluid / FlowField / Water blocks
+
+| Param group | Read by | Gate that shows it |
+|---|---|---|
+| `fluidQuality`, `fluidAutoQuality` | FL `FluidScene.kt:118`, WA `WaterScene.kt:142` | `isEmitterSceneId` |
+| `fluidIterations`, `fluidPressure`, `fluidCurl`, `fluidVelocityDissipation`, `fluidDensityDissipation`, `fluidChromaticAging` | FL only `FluidScene.kt:205-212` | `isFluidSceneId` |
+| emitter schedule: `fluidBeatPattern`, `fluidBeatSplats`, `fluidStirrers`, `fluidStirrerSpeed`, `fluidSplatRadius`, `fluidRadiusPulse`, `fluidSplatForce`, `fluidBassPump`, `fluidSparkle` | FL `:227-242`, WA `:229-238` | `isEmitterSceneId` |
+| `fluidPaletteCycleSpeed` | FL only `:241` (WATER discards splat colour) | `isFluidSceneId` |
+| journey: `fluidSpawnPath`, `fluidSpawnPoints`, `fluidSpawnProgress`, `fluidCatchPoints`, `fluidCatchPull`, `fluidCatchRadius`, `fluidParticleLife` | FL `:221-224,279-280`, CF `CurlFlowScene.kt:153-157,181-187`, WA `WaterScene.kt:222-225,237,243` | `isJourneySceneId` |
+| `fluidParticleDrag` | FL `:274`, CF `:181` | `isParticleLayerSceneId` |
+| `fluidParticlesEnabled`, `fluidParticleBrightness` | FL only (`:273,324`) | `isFluidSceneId` inside the particle section |
+| `fluidDyeEnabled`, `fluidShading`, `fluidBloom*`, `fluidSunrays*`, `fluidCurlAudio`, `fluidBloomAudio`, `fluidFadeAudio` | FL only `:288-306` | `isFluidSceneId` |
+| `waterWaveSpeed`, `waterDamping`, `waterRippleStrength`, `waterDepth`, `waterSpecular`, `waterFlow` | WA only `WaterScene.kt:181,218-219,242,281-283` | `isWaterSceneId` |
+| `flowEnabled`, `flowStrength`, `flowForce`, `flowCurl` | C fluidWarp for every family (`VisualizerRenderer.kt:716-729`); FL substitutes its own velocity field | always |
+| `flowAdvectParticles` | P `ParticleSceneBase.kt:96-112` | always |
+| `rippleOverlayEnabled`, `rippleOverlayStrength`, `rippleOverlaySpecular` | C for every family (`:738-750`); forced off on WATER, whose own display already refracts | always |
+
+The gate predicates live in `VisualsHub.kt:372-400` and are pinned by
+`FluidTabGatingTest` / `CurlFlowCustomizeTest`.
+
+## Notes
+
+1. **MilkDrop ignores `speed`.** The preset's motion runs on projectM's own
+   clock inside the native library; there is no host-side rate to scale.
+2. **Rotation is a SPEED everywhere.** Scenes integrate `rotationAngle +=
+   rotation * dt`; the composite integrates its own `postRotationAngle`
+   (`CompositeGrade.integrateRotation`) so the fluid family spins at the same
+   rate rather than sitting at a static offset.
+3. `endlessZoom` is a per-scene *simulation* behaviour (respawn/outflow), not a
+   post transform. The fluid family has no equivalent — its "endlessness" is
+   the flow field itself. **Gap:** the checkbox is still shown on those styles.
+4. **`pulse` (Beat pulse) has no reader on MD/FL/CF/WA.** Shader scenes use
+   `uPulse`, particles swell their point size; the composite declares no beat
+   pulse at all. Closing it means a new `uPost*` uniform plus its `FxCompositor`
+   and `CompositeGrade` mirrors — written up in `todo.md`.
+5. **`audioDrive` and `beatResponse` have no reader on FL/WA (and `audioDrive`
+   none on MD).** Both styles consume raw `AudioFeatures` after `applyBandGains`
+   only, so the band-gain faders work but the two master reactivity sliders do
+   not. Curl Flow reads `audioDrive` in its field kick and still ignores
+   `beatResponse` (its beat term is a local envelope). Written up in `todo.md`.
+6. `density` thins a point population; a fullscreen fragment shader has none.
+7. Trails are a renderer-level canvas-persistence path, gated to
+   `ParticleSceneBase || CurlFlowScene` (`:668`). The other styles either clear
+   every frame by design or run their own dissipation (`fluidDensityDissipation`
+   on FL, `waterDamping` on WA). The label says "(particle scenes)".
+8. **By design, shader-only:** `morph` deforms geometry inside each fragment
+   pattern; `palette2`/`paletteMix`/`duotone` need the fragment palette
+   machinery. There is no meaningful post-hoc equivalent. **Gap:** since the
+   Customize panel moved into `VisualsHub`, the Shape and Color tabs are shown
+   unconditionally, so these four now render as live sliders on styles that
+   ignore them. Written up in `todo.md` (the fix is scene-family gating on
+   those tabs, matching what the Fluid tab already does).
+9. MilkDrop colours are authored by the preset; `pm_post_frag` rotates hue but
+   has no palette table to key off.
+
+## Divergences worth knowing
+
+* **`hueRange` clamping.** The fluid family runs it through
+  `FluidHue.span`, which clamps to `MIN_HUE_RANGE`(0.1)..1 — so on those three
+  styles the slider's 1.0–1.5 range is flat and 0 does not collapse the
+  palette to one colour. Shader and particle scenes multiply the raw value.
+  Intentional (a 0 span kills the fluid look), documented here rather than
+  fixed, because it also means those styles cannot over-span.
+* **Hue rotation is applied exactly once on the fluid family.** The scene owns
+  palette IDENTITY (base + span, decided at emission time), the composite owns
+  ROTATION (`colorShift + cyclePhase`). See `FluidHue.kt:5-24`; folding either
+  into the scene as well turned the wheel twice per slider unit.
+* **Brightness/intensity is applied exactly once.** `CurlFlowMath` and
+  `WaterMath` deliberately return exposure-free values; the composite's
+  `uPostBright = brightness * intensity` is the single owner for FL/CF/WA.
+* **Chip selectors are lockable.** `Palette`, `Palette 2`, `Particle shape`,
+  `Beat pattern` and `Path` now render `LockableChipLabel`, so every parameter
+  `ParamRandomizer` rolls can be held. Lock keys are the label strings, which
+  is why `"Ripple strength"` (Water, 0..2) and `"Ripple overlay strength"`
+  (all-styles overlay, 0..1) had to stop sharing a label, and why the LFO
+  card's depth slider is now `"LFO depth"` rather than colliding with the
+  Water section's `"Depth"`.

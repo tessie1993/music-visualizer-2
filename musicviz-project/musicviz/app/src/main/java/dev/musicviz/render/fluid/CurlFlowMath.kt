@@ -65,6 +65,21 @@ internal object CurlFlowMath {
     }
 
     /**
+     * Frame retention the feedback-trail WARP path writes as `uDecay`
+     * (trail_warp_frag), given the same remapped [retention] the plain fade
+     * path gets. Shared by every trailing style, but it lives here because
+     * Curl Flow is the one whose retention is remapped: `drawTrailWarp` took
+     * the remapped value as a parameter and then computed `uDecay` from the
+     * RAW `trailLength` slider anyway, so switching Trail zoom or Trail warp
+     * on dropped Curl Flow back below [MIN_RETENTION] and the streams broke up
+     * into strobing dots at settings the fade path kept smooth.
+     */
+    fun warpDecay(
+        retention: Float,
+        dt: Float,
+    ): Float = (retention * 0.97f + 0.02f).coerceIn(0f, 0.99f).pow(dt * 60f)
+
+    /**
      * Brightness the scene hands its particle shader: the beat pulse ONLY.
      * Exposure (`brightness * intensity`) belongs to the composite grading
      * pass now, so folding it in here as well made Intensity quadratic. The
