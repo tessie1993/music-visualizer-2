@@ -245,8 +245,14 @@ internal class FluidScene(
         // FPS made capsule spacing outrun the fluid (splats degenerate into
         // disconnected flickering stamps).
         val simDt = lastDt.coerceIn(0f, 1f / 30f)
+        // One colour source for the whole style (dye + particles): palette
+        // base + Hue shift slider, spanning the palette's own hue width. The
+        // span used to be dropped here, so switching palette only retinted
+        // the fluid instead of changing its character.
+        val hueBase = FluidHue.base(p.paletteBase, p.colorShift)
+        val hueSpan = FluidHue.span(p.hueRange, p.paletteRange)
         choreography.tick(f, simDt, sim.aspect)
-        for (s in emitters.tick(f, simDt, sim.aspect, params.paletteBase, params.hueRange.coerceIn(0.1f, 1f))) {
+        for (s in emitters.tick(f, simDt, sim.aspect, hueBase, hueSpan)) {
             sim.queueSplat(s)
         }
         sim.step(simDt)
@@ -306,8 +312,8 @@ internal class FluidScene(
             particles.draw(
                 aspect = sim.aspect,
                 pointScale = (1.5f * p.particleSize.coerceIn(0.2f, 3f)) * dpiScale,
-                hueBase = p.paletteBase,
-                hueSpan = p.hueRange.coerceIn(0.1f, 1f),
+                hueBase = hueBase,
+                hueSpan = hueSpan,
                 brightness =
                     0.55f * p.fluidParticleBrightness.coerceIn(0f, 2f) *
                         (0.3f + p.density.coerceIn(0f, 1.5f)),
