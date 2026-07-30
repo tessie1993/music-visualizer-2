@@ -158,10 +158,12 @@ class CurlFlowCustomizeTest {
         // Exposure is the composite pass's job. The scene contributes only its
         // beat pulse, so doubling Intensity must double the screen brightness.
         fun onScreen(intensity: Float) = CurlFlowMath.particleBrightness(0f) * CompositeGrade.brightness(1f, intensity)
-        assertEquals(2f, onScreen(2f) / onScreen(1f), 1e-4f)
-        assertEquals(0.5f, onScreen(0.5f) / onScreen(1f), 1e-4f)
+
         // The old wiring - scene intensity AND composite intensity - squared it.
         fun doubleApplied(intensity: Float) = onScreen(intensity) * intensity
+
+        assertEquals(2f, onScreen(2f) / onScreen(1f), 1e-4f)
+        assertEquals(0.5f, onScreen(0.5f) / onScreen(1f), 1e-4f)
         assertEquals(4f, doubleApplied(2f) / doubleApplied(1f), 1e-4f)
         // The uniform is still uploaded at a live, non-zero value: an unset GL
         // uniform reads 0 and would render the streams black.
