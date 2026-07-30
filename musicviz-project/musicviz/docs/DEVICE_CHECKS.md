@@ -94,3 +94,12 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     must show the same refraction/glint as the live view. Watch frame
     time on a Min-tier device with overlay + FlowField both on (two
     extra sims per frame).
+21. Water customization gaps: on the WATER style, with Catch points >= 1,
+    sweep "Catch radius" (Journey) — the drain dimples on the pool must
+    visibly grow/shrink with the slider (they used to be inert), and each
+    well must read as a DIP that radiates rings, not as a splash. Then
+    sweep "Hue shift" (Color) — the whole pool must retint continuously
+    and wrap around the hue circle without a jump; at Hue shift 0 the
+    pool must look exactly as it did before this change (palette base
+    only). Check both against a saved preset roundtrip, and confirm a
+    10 s export matches the live view for both sliders.
