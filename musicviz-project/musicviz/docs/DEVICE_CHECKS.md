@@ -94,7 +94,17 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     must show the same refraction/glint as the live view. Watch frame
     time on a Min-tier device with overlay + FlowField both on (two
     extra sims per frame).
-21. Water customization gaps: on the WATER style, with Catch points >= 1,
+21. Fluid colours: on the FLUID style, sweep Color > Palette. Each
+    palette must change the CHARACTER of the ink, not just its tint —
+    Fire/Cherry/Copper stay inside one narrow hot band while
+    Spectrum/Aurora/Galaxy sweep visibly across the wheel in a single
+    frame, on the dye splats AND the particle layer. Then sweep "Hue
+    shift" 0 -> 1: the whole fluid must rotate through the wheel and land
+    back on the starting colours at 1 (dye and particles together, no
+    jump at the wrap). Pull "Hue range" to 0 — colours must narrow to a
+    tight band but never collapse to one flat colour. Repeat with a
+    user-made custom palette selected.
+22. Water customization gaps: on the WATER style, with Catch points >= 1,
     sweep "Catch radius" (Journey) — the drain dimples on the pool must
     visibly grow/shrink with the slider (they used to be inert), and each
     well must read as a DIP that radiates rings, not as a splash. Then
