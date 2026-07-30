@@ -4,14 +4,104 @@ import android.content.Context
 import android.opengl.GLES30
 import dev.musicviz.R
 import dev.musicviz.analysis.AudioFeatures
+import dev.musicviz.render.CompositeGrade
 import dev.musicviz.render.scene.GlUtil
 import dev.musicviz.render.scene.SceneParams
 import kotlin.math.pow
 
 /**
+ * The composite pass' grading uniforms for one frame, in the exact shape
+ * `composite_frag.glsl` reads them.
+ *
+ * [enabled] is load-bearing rather than decorative: the neutral value of the
+ * rest of this block is 1.0, not 0.0, so a program that leaves them unset
+ * reads GL's default 0 and renders black at 20x zoom. When a scene grades
+ * itself, [enabled] is false AND every value is the identity, so the block is
+ * a no-op either way.
+ */
+internal data class ExportGradeUniforms(
+    val enabled: Boolean,
+    val zoom: Float,
+    val rotation: Float,
+    val saturation: Float,
+    val brightness: Float,
+    val contrast: Float,
+    val gamma: Float,
+    val hue: Float,
+)
+
+/**
+ * Export-side mirror of the live renderer's composite grading state.
+ *
+ * Rotation is a SPEED in every scene (`rotationAngle += p.rotation * dt`) and
+ * the colour cycle is a phase, so the composite pass integrates both itself
+ * instead of feeding the raw sliders through as static offsets. An export
+ * renders on its own clock, so [advance] is driven by the export's frame delta
+ * (1/fps): ten seconds of exported video then spins and cycles exactly as far
+ * as ten seconds of live playback, at any frame rate.
+ *
+ * Kept out of [FxCompositor] itself (and free of GL calls) so the headless
+ * gate can drive it frame by frame - see `ExportCompositeGradeTest`.
+ */
+internal class ExportGradeState {
+    /** Integrated rotation angle, in radians, wrapped to +-2*pi. */
+    var rotationAngle: Float = 0f
+        private set
+
+    /** Integrated colour-cycle phase in [0,1), added to the Hue shift. */
+    var cyclePhase: Float = 0f
+        private set
+
+    /** Advances one exported frame; [dtSeconds] is the export's 1/fps. */
+    fun advance(
+        params: SceneParams,
+        dtSeconds: Float,
+    ) {
+        rotationAngle = CompositeGrade.integrateRotation(rotationAngle, params.rotation, dtSeconds)
+        cyclePhase = CompositeGrade.integrateCyclePhase(cyclePhase, params.cycleSpeed, dtSeconds, params.colorCycle)
+    }
+
+    /**
+     * The uniforms to upload, gated exactly like `VisualizerRenderer`'s
+     * composite pass: scenes that grade themselves (shader, particle,
+     * milkdrop) get the neutral identity and the disable flag, so they stay
+     * bit-identical; only the fluid family (Fluid, Curl Flow, Water), which
+     * grades nothing of its own, is graded here.
+     */
+    fun uniforms(
+        params: SceneParams,
+        gradesItself: Boolean,
+    ): ExportGradeUniforms =
+        if (gradesItself) {
+            ExportGradeUniforms(
+                enabled = false,
+                zoom = 1f,
+                rotation = 0f,
+                saturation = 1f,
+                brightness = 1f,
+                contrast = 1f,
+                gamma = 1f,
+                hue = 0f,
+            )
+        } else {
+            ExportGradeUniforms(
+                enabled = true,
+                zoom = params.zoom,
+                rotation = rotationAngle,
+                saturation = params.saturation,
+                brightness = CompositeGrade.brightness(params.brightness, params.intensity),
+                contrast = params.contrast,
+                gamma = params.gamma,
+                hue = params.colorShift + cyclePhase,
+            )
+        }
+}
+
+/**
  * Applies MusicViz's screen-space composite FX chain (geometry, chromatic
  * aberration, vignette, scanlines, grain, glitch, fisheye, strobe, bloom,
- * posterize, invert) to an exported frame, exactly as the live renderer does.
+ * posterize, invert) plus the universal colour grade / zoom / rotation to an
+ * exported frame, exactly as the live renderer does.
  *
  * The scene is drawn into [sceneFbo] instead of straight to the encoder
  * surface; each frame we then draw a fullscreen quad sampling that texture
@@ -35,6 +125,9 @@ internal class FxCompositor(
     val sceneFbo: Int
     private val sceneTex: Int
     private val emptyTex: Int
+
+    /** Integrated rotation angle / colour-cycle phase for the grade block. */
+    private val grade = ExportGradeState()
 
     init {
         val ids = IntArray(1)
@@ -197,6 +290,9 @@ internal class FxCompositor(
     }
 
     /** Composites the scene texture (with FX) onto the currently-bound surface.
+     *  Call exactly once per exported frame: [dtSeconds] (the export's 1/fps)
+     *  advances the integrated rotation angle and colour-cycle phase, so the
+     *  spin/cycle of a rendered clip matches the same span of live playback.
      *  [flowTex]/[flowStrength] feed the fluidWarp slot so FlowField bending
      *  appears in exports exactly like the live view (0 = disabled).
      *  [rippleTex]/[rippleTexelW]/[rippleTexelH]/[rippleStrength]/
@@ -204,9 +300,11 @@ internal class FxCompositor(
      *  disabled; the 1x1 empty texture keeps the sampler valid). */
     fun composite(
         timeSeconds: Float,
+        dtSeconds: Float,
         features: AudioFeatures,
         isParticle: Boolean,
         isShaderScene: Boolean,
+        isProjectM: Boolean,
         params: SceneParams,
         flowTex: Int = 0,
         flowStrength: Float = 0f,
@@ -216,6 +314,10 @@ internal class FxCompositor(
         rippleStrength: Float = 0f,
         rippleSpecular: Float = 0f,
     ) {
+        // Rotation and the colour cycle are SPEEDS: integrate them on the
+        // export's own clock, once per exported frame, exactly as the live
+        // renderer integrates once per displayed frame.
+        grade.advance(params, dtSeconds)
         // Shader scenes apply all geometric/stylize FX in-shader already;
         // pass neutral values so they aren't applied twice (matches the
         // live renderer's guard).
@@ -269,10 +371,30 @@ internal class FxCompositor(
         GLES30.glUniform1f(loc("uPostFlash"), geoF(params.flash))
         GLES30.glUniform1f(loc("uPostTemp"), geoF(params.temperature))
         GLES30.glUniform1f(loc("uPostSolarize"), if (applyGeo && params.solarize) 1f else 0f)
-        // Match the live renderer: geometric mirror/invert only for particle
-        // scenes (shader scenes already apply them in-shader).
-        GLES30.glUniform1f(loc("uPostMirror"), if (isParticle && params.mirror) 1f else 0f)
-        GLES30.glUniform1f(loc("uPostInvert"), if (isParticle && params.invert) 1f else 0f)
+        // Match the live renderer: shader scenes AND the milkdrop post pass
+        // apply mirror/invert themselves; everything else needs them here -
+        // particle scenes (whose fragment shader defers invert to this pass)
+        // and the fluid family, which applies neither.
+        val ownsMirrorInvert = isShaderScene || isProjectM
+        GLES30.glUniform1f(loc("uPostMirror"), if (!ownsMirrorInvert && params.mirror) 1f else 0f)
+        GLES30.glUniform1f(loc("uPostInvert"), if (!ownsMirrorInvert && params.invert) 1f else 0f)
+        // Universal grading + zoom/rotation, same gate as the live renderer:
+        // ShaderScene (view()/grade()), the particle pipeline (particle_vert's
+        // uZoom/uRotation, particle_frag's uSat/uBright/uContrast/uGamma) and
+        // the milkdrop post pass grade in their OWN pass and get the neutral
+        // identity here; only the fluid family (Fluid, Curl Flow, Water) is
+        // graded in the composite. Without this block an exported fluid clip
+        // came out ungraded while the live view was graded.
+        val gradesItself = isShaderScene || isParticle || isProjectM
+        val gu = grade.uniforms(params, gradesItself)
+        GLES30.glUniform1f(loc("uPostGrade"), if (gu.enabled) 1f else 0f)
+        GLES30.glUniform1f(loc("uPostZoom"), gu.zoom)
+        GLES30.glUniform1f(loc("uPostRotation"), gu.rotation)
+        GLES30.glUniform1f(loc("uPostSat"), gu.saturation)
+        GLES30.glUniform1f(loc("uPostBright"), gu.brightness)
+        GLES30.glUniform1f(loc("uPostContrast"), gu.contrast)
+        GLES30.glUniform1f(loc("uPostGamma"), gu.gamma)
+        GLES30.glUniform1f(loc("uPostHue"), gu.hue)
         GLES30.glBindVertexArray(vao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)

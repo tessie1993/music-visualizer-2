@@ -298,6 +298,9 @@ class VideoExporter(
             GLES30.glViewport(0, 0, aspect.width, aspect.height)
             val isParticle = scene is dev.musicviz.render.scene.ParticleSceneBase
             val isShaderScene = scene is dev.musicviz.render.scene.ShaderScene
+            // Milkdrop grades (and mirrors/inverts) in pm_post_frag, so the
+            // composite must send it the neutral identity like the live path.
+            val isProjectM = scene is dev.musicviz.render.scene.ProjectMScene
             // Curl Flow's look is DEFINED by canvas persistence (live renderer
             // forces it regardless of the trails toggle); a hard-cleared export
             // reads as strobing dots instead of streams.
@@ -458,11 +461,16 @@ class VideoExporter(
                     }
                 val rippleTex = if (rippleOn && rippleOverlay != null) rippleOverlay.heightTex else 0
                 fx.composite(
-                    timeMs / 1000f,
-                    features,
-                    isParticle,
-                    isShaderScene,
-                    p,
+                    timeSeconds = timeMs / 1000f,
+                    // The composite integrates rotation/colour cycle on the
+                    // export's own clock, so it must see the export's frame
+                    // delta - 1/60 would spin a 30 fps render at half speed.
+                    dtSeconds = 1f / fps,
+                    features = features,
+                    isParticle = isParticle,
+                    isShaderScene = isShaderScene,
+                    isProjectM = isProjectM,
+                    params = p,
                     flowTex = flowTex,
                     flowStrength = if (flowTex != 0) p.flowStrength else 0f,
                     rippleTex = rippleTex,

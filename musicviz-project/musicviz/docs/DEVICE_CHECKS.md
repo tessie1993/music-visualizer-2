@@ -134,10 +134,7 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     contrasty or twice as zoomed as before means the gate regressed.
     Switch fluid <-> shader mid-sweep and watch the transition for a
     grading pop on the outgoing image.
-    Known gap (follow-up): the export compositor (FxCompositor) does not
-    upload the new uniforms yet, so an exported fluid clip is ungraded
-    while the live view is graded. Exports of every other style must be
-    unchanged.
+    (The export side of this is now covered by item 25.)
 24. Curl Flow customization: on the CURL FLOW style, (a) sweep Color >
     Palette — each palette must change the CHARACTER of the streams, not
     just their tint (Fire/Cherry/Copper stay in one narrow hot band,
@@ -160,6 +157,21 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     rise SMOOTHLY and linearly, not ramp away (it used to be applied
     twice, once in the scene and once in the composite grade), and the
     streams must never render black at any setting.
+25. Composite grading in EXPORTS: with Zoom, Rotation, Saturation,
+    Brightness, Contrast, Gamma, Hue shift, Intensity, Color cycle,
+    Mirror and Invert all pushed well off neutral on a fluid style
+    (Fluid, Curl Flow AND Water), record a ~10 s clip and play the mp4
+    back next to the live view: the grade, the mirror/invert and the
+    zoom must match, and the rotation/colour cycle must have travelled
+    the SAME distance over those 10 s (it is a speed integrated on the
+    export's own clock). Repeat the recording at 30 fps and at 60 fps —
+    the spin rate must be identical in both files; a 30 fps clip that
+    spins at half speed means the frame delta is wrong.
+    REGRESSION SIDE — export a shader style, a particle style and a live
+    MilkDrop preset with the same sliders: those grade themselves, so
+    their files must look exactly as they did before (uPostGrade = 0).
+    A black or near-black exported frame at high Zoom is the signature
+    of the grading uniforms being left unset.
 26. Beat sensitivity for slow tracks: play a slow, sparse track (ballad,
     ambient, ~60-80 BPM) on a beat-reactive style (flash/pulse/strobe).
     At the shipped defaults note how often it flashes. Drag "Beat
@@ -190,8 +202,8 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     Palette and "Hue range" must keep changing the CHARACTER of the ink as
     in item 21 — palette identity stays scene-side, only the rotation
     moved to the composite.
-    Export note: until FxCompositor uploads the grading uniforms (item 23's
-    known gap), an exported FLUID clip now renders with Hue shift / Color
-    cycle neutral instead of baked into the dye — the same state Curl Flow
-    and Water exports are already in. Live view is the gate here; Palette
-    and Hue range must still show in the export.
+    Export note: the export compositor now uploads the same grading
+    uniforms (item 25), so an exported FLUID clip must show Hue shift and
+    Color cycle exactly like the live view — walk the same 0 -> 1 sweep
+    against a recording. Palette and Hue range must still show in the
+    export as well.
