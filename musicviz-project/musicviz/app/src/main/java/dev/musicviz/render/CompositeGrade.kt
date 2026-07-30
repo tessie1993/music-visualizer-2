@@ -105,7 +105,12 @@ internal object CompositeGrade {
     /** `dot(col, vec3(0.299, 0.587, 0.114))` - the shaders' greyscale weight. */
     fun luma(rgb: FloatArray): Float = rgb[0] * LUMA_R + rgb[1] * LUMA_G + rgb[2] * LUMA_B
 
-    /** Luma-preserving hue rotation; mirror of pm_post_frag's `hueRotate`. */
+    /**
+     * Hue rotation about the grey axis; mirror of pm_post_frag's `hueRotate`.
+     * Greys are a fixed point and a full turn is a round trip, but the axis
+     * is 1/sqrt(3) rather than the Rec.601 luma vector, so brightness is only
+     * approximately preserved - the same approximation the scene shaders use.
+     */
     fun hueRotate(
         rgb: FloatArray,
         amount: Float,

@@ -166,13 +166,20 @@ class CompositeGradeTest {
     }
 
     @Test
-    fun hueRotationPreservesLumaAndIsCyclic() {
+    fun hueRotationIsCyclicAndFixesTheGreyAxis() {
         val c = floatArrayOf(0.9f, 0.2f, 0.35f)
-        val turned = CompositeGrade.hueRotate(c, 0.33f)
-        assertEquals("hue rotation must not change brightness", luma(c), luma(turned), 1e-3f)
-        assertNotEquals(c[0], turned[0], 1e-2f)
-        // A full turn returns the original color (the shader's 6.2831 is a
-        // hair short of 2*pi, so this is approximate by construction).
+        assertNotEquals(c[0], CompositeGrade.hueRotate(c, 0.33f)[0], 1e-2f)
+        // Greys have no hue to rotate: r == g == b is a fixed point at every
+        // angle (both the (c - g) term and the cross product vanish).
+        val grey = floatArrayOf(0.42f, 0.42f, 0.42f)
+        for (amount in listOf(0.1f, 0.5f, 0.9f)) {
+            assertRgb(grey, CompositeGrade.hueRotate(grey, amount), "grey at $amount")
+        }
+        // Zero rotation is an exact identity - the neutral value the renderer
+        // sends to every scene that grades itself.
+        assertRgb(c, CompositeGrade.hueRotate(c, 0f), "zero rotation")
+        // A full turn returns the original color (the shader spells 2*pi as
+        // 6.2831, a hair short, so this is approximate by construction).
         assertRgb(c, CompositeGrade.hueRotate(c, 1f), "full hue turn")
     }
 

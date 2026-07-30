@@ -79,7 +79,7 @@ float hash12(vec2 p) {
     return fract((p3.x + p3.y) * p3.z);
 }
 
-// Luma-preserving hue rotation, byte-for-byte the same formula as
+// Hue rotation about the grey axis, byte-for-byte the same formula as
 // pm_post_frag's hueRotate (and mirrored by CompositeGrade.hueRotate).
 vec3 hueRotate(vec3 c, float a) {
     const vec3 w = vec3(0.299, 0.587, 0.114);
