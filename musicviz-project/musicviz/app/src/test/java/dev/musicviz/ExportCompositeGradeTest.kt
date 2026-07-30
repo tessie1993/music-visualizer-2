@@ -148,9 +148,11 @@ class ExportCompositeGradeTest {
         val src = floatArrayOf(0.2f, 0.55f, 0.91f)
         val out = CompositeGrade.grade(src, u.hue, u.saturation, u.contrast, u.gamma, u.brightness)
         for (i in 0..2) assertEquals("channel $i", src[i], out[i], 0f)
+        // Geometry skips both branches, so the uv only makes the centre-space
+        // round trip (-0.5 then +0.5), which costs at most an ulp.
         val (x, y) = CompositeGrade.geometry(0.77f, 0.12f, u.rotation, u.zoom)
-        assertEquals(0.77f, x, 0f)
-        assertEquals(0.12f, y, 0f)
+        assertEquals(0.77f, x, eps)
+        assertEquals(0.12f, y, eps)
     }
 
     @Test
