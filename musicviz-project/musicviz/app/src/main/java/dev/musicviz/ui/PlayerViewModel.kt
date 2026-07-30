@@ -328,6 +328,7 @@ class PlayerViewModel(
 
     init {
         engine.beatThresholdSigma = _guiPrefs.value.beatThresholdSigma
+        engine.beatMinIntervalMs = _guiPrefs.value.beatMinIntervalMs
         // Apply the restored reactivity to the engine (setReactivity normally
         // does this, but the restored values arrive outside that path).
         engine.smoother.attack = _vizState.value.attack
@@ -340,6 +341,7 @@ class PlayerViewModel(
         themeStore.saveGui(prefs)
         _guiPrefs.value = prefs
         engine.beatThresholdSigma = prefs.beatThresholdSigma
+        engine.beatMinIntervalMs = prefs.beatMinIntervalMs
     }
 
     fun setTheme(theme: AppTheme) {

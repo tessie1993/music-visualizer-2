@@ -1,6 +1,7 @@
 package dev.musicviz.analysis
 
 import kotlin.math.max
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
@@ -35,9 +36,24 @@ class FeatureExtractor(
     private val historySize = (hopRateHz * historySeconds).toInt()
     private val fluxHistory = FloatArray(historySize)
 
-    /** Beat sensitivity in sigmas over mean flux; higher = fewer, surer beats. */
+    /**
+     * Beat sensitivity in sigmas over mean flux; higher = fewer, surer beats.
+     * Clamped by callers to [SIGMA_MIN]..[SIGMA_MAX].
+     */
     @Volatile
-    var beatThresholdSigma: Float = 2.5f
+    var beatThresholdSigma: Float = SIGMA_DEFAULT
+
+    /**
+     * Refractory window: no second beat may fire until this many milliseconds
+     * have passed. This is the lever that actually tames slow tracks - a high
+     * sigma alone cannot, because sigma is measured against the track's own
+     * flux history, so a quiet ballad re-normalises and keeps firing on
+     * sustained pads, reverb tails and vibrato. Capping the rate directly
+     * ("at most one flash per 700 ms") is what a listener perceives.
+     * Clamped by callers to [INTERVAL_MS_MIN]..[INTERVAL_MS_MAX].
+     */
+    @Volatile
+    var beatMinIntervalMs: Float = INTERVAL_MS_DEFAULT
 
     /** Extra smoothing for the treble group, which is jumpy on hi-hats and was
      *  a flicker source when driving flash/strobe-style params. */
@@ -72,14 +88,18 @@ class FeatureExtractor(
         historyFilled = minOf(historyFilled + 1, historySize)
 
         val (mean, std) = fluxStats()
-        // 2.0 sigma (was 1.6) plus a 250 ms refractory (was 200 ms, i.e. up to
-        // 300 BPM): together with the band weighting this stops the beat flag
-        // strobing on high-frequency content while still catching real kicks.
-        // Threshold sigma is user-tunable (Settings > Analysis). The old fixed
-        // 2.0 sigma + short refractory fired on hi-hats/high-mids and made the
-        // visuals strobe on busy tracks.
+        // Two independent gates, both user-tunable (Settings > Visuals &
+        // Analysis). The old fixed 2.0 sigma + 200 ms refractory fired on
+        // hi-hats/high-mids and made the visuals strobe on busy tracks; the
+        // band weighting above plus the defaults here (2.5 sigma, 333 ms i.e.
+        // up to 180 BPM) fixed that for dance music, but left slow, soft
+        // tracks flashing because sigma is relative to the track's own flux
+        // history. Raising sigma toward SIGMA_MAX and widening the refractory
+        // toward INTERVAL_MS_MAX is what makes the detector genuinely less
+        // sensitive on a ballad.
         val threshold = mean + beatThresholdSigma * std
-        val isBeat = flux > threshold && flux > 0.02f && framesSinceBeat > (hopRateHz / 3f).toInt()
+        val refractoryFrames = (hopRateHz * beatMinIntervalMs / 1000f).roundToInt().coerceAtLeast(1)
+        val isBeat = flux > threshold && flux > 0.02f && framesSinceBeat > refractoryFrames
         framesSinceBeat = if (isBeat) 0 else framesSinceBeat + 1
 
         if (historyFilled >= historySize / 2) {
@@ -157,5 +177,44 @@ class FeatureExtractor(
     private fun chronological(i: Int): Float {
         val start = if (historyFilled < historySize) 0 else historyIndex
         return fluxHistory[(start + i) % historySize]
+    }
+
+    /**
+     * Single source of truth for the beat-detection bounds. [AnalysisEngine]
+     * clamps to these and the Settings sliders use them as their value range,
+     * so the slider can never silently saturate against a tighter clamp.
+     */
+    companion object {
+        /** Most sensitive usable threshold; below this the gate fires on noise. */
+        const val SIGMA_MIN = 1.5f
+
+        /**
+         * Least sensitive threshold. 6 sigma is the practical ceiling, not an
+         * arbitrary one: with a 6 s flux history at ~60 Hz (~375 samples), a
+         * beat occurring every ~0.9 s leaves p ~= 1/56 of the window above the
+         * baseline, and the largest z-score such a sample can reach is
+         * sqrt((1 - p) / p) ~= 7.4. Real onsets spread over several frames and
+         * land well under that, so anything past ~6 would mean "never fire" for
+         * most material - a mute switch rather than a sensitivity control.
+         */
+        const val SIGMA_MAX = 6f
+
+        /** Ships-with default; unchanged from before the range was widened. */
+        const val SIGMA_DEFAULT = 2.5f
+
+        /** 200 ms refractory = 300 BPM ceiling; fast enough for drum & bass. */
+        const val INTERVAL_MS_MIN = 200f
+
+        /** 1200 ms = 50 BPM ceiling, below the slowest common ballad tempo. */
+        const val INTERVAL_MS_MAX = 1200f
+
+        /** 333 ms (180 BPM ceiling): the value hard-coded before it was tunable. */
+        const val INTERVAL_MS_DEFAULT = 1000f / 3f
+
+        /** "Slow track" preset: strict threshold, at most ~85 flashes/minute. */
+        const val SLOW_SIGMA = 4.5f
+
+        /** "Slow track" preset partner value for [beatMinIntervalMs]. */
+        const val SLOW_INTERVAL_MS = 700f
     }
 }
