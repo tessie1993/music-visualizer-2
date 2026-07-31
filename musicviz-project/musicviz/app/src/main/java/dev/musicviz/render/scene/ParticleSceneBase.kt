@@ -86,7 +86,8 @@ abstract class ParticleSceneBase(
         val p = sceneParams
         rotationAngle += p.rotation * dt
         if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * dt) % 1f
-        beatPulse = if (features.beat) 1f else (beatPulse - dt * 3f).coerceAtLeast(0f)
+        // Graded: a soft hit nudges the envelope, a hard one snaps it high.
+        beatPulse = maxOf(features.beatImpulse, beatPulse - dt * 3f).coerceAtLeast(0f)
         simulate(features, dt)
         applyFlowField(p, dt)
         postProcess(p)

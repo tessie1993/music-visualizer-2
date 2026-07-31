@@ -24,6 +24,11 @@ import kotlin.math.roundToInt
  * fix stores the onset curve and replays the very same [FeatureExtractor.BeatGate]
  * over it, so the two paths cannot disagree; that agreement is the property
  * tested here.
+ *
+ * The gate now feeds [PulseTracker], which tempo-gates its candidates; the
+ * per-frame live/replay agreement below therefore covers the whole tracker,
+ * and the beat counts assert the grid's suppression on top of the sliders'.
+ * [PulseTrackerTest] covers the tracker's own behavior in detail.
  */
 class FeatureExtractorTest {
     private fun pulseBands(on: Boolean): FloatArray = FloatArray(64) { if (on) 0.9f else 0.05f }
@@ -121,13 +126,24 @@ class FeatureExtractorTest {
     }
 
     @Test
-    fun `slow sparse track loses its spurious flashes at the new high-sigma end`() {
+    fun `slow sparse track stays near its real kicks at the default settings`() {
+        // Only 12 kicks are real. The RAW gate fires on the in-between
+        // transients too - the historical strobe this pipeline kept being
+        // tuned against - which is exactly what [PulseTracker]'s tempo grid
+        // now suppresses without the user touching a slider.
+        val (_, flux) = liveRun(FeatureExtractor.SIGMA_DEFAULT, FeatureExtractor.INTERVAL_MS_DEFAULT)
+        val rawGate = FeatureExtractor.BeatGate(60f)
+        var raw = 0
+        for (i in flux.indices) {
+            if (rawGate.accept(flux[i]) && i > 180) raw++
+        }
         val atDefault = countSlowTrackBeats(FeatureExtractor.SIGMA_DEFAULT, FeatureExtractor.INTERVAL_MS_DEFAULT)
+        assertTrue("the raw gate must over-trigger here (got $raw), or this proves nothing", raw > 16)
+        assertTrue("the tempo grid should hold the default near the 12 kicks, got $atDefault vs raw $raw", atDefault <= 16)
+        assertTrue("but must not go deaf, got $atDefault", atDefault >= 8)
+        // The sigma ceiling still means "less sensitive", never more.
         val atCeiling = countSlowTrackBeats(FeatureExtractor.SIGMA_MAX, FeatureExtractor.INTERVAL_MS_DEFAULT)
-        // Only 12 kicks are real, so the default gate is firing on the
-        // in-between transients - that is the complaint being fixed.
-        assertTrue("default gate should over-trigger here, got $atDefault", atDefault > 16)
-        assertTrue("high sigma should suppress the extras, got $atCeiling vs $atDefault", atCeiling < atDefault / 2)
+        assertTrue("high sigma may only reduce the count, got $atCeiling vs $atDefault", atCeiling <= atDefault)
     }
 
     @Test

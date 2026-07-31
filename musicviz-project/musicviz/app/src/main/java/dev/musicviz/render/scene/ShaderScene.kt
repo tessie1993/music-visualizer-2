@@ -126,7 +126,8 @@ class ShaderScene(
         mid = (features.mid * p.audioDrive).coerceIn(0f, 1.5f)
         treble = (features.treble * p.audioDrive).coerceIn(0f, 1.5f)
         energy = (features.rms * p.audioDrive).coerceIn(0f, 1.5f)
-        beatPulse = if (features.beat) 1f else (beatPulse - dt * 3f).coerceAtLeast(0f)
+        // Graded: a soft hit nudges the envelope, a hard one snaps it high.
+        beatPulse = maxOf(features.beatImpulse, beatPulse - dt * 3f).coerceAtLeast(0f)
         // BPM-locked phase clock in [0,1): advances at the detected tempo and
         // softly resynchronizes on detected beats, so shader pulses land on
         // the actual musical beat instead of free-running.

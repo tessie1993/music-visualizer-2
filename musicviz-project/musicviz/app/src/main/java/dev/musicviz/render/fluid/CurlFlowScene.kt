@@ -150,7 +150,7 @@ internal class CurlFlowScene(
 
         if (f != null) {
             wallTime += lastDt
-            beatEnv = if (f.beat) 1f else beatEnv * kotlin.math.exp(-lastDt / 0.35f)
+            beatEnv = kotlin.math.max(f.beatImpulse, beatEnv * kotlin.math.exp(-lastDt / 0.35f))
             // The envelope carries the timing, "Beat response" the depth: the
             // slider had no reader on this style, so it moved nothing while
             // "Audio drive" (the field kick below) worked.

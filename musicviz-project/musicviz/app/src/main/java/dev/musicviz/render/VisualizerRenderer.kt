@@ -609,7 +609,7 @@ class VisualizerRenderer(
         lastFinalParams = p
         postRotationAngle = CompositeGrade.integrateRotation(postRotationAngle, p.rotation, dt)
         postCyclePhase = CompositeGrade.integrateCyclePhase(postCyclePhase, p.cycleSpeed, dt, p.colorCycle)
-        postBeatPulse = CompositeGrade.integrateBeatPulse(postBeatPulse, features.beat, dt)
+        postBeatPulse = CompositeGrade.integrateBeatPulse(postBeatPulse, features.beatImpulse, dt)
         if (fluidInjectionDirty) {
             fluidInjectionDirty = false
             (scenes[SceneIds.FLUID] as? dev.musicviz.render.fluid.FluidScene)
@@ -763,7 +763,7 @@ class VisualizerRenderer(
         GLES30.glUniform1i(cLoc("uStyle"), style.ordinal)
         val fx = lastFinalParams
         GLES30.glUniform1f(cLoc("uTime"), timeSeconds)
-        GLES30.glUniform1f(cLoc("uBeat"), if (features.beat) 1f else 0f)
+        GLES30.glUniform1f(cLoc("uBeat"), features.beatImpulse)
         GLES30.glUniform1f(cLoc("uChroma"), fx.chromaAb)
         GLES30.glUniform1f(cLoc("uVignette"), fx.vignette)
         GLES30.glUniform1f(cLoc("uScanline"), fx.scanlines)

@@ -27,7 +27,7 @@ class FountainScene(
     ) {
         val p = sceneParams
         val power = (features.bass * p.audioDrive).coerceIn(0f, 1.5f)
-        emitAcc += (6 + power * 60f * (1f + p.beatResponse * (if (features.beat) 2f else 0f))) * dt * 60f
+        emitAcc += (6 + power * 60f * (1f + p.beatResponse * 2f * features.beatImpulse)) * dt * 60f
         val emitCount = emitAcc.toInt().coerceAtMost(count)
         emitAcc -= emitCount
         repeat(emitCount) {

@@ -9,8 +9,10 @@ import kotlin.math.sqrt
  * energy groups, spectral-flux onsets, beat pulses and a BPM estimate via
  * autocorrelation of the onset envelope. Pure JVM; one instance per worker.
  *
- * The beat decision itself lives in [BeatGate], so that the live path and the
- * offline/cached path can run byte-identical code over the same onset curve.
+ * The beat decision itself lives in [PulseTracker] (candidate gating in
+ * [BeatGate], tempo-phase locking and strength grading above it), so that the
+ * live path and the offline/cached path can run byte-identical code over the
+ * same onset curve.
  */
 class FeatureExtractor(
     private val bandCount: Int = 64,
@@ -37,17 +39,18 @@ class FeatureExtractor(
             }
         }
 
-    /** Rolling flux history + beat gate; also the BPM autocorrelation source. */
-    private val gate = BeatGate(hopRateHz, historySeconds)
+    /** Tempo-phase-locked pulse tracking over the gated onset stream; owns
+     *  the rolling flux history and the BPM autocorrelation. */
+    private val tracker = PulseTracker(hopRateHz, historySeconds)
 
     /**
      * Beat sensitivity in sigmas over mean flux; higher = fewer, surer beats.
      * Clamped by callers to [SIGMA_MIN]..[SIGMA_MAX].
      */
     var beatThresholdSigma: Float
-        get() = gate.beatThresholdSigma
+        get() = tracker.gate.beatThresholdSigma
         set(value) {
-            gate.beatThresholdSigma = value
+            tracker.gate.beatThresholdSigma = value
         }
 
     /**
@@ -60,9 +63,9 @@ class FeatureExtractor(
      * Clamped by callers to [INTERVAL_MS_MIN]..[INTERVAL_MS_MAX].
      */
     var beatMinIntervalMs: Float
-        get() = gate.beatMinIntervalMs
+        get() = tracker.gate.beatMinIntervalMs
         set(value) {
-            gate.beatMinIntervalMs = value
+            tracker.gate.beatMinIntervalMs = value
         }
 
     /** Extra smoothing for the treble group, which is jumpy on hi-hats and was
@@ -90,23 +93,19 @@ class FeatureExtractor(
         val centroid = if (sum > 1e-6f) weighted / (sum * bandCount) else 0f
         val rms = sqrt(sumSq / bandCount)
 
-        // Two independent gates, both user-tunable (Settings > Visuals &
-        // Analysis). The old fixed 2.0 sigma + 200 ms refractory fired on
-        // hi-hats/high-mids and made the visuals strobe on busy tracks; the
-        // band weighting above plus the defaults here (2.5 sigma, 333 ms i.e.
-        // up to 180 BPM) fixed that for dance music, but left slow, soft
-        // tracks flashing because sigma is relative to the track's own flux
-        // history. Raising sigma toward SIGMA_MAX and widening the refractory
-        // toward INTERVAL_MS_MAX is what makes the detector genuinely less
-        // sensitive on a ballad.
-        val isBeat = gate.accept(flux)
-        val mean = gate.fluxMean
-        val std = gate.fluxStd
+        // The sigma threshold and refractory window (both user-tunable via
+        // Settings > Visuals & Analysis) produce beat CANDIDATES; the tracker
+        // then holds them against a tempo-phase grid so that only candidates
+        // landing where the music's pulse predicts them - or unmistakable
+        // accents - fire, each graded by how hard it actually hit. That is
+        // what turned "every transient flashes at full strength" into a beat
+        // stream a scene can follow; see [PulseTracker] for the model.
+        tracker.step(flux, rms)
+        val mean = tracker.gate.fluxMean
+        val std = tracker.gate.fluxStd
 
-        if (gate.filled >= gate.size / 2) {
-            val bpm = estimateBpm()
-            if (bpm > 0f) bpmSmoothed = if (bpmSmoothed == 0f) bpm else bpmSmoothed + (bpm - bpmSmoothed) * 0.1f
-        }
+        val bpm = tracker.bpmEstimate
+        if (bpm > 0f) bpmSmoothed = if (bpmSmoothed == 0f) bpm else bpmSmoothed + (bpm - bpmSmoothed) * 0.1f
 
         return AudioFeatures(
             bands = bands.copyOf(),
@@ -116,10 +115,14 @@ class FeatureExtractor(
             mid = groupEnergy(bands, bandCount / 8, bandCount / 2),
             treble = smoothTreble(groupEnergy(bands, bandCount / 2, bandCount)),
             onset = if (std > 1e-6f) ((flux - mean) / (3f * std)).coerceIn(0f, 1f) else 0f,
-            beat = isBeat,
+            beat = tracker.beat,
             bpm = bpmSmoothed,
             centroid = centroid,
             flux = flux,
+            beatStrength = tracker.strength,
+            beatPhase = tracker.phase,
+            pulseConfidence = tracker.confidence,
+            macroEnergy = tracker.energy,
         )
     }
 
@@ -139,38 +142,13 @@ class FeatureExtractor(
         return acc / (to - from)
     }
 
-    /** Autocorrelation of the onset envelope over lags covering 60-200 BPM. */
-    internal fun estimateBpm(): Float {
-        val filled = gate.filled
-        val minLag = (hopRateHz * 60f / 200f).toInt().coerceAtLeast(2)
-        val maxLag = (hopRateHz * 60f / 60f).toInt().coerceAtMost(filled / 2)
-        if (maxLag <= minLag) return 0f
-        var bestLag = 0
-        var bestScore = 0f
-        for (lag in minLag..maxLag) {
-            var score = 0f
-            val overlap = filled - lag
-            for (i in 0 until overlap) {
-                score += gate.chronological(i) * gate.chronological(i + lag)
-            }
-            // Normalize by overlap length: raw sums have more terms at small
-            // lags, which biased the estimate toward doubled BPM.
-            score /= overlap.coerceAtLeast(1)
-            if (score > bestScore) {
-                bestScore = score
-                bestLag = lag
-            }
-        }
-        return if (bestLag > 0) hopRateHz * 60f / bestLag else 0f
-    }
-
     /**
-     * The beat decision, split out of [FeatureExtractor] so that exactly one
-     * implementation exists. Live analysis drives it frame by frame; the
-     * offline/cached path replays it over the onset curve stored by
-     * [AnalysisCache] (see [decideBeats]). Same curve + same settings =>
-     * same beats, which is what keeps an exported video in step with what
-     * the user just watched during playback.
+     * The beat CANDIDATE decision - sigma threshold plus refractory window -
+     * split out of [FeatureExtractor] so that exactly one implementation
+     * exists. [PulseTracker] drives it frame by frame (live) or replays it
+     * over the onset curve stored by [AnalysisCache] (see [decideBeats]).
+     * Same curve + same settings => same beats, which is what keeps an
+     * exported video in step with what the user just watched during playback.
      *
      * Stateful and ordered: [accept] must be fed every frame, in order.
      */
@@ -290,12 +268,20 @@ class FeatureExtractor(
 
         /**
          * Re-decides the beat flags for a whole onset curve - the offline
-         * counterpart of the live per-frame gate, used when a cached timeline
+         * counterpart of the live per-frame path, used when a cached timeline
          * is read back at the user's *current* sensitivity. [flux] must be the
          * per-frame values in order, [hopRateHz] the rate they were produced
-         * at (the refractory and the history window are both measured in
-         * frames). Settings are clamped exactly as [AnalysisEngine] clamps
-         * them, so live and offline cannot drift apart at the extremes.
+         * at (the refractory, the history window and the tempo grid are all
+         * measured in frames). Settings are clamped exactly as
+         * [AnalysisEngine] clamps them, so live and offline cannot drift
+         * apart at the extremes.
+         *
+         * Runs the full [PulseTracker], not just the raw gate: the flags it
+         * returns are the tempo-gated beats live analysis shows. The beat
+         * decision is independent of the rms curve (energy only grades
+         * strength), so flux alone reproduces it exactly; callers that also
+         * need the graded strength/phase/energy curves should use
+         * [PulseTracker.decidePulse] with the stored rms directly.
          */
         fun decideBeats(
             flux: FloatArray,
@@ -303,13 +289,15 @@ class FeatureExtractor(
             beatThresholdSigma: Float,
             beatMinIntervalMs: Float,
             historySeconds: Float = HISTORY_SECONDS,
-        ): BooleanArray {
-            val gate = BeatGate(hopRateHz, historySeconds)
-            gate.beatThresholdSigma = beatThresholdSigma.coerceIn(SIGMA_MIN, SIGMA_MAX)
-            gate.beatMinIntervalMs = beatMinIntervalMs.coerceIn(INTERVAL_MS_MIN, INTERVAL_MS_MAX)
-            val out = BooleanArray(flux.size)
-            for (i in flux.indices) out[i] = gate.accept(flux[i])
-            return out
-        }
+        ): BooleanArray =
+            PulseTracker
+                .decidePulse(
+                    flux,
+                    FloatArray(0),
+                    hopRateHz,
+                    beatThresholdSigma,
+                    beatMinIntervalMs,
+                    historySeconds,
+                ).beat
     }
 }

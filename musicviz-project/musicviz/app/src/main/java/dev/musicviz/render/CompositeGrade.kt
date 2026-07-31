@@ -157,16 +157,26 @@ internal object CompositeGrade {
     ): Float = if (enabled) (phase + cycleSpeed * dt) % 1f else phase
 
     /**
-     * Beat envelope for the composite pass: snaps to 1 on a detected beat and
-     * decays linearly at [BEAT_DECAY] per second, the same envelope
-     * `ParticleSceneBase.update` keeps. The composite pass has no BPM phase
-     * clock (that lives in `ShaderScene`), so this is what drives its pulse.
+     * Beat envelope for the composite pass: snaps to the beat's graded
+     * impulse ([dev.musicviz.analysis.AudioFeatures.beatImpulse] - how hard
+     * the hit actually was, up to 1) and decays linearly at [BEAT_DECAY] per
+     * second, the same envelope `ParticleSceneBase.update` keeps. The
+     * composite pass has no BPM phase clock (that lives in `ShaderScene`),
+     * so this is what drives its pulse.
      */
+    fun integrateBeatPulse(
+        envelope: Float,
+        impulse: Float,
+        dt: Float,
+    ): Float = maxOf(impulse, (envelope - dt * BEAT_DECAY)).coerceAtLeast(0f)
+
+    /** Boolean convenience for callers without a graded impulse: a beat is a
+     *  full-strength kick, exactly the pre-[PulseTracker] behavior. */
     fun integrateBeatPulse(
         envelope: Float,
         beat: Boolean,
         dt: Float,
-    ): Float = if (beat) 1f else (envelope - dt * BEAT_DECAY).coerceAtLeast(0f)
+    ): Float = integrateBeatPulse(envelope, if (beat) 1f else 0f, dt)
 
     /**
      * The value uploaded as `uPostPulse`: the slider scaled by the SQUARED

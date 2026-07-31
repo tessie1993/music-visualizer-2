@@ -188,7 +188,8 @@ class ProjectMScene(
         rotationAngle += p.rotation * dt
         zoomPhase = if (p.endlessZoom) (zoomPhase + p.endlessZoomSpeed * dt) % 1f else 0f
         if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * dt) % 1f
-        beatPulse = if (features.beat) 1f else (beatPulse - dt * 3f).coerceAtLeast(0f)
+        // Graded: a soft hit nudges the envelope, a hard one snaps it high.
+        beatPulse = maxOf(features.beatImpulse, beatPulse - dt * 3f).coerceAtLeast(0f)
         if (handle == 0L) return
         val chunk = pcmProvider()
         if (chunk != null && chunk.count > 0) {

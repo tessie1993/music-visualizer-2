@@ -4,6 +4,7 @@ import dev.musicviz.analysis.AudioFeatures
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.exp
+import kotlin.math.max
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
@@ -133,9 +134,10 @@ internal class FluidEmitters(
         baseHue: Float,
         hueSpan: Float,
     ): List<FluidSim.Splat> {
-        // Envelopes: beat -> instant attack, ~0.3 s release; bass follower.
-        // The raw envelope carries the timing, "Beat response" the depth.
-        beatEnvRaw = if (f.beat) 1f else beatEnvRaw * exp(-dt / 0.3f)
+        // Envelopes: beat -> instant attack to the beat's graded impulse,
+        // ~0.3 s release; bass follower. The raw envelope carries the timing,
+        // "Beat response" the depth.
+        beatEnvRaw = max(f.beatImpulse, beatEnvRaw * exp(-dt / 0.3f))
         beatEnv = beatEnvRaw * beatResponse.coerceIn(MIN_BEAT_RESPONSE, MAX_BEAT_RESPONSE)
         val bassTarget = (f.bass * 1.2f).coerceIn(0f, 1f)
         bassEnv +=

@@ -224,7 +224,7 @@ internal class FluidScene(
         sim.audioMid = f.mid
         sim.audioTreble = f.treble
         sim.audioEnergy = energy
-        sim.audioBeat = if (f.beat) 1f else 0f
+        sim.audioBeat = f.beatImpulse
         sim.timeSeconds = time
 
         // The progression engine: spawn/catch anchors journey with the track.

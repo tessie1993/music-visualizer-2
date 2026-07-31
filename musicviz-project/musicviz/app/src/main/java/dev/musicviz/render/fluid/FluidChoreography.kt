@@ -4,6 +4,7 @@ import dev.musicviz.analysis.AudioFeatures
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -139,7 +140,7 @@ internal class FluidChoreography {
         // bloom twice per beat on 120 Hz displays and diverged from export.
         if (f.beat && !prevBeat) beatCount++
         prevBeat = f.beat
-        beatEnv = if (f.beat) 1f else beatEnv * kotlin.math.exp(-dt / 0.35f)
+        beatEnv = max(f.beatImpulse, beatEnv * kotlin.math.exp(-dt / 0.35f))
         val bassTarget = (f.bass * 1.2f).coerceIn(0f, 1f)
         bassEnv += (bassTarget - bassEnv) * (if (bassTarget > bassEnv) (dt / 0.03f) else (dt / 0.45f)).coerceAtMost(1f)
 
