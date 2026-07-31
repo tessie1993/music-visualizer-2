@@ -17,6 +17,12 @@ uniform float uGrain;
 uniform float uGlitch;
 uniform float uFisheye;
 uniform float uStrobe;
+// Strobe rate in flashes/second. Was the literal 9.0 below, which no user
+// control could reach - so "less strobe" only ever meant a DIMMER 9 Hz
+// flicker, never a slower one, and 9 Hz sits inside the band that provokes
+// photosensitive seizures. VisualSafety.strobeHz owns this value: it stays
+// 9.0 unless Safe visuals is on, so nothing changes by default.
+uniform float uStrobeHz;
 // PER-TEXTURE GATES. Which of the uPost* groups below the composite must
 // apply is a property of the SCENE, not of the frame: shader scenes already
 // warp/grade in view()/grade(), particle scenes in particle_vert/frag,
@@ -287,7 +293,9 @@ vec3 postFx(sampler2D tex, vec2 uv, vec4 gate) {
         col *= 1.0 - uVignette * smoothstep(0.5, 1.05, d);
     }
     if (uStrobe > 0.001) {
-        col *= 1.0 - uStrobe * 0.85 * step(0.5, fract(uTime * 9.0)) * (1.0 - uBeat * 0.5);
+        // max() so an unset uniform (0.0) cannot freeze the strobe on a
+        // permanently-dark half-cycle; the default upload is 9.0.
+        col *= 1.0 - uStrobe * 0.85 * step(0.5, fract(uTime * max(uStrobeHz, 0.1))) * (1.0 - uBeat * 0.5);
     }
     if (geoOn) {
         col.r += uPostTemp * 0.12;

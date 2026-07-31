@@ -2,6 +2,7 @@ package dev.musicviz.analysis
 
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.pow
 
 /**
  * Tempo-phase-locked pulse tracking: the layer between raw onset detection and
@@ -59,7 +60,17 @@ class PulseTracker(
     var beat: Boolean = false
         private set
 
-    /** Graded weight of an accepted beat, [STRENGTH_FLOOR]..1; 0 off-beat. */
+    /**
+     * Graded weight of an accepted beat; 0 off-beat.
+     *
+     * The upper bound is 1. The lower bound is NOT [STRENGTH_FLOOR]: that is
+     * the floor of the pre-scaling curve in [grade], which is then multiplied
+     * by the macro-energy term ([ENERGY_BASE]..1) and, while the grid is
+     * unlocked, by [UNLOCKED_SCALE]. The weakest beat this can emit is
+     * therefore `STRENGTH_FLOOR * ENERGY_BASE * UNLOCKED_SCALE` (0.168) - a
+     * quiet hit early in a track the tracker has not locked yet. Consumers
+     * sizing a minimum visible response should use that number, not 0.35.
+     */
     var strength: Float = 0f
         private set
 
@@ -99,10 +110,50 @@ class PulseTracker(
     private var predictedFrame = 0f
     private var locked = false
     private var tempoClarity = 0f
-    private var divergentFrames = 0
+    private var divergentUpdates = 0
     private var predictionStreak = 0
     private var anchorZ = 0f
     private var transientBudget = 1f
+
+    /** Scratch for [updateTempo]'s chronological scan; see [BeatGate.copyChronological]. */
+    private val tempoScratch = FloatArray(gate.size)
+
+    /**
+     * Returns the tracker to its just-constructed state, keeping the gate's
+     * user settings ([FeatureExtractor.beatThresholdSigma] and
+     * [FeatureExtractor.beatMinIntervalMs]).
+     *
+     * MUST be called whenever the audio stream becomes discontinuous - a track
+     * change or a seek. Everything this class holds is a claim about ONE piece
+     * of music: a locked period and phase, the confidence behind them, the
+     * rolling flux window the sigma threshold is measured against, and the
+     * 30-second energy peak. Carried into a different track those claims are
+     * actively wrong - the old grid suppresses the new track's beats as
+     * off-grid, and the old peak grades whatever survives against a loudness
+     * that is no longer there. Resetting also restores the determinism
+     * contract: [decidePulse] always replays from frame 0, so the live path
+     * must start there too or export and playback disagree.
+     */
+    fun reset() {
+        gate.reset()
+        energyFollower.reset()
+        frame = 0
+        periodFrames = 0f
+        predictedFrame = 0f
+        locked = false
+        tempoClarity = 0f
+        divergentUpdates = 0
+        predictionStreak = 0
+        anchorZ = 0f
+        transientBudget = 1f
+        beat = false
+        strength = 0f
+        transient = 0f
+        phase = 0f
+        confidence = 0f
+        energy = 0f
+        bpmEstimate = 0f
+    }
 
     /** Feeds one frame's flux and rms; read the outputs afterwards. */
     fun step(
@@ -114,7 +165,15 @@ class PulseTracker(
         val candidate = gate.accept(flux)
         val std = gate.fluxStd
         val z = if (std > 1e-6f) (flux - gate.fluxMean) / std else 0f
-        if (gate.filled >= gate.size / 2) updateTempo()
+        // The autocorrelation is O(lags x window) and tempo does not change on
+        // a 16 ms timescale, so it refreshes on a fixed frame cadence rather
+        // than every frame - the first estimate still lands the moment the
+        // history half-fills. Everything downstream is expressed in seconds
+        // ([PERIOD_TRACK_GAIN], [PERIOD_SNAP_SECONDS]) and rescaled by the
+        // cadence, so the tracking behaviour is unchanged; only the cost is.
+        // Keyed off [frame], which [reset] zeroes, so the offline replay in
+        // [decidePulse] refreshes on exactly the same frames as live analysis.
+        if (gate.filled >= gate.size / 2 && (periodFrames <= 0f || frame % TEMPO_REFRESH_FRAMES == 0)) updateTempo()
 
         beat = false
         strength = 0f
@@ -233,7 +292,19 @@ class PulseTracker(
         val filled = gate.filled
         val minLag = minPeriod().toInt().coerceAtLeast(2)
         val maxLag = maxPeriod().toInt().coerceAtMost(filled / 2)
-        if (maxLag <= minLag) return
+        // Too little history to measure a period. The window is still growing,
+        // so say nothing rather than leaving a stale clarity in place: an
+        // unrefreshed clarity keeps the confidence-decay gate in [step]
+        // disarmed, which would let the tracker hold a lock it can no longer
+        // justify. Same reasoning for the no-peak return below.
+        if (maxLag <= minLag) {
+            tempoClarity = 0f
+            return
+        }
+        // One chronological copy instead of two modulo-indexed reads per term:
+        // the scan below is O(lags x window), so hoisting the index arithmetic
+        // out of it is most of this function's cost.
+        gate.copyChronological(tempoScratch)
         var bestLag = 0
         var bestScore = 0f
         var scoreSum = 0f
@@ -241,7 +312,7 @@ class PulseTracker(
             var score = 0f
             val overlap = filled - lag
             for (i in 0 until overlap) {
-                score += gate.chronological(i) * gate.chronological(i + lag)
+                score += tempoScratch[i] * tempoScratch[i + lag]
             }
             // Normalize by overlap length: raw sums have more terms at small
             // lags, which biased the estimate toward doubled BPM.
@@ -252,7 +323,13 @@ class PulseTracker(
                 bestLag = lag
             }
         }
-        if (bestLag <= 0) return
+        if (bestLag <= 0) {
+            // Flat or silent onset envelope (a breakdown, a fade): there is no
+            // periodicity to claim, which is exactly when confidence must be
+            // allowed to decay.
+            tempoClarity = 0f
+            return
+        }
         bpmEstimate = hopRateHz * 60f / bestLag
         val meanScore = scoreSum / (maxLag - minLag + 1)
         tempoClarity = if (bestScore > 1e-9f) (1f - meanScore / bestScore).coerceIn(0f, 1f) else 0f
@@ -266,20 +343,30 @@ class PulseTracker(
                 // A harmonic flip or real tempo change - but only re-seat the
                 // grid once the new estimate has PERSISTED, or a single noisy
                 // autocorrelation frame would break an otherwise solid lock.
-                divergentFrames++
-                if (divergentFrames >= (hopRateHz * PERIOD_SNAP_SECONDS).toInt()) {
+                divergentUpdates++
+                if (divergentUpdates >= snapUpdates()) {
                     periodFrames = target
                     predictedFrame = frame + target
-                    divergentFrames = 0
+                    divergentUpdates = 0
                     confidence *= 0.5f
                 }
             }
             else -> {
-                divergentFrames = 0
-                periodFrames += PERIOD_TRACK_GAIN * (target - periodFrames)
+                divergentUpdates = 0
+                periodFrames += trackGain() * (target - periodFrames)
             }
         }
     }
+
+    /**
+     * Per-refresh period-tracking gain equivalent to [PERIOD_TRACK_GAIN]
+     * applied once per frame: `1 - (1 - g)^n` is the exact one-pole
+     * equivalent, so the convergence TIME is unchanged by the refresh cadence.
+     */
+    private fun trackGain(): Float = 1f - (1f - PERIOD_TRACK_GAIN).pow(TEMPO_REFRESH_FRAMES)
+
+    /** [PERIOD_SNAP_SECONDS] expressed in refreshes rather than frames. */
+    private fun snapUpdates(): Int = (hopRateHz * PERIOD_SNAP_SECONDS / TEMPO_REFRESH_FRAMES).toInt().coerceAtLeast(1)
 
     /**
      * Track-relative macro dynamics: a fast-attack/slow-release follower of
@@ -295,16 +382,18 @@ class PulseTracker(
         private var follower = 0f
         private var peak = 0f
 
-        /** Envelope after the latest frame, 0..1. */
-        var value = 0f
-            private set
+        /** Forgets the previous track's level and rolling peak. */
+        fun reset() {
+            follower = 0f
+            peak = 0f
+        }
 
+        /** Advances one frame and returns the envelope, 0..1. */
         fun step(rms: Float): Float {
             val tau = if (rms > follower) ATTACK_SECONDS else RELEASE_SECONDS
             follower += (rms - follower) * (dt / tau).coerceAtMost(1f)
             peak = max(follower, peak - peak * dt / PEAK_DECAY_SECONDS)
-            value = if (peak > SILENCE_FLOOR) (follower / peak).coerceIn(0f, 1f) else 0f
-            return value
+            return if (peak > SILENCE_FLOOR) (follower / peak).coerceIn(0f, 1f) else 0f
         }
 
         private companion object {
@@ -405,8 +494,22 @@ class PulseTracker(
         /** How long a divergent tempo must persist before the grid re-seats. */
         const val PERIOD_SNAP_SECONDS = 1.5f
 
-        /** Tracking gain from the autocorrelation period into the grid's. */
+        /** Tracking gain from the autocorrelation period into the grid's,
+         *  expressed per FRAME; [trackGain] converts it to the refresh rate. */
         const val PERIOD_TRACK_GAIN = 0.02f
+
+        /**
+         * Frames between autocorrelation refreshes. The scan is
+         * O(lags x window) - about 45 lags over a ~375-sample window at the
+         * shipped settings - so running it per frame cost roughly 100x what
+         * the rest of [step] does, which showed up as a multi-second stall
+         * every time [FeatureTimeline.withBeatSensitivity] replayed a track
+         * (cached track load, beat-sensitivity slider settle, export start).
+         * 8 frames is ~128 ms at the live hop rate: far finer than any real
+         * tempo change, and both time constants that depend on it are
+         * rescaled ([trackGain], [snapUpdates]) so behaviour is unchanged.
+         */
+        const val TEMPO_REFRESH_FRAMES = 8
 
         /**
          * Replays the tracker over a stored flux/rms curve - the offline

@@ -96,12 +96,22 @@ class LfoEngine {
     private val totalPhase = FloatArray(3)
     private val lastCycle = IntArray(3) { -1 }
 
-    /** Advances phases and returns each LFO's bipolar output value. */
+    /**
+     * Advances phases and returns each LFO's bipolar output value.
+     *
+     * [safety] caps the rate of any LFO pointed at a full-frame luminance
+     * param. Clamping the VALUES afterwards (which `VisualSafety.apply` does)
+     * bounds where the oscillation goes but not how fast it gets there, and a
+     * square-wave LFO swinging brightness at the 30 Hz ceiling below is the
+     * worst flash the app can produce - reachable by rate-chaining, or by the
+     * randomizer rolling an LFO onto Brightness.
+     */
     fun tick(
         dt: Float,
         bpm: Float,
         extRateAdd: FloatArray? = null,
         extDepthAdd: FloatArray? = null,
+        safety: VisualSafety.SafetyConfig = VisualSafety.SafetyConfig.OFF,
     ): FloatArray {
         val cfgs = configs
         val out = FloatArray(3)
@@ -117,7 +127,12 @@ class LfoEngine {
                 } else {
                     c.rateHz
                 }
-            val rate = (baseRate + rateAdd[i]).coerceIn(0.01f, 30f)
+            val rate =
+                VisualSafety.limitLfoRate(
+                    (baseRate + rateAdd[i]).coerceIn(0.01f, 30f),
+                    c.target,
+                    safety,
+                )
             val depth = (c.depth + depthAdd[i]).coerceIn(0f, 2f)
             phases[i] = (phases[i] + rate * dt) % 1f
             totalPhase[i] += rate * dt

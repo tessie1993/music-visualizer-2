@@ -176,6 +176,41 @@ class PulseTrackerTest {
     }
 
     @Test
+    fun `the transient channel obeys the photosensitivity flash-rate cap`() {
+        // SAFETY INVARIANT. VisualSafety limits flashing by RAISING the
+        // analysis gate's minimum gap between beats - it documents that gap
+        // as "the only lever that reaches it", because the rate is set
+        // upstream in the analyzer. That argument holds for the transient
+        // channel only because transients fire on GATE CANDIDATES, which the
+        // refractory rate-caps just like beats. Anything that made transients
+        // fire straight off the flux curve would silently escape the cap, so
+        // pin the property here.
+        val intervalMs = 1000f / 3f // the WCAG 3 Hz limit
+        val t = tracker(intervalMs = intervalMs)
+        // Onsets arriving at 6 Hz - twice the 3 Hz cap - so the refractory is
+        // the only thing that can hold the rate down. (Much denser than this
+        // and the spikes dominate their own flux history, so the sigma gate
+        // stops seeing them as onsets at all: a different, weaker fixture.)
+        var lastImpulseFrame = -1
+        var impulses = 0
+        var minGap = Int.MAX_VALUE
+        for (frame in 0 until 2400) {
+            t.step(if (frame % 10 == 0) 1.5f else 0.02f, 0.6f)
+            if (t.beat || t.transient > 0f) {
+                impulses++
+                if (lastImpulseFrame >= 0) minGap = minOf(minGap, frame - lastImpulseFrame)
+                lastImpulseFrame = frame
+            }
+        }
+        assertTrue("the fixture must produce impulses, got $impulses", impulses > 20)
+        val minGapMs = minGap * 1000f / HOP
+        assertTrue(
+            "impulses came ${minGapMs}ms apart, faster than the ${intervalMs}ms floor",
+            minGapMs >= intervalMs - 1f,
+        )
+    }
+
+    @Test
     fun `motion impulse blends beats with softened transients`() {
         val f = AudioFeatures.empty()
         // A beat dominates; a lone transient contributes at reduced weight.
@@ -396,6 +431,49 @@ class PulseTrackerTest {
             assertEquals("beat at frame $i", withRms.beat[i], withoutRms.beat[i])
         }
         assertFalse("but strength must differ (energy shapes it)", withRms.strength.contentEquals(withoutRms.strength))
+    }
+
+    @Test
+    fun `reset makes a reused tracker identical to a fresh one`() {
+        // The live path holds ONE extractor for the whole session while the
+        // audio it sees changes underneath it. Without a reset at the track
+        // boundary the previous track's locked grid suppresses the new
+        // track's kicks as off-grid and its rolling energy peak grades what
+        // survives - and playback stops matching export, because the offline
+        // replay always starts from a cold tracker.
+        fun run(
+            t: PulseTracker,
+            period: Int,
+            level: Float,
+            frames: Int,
+        ): List<Triple<Int, Float, Float>> {
+            val hits = mutableListOf<Triple<Int, Float, Float>>()
+            for (frame in 0 until frames) {
+                t.step(kickAndOffbeatFlux(frame, period) * level, 0.4f * level)
+                if (t.beat) hits += Triple(frame, t.strength, t.phase)
+            }
+            return hits
+        }
+
+        // A loud fast track, then a quiet slow one on the same tracker.
+        val reused = tracker()
+        run(reused, period = 28, level = 1f, frames = WARMUP + 600)
+        reused.reset()
+        val afterReset = run(reused, period = 64, level = 0.3f, frames = WARMUP)
+
+        val fresh = run(tracker(), period = 64, level = 0.3f, frames = WARMUP)
+        assertEquals("reset must reproduce a fresh tracker exactly", fresh, afterReset)
+
+        // And prove the reset is doing real work on this fixture, so the
+        // assertion above cannot pass by the two runs being trivially equal.
+        val leaked = tracker()
+        run(leaked, period = 28, level = 1f, frames = WARMUP + 600)
+        val withoutReset = run(leaked, period = 64, level = 0.3f, frames = WARMUP)
+        assertTrue(
+            "carrying the previous track's grid must visibly cost beats " +
+                "(fresh=${fresh.size}, leaked=${withoutReset.size})",
+            withoutReset.size < fresh.size,
+        )
     }
 
     @Test

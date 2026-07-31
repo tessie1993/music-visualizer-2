@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import dev.musicviz.render.VisualSafety
 import dev.musicviz.render.VisualizerView
 
 /**
@@ -22,6 +23,7 @@ fun VisualizerEngineBindings(
     val lfos by viewModel.lfos.collectAsState()
     val adsrs by viewModel.adsrs.collectAsState()
     val playerPrefs by viewModel.playerPrefs.collectAsState()
+    val gui by viewModel.guiPrefs.collectAsState()
 
     LaunchedEffect(Unit) {
         visualizerView.visualizerRenderer.onShaderError = viewModel::reportShaderError
@@ -45,9 +47,16 @@ fun VisualizerEngineBindings(
         visualizerView.visualizerRenderer.lfoEngine.configs = lfos
         visualizerView.visualizerRenderer.adsrEngine.configs = adsrs
     }
-    LaunchedEffect(viz.transitionStyle, viz.transitionDurationSec) {
-        visualizerView.visualizerRenderer.transitionStyle = viz.transitionStyle
+    LaunchedEffect(viz.transitionStyle, viz.transitionDurationSec, gui.safety) {
+        // A hard CUT swaps the whole frame in one frame, so Safe visuals
+        // substitutes a crossfade. The user's stored choice is untouched -
+        // turning safety back off restores it.
+        visualizerView.visualizerRenderer.transitionStyle =
+            VisualSafety.transitionStyle(viz.transitionStyle, gui.safety)
         visualizerView.visualizerRenderer.transitionDurationMs = (viz.transitionDurationSec * 1000).toLong()
+    }
+    LaunchedEffect(gui.safety) {
+        visualizerView.visualizerRenderer.safety = gui.safety
     }
     LaunchedEffect(Unit) {
         viewModel.morphFade.collect { visualizerView.visualizerRenderer.beginParamMorph(it) }

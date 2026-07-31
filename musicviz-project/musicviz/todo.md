@@ -463,6 +463,163 @@ it was left and what closing it involves.
       condition on FLUID. Every remaining Journey control was re-checked and
       does have a `WaterScene` reader (see `docs/PARAM_MATRIX.md`).
 
+## Known gaps — pulse-tracker review (v1.1.x)
+Findings from an adversarial review of the `PulseTracker` + graded-transient
+commits, verified by compiling the analysis package standalone and driving the
+real classes (the Android build cannot resolve its plugins offline).
+
+- [x] **The tracker's state was never cleared between tracks or on a seek.**
+      `AnalysisEngine` holds one `FeatureExtractor` for the whole session, so
+      the locked beat grid, the 30 s rolling energy peak and the flux history
+      all carried into the next track — the old grid then suppressed the new
+      track's kicks as off-grid. Measured on a 128 BPM loud → 75 BPM quiet
+      change: 1 beat in the first 5 s against 6 from a cold extractor, and the
+      survivors graded at 0.208 against 0.739. It also broke the export-parity
+      contract, since the offline replay always starts cold. CLOSED:
+      `reset()` on `PulseTracker`/`BeatGate`/`EnergyFollower`/`BandSmoother`/
+      `FeatureExtractor`/`AnalysisEngine`, called from `onTrackChanged` and
+      from a new `onPositionDiscontinuity` seek branch. The engine's reset is
+      a volatile flag consumed by the worker loop, NOT a direct call: the
+      extractor is single-threaded state owned by that coroutine and the
+      player callbacks arrive on the main thread. Pinned by
+      `PulseTrackerTest."reset makes a reused tracker identical to a fresh
+      one"`, which asserts both directions — reset output is bit-identical to
+      a fresh tracker, and the un-reset run is measurably worse, so the test
+      cannot pass by the two fixtures being trivially equal. Device check 37.
+- [x] **`withBeatSensitivity` ran the tempo autocorrelation on every frame.**
+      O(lags × window) per frame — ~1.5 s for a 4-minute track — on a path
+      that runs at cached-track load, on every beat-sensitivity slider settle
+      and before every export. CLOSED: the autocorrelation refreshes every
+      `TEMPO_REFRESH_FRAMES` (8, ~128 ms) instead of every frame, and its
+      inner loop reads a chronological copy of the flux window instead of
+      doing two modulos per term (`BeatGate.copyChronological`). ~1460 ms →
+      ~61 ms on the same fixture. Both time constants that depended on the
+      per-frame cadence are rescaled (`trackGain` uses the exact one-pole
+      equivalent `1-(1-g)^n`, `snapUpdates` converts `PERIOD_SNAP_SECONDS`),
+      so behaviour is unchanged: beat decisions are byte-identical across 4
+      fixtures × 4 settings, and live/offline replay still agrees frame for
+      frame. NOTE the BPM *readout* can differ where the autocorrelation was
+      already ambiguous between harmonics (it samples different frames); on
+      fixtures where it locks cleanly it is unchanged. `bpmSmoothed` stays
+      poled per FRAME on purpose — it is a lowpass on a displayed number, so
+      its wall-clock time constant is what matters. Device check 38.
+- [x] `updateTempo`'s early returns left `tempoClarity` stale, which kept the
+      confidence-decay gate disarmed through a breakdown (the tracker held a
+      lock it could no longer justify), and `divergentFrames` only reset in
+      the tracking branch, so divergences from unrelated passages accumulated
+      toward a spurious grid re-seat. Both returns now zero the clarity, and
+      the counter is per-refresh (`divergentUpdates`).
+- [x] Docs corrected against the code: `beatStrength`'s real range is
+      0.168..1, not the 0.35..1 that `PulseTracker`'s KDoc and
+      MUSICAL_PULSE.md both claimed (0.35 is the floor BEFORE the energy and
+      unlocked multipliers); MUSICAL_PULSE.md's consumer table claimed ADSR
+      attack and beat-edge splat firing had moved to `beatImpulse` when both
+      still branch on the raw `beat` flag — they are listed as deliberately
+      ungraded now, with the reason (both retrigger something that already
+      has its own amplitude envelope, so grading the trigger would grade the
+      same hit twice); `ExportGradeState`'s KDoc no longer says the envelope
+      is "1 on a beat" or names `beatImpulse` where production passes
+      `motionImpulse`; `decideBeats` no longer claims to be the cached-replay
+      path, which it has not been since `withBeatSensitivity` started calling
+      `decidePulse` directly.
+- [x] Tests that could not fail: the sigma-ceiling assertion was
+      `atCeiling <= atDefault`, which passes when the control does nothing
+      AND when it silences the track. Replaced with a strict reduction plus a
+      usability bound at `SLOW_SIGMA`. The export beat-parity test drove the
+      `advance(beat: Boolean)` convenience overload, so it exercised a branch
+      nothing ships; it now passes `features.motionImpulse` like
+      `FxCompositor` does, and a new test pins that the export pulse actually
+      follows the beat's graded strength.
+- [ ] `EnergyFollower.value` was dead public state (written per frame, read
+      nowhere); removed in favour of `step`'s return value. Nothing to do —
+      recorded so the removal is not re-added as a "missing accessor".
+- [ ] **Judgement call left for the user: `SIGMA_MAX = 6` can be a mute
+      switch.** Measured sweep on the slow-sparse test fixture at the default
+      gap: 2.0–3.0 → 24 beats, 3.5–5.0 → 11–12 (the twelve real kicks),
+      5.5–6.0 → **0**. The cliff is the sigma gate itself, not the tempo grid
+      (the raw candidate gate also yields 0 at 6σ), and it is inherent to
+      thresholding against a track's own flux — for sparse quiet material
+      there is always a sigma above which nothing passes. But `SIGMA_MAX`'s
+      own KDoc argues 6 was chosen because anything higher "would mean 'never
+      fire' for most material — a mute switch rather than a sensitivity
+      control", so on this material the constant is already past its stated
+      rationale. Options: lower `SIGMA_MAX` to ~5, or leave it and accept
+      that the extreme end of the slider can go silent. NOT changed here: it
+      is a user-facing change to a shipped slider range, on the evidence of
+      one synthetic fixture. Worth confirming on real tracks first
+      (device check 26 already exercises this slider).
+- [ ] Not changed, and worth stating: the review flagged
+      `integrateBeatPulse`'s `max(impulse, decayed)` as dropping soft beats.
+      Its worked example is arithmetically wrong (`max(0.4, 0.8 - 0.15×3)` is
+      0.4, not 0.35 — the soft beat wins and the envelope rises). The `max`
+      form is a peak-hold-with-decay, which is a coherent envelope follower,
+      and at `BEAT_DECAY` = 3/s a full-strength hit is spent in 333 ms, so
+      the window in which a later beat is swallowed is roughly the window in
+      which it would be perceptually masked anyway. Changing it would be a
+      taste change across seven files (`CompositeGrade`, `ShaderScene`,
+      `ParticleSceneBase`, `ProjectMScene`, `FluidEmitters`,
+      `FluidChoreography`, `CurlFlowScene`), so it wants a device check on
+      real material, not a headless argument.
+
+## Visual safety (v1.1.x) — photosensitivity limits
+From docs/FEATURE_AUDIT.md's recommendation to move this ahead of the rest of
+the new brief. Settings > Visual safety; `render/VisualSafety.kt`, pinned by
+`VisualSafetyTest`. Device check 39.
+
+- [x] **Nothing bounded the flashing paths.** An audit of every strobe/flash/
+      invert path found zero clamps anywhere in the tree. Three were reachable
+      without doing anything unusual: `strobe` ran a **9 Hz** full-frame square
+      wave at up to 85% depth with the RATE hard-coded in
+      `composite_frag.glsl` (so "less strobe" only ever meant a dimmer 9 Hz
+      flicker); `flash` fires once per beat, so its rate is the track's and
+      nothing capped it; and an LFO can target `BRIGHTNESS`/`INTENSITY` at up
+      to **30 Hz** — which `ParamRandomizer` can roll. 9-30 Hz is the band
+      photosensitive-seizure guidance is about.
+- [x] `VisualSafety.apply` runs LAST, after `LfoEngine.apply` and
+      `AdsrEngine.apply`, at the two-line idiom both paths already share
+      (`VisualizerRenderer` and `VideoExporter`). Clamping the stored params
+      instead would be bypassed — the modulators push those values straight
+      back up to their own ceilings afterwards.
+- [x] Rate is capped, not just depth: new `uStrobeHz` uniform (defaults to the
+      old literal 9.0, uploaded by BOTH the renderer and `FxCompositor`);
+      `LfoEngine.tick` takes the config and slows any LFO pointed at a
+      luminance target; the analyzer's minimum beat gap is floored so the
+      beat-driven flash cannot outrun the limit; a hard `CUT` transition
+      becomes a crossfade.
+- [x] Thresholds follow WCAG 2.3.1 — three flashes per second, risk peaking
+      around 15-20 Hz — with the rate, the depth and inversion all separately
+      adjustable, plus an independent Reduced motion switch (vestibular
+      comfort is a different problem from seizures and the two settings say
+      so).
+- [x] Disabled is an EXACT no-op: `apply` returns the same instance, not an
+      equal copy, so saved presets and the export byte-parity tests are
+      untouched. Pinned by `assertSame`.
+
+- [ ] **DECISION FOR THE USER: should Safe visuals default ON?** It ships OFF,
+      matching this codebase's rule that optional visual additions are exact
+      no-ops so nobody's saved work changes on upgrade. But the asymmetry runs
+      the other way for a safety setting: defaulting off risks a seizure,
+      defaulting on risks tamer visuals until someone flips a switch. The real
+      answer is probably neither — ask during first-run onboarding, which does
+      not exist yet (see FEATURE_AUDIT.md). Until it does, this is a product
+      call, not one to make silently inside a clamp function.
+- [ ] `solar_frag.glsl:140` has an unconditional 9 Hz flicker
+      (`0.9 + 0.1*sin(uTime*9.0 + r*20.0)*uTreble`) with no param gate, so the
+      clamp cannot reach it. Left alone deliberately: its depth is ±10% at
+      most, weighted by treble, over the sun's disc rather than the full frame
+      — well under the "large area, ≥10% luminance change" the guidance is
+      about, and gating it means plumbing a uniform through all twenty shader
+      scenes for a shimmer. Revisit if the sun ever fills the screen.
+- [ ] Two built-in presets ship values this mode exists to bound —
+      `BuiltInPresets.kt` has one at `strobe = 0.5, flash = 0.6`. They are
+      still safe to ship (safety mode clamps them like anything else), but
+      they are the presets most likely to be the first thing a new user opens.
+      Worth a look at whether the shipped defaults should be that hot.
+- [ ] `LfoStore.kt` loads `rateHz` with no `coerceIn`, so a hand-edited or
+      migrated store can hold a rate outside the slider's range. The safety
+      cap covers the luminance targets; the general range guard is still
+      missing.
+
 ## Always
 - [ ] Update docs (NAVIGATION.md, WIREFRAME.md, PARAM_MATRIX.md) when
       behavior changes; keep README changelog per round.

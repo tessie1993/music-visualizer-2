@@ -145,6 +145,15 @@ data class ExportUiState(
 )
 
 /**
+ * Graded beat impulse a "switch on a musical moment" decision (intelligent
+ * visual playlist, Random mode's switch-on-beat) treats as strong enough to
+ * act on. Track-relative by construction - [AudioFeatures.beatImpulse] folds
+ * in the macro-energy envelope - so this is "one of this song's bigger hits",
+ * not an absolute loudness that quiet masters never reach.
+ */
+private const val STRONG_MOMENT_IMPULSE = 0.6f
+
+/**
  * Owns playback (queue + audio focus + PCM tap), live analysis, offline
  * analysis/intelligence, presets and export orchestration.
  */
@@ -329,7 +338,7 @@ class PlayerViewModel(
 
     init {
         engine.beatThresholdSigma = _guiPrefs.value.beatThresholdSigma
-        engine.beatMinIntervalMs = _guiPrefs.value.beatMinIntervalMs
+        engine.beatMinIntervalMs = _guiPrefs.value.effectiveBeatMinIntervalMs
         // Apply the restored reactivity to the engine (setReactivity normally
         // does this, but the restored values arrive outside that path).
         engine.smoother.attack = _vizState.value.attack
@@ -343,10 +352,18 @@ class PlayerViewModel(
         themeStore.saveGui(prefs)
         _guiPrefs.value = prefs
         engine.beatThresholdSigma = prefs.beatThresholdSigma
-        engine.beatMinIntervalMs = prefs.beatMinIntervalMs
+        // Safe visuals floors the gap between beats, because `flash` fires
+        // once per beat and no visual slider governs how often that is.
+        engine.beatMinIntervalMs = prefs.effectiveBeatMinIntervalMs
+        // Compare the EFFECTIVE interval, not the raw slider and not the whole
+        // SafetyConfig: the effective value already folds in the Safe-visuals
+        // floor, while `safety != safety` would also fire on flash depth,
+        // inversion and reduced motion - none of which touch the beat grid, so
+        // each tick of those sliders would re-decide tens of thousands of
+        // frames to produce a byte-identical timeline.
         val sensitivityChanged =
             previous.beatThresholdSigma != prefs.beatThresholdSigma ||
-                previous.beatMinIntervalMs != prefs.beatMinIntervalMs
+                previous.effectiveBeatMinIntervalMs != prefs.effectiveBeatMinIntervalMs
         if (sensitivityChanged) redecideCachedBeats(prefs)
     }
 
@@ -365,11 +382,11 @@ class PlayerViewModel(
         beatRedecideJob =
             viewModelScope.launch(Dispatchers.Default) {
                 delay(120)
-                val updated = base.withBeatSensitivity(prefs.beatThresholdSigma, prefs.beatMinIntervalMs)
+                val updated = base.withBeatSensitivity(prefs.beatThresholdSigma, prefs.effectiveBeatMinIntervalMs)
                 val now = _guiPrefs.value
                 val stillCurrent =
                     now.beatThresholdSigma == prefs.beatThresholdSigma &&
-                        now.beatMinIntervalMs == prefs.beatMinIntervalMs
+                        now.effectiveBeatMinIntervalMs == prefs.effectiveBeatMinIntervalMs
                 if (stillCurrent && currentUri == uri) timeline = updated
             }
     }
@@ -720,6 +737,27 @@ class PlayerViewModel(
                     }
                 }
 
+                override fun onPositionDiscontinuity(
+                    oldPosition: Player.PositionInfo,
+                    newPosition: Player.PositionInfo,
+                    reason: Int,
+                ) {
+                    // A seek breaks the audio stream's continuity just as a
+                    // track change does: the tracker's predicted beat frames
+                    // now point at music that will not arrive, so it would
+                    // suppress the real beats at the new position as off-grid
+                    // until it re-locked. Covers every seek path (transport
+                    // bar, gestures, any future notification controls), which
+                    // is why this hangs off the listener and not seekTo().
+                    // Auto-advance discontinuities are left to
+                    // EVENT_MEDIA_ITEM_TRANSITION, which resets anyway.
+                    if (reason == Player.DISCONTINUITY_REASON_SEEK ||
+                        reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
+                    ) {
+                        engine.reset()
+                    }
+                }
+
                 override fun onAudioSessionIdChanged(audioSessionId: Int) {
                     // The audiofx chain must follow the sink's session; attach
                     // rebuilds the effects and restores persisted settings.
@@ -934,12 +972,16 @@ class PlayerViewModel(
         val intervalMs = s.vizPlaylistIntervalSec * 1000L
         val due =
             if (s.vizPlaylistIntelligent) {
-                // Intelligent: after a minimum dwell, switch on a strong musical
-                // moment (beat + high energy); force a switch at 2x interval so
-                // quiet passages still rotate.
+                // Intelligent: after a minimum dwell, switch on a strong
+                // musical moment; force a switch at 2x interval so quiet
+                // passages still rotate. "Strong" is the tracker's graded beat
+                // impulse, which is TRACK-RELATIVE (it folds in the macro-
+                // energy envelope) - the absolute rms gate this replaced never
+                // opened on a quietly mastered track, so intelligent mode
+                // silently degraded into the plain 2x-interval timer there.
                 val f = engine.features.value
                 val minDwell = maxOf(8_000L, intervalMs / 2)
-                (elapsed >= minDwell && f.beat && f.rms > 0.28f) || elapsed >= intervalMs * 2
+                (elapsed >= minDwell && f.beatImpulse >= STRONG_MOMENT_IMPULSE) || elapsed >= intervalMs * 2
             } else {
                 elapsed >= intervalMs
             }
@@ -1007,9 +1049,10 @@ class PlayerViewModel(
             if (s.randomOnBeat) {
                 // Switch on a strong musical moment after a minimum dwell;
                 // force a switch at 2x interval so quiet passages still move.
+                // Graded and track-relative, as in advanceVizPlaylist().
                 val f = engine.features.value
                 val minDwell = maxOf(6_000L, intervalMs / 2)
-                (elapsed >= minDwell && f.beat && f.rms > 0.25f) || elapsed >= intervalMs * 2
+                (elapsed >= minDwell && f.beatImpulse >= STRONG_MOMENT_IMPULSE) || elapsed >= intervalMs * 2
             } else {
                 elapsed >= intervalMs
             }
@@ -1303,13 +1346,13 @@ class PlayerViewModel(
         val app = getApplication<Application>()
         val gui = _guiPrefs.value
         dev.musicviz.analysis.AnalysisCache
-            .load(app, uri, gui.beatThresholdSigma, gui.beatMinIntervalMs)
+            .load(app, uri, gui.beatThresholdSigma, gui.effectiveBeatMinIntervalMs)
             ?.let {
                 onProgress(1f)
                 return it
             }
         return offlineAnalyzer
-            .analyze(uri, gui.beatThresholdSigma, gui.beatMinIntervalMs, onProgress)
+            .analyze(uri, gui.beatThresholdSigma, gui.effectiveBeatMinIntervalMs, onProgress)
             .also {
                 dev.musicviz.analysis.AnalysisCache
                     .save(app, uri, it)
@@ -1730,6 +1773,9 @@ class PlayerViewModel(
     // ---- Intelligence ----
 
     private fun onTrackChanged() {
+        // Before anything else: the live analyzer's beat grid, energy envelope
+        // and flux history all describe the track that just ended.
+        engine.reset()
         timeline = null
         _vizState.update { it.copy(suggestedSceneId = null, bpm = 0f, sections = emptyList()) }
         if (_vizState.value.intelligenceMode != IntelligenceMode.MANUAL) {
@@ -1743,7 +1789,7 @@ class PlayerViewModel(
             val gui = _guiPrefs.value
             viewModelScope.launch(Dispatchers.IO) {
                 dev.musicviz.analysis.AnalysisCache
-                    .load(getApplication<Application>(), uri, gui.beatThresholdSigma, gui.beatMinIntervalMs)
+                    .load(getApplication<Application>(), uri, gui.beatThresholdSigma, gui.effectiveBeatMinIntervalMs)
                     ?.let { t ->
                         if (currentUri == uri) {
                             timeline = t
@@ -1973,7 +2019,13 @@ class PlayerViewModel(
                     // differently from the playback the user just watched is
                     // the whole bug this guards against.
                     val gui = _guiPrefs.value
-                    val t = analysed.withBeatSensitivity(gui.beatThresholdSigma, gui.beatMinIntervalMs)
+                    val t =
+                        analysed.withBeatSensitivity(
+                            gui.beatThresholdSigma,
+                            // Same floor the live engine runs under, or an
+                            // export would flash faster than the screen did.
+                            gui.effectiveBeatMinIntervalMs,
+                        )
                     // Publish the section context the exporter is about to
                     // journey through, so live playback of the same track
                     // re-seats identically from now on (journey parity even
@@ -1992,6 +2044,7 @@ class PlayerViewModel(
                             sceneParams = _vizState.value.params,
                             lfoConfigs = _lfos.value,
                             adsrConfigs = _adsrs.value,
+                            safety = gui.safety,
                             requestedFps = fps,
                             destination = destination,
                             onProgress = { p ->

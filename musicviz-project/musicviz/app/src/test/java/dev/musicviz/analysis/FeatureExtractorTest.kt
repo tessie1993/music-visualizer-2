@@ -141,9 +141,24 @@ class FeatureExtractorTest {
         assertTrue("the raw gate must over-trigger here (got $raw), or this proves nothing", raw > 16)
         assertTrue("the tempo grid should hold the default near the 12 kicks, got $atDefault vs raw $raw", atDefault <= 16)
         assertTrue("but must not go deaf, got $atDefault", atDefault >= 8)
-        // The sigma ceiling still means "less sensitive", never more.
+        // The sigma control must move the needle by a real margin. A bare
+        // `atCeiling <= atDefault` proves nothing - it passes just as happily
+        // when the ceiling changes nothing at all, which is the way a
+        // sensitivity control usually dies.
         val atCeiling = countSlowTrackBeats(FeatureExtractor.SIGMA_MAX, FeatureExtractor.INTERVAL_MS_DEFAULT)
-        assertTrue("high sigma may only reduce the count, got $atCeiling vs $atDefault", atCeiling <= atDefault)
+        assertTrue("the sigma ceiling must visibly reduce the count, got $atCeiling vs $atDefault", atCeiling < atDefault)
+        // And it must stay USABLE across the range the presets actually reach.
+        // Measured sweep on this fixture (default gap): 2.0-3.0 -> 24 beats,
+        // 3.5-5.0 -> 11-12 (the twelve real kicks), 5.5+ -> 0. The cliff is
+        // the sigma gate itself, not the tempo grid - the raw candidate gate
+        // also yields 0 here at 6 sigma - and it is inherent to thresholding
+        // against the track's own flux: for sparse quiet material there is
+        // always a sigma above which nothing passes. So the ceiling is allowed
+        // to be silent, but SLOW_SIGMA (the "Slow track" preset, the highest
+        // value the UI recommends) must not be. If that stops holding, the
+        // preset has drifted past the usable range, not merely got stricter.
+        val atSlowPreset = countSlowTrackBeats(FeatureExtractor.SLOW_SIGMA, FeatureExtractor.INTERVAL_MS_DEFAULT)
+        assertTrue("the Slow-track sigma must still track the 12 kicks, got $atSlowPreset", atSlowPreset in 8..14)
     }
 
     @Test

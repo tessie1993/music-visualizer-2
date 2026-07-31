@@ -73,6 +73,27 @@ class FeatureExtractor(
     private var trebleSmooth = 0f
     private var bpmSmoothed = 0f
 
+    /**
+     * Forgets everything that belongs to ONE piece of audio - the tracker's
+     * beat grid and energy envelope, the previous frame's band spectrum, the
+     * smoothed treble and BPM readouts - while keeping the user's sensitivity
+     * settings.
+     *
+     * Call on any discontinuity in the audio stream: a track change or a seek.
+     * Without it the first seconds of a new track are judged against the
+     * previous one - its tempo grid suppresses the new beats as off-grid and
+     * its rolling loudness peak grades what survives - and, because
+     * [PulseTracker.decidePulse] always replays from a cold tracker, live
+     * playback would no longer match the cached/exported render of the same
+     * track.
+     */
+    fun reset() {
+        tracker.reset()
+        java.util.Arrays.fill(prevBands, 0f)
+        trebleSmooth = 0f
+        bpmSmoothed = 0f
+    }
+
     fun extract(
         bands: FloatArray,
         waveform: FloatArray,
@@ -104,8 +125,15 @@ class FeatureExtractor(
         val mean = tracker.gate.fluxMean
         val std = tracker.gate.fluxStd
 
+        // Poled once per FRAME, deliberately, even though [PulseTracker] now
+        // refreshes its raw estimate only every
+        // [PulseTracker.TEMPO_REFRESH_FRAMES] frames and holds it in between.
+        // This is a lowpass on the displayed number, so what matters is its
+        // time constant in wall-clock (~160 ms), not per-estimate: poling once
+        // per refresh instead would make the readout 8x slower to settle and
+        // is what the `bpm estimate converges near pulse rate` test catches.
         val bpm = tracker.bpmEstimate
-        if (bpm > 0f) bpmSmoothed = if (bpmSmoothed == 0f) bpm else bpmSmoothed + (bpm - bpmSmoothed) * 0.1f
+        if (bpm > 0f) bpmSmoothed = if (bpmSmoothed == 0f) bpm else bpmSmoothed + (bpm - bpmSmoothed) * BPM_SMOOTH_POLE
 
         return AudioFeatures(
             bands = bands.copyOf(),
@@ -185,6 +213,22 @@ class FeatureExtractor(
         /** Capacity of the history window, in frames. */
         val size: Int get() = historySize
 
+        /**
+         * Empties the rolling flux window and the refractory countdown,
+         * keeping [beatThresholdSigma] and [beatMinIntervalMs]. Called through
+         * [PulseTracker.reset] when the audio stream is discontinuous: the
+         * sigma threshold is measured against this window, so a new track
+         * judged against the previous one's flux statistics is judged wrong.
+         */
+        fun reset() {
+            java.util.Arrays.fill(fluxHistory, 0f)
+            historyIndex = 0
+            historyFilled = 0
+            framesSinceBeat = 100
+            fluxMean = 0f
+            fluxStd = 0f
+        }
+
         /** Feeds one frame's flux and returns whether it is a beat. */
         fun accept(flux: Float): Boolean {
             fluxHistory[historyIndex] = flux
@@ -202,6 +246,26 @@ class FeatureExtractor(
         fun chronological(i: Int): Float {
             val start = if (historyFilled < historySize) 0 else historyIndex
             return fluxHistory[(start + i) % historySize]
+        }
+
+        /**
+         * Copies the retained history into [dst] in chronological order
+         * (0 = oldest), returning the number of samples written ([filled]).
+         *
+         * Two array copies instead of a modulo per sample: the autocorrelation
+         * in [PulseTracker] reads this window O(lags x window) times per
+         * refresh, so the index arithmetic - not the multiply - dominated it.
+         * [dst] must hold at least [size] elements.
+         */
+        fun copyChronological(dst: FloatArray): Int {
+            if (historyFilled < historySize) {
+                System.arraycopy(fluxHistory, 0, dst, 0, historyFilled)
+            } else {
+                val tail = historySize - historyIndex
+                System.arraycopy(fluxHistory, historyIndex, dst, 0, tail)
+                System.arraycopy(fluxHistory, 0, dst, tail, historyIndex)
+            }
+            return historyFilled
         }
 
         private fun updateStats() {
@@ -267,22 +331,31 @@ class FeatureExtractor(
         /** Absolute floor under the sigma gate: silence must never flag a beat. */
         const val FLUX_FLOOR = 0.02f
 
+        /** One-pole smoothing applied to the published BPM once per new
+         *  autocorrelation estimate, so the readout settles instead of
+         *  stepping between harmonic candidates. */
+        const val BPM_SMOOTH_POLE = 0.1f
+
         /**
-         * Re-decides the beat flags for a whole onset curve - the offline
-         * counterpart of the live per-frame path, used when a cached timeline
-         * is read back at the user's *current* sensitivity. [flux] must be the
-         * per-frame values in order, [hopRateHz] the rate they were produced
-         * at (the refractory, the history window and the tempo grid are all
-         * measured in frames). Settings are clamped exactly as
-         * [AnalysisEngine] clamps them, so live and offline cannot drift
+         * Re-decides the beat FLAGS for a whole onset curve from flux alone.
+         * [flux] must be the per-frame values in order, [hopRateHz] the rate
+         * they were produced at (the refractory, the history window and the
+         * tempo grid are all measured in frames). Settings are clamped exactly
+         * as [AnalysisEngine] clamps them, so live and offline cannot drift
          * apart at the extremes.
          *
-         * Runs the full [PulseTracker], not just the raw gate: the flags it
-         * returns are the tempo-gated beats live analysis shows. The beat
-         * decision is independent of the rms curve (energy only grades
-         * strength), so flux alone reproduces it exactly; callers that also
-         * need the graded strength/phase/energy curves should use
-         * [PulseTracker.decidePulse] with the stored rms directly.
+         * This is a thin convenience over [PulseTracker.decidePulse] that
+         * exists to express one property: the beat decision is independent of
+         * the rms curve (energy grades strength, never acceptance), so flux
+         * alone reproduces the flags exactly. It passes an empty rms array,
+         * which means every strength/transient/energy value it computes is
+         * discarded and none of them match a production path.
+         *
+         * Nothing in the app calls this - the cached-timeline replay
+         * ([FeatureTimeline.withBeatSensitivity]) needs the graded curves and
+         * so calls [PulseTracker.decidePulse] with the stored rms directly.
+         * Its remaining job is as the subject of the flux-only determinism
+         * test; new callers want [PulseTracker.decidePulse].
          */
         fun decideBeats(
             flux: FloatArray,
