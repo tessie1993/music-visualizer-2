@@ -135,7 +135,7 @@ real hue would cross zero and flicker the slot between built-in and custom.
 | `fluidParticleDrag`, `fluidParticleLife` ¹¹ | FL `:287-288`, CF `:186-187` | `isParticleLayerSceneId` |
 | `fluidParticlesEnabled`, `fluidParticleBrightness` | FL only (`:273,324`) | `isFluidSceneId` inside the particle section |
 | `fluidDyeEnabled`, `fluidShading`, `fluidBloom*`, `fluidSunrays*`, `fluidCurlAudio`, `fluidBloomAudio`, `fluidFadeAudio` | FL only `:288-306` | `isFluidSceneId` |
-| `waterRippleStrength`, `waterDepth`, `waterSpecular`, `waterFlow` | WA only `WaterScene.kt:181,242,281-283` | `isWaterSceneId` |
+| `waterRippleStrength`, `waterDepth`, `waterSpecular`, `waterFlow` | WA only `WaterScene.kt:184,255,294-296` | `isWaterSceneId` |
 | `waterWaveSpeed`, `waterDamping` ¹² | WA `WaterScene.kt:228-229` **and the all-styles ripple overlay** (`VisualizerRenderer.kt:636-637`, `VideoExporter.kt:426-427`) | `isWaterSceneId`, plus the overlay section (`!isWaterScene`) on every other style |
 | `flowEnabled`, `flowStrength`, `flowForce`, `flowCurl` | C fluidWarp for every family (`VisualizerRenderer.kt:716-729`); FL substitutes its own velocity field | always |
 | `flowAdvectParticles` | P `ParticleSceneBase.kt:96-112` | always |
