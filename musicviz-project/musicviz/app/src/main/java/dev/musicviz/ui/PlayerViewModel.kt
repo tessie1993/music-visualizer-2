@@ -7,30 +7,25 @@ import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
 import dev.musicviz.analysis.AnalysisEngine
 import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.analysis.AudioQualityInfo
 import dev.musicviz.analysis.FeatureTimeline
 import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.analysis.OfflineAnalyzer
-import dev.musicviz.analysis.PlaybackMath
 import dev.musicviz.analysis.SceneSuggester
 import dev.musicviz.audio.AudioFxController
 import dev.musicviz.audio.AudioFxState
-import dev.musicviz.audio.PcmRingBuffer
-import dev.musicviz.audio.PcmTapSink
-import dev.musicviz.audio.TapRenderersFactory
 import dev.musicviz.export.ExportAspect
 import dev.musicviz.export.VideoExporter
+import dev.musicviz.playback.PlaybackController
+import dev.musicviz.playback.PlaybackSnapshot
 import dev.musicviz.render.TransitionStyle
 import dev.musicviz.render.scene.ParamRandomizer
 import dev.musicviz.render.scene.PcmChunk
@@ -50,18 +45,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-data class PlayerUiState(
-    val isPlaying: Boolean = false,
-    val positionMs: Long = 0,
-    val durationMs: Long = 0,
-    val title: String? = null,
-    val artist: String? = null,
-    val hasMedia: Boolean = false,
-    val queueSize: Int = 0,
-    val queueIndex: Int = 0,
-    val shuffle: Boolean = false,
-    val repeatMode: Int = Player.REPEAT_MODE_OFF,
-)
+// The transport state the screens render is now [PlaybackSnapshot], declared
+// next to the player it is sampled from. Screens reach it through [uiState]
+// and never name the type, so nothing outside this file changed.
 
 data class VizUiState(
     val sceneId: String = SceneIds.NEBULA,
@@ -161,8 +147,14 @@ private const val STRONG_MOMENT_IMPULSE = 0.6f
 class PlayerViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
-    private val ring = PcmRingBuffer()
-    private val engine = AnalysisEngine(ring)
+    /**
+     * Playback (ExoPlayer + queue + PCM tap + sleep timer). Declared first
+     * because [engine] analyses the PCM its tap captures. Its callbacks are
+     * wired in the init block below, not here, so nothing can fire against a
+     * half-constructed ViewModel.
+     */
+    private val playback = PlaybackController(application)
+    private val engine = AnalysisEngine(playback.ring)
 
     // ---- Audio-quality readout ----
     // Combines the selected track's source Format (onTracksChanged) with the
@@ -238,11 +230,6 @@ class PlayerViewModel(
             )
     }
 
-    private val sink =
-        PcmTapSink(ring) { rate, channels, encoding ->
-            engine.sampleRateHz = rate
-            onTapFormat(rate, channels, encoding)
-        }
     private val offlineAnalyzer = OfflineAnalyzer(application)
     private val presetStore = PresetStore(application)
     private val trackLibrary = TrackLibrary(application)
@@ -254,32 +241,8 @@ class PlayerViewModel(
     private val exporter = VideoExporter(application)
     private val audioFxController = AudioFxController(application)
 
-    val player: ExoPlayer =
-        ExoPlayer
-            .Builder(application, TapRenderersFactory(application, sink))
-            // AIFF/AIFC support: Media3 ships no AIFF extractor, so ours is
-            // appended after the defaults (sniff order keeps defaults first).
-            .setMediaSourceFactory(
-                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
-                    application,
-                    androidx.media3.extractor.ExtractorsFactory {
-                        androidx.media3.extractor
-                            .DefaultExtractorsFactory()
-                            .createExtractors() +
-                            dev.musicviz.audio.AiffExtractor()
-                    },
-                ),
-            ).setAudioAttributes(
-                AudioAttributes
-                    .Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                true,
-            ).build()
-
-    private val _uiState = MutableStateFlow(PlayerUiState())
-    val uiState: StateFlow<PlayerUiState> = _uiState
+    private val _uiState = MutableStateFlow(PlaybackSnapshot())
+    val uiState: StateFlow<PlaybackSnapshot> = _uiState
 
     private val _vizState = MutableStateFlow(restoreVizState())
     val vizState: StateFlow<VizUiState> = _vizState
@@ -337,6 +300,13 @@ class PlayerViewModel(
     private val _guiPrefs = MutableStateFlow(themeStore.loadGui())
 
     init {
+        // Wired here, not at construction: the tap fires these from the
+        // playback thread and they touch fields declared further down.
+        playback.onAudioFormat = { rate, channels, encoding ->
+            engine.sampleRateHz = rate
+            onTapFormat(rate, channels, encoding)
+        }
+        playback.mediaItemFactory = ::mediaItemFor
         engine.beatThresholdSigma = _guiPrefs.value.beatThresholdSigma
         engine.beatMinIntervalMs = _guiPrefs.value.effectiveBeatMinIntervalMs
         // Apply the restored reactivity to the engine (setReactivity normally
@@ -418,14 +388,12 @@ class PlayerViewModel(
 
     /** Pushes speed/pitch, skip-silence and noisy-handling onto the ExoPlayer. */
     private fun applyPlaybackPrefs(p: PlayerPrefs) {
-        player.playbackParameters = PlaybackParameters(p.speed, PlaybackMath.semitonesToRatio(p.pitchSemitones))
-        player.skipSilenceEnabled = p.skipSilence
-        player.setHandleAudioBecomingNoisy(p.pauseOnNoisy)
+        playback.applyPlaybackPrefs(p.speed, p.pitchSemitones, p.skipSilence, p.pauseOnNoisy)
     }
 
     /** Mirrors the player's shuffle/repeat state into the persisted prefs. */
     private fun persistPlayerOptions() {
-        val p = _playerPrefs.value.copy(shuffle = player.shuffleModeEnabled, repeatMode = player.repeatMode)
+        val p = _playerPrefs.value.copy(shuffle = playback.shuffle, repeatMode = playback.repeatMode)
         _playerPrefs.value = p
         playerPrefsStore.save(p)
     }
@@ -709,11 +677,11 @@ class PlayerViewModel(
         // preparation never records a phantom play into history (ExoPlayer
         // only delivers events to listeners registered when they occurred).
         val pp = _playerPrefs.value
-        player.shuffleModeEnabled = pp.shuffle
-        player.repeatMode = pp.repeatMode
+        playback.shuffle = pp.shuffle
+        playback.repeatMode = pp.repeatMode
         applyPlaybackPrefs(pp)
         if (pp.autoResume) prepareLastPlayed()
-        player.addListener(
+        playback.addListener(
             object : Player.Listener {
                 override fun onEvents(
                     player: Player,
@@ -785,7 +753,7 @@ class PlayerViewModel(
             },
         )
         // The sink may already have a session id (attach ignores UNSET = 0).
-        audioFxController.attach(player.audioSessionId)
+        audioFxController.attach(playback.audioSessionId)
         refreshAudioFx()
         viewModelScope.launch {
             while (true) {
@@ -799,43 +767,19 @@ class PlayerViewModel(
     }
 
     private fun refresh() {
-        _uiState.value =
-            PlayerUiState(
-                isPlaying = player.isPlaying,
-                positionMs = player.currentPosition.coerceAtLeast(0),
-                durationMs = player.duration.coerceAtLeast(0),
-                artist = player.mediaMetadata.artist?.toString(),
-                title =
-                    player.mediaMetadata.title?.toString()
-                        ?: player.currentMediaItem
-                            ?.localConfiguration
-                            ?.uri
-                            ?.lastPathSegment
-                            ?.substringAfterLast('/')
-                            ?.substringBeforeLast('.'),
-                hasMedia = player.currentMediaItem != null,
-                queueSize = player.mediaItemCount,
-                queueIndex = player.currentMediaItemIndex,
-                shuffle = player.shuffleModeEnabled,
-                repeatMode = player.repeatMode,
-            )
+        _uiState.value = playback.snapshot()
     }
 
     // ---- Player options ----
 
     fun toggleShuffle() {
-        player.shuffleModeEnabled = !player.shuffleModeEnabled
+        playback.toggleShuffle()
         persistPlayerOptions()
         refresh()
     }
 
     fun cycleRepeatMode() {
-        player.repeatMode =
-            when (player.repeatMode) {
-                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-                Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-                else -> Player.REPEAT_MODE_OFF
-            }
+        playback.cycleRepeatMode()
         persistPlayerOptions()
         refresh()
     }
@@ -849,19 +793,15 @@ class PlayerViewModel(
         val last = historyStore.recentlyPlayed(1).firstOrNull() ?: return
         runCatching {
             val uri = Uri.parse(last.uri)
-            player.setMediaItems(listOf(mediaItemFor(uri)))
-            player.prepare()
+            playback.prepareOnly(uri)
             currentUri = uri
         }
     }
 
     // ---- Sleep timer ----
 
-    private var sleepTimerJob: Job? = null
-    private val _sleepTimerRemainingMs = MutableStateFlow<Long?>(null)
-
     /** Remaining sleep-timer time, or null when no timer is running. */
-    val sleepTimerRemainingMs: StateFlow<Long?> = _sleepTimerRemainingMs
+    val sleepTimerRemainingMs: StateFlow<Long?> = playback.sleepTimerRemainingMs
 
     /**
      * Starts (or restarts) the sleep timer: counts down, fades the volume
@@ -874,31 +814,11 @@ class PlayerViewModel(
             return
         }
         setPlayerPrefs(_playerPrefs.value.copy(sleepTimerMinutes = minutes))
-        sleepTimerJob?.cancel()
-        sleepTimerJob =
-            viewModelScope.launch {
-                val endMs = android.os.SystemClock.elapsedRealtime() + minutes * 60_000L
-                while (true) {
-                    val remaining = endMs - android.os.SystemClock.elapsedRealtime()
-                    if (remaining <= 0L) break
-                    _sleepTimerRemainingMs.value = remaining
-                    player.volume = PlaybackMath.sleepFadeVolume(remaining)
-                    delay(if (remaining <= PlaybackMath.SLEEP_FADE_MS) 100 else 500)
-                }
-                player.pause()
-                player.volume = 1f
-                _sleepTimerRemainingMs.value = null
-                sleepTimerJob = null
-            }
+        playback.startSleepTimer(minutes)
     }
 
     /** Cancels a running sleep timer and restores full volume. */
-    fun cancelSleepTimer() {
-        sleepTimerJob?.cancel()
-        sleepTimerJob = null
-        _sleepTimerRemainingMs.value = null
-        player.volume = 1f
-    }
+    fun cancelSleepTimer() = playback.cancelSleepTimer()
 
     // ---- Visual playlist ----
 
@@ -1528,11 +1448,7 @@ class PlayerViewModel(
                 ?.trackUris
                 .orEmpty()
         if (uris.isEmpty()) return
-        player.setMediaItems(uris.map { mediaItemFor(Uri.parse(it)) })
-        player.prepare()
-        player.seekTo(startIndex.coerceIn(0, uris.size - 1), 0L)
-        player.play()
-        currentUri = Uri.parse(uris[startIndex.coerceIn(0, uris.size - 1)])
+        currentUri = playback.setQueue(uris.map { Uri.parse(it) }, startIndex)
         onTrackChanged()
     }
 
@@ -1554,13 +1470,12 @@ class PlayerViewModel(
     }
 
     fun playNext(uri: String) {
-        val at = (player.currentMediaItemIndex + 1).coerceAtMost(player.mediaItemCount)
-        player.addMediaItem(at, mediaItemFor(Uri.parse(uri)))
+        playback.addNext(Uri.parse(uri))
         refresh()
     }
 
     fun enqueue(uri: String) {
-        player.addMediaItem(mediaItemFor(Uri.parse(uri)))
+        playback.addLast(Uri.parse(uri))
         refresh()
     }
 
@@ -1574,9 +1489,7 @@ class PlayerViewModel(
     fun openStringsPublic(uris: List<String>) = openStrings(uris)
 
     private fun openStrings(uris: List<String>) {
-        player.setMediaItems(uris.map { mediaItemFor(Uri.parse(it)) })
-        player.prepare()
-        player.play()
+        playback.setQueue(uris.map { Uri.parse(it) })
     }
 
     // Preset folder tree
@@ -1608,11 +1521,7 @@ class PlayerViewModel(
             .orEmpty()
     }
 
-    fun seekBy(deltaMs: Long) {
-        val d = player.duration
-        val target = (player.currentPosition + deltaMs).coerceAtLeast(0L)
-        player.seekTo(if (d > 0) target.coerceAtMost(d) else target)
-    }
+    fun seekBy(deltaMs: Long) = playback.seekBy(deltaMs)
 
     /** Swipe left/right in Now Playing: step through this scene's presets. */
     private var quickPresetIndex = -1
@@ -1631,10 +1540,7 @@ class PlayerViewModel(
 
     /** Plays a single library track immediately. */
     fun playTrack(uri: String) {
-        player.setMediaItems(listOf(mediaItemFor(Uri.parse(uri))))
-        player.prepare()
-        player.play()
-        currentUri = Uri.parse(uri)
+        currentUri = playback.setQueue(listOf(Uri.parse(uri)))
         onTrackChanged()
     }
 
@@ -1729,46 +1635,23 @@ class PlayerViewModel(
 
     fun open(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        player.setMediaItems(uris.map { mediaItemFor(it) })
-        player.prepare()
-        player.play()
-        currentUri = uris.first()
+        currentUri = playback.setQueue(uris)
         onTrackChanged()
     }
 
     /** Human-readable labels for the playback queue, in play order. */
-    fun queueTitles(): List<String> =
-        (0 until player.mediaItemCount).map { i ->
-            val item = player.getMediaItemAt(i)
-            item.mediaMetadata.title?.toString()
-                ?: item.localConfiguration
-                    ?.uri
-                    ?.lastPathSegment
-                    ?.substringAfterLast('/')
-                    ?.substringBeforeLast('.')
-                ?: "Track ${i + 1}"
-        }
+    fun queueTitles(): List<String> = playback.queueTitles()
 
     /** Jumps playback to the given queue position. */
-    fun playQueueIndex(index: Int) {
-        if (index in 0 until player.mediaItemCount) {
-            player.seekTo(index, 0L)
-            player.play()
-        }
-    }
+    fun playQueueIndex(index: Int) = playback.playQueueIndex(index)
 
-    fun next() = player.seekToNextMediaItem()
+    fun next() = playback.next()
 
-    fun previous() = player.seekToPreviousMediaItem()
+    fun previous() = playback.previous()
 
-    fun togglePlayPause() {
-        if (player.isPlaying) player.pause() else player.play()
-    }
+    fun togglePlayPause() = playback.togglePlayPause()
 
-    fun seekTo(fraction: Float) {
-        val d = player.duration
-        if (d > 0) player.seekTo((d * fraction).toLong())
-    }
+    fun seekTo(fraction: Float) = playback.seekToFraction(fraction)
 
     // ---- Intelligence ----
 
@@ -1847,7 +1730,7 @@ class PlayerViewModel(
         val s = _vizState.value
         if (s.intelligenceMode != IntelligenceMode.AUTO) return
         val t = timeline ?: return
-        val f = t.featuresAt(player.currentPosition)
+        val f = t.featuresAt(playback.positionMs)
         val suggestion = SceneSuggester.suggest(t.bpm, f.rms, f.centroid)
         if (suggestion != s.sceneId) _vizState.value = s.copy(sceneId = suggestion)
     }
@@ -2088,6 +1971,6 @@ class PlayerViewModel(
     override fun onCleared() {
         engine.stop()
         audioFxController.release()
-        player.release()
+        playback.release()
     }
 }
