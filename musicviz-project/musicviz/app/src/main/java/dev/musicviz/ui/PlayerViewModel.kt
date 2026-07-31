@@ -561,8 +561,8 @@ class PlayerViewModel(
 
     /** Fresh mono PCM since the last call, for the milkdrop scene (GL thread). */
     fun latestPcm(): PcmChunk? {
-        val n = ring.copyNewSince(pcmCursor, pcmScratch)
-        pcmCursor = ring.lastCopyEndIndex
+        val n = playback.ring.copyNewSince(pcmCursor, pcmScratch)
+        pcmCursor = playback.ring.lastCopyEndIndex
         return if (n > 0) PcmChunk(pcmScratch, n) else null
     }
 
