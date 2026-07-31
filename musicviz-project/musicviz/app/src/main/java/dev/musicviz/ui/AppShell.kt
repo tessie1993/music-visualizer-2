@@ -761,6 +761,20 @@ private fun AppSettingsTab(
         item {
             SettingsSection("Visuals & Analysis") {
                 Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Colour from the musical key", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Switch(checked = gui.keyColor, onCheckedChange = viewModel::setKeyColor)
+                    }
+                    Text(
+                        "Sets Hue shift from the key the analyser found, around the circle of fifths — so a " +
+                            "track keeps the same colour every time you play it, and two songs that sound " +
+                            "related look related. It moves the ordinary Hue shift slider, so you can always " +
+                            "disagree with it; switching this off gives your own value back.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Column {
                     Text("Preset morph: ${gui.morphBeats} beats (0 = snap)")
                     CrystalSlider(
                         value = gui.morphBeats.toFloat(),
@@ -916,6 +930,30 @@ private fun LiveInputSettings(viewModel: PlayerViewModel) {
         }
     }
     Column {
+        Text("Tune for what the phone is hearing", style = MaterialTheme.typography.labelMedium)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(dev.musicviz.analysis.LiveInputProfile.entries.toList()) { profile ->
+                CrystalButton(
+                    compact = true,
+                    filled = false,
+                    onClick = { viewModel.applyLiveInputProfile(profile) },
+                ) { Text(profile.label) }
+            }
+        }
+        Text(
+            dev.musicviz.analysis.LiveInputProfile.entries.joinToString("  ·  ") { "${it.label}: ${it.summary}" },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "Each sets the beat threshold, the reactivity envelope and the band balance together — " +
+                "they are one decision, and they live on three different screens. Every value stays " +
+                "an ordinary slider afterwards.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Smear the visuals with a finger", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             Switch(
@@ -938,6 +976,22 @@ private fun LiveInputSettings(viewModel: PlayerViewModel) {
                 valueRange = 0.2f..2f,
             )
         }
+    }
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Pinch and twist the canvas", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Switch(
+                checked = gui.touchTransform,
+                onCheckedChange = { viewModel.setGuiPrefs(gui.copy(touchTransform = it)) },
+            )
+        }
+        Text(
+            "Two fingers on the fullscreen visualizer: pinch moves the Zoom slider, twist moves " +
+                "Rotation. They are the same controls the Customize panel shows, so a gesture is " +
+                "saved into presets and takes — and undone by dragging the slider back.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

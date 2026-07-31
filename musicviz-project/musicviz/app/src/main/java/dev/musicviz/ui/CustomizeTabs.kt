@@ -314,10 +314,24 @@ internal fun ColorTab(
     p: SceneParams,
     onChange: (SceneParams) -> Unit,
     isShaderLookScene: Boolean,
+    onTakeArtworkPalette: (() -> Unit)? = null,
+    artworkNote: String? = null,
 ) {
     val palettes = rememberSavedPalettes()
     Column {
         SectionHeader("Palettes")
+        if (onTakeArtworkPalette != null) {
+            // Sits above the palette chips because it is a way of CHOOSING one,
+            // not a separate effect: it writes the same base/span override the
+            // gradient maker below does, so the result is an ordinary custom
+            // palette the user can then edit or save.
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CrystalButton(compact = true, filled = false, onClick = onTakeArtworkPalette) {
+                    Text("Take the colours from the artwork")
+                }
+            }
+            artworkNote?.let { ControlHint(it) }
+        }
         LockableChipLabel("Palette")
         PaletteSlotSelector(p, onChange, palettes)
         if (isShaderLookScene) {

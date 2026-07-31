@@ -37,14 +37,20 @@ import dev.musicviz.export.ExportRatio
 fun SettingsDialog(
     export: ExportUiState,
     hasMedia: Boolean,
-    onStart: (ExportAspect, Int) -> Unit,
-    onStartToDestination: (ExportAspect, Int) -> Unit,
+    takes: List<String>,
+    selectedTake: String?,
+    onSelectTake: (String?) -> Unit,
+    /** Detected tempo, so the dialog can say whether a bar trim is possible. */
+    bpm: Float,
+    onStart: (ExportAspect, Int, Boolean) -> Unit,
+    onStartToDestination: (ExportAspect, Int, Boolean) -> Unit,
     onCancel: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var quality by remember { mutableStateOf(ExportQuality.FHD1080) }
     var ratio by remember { mutableStateOf(ExportRatio.R16_9) }
     var fps by remember { mutableStateOf(60) }
+    var loopSafe by remember { mutableStateOf(false) }
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -108,6 +114,45 @@ fun SettingsDialog(
                                 QualityChip(r.label, ratio == r) { ratio = r }
                             }
                         }
+                        val barUs = dev.musicviz.analysis.BarTrim.barDurationUs(bpm)
+                        Text("Looping", style = MaterialTheme.typography.labelMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            QualityChip("Full length", !loopSafe) { loopSafe = false }
+                            QualityChip("Loop-safe", loopSafe) { loopSafe = barUs != null }
+                        }
+                        Text(
+                            if (barUs != null) {
+                                "Loop-safe cuts on a bar boundary (${"%.0f".format(bpm)} BPM, " +
+                                    "${"%.1f".format(barUs / 1_000_000f)} s per bar) so the last beat runs " +
+                                    "into the first — what a short clip needs when a platform autoplays it " +
+                                    "on repeat. Up to one bar is trimmed from the end."
+                            } else {
+                                "Loop-safe needs a detected tempo. Analyse the track (Now Playing › Auto) " +
+                                    "and reopen this dialog."
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                        if (takes.isNotEmpty()) {
+                            Text("Performance", style = MaterialTheme.typography.labelMedium)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                QualityChip("Live settings", selectedTake == null) { onSelectTake(null) }
+                                takes.forEach { name ->
+                                    QualityChip(name, selectedTake == name) { onSelectTake(name) }
+                                }
+                            }
+                            if (selectedTake != null) {
+                                Text(
+                                    "Renders the take's parameter automation — every slider, colour and " +
+                                        "effect moving as you performed it. A style SWITCH inside the take " +
+                                        "is not reproduced: the render draws through the style selected " +
+                                        "now, for its whole length.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                        }
                         if (quality == ExportQuality.UHD4K) {
                             Text(
                                 "4K depends on your device's encoder; it falls back automatically if unsupported.",
@@ -115,14 +160,14 @@ fun SettingsDialog(
                             )
                         }
                         Button(
-                            onClick = { onStart(ExportAspect.of(quality, ratio), fps) },
+                            onClick = { onStart(ExportAspect.of(quality, ratio), fps, loopSafe) },
                             enabled = hasMedia,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text("Render ${quality.shortSide}p ${ratio.label} ${fps}fps")
                         }
                         OutlinedButton(
-                            onClick = { onStartToDestination(ExportAspect.of(quality, ratio), fps) },
+                            onClick = { onStartToDestination(ExportAspect.of(quality, ratio), fps, loopSafe) },
                             enabled = hasMedia,
                             modifier = Modifier.fillMaxWidth(),
                         ) {

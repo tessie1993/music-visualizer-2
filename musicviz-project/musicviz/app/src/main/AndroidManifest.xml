@@ -36,6 +36,33 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!--
+              Shared presets. A preset is a self-contained document and the app
+              has no network permission, so a "shared preset" IS the preset,
+              carried inside the link; tapping one in a chat opens the app and
+              imports it. Nothing is fetched.
+            -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="musicviz"
+                    android:host="preset" />
+            </intent-filter>
         </activity>
+
+        <!-- Sharing a preset too long to be a link sends its .json; a raw
+             file:// uri cannot leave the app, so it goes out through here.
+             Scoped to the presets directory alone (preset_paths.xml). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.presets"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/preset_paths" />
+        </provider>
     </application>
 </manifest>

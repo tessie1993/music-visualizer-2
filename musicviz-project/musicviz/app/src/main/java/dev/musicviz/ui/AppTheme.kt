@@ -338,6 +338,14 @@ data class GuiPrefs(
     val touchSmear: Boolean = false,
     /** How hard a drag displaces the surface, 0.2..2. */
     val touchSmearStrength: Float = 1f,
+    /** Colour the visuals from the track's detected musical key. Drives the
+     *  Hue shift slider, so it is visible and undoable rather than a hidden
+     *  second colour source; turning it off restores the value it replaced. */
+    val keyColor: Boolean = false,
+    /** Pinch to zoom and twist to spin on the fullscreen canvas. On by
+     *  default: both are standard gestures, and both land on ordinary sliders
+     *  that undo them, so there is nothing to get stuck in. */
+    val touchTransform: Boolean = true,
 ) {
     /**
      * [beatMinIntervalMs] after the Safe-visuals floor.
@@ -423,6 +431,8 @@ class ThemeStore(
             // microphone is opened only by an explicit switch in this session.
             touchSmear = prefs.getBoolean(KEY_TOUCH_SMEAR, false),
             touchSmearStrength = prefs.getFloat(KEY_TOUCH_SMEAR_STRENGTH, 1f).coerceIn(0.2f, 2f),
+            touchTransform = prefs.getBoolean(KEY_TOUCH_TRANSFORM, true),
+            keyColor = prefs.getBoolean(KEY_KEY_COLOR, false),
         )
 
     fun saveGui(gui: GuiPrefs) {
@@ -448,6 +458,8 @@ class ThemeStore(
             .putBoolean(KEY_REDUCED_MOTION, gui.reducedMotion)
             .putBoolean(KEY_TOUCH_SMEAR, gui.touchSmear)
             .putFloat(KEY_TOUCH_SMEAR_STRENGTH, gui.touchSmearStrength)
+            .putBoolean(KEY_TOUCH_TRANSFORM, gui.touchTransform)
+            .putBoolean(KEY_KEY_COLOR, gui.keyColor)
             .apply()
     }
 
@@ -470,5 +482,7 @@ class ThemeStore(
         const val KEY_REDUCED_MOTION = "gui_reduced_motion"
         const val KEY_TOUCH_SMEAR = "gui_touch_smear"
         const val KEY_TOUCH_SMEAR_STRENGTH = "gui_touch_smear_strength"
+        const val KEY_TOUCH_TRANSFORM = "gui_touch_transform"
+        const val KEY_KEY_COLOR = "gui_key_color"
     }
 }
