@@ -1,14 +1,21 @@
 name: Rebuild native libs (16 KB aligned)
 
 # Google Play requires 16 KB page-size support for apps targeting Android 15+
-# (API 35 and above). The .so files checked into app/src/main/jniLibs must
-# therefore have ELF LOAD segments aligned to 16384, which means rebuilding
-# libprojectM and the JNI bridge with NDK r28 (16 KB is its default) plus the
-# explicit max-page-size linker flag.
+# (API 35 and above). The .so files in app/src/main/jniLibs must therefore have
+# ELF LOAD segments aligned to 16384, which means rebuilding libprojectM and the
+# JNI bridge with NDK r28 or newer (16 KB is its default) plus the explicit
+# max-page-size linker flag.
 #
-# Run this manually, download the artifact, drop both .so into
-# app/src/main/jniLibs/arm64-v8a/ and commit. The alignment guard in
-# android.yml then verifies every push.
+# Rebuilding is the only fix — the alignment is baked into the ELF program
+# headers and cannot be patched into an existing .so.
+#
+# By default this commits the rebuilt libraries straight back to the branch it
+# runs on, because the artifact download is not reachable from every
+# environment. Set commit=false to only produce the artifact.
+#
+# The rebuilt engine still needs the on-device MilkDrop checks in
+# docs/DEVICE_CHECKS.md: this is a fresh build of the render engine, and a
+# green workflow only proves the libraries link and are aligned.
 
 on:
   workflow_dispatch:
@@ -17,28 +24,46 @@ on:
         description: projectM release tag to build
         default: v4.1.7
         required: true
+      commit:
+        description: Commit the rebuilt .so back to this branch
+        type: boolean
+        default: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      # NDK r28 defaults to 16 KB-aligned shared objects.
-      NDK_VERSION: 28.0.13004108
       ABI: arm64-v8a
       API: 26
+      JNILIBS: musicviz-project/musicviz/app/src/main/jniLibs/arm64-v8a
       PAGE_FLAGS: -Wl,-z,max-page-size=16384,-z,common-page-size=16384
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install NDK ${{ env.NDK_VERSION }}
+      # Pinning an exact NDK build number is brittle — the hosted image's
+      # available packages move. Resolve the newest r28+ instead and fail loudly
+      # if the image has none.
+      - name: Install NDK (r28 or newer)
         run: |
           set -euo pipefail
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;${NDK_VERSION}"
-          echo "NDK=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          version=$("$SDKMANAGER" --list 2>/dev/null \
+            | grep -oE 'ndk;[0-9]+\.[0-9]+\.[0-9]+' \
+            | sed 's/^ndk;//' \
+            | sort -u -V \
+            | awk '$0 + 0 >= 28' \
+            | tail -1)
+          if [ -z "$version" ]; then
+            echo "::error::no NDK r28+ available; 16 KB alignment needs r28 or newer"
+            exit 1
+          fi
+          echo "Installing NDK $version"
+          "$SDKMANAGER" --install "ndk;$version" > /dev/null
+          echo "NDK=$ANDROID_HOME/ndk/$version" >> "$GITHUB_ENV"
 
       - name: Install build tools
         run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
@@ -55,6 +80,9 @@ jobs:
         working-directory: projectm
         run: |
           set -euo pipefail
+          # Adds projectm_opengl_render_frame_fbo, which the app's JNI bridge
+          # calls. If this stops applying, the JNI link below fails on the
+          # missing symbol rather than producing a lib that crashes on device.
           git apply --verbose \
             ../musicviz-project/musicviz/tools/projectm-v417-render-fbo-backport.patch
 
@@ -76,14 +104,23 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out
-          find build-android -name 'libprojectM-4.so' -exec cp {} out/ \;
+          found=$(find build-android -name 'libprojectM-4.so' | head -1)
+          if [ -z "$found" ]; then
+            echo "::error::libprojectM-4.so was not produced by the cmake build"
+            exit 1
+          fi
+          cp "$found" out/
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          # --no-undefined turns a missing projectM symbol (e.g. the FBO
+          # backport failing to apply) into a link error here instead of an
+          # UnsatisfiedLinkError on a user's phone.
           "$TOOLCHAIN/bin/aarch64-linux-android$API-clang" \
             -shared -fPIC -O2 \
             -o out/libprojectmjni.so \
             musicviz-project/musicviz/tools/pm_jni.c \
             -I projectm/src/api/include \
             -L out -lprojectM-4 -llog \
+            -Wl,--no-undefined \
             $PAGE_FLAGS
 
       - name: Verify 16 KB alignment
@@ -91,6 +128,7 @@ jobs:
           set -euo pipefail
           fail=0
           for so in out/*.so; do
+            echo "== $so"
             readelf -lW "$so" | awk '$1 == "LOAD"'
             for a in $(readelf -lW "$so" | awk '$1 == "LOAD" { print $NF }'); do
               if [ "$((a))" -lt 16384 ]; then
@@ -102,9 +140,59 @@ jobs:
           [ "$fail" -eq 0 ] && echo "All LOAD segments are 16 KB aligned."
           exit "$fail"
 
+      # A correctly aligned library that no longer exports what PMBridge.kt
+      # declares would fail at runtime, not at build time. Check the two things
+      # the app actually depends on.
+      - name: Verify JNI surface and SONAME
+        run: |
+          set -euo pipefail
+          soname=$(readelf -dW out/libprojectM-4.so | awk -F'[][]' '/SONAME/ {print $2}')
+          echo "libprojectM-4.so SONAME: $soname"
+          if [ "$soname" != "libprojectM-4.so" ]; then
+            echo "::error::unexpected SONAME '$soname'; Android only loads unversioned lib*.so"
+            exit 1
+          fi
+          missing=0
+          # Every `external fun` in PMBridge.kt must exist as a JNI symbol.
+          for fn in $(grep -oP 'external fun \K\w+' \
+              musicviz-project/musicviz/app/src/main/java/dev/musicviz/render/scene/PMBridge.kt); do
+            sym="Java_dev_musicviz_render_scene_PMBridge_$fn"
+            if ! readelf -sW --dyn-syms out/libprojectmjni.so | grep -q " $sym\$"; then
+              echo "::error::libprojectmjni.so does not export $sym"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] && echo "All PMBridge native methods are exported."
+          exit "$missing"
+
       - name: Upload native libs
         uses: actions/upload-artifact@v4
         with:
           name: jniLibs-arm64-v8a-16k
           path: out/*.so
           retention-days: 30
+
+      - name: Commit rebuilt libraries
+        if: ${{ inputs.commit }}
+        run: |
+          set -euo pipefail
+          cp out/libprojectM-4.so out/libprojectmjni.so "$JNILIBS/"
+          git config user.email noreply@anthropic.com
+          git config user.name Claude
+          git add "$JNILIBS"
+          if git diff --cached --quiet; then
+            echo "Native libraries are byte-identical to the committed ones; nothing to do."
+            exit 0
+          fi
+          git commit -m "Rebuild native libs with 16 KB page alignment
+
+          Built from projectM ${{ inputs.projectm_tag }} with the render-to-FBO
+          backport, NDK r28+ and -Wl,-z,max-page-size=16384, by the native-libs
+          workflow (run ${GITHUB_RUN_ID}).
+
+          Google Play requires 16 KB page-size support for apps targeting
+          Android 15+; the previous libraries had 4 KB-aligned LOAD segments.
+
+          This is a fresh build of the render engine, not a repackage: run the
+          MilkDrop items in docs/DEVICE_CHECKS.md before releasing."
+          git push origin "HEAD:${GITHUB_REF_NAME}"
