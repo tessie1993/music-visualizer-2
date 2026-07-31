@@ -22,9 +22,10 @@ import dev.musicviz.render.scene.SceneParams
  *
  * Music mapping: mids drive field morph rate, treble gains the fine
  * turbulence octave, beats kick field amplitude and brightness (impulse +
- * exponential release), bass pulls toward the catch points. Existing
- * Customize controls map on: Speed = morph rate, Turbulence = spatial
- * frequency, Audio drive = flow strength, Particle size/Palette/Hue range =
+ * exponential release, scaled by Beat response), bass pulls toward the catch
+ * points. Existing Customize controls map on: Speed = morph rate, Turbulence =
+ * spatial frequency, Audio drive = flow strength, Beat response = how far a
+ * beat kicks the field and the points, Particle size/Palette/Hue range =
  * rendering (the palette span via [FluidHue], shared with the other fluid
  * styles), Trails/Trail length = canvas persistence (via [CurlFlowMath]),
  * Particle drag/Particle life = the lifecycle layer, plus the shared fluid
@@ -51,6 +52,9 @@ internal class CurlFlowScene(
     private var noiseTime = 0f
     private var wallTime = 0f
     private var beatEnv = 0f
+
+    /** [beatEnv] after "Beat response" - the value both beat terms ride. */
+    private var beatDrive = 0f
     private var aspect = 1f
     private var available = false
 
@@ -147,6 +151,10 @@ internal class CurlFlowScene(
         if (f != null) {
             wallTime += lastDt
             beatEnv = if (f.beat) 1f else beatEnv * kotlin.math.exp(-lastDt / 0.35f)
+            // The envelope carries the timing, "Beat response" the depth: the
+            // slider had no reader on this style, so it moved nothing while
+            // "Audio drive" (the field kick below) worked.
+            beatDrive = CurlFlowMath.beatDrive(beatEnv, params.beatResponse)
             noiseTime += lastDt * (0.15f + f.mid * 1.4f) * params.speed.coerceIn(0.1f, 2f)
 
             // Shared spawn/catch progression: same params as the fluid scene.
@@ -165,10 +173,7 @@ internal class CurlFlowScene(
             GLES30.glUniform1f(loc("uTime"), noiseTime)
             GLES30.glUniform1f(loc("uFreq"), 1.2f * (0.5f + params.turbulence.coerceIn(0.1f, 2f)))
             GLES30.glUniform1f(loc("uDetail"), (f.treble * 3f).coerceIn(0f, 1.5f))
-            GLES30.glUniform1f(
-                loc("uAmp"),
-                0.55f * params.audioDrive.coerceIn(0.2f, 2f) * (1f + beatEnv * 0.9f),
-            )
+            GLES30.glUniform1f(loc("uAmp"), CurlFlowMath.fieldAmp(params.audioDrive, beatDrive))
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fld.fbo)
             GLES30.glViewport(0, 0, fld.width, fld.height)
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
@@ -212,7 +217,7 @@ internal class CurlFlowScene(
             // jump from reading as a strobe on busy tracks. Exposure
             // (brightness * intensity) is the composite pass's job - folding
             // intensity in here too made that slider quadratic.
-            CurlFlowMath.particleBrightness(beatEnv),
+            CurlFlowMath.particleBrightness(beatDrive),
         )
     }
 

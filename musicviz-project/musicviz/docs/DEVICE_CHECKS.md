@@ -220,3 +220,29 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     independently. Finally, Visuals > Customize must be the only
     customization surface: there is no second full-screen dialog to reach
     from anywhere in the app.
+28. Audio drive + Beat response on the fluid family (v1.1.x): play a
+    track with a clear kick and open Visuals > Customize > Behaviour on
+    FLUID. REGRESSION SIDE FIRST — at the defaults (Audio drive 1.0, Beat
+    response 1.0) the style must look EXACTLY as it did before this
+    change; load an old saved preset that never touched either slider and
+    confirm the same. Now drag Audio drive to 2.5: the dye splats must
+    kick harder, the curl swirl tighten and the canvas hold its ink
+    longer (the quiet-passage fade is audio-driven too). Drag it to 0.2:
+    the same track must read as a near-idle drift. It must ramp smoothly,
+    and it must NOT wash out to a blown white frame at the top — that is
+    what a double-applied gain looks like. Then Beat response: at 2.0
+    every beat must stamp a visibly wider, faster, brighter splat; at 0
+    the beat pattern must stop firing entirely while stirrers, sparkle
+    and bass pump keep running (the silence between beats is the tell).
+    Repeat the sweep on WATER — drops grow and travel harder with Audio
+    drive, beat rings vanish at Beat response 0 while stirrer wakes
+    continue — and on CURL FLOW, where Beat response was inert before: at
+    2.0 the field must lurch on the beat and the streams flash, at 0 the
+    flow must stay perfectly even through a drop. On Curl Flow also check
+    the TOP of Audio drive specifically: 2.0 -> 2.5 used to be flat and
+    must now still increase the flow. Finally MILKDROP: Beat response
+    must still change how eagerly presets react (it drives projectM's own
+    beat sensitivity) and Audio drive must do NOTHING there — deliberate,
+    not a bug to file (PARAM_MATRIX note 5). Leave FLUID at Audio drive
+    2.5 for a minute and watch the frame rate: no auto-quality downgrade
+    spiral, no NaN/black frame.

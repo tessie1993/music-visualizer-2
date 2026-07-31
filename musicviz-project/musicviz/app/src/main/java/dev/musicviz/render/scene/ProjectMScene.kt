@@ -19,6 +19,8 @@ class PcmChunk(
  * brightness/contrast/gamma/invert, intensity) work on .milk presets too.
  * Beat response maps to projectM's own beat sensitivity.
  *
+ * "Audio drive" is deliberately NOT wired here - see [update] for why.
+ *
  * Preset loads are debounced on the GL thread; file I/O happens off-thread in
  * the ViewModel before paths reach this class.
  */
@@ -156,6 +158,23 @@ class ProjectMScene(
         fboHeight = height
     }
 
+    /**
+     * Advances the Customize transforms and feeds the engine raw PCM.
+     *
+     * WHY "Audio drive" HAS NO READER HERE (and should not get one): every
+     * other style consumes the analysed features, so a master gain on them is
+     * meaningful. MilkDrop does not - the ONLY audio that reaches a .milk
+     * preset is the mono PCM below, from which libprojectM runs its own FFT
+     * and its own beat detector. That detector is ratio-based (instantaneous
+     * band energy against its running average), so a constant gain on the
+     * samples cancels out of exactly the quantities presets react to, and the
+     * one thing it would NOT cancel out of is the waveform many presets draw
+     * directly - which would clip against the preset's own scaling. The
+     * slider's honest counterpart on this style is projectM's own beat
+     * sensitivity, and "Beat response" is already mapped onto it in [draw].
+     * Scaling [PcmChunk.data] in place would also corrupt a buffer the tap
+     * owns, and copying it every frame would allocate for no visible effect.
+     */
     override fun update(
         features: AudioFeatures,
         dt: Float,

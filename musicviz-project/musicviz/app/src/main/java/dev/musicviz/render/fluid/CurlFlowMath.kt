@@ -39,6 +39,38 @@ internal object CurlFlowMath {
     /** How much a fresh beat lifts the points above [BASE_BRIGHTNESS]. */
     const val BEAT_BRIGHTNESS = 0.35f
 
+    /** Curl field amplitude at neutral audio drive with no beat in flight. */
+    const val BASE_AMP = 0.55f
+
+    /** How much a full beat envelope kicks the field above [BASE_AMP]. */
+    const val BEAT_AMP = 0.9f
+
+    /**
+     * The beat envelope after the "Beat response" slider (0..2, neutral 1).
+     * The scene's envelope is a local attack/release with no reader for that
+     * slider at all before this - so on Curl Flow "Beat response" was inert
+     * even though "Audio drive" was wired. Scaling the envelope (rather than
+     * one term) makes the slider move BOTH beat-driven terms, the field kick
+     * and the point brightness, and is an exact no-op at 1.
+     */
+    fun beatDrive(
+        beatEnvelope: Float,
+        beatResponse: Float,
+    ): Float = beatEnvelope * beatResponse.coerceIn(0f, 2f)
+
+    /**
+     * Curl field amplitude uniform (`uAmp`). "Audio drive" spans the full
+     * slider domain here: the scene used to clamp it to 2.0 while the slider
+     * goes to 2.5, so its top fifth was flat on this style.
+     */
+    fun fieldAmp(
+        audioDrive: Float,
+        beatDrive: Float,
+    ): Float =
+        BASE_AMP *
+            audioDrive.coerceIn(FluidMath.MIN_AUDIO_DRIVE, FluidMath.MAX_AUDIO_DRIVE) *
+            (1f + beatDrive.coerceIn(0f, 2f) * BEAT_AMP)
+
     /**
      * Frame retention for a given "Trail length" slider value. Strictly
      * increasing over the slider's whole 0.05..0.98 range, so no part of the
