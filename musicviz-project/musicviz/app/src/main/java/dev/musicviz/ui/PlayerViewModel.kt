@@ -26,6 +26,7 @@ import dev.musicviz.export.VideoExporter
 import dev.musicviz.playback.PlaybackEngine
 import dev.musicviz.playback.PlaybackService
 import dev.musicviz.playback.PlaybackSnapshot
+import dev.musicviz.render.SwitchTiming
 import dev.musicviz.render.TransitionStyle
 import dev.musicviz.render.scene.ParamRandomizer
 import dev.musicviz.render.scene.PcmChunk
@@ -39,6 +40,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -131,13 +134,14 @@ data class ExportUiState(
 )
 
 /**
- * Graded beat impulse a "switch on a musical moment" decision (intelligent
- * visual playlist, Random mode's switch-on-beat) treats as strong enough to
- * act on. Track-relative by construction - [AudioFeatures.beatImpulse] folds
- * in the macro-energy envelope - so this is "one of this song's bigger hits",
- * not an absolute loudness that quiet masters never reach.
+ * Shortest time the intelligent visual playlist will hold a look before a
+ * strong beat may replace it. Higher than Random mode's floor because a
+ * playlist is a sequence the user arranged, not a shuffle.
  */
-private const val STRONG_MOMENT_IMPULSE = 0.6f
+private const val VIZ_PLAYLIST_MIN_DWELL_MS = 8_000L
+
+/** Random mode's equivalent floor: it is meant to feel livelier. */
+private const val RANDOM_MODE_MIN_DWELL_MS = 6_000L
 
 /**
  * Owns playback (queue + audio focus + PCM tap), live analysis, offline
@@ -777,14 +781,32 @@ class PlayerViewModel(
         // The sink may already have a session id (attach ignores UNSET = 0).
         audioFxController.attach(playback.audioSessionId)
         refreshAudioFx()
+        // Tick only while audio is actually moving. This used to be an
+        // unconditional `while (true) { ...; delay(500) }` for the ViewModel's
+        // whole life, which woke the main thread twice a second forever - with
+        // the app idle, with the screen off, with nothing playing. Everything
+        // in the tick is about a position that is advancing: refresh() resamples
+        // it, and the three rotations below all return immediately unless
+        // something is playing.
+        //
+        // collectLatest is what stops it: a pause cancels the inner loop, and a
+        // play starts a fresh one. The pause itself is not missed, because the
+        // Player.Listener calls refresh() on every event, so the final position
+        // lands before the loop is cancelled.
         viewModelScope.launch {
-            while (true) {
-                refresh()
-                applyIntelligence()
-                advanceVizPlaylist()
-                advanceRandomMode()
-                delay(500)
-            }
+            _uiState
+                .map { it.isPlaying }
+                .distinctUntilChanged()
+                .collectLatest { playing ->
+                    if (!playing) return@collectLatest
+                    while (true) {
+                        refresh()
+                        applyIntelligence()
+                        advanceVizPlaylist()
+                        advanceRandomMode()
+                        delay(500)
+                    }
+                }
         }
     }
 
@@ -910,23 +932,14 @@ class PlayerViewModel(
         val s = _vizState.value
         if (!s.vizPlaylistEnabled || s.vizPlaylist.size < 2 || !_uiState.value.isPlaying) return
         val now = android.os.SystemClock.elapsedRealtime()
-        val elapsed = now - lastVizSwitchMs
-        val intervalMs = s.vizPlaylistIntervalSec * 1000L
         val due =
-            if (s.vizPlaylistIntelligent) {
-                // Intelligent: after a minimum dwell, switch on a strong
-                // musical moment; force a switch at 2x interval so quiet
-                // passages still rotate. "Strong" is the tracker's graded beat
-                // impulse, which is TRACK-RELATIVE (it folds in the macro-
-                // energy envelope) - the absolute rms gate this replaced never
-                // opened on a quietly mastered track, so intelligent mode
-                // silently degraded into the plain 2x-interval timer there.
-                val f = engine.features.value
-                val minDwell = maxOf(8_000L, intervalMs / 2)
-                (elapsed >= minDwell && f.beatImpulse >= STRONG_MOMENT_IMPULSE) || elapsed >= intervalMs * 2
-            } else {
-                elapsed >= intervalMs
-            }
+            SwitchTiming.isDue(
+                elapsedMs = now - lastVizSwitchMs,
+                intervalMs = s.vizPlaylistIntervalSec * 1000L,
+                onStrongMoment = s.vizPlaylistIntelligent,
+                beatImpulse = engine.features.value.beatImpulse,
+                minDwellFloorMs = VIZ_PLAYLIST_MIN_DWELL_MS,
+            )
         if (!due) return
         lastVizSwitchMs = now
         vizPlaylistIndex = (vizPlaylistIndex + 1) % s.vizPlaylist.size
@@ -984,20 +997,14 @@ class PlayerViewModel(
     private fun advanceRandomMode() {
         val s = _vizState.value
         if (!s.randomEnabled || !_uiState.value.isPlaying) return
-        val now = android.os.SystemClock.elapsedRealtime()
-        val elapsed = now - lastRandomSwitchMs
-        val intervalMs = s.randomIntervalSec * 1000L
         val due =
-            if (s.randomOnBeat) {
-                // Switch on a strong musical moment after a minimum dwell;
-                // force a switch at 2x interval so quiet passages still move.
-                // Graded and track-relative, as in advanceVizPlaylist().
-                val f = engine.features.value
-                val minDwell = maxOf(6_000L, intervalMs / 2)
-                (elapsed >= minDwell && f.beatImpulse >= STRONG_MOMENT_IMPULSE) || elapsed >= intervalMs * 2
-            } else {
-                elapsed >= intervalMs
-            }
+            SwitchTiming.isDue(
+                elapsedMs = android.os.SystemClock.elapsedRealtime() - lastRandomSwitchMs,
+                intervalMs = s.randomIntervalSec * 1000L,
+                onStrongMoment = s.randomOnBeat,
+                beatImpulse = engine.features.value.beatImpulse,
+                minDwellFloorMs = RANDOM_MODE_MIN_DWELL_MS,
+            )
         if (!due) return
         randomStepNow()
     }
@@ -1707,7 +1714,14 @@ class PlayerViewModel(
 
     fun setIntelligenceMode(mode: IntelligenceMode) {
         _vizState.update { it.copy(intelligenceMode = mode) }
-        if (mode != IntelligenceMode.MANUAL && timeline == null) analyzeCurrentTrack()
+        if (mode != IntelligenceMode.MANUAL && timeline == null) {
+            analyzeCurrentTrack()
+        } else {
+            // Act on the switch now rather than on the next tick: with an
+            // already-analysed track the tick may be up to half a second away,
+            // and while paused it never comes at all.
+            applyIntelligence()
+        }
     }
 
     fun analyzeCurrentTrack() {
