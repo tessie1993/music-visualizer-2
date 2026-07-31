@@ -235,6 +235,10 @@ internal fun BehaviorTab(
  * pass, so they work on every style; the second palette slot and Duotone are
  * ShaderScene-only and are gated by [isShaderLookScene] - see
  * `VisualsHub.isShaderLookSceneId`.
+ *
+ * "MilkDrop palette tint" is the reverse case: a control that only the
+ * MILKDROP style reads, shown everywhere with the style in its label, because
+ * this tab is handed no MilkDrop predicate to gate on.
  */
 @Composable
 internal fun ColorTab(
@@ -257,6 +261,20 @@ internal fun ColorTab(
                 LockableChipLabel("Palette 2")
                 PaletteSlotSelector(p, onChange, palettes, second = true)
             }
+        }
+        // MilkDrop is the one style that authors its own colours, so the
+        // palette reaches it as an opt-in blend rather than as the colour
+        // itself (ProjectMScene's post pass, uPalTint). The label names the
+        // style - as "Trails (particle scenes)" and "Glow (fluid)" do -
+        // because ColorTab has no MilkDrop predicate to gate on.
+        Text(
+            "MilkDrop presets paint their own colours. This steers them toward the " +
+                "palette above (0 = the preset untouched); every other style renders " +
+                "the palette directly and ignores it.",
+            style = MaterialTheme.typography.labelSmall,
+        )
+        LabeledSlider("MilkDrop palette tint", p.milkdropPaletteTint, 0f..1f) {
+            onChange(p.copy(milkdropPaletteTint = it))
         }
         SectionHeader("Gradient & palette maker")
         PaletteMakerCard(p, onChange, palettes)
