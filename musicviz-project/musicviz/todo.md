@@ -335,15 +335,23 @@ it was left and what closing it involves.
       `VisualizerRenderer` and `FxCompositor`, and a `CompositeGrade` mirror
       + headless test — the same shape as the v0.14 grading work. Pick the
       curve so it matches what shader scenes already do at the same value.
-- [ ] **`audioDrive` / `beatResponse` have no reader on Fluid, Water (and
-      `audioDrive` none on MilkDrop).** Those scenes consume `AudioFeatures`
-      straight after `applyBandGains`, so the per-band faders work but the
-      two master reactivity sliders do nothing. Curl Flow reads `audioDrive`
-      (CurlFlowScene.kt:170) and still ignores `beatResponse`. Do NOT fix by
-      folding `audioDrive` into `applyBandGains` — shader and particle scenes
-      apply it themselves and would double-apply. The honest fix is to scale
-      the emitter/choreography drive terms in FluidScene/WaterScene, which
-      needs on-device tuning to avoid blowing the sim out at 2.5x.
+- [x] **`audioDrive` / `beatResponse` have no reader on Fluid, Water (and
+      `audioDrive` none on MilkDrop).** Fixed for the fluid family: FLUID and
+      WATER apply `audioDrive` once, in `draw`, to the feature snapshot the
+      sim uniforms, the choreography and the emitters share (`FluidAudioDrive`
+      in FluidMath.kt, reusing ShaderScene's `x * drive` clamped to 1.5 so the
+      sim can't be blown out at 2.5x), and pass `beatResponse` to
+      `FluidEmitters` as the depth of the beat envelope its radius pulse,
+      momentum and dye gain ride; Curl Flow now scales its own beat envelope
+      by `beatResponse` (`CurlFlowMath.beatDrive`) and reaches the whole
+      `audioDrive` slider instead of clamping it at 2.0. Both are exact
+      no-ops at the neutral default, pinned by `FluidAudioDriveTest`, and
+      NEITHER is folded into `applyBandGains` (shader/particle scenes apply
+      `audioDrive` themselves and would double-apply). Still deliberately
+      unwired on MilkDrop: the only audio a `.milk` preset sees is the mono
+      PCM, and libprojectM's beat detector is ratio-based, so a constant gain
+      cancels out of what presets react to while clipping the waveform they
+      draw — reasoning in `ProjectMScene.update`'s KDoc. Device check 28.
 - [x] **Shader-only params are shown on every style.** DONE (v1.1.0):
       `morph`, `palette2`, `paletteMix` and `duotone` are read only by
       `ShaderScene` (uMorph / uPal2Base+uPal2Range / uPaletteMix / uDuotone,
