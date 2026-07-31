@@ -4,12 +4,14 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,30 +22,28 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -58,6 +58,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -172,34 +174,18 @@ fun AppRoot(
                                 .height(1.dp)
                                 .luminousHairline(MaterialTheme.colorScheme.primary),
                         )
-                        NavigationBar(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = gui.barOpacity * 0.9f),
-                        ) {
-                            NavigationBarItem(
-                                selected = dest == 0,
-                                onClick = { dest = 0 },
-                                icon = { Icon(Icons.Filled.Home, "Home") },
-                                label = { Text("Home") },
-                            )
-                            NavigationBarItem(
-                                selected = dest == 1,
-                                onClick = { dest = 1 },
-                                icon = { Icon(Icons.Filled.LibraryMusic, "Library") },
-                                label = { Text("Library") },
-                            )
-                            NavigationBarItem(
-                                selected = dest == 2,
-                                onClick = { dest = 2 },
-                                icon = { Icon(Icons.Filled.MusicNote, "Visuals") },
-                                label = { Text("Visuals") },
-                            )
-                            NavigationBarItem(
-                                selected = dest == 3,
-                                onClick = { dest = 3 },
-                                icon = { Icon(Icons.Filled.Settings, "Settings") },
-                                label = { Text("Settings") },
-                            )
-                        }
+                        CrystalNavBar(
+                            items =
+                                listOf(
+                                    "Home" to Icons.Outlined.Home,
+                                    "Library" to Icons.Outlined.LibraryMusic,
+                                    "Visuals" to Icons.Outlined.GraphicEq,
+                                    "Settings" to Icons.Outlined.Settings,
+                                ),
+                            selected = dest,
+                            onSelect = { dest = it },
+                            barOpacity = gui.barOpacity,
+                        )
                     }
                 },
             ) { pad ->
@@ -280,22 +266,21 @@ private fun MiniPlayer(
     onNext: () -> Unit,
 ) {
     if (!hasMedia) return
+    val cs = MaterialTheme.colorScheme
+    // Floating glass card per the mockups' mini player: crystal thumbnail,
+    // one-line title, lit play control, luminous progress hairline.
     Column(
         Modifier
             .fillMaxWidth()
-            .glassPanel(barOpacity, MaterialTheme.colorScheme.surfaceVariant, glow = MaterialTheme.colorScheme.primary)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .crystalPanel(barOpacity, cs.surfaceVariant, cs.primary, corner = 18.dp, glowStrength = 0.7f)
             .clickable(onClick = onExpand),
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = if (compact) 0.dp else 6.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = if (compact) 2.dp else 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                Icons.Filled.MusicNote,
-                null,
-                Modifier.size(if (compact) 20.dp else 28.dp),
-                tint = MaterialTheme.colorScheme.primary,
-            )
+            CrystalThumb(title ?: "MusicViz", size = if (compact) 26.dp else 36.dp, corner = 8.dp)
             Text(
                 title ?: "Now playing",
                 modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
@@ -304,14 +289,27 @@ private fun MiniPlayer(
                 style = MaterialTheme.typography.bodyMedium,
             )
             IconButton(onClick = onPlayPause) {
-                Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play/Pause")
+                Icon(
+                    if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    "Play/Pause",
+                    tint = cs.primary,
+                )
             }
             IconButton(onClick = onNext) { Icon(Icons.Filled.SkipNext, "Next") }
         }
-        LinearProgressIndicator(
-            progress = { progress.coerceIn(0f, 1f) },
-            modifier = Modifier.fillMaxWidth().height(2.dp),
-        )
+        Box(Modifier.fillMaxWidth().height(2.dp).background(cs.onSurface.copy(alpha = 0.12f))) {
+            Box(
+                Modifier
+                    .fillMaxWidth(progress.coerceIn(0f, 1f))
+                    .height(2.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            0f to cs.primary.copy(alpha = 0.4f),
+                            1f to cs.primary,
+                        ),
+                    ),
+            )
+        }
     }
 }
 
@@ -337,41 +335,54 @@ fun HomeScreen(
         }
         if (state.hasMedia) {
             item {
+                // "Resume" hero card per the mockups: circular lit play glyph,
+                // overline + title, trailing chevron.
+                val cs = MaterialTheme.colorScheme
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .crystalPanel(
                             0.4f,
-                            MaterialTheme.colorScheme.surfaceVariant,
-                            MaterialTheme.colorScheme.primary,
+                            cs.surfaceVariant,
+                            cs.primary,
                             corner = 20.dp,
                         ).clickable(onClick = onExpand)
                         .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(
-                        Icons.Filled.PlayArrow,
-                        null,
-                        Modifier.softGlow(MaterialTheme.colorScheme.primary, 12.dp),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    Column(Modifier.padding(start = 10.dp)) {
+                    Box(
+                        Modifier
+                            .size(40.dp)
+                            .softGlow(cs.primary, 10.dp)
+                            .clip(CircleShape)
+                            .background(cs.primary.copy(alpha = 0.25f))
+                            .border(1.dp, cs.primary.copy(alpha = 0.8f), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Filled.PlayArrow, null, tint = Color.White)
+                    }
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
                         CrystalOverline("Resume")
                         Text(state.title ?: "Current queue", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
+                    Icon(Icons.Filled.ChevronRight, null, tint = cs.onSurfaceVariant)
                 }
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = viewModel::shuffleAllHistory) { Text("Shuffle all") }
-            }
+            CrystalButton(
+                "Shuffle All",
+                onClick = viewModel::shuffleAllHistory,
+                modifier = Modifier.fillMaxWidth(),
+                icon = Icons.Filled.Shuffle,
+                kind = CrystalButtonKind.SECONDARY,
+            )
         }
         if (recent.isNotEmpty()) {
             item { CrystalOverline("Recently played", Modifier.padding(top = 6.dp)) }
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(recent) { e -> HistoryChip(e.title) { viewModel.playTrack(e.uri) } }
+                    items(recent) { e -> CrystalChip(e.title, onClick = { viewModel.playTrack(e.uri) }) }
                 }
             }
         }
@@ -379,38 +390,13 @@ fun HomeScreen(
             item { CrystalOverline("Most played", Modifier.padding(top = 6.dp)) }
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(most) { e -> HistoryChip("${e.title} (${e.playCount})") { viewModel.playTrack(e.uri) } }
+                    items(most) { e -> CrystalChip("${e.title} (${e.playCount})", onClick = { viewModel.playTrack(e.uri) }) }
                 }
             }
         }
         if (recent.isEmpty()) {
             item { Text("Play something from the Library to see history here.", style = MaterialTheme.typography.bodyMedium) }
         }
-    }
-}
-
-@Composable
-private fun HistoryChip(
-    label: String,
-    onClick: () -> Unit,
-) {
-    Box(
-        Modifier
-            .crystalPanel(
-                0.3f,
-                MaterialTheme.colorScheme.surfaceVariant,
-                MaterialTheme.colorScheme.primary,
-                corner = 24.dp,
-                glowStrength = 0.6f,
-            ).clickable(onClick = onClick),
-    ) {
-        Text(
-            label,
-            Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.bodyMedium,
-        )
     }
 }
 
@@ -478,80 +464,54 @@ fun SettingsScreen(
                 CrystalOverline("Theme", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(AppTheme.entries.toList()) { t ->
-                        val sel = t == appTheme
-                        Box(
-                            Modifier
-                                .crystalPanel(
-                                    if (sel) 0.55f else 0.25f,
-                                    if (sel) {
-                                        MaterialTheme.colorScheme.primaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceVariant
-                                    },
-                                    MaterialTheme.colorScheme.primary,
-                                    corner = 20.dp,
-                                    glowStrength = if (sel) 1.2f else 0.4f,
-                                ).clickable { viewModel.setTheme(t) },
-                        ) {
-                            Text(
-                                t.label,
-                                Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color =
-                                    if (sel) {
-                                        MaterialTheme.colorScheme.onPrimaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
-                                    },
-                            )
-                        }
+                        CrystalChip(t.label, onClick = { viewModel.setTheme(t) }, selected = t == appTheme)
                     }
                 }
+                CrystalSliderRow(
+                    "Bar opacity",
+                    gui.barOpacity,
+                    0.2f..1f,
+                    onChange = { viewModel.setGuiPrefs(gui.copy(barOpacity = it)) },
+                    valueText = "${(gui.barOpacity * 100).toInt()}%",
+                )
                 Column {
-                    Text("Bar opacity  ${(gui.barOpacity * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
-                    Slider(
-                        value = gui.barOpacity,
-                        onValueChange = { viewModel.setGuiPrefs(gui.copy(barOpacity = it)) },
-                        valueRange = 0.2f..1f,
+                    CrystalOverline("Player position", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(6.dp))
+                    CrystalSegmented(
+                        PlayerPosition.entries.map { it.label },
+                        gui.playerPosition.ordinal,
+                        onSelect = { viewModel.setGuiPrefs(gui.copy(playerPosition = PlayerPosition.entries[it])) },
                     )
                 }
                 Column {
-                    Text("Player position", style = MaterialTheme.typography.labelMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PlayerPosition.entries.forEach { pos ->
-                            OutlinedButton(onClick = { viewModel.setGuiPrefs(gui.copy(playerPosition = pos)) }) {
-                                Text((if (gui.playerPosition == pos) "● " else "") + pos.name.lowercase())
-                            }
-                        }
-                    }
+                    CrystalOverline("Corner style", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(6.dp))
+                    CrystalSegmented(
+                        CornerStyle.entries.map { it.label },
+                        gui.cornerStyle.ordinal,
+                        onSelect = { viewModel.setGuiPrefs(gui.copy(cornerStyle = CornerStyle.entries[it])) },
+                    )
                 }
-                Column {
-                    Text("Corner style", style = MaterialTheme.typography.labelMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CornerStyle.entries.forEach { c ->
-                            OutlinedButton(onClick = { viewModel.setGuiPrefs(gui.copy(cornerStyle = c)) }) {
-                                Text((if (gui.cornerStyle == c) "● " else "") + c.name.lowercase())
-                            }
-                        }
-                    }
-                }
-                Text("Accent intensity  ${(gui.accentIntensity * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
-                Slider(
-                    value = gui.accentIntensity,
-                    onValueChange = { viewModel.setGuiPrefs(gui.copy(accentIntensity = it)) },
-                    valueRange = 0.5f..1.5f,
+                CrystalSliderRow(
+                    "Accent strength",
+                    gui.accentIntensity,
+                    0.5f..1.5f,
+                    onChange = { viewModel.setGuiPrefs(gui.copy(accentIntensity = it)) },
+                    valueText = "${(gui.accentIntensity * 100).toInt()}%",
                 )
-                Text("Background dim  ${(gui.backgroundDim * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
-                Slider(
-                    value = gui.backgroundDim,
-                    onValueChange = { viewModel.setGuiPrefs(gui.copy(backgroundDim = it)) },
-                    valueRange = 0f..0.6f,
+                CrystalSliderRow(
+                    "Background dim",
+                    gui.backgroundDim,
+                    0f..0.6f,
+                    onChange = { viewModel.setGuiPrefs(gui.copy(backgroundDim = it)) },
+                    valueText = "${(gui.backgroundDim * 100).toInt()}%",
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Follow system light/dark", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Switch(
                         checked = gui.followSystemDark,
                         onCheckedChange = { viewModel.setGuiPrefs(gui.copy(followSystemDark = it)) },
+                        colors = crystalSwitchColors(),
                     )
                 }
                 Column {
@@ -573,6 +533,7 @@ fun SettingsScreen(
                     Switch(
                         checked = gui.compactPlayer,
                         onCheckedChange = { viewModel.setGuiPrefs(gui.copy(compactPlayer = it)) },
+                        colors = crystalSwitchColors(),
                     )
                 }
                 Column {
@@ -581,6 +542,7 @@ fun SettingsScreen(
                         Switch(
                             checked = gui.clearVisualsMenu,
                             onCheckedChange = { viewModel.setGuiPrefs(gui.copy(clearVisualsMenu = it)) },
+                            colors = crystalSwitchColors(),
                         )
                     }
                     Text(
@@ -598,7 +560,7 @@ fun SettingsScreen(
                     Switch(checked = bootAnim, onCheckedChange = {
                         bootAnim = it
                         bootPrefs.edit().putBoolean("boot_anim", it).apply()
-                    })
+                    }, colors = crystalSwitchColors())
                 }
             }
         }
@@ -631,8 +593,12 @@ fun SettingsScreen(
                         },
                         style = MaterialTheme.typography.labelMedium,
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { folderPicker.launch(null) }) { Text("Choose preset folder") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CrystalButton(
+                            "Choose preset folder",
+                            onClick = { folderPicker.launch(null) },
+                            kind = CrystalButtonKind.SECONDARY,
+                        )
                         if (gui.presetMirrorUri != null) {
                             TextButton(onClick = { viewModel.setGuiPrefs(gui.copy(presetMirrorUri = null)) }) { Text("Clear") }
                         }
@@ -646,60 +612,57 @@ fun SettingsScreen(
         }
         item {
             SettingsSection("Visuals & Analysis") {
-                Column {
-                    Text("Preset morph: ${gui.morphBeats} beats (0 = snap)")
-                    Slider(
-                        value = gui.morphBeats.toFloat(),
-                        onValueChange = { viewModel.setGuiPrefs(gui.copy(morphBeats = it.toInt())) },
-                        valueRange = 0f..16f,
-                        steps = 15,
+                CrystalSliderRow(
+                    "Preset morph (beats, 0 = snap)",
+                    gui.morphBeats.toFloat(),
+                    0f..16f,
+                    onChange = { viewModel.setGuiPrefs(gui.copy(morphBeats = it.toInt())) },
+                    valueText = "${gui.morphBeats}",
+                    steps = 15,
+                )
+                // Range comes from the extractor so the slider can never
+                // saturate against a tighter clamp in AnalysisEngine.
+                CrystalSliderRow(
+                    "Beat sensitivity — drag right for LESS sensitive",
+                    gui.beatThresholdSigma,
+                    FeatureExtractor.SIGMA_MIN..FeatureExtractor.SIGMA_MAX,
+                    onChange = { viewModel.setGuiPrefs(gui.copy(beatThresholdSigma = it)) },
+                    valueText = "%.1f\u03c3".format(gui.beatThresholdSigma),
+                )
+                CrystalSliderRow(
+                    "Minimum gap between beats",
+                    gui.beatMinIntervalMs,
+                    FeatureExtractor.INTERVAL_MS_MIN..FeatureExtractor.INTERVAL_MS_MAX,
+                    onChange = { viewModel.setGuiPrefs(gui.copy(beatMinIntervalMs = it)) },
+                    valueText =
+                        "${gui.beatMinIntervalMs.roundToInt()} ms \u00b7 " +
+                            "max ${(60_000f / gui.beatMinIntervalMs).roundToInt()} BPM",
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CrystalButton(
+                        "Slow track",
+                        onClick = {
+                            viewModel.setGuiPrefs(
+                                gui.copy(
+                                    beatThresholdSigma = FeatureExtractor.SLOW_SIGMA,
+                                    beatMinIntervalMs = FeatureExtractor.SLOW_INTERVAL_MS,
+                                ),
+                            )
+                        },
+                        kind = CrystalButtonKind.SECONDARY,
                     )
-                }
-                Column {
-                    Text(
-                        "Beat sensitivity  ${"%.1f".format(gui.beatThresholdSigma)}σ " +
-                            "— drag right for LESS sensitive (fewer beat flashes)",
-                        style = MaterialTheme.typography.labelMedium,
+                    CrystalButton(
+                        "Default",
+                        onClick = {
+                            viewModel.setGuiPrefs(
+                                gui.copy(
+                                    beatThresholdSigma = FeatureExtractor.SIGMA_DEFAULT,
+                                    beatMinIntervalMs = FeatureExtractor.INTERVAL_MS_DEFAULT,
+                                ),
+                            )
+                        },
+                        kind = CrystalButtonKind.SECONDARY,
                     )
-                    // Range comes from the extractor so the slider can never
-                    // saturate against a tighter clamp in AnalysisEngine.
-                    Slider(
-                        value = gui.beatThresholdSigma,
-                        onValueChange = { viewModel.setGuiPrefs(gui.copy(beatThresholdSigma = it)) },
-                        valueRange = FeatureExtractor.SIGMA_MIN..FeatureExtractor.SIGMA_MAX,
-                    )
-                    Text(
-                        "Minimum gap between beats  ${gui.beatMinIntervalMs.roundToInt()} ms " +
-                            "— never flash faster than ${(60_000f / gui.beatMinIntervalMs).roundToInt()} BPM",
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                    Slider(
-                        value = gui.beatMinIntervalMs,
-                        onValueChange = { viewModel.setGuiPrefs(gui.copy(beatMinIntervalMs = it)) },
-                        valueRange = FeatureExtractor.INTERVAL_MS_MIN..FeatureExtractor.INTERVAL_MS_MAX,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = {
-                                viewModel.setGuiPrefs(
-                                    gui.copy(
-                                        beatThresholdSigma = FeatureExtractor.SLOW_SIGMA,
-                                        beatMinIntervalMs = FeatureExtractor.SLOW_INTERVAL_MS,
-                                    ),
-                                )
-                            },
-                        ) { Text("Slow track") }
-                        TextButton(
-                            onClick = {
-                                viewModel.setGuiPrefs(
-                                    gui.copy(
-                                        beatThresholdSigma = FeatureExtractor.SIGMA_DEFAULT,
-                                        beatMinIntervalMs = FeatureExtractor.INTERVAL_MS_DEFAULT,
-                                    ),
-                                )
-                            },
-                        ) { Text("Default") }
-                    }
                 }
                 val context = androidx.compose.ui.platform.LocalContext.current
                 var cacheInfo by remember { mutableStateOf("…") }
@@ -729,7 +692,7 @@ fun SettingsScreen(
         }
         item {
             SettingsSection("Export & About") {
-                Button(onClick = { showExport = true }) { Text("Export video…") }
+                CrystalButton("Export video…", onClick = { showExport = true })
                 AboutSection()
             }
         }
@@ -816,15 +779,15 @@ fun SearchScreen(
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background.copy(alpha = maxOf(gui.barOpacity, 0.85f)))) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
+                CrystalSearchBar(
                     value = query,
                     onValueChange = { query = it },
+                    placeholder = "Search tracks, artists, albums…",
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Search tracks, playlists & presets") },
-                    singleLine = true,
                 )
                 IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "Close search") }
             }
+            Spacer(Modifier.height(10.dp))
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (terms.isEmpty()) {
                     item {
@@ -836,29 +799,17 @@ fun SearchScreen(
                     }
                 } else {
                     if (trackResults.isNotEmpty()) {
-                        item { Text("Tracks (${trackResults.size})", style = MaterialTheme.typography.titleMedium) }
+                        item { CrystalOverline("Tracks (${trackResults.size})", Modifier.padding(vertical = 4.dp)) }
                         items(trackResults, key = { "t:${it.uri}" }) { t ->
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        viewModel.playTrack(t.uri)
-                                        onClose()
-                                    },
-                                verticalAlignment = Alignment.CenterVertically,
+                            CrystalListRow(
+                                title = t.title,
+                                subtitle = t.subtitle.takeIf { it.isNotBlank() },
+                                onClick = {
+                                    viewModel.playTrack(t.uri)
+                                    onClose()
+                                },
+                                thumbSeed = t.title,
                             ) {
-                                Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                                    Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    if (t.subtitle.isNotBlank()) {
-                                        Text(
-                                            t.subtitle,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                }
                                 IconButton(onClick = { viewModel.enqueue(t.uri) }) {
                                     Icon(Icons.AutoMirrored.Filled.QueueMusic, "Add to queue")
                                 }
@@ -866,7 +817,7 @@ fun SearchScreen(
                         }
                     }
                     if (playlistResults.isNotEmpty()) {
-                        item { Text("Playlists (${playlistResults.size})", style = MaterialTheme.typography.titleMedium) }
+                        item { CrystalOverline("Playlists (${playlistResults.size})", Modifier.padding(vertical = 4.dp)) }
                         items(playlistResults) { pl ->
                             Column(
                                 Modifier
@@ -886,7 +837,7 @@ fun SearchScreen(
                         }
                     }
                     if (presetResults.isNotEmpty()) {
-                        item { Text("Presets (${presetResults.size})", style = MaterialTheme.typography.titleMedium) }
+                        item { CrystalOverline("Presets (${presetResults.size})", Modifier.padding(vertical = 4.dp)) }
                         items(presetResults) { p ->
                             Text(
                                 p.name,

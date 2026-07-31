@@ -3,7 +3,6 @@ package dev.musicviz.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,22 +16,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.LayersClear
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ProvideTextStyle
-import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -109,15 +105,9 @@ fun VisualsHub(
                             tint = if (liveBackdrop) MaterialTheme.colorScheme.primary else LocalContentColor.current,
                         )
                     }
-                    OutlinedButton(onClick = onOpenNowPlaying) { Text("View live") }
+                    CrystalButton("View Live", kind = CrystalButtonKind.GHOST, onClick = onOpenNowPlaying)
                 }
-                ScrollableTabRow(
-                    selectedTabIndex = tab,
-                    edgePadding = 8.dp,
-                    containerColor = Color.Transparent,
-                ) {
-                    tabs.forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) }) }
-                }
+                CrystalTabRow(tabs, tab, onSelect = { tab = it })
                 when (tab) {
                     0 -> PresetsTreeTab(viewModel, visualizerView)
                     1 -> StylesTab(viewModel, visualizerView, onOpenTextures = { tab = 3 })
@@ -148,31 +138,28 @@ private fun PresetsTreeTab(
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
+                CrystalTextField(
                     value = newFolder,
                     onValueChange = { newFolder = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("New folder name") },
-                    singleLine = true,
+                    placeholder = "New folder name",
                 )
-                Button(onClick = {
+                CrystalButton("Add", kind = CrystalButtonKind.SECONDARY, onClick = {
                     if (newFolder.isNotBlank()) {
                         viewModel.addPresetFolder(newFolder.trim())
                         newFolder = ""
                         folderRefresh++
                     }
-                }) { Text("Add") }
+                })
             }
         }
         (listOf("") + folders).forEach { folder ->
             val inFolder = byFolder[folder].orEmpty()
             if (folder.isNotEmpty() || inFolder.isNotEmpty()) {
                 item(key = "hdr_$folder") {
-                    Text(
+                    CrystalOverline(
                         if (folder.isEmpty()) "Presets" else "📁 $folder",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 8.dp),
+                        Modifier.padding(top = 10.dp),
                     )
                 }
             }
@@ -198,12 +185,7 @@ private fun PresetsTreeTab(
             }
         }
         item {
-            Text(
-                "Built-in",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 8.dp),
-            )
+            CrystalOverline("Built-in", Modifier.padding(top = 10.dp))
         }
         items(viz.presets.filter { BuiltInPresets.isBuiltIn(it.name) && it.sceneId == viz.sceneId }, key = { "b_${it.name}" }) { p ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -219,14 +201,13 @@ private fun PresetsTreeTab(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.padding(vertical = 10.dp),
             ) {
-                OutlinedTextField(
+                CrystalTextField(
                     value = saveName,
                     onValueChange = { saveName = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Save current as…") },
-                    singleLine = true,
+                    placeholder = "Save current as…",
                 )
-                Button(onClick = {
+                CrystalButton("Save", onClick = {
                     if (saveName.isNotBlank()) {
                         viewModel.savePreset(
                             saveName.trim(),
@@ -235,14 +216,12 @@ private fun PresetsTreeTab(
                         )
                         saveName = ""
                     }
-                }) { Text("Save") }
+                })
             }
             if (folders.isNotEmpty()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 12.dp)) {
                     (listOf("") + folders).forEach { f ->
-                        OutlinedButton(onClick = { saveFolder = f }) {
-                            Text((if (saveFolder == f) "● " else "") + f.ifEmpty { "root" }, style = MaterialTheme.typography.bodySmall)
-                        }
+                        CrystalChip(f.ifEmpty { "root" }, selected = saveFolder == f, onClick = { saveFolder = f })
                     }
                 }
             }
@@ -276,11 +255,7 @@ private fun StylesTab(
     // state flow. One source of truth is what keeps switching stable.
     val pickScene: (String) -> Unit = { viewModel.selectScene(it) }
     Column(Modifier.fillMaxSize()) {
-        ScrollableTabRow(selectedTabIndex = sub, edgePadding = 8.dp, containerColor = Color.Transparent) {
-            listOf("Particles", "Shaders", "Fluid", "MilkDrop").forEachIndexed { i, t ->
-                Tab(selected = sub == i, onClick = { sub = i }, text = { Text(t) })
-            }
-        }
+        CrystalTabRow(listOf("Particles", "Shaders", "Fluid", "MilkDrop"), sub, onSelect = { sub = it })
         when (sub) {
             0 -> SceneList(VisualizerRenderer.PARTICLE_SCENES, viz.sceneId, pickScene)
             1 -> SceneList(VisualizerRenderer.SHADER_SCENES.keys.toList(), viz.sceneId, pickScene)
@@ -290,18 +265,60 @@ private fun StylesTab(
     }
 }
 
+/** Display name + one-line description per scene, for the style cards. */
+private val SCENE_META: Map<String, Pair<String, String>> =
+    mapOf(
+        SceneIds.FLUID to ("Fluid" to "Dye + force simulation"),
+        SceneIds.CURLFLOW to ("Curlflow" to "Curl-noise particle flow"),
+        SceneIds.WATER to ("Water" to "Surface waves + refraction"),
+        SceneIds.NEBULA to ("Nebula" to "Aurora particle bloom"),
+        SceneIds.BURSTS to ("Bursts" to "Beat-synced particle bursts"),
+        SceneIds.SWARM to ("Swarm" to "Flocking particle swarm"),
+        SceneIds.FOUNTAIN to ("Fountain" to "Gravity particle fountain"),
+        SceneIds.ORBITS to ("Orbits" to "Orbital particle trails"),
+        SceneIds.JULIA to ("Julia" to "Julia-set fractal dive"),
+        SceneIds.TUNNEL to ("Tunnel" to "Warp tunnel flight"),
+        SceneIds.BARS to ("Bars" to "Classic spectrum bars"),
+        SceneIds.RING to ("Ring" to "Radial spectrum ring"),
+        SceneIds.SCOPE to ("Scope" to "Oscilloscope waveform"),
+        SceneIds.PLASMA to ("Plasma" to "Flowing plasma field"),
+        SceneIds.KALEIDO to ("Kaleido" to "Kaleidoscope mirror folds"),
+        SceneIds.WARP to ("Warp" to "Hyperspace star warp"),
+        SceneIds.GRID to ("Grid" to "Pulsing neon grid"),
+        SceneIds.VORONOI to ("Voronoi" to "Cellular crystal facets"),
+        SceneIds.MANDEL to ("Mandel" to "Mandelbrot fractal zoom"),
+        SceneIds.LISS to ("Liss" to "Lissajous curve weave"),
+        SceneIds.METABALLS to ("Metaballs" to "Liquid metaball blobs"),
+        SceneIds.RIPPLES to ("Ripples" to "Beat-driven ripple rings"),
+        SceneIds.STARFIELD to ("Starfield" to "Deep-space star drift"),
+        SceneIds.WAVES to ("Waves" to "Layered waveform ribbons"),
+        SceneIds.HEXGRID to ("Hexgrid" to "Hex lattice pulse"),
+        SceneIds.SPIRAL to ("Spiral" to "Spinning spiral bloom"),
+        SceneIds.AURORA to ("Aurora" to "Northern-lights curtains"),
+        SceneIds.SOLAR to ("Solar" to "Solar flare corona"),
+        SceneIds.MILKDROP to ("MilkDrop" to "MilkDrop preset engine"),
+    )
+
 @Composable
 private fun SceneList(
     ids: List<String>,
     current: String,
     onPick: (String) -> Unit,
 ) {
-    LazyColumn(Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         items(ids) { id ->
-            Text(
-                (if (id == current) "● " else "") + id,
-                Modifier.fillMaxWidth().clickable { onPick(id) }.padding(horizontal = 16.dp, vertical = 10.dp),
-            )
+            val (name, desc) = SCENE_META[id] ?: (id.replaceFirstChar { it.uppercase() } to "Visual style")
+            val sel = id == current
+            CrystalListRow(
+                title = name,
+                subtitle = desc,
+                onClick = { onPick(id) },
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 3.dp),
+                thumbSeed = id,
+                selected = sel,
+            ) {
+                CrystalRadio(sel, Modifier.padding(end = 8.dp))
+            }
         }
     }
 }
@@ -332,17 +349,19 @@ private fun MilkDropTab(
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { milkPicker.launch(arrayOf("*/*")) }) { Text("Load .milk file") }
-            OutlinedButton(onClick = onOpenTextures) { Text("Textures…") }
+            CrystalButton("Load .milk file", onClick = { milkPicker.launch(arrayOf("*/*")) })
+            CrystalButton("Textures…", kind = CrystalButtonKind.GHOST, onClick = onOpenTextures)
         }
-        Text("Your .milk presets", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        CrystalOverline("Your .milk presets", Modifier.padding(top = 4.dp))
         if (milkFiles.isEmpty()) {
             Text("None yet — load a .milk file or save one from the milkdrop scene.", style = MaterialTheme.typography.bodySmall)
         }
         milkFiles.forEach { f ->
-            Text(
-                f.nameWithoutExtension,
-                Modifier.fillMaxWidth().clickable { selectMilk(viewModel, visualizerView, f.absolutePath) }.padding(vertical = 8.dp),
+            CrystalListRow(
+                title = f.nameWithoutExtension,
+                subtitle = null,
+                onClick = { selectMilk(viewModel, visualizerView, f.absolutePath) },
+                thumbSeed = f.name,
             )
         }
     }
@@ -431,11 +450,14 @@ private fun CustomizeHubTab(
     val tabs = listOf("Motion", "Shape", "Behavior", "Color", "FX", "Fluid") + if (isShader) listOf("GLSL") else emptyList()
     LaunchedEffect(isShader) { if (!isShader && sub >= 6) sub = 0 }
     Column(Modifier.fillMaxSize()) {
-        ScrollableTabRow(selectedTabIndex = sub, edgePadding = 8.dp, containerColor = Color.Transparent) {
-            tabs.forEachIndexed { i, t -> Tab(selected = sub == i, onClick = { sub = i }, text = { Text(t) }) }
-        }
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-            Button(onClick = viewModel::randomizeParams) { Text("⚄ Randomize unlocked") }
+        CrystalTabRow(tabs, sub, onSelect = { sub = it })
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+            CrystalButton(
+                "Randomize Unlocked",
+                icon = Icons.Filled.Casino,
+                kind = CrystalButtonKind.SECONDARY,
+                onClick = viewModel::randomizeParams,
+            )
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             val locked by viewModel.lockedParams.collectAsState()
@@ -510,13 +532,17 @@ private fun TexturesHubTab(
             }
         }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { picker.launch(arrayOf("image/*")) }) { Text("Import images") }
+        CrystalButton("Import images", onClick = { picker.launch(arrayOf("image/*")) })
         textures.forEach { tex ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(tex.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                OutlinedButton(onClick = {
+            CrystalListRow(
+                title = tex.name,
+                subtitle = null,
+                onClick = { viewModel.useTexture(tex.name) { path -> selectMilk(viewModel, visualizerView, path) } },
+                thumbSeed = tex.name,
+            ) {
+                CrystalButton("Use", kind = CrystalButtonKind.GHOST, onClick = {
                     viewModel.useTexture(tex.name) { path -> selectMilk(viewModel, visualizerView, path) }
-                }) { Text("Use") }
+                })
             }
         }
         if (textures.isEmpty()) Text("No textures imported yet.", style = MaterialTheme.typography.bodySmall)
@@ -558,7 +584,7 @@ private fun GlslHubTab(
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { viewModel.applyCustomShader(source) }) { Text("Apply shader") }
+            CrystalButton("Apply shader", onClick = { viewModel.applyCustomShader(source) })
             TextButton(onClick = {
                 source = visualizerView.visualizerRenderer.customShaderFor(viz.sceneId) ?: ""
             }) { Text("Revert") }

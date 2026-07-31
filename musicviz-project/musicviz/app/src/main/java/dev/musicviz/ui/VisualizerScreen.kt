@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -47,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import dev.musicviz.analysis.AudioQualityInfo
 import dev.musicviz.render.VisualizerView
@@ -172,6 +172,7 @@ fun VisualizerScreen(
                                     0f
                                 },
                             onValueChange = viewModel::seekTo,
+                            colors = crystalSliderColors(),
                             modifier = Modifier.weight(1f),
                         )
                         Text(formatTime(state.durationMs), style = MaterialTheme.typography.labelSmall)
@@ -196,16 +197,13 @@ fun VisualizerScreen(
                         IconButton(onClick = viewModel::previous, enabled = state.hasMedia) {
                             Icon(Icons.Filled.SkipPrevious, "Previous")
                         }
-                        FilledTonalIconButton(
+                        CrystalPlayButton(
+                            icon = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = if (state.isPlaying) "Pause" else "Play",
                             onClick = viewModel::togglePlayPause,
+                            size = 58.dp,
                             enabled = state.hasMedia,
-                            modifier = Modifier.softGlow(MaterialTheme.colorScheme.primary, 14.dp),
-                        ) {
-                            Icon(
-                                if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                if (state.isPlaying) "Pause" else "Play",
-                            )
-                        }
+                        )
                         IconButton(onClick = viewModel::next, enabled = state.hasMedia) {
                             Icon(Icons.Filled.SkipNext, "Next")
                         }
@@ -226,23 +224,61 @@ fun VisualizerScreen(
                             )
                         }
                     }
+                    // Format chips per the mockups' Now Playing footer:
+                    // "FLAC · LOSSLESS"  "24-BIT / 96 KHZ".
+                    audioQuality?.let { q ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                        ) {
+                            val codecChip =
+                                q.codec.uppercase() +
+                                    when {
+                                        q.isBitPerfect -> " · BIT-PERFECT"
+                                        q.lossless -> " · LOSSLESS"
+                                        else -> ""
+                                    }
+                            CrystalBadge(codecChip, accent = q.lossless)
+                            val detail =
+                                buildList {
+                                    if (q.bitDepth > 0) add("${q.bitDepth}-bit")
+                                    if (q.sourceSampleRateHz > 0) add(AudioQualityInfo.formatKhz(q.sourceSampleRateHz))
+                                }.joinToString(" / ")
+                            if (detail.isNotEmpty()) CrystalBadge(detail)
+                        }
+                    }
                     Row(
                         Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         TextButton(onClick = onOpenVisuals) {
-                            Icon(Icons.Filled.Tune, null)
-                            Text("  Visuals")
+                            Icon(Icons.Filled.Tune, null, tint = MaterialTheme.colorScheme.primary)
+                            Text(
+                                "  VISUALS",
+                                style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.6.sp),
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
                         }
                         TextButton(onClick = viewModel::cycleAutoMode) {
-                            Icon(Icons.AutoMirrored.Filled.QueueMusic, null)
+                            Icon(
+                                Icons.AutoMirrored.Filled.QueueMusic,
+                                null,
+                                tint =
+                                    if (autoMode != 0) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                            )
                             Text(
                                 when (autoMode) {
-                                    1 -> "  Auto: random"
-                                    2 -> "  Auto: smart"
-                                    else -> "  Auto: off"
+                                    1 -> "  AUTO · RANDOM"
+                                    2 -> "  AUTO · SMART"
+                                    else -> "  AUTO · OFF"
                                 },
+                                style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.6.sp),
+                                color = MaterialTheme.colorScheme.onSurface,
                             )
                         }
                     }
@@ -280,17 +316,7 @@ private fun AudioQualityRow(
                     quality.lossless -> "LOSSLESS"
                     else -> "LOSSY"
                 }
-            val badgeColor = if (quality.lossless) Color(0xFF2E7D32) else Color(0xFFB8860B)
-            Text(
-                badge,
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White,
-                maxLines = 1,
-                modifier =
-                    Modifier
-                        .background(badgeColor, RoundedCornerShape(4.dp))
-                        .padding(horizontal = 5.dp, vertical = 1.dp),
-            )
+            CrystalBadge(badge, accent = quality.lossless)
             Text(
                 quality.qualityLine(),
                 style = MaterialTheme.typography.labelSmall,

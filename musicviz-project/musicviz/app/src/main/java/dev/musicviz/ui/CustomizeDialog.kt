@@ -16,11 +16,8 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -66,8 +63,14 @@ val LocalParamLocks =
 
 @Composable
 private fun SectionHeader(title: String) {
-    HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
-    Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .height(1.dp)
+            .luminousHairline(MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+    )
+    CrystalOverline(title)
 }
 
 @Composable
@@ -159,17 +162,22 @@ internal fun BehaviorTab(
             SectionHeader("Scene transition")
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 dev.musicviz.render.TransitionStyle.entries.forEach { t ->
-                    FilterChip(
+                    CrystalChip(
+                        t.name.lowercase(),
                         selected = transitionStyle == t,
                         onClick = { onTransitionStyle(t) },
-                        label = { Text(t.name.lowercase()) },
                     )
                 }
             }
-            Text("Duration ${"%.1f".format(transitionDurationSec)}s", style = MaterialTheme.typography.labelMedium)
             // Must match setTransitionDuration's 0.3-5 s clamp: below 0.3 the
             // thumb snapped back mid-drag, and 3-5 s was unreachable.
-            Slider(value = transitionDurationSec, onValueChange = onTransitionDuration, valueRange = 0.3f..5f)
+            CrystalSliderRow(
+                "Duration",
+                transitionDurationSec,
+                0.3f..5f,
+                onChange = onTransitionDuration,
+                valueText = "%.1fs".format(transitionDurationSec),
+            )
         }
         SectionHeader("Audio response")
         LabeledSlider("Audio drive", p.audioDrive, 0.2f..2.5f) { onChange(p.copy(audioDrive = it)) }
@@ -382,11 +390,7 @@ private fun ChipRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         labels.forEachIndexed { index, label ->
-            FilterChip(
-                selected = index == selectedIndex,
-                onClick = { onSelect(index) },
-                label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-            )
+            CrystalChip(label, selected = index == selectedIndex, onClick = { onSelect(index) })
         }
     }
 }
@@ -399,22 +403,24 @@ private fun LabeledSlider(
     onChange: (Float) -> Unit,
 ) {
     val (locked, toggle) = LocalParamLocks.current
-    Column {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("$label ${"%.2f".format(value)}", style = MaterialTheme.typography.labelSmall)
-            Text(
-                if (label in locked) "locked" else "lock",
-                style = MaterialTheme.typography.labelSmall,
-                color =
-                    if (label in locked) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    },
-                modifier = Modifier.clickable { toggle(label) },
-            )
-        }
-        Slider(value = value, onValueChange = onChange, valueRange = range, modifier = Modifier.fillMaxWidth())
+    CrystalSliderRow(
+        label,
+        value,
+        range,
+        onChange = onChange,
+        valueText = "%.2f".format(value),
+    ) {
+        Text(
+            if (label in locked) "  locked" else "  lock",
+            style = MaterialTheme.typography.labelSmall,
+            color =
+                if (label in locked) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                },
+            modifier = Modifier.clickable { toggle(label) },
+        )
     }
 }
 
@@ -727,27 +733,24 @@ private fun LabeledIntSlider(
     onChange: (Int) -> Unit,
 ) {
     val (locked, toggle) = LocalParamLocks.current
-    Column {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("$label $value", style = MaterialTheme.typography.labelSmall)
-            Text(
-                if (label in locked) "locked" else "lock",
-                style = MaterialTheme.typography.labelSmall,
-                color =
-                    if (label in locked) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    },
-                modifier = Modifier.clickable { toggle(label) },
-            )
-        }
-        Slider(
-            value = value.toFloat(),
-            onValueChange = { onChange(it.toInt().coerceIn(range.first, range.last)) },
-            valueRange = range.first.toFloat()..range.last.toFloat(),
-            steps = (range.last - range.first - 1).coerceAtLeast(0),
-            modifier = Modifier.fillMaxWidth(),
+    CrystalSliderRow(
+        label,
+        value.toFloat(),
+        range.first.toFloat()..range.last.toFloat(),
+        onChange = { onChange(it.toInt().coerceIn(range.first, range.last)) },
+        valueText = "$value",
+        steps = (range.last - range.first - 1).coerceAtLeast(0),
+    ) {
+        Text(
+            if (label in locked) "  locked" else "  lock",
+            style = MaterialTheme.typography.labelSmall,
+            color =
+                if (label in locked) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                },
+            modifier = Modifier.clickable { toggle(label) },
         )
     }
 }
