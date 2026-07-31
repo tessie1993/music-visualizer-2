@@ -173,6 +173,8 @@ class PlayerViewModel(
     private val deviceIndex = DeviceMusicIndex(application)
     private val milkAssets = MilkAssetStore(application)
     private val presetStore: PresetRepository = PresetStore(application)
+    private val liveViz: LiveVizRepository = LiveVizStore(application)
+    private val paramLocks: ParamLockRepository = ParamLockStore(application)
     private val trackLibrary: LibraryRepository = TrackLibrary(application)
     private val themeStore = ThemeStore(application)
     private val playerPrefsStore = PlayerPrefsStore(application)
@@ -212,31 +214,20 @@ class PlayerViewModel(
     private val _vizState = MutableStateFlow(restoreVizState())
     val vizState: StateFlow<VizUiState> = _vizState
 
-    /** Prefs file for the LIVE viz state (scene + Customize params). */
-    private fun vizPrefs(): android.content.SharedPreferences =
-        getApplication<Application>().getSharedPreferences("musicviz-viz", android.content.Context.MODE_PRIVATE)
-
     /**
-     * Restores the live customization on startup. Without this every app
-     * restart silently reset the selected style and ALL Customize sliders to
-     * defaults - only explicit presets survived. Reuses the preset JSON
-     * serializer so every SceneParams field roundtrips (same coverage the
-     * PresetRoundtripTest gate proves).
+     * Restores the live customization on startup, falling back to defaults on
+     * first run. The saved presets list is always rebuilt from the store.
      */
     private fun restoreVizState(): VizUiState {
         val base = VizUiState(presets = BuiltInPresets.ALL + presetStore.list())
-        val json = vizPrefs().getString("live_state", null) ?: return base
-        return runCatching {
-            val p = PresetStore.fromJson(json)
-            base.copy(sceneId = p.sceneId, attack = p.attack, decay = p.decay, params = p.params)
-        }.getOrDefault(base)
+        val live = liveViz.load() ?: return base
+        return base.copy(sceneId = live.sceneId, attack = live.attack, decay = live.decay, params = live.params)
     }
 
     /** Persists the live viz state; called from every mutation funnel. */
     private fun persistVizState() {
         val s = _vizState.value
-        val json = PresetStore.toJson(Preset("__live__", s.sceneId, s.attack, s.decay, null, s.params))
-        vizPrefs().edit().putString("live_state", json).apply()
+        liveViz.save(LiveViz(sceneId = s.sceneId, attack = s.attack, decay = s.decay, params = s.params))
     }
 
     /**
@@ -439,19 +430,13 @@ class PlayerViewModel(
     val lfos: StateFlow<List<dev.musicviz.render.LfoConfig>> = _lfos
     val adsrs: StateFlow<List<dev.musicviz.render.AdsrConfig>> = _adsrs
 
-    private fun adsrPrefs(): android.content.SharedPreferences =
-        getApplication<Application>().getSharedPreferences("musicviz-mod", android.content.Context.MODE_PRIVATE)
-
     // ---- Randomizer with per-parameter locks (keys = slider labels) ----
-    private val _lockedParams =
-        MutableStateFlow<Set<String>>(
-            adsrPrefs().getStringSet("locked_params", emptySet()) ?: emptySet(),
-        )
+    private val _lockedParams = MutableStateFlow(paramLocks.load())
     val lockedParams: StateFlow<Set<String>> = _lockedParams
 
     fun toggleParamLock(label: String) {
         _lockedParams.update { if (label in it) it - label else it + label }
-        adsrPrefs().edit().putStringSet("locked_params", _lockedParams.value).apply()
+        paramLocks.save(_lockedParams.value)
     }
 
     /**

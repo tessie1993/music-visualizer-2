@@ -120,3 +120,27 @@ interface MusicPlaylistRepository {
         uri: String,
     ): MusicPlaylist
 }
+
+/**
+ * The live visual customization — what the user has dialled in right now, as
+ * opposed to a preset they explicitly saved. Restored on every app start.
+ */
+interface LiveVizRepository {
+    /** The stored state, or null on first run / unreadable data. */
+    fun load(): LiveViz?
+
+    fun save(state: LiveViz)
+}
+
+/**
+ * Customize parameters the user has locked against "Randomize unlocked".
+ *
+ * Keyed by display label rather than by a stable id, which is why a rename is
+ * silent at runtime; see [ParamLockStore] for the consequence and where the
+ * migration to stable ids would land.
+ */
+interface ParamLockRepository {
+    fun load(): Set<String>
+
+    fun save(locked: Set<String>)
+}
