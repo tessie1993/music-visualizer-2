@@ -8,6 +8,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -18,13 +21,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
@@ -36,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.musicviz.render.VisualizerView
 import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -45,9 +54,47 @@ import kotlin.random.Random
  * Crystal design kit — the shared "luminous crystal glass" language from the
  * MusicViz theme mockups (Lapis, Sugilite, Kyanite, …): editorial serif
  * display type, tracked-caps overlines, panels with gradient glass fills,
- * luminous strokes and a soft outer glow, plus a twinkling nebula backdrop
- * behind every shell screen.
+ * facet glints, luminous strokes and a soft outer glow, plus a twinkling
+ * nebula-and-shards backdrop behind every shell screen.
+ *
+ * Two silhouettes carry the identity everywhere:
+ *  - the SHARD: an asymmetrically cut gem profile ([crystalShardShape]) used
+ *    by buttons, chips and segmented controls, and
+ *  - the GEM: a small rotated-square diamond ([CrystalGem]) used as the
+ *    selection marker in nav, tabs, lists and slider thumbs.
  */
+
+// ------------------------------------------------------------- silhouettes
+
+/**
+ * The signature "cut shard" silhouette: a deep gem cut on the top-start and
+ * bottom-end corners, a shallow one on the other two — like a sliver cleaved
+ * off a larger crystal. Used by every crystal control.
+ */
+fun crystalShardShape(
+    cut: Dp = 12.dp,
+    minor: Dp = 4.dp,
+): Shape = CutCornerShape(topStart = cut, topEnd = minor, bottomStart = minor, bottomEnd = cut)
+
+/**
+ * Small diamond marker — the kit's selection/indicator glyph. A rotated
+ * square lit from its top point, with an unrotated soft bloom behind it.
+ */
+@Composable
+fun CrystalGem(
+    color: Color,
+    modifier: Modifier = Modifier,
+    size: Dp = 7.dp,
+    glow: Boolean = true,
+) {
+    Box(
+        modifier
+            .size(size)
+            .then(if (glow) Modifier.softGlow(color, size) else Modifier)
+            .rotate(45f)
+            .background(Brush.linearGradient(listOf(lerp(color, Color.White, 0.55f), color))),
+    )
+}
 
 // ------------------------------------------------------------- typography
 
@@ -139,10 +186,78 @@ fun Modifier.softGlow(
         )
     }
 
+/** Outer bloom shared by panels and buttons: stacked halo strokes fading with distance. */
+internal fun DrawScope.crystalHalo(
+    glow: Color,
+    cornerPx: Float,
+    strength: Float,
+) {
+    for (i in 1..4) {
+        val spread = i * i * 1.4f * 1.dp.toPx()
+        drawRoundRect(
+            color = glow.copy(alpha = (0.09f / i) * strength),
+            topLeft = Offset(-spread, -spread),
+            size = Size(size.width + spread * 2, size.height + spread * 2),
+            cornerRadius = CornerRadius(cornerPx + spread, cornerPx + spread),
+            style = Stroke(width = spread * 1.3f),
+        )
+    }
+}
+
+/**
+ * Facet glints drawn over a glass fill: a specular streak along the top edge
+ * plus two sheared translucent planes, like light caught in the internal cuts
+ * of a polished stone. [strength] scales all glint alphas.
+ */
+internal fun DrawScope.crystalFacets(strength: Float) {
+    if (strength <= 0f) return
+    val w = size.width
+    val h = size.height
+    // Specular top edge.
+    drawRect(
+        brush =
+            Brush.verticalGradient(
+                0f to Color.White.copy(alpha = 0.10f * strength),
+                1f to Color.Transparent,
+                endY = h * 0.30f,
+            ),
+        size = Size(w, h * 0.30f),
+    )
+
+    // Two sheared facet planes, brighter one left of center, fainter right.
+    fun plane(
+        topFrom: Float,
+        topTo: Float,
+        shear: Float,
+        alpha: Float,
+    ) {
+        val path =
+            Path().apply {
+                moveTo(w * topFrom, 0f)
+                lineTo(w * topTo, 0f)
+                lineTo(w * (topTo - shear), h)
+                lineTo(w * (topFrom - shear), h)
+                close()
+            }
+        drawPath(
+            path,
+            brush =
+                Brush.verticalGradient(
+                    0f to Color.White.copy(alpha = alpha * strength),
+                    1f to Color.White.copy(alpha = alpha * 0.25f * strength),
+                ),
+        )
+    }
+    plane(topFrom = 0.16f, topTo = 0.34f, shear = 0.10f, alpha = 0.05f)
+    plane(topFrom = 0.62f, topTo = 0.71f, shear = 0.13f, alpha = 0.035f)
+}
+
 /**
  * Crystal glass panel: soft outer glow halo, vertical gradient glass fill
- * (lit from the top like the mockups' "inner glow" material) and a luminous
- * gradient border stroke.
+ * (lit from the top like the mockups' "inner glow" material), facet glints,
+ * and a luminous gradient border stroke. With [prismatic] the border becomes
+ * an iridescent sweep between [glow], white and [sheen] — the selected-state
+ * treatment ([sheen] defaults to the glow color).
  */
 fun Modifier.crystalPanel(
     opacity: Float,
@@ -150,39 +265,43 @@ fun Modifier.crystalPanel(
     glow: Color,
     corner: Dp = 18.dp,
     glowStrength: Float = 1f,
+    facets: Float = 1f,
+    prismatic: Boolean = false,
+    sheen: Color = glow,
 ): Modifier {
     val alpha = opacity.coerceIn(0f, 1f)
     val shape = RoundedCornerShape(corner)
+    val borderBrush =
+        if (prismatic) {
+            Brush.sweepGradient(
+                listOf(
+                    glow.copy(alpha = 0.9f),
+                    Color.White.copy(alpha = 0.95f),
+                    sheen.copy(alpha = 0.85f),
+                    glow.copy(alpha = 0.35f),
+                    sheen.copy(alpha = 0.8f),
+                    Color.White.copy(alpha = 0.9f),
+                    glow.copy(alpha = 0.9f),
+                ),
+            )
+        } else {
+            Brush.verticalGradient(
+                0f to glow.copy(alpha = min(1f, 0.85f * glowStrength)),
+                0.55f to glow.copy(alpha = 0.22f * glowStrength),
+                1f to glow.copy(alpha = 0.45f * glowStrength),
+            )
+        }
     return this
-        .drawBehind {
-            // Outer bloom: stacked halo strokes fading with distance.
-            val r = corner.toPx()
-            for (i in 1..4) {
-                val spread = i * i * 1.4f * 1.dp.toPx()
-                drawRoundRect(
-                    color = glow.copy(alpha = (0.09f / i) * glowStrength),
-                    topLeft = Offset(-spread, -spread),
-                    size = Size(size.width + spread * 2, size.height + spread * 2),
-                    cornerRadius = CornerRadius(r + spread, r + spread),
-                    style = Stroke(width = spread * 1.3f),
-                )
-            }
-        }.clip(shape)
+        .drawBehind { crystalHalo(glow, corner.toPx(), glowStrength) }
+        .clip(shape)
         .background(
             Brush.verticalGradient(
                 0f to lerp(tint, glow, 0.18f).copy(alpha = min(1f, alpha + 0.08f)),
                 0.4f to tint.copy(alpha = alpha),
                 1f to lerp(tint, Color.Black, 0.28f).copy(alpha = alpha),
             ),
-        ).border(
-            1.dp,
-            Brush.verticalGradient(
-                0f to glow.copy(alpha = min(1f, 0.85f * glowStrength)),
-                0.55f to glow.copy(alpha = 0.22f * glowStrength),
-                1f to glow.copy(alpha = 0.45f * glowStrength),
-            ),
-            shape,
-        )
+        ).drawBehind { crystalFacets(facets) }
+        .border(1.dp, borderBrush, shape)
 }
 
 /** Thin luminous divider line (transparent → glow → transparent). */
@@ -206,10 +325,37 @@ private data class Star(
 )
 
 /**
+ * A floating crystal splinter in the backdrop: an irregular gem outline that
+ * slowly rocks around its center. Positions/sizes are normalized; [spin] is
+ * the rocking amplitude in degrees and [phase] offsets the motion so the
+ * shards never move in lockstep.
+ */
+private class BackdropShard(
+    val cx: Float,
+    val cy: Float,
+    val radius: Float,
+    val tilt: Float,
+    val spin: Float,
+    val phase: Float,
+    val secondary: Boolean,
+    // Irregular gem profile: per-vertex radial scale at even angles.
+    val profile: List<Float>,
+)
+
+private val BACKDROP_SHARDS =
+    listOf(
+        BackdropShard(0.84f, 0.16f, 0.085f, -18f, 7f, 0.0f, false, listOf(1f, 0.52f, 0.88f, 0.5f)),
+        BackdropShard(0.12f, 0.56f, 0.065f, 24f, 9f, 2.1f, true, listOf(1f, 0.6f, 0.75f, 0.42f)),
+        BackdropShard(0.68f, 0.72f, 0.11f, -40f, 5f, 4.4f, false, listOf(1f, 0.45f, 0.9f, 0.6f)),
+        BackdropShard(0.34f, 0.88f, 0.05f, 66f, 6f, 1.2f, true, listOf(1f, 0.5f, 0.95f, 0.55f)),
+    )
+
+/**
  * Nebula backdrop for shell screens: the theme background color with big
- * soft aurora blobs in primary/secondary plus a slowly twinkling star field —
- * the "crystal texture / caustic light" mood from the mockups, cheap enough
- * to sit behind every tab.
+ * soft aurora blobs in primary/secondary, a handful of slowly rocking
+ * crystal-shard outlines, plus a twinkling star field — the "crystal texture
+ * / caustic light" mood from the mockups, cheap enough to sit behind every
+ * tab.
  */
 @Composable
 fun CrystalBackground(modifier: Modifier = Modifier) {
@@ -274,6 +420,36 @@ fun CrystalBackground(modifier: Modifier = Modifier) {
             radius = d * 0.5f,
             center = Offset(size.width * 0.7f, size.height * 0.35f),
         )
+        // Floating crystal splinters: irregular gem outlines rocking gently
+        // around their own centers, with a faint fill and one lit facet line.
+        val shardBase = if (lightTheme) 0.5f else 1f
+        BACKDROP_SHARDS.forEach { sh ->
+            val tone = if (sh.secondary) cs.secondary else cs.primary
+            val pivot = Offset(sh.cx * size.width, sh.cy * size.height)
+            val r = sh.radius * d
+            rotate(sh.tilt + sh.spin * sin(t + sh.phase), pivot) {
+                val pts =
+                    sh.profile.mapIndexed { i, k ->
+                        val a = (2f * PI.toFloat()) * i / sh.profile.size
+                        Offset(pivot.x + r * k * sin(a), pivot.y - r * k * cos(a))
+                    }
+                val path =
+                    Path().apply {
+                        moveTo(pts[0].x, pts[0].y)
+                        for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y)
+                        close()
+                    }
+                drawPath(path, color = tone.copy(alpha = 0.035f * shardBase))
+                drawPath(path, color = tone.copy(alpha = 0.16f * shardBase), style = Stroke(width = 1.dp.toPx()))
+                // One internal facet: the top vertex lit through the body.
+                drawLine(
+                    color = Color.White.copy(alpha = 0.10f * shardBase),
+                    start = pts[0],
+                    end = pts[2],
+                    strokeWidth = 1.dp.toPx(),
+                )
+            }
+        }
         stars.forEach { s ->
             val tw = 0.5f + 0.5f * sin(t + s.phase)
             val alpha = (0.04f + 0.22f * s.bright * tw) * (if (lightTheme) 0.6f else 1f)

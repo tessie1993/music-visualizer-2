@@ -33,7 +33,6 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -164,7 +163,7 @@ fun VisualizerScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(formatTime(state.positionMs), style = MaterialTheme.typography.labelSmall)
-                        Slider(
+                        CrystalSlider(
                             value =
                                 if (state.durationMs > 0) {
                                     (state.positionMs / state.durationMs.toFloat()).coerceIn(0f, 1f)
@@ -196,16 +195,12 @@ fun VisualizerScreen(
                         IconButton(onClick = viewModel::previous, enabled = state.hasMedia) {
                             Icon(Icons.Filled.SkipPrevious, "Previous")
                         }
-                        FilledTonalIconButton(
+                        CrystalPlayButton(
+                            icon = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = if (state.isPlaying) "Pause" else "Play",
                             onClick = viewModel::togglePlayPause,
                             enabled = state.hasMedia,
-                            modifier = Modifier.softGlow(MaterialTheme.colorScheme.primary, 14.dp),
-                        ) {
-                            Icon(
-                                if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                if (state.isPlaying) "Pause" else "Play",
-                            )
-                        }
+                        )
                         IconButton(onClick = viewModel::next, enabled = state.hasMedia) {
                             Icon(Icons.Filled.SkipNext, "Next")
                         }

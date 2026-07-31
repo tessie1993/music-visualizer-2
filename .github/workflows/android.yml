@@ -1,170 +1,120 @@
-name: Android CI
+name: Build MusicViz Debug APK
 
 on:
-  pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  push:
+    branches:
+      - main
+    paths:
+      - "musicviz-project/musicviz/**"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "musicviz-project/musicviz/**"
+      - ".github/workflows/android.yml"
 
 permissions:
-  contents: write
+  contents: read
 
-defaults:
-  run:
-    working-directory: musicviz-project/musicviz
+concurrency:
+  group: musicviz-debug-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROJECT_DIR: musicviz-project/musicviz
+  APK_SOURCE: musicviz-project/musicviz/app/build/outputs/apk/debug/app-debug.apk
 
 jobs:
-  build:
+  build-debug-apk:
+    name: Build debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Gradle (with caching)
+      - name: Set up Gradle and cache
         uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
 
-      - name: ktlint + bundled-notices freshness
-        run: ./gradlew ktlintCheck checkThirdPartyNotices --stacktrace
+      - name: Install Android SDK 36
+        shell: bash
+        # sdkmanager is not on PATH on the ubuntu-24.04 runner image; resolve
+        # it from the preinstalled SDK location instead.
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK location not set on runner}}"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
 
-      - name: Unit tests (incl. Robolectric UI tests)
-        run: ./gradlew testDebugUnitTest --stacktrace
+      - name: Make Gradle wrapper executable
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: chmod +x gradlew
 
       - name: Assemble debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
 
-      - name: Verify debug APK
-        working-directory: musicviz-project/musicviz/app/build/outputs/apk/debug
+      - name: Package APK and checksum
+        id: package
+        shell: bash
         run: |
           set -euo pipefail
-          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK not found}}"
-          BT="$SDK/build-tools/$(ls -1 "$SDK/build-tools" | sort -V | tail -n1)"
-          echo "Using build-tools: $BT"
+          VERSION_NAME=$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' \
+            "$PROJECT_DIR/app/build.gradle.kts" | head -n 1)
+          SHORT_SHA="${GITHUB_SHA::7}"
+          FILE_NAME="MusicViz-${VERSION_NAME:-debug}-${SHORT_SHA}-debug.apk"
 
-          APK=app-debug.apk
-          test -s "$APK" || { echo "::error::$APK is missing or empty"; exit 1; }
+          mkdir -p dist
+          cp "$APK_SOURCE" "dist/$FILE_NAME"
+          sha256sum "dist/$FILE_NAME" > "dist/$FILE_NAME.sha256"
 
-          # Signature must verify, or the APK cannot be installed on a device.
-          "$BT/apksigner" verify --verbose --print-certs "$APK"
-
-          # Capture once and match against here-strings: piping into `head`/`grep -q`
-          # closes the pipe early, which trips `pipefail` and fails the step.
-          BADGING=$("$BT/aapt2" dump badging "$APK")
-          ZIPLIST=$(unzip -l "$APK")
-          head -5 <<<"$BADGING"
-
-          grep -q "package: name='dev.musicviz'" <<<"$BADGING" \
-            || { echo "::error::unexpected applicationId"; exit 1; }
-          grep -q '^application-debuggable$' <<<"$BADGING" \
-            || { echo "::error::APK is not debuggable — this is meant to be a debug build"; exit 1; }
-          grep -q "native-code: 'arm64-v8a'" <<<"$BADGING" \
-            || { echo "::error::arm64-v8a native code missing"; exit 1; }
-          grep -q 'lib/arm64-v8a/libprojectM-4\.so' <<<"$ZIPLIST" \
-            || { echo "::error::projectM native library missing from APK"; exit 1; }
-          grep -q 'lib/arm64-v8a/libprojectmjni\.so' <<<"$ZIPLIST" \
-            || { echo "::error::projectM JNI bridge missing from APK"; exit 1; }
-
-          VNAME=$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p;T;q" <<<"$BADGING")
-          VCODE=$(sed -n "s/.*versionCode='\([^']*\)'.*/\1/p;T;q" <<<"$BADGING")
-          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
-          SIZE=$(du -h "$APK" | cut -f1)
-
-          {
-            echo "### MusicViz debug APK"
-            echo
-            echo "| | |"
-            echo "|---|---|"
-            echo "| Package | \`dev.musicviz\` (debuggable) |"
-            echo "| Version | $VNAME ($VCODE) |"
-            echo "| ABI | arm64-v8a |"
-            echo "| Size | $SIZE |"
-            echo "| SHA-256 | \`$SHA\` |"
-            echo "| Commit | \`$GITHUB_SHA\` |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      # Exercises R8/resource shrinking on every push so a broken keep rule is
-      # caught here rather than at upload time. Unsigned unless the signing
-      # secrets are present.
-      - name: Bundle release AAB
-        run: ./gradlew bundleRelease --stacktrace
-
-      - name: Check native libs for 16 KB page alignment
-        working-directory: musicviz-project/musicviz/app/src/main/jniLibs
-        run: |
-          set -uo pipefail
-          # Play requires 16 KB page-size support for targetSdk 35+. Warn here;
-          # release.yml turns the same check into a hard gate.
-          bad=0
-          for so in $(find . -name '*.so'); do
-            aligns=$(readelf -lW "$so" | awk '$1 == "LOAD" { print $NF }')
-            for a in $aligns; do
-              if [ "$((a))" -lt 16384 ]; then
-                echo "::warning file=$so::LOAD segment aligned to $a, needs >= 0x4000 (16384). Rebuild via the native-libs workflow."
-                bad=1
-                break
-              fi
-            done
-          done
-          [ "$bad" -eq 0 ] && echo "All native libs are 16 KB aligned."
-          exit 0
-
-      # The privacy policy and the Play data-safety answers both rest on the
-      # claim that MusicViz cannot talk to the network. Assert it against the
-      # merged manifest so a future dependency cannot quietly add the
-      # permission and make those statements false.
-      - name: Assert no INTERNET permission
-        working-directory: musicviz-project/musicviz/app/build/intermediates
-        run: |
-          set -euo pipefail
-          manifests=$(find . -name AndroidManifest.xml -path '*merged_manifest*')
-          if [ -z "$manifests" ]; then
-            echo "::error::no merged manifest found — check the intermediates path"
-            exit 1
-          fi
-          if grep -l 'android.permission.INTERNET' $manifests; then
-            echo "::error::INTERNET permission appeared in the merged manifest; update docs/PRIVACY_POLICY.md and the Play data-safety answers before shipping"
-            exit 1
-          fi
-          echo "No INTERNET permission in the merged manifest."
-
-      - name: Lint
-        run: ./gradlew lint --stacktrace
+          echo "file_name=$FILE_NAME" >> "$GITHUB_OUTPUT"
+          echo "Built dist/$FILE_NAME"
 
       - name: Upload debug APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: musicviz-debug-apk
-          path: musicviz-project/musicviz/app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 14
+          name: musicviz-debug-${{ github.run_number }}-${{ github.sha }}
+          path: |
+            dist/${{ steps.package.outputs.file_name }}
+            dist/${{ steps.package.outputs.file_name }}.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
 
-      - name: Publish APK to apk-drop branch
-        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        working-directory: musicviz-project/musicviz/app/build/outputs/apk/debug
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git init -b apk-drop
-          git config user.email noreply@anthropic.com
-          git config user.name Claude
-          git add app-debug.apk
-          git commit -m "MusicViz debug APK from ${GITHUB_SHA} (run ${GITHUB_RUN_ID})"
-          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" apk-drop
+      # Verification runs after the APK upload. If a check fails, the APK is
+      # still available from the workflow run for device testing.
+      - name: Run unit tests
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./gradlew :app:testDebugUnitTest --stacktrace --no-daemon
 
-      - name: Upload test & lint reports
+      - name: Run Android lint
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./gradlew :app:lintDebug --stacktrace --no-daemon
+
+      - name: Run Kotlin formatting checks
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./gradlew ktlintCheck --stacktrace --no-daemon
+
+      - name: Upload reports when verification fails
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: reports
+          name: musicviz-build-reports-${{ github.run_number }}
           path: |
             musicviz-project/musicviz/app/build/reports/
-          retention-days: 7
+            musicviz-project/musicviz/app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 14

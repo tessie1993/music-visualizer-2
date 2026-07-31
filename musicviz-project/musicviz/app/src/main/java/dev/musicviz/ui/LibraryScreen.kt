@@ -23,16 +23,12 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -85,17 +81,11 @@ fun LibraryScreen(
         if (!granted) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Grant music access to browse everything on this device.")
-                Button(onClick = { permLauncher.launch(permission) }) { Text("Allow music access") }
+                CrystalButton(onClick = { permLauncher.launch(permission) }) { Text("Allow music access") }
             }
             return
         }
-        ScrollableTabRow(
-            selectedTabIndex = tab,
-            edgePadding = 8.dp,
-            containerColor = androidx.compose.ui.graphics.Color.Transparent,
-        ) {
-            tabs.forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) }) }
-        }
+        CrystalTabs(titles = tabs, selected = tab, onSelect = { tab = it })
         when (tab) {
             0 -> TrackList(tracks, viewModel)
             1 -> GroupList(tracks.groupBy { it.album }, viewModel)
@@ -199,8 +189,12 @@ private fun GroupList(
                 Text(sel, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { viewModel.openStringsPublic(groups.getValue(sel).map { it.uri }) }) { Text("Play all") }
-                Button(onClick = { viewModel.openStringsPublic(groups.getValue(sel).map { it.uri }.shuffled()) }) { Text("Shuffle") }
+                CrystalButton(compact = true, onClick = {
+                    viewModel.openStringsPublic(groups.getValue(sel).map { it.uri })
+                }) { Text("Play all") }
+                CrystalButton(compact = true, filled = false, onClick = {
+                    viewModel.openStringsPublic(groups.getValue(sel).map { it.uri }.shuffled())
+                }) { Text("Shuffle") }
             }
             LazyColumn(Modifier.fillMaxSize()) {
                 items(groups.getValue(sel), key = { it.uri }) { t -> TrackRow(t, viewModel, subtitleOverride = t.album) }
@@ -288,7 +282,7 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
             title = { Text("Rename playlist") },
             text = { OutlinedTextField(value = renameText, onValueChange = { renameText = it }, singleLine = true) },
             confirmButton = {
-                Button(onClick = {
+                CrystalButton(onClick = {
                     viewModel.renameMusicPlaylist(old, renameText)
                     renaming = null
                 }) { Text("Rename") }
@@ -338,8 +332,13 @@ private fun FoldersTab(
             Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            OutlinedButton(onClick = { folderPicker.launch(null) }) { Text("Add folder") }
-            OutlinedButton(onClick = viewModel::rescanMediaRoots, enabled = roots.isNotEmpty() && !scanning) {
+            CrystalButton(compact = true, filled = false, onClick = { folderPicker.launch(null) }) { Text("Add folder") }
+            CrystalButton(
+                compact = true,
+                filled = false,
+                onClick = viewModel::rescanMediaRoots,
+                enabled = roots.isNotEmpty() && !scanning,
+            ) {
                 Text(if (scanning) "Scanning…" else "Rescan")
             }
         }
