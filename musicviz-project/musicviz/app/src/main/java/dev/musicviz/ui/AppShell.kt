@@ -735,6 +735,8 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+        item {
             SettingsSection("Visuals & Analysis") {
                 Column {
                     Text("Preset morph: ${gui.morphBeats} beats (0 = snap)")

@@ -129,6 +129,10 @@ object VisualSafety {
                     // Glitch cuts and displaces blocks frame to frame, which
                     // reads as high-frequency change over a large area.
                     glitch = out.glitch.coerceAtMost(depth),
+                    // Bloom is `col += uPostBloom * col * col` - a superlinear
+                    // luminance ADD over the whole frame, so a beat that lands
+                    // on a bright frame can nearly double it.
+                    bloom = out.bloom.coerceAtMost(depth),
                     // A hard reversal of the whole frame is the largest
                     // possible contrast change; solarize folds the curve and
                     // is nearly as abrupt.
@@ -153,6 +157,11 @@ object VisualSafety {
                     turbulence = out.turbulence * REDUCED_MOTION_SCALE,
                     pulse = out.pulse * REDUCED_MOTION_SCALE,
                     cycleSpeed = out.cycleSpeed * REDUCED_MOTION_SCALE,
+                    // A continuous zoom toward or away from the viewer is one
+                    // of the strongest vection triggers there is - stronger
+                    // than the lateral drift above - so it belongs here more
+                    // than most of this list.
+                    endlessZoomSpeed = out.endlessZoomSpeed * REDUCED_MOTION_SCALE,
                 )
         }
         return out
@@ -197,12 +206,19 @@ object VisualSafety {
      * flash cannot outrun [SafetyConfig.maxFlashHz].
      *
      * `flash` fires once per detected beat, so its rate is the track's, not a
-     * slider's - at the shipped `INTERVAL_MS_MIN` of 200 ms a dense track can
-     * flash five times a second. This is the only lever that reaches that,
-     * because the rate is set upstream in the analyzer rather than in any
-     * visual param. Returns [requestedMs] untouched when safety is off, and
-     * only ever RAISES the gap: a user who has already chosen a calmer
-     * setting keeps it.
+     * slider's. This is the only lever that reaches it, because the rate is
+     * set upstream in the analyzer rather than in any visual param.
+     *
+     * Worth knowing how little this does at the DEFAULT settings, so nobody
+     * reads more into the switch than it delivers:
+     * `FeatureExtractor.INTERVAL_MS_DEFAULT` is 1000/3 ms, i.e. already
+     * exactly the 3 Hz limit, so a user who has not touched "Minimum gap
+     * between beats" sees no change here at all. It bites only for someone who
+     * dragged that slider down toward its 200 ms minimum (5 Hz), which is
+     * precisely the person it should protect.
+     *
+     * Returns [requestedMs] untouched when safety is off, and only ever RAISES
+     * the gap: a user who has already chosen a calmer setting keeps it.
      */
     fun beatMinIntervalMs(
         requestedMs: Float,
@@ -229,8 +245,21 @@ object VisualSafety {
         if (config.enabled && requested == TransitionStyle.CUT) TransitionStyle.FADE else requested
 
     /**
-     * Whether an LFO target drives overall frame brightness/contrast, i.e.
-     * whether oscillating it fast is a flash rather than motion.
+     * Whether oscillating this target quickly reads as the SCREEN FLASHING
+     * rather than as something moving.
+     *
+     * Note this set is deliberately NOT the same as the set [apply] clamps,
+     * and the difference is not an oversight - the two bound different things.
+     * [apply] bounds the peak magnitude of a full-frame luminance event, which
+     * only matters for params that are large and bright at rest (brightness,
+     * contrast, bloom, the flash controls). This bounds the FREQUENCY of any
+     * modulation a viewer would perceive as flashing, which includes params
+     * that are perfectly safe at any fixed value and only become a hazard when
+     * swung fast: a vignette pumping at 30 Hz is a large-area luminance
+     * oscillation, and hue/palette at 30 Hz is the saturated-colour flashing
+     * WCAG 2.3.1 calls out separately from luminance. Geometry targets are
+     * excluded because fast geometry is motion, which is what reduced motion
+     * is for.
      *
      * Deliberately a property of the target rather than a set held here, so a
      * new [LfoTarget] has to state which side it is on.
@@ -243,6 +272,10 @@ object VisualSafety {
                 LfoTarget.SATURATION,
                 LfoTarget.BLOOM,
                 LfoTarget.GLITCH,
+                LfoTarget.VIGNETTE,
+                LfoTarget.COLOR_SHIFT,
+                LfoTarget.PALETTE_MIX,
+                LfoTarget.TEMPERATURE,
                 -> true
                 else -> false
             }

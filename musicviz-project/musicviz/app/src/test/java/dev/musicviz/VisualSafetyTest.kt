@@ -34,9 +34,11 @@ class VisualSafetyTest {
             brightness = 3f,
             intensity = 3f,
             contrast = 3f,
+            bloom = 1f,
             speed = 4f,
             shake = 1f,
             rotation = 2f,
+            endlessZoomSpeed = 2f,
         )
 
     @Test
@@ -92,6 +94,35 @@ class VisualSafetyTest {
     }
 
     @Test
+    fun fastModulationIsCappedForColourAndLargeAreaTargetsToo() {
+        // The rate cap must not be read as "brightness only". A param can sit
+        // at any fixed value safely and still be a hazard when SWUNG fast:
+        // a vignette pumping at 30 Hz is a large-area luminance oscillation,
+        // and hue/palette at that rate is the saturated-colour flashing
+        // WCAG 2.3.1 names separately from luminance. None of these are
+        // clamped by apply(), so the rate cap is their only bound.
+        val safe = SafetyConfig(enabled = true)
+        for (target in
+            listOf(
+                LfoTarget.VIGNETTE,
+                LfoTarget.COLOR_SHIFT,
+                LfoTarget.PALETTE_MIX,
+                LfoTarget.TEMPERATURE,
+                LfoTarget.SATURATION,
+                LfoTarget.BLOOM,
+                LfoTarget.GLITCH,
+            )
+        ) {
+            assertEquals("$target must be rate-capped", 3f, VisualSafety.limitLfoRate(30f, target, safe), eps)
+        }
+        // Spot-check the other side of the line: these move the picture rather
+        // than flash it, so they stay fast and reduced motion owns them.
+        for (target in listOf(LfoTarget.ZOOM, LfoTarget.SPEED, LfoTarget.DRIFT_X, LfoTarget.TWIST)) {
+            assertEquals("$target is motion, not flashing", 30f, VisualSafety.limitLfoRate(30f, target, safe), eps)
+        }
+    }
+
+    @Test
     fun enabledBoundsEveryFullScreenLuminancePath() {
         val safe = SafetyConfig(enabled = true)
         val out = VisualSafety.apply(hostile, safe)
@@ -112,6 +143,9 @@ class VisualSafetyTest {
             1e-4f,
         )
         assertTrue("glitch bounded, got ${out.glitch}", out.glitch <= depth + eps)
+        // Bloom is a superlinear full-frame luminance ADD, so it is bounded by
+        // the same budget rather than only rate-capped.
+        assertTrue("bloom bounded, got ${out.bloom}", out.bloom <= depth + eps)
         assertFalse("full-frame inversion is the largest possible contrast jump", out.invert)
         assertFalse("solarize folds the curve almost as abruptly", out.solarize)
         assertTrue("brightness bounded, got ${out.brightness}", out.brightness <= 1f + depth + eps)
@@ -125,6 +159,7 @@ class VisualSafetyTest {
         assertEquals(0f, out.strobe, eps)
         assertEquals(0f, out.flash, eps)
         assertEquals(0f, out.glitch, eps)
+        assertEquals(0f, out.bloom, eps)
         assertEquals("neutral level", 1f, out.brightness, eps)
         assertEquals("neutral contrast", 1f, out.contrast, eps)
     }
@@ -151,6 +186,8 @@ class VisualSafetyTest {
         assertEquals(hostile.speed * k, out.speed, eps)
         assertEquals(hostile.shake * k, out.shake, eps)
         assertEquals(hostile.rotation * k, out.rotation, eps)
+        // Continuous zoom is the strongest vection trigger in the list.
+        assertEquals(hostile.endlessZoomSpeed * k, out.endlessZoomSpeed, eps)
         assertEquals("flash untouched by reduced motion", hostile.flash, out.flash, eps)
         assertEquals("strobe untouched by reduced motion", hostile.strobe, out.strobe, eps)
         assertTrue("invert untouched by reduced motion", out.invert)
@@ -215,11 +252,16 @@ class VisualSafetyTest {
         // something brighter would be the worst possible bug here.
         val safe = SafetyConfig(enabled = true)
         for (v in listOf(0f, 0.1f, 0.25f, 0.5f, 0.9f, 1f)) {
-            val src = SceneParams.DEFAULT.copy(strobe = v, flash = v, glitch = v, brightness = 1f + v, contrast = 1f + v)
+            val src =
+                SceneParams.DEFAULT.copy(
+                    strobe = v, flash = v, glitch = v, bloom = v,
+                    brightness = 1f + v, contrast = 1f + v,
+                )
             val out = VisualSafety.apply(src, safe)
             assertTrue("strobe rose at $v", out.strobe <= src.strobe + eps)
             assertTrue("flash rose at $v", out.flash <= src.flash + eps)
             assertTrue("glitch rose at $v", out.glitch <= src.glitch + eps)
+            assertTrue("bloom rose at $v", out.bloom <= src.bloom + eps)
             assertTrue("brightness rose at $v", out.brightness <= src.brightness + eps)
             assertTrue("contrast rose at $v", out.contrast <= src.contrast + eps)
         }

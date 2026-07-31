@@ -355,10 +355,15 @@ class PlayerViewModel(
         // Safe visuals floors the gap between beats, because `flash` fires
         // once per beat and no visual slider governs how often that is.
         engine.beatMinIntervalMs = prefs.effectiveBeatMinIntervalMs
+        // Compare the EFFECTIVE interval, not the raw slider and not the whole
+        // SafetyConfig: the effective value already folds in the Safe-visuals
+        // floor, while `safety != safety` would also fire on flash depth,
+        // inversion and reduced motion - none of which touch the beat grid, so
+        // each tick of those sliders would re-decide tens of thousands of
+        // frames to produce a byte-identical timeline.
         val sensitivityChanged =
             previous.beatThresholdSigma != prefs.beatThresholdSigma ||
-                previous.beatMinIntervalMs != prefs.beatMinIntervalMs ||
-                previous.safety != prefs.safety
+                previous.effectiveBeatMinIntervalMs != prefs.effectiveBeatMinIntervalMs
         if (sensitivityChanged) redecideCachedBeats(prefs)
     }
 
