@@ -180,8 +180,10 @@ fun CrystalPlayButton(
  * Crystal slider: a thin luminous track whose active side runs
  * secondary→primary, gem-diamond thumb with bloom, and small tick diamonds
  * when [steps] > 0. Drop-in for the Material Slider call sites in this app
- * (value/range/steps/enabled only).
+ * (value/range/steps/enabled only). The custom thumb/track Slider overload
+ * is still experimental in Material 3, hence the opt-in.
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun CrystalSlider(
     value: Float,
