@@ -198,11 +198,8 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     the app after each change: both values must persist, and a profile
     that last stored a sigma under the old 1.5-4.0 range must reload at
     that same value with the slider thumb sitting on it (not snapped).
-    KNOWN LIMITATION (not a bug to file): both settings apply to LIVE
-    analysis only. Cached/offline beat grids are built with the extractor
-    defaults, so an exported clip and any section-driven intelligence
-    still use 2.5σ / 333 ms whatever the sliders say — see todo.md
-    "Beat sensitivity does not reach the offline analyzer".
+    (The former limitation — that both settings reached LIVE analysis
+    only — is closed; check 30 covers the offline/export side.)
 27. Randomize locks + Customize labels (v0.14.0): open Visuals >
     Customize. Every control must show a "lock"/"locked" affordance,
     INCLUDING the chip selectors — Palette, Palette 2 (visible once
@@ -220,3 +217,22 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     independently. Finally, Visuals > Customize must be the only
     customization surface: there is no second full-screen dialog to reach
     from anywhere in the app.
+30. Beat sensitivity reaches exports and the cached analysis: pick a slow,
+    sparse track and let it analyse fully (Settings shows the analysis
+    cache growing by one track). At the shipped defaults export a short
+    clip on a beat-reactive style — the flashes in the file must land
+    where playback flashed. Now open Settings and tap "Slow track"
+    (4.5σ / 700 ms), then export the SAME track again WITHOUT
+    re-analysing: the cache entry count must NOT change (no second
+    analysis pass, no progress bar crawl), and the new file must flash
+    noticeably less — on the kick only — matching what live playback now
+    does. Drag the sliders back to "Default" and export once more: the
+    beat grid must come back to what the first clip had. Do the same in
+    MANUAL intelligence mode, which only reads the cache: the fluid
+    journey's beat response must follow the sliders there too.
+    MIGRATION SIDE — install this build OVER a build from before it with
+    tracks already analysed. Those entries are the old v1 format and are
+    silently dropped: the first play/export of such a track re-analyses it
+    once (progress bar), then behaves as above. Nothing must crash, and
+    the "Analysis cache: N tracks" line must recover to a sensible count.
+    Settings > "Clear" on the analysis cache must still empty it.

@@ -289,22 +289,21 @@ docs/PARAM_MATRIX.md ("Notes" + "Divergences worth knowing"). Everything
 listed here is a real gap that was NOT closed in this round, with the reason
 it was left and what closing it involves.
 
-- [ ] **Beat sensitivity does not reach the offline analyzer.**
-      `OfflineAnalyzer.StreamingPipeline` builds its own `FeatureExtractor`
-      (analysis/OfflineAnalyzer.kt:137) and never assigns
-      `beatThresholdSigma` / `beatMinIntervalMs`, so every cached beat grid —
-      and therefore every export and every section-driven intelligence
-      decision — runs at the shipped defaults (2.5σ / 333 ms) no matter where
-      the user leaves the sliders. Pre-existing; predates the v0.14 beat
-      work. Closing it is NOT a one-liner: the two values have to be
-      threaded from GuiPrefs into `OfflineAnalyzer.analyze`, AND
-      `AnalysisCache` must stop serving a timeline analysed at other
-      settings — its key is a SHA-1 of the URI alone
-      (analysis/AnalysisCache.kt:36-40) with no sensitivity in the key or the
-      header. Either fold both values into the key or bump `VERSION`, store
-      them in the header and reject mismatches. Decide first whether beat
-      grids SHOULD follow a live-visuals slider at all, or whether the
-      offline detector wants its own (probably stricter) setting.
+- [x] **Beat sensitivity does not reach the offline analyzer.** CLOSED —
+      `OfflineAnalyzer.analyze` now takes the sigma/interval pair and clamps
+      it exactly as `AnalysisEngine` does, and the cache stops storing a beat
+      decision it cannot revise: v2 persists the raw onset curve
+      (`AudioFeatures.flux`) plus the hop rate, and `AnalysisCache.load`
+      re-decides the beats through the same `FeatureExtractor.BeatGate` the
+      live path runs (`FeatureTimeline.withBeatSensitivity`). So the key stays
+      a SHA-1 of the URI alone — one entry serves every setting, a slider drag
+      applies to already-analysed tracks with no re-analysis, and folding the
+      settings into the key (which would have re-analysed on every drag and
+      thrashed the 15-entry LRU) was not needed. v1 entries carry no curve and
+      are deleted on load, costing one re-analysis per track. The offline
+      detector deliberately follows the live slider rather than owning a
+      second setting: an export that disagrees with the playback the user just
+      watched is the bug, not a feature.
 - [ ] **`pulse` ("Beat pulse") has no reader on MilkDrop or the fluid
       family.** Shader scenes use `uPulse`, particle scenes swell their point
       size; the composite pass declares no beat pulse at all, so the slider

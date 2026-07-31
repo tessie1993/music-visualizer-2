@@ -16,6 +16,14 @@ import kotlin.math.roundToInt
  * further. The threshold and the minimum gap between beats are now both
  * tunable, over one shared set of bounds that the engine clamp and the
  * Settings sliders read from, so the slider can never saturate silently.
+ *
+ * Second bug, guarded from `live gate and offline replay agree` down: only the
+ * LIVE path honoured those settings. The offline analyzer built its own
+ * extractor and left the defaults in place, so cached beat grids - the ones
+ * video export and the section intelligence run on - ignored the sliders. The
+ * fix stores the onset curve and replays the very same [FeatureExtractor.BeatGate]
+ * over it, so the two paths cannot disagree; that agreement is the property
+ * tested here.
  */
 class FeatureExtractorTest {
     private fun pulseBands(on: Boolean): FloatArray = FloatArray(64) { if (on) 0.9f else 0.05f }
@@ -166,5 +174,75 @@ class FeatureExtractorTest {
         // A sigma persisted under the old 1.5..4 bounds must still load as-is.
         engine.beatThresholdSigma = 4f
         assertEquals(4f, engine.beatThresholdSigma, 1e-6f)
+    }
+
+    /** Runs the slow track live, returning (beat flags, onset curve). */
+    private fun liveRun(
+        sigma: Float,
+        intervalMs: Float,
+    ): Pair<BooleanArray, FloatArray> {
+        val extractor = FeatureExtractor(64, hopRateHz = 60f)
+        extractor.beatThresholdSigma = sigma
+        extractor.beatMinIntervalMs = intervalMs
+        val waveform = FloatArray(128)
+        val beats = BooleanArray(900)
+        val flux = FloatArray(900)
+        for (frame in 0 until 900) {
+            val f = extractor.extract(slowTrackBands(frame), waveform, 44100)
+            beats[frame] = f.beat
+            flux[frame] = f.flux
+        }
+        return beats to flux
+    }
+
+    @Test
+    fun `live gate and offline replay agree frame for frame`() {
+        // Exports read a cached onset curve and re-decide the beats; if that
+        // replay disagreed with the live gate by even one frame, an exported
+        // clip would flash where playback did not.
+        val settings =
+            listOf(
+                FeatureExtractor.SIGMA_DEFAULT to FeatureExtractor.INTERVAL_MS_DEFAULT,
+                FeatureExtractor.SLOW_SIGMA to FeatureExtractor.SLOW_INTERVAL_MS,
+                FeatureExtractor.SIGMA_MAX to FeatureExtractor.INTERVAL_MS_MAX,
+                FeatureExtractor.SIGMA_MIN to FeatureExtractor.INTERVAL_MS_MIN,
+            )
+        for ((sigma, intervalMs) in settings) {
+            val (live, flux) = liveRun(sigma, intervalMs)
+            val replayed = FeatureExtractor.decideBeats(flux, 60f, sigma, intervalMs)
+            assertEquals(live.size, replayed.size)
+            for (i in live.indices) {
+                assertEquals("frame $i at $sigma sigma / $intervalMs ms", live[i], replayed[i])
+            }
+        }
+    }
+
+    @Test
+    fun `replaying one onset curve at different settings changes the beats`() {
+        // The whole point of caching the curve instead of the decision.
+        val flux = liveRun(FeatureExtractor.SIGMA_DEFAULT, FeatureExtractor.INTERVAL_MS_DEFAULT).second
+        val atDefault =
+            FeatureExtractor
+                .decideBeats(flux, 60f, FeatureExtractor.SIGMA_DEFAULT, FeatureExtractor.INTERVAL_MS_DEFAULT)
+                .count { it }
+        val atSlow =
+            FeatureExtractor
+                .decideBeats(flux, 60f, FeatureExtractor.SLOW_SIGMA, FeatureExtractor.SLOW_INTERVAL_MS)
+                .count { it }
+        assertTrue("slow preset should flash less, got $atSlow vs $atDefault", atSlow < atDefault)
+        assertTrue("slow preset should still find the kicks, got $atSlow", atSlow > 0)
+    }
+
+    @Test
+    fun `replay clamps out-of-range settings exactly like the engine`() {
+        val flux = liveRun(FeatureExtractor.SIGMA_DEFAULT, FeatureExtractor.INTERVAL_MS_DEFAULT).second
+        val underClamped = FeatureExtractor.decideBeats(flux, 60f, -3f, 0f)
+        val atMin = FeatureExtractor.decideBeats(flux, 60f, FeatureExtractor.SIGMA_MIN, FeatureExtractor.INTERVAL_MS_MIN)
+        assertTrue("comparison must not be vacuous", atMin.any { it })
+        for (i in atMin.indices) assertEquals("frame $i", atMin[i], underClamped[i])
+
+        val overClamped = FeatureExtractor.decideBeats(flux, 60f, 99f, 99_999f)
+        val atMax = FeatureExtractor.decideBeats(flux, 60f, FeatureExtractor.SIGMA_MAX, FeatureExtractor.INTERVAL_MS_MAX)
+        for (i in atMax.indices) assertEquals("frame $i", atMax[i], overClamped[i])
     }
 }

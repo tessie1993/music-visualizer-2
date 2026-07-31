@@ -343,6 +343,12 @@ class PlayerViewModel(
         _guiPrefs.value = prefs
         engine.beatThresholdSigma = prefs.beatThresholdSigma
         engine.beatMinIntervalMs = prefs.beatMinIntervalMs
+        // The offline timeline drives export and the intelligence modes; it
+        // stores the raw onset curve, so the new sensitivity can be applied
+        // to the already-analysed track right now instead of only after a
+        // re-analysis. Without this, an export would keep the beat grid the
+        // track happened to be analysed under.
+        timeline = timeline?.withBeatSensitivity(prefs.beatThresholdSigma, prefs.beatMinIntervalMs)
     }
 
     fun setTheme(theme: AppTheme) {
@@ -1260,20 +1266,30 @@ class PlayerViewModel(
     /**
      * Analysis with the persistent cache: a hit skips the whole offline
      * pass (the dominant cost of export). Call on Dispatchers.IO.
+     *
+     * Both paths get the user's beat sensitivity: the analyzer runs its gate
+     * with it, and a cache hit re-decides the beats from the stored onset
+     * curve. So the cached beat grid always matches what the live engine is
+     * flashing on, for exports as well as the intelligence modes.
      */
     private suspend fun analyzeCached(
         uri: Uri,
         onProgress: (Float) -> Unit,
     ): dev.musicviz.analysis.FeatureTimeline {
         val app = getApplication<Application>()
-        dev.musicviz.analysis.AnalysisCache.load(app, uri)?.let {
-            onProgress(1f)
-            return it
-        }
-        return offlineAnalyzer.analyze(uri, onProgress).also {
-            dev.musicviz.analysis.AnalysisCache
-                .save(app, uri, it)
-        }
+        val gui = _guiPrefs.value
+        dev.musicviz.analysis.AnalysisCache
+            .load(app, uri, gui.beatThresholdSigma, gui.beatMinIntervalMs)
+            ?.let {
+                onProgress(1f)
+                return it
+            }
+        return offlineAnalyzer
+            .analyze(uri, gui.beatThresholdSigma, gui.beatMinIntervalMs, onProgress)
+            .also {
+                dev.musicviz.analysis.AnalysisCache
+                    .save(app, uri, it)
+            }
     }
 
     private fun libraryPrefs(): android.content.SharedPreferences =
@@ -1700,13 +1716,16 @@ class PlayerViewModel(
             // section re-seats match a later export of the same track
             // (export always detects sections from the same timeline).
             val uri = currentUri ?: return
+            val gui = _guiPrefs.value
             viewModelScope.launch(Dispatchers.IO) {
-                dev.musicviz.analysis.AnalysisCache.load(getApplication<Application>(), uri)?.let { t ->
-                    if (currentUri == uri) {
-                        timeline = t
-                        _vizState.update { it.copy(bpm = t.bpm, sections = t.detectSections()) }
+                dev.musicviz.analysis.AnalysisCache
+                    .load(getApplication<Application>(), uri, gui.beatThresholdSigma, gui.beatMinIntervalMs)
+                    ?.let { t ->
+                        if (currentUri == uri) {
+                            timeline = t
+                            _vizState.update { it.copy(bpm = t.bpm, sections = t.detectSections()) }
+                        }
                     }
-                }
             }
         }
     }
