@@ -175,14 +175,26 @@ kotlin {
 // resolution error rather than as 38 mystery test failures. The tests
 // themselves then run with no network access at all.
 //
-// One entry is needed per SDK level named in an `@Config(sdk = [...])` under
-// src/test. Version strings are the ones Robolectric 4.14.1 asks for
+// One configuration is needed per SDK level named in an `@Config(sdk = [...])`
+// under src/test. Version strings are the ones Robolectric 4.14.1 asks for
 // (org.robolectric.plugins.DefaultSdkProvider): sdk 34 -> Android 14 build
 // 10818077, sdk 35 -> Android 15 build 12650502, with the `-i7`
 // preinstrumented-jar revision this Robolectric release pins. Adding a test on
-// a new SDK level means adding its jar here; Robolectric will otherwise fail
-// loudly with "Unable to locate dependency".
-val robolectricSdks by configurations.creating {
+// a new SDK level means adding its own configuration here; Robolectric will
+// otherwise fail loudly with "Unable to locate dependency".
+//
+// It has to be one configuration *per* SDK level rather than one shared one:
+// these jars are all versions of the same module
+// (org.robolectric:android-all-instrumented), so in a single configuration
+// Gradle's conflict resolution collapses them to the highest version and
+// stages only that one jar, failing every test on every other SDK level.
+val robolectricSdk34 by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    isTransitive = false
+}
+
+val robolectricSdk35 by configurations.creating {
     isCanBeConsumed = false
     isCanBeResolved = true
     isTransitive = false
@@ -193,7 +205,7 @@ val robolectricSdkDir = layout.buildDirectory.dir("robolectric-sdks")
 val stageRobolectricSdks =
     tasks.register<Sync>("stageRobolectricSdks") {
         description = "Stages Robolectric's android-all jars so unit tests never hit the network."
-        from(robolectricSdks)
+        from(robolectricSdk34, robolectricSdk35)
         into(robolectricSdkDir)
     }
 
@@ -201,19 +213,21 @@ tasks.withType<Test>().configureEach {
     dependsOn(stageRobolectricSdks)
     systemProperty("robolectric.offline", "true")
     systemProperty("robolectric.dependency.dir", robolectricSdkDir.get().asFile.absolutePath)
-    // The default failure output prints only "AssertionError at Foo.java:12"
-    // with no message, which is what made the flake above so hard to read.
+    // Gradle's default (SHORT) prints only "AssertionError at Foo.java:12" with
+    // no message at all, which is exactly what made the flake above so hard to
+    // read from a CI log. FULL is only ever paid for on a failing build.
     testLogging {
         events("failed")
-        exceptionFormat = TestExceptionFormat.SHORT
+        exceptionFormat = TestExceptionFormat.FULL
         showCauses = true
         showExceptions = true
+        showStackTraces = true
     }
 }
 
 dependencies {
-    robolectricSdks("org.robolectric:android-all-instrumented:14-robolectric-10818077-i7")
-    robolectricSdks("org.robolectric:android-all-instrumented:15-robolectric-12650502-i7")
+    robolectricSdk34("org.robolectric:android-all-instrumented:14-robolectric-10818077-i7")
+    robolectricSdk35("org.robolectric:android-all-instrumented:15-robolectric-12650502-i7")
 
     implementation(libs.core.splashscreen)
     implementation(libs.media3.exoplayer)

@@ -84,9 +84,13 @@ UI OVERHAUL IS GATED: no visual redesign until P0–P4 architecture is done.
       `stageRobolectricSdks` syncs them into build/robolectric-sdks, and the
       test tasks run with `robolectric.offline=true` +
       `robolectric.dependency.dir`, so tests need no network at all. Adding
-      an `@Config(sdk = [N])` on a new SDK level means adding that jar to
-      the configuration. Test-side `testLogging` now prints failure messages
-      and causes, which the previous output swallowed.
+      an `@Config(sdk = [N])` on a new SDK level means adding its OWN
+      configuration — one per level, because they are all versions of the
+      same module and a shared configuration makes Gradle's conflict
+      resolution collapse them to the highest version and stage only that
+      jar. Test-side `testLogging` now uses `exceptionFormat = FULL`;
+      Gradle's default SHORT prints the exception class and line but no
+      message at all, which is what made this so hard to read from CI.
 
 ## P1 — Milkdrop tab + preset architecture
 - [x] Style sheet → 3 tabs: Particles | Shaders | MilkDrop
