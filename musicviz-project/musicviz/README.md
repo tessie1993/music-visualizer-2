@@ -1,3 +1,38 @@
+## v1.0.0 (code 24-25) - Play Store release build + background playback
+- Background playback (code 25): the ExoPlayer, PCM tap, analysis loop and
+  audiofx chain moved out of PlayerViewModel into a process-wide
+  playback/PlaybackEngine, and a MediaSessionService (playback/PlaybackService)
+  publishes a MediaSession over that same player. Music now survives a locked
+  screen and a backgrounded app, with lock-screen/notification transport
+  controls and headset buttons; the service runs in the foreground while
+  playing and holds a WAKE_MODE_LOCAL wake lock. The ViewModel still drives the
+  concrete ExoPlayer (it needs the audio session id for the equalizer, volume
+  ramps for the sleep timer, and the tap renderers factory for the visualizer),
+  so it now detaches its Player.Listener in onCleared instead of releasing the
+  player, and auto-resume only runs when no queue is already loaded - returning
+  to the app must not replace what is playing. New permissions:
+  FOREGROUND_SERVICE(_MEDIA_PLAYBACK), POST_NOTIFICATIONS, WAKE_LOCK.
+- Release build (code 24): first real release buildType - R8 + resource
+  shrinking with keep rules for the projectM JNI symbols (pm_jni.c registers
+  statically, so PMBridge's class and method names must survive), signing from
+  keystore.properties or MUSICVIZ_* env vars, uncompressed page-aligned
+  jniLibs, single-language bundle, buildConfig enabled.
+- Compliance: THIRD_PARTY_NOTICES ships as an asset and is shown under
+  Settings > Export & About (LGPL-2.1 for libprojectM requires the notice to
+  reach users), with checkThirdPartyNotices failing the build if the copy
+  drifts; privacy policy in docs/ + a GitHub Pages page the About screen links
+  to.
+- CI: android.yml also runs bundleRelease, asserts no INTERNET permission
+  reaches the merged manifest, and warns when the bundled .so are not 16 KB
+  aligned; release.yml builds/verifies a signed AAB and hard-fails the 16 KB
+  check; native-libs.yml rebuilds libprojectM with NDK r28 and
+  -Wl,-z,max-page-size=16384.
+- KNOWN BLOCKER: the bundled .so are still 4 KB aligned, which Play rejects for
+  targetSdk 35+. See docs/PLAY_STORE_RELEASE.md.
+- Verify note: built without the Android SDK locally; gate = full CI (ktlint,
+  106+ headless tests, assembleDebug, bundleRelease, lint) green. Background
+  playback cannot be checked headless - run DEVICE_CHECKS items 21-22.
+
 ## v0.13.1 (code 23) - Player settings, library metadata & search, WATER style + ripple overlay, glass UI, boot intro
 - Player: PlayerPrefs store (shuffle/repeat now persisted and restored),
   playback speed 0.5-2x and pitch +/-6 st, skip silence, pause-on-unplug,

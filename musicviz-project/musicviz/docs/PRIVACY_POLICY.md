@@ -34,6 +34,12 @@ To do its job MusicViz reads data that never leaves your device:
 - **`READ_MEDIA_AUDIO`** (Android 13+) / **`READ_EXTERNAL_STORAGE`**
   (Android 12 and below): required to find and play the music already on your
   device. Nothing else is read.
+- **`POST_NOTIFICATIONS`** (Android 13+): shows the playback notification with
+  play/pause/next controls. Declining it only hides those controls; the app
+  sends no other notifications and never uses them for marketing.
+- **`FOREGROUND_SERVICE`**, **`FOREGROUND_SERVICE_MEDIA_PLAYBACK`** and
+  **`WAKE_LOCK`**: keep music playing when the screen is off or the app is in
+  the background. They are used only while a track is actually playing.
 
 MusicViz requests no camera, microphone, contacts, location or network
 permission.

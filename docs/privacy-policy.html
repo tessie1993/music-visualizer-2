@@ -79,6 +79,13 @@ information. Specifically, the app has:</p>
   <li><strong><code>READ_MEDIA_AUDIO</code></strong> (Android 13+) /
       <strong><code>READ_EXTERNAL_STORAGE</code></strong> (Android 12 and below):
       required to find and play the music already on your device. Nothing else is read.</li>
+  <li><strong><code>POST_NOTIFICATIONS</code></strong> (Android 13+): shows the playback
+      notification with play/pause/next controls. Declining it only hides those controls;
+      the app sends no other notifications and never uses them for marketing.</li>
+  <li><strong><code>FOREGROUND_SERVICE</code></strong>,
+      <strong><code>FOREGROUND_SERVICE_MEDIA_PLAYBACK</code></strong> and
+      <strong><code>WAKE_LOCK</code></strong>: keep music playing when the screen is off or
+      the app is in the background. They are used only while a track is actually playing.</li>
 </ul>
 <p>MusicViz requests no camera, microphone, contacts, location or network permission.</p>
 

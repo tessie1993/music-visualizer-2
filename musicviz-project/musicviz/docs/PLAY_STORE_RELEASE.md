@@ -132,6 +132,20 @@ Category: **Utility / Productivity / Communication / Other**. Everything is
 location sharing, digital purchases, or unrestricted internet. Expected result:
 **Everyone / PEGI 3**.
 
+### Foreground service declaration — required since the 1.0.0 playback change
+
+MusicViz now runs a `mediaPlayback` foreground service so audio survives a
+locked screen. Play Console requires every foreground service type to be
+declared under **App content → Foreground service types**, and rejects
+releases that use one without it. Answer:
+
+- **Type used:** Media playback
+- **What it's for:** "Continues playing the user's own music, with lock-screen
+  and notification transport controls, while the app is in the background."
+- **Video/demo:** the form asks for a short screen recording showing the
+  feature in use — record the lock screen with the controls visible while a
+  track plays.
+
 ### App content declarations
 
 | Question | Answer |
@@ -194,13 +208,6 @@ must exist in the build you upload.
 
 ## 6. Recommended before 1.0, not required by Play
 
-- **Background playback.** There is no `MediaSessionService`, so playback is
-  owned by the Activity: Android will kill it shortly after the app is
-  backgrounded or the screen locks, and there are no lock-screen or notification
-  controls. For a music player this is the single most likely source of
-  one-star reviews. Fix is `androidx.media3:media3-session` +
-  `MediaSessionService` + `FOREGROUND_SERVICE_MEDIA_PLAYBACK` +
-  `POST_NOTIFICATIONS`.
 - **ABI coverage.** Only `arm64-v8a` ships. That covers essentially every
   modern phone, but excludes x86_64 — Chromebooks and emulators cannot install
   the app, and Play Console will show a reduced device count. Add the ABI to

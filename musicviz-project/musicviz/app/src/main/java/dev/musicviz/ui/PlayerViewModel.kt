@@ -7,7 +7,6 @@ import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
@@ -16,7 +15,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
-import dev.musicviz.analysis.AnalysisEngine
 import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.analysis.AudioQualityInfo
 import dev.musicviz.analysis.FeatureTimeline
@@ -24,13 +22,10 @@ import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.analysis.OfflineAnalyzer
 import dev.musicviz.analysis.PlaybackMath
 import dev.musicviz.analysis.SceneSuggester
-import dev.musicviz.audio.AudioFxController
 import dev.musicviz.audio.AudioFxState
-import dev.musicviz.audio.PcmRingBuffer
-import dev.musicviz.audio.PcmTapSink
-import dev.musicviz.audio.TapRenderersFactory
 import dev.musicviz.export.ExportAspect
 import dev.musicviz.export.VideoExporter
+import dev.musicviz.playback.PlaybackEngine
 import dev.musicviz.render.TransitionStyle
 import dev.musicviz.render.scene.PcmChunk
 import dev.musicviz.render.scene.SceneIds
@@ -151,8 +146,13 @@ data class ExportUiState(
 class PlayerViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
-    private val ring = PcmRingBuffer()
-    private val engine = AnalysisEngine(ring)
+    // Playback lives in a process-wide engine, not in this ViewModel: the
+    // MediaSessionService needs the same player instance, and releasing it
+    // when MainActivity goes away would cut off background playback. See
+    // dev.musicviz.playback.PlaybackEngine.
+    private val playback = PlaybackEngine.get(application)
+    private val ring = playback.ring
+    private val engine = playback.analysis
 
     // ---- Audio-quality readout ----
     // Combines the selected track's source Format (onTracksChanged) with the
@@ -228,11 +228,13 @@ class PlayerViewModel(
             )
     }
 
-    private val sink =
-        PcmTapSink(ring) { rate, channels, encoding ->
-            engine.sampleRateHz = rate
-            onTapFormat(rate, channels, encoding)
-        }
+    // The PCM tap belongs to the shared engine; this ViewModel only subscribes
+    // to the format changes it needs for the audio-quality readout. Kept as a
+    // field so onCleared can detach exactly this listener.
+    private val tapFormatListener: (Int, Int, Int) -> Unit = { rate, channels, encoding ->
+        onTapFormat(rate, channels, encoding)
+    }
+
     private val offlineAnalyzer = OfflineAnalyzer(application)
     private val presetStore = PresetStore(application)
     private val trackLibrary = TrackLibrary(application)
@@ -242,31 +244,9 @@ class PlayerViewModel(
     private val lfoStore = LfoStore(application)
     private val musicPlaylists = MusicPlaylistStore(application)
     private val exporter = VideoExporter(application)
-    private val audioFxController = AudioFxController(application)
+    private val audioFxController = playback.audioFx
 
-    val player: ExoPlayer =
-        ExoPlayer
-            .Builder(application, TapRenderersFactory(application, sink))
-            // AIFF/AIFC support: Media3 ships no AIFF extractor, so ours is
-            // appended after the defaults (sniff order keeps defaults first).
-            .setMediaSourceFactory(
-                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
-                    application,
-                    androidx.media3.extractor.ExtractorsFactory {
-                        androidx.media3.extractor
-                            .DefaultExtractorsFactory()
-                            .createExtractors() +
-                            dev.musicviz.audio.AiffExtractor()
-                    },
-                ),
-            ).setAudioAttributes(
-                AudioAttributes
-                    .Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                true,
-            ).build()
+    val player: ExoPlayer = playback.player
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState
@@ -721,68 +701,81 @@ class PlayerViewModel(
     private val _autoMode = MutableStateFlow(0)
     val autoMode: StateFlow<Int> = _autoMode
 
+    // Held as a field so onCleared can detach it: the player is process-wide
+    // now, so a listener left behind would outlive this ViewModel and keep it
+    // (and its Application-bound stores) reachable for the process's life.
+    private val playerListener: Player.Listener =
+        object : Player.Listener {
+            override fun onEvents(
+                player: Player,
+                events: Player.Events,
+            ) {
+                refresh()
+                if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
+                    currentUri = player.currentMediaItem?.localConfiguration?.uri
+                    currentUri?.let { u ->
+                        val title =
+                            player.mediaMetadata.title?.toString()
+                                ?: player.currentMediaItem
+                                    ?.localConfiguration
+                                    ?.uri
+                                    ?.lastPathSegment
+                                    .orEmpty()
+                        historyStore.recordPlay(u.toString(), title)
+                        _historyTick.update { it + 1 }
+                    }
+                    onTrackChanged()
+                }
+            }
+
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                // The audiofx chain must follow the sink's session; attach
+                // rebuilds the effects and restores persisted settings.
+                audioFxController.attach(audioSessionId)
+                refreshAudioFx()
+            }
+
+            override fun onTracksChanged(tracks: Tracks) {
+                // Selected audio track's source Format (mime, sample rate,
+                // pcm encoding, bitrate) for the quality readout. Defensive
+                // scan: take the first selected audio track, else null.
+                var fmt: Format? = null
+                outer@ for (group in tracks.groups) {
+                    if (group.type != C.TRACK_TYPE_AUDIO) continue
+                    for (i in 0 until group.length) {
+                        if (group.isTrackSelected(i)) {
+                            fmt = group.getTrackFormat(i)
+                            break@outer
+                        }
+                    }
+                }
+                sourceAudioFormat = fmt
+                recomputeAudioQuality()
+            }
+        }
+
     init {
-        engine.start(viewModelScope)
+        // The analysis loop belongs to PlaybackEngine and is already running;
+        // this ViewModel only subscribes to the tap's format changes.
+        playback.onTapFormat = tapFormatListener
         refreshNumericTitles()
-        // Restore persisted playback options onto the freshly built player.
-        // Auto-resume runs BEFORE the listener registers so the startup
-        // preparation never records a phantom play into history (ExoPlayer
-        // only delivers events to listeners registered when they occurred).
+        // Restore persisted playback options onto the player. Auto-resume runs
+        // BEFORE the listener registers so the startup preparation never
+        // records a phantom play into history (ExoPlayer only delivers events
+        // to listeners registered when they occurred).
         val pp = _playerPrefs.value
         player.shuffleModeEnabled = pp.shuffle
         player.repeatMode = pp.repeatMode
         applyPlaybackPrefs(pp)
-        if (pp.autoResume) prepareLastPlayed()
-        player.addListener(
-            object : Player.Listener {
-                override fun onEvents(
-                    player: Player,
-                    events: Player.Events,
-                ) {
-                    refresh()
-                    if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
-                        currentUri = player.currentMediaItem?.localConfiguration?.uri
-                        currentUri?.let { u ->
-                            val title =
-                                player.mediaMetadata.title?.toString()
-                                    ?: player.currentMediaItem
-                                        ?.localConfiguration
-                                        ?.uri
-                                        ?.lastPathSegment
-                                        .orEmpty()
-                            historyStore.recordPlay(u.toString(), title)
-                            _historyTick.update { it + 1 }
-                        }
-                        onTrackChanged()
-                    }
-                }
-
-                override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                    // The audiofx chain must follow the sink's session; attach
-                    // rebuilds the effects and restores persisted settings.
-                    audioFxController.attach(audioSessionId)
-                    refreshAudioFx()
-                }
-
-                override fun onTracksChanged(tracks: Tracks) {
-                    // Selected audio track's source Format (mime, sample rate,
-                    // pcm encoding, bitrate) for the quality readout. Defensive
-                    // scan: take the first selected audio track, else null.
-                    var fmt: Format? = null
-                    outer@ for (group in tracks.groups) {
-                        if (group.type != C.TRACK_TYPE_AUDIO) continue
-                        for (i in 0 until group.length) {
-                            if (group.isTrackSelected(i)) {
-                                fmt = group.getTrackFormat(i)
-                                break@outer
-                            }
-                        }
-                    }
-                    sourceAudioFormat = fmt
-                    recomputeAudioQuality()
-                }
-            },
-        )
+        // The player outlives this ViewModel now, so a queue may already be
+        // loaded — returning to the app while the service kept playing.
+        // Auto-resume would overwrite that queue, so it only runs from cold.
+        if (player.currentMediaItem != null) {
+            currentUri = player.currentMediaItem?.localConfiguration?.uri
+        } else if (pp.autoResume) {
+            prepareLastPlayed()
+        }
+        player.addListener(playerListener)
         // The sink may already have a session id (attach ignores UNSET = 0).
         audioFxController.attach(player.audioSessionId)
         refreshAudioFx()
@@ -2047,9 +2040,15 @@ class PlayerViewModel(
         if (!_exportState.value.running) _exportState.value = ExportUiState()
     }
 
+    /**
+     * Detaches from the shared engine without tearing it down. The player, the
+     * analysis loop and the audiofx chain are process-wide and may still be
+     * driving a foreground playback session — releasing them here is exactly
+     * the bug that used to kill music when the Activity went away.
+     */
     override fun onCleared() {
-        engine.stop()
-        audioFxController.release()
-        player.release()
+        player.removeListener(playerListener)
+        // Only clear the hook if a newer ViewModel has not already replaced it.
+        if (playback.onTapFormat === tapFormatListener) playback.onTapFormat = null
     }
 }

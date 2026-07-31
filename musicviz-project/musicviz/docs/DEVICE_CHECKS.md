@@ -94,3 +94,20 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     must show the same refraction/glint as the live view. Watch frame
     time on a Min-tier device with overlay + FlowField both on (two
     extra sims per frame).
+21. Background playback (1.0.0): start a track, then lock the screen —
+    audio must continue, and the lock screen must show title/artist with
+    working play/pause/next. Swipe the notification's transport controls
+    from the shade too. Now leave it playing and open several heavy apps
+    to push MusicViz out of memory: playback must survive (it is a
+    foreground service now). Return to the app: the visualizer must pick
+    up the *same* track at the right position, NOT restart or jump to the
+    auto-resume track — the ViewModel is rebuilt against the still-live
+    player, so a regression here shows up as the queue being replaced.
+    Then: pause, swipe the app off Recents — the service must stop and
+    the notification disappear. With playback running, swipe Recents —
+    audio must keep going. Bluetooth/wired headset play-pause and
+    next-track buttons must work while the screen is off.
+22. Equalizer + sleep timer after the service change (1.0.0): the audio
+    session id now comes from a process-wide player, so re-verify that
+    Settings > Playback > Equalizer still applies live, and that the
+    sleep timer's 3 s fade still ramps and pauses.
