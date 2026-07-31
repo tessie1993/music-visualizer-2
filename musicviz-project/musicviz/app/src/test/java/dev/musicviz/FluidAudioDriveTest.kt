@@ -102,7 +102,13 @@ class FluidAudioDriveTest {
         assertEquals(0.1f, hot.treble, 1e-6f)
         assertEquals(0.8f, hot.rms, 1e-6f)
         // Bands feed the spectrum-arc beat pattern and the per-anchor energy.
-        for (i in f.bands.indices) assertEquals(f.bands[i] * 2f, hot.bands[i], 1e-6f)
+        // Each is doubled up to the shared ceiling - a band already above
+        // 0.75 lands ON the ceiling instead of doubling past it.
+        for (i in f.bands.indices) {
+            val expected = minOf(f.bands[i] * 2f, maxOf(f.bands[i], FluidMath.DRIVE_CEILING))
+            assertEquals("band $i", expected, hot.bands[i], 1e-6f)
+        }
+        assertTrue("no band was scaled at all", hot.bands.last() > f.bands.last())
         // ...and the untouched fields survive the copy.
         assertSame(f.waveform, hot.waveform)
 
