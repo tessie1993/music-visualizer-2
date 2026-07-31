@@ -45,28 +45,63 @@ jobs:
       - uses: actions/checkout@v4
 
       # Pinning an exact NDK build number is brittle — the hosted image's
-      # available packages move. Resolve the newest r28+ instead and fail loudly
-      # if the image has none.
-      - name: Install NDK (r28 or newer)
+      # packages move. Prefer one already on the image, and take the LOWEST
+      # r28+ rather than the newest: r28 is where 16 KB alignment became the
+      # default, and staying close to it avoids bleeding-edge toolchain
+      # surprises in a 12 MB C++ library.
+      - name: Provide an NDK (r28 or newer)
         run: |
           set -euo pipefail
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          version=$("$SDKMANAGER" --list 2>/dev/null \
-            | grep -oE 'ndk;[0-9]+\.[0-9]+\.[0-9]+' \
-            | sed 's/^ndk;//' \
-            | sort -u -V \
-            | awk '$0 + 0 >= 28' \
-            | tail -1)
-          if [ -z "$version" ]; then
-            echo "::error::no NDK r28+ available; 16 KB alignment needs r28 or newer"
+          echo "NDKs already on the image:"
+          ls -1 "$ANDROID_HOME/ndk" 2>/dev/null || echo "  (none)"
+
+          version=$(ls -1 "$ANDROID_HOME/ndk" 2>/dev/null \
+            | sort -V | awk '$0 + 0 >= 28' | head -1 || true)
+
+          if [ -n "$version" ]; then
+            echo "Using preinstalled NDK $version"
+          else
+            version=$("$SDKMANAGER" --list 2>/dev/null \
+              | grep -oE 'ndk;[0-9]+\.[0-9]+\.[0-9]+' \
+              | sed 's/^ndk;//' \
+              | sort -u -V \
+              | awk '$0 + 0 >= 28' \
+              | head -1)
+            if [ -z "$version" ]; then
+              echo "::error::no NDK r28+ available; 16 KB alignment needs r28 or newer"
+              exit 1
+            fi
+            echo "Installing NDK $version"
+            # Best effort: hosted runners pre-accept these, but a missing
+            # licence makes --install a silent no-op rather than an error.
+            (yes | "$SDKMANAGER" --licenses > /dev/null 2>&1) || true
+            "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install "ndk;$version"
+          fi
+
+          # sdkmanager can exit 0 without installing anything, which then shows
+          # up as a confusing CMake "could not find toolchain file" error. Fail
+          # here, where the cause is obvious.
+          toolchain="$ANDROID_HOME/ndk/$version/build/cmake/android.toolchain.cmake"
+          if [ ! -f "$toolchain" ]; then
+            echo "::error::NDK $version resolved but $toolchain is missing"
+            ls -la "$ANDROID_HOME/ndk" || true
             exit 1
           fi
-          echo "Installing NDK $version"
-          "$SDKMANAGER" --install "ndk;$version" > /dev/null
+          echo "Using toolchain: $toolchain"
           echo "NDK=$ANDROID_HOME/ndk/$version" >> "$GITHUB_ENV"
 
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake
+          # CMake reported "unable to find a build program corresponding to
+          # Ninja" on the first attempt; prove both are present and pass the
+          # resolved ninja path explicitly rather than relying on lookup.
+          cmake --version | head -1
+          ninja --version
+          echo "NINJA=$(command -v ninja)" >> "$GITHUB_ENV"
 
       - name: Clone projectM ${{ inputs.projectm_tag }}
         run: |
@@ -97,8 +132,9 @@ jobs:
             -DBUILD_SHARED_LIBS=ON \
             -DENABLE_PLAYLIST=ON \
             -DCMAKE_SHARED_LINKER_FLAGS="$PAGE_FLAGS" \
+            -DCMAKE_MAKE_PROGRAM="$NINJA" \
             -G Ninja
-          ninja -C build-android
+          "$NINJA" -C build-android
 
       - name: Build libprojectmjni.so
         run: |
