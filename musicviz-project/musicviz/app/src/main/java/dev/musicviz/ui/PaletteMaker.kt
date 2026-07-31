@@ -16,7 +16,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -178,14 +177,14 @@ internal fun PaletteMakerCard(
         )
         GradientPreview(baseHue, hueSpan, modifier = Modifier.fillMaxWidth())
         Text("Base hue ${"%.2f".format(baseHue)}", style = MaterialTheme.typography.labelSmall)
-        Slider(
+        CrystalSlider(
             value = baseHue,
             onValueChange = { baseHue = it },
             valueRange = 0f..1f,
             modifier = Modifier.fillMaxWidth(),
         )
         Text("Hue span ${"%.2f".format(hueSpan)}", style = MaterialTheme.typography.labelSmall)
-        Slider(
+        CrystalSlider(
             value = hueSpan,
             onValueChange = { hueSpan = it },
             valueRange = 0f..1f,

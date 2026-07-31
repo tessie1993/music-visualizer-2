@@ -10,7 +10,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -75,7 +74,7 @@ fun EqualizerSettings(viewModel: PlayerViewModel) {
                     "${band.label}  ${AudioFxFormat.dbLabel(band.levelMb)}",
                     style = MaterialTheme.typography.labelMedium,
                 )
-                Slider(
+                CrystalSlider(
                     value = band.levelMb.toFloat(),
                     onValueChange = { viewModel.setAudioFxBand(i, it.toInt()) },
                     valueRange = band.minMb.toFloat()..band.maxMb.toFloat(),
@@ -83,14 +82,14 @@ fun EqualizerSettings(viewModel: PlayerViewModel) {
                 )
             }
             Text("Bass boost  ${fx.bassBoost / 10}%", style = MaterialTheme.typography.labelMedium)
-            Slider(
+            CrystalSlider(
                 value = fx.bassBoost.toFloat(),
                 onValueChange = { viewModel.setAudioFxBassBoost(it.toInt()) },
                 valueRange = 0f..1000f,
                 enabled = controlsOn,
             )
             Text("Loudness  ${AudioFxFormat.dbLabel(fx.loudness)}", style = MaterialTheme.typography.labelMedium)
-            Slider(
+            CrystalSlider(
                 value = fx.loudness.toFloat(),
                 onValueChange = { viewModel.setAudioFxLoudness(it.toInt()) },
                 valueRange = 0f..1000f,

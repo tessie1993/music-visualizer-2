@@ -33,17 +33,12 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -172,34 +167,18 @@ fun AppRoot(
                                 .height(1.dp)
                                 .luminousHairline(MaterialTheme.colorScheme.primary),
                         )
-                        NavigationBar(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = gui.barOpacity * 0.9f),
-                        ) {
-                            NavigationBarItem(
-                                selected = dest == 0,
-                                onClick = { dest = 0 },
-                                icon = { Icon(Icons.Filled.Home, "Home") },
-                                label = { Text("Home") },
-                            )
-                            NavigationBarItem(
-                                selected = dest == 1,
-                                onClick = { dest = 1 },
-                                icon = { Icon(Icons.Filled.LibraryMusic, "Library") },
-                                label = { Text("Library") },
-                            )
-                            NavigationBarItem(
-                                selected = dest == 2,
-                                onClick = { dest = 2 },
-                                icon = { Icon(Icons.Filled.MusicNote, "Visuals") },
-                                label = { Text("Visuals") },
-                            )
-                            NavigationBarItem(
-                                selected = dest == 3,
-                                onClick = { dest = 3 },
-                                icon = { Icon(Icons.Filled.Settings, "Settings") },
-                                label = { Text("Settings") },
-                            )
-                        }
+                        CrystalNavBar(
+                            items =
+                                listOf(
+                                    CrystalNavItem("Home", Icons.Filled.Home),
+                                    CrystalNavItem("Library", Icons.Filled.LibraryMusic),
+                                    CrystalNavItem("Visuals", Icons.Filled.MusicNote),
+                                    CrystalNavItem("Settings", Icons.Filled.Settings),
+                                ),
+                            selected = dest,
+                            onSelect = { dest = it },
+                            opacity = gui.barOpacity,
+                        )
                     }
                 },
             ) { pad ->
@@ -235,13 +214,13 @@ fun AppRoot(
                         )
                     },
                     confirmButton = {
-                        Button(onClick = {
+                        CrystalButton(onClick = {
                             val cm = context.getSystemService(android.content.ClipboardManager::class.java)
                             cm.setPrimaryClip(android.content.ClipData.newPlainText("MusicViz crash", text))
                         }) { Text("Copy") }
                     },
                     dismissButton = {
-                        OutlinedButton(onClick = {
+                        CrystalButton(filled = false, onClick = {
                             java.io.File(context.filesDir, "crash-latest.txt").delete()
                             crashText = null
                         }) { Text("Dismiss") }
@@ -293,7 +272,9 @@ private fun MiniPlayer(
             Icon(
                 Icons.Filled.MusicNote,
                 null,
-                Modifier.size(if (compact) 20.dp else 28.dp),
+                Modifier
+                    .size(if (compact) 20.dp else 28.dp)
+                    .softGlow(MaterialTheme.colorScheme.primary, 8.dp, if (isPlaying) 1f else 0.35f),
                 tint = MaterialTheme.colorScheme.primary,
             )
             Text(
@@ -311,6 +292,8 @@ private fun MiniPlayer(
         LinearProgressIndicator(
             progress = { progress.coerceIn(0f, 1f) },
             modifier = Modifier.fillMaxWidth().height(2.dp),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
         )
     }
 }
@@ -364,7 +347,7 @@ fun HomeScreen(
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = viewModel::shuffleAllHistory) { Text("Shuffle all") }
+                CrystalButton(onClick = viewModel::shuffleAllHistory) { Text("Shuffle all") }
             }
         }
         if (recent.isNotEmpty()) {
@@ -432,9 +415,10 @@ private fun SettingsSection(
                 .padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            CrystalGem(MaterialTheme.colorScheme.primary, size = 6.dp, glow = expanded)
             Text(
                 title.uppercase(),
-                Modifier.weight(1f),
+                Modifier.weight(1f).padding(start = 10.dp),
                 style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.2.sp),
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -491,6 +475,8 @@ fun SettingsScreen(
                                     MaterialTheme.colorScheme.primary,
                                     corner = 20.dp,
                                     glowStrength = if (sel) 1.2f else 0.4f,
+                                    prismatic = sel,
+                                    sheen = MaterialTheme.colorScheme.secondary,
                                 ).clickable { viewModel.setTheme(t) },
                         ) {
                             Text(
@@ -509,7 +495,7 @@ fun SettingsScreen(
                 }
                 Column {
                     Text("Bar opacity  ${(gui.barOpacity * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
-                    Slider(
+                    CrystalSlider(
                         value = gui.barOpacity,
                         onValueChange = { viewModel.setGuiPrefs(gui.copy(barOpacity = it)) },
                         valueRange = 0.2f..1f,
@@ -517,32 +503,30 @@ fun SettingsScreen(
                 }
                 Column {
                     Text("Player position", style = MaterialTheme.typography.labelMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PlayerPosition.entries.forEach { pos ->
-                            OutlinedButton(onClick = { viewModel.setGuiPrefs(gui.copy(playerPosition = pos)) }) {
-                                Text((if (gui.playerPosition == pos) "● " else "") + pos.name.lowercase())
-                            }
-                        }
-                    }
+                    CrystalSegmented(
+                        options = PlayerPosition.entries.map { it.label },
+                        selected = PlayerPosition.entries.indexOf(gui.playerPosition),
+                        onSelect = { viewModel.setGuiPrefs(gui.copy(playerPosition = PlayerPosition.entries[it])) },
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
                 }
                 Column {
                     Text("Corner style", style = MaterialTheme.typography.labelMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CornerStyle.entries.forEach { c ->
-                            OutlinedButton(onClick = { viewModel.setGuiPrefs(gui.copy(cornerStyle = c)) }) {
-                                Text((if (gui.cornerStyle == c) "● " else "") + c.name.lowercase())
-                            }
-                        }
-                    }
+                    CrystalSegmented(
+                        options = CornerStyle.entries.map { it.label },
+                        selected = CornerStyle.entries.indexOf(gui.cornerStyle),
+                        onSelect = { viewModel.setGuiPrefs(gui.copy(cornerStyle = CornerStyle.entries[it])) },
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
                 }
                 Text("Accent intensity  ${(gui.accentIntensity * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
-                Slider(
+                CrystalSlider(
                     value = gui.accentIntensity,
                     onValueChange = { viewModel.setGuiPrefs(gui.copy(accentIntensity = it)) },
                     valueRange = 0.5f..1.5f,
                 )
                 Text("Background dim  ${(gui.backgroundDim * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
-                Slider(
+                CrystalSlider(
                     value = gui.backgroundDim,
                     onValueChange = { viewModel.setGuiPrefs(gui.copy(backgroundDim = it)) },
                     valueRange = 0f..0.6f,
@@ -632,7 +616,7 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.labelMedium,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { folderPicker.launch(null) }) { Text("Choose preset folder") }
+                        CrystalButton(filled = false, onClick = { folderPicker.launch(null) }) { Text("Choose preset folder") }
                         if (gui.presetMirrorUri != null) {
                             TextButton(onClick = { viewModel.setGuiPrefs(gui.copy(presetMirrorUri = null)) }) { Text("Clear") }
                         }
@@ -648,7 +632,7 @@ fun SettingsScreen(
             SettingsSection("Visuals & Analysis") {
                 Column {
                     Text("Preset morph: ${gui.morphBeats} beats (0 = snap)")
-                    Slider(
+                    CrystalSlider(
                         value = gui.morphBeats.toFloat(),
                         onValueChange = { viewModel.setGuiPrefs(gui.copy(morphBeats = it.toInt())) },
                         valueRange = 0f..16f,
@@ -663,7 +647,7 @@ fun SettingsScreen(
                     )
                     // Range comes from the extractor so the slider can never
                     // saturate against a tighter clamp in AnalysisEngine.
-                    Slider(
+                    CrystalSlider(
                         value = gui.beatThresholdSigma,
                         onValueChange = { viewModel.setGuiPrefs(gui.copy(beatThresholdSigma = it)) },
                         valueRange = FeatureExtractor.SIGMA_MIN..FeatureExtractor.SIGMA_MAX,
@@ -673,13 +657,14 @@ fun SettingsScreen(
                             "— never flash faster than ${(60_000f / gui.beatMinIntervalMs).roundToInt()} BPM",
                         style = MaterialTheme.typography.labelMedium,
                     )
-                    Slider(
+                    CrystalSlider(
                         value = gui.beatMinIntervalMs,
                         onValueChange = { viewModel.setGuiPrefs(gui.copy(beatMinIntervalMs = it)) },
                         valueRange = FeatureExtractor.INTERVAL_MS_MIN..FeatureExtractor.INTERVAL_MS_MAX,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
+                        CrystalButton(
+                            filled = false,
                             onClick = {
                                 viewModel.setGuiPrefs(
                                     gui.copy(
@@ -729,7 +714,7 @@ fun SettingsScreen(
         }
         item {
             SettingsSection("Export & About") {
-                Button(onClick = { showExport = true }) { Text("Export video…") }
+                CrystalButton(onClick = { showExport = true }) { Text("Export video…") }
                 AboutSection()
             }
         }
@@ -757,7 +742,6 @@ fun SearchScreen(
     var debounced by rememberSaveable { mutableStateOf("") }
     val library by viewModel.library.collectAsState()
     val viz by viewModel.vizState.collectAsState()
-    val gui by viewModel.guiPrefs.collectAsState()
     val deviceTracks by viewModel.deviceTracks.collectAsState()
     // The device index may be empty when search opens before the Library tab
     // has loaded it; refresh is a no-op without the audio permission.
@@ -810,11 +794,18 @@ fun SearchScreen(
             viz.presets.filter { SearchMatcher.matches(terms, listOf(it.name)) }
         }
 
-    // Search floats over a full content screen, so it needs more glass than
-    // the bars: clamp to >= 0.85 opacity or result text becomes unreadable
-    // against whatever is behind the overlay.
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background.copy(alpha = maxOf(gui.barOpacity, 0.85f)))) {
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(16.dp)) {
+    // Search floats over a full content screen: it gets its own opaque
+    // nebula backdrop so results always read, and the field itself is cut
+    // in the shard silhouette.
+    Box(Modifier.fillMaxSize()) {
+        CrystalBackground(Modifier.fillMaxSize())
+        Column(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(16.dp),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = query,
@@ -822,6 +813,7 @@ fun SearchScreen(
                     modifier = Modifier.weight(1f),
                     placeholder = { Text("Search tracks, playlists & presets") },
                     singleLine = true,
+                    shape = crystalShardShape(14.dp, 5.dp),
                 )
                 IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "Close search") }
             }
@@ -836,7 +828,7 @@ fun SearchScreen(
                     }
                 } else {
                     if (trackResults.isNotEmpty()) {
-                        item { Text("Tracks (${trackResults.size})", style = MaterialTheme.typography.titleMedium) }
+                        item { CrystalOverline("Tracks (${trackResults.size})", Modifier.padding(top = 8.dp)) }
                         items(trackResults, key = { "t:${it.uri}" }) { t ->
                             Row(
                                 Modifier
@@ -866,7 +858,7 @@ fun SearchScreen(
                         }
                     }
                     if (playlistResults.isNotEmpty()) {
-                        item { Text("Playlists (${playlistResults.size})", style = MaterialTheme.typography.titleMedium) }
+                        item { CrystalOverline("Playlists (${playlistResults.size})", Modifier.padding(top = 8.dp)) }
                         items(playlistResults) { pl ->
                             Column(
                                 Modifier
@@ -886,7 +878,7 @@ fun SearchScreen(
                         }
                     }
                     if (presetResults.isNotEmpty()) {
-                        item { Text("Presets (${presetResults.size})", style = MaterialTheme.typography.titleMedium) }
+                        item { CrystalOverline("Presets (${presetResults.size})", Modifier.padding(top = 8.dp)) }
                         items(presetResults) { p ->
                             Text(
                                 p.name,

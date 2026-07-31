@@ -9,7 +9,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,7 +36,7 @@ fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
         Text("Playback", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
         Column {
             Text("Speed  ${"%.2f".format(prefs.speed)}x", style = MaterialTheme.typography.labelMedium)
-            Slider(
+            CrystalSlider(
                 value = prefs.speed,
                 onValueChange = { viewModel.setPlayerPrefs(prefs.copy(speed = PlaybackMath.snap(it, 0.05f))) },
                 valueRange = 0.5f..2f,
@@ -48,7 +47,7 @@ fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
                 "Pitch  ${"%.1f".format(prefs.pitchSemitones)} st (0 = normal)",
                 style = MaterialTheme.typography.labelMedium,
             )
-            Slider(
+            CrystalSlider(
                 value = prefs.pitchSemitones,
                 onValueChange = { viewModel.setPlayerPrefs(prefs.copy(pitchSemitones = PlaybackMath.snap(it, 0.5f))) },
                 valueRange = -6f..6f,

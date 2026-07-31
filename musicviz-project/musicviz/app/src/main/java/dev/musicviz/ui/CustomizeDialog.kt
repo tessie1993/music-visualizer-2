@@ -20,7 +20,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -200,7 +199,7 @@ internal fun BehaviorTab(
             Text("Duration ${"%.1f".format(transitionDurationSec)}s", style = MaterialTheme.typography.labelMedium)
             // Must match setTransitionDuration's 0.3-5 s clamp: below 0.3 the
             // thumb snapped back mid-drag, and 3-5 s was unreachable.
-            Slider(value = transitionDurationSec, onValueChange = onTransitionDuration, valueRange = 0.3f..5f)
+            CrystalSlider(value = transitionDurationSec, onValueChange = onTransitionDuration, valueRange = 0.3f..5f)
         }
         SectionHeader("Audio response")
         LabeledSlider("Audio drive", p.audioDrive, 0.2f..2.5f) { onChange(p.copy(audioDrive = it)) }
@@ -468,7 +467,7 @@ private fun LabeledSlider(
                 modifier = Modifier.clickable { toggle(label) },
             )
         }
-        Slider(value = value, onValueChange = onChange, valueRange = range, modifier = Modifier.fillMaxWidth())
+        CrystalSlider(value = value, onValueChange = onChange, valueRange = range, modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -828,7 +827,7 @@ private fun LabeledIntSlider(
                 modifier = Modifier.clickable { toggle(label) },
             )
         }
-        Slider(
+        CrystalSlider(
             value = value.toFloat(),
             onValueChange = { onChange(it.toInt().coerceIn(range.first, range.last)) },
             valueRange = range.first.toFloat()..range.last.toFloat(),
