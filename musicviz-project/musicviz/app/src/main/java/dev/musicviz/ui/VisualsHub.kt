@@ -417,6 +417,36 @@ internal fun isParticleLayerSceneId(sceneId: String): Boolean = sceneId == Scene
  */
 internal fun isShaderLookSceneId(sceneId: String): Boolean = sceneId in VisualizerRenderer.SHADER_SCENES
 
+/**
+ * Styles that draw the CPU particle system, i.e. the only readers of
+ * `particleShape`. `ParticleSceneBase.draw` is the one place `uShape` is
+ * uploaded (`particle_frag.glsl`'s shapeMask), and its five subclasses -
+ * Nebula / Bursts / Swarm / Fountain / Orbits - are exactly
+ * [VisualizerRenderer.PARTICLE_SCENES]. The fluid point layer
+ * (`FluidParticles`) has no shape uniform at all: its sprites are always
+ * round, so the chip row is dead on FLUID and CURLFLOW too, not only on
+ * shader / MilkDrop / Water styles.
+ */
+internal fun isParticleShapeSceneId(sceneId: String): Boolean = sceneId in VisualizerRenderer.PARTICLE_SCENES
+
+/**
+ * Styles that size a point sprite from `particleSize`, a strictly wider set
+ * than [isParticleShapeSceneId]: `ParticleSceneBase.kt` uploads it as `uSize`
+ * (`:152`), `FluidScene.kt` folds it into `pointScale` (`:333`) and
+ * `CurlFlowScene.kt` into its `particles.draw` point scale (`:212`). The fluid
+ * half of that is exactly [isParticleLayerSceneId] - the same FluidParticles
+ * layer that reads `fluidParticleDrag` - so this predicate is composed from
+ * the two rather than restating FLUID/CURLFLOW a third time; if the layer ever
+ * gains or loses a style, both move together.
+ *
+ * Note FLUID can switch its point layer off (`fluidParticlesEnabled`), which
+ * makes the slider *temporarily* inert there. That is deliberately NOT part of
+ * this predicate: gating is about what a style can read, and a control the
+ * user can revive with one checkbox should not vanish from a different tab
+ * with no visible cause. The Shape tab says so instead.
+ */
+internal fun isPointSpriteSceneId(sceneId: String): Boolean = isParticleShapeSceneId(sceneId) || isParticleLayerSceneId(sceneId)
+
 @Composable
 private fun CustomizeHubTab(
     viewModel: PlayerViewModel,
@@ -447,7 +477,15 @@ private fun CustomizeHubTab(
                 val lfos by viewModel.lfos.collectAsState()
                 when (sub) {
                     0 -> MotionTab(p, onChange)
-                    1 -> ShapeTab(p, onChange, isShaderLookScene = isShader)
+                    1 ->
+                        ShapeTab(
+                            p,
+                            onChange,
+                            isShaderLookScene = isShader,
+                            isParticleShapeScene = isParticleShapeSceneId(viz.sceneId),
+                            isPointSpriteScene = isPointSpriteSceneId(viz.sceneId),
+                            particleLayerOff = isFluidSceneId(viz.sceneId) && !p.fluidParticlesEnabled,
+                        )
                     2 ->
                         BehaviorTab(
                             p,

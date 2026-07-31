@@ -363,18 +363,29 @@ it was left and what closing it involves.
       parses back out of `CustomizeDialog.kt`. "Palette blend" and
       "Palette 2" are gated as ONE group: a blend slider with nothing to
       blend would be a worse control than none.
-- [ ] **`particleShape` ("Particle shape") has no reader outside the five
-      particle scenes**, and `particleSize` none outside particles + Fluid +
-      Curl Flow — yet both sit ungated in the Shape tab's "Particles"
-      section, so they are inert on shader, MilkDrop and Water styles. Same
-      class as the item above but NOT the same one-line fix: the two
-      controls have DIFFERENT readers, so the section needs two predicates
-      (`isParticleShapeSceneId` = `VisualizerRenderer.PARTICLE_SCENES`,
-      `isPointSpriteSceneId` = that plus FLUID + CURLFLOW) and the
-      "Particles" header itself has to disappear when both are hidden.
-      Check `fluidParticlesEnabled` first: on FLUID the point layer can be
-      switched off, which would make `particleSize` conditionally inert
-      there too. Left out of the v1.1.0 gating round deliberately.
+- [x] **`particleShape` / `particleSize` were shown on styles that cannot
+      read them.** CLOSED. Verified by grep before hiding anything:
+      `particleShape` has exactly one reader, `ParticleSceneBase.kt:149`
+      (`uShape` → `particle_frag.glsl` shapeMask), whose five subclasses are
+      exactly `VisualizerRenderer.PARTICLE_SCENES`; `particleSize` has three,
+      `ParticleSceneBase.kt:152` plus `FluidScene.kt:333` (`pointScale`) and
+      `CurlFlowScene.kt:212`. Nothing in `composite_frag.glsl`,
+      `ProjectMScene`, `WaterScene` or `FxCompositor` touches either. So the
+      Shape tab's "Particles" section now takes TWO predicates —
+      `VisualsHub.isParticleShapeSceneId` (= `PARTICLE_SCENES`) and
+      `isPointSpriteSceneId`, composed as `isParticleShapeSceneId ||
+      isParticleLayerSceneId` so the fluid half is not restated a third time
+      — with the section HEADER on the wider gate, so it leaves no empty
+      heading on shader / MilkDrop / Water. Note the shape chips are hidden
+      on FLUID and CURLFLOW too: FluidParticles has no shape uniform at all,
+      its sprites are always round. `fluidParticlesEnabled` was deliberately
+      NOT folded into the gate: it is a user-revertible switch that lives in
+      another tab, so on FLUID with the layer off the slider stays put and
+      shows a one-line note instead of vanishing (a control disappearing with
+      no visible cause reads exactly like the bug being fixed). Pinned by
+      `ParticleGatingTest`, which asserts both predicates against the real
+      scene-id sets and parses the gating back out of `CustomizeDialog.kt` so
+      over-gating fails too. Device check 32.
 - [x] **MilkDrop ignores the whole "Palettes" section.** CLOSED by the
       second option, teaching the render path to tint: `ProjectMScene` now
       uploads `uPalBase` / `uPalSpan` / `uPalTint` to its OWN post pass

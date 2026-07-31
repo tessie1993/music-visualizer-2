@@ -96,17 +96,34 @@ internal fun MotionTab(
 }
 
 /**
- * Geometry and distortion. Everything here except Morph reaches every style
- * through the composite pass (uPostWarp, uPostRipple, uPostTwist,
- * uPostKaleido, uPostSymmetry, uPostTile, uPostPixelate, uPostPosterize);
- * [isShaderLookScene] gates the one control that does not - see
- * `VisualsHub.isShaderLookSceneId`.
+ * Geometry and distortion. Everything in Distortion / Symmetry / Stylize
+ * except Morph reaches every style through the composite pass (uPostWarp,
+ * uPostRipple, uPostTwist, uPostKaleido, uPostSymmetry, uPostTile,
+ * uPostPixelate, uPostPosterize); [isShaderLookScene] gates the one control
+ * that does not - see `VisualsHub.isShaderLookSceneId`.
+ *
+ * The Particles section is different: nothing in it has a composite mirror, and
+ * its two controls do not even share a reader set, so it takes two gates.
+ * - [isParticleShapeScene] (`VisualsHub.isParticleShapeSceneId`): the five
+ *   `ParticleSceneBase` styles, the only uploaders of `uShape`.
+ * - [isPointSpriteScene] (`VisualsHub.isPointSpriteSceneId`): those plus FLUID
+ *   and CURLFLOW, which size the FluidParticles sprites from `particleSize`.
+ * The header rides the wider gate, so it disappears with the last control
+ * instead of leaving an empty "Particles" heading on shader / MilkDrop /
+ * Water styles.
+ *
+ * [particleLayerOff] is not a gate: it is true only on FLUID with the point
+ * layer switched off in the Fluid tab, a state the user can undo, so the
+ * slider stays put and says why it is idle rather than vanishing.
  */
 @Composable
 internal fun ShapeTab(
     p: SceneParams,
     onChange: (SceneParams) -> Unit,
     isShaderLookScene: Boolean,
+    isParticleShapeScene: Boolean,
+    isPointSpriteScene: Boolean,
+    particleLayerOff: Boolean = false,
 ) {
     Column {
         SectionHeader("Distortion")
@@ -133,10 +150,24 @@ internal fun ShapeTab(
         SectionHeader("Stylize")
         LabeledSlider("Pixelate", p.pixelate, 0f..1f) { onChange(p.copy(pixelate = it)) }
         LabeledSlider("Posterize", p.posterize, 0f..1f) { onChange(p.copy(posterize = it)) }
-        SectionHeader("Particles")
-        LockableChipLabel("Particle shape")
-        ChipRow(SceneParams.PARTICLE_SHAPES, p.particleShape) { onChange(p.copy(particleShape = it)) }
-        LabeledSlider("Particle size", p.particleSize, 0.3f..2.5f) { onChange(p.copy(particleSize = it)) }
+        if (isPointSpriteScene) {
+            SectionHeader("Particles")
+            if (isParticleShapeScene) {
+                // uShape is a ParticleSceneBase-only uniform (particle_frag's
+                // shapeMask). The fluid point layer has no shape at all - its
+                // sprites are always round - so the chips are dead there too.
+                LockableChipLabel("Particle shape")
+                ChipRow(SceneParams.PARTICLE_SHAPES, p.particleShape) { onChange(p.copy(particleShape = it)) }
+            }
+            LabeledSlider("Particle size", p.particleSize, 0.3f..2.5f) { onChange(p.copy(particleSize = it)) }
+            if (particleLayerOff) {
+                Text(
+                    "The fluid particle layer is off (Fluid tab), so size has no " +
+                        "sprites to scale until you switch it back on.",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
     }
 }
 
