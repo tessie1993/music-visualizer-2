@@ -151,15 +151,64 @@ class FluidHueTest {
         assertTrue("the palette span must survive the wiring", fireSpan != auroraSpan)
         // WaterScene's form, which the fluid scenes must now match exactly.
         for (p in SceneParams.PALETTES.indices) {
-            for (range in listOf(0f, 0.05f, 0.3f, 1f)) {
+            for (range in listOf(0f, 0.05f, 0.3f, 1f, 1.25f, 1.5f)) {
                 val sp = SceneParams(palette = p, hueRange = range)
                 assertEquals(
-                    sp.hueRange.coerceIn(0.1f, 1f) * sp.paletteRange,
+                    sp.hueRange.coerceIn(FluidHue.MIN_HUE_RANGE, FluidHue.MAX_HUE_RANGE) * sp.paletteRange,
                     FluidHue.span(sp.hueRange, sp.paletteRange),
                     1e-6f,
                 )
             }
         }
+    }
+
+    @Test
+    fun theWholeHueRangeSliderIsLiveOnTheFluidFamily() {
+        // The bug: span() clamped the slider at 1 while the slider itself runs
+        // to 1.5 (and the randomizer rolls 0.5..1.5), so the top THIRD of its
+        // travel did nothing on Fluid/Curl Flow/Water while the shader and
+        // particle families - which pass hueRange through unclamped - kept
+        // moving. One slider value has to mean one thing on every family.
+        assertEquals(1.5f, FluidHue.MAX_HUE_RANGE, 0f)
+        val palRange = SceneParams(palette = 7).paletteRange
+        var previous = FluidHue.span(1f, palRange)
+        for (range in listOf(1.1f, 1.25f, 1.4f, 1.5f)) {
+            val span = FluidHue.span(range, palRange)
+            assertEquals(range * palRange, span, 1e-6f)
+            assertTrue("Hue range $range must still widen the span", span > previous)
+            previous = span
+        }
+        // ParticleSceneBase's form (`paletteRange * hueRange`, unclamped) is
+        // what the family is being aligned to across the slider's own travel.
+        for (range in listOf(0.1f, 0.5f, 1f, 1.5f)) {
+            assertEquals(palRange * range, FluidHue.span(range, palRange), 1e-6f)
+        }
+        // Past the slider's top it clamps rather than running away.
+        assertEquals(FluidHue.MAX_HUE_RANGE * palRange, FluidHue.span(9f, palRange), 1e-6f)
+        // A span over one turn reaches the emitters as a real colour change,
+        // not a wrapped no-op: the dye walks more than once round the wheel.
+        val oneTurn = beatColors(refBase, FluidHue.span(1f, 1f))
+        val overTurn = beatColors(refBase, FluidHue.span(1.5f, 1f))
+        assertTrue(
+            "a span past one turn must repaint the splats",
+            maxChannelDelta(oneTurn, overTurn) > 0.05f,
+        )
+    }
+
+    @Test
+    fun theHueRangeFloorKeepsTheEmittersOffOneFlatColour() {
+        // The floor is load-bearing, unlike the ceiling: the emitters colour
+        // each splat at `base + frac * span`, so a span of 0 paints every
+        // splat the same and the style collapses to one flat tint.
+        assertEquals(FluidHue.MIN_HUE_RANGE, FluidHue.range(0f), 0f)
+        assertEquals(FluidHue.MIN_HUE_RANGE, FluidHue.range(-4f), 0f)
+        val palRange = SceneParams(palette = 7).paletteRange
+        val floored = beatColors(refBase, FluidHue.span(0f, palRange))
+        val collapsed = beatColors(refBase, 0f)
+        assertTrue("the floor must keep the splats off a single flat colour", maxChannelDelta(floored, collapsed) > 0.01f)
+        // ...and it stays a TIGHT band: much narrower than the default slider.
+        val wide = beatColors(refBase, FluidHue.span(1f, palRange))
+        assertTrue(maxChannelDelta(floored, wide) > maxChannelDelta(floored, collapsed))
     }
 
     @Test
@@ -171,7 +220,10 @@ class FluidHueTest {
         // a single flat colour.
         assertEquals(FluidHue.MIN_HUE_RANGE * palRange, FluidHue.span(0f, palRange), 1e-6f)
         assertEquals(FluidHue.MIN_HUE_RANGE * palRange, FluidHue.span(-3f, palRange), 1e-6f)
-        // A span is a fraction of the wheel: never negative, never over 1.
+        // The palette's own width is DATA, a fraction of the wheel: never
+        // negative, never over 1. (The slider's 0..1.5 travel is the only
+        // thing that may take the product past a full turn - see
+        // theWholeHueRangeSliderIsLiveOnTheFluidFamily.)
         assertEquals(0f, FluidHue.span(1f, -1f), 1e-6f)
         assertEquals(1f, FluidHue.span(1f, 5f), 1e-6f)
     }
