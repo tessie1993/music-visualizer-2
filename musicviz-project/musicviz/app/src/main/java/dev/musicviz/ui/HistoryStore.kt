@@ -11,7 +11,7 @@ import org.json.JSONObject
  */
 class HistoryStore(
     context: Context,
-) {
+) : HistoryRepository {
     private val file = java.io.File(context.filesDir, "history.json")
 
     /** uri -> (lastPlayedMs, playCount, title) */
@@ -37,7 +37,7 @@ class HistoryStore(
         }
     }
 
-    fun recordPlay(
+    override fun recordPlay(
         uri: String,
         title: String,
     ) {
@@ -48,9 +48,9 @@ class HistoryStore(
         persist()
     }
 
-    fun recentlyPlayed(limit: Int = 20): List<Entry> = entries.values.sortedByDescending { it.lastPlayedMs }.take(limit)
+    override fun recentlyPlayed(limit: Int): List<Entry> = entries.values.sortedByDescending { it.lastPlayedMs }.take(limit)
 
-    fun mostPlayed(limit: Int = 20): List<Entry> = entries.values.sortedByDescending { it.playCount }.take(limit)
+    override fun mostPlayed(limit: Int): List<Entry> = entries.values.sortedByDescending { it.playCount }.take(limit)
 
     private fun persist() {
         runCatching {
@@ -65,7 +65,7 @@ class HistoryStore(
                         .put("title", e.title),
                 )
             }
-            file.writeText(arr.toString())
+            file.writeTextAtomic(arr.toString())
         }
     }
 }

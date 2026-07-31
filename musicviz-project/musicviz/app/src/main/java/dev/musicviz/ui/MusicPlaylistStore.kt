@@ -17,26 +17,26 @@ data class MusicPlaylist(
  */
 class MusicPlaylistStore(
     context: Context,
-) {
+) : MusicPlaylistRepository {
     private val dir = File(context.filesDir, "music-playlists").apply { mkdirs() }
 
-    fun list(): List<MusicPlaylist> =
+    override fun list(): List<MusicPlaylist> =
         dir
             .listFiles { f -> f.extension == "json" }
             ?.mapNotNull { runCatching { fromJson(it.readText()) }.getOrNull() }
             ?.sortedBy { it.name.lowercase() }
             .orEmpty()
 
-    fun save(playlist: MusicPlaylist) {
-        File(dir, sanitize(playlist.name) + ".json").writeText(toJson(playlist))
+    override fun save(playlist: MusicPlaylist) {
+        File(dir, sanitize(playlist.name) + ".json").writeTextAtomic(toJson(playlist))
     }
 
-    fun delete(name: String) {
+    override fun delete(name: String) {
         File(dir, sanitize(name) + ".json").delete()
     }
 
     /** Appends a track uri if not already present. */
-    fun addTrack(
+    override fun addTrack(
         name: String,
         uri: String,
     ): MusicPlaylist {
@@ -48,7 +48,7 @@ class MusicPlaylistStore(
     }
 
     /** Moves the track at [from] to [to], clamping to valid bounds. */
-    fun rename(
+    override fun rename(
         oldName: String,
         newName: String,
     ): Boolean {
@@ -59,7 +59,7 @@ class MusicPlaylistStore(
         return true
     }
 
-    fun move(
+    override fun move(
         name: String,
         from: Int,
         to: Int,
@@ -75,7 +75,7 @@ class MusicPlaylistStore(
         return updated
     }
 
-    fun removeTrack(
+    override fun removeTrack(
         name: String,
         uri: String,
     ): MusicPlaylist {

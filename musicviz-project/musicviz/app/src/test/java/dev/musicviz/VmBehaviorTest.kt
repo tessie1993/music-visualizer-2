@@ -3,6 +3,7 @@ package dev.musicviz
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import dev.musicviz.analysis.IntelligenceMode
+import dev.musicviz.ui.HistoryRepository
 import dev.musicviz.ui.HistoryStore
 import dev.musicviz.ui.PlayerViewModel
 import org.junit.Assert.assertEquals
@@ -113,7 +114,7 @@ class VmBehaviorTest {
     @Test
     fun history_store_orders_recent_and_most() {
         val app = ApplicationProvider.getApplicationContext<Application>()
-        val h = HistoryStore(app)
+        val h: HistoryRepository = HistoryStore(app)
         h.recordPlay("uri://a", "A")
         h.recordPlay("uri://b", "B")
         h.recordPlay("uri://b", "B")

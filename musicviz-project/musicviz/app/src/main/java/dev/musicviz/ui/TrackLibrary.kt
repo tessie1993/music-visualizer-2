@@ -34,17 +34,17 @@ data class LibraryTrack(
  */
 class TrackLibrary(
     context: Context,
-) {
+) : LibraryRepository {
     private val file = File(context.filesDir, "library.json")
 
-    fun list(): List<LibraryTrack> =
+    override fun list(): List<LibraryTrack> =
         runCatching {
             if (!file.exists()) return emptyList()
             parse(file.readText())
         }.getOrDefault(emptyList())
 
     /** Adds tracks not already present (dedup by uri); returns the new list. */
-    fun addAll(tracks: List<LibraryTrack>): List<LibraryTrack> {
+    override fun addAll(tracks: List<LibraryTrack>): List<LibraryTrack> {
         val existing = list().associateBy { it.uri }.toMutableMap()
         for (t in tracks) if (!existing.containsKey(t.uri)) existing[t.uri] = t
         val merged = existing.values.sortedBy { it.title.lowercase() }
@@ -53,12 +53,12 @@ class TrackLibrary(
     }
 
     /** Records analysis results for a track, creating the entry if needed. */
-    fun updateAnalysis(
+    override fun updateAnalysis(
         uri: String,
         title: String,
         durationMs: Long,
         bpm: Float,
-        key: String = "",
+        key: String,
     ): List<LibraryTrack> {
         val map = list().associateBy { it.uri }.toMutableMap()
         // copy() so user-edited metadata (album/genre/…) survives re-analysis.
@@ -76,7 +76,7 @@ class TrackLibrary(
     }
 
     /** Overwrites title/artist for an existing entry (metadata refresh). */
-    fun updateMetadata(
+    override fun updateMetadata(
         uri: String,
         title: String,
         artist: String,
@@ -90,7 +90,7 @@ class TrackLibrary(
      * device (MediaStore) tracks that were never imported can still carry
      * app-side metadata overrides.
      */
-    fun updateMetadata(
+    override fun updateMetadata(
         uri: String,
         title: String,
         artist: String,
@@ -105,14 +105,14 @@ class TrackLibrary(
         return merged
     }
 
-    fun remove(uri: String): List<LibraryTrack> {
+    override fun remove(uri: String): List<LibraryTrack> {
         val merged = list().filterNot { it.uri == uri }
         write(merged)
         return merged
     }
 
     private fun write(tracks: List<LibraryTrack>) {
-        runCatching { file.writeText(serialize(tracks)) }
+        runCatching { file.writeTextAtomic(serialize(tracks)) }
     }
 
     companion object {

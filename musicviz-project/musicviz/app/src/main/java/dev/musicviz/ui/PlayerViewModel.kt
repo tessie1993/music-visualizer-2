@@ -235,13 +235,13 @@ class PlayerViewModel(
             onTapFormat(rate, channels, encoding)
         }
     private val offlineAnalyzer = OfflineAnalyzer(application)
-    private val presetStore = PresetStore(application)
-    private val trackLibrary = TrackLibrary(application)
+    private val presetStore: PresetRepository = PresetStore(application)
+    private val trackLibrary: LibraryRepository = TrackLibrary(application)
     private val themeStore = ThemeStore(application)
     private val playerPrefsStore = PlayerPrefsStore(application)
     private val textureStore = TextureStore(application)
     private val lfoStore = LfoStore(application)
-    private val musicPlaylists = MusicPlaylistStore(application)
+    private val musicPlaylists: MusicPlaylistRepository = MusicPlaylistStore(application)
     private val exporter = VideoExporter(application)
     private val audioFxController = AudioFxController(application)
 
@@ -672,7 +672,7 @@ class PlayerViewModel(
     // this crashed at launch with an NPE when applyIntelligence() read
     // _presetLocked before its initializer had run. Robolectric's deferred
     // looper hid the crash, which is why the smoke test passed.
-    private val historyStore = HistoryStore(application)
+    private val historyStore: HistoryRepository = HistoryStore(application)
     private val _historyTick = MutableStateFlow(0)
     val historyTick: StateFlow<Int> = _historyTick
 

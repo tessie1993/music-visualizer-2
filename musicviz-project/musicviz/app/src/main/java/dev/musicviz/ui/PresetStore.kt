@@ -18,11 +18,11 @@ data class Preset(
 /** JSON file persistence for presets in app-private storage. */
 class PresetStore(
     context: Context,
-) {
+) : PresetRepository {
     private val dir = File(context.filesDir, "presets").apply { mkdirs() }
 
     /** Relative folder ("" = root) for each preset name, for the tree UI. */
-    fun folderOf(name: String): String {
+    override fun folderOf(name: String): String {
         val f = findFile(name) ?: return ""
         return f.parentFile
             ?.relativeTo(dir)
@@ -30,7 +30,7 @@ class PresetStore(
             .orEmpty()
     }
 
-    fun folders(): List<String> =
+    override fun folders(): List<String> =
         dir
             .walkTopDown()
             .filter { it.isDirectory && it != dir }
@@ -38,11 +38,11 @@ class PresetStore(
             .sorted()
             .toList()
 
-    fun addFolder(path: String) {
+    override fun addFolder(path: String) {
         File(dir, sanitize(path)).mkdirs()
     }
 
-    fun renameFolder(
+    override fun renameFolder(
         from: String,
         to: String,
     ) {
@@ -50,7 +50,7 @@ class PresetStore(
         if (src.isDirectory) src.renameTo(File(dir, sanitize(to)))
     }
 
-    fun moveToFolder(
+    override fun moveToFolder(
         name: String,
         folder: String,
     ) {
@@ -60,12 +60,12 @@ class PresetStore(
     }
 
     /** The on-disk JSON file for a saved preset, for mirroring/export. */
-    fun fileOf(name: String): File? = findFile(name)
+    override fun fileOf(name: String): File? = findFile(name)
 
     private fun findFile(name: String): File? =
         dir.walkTopDown().firstOrNull { it.isFile && it.extension == "json" && it.nameWithoutExtension == sanitize(name) }
 
-    fun list(): List<Preset> =
+    override fun list(): List<Preset> =
         dir
             .walkTopDown()
             .filter { it.isFile && it.extension == "json" }
@@ -73,17 +73,17 @@ class PresetStore(
             .sortedBy { it.name }
             .toList()
 
-    fun save(
+    override fun save(
         preset: Preset,
-        folder: String = "",
+        folder: String,
     ) {
         val destDir = if (folder.isEmpty()) dir else File(dir, sanitize(folder)).apply { mkdirs() }
         val dest = File(destDir, sanitize(preset.name) + ".json")
         findFile(preset.name)?.takeIf { it != dest }?.delete()
-        dest.writeText(toJson(preset))
+        dest.writeTextAtomic(toJson(preset))
     }
 
-    fun delete(name: String) {
+    override fun delete(name: String) {
         findFile(name)?.delete()
     }
 
