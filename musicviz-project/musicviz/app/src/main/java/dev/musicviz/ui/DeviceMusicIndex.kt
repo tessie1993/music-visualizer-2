@@ -29,8 +29,7 @@ internal class DeviceMusicIndex(
             }
 
     /** True when the app may read the device music index. */
-    fun hasPermission(): Boolean =
-        ContextCompat.checkSelfPermission(appContext, permission) == PackageManager.PERMISSION_GRANTED
+    fun hasPermission(): Boolean = ContextCompat.checkSelfPermission(appContext, permission) == PackageManager.PERMISSION_GRANTED
 
     /** Full MediaStore music query, title-sorted; empty without permission. */
     fun query(): List<DeviceTrack> {

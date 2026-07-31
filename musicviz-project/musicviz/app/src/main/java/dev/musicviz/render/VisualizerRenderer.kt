@@ -370,8 +370,7 @@ class VisualizerRenderer(
         }
     }
 
-    fun availableSceneIds(): List<String> =
-        SceneCatalog.selectableStyles(PARTICLE_SCENES, SHADER_SCENES.keys, PMBridge.available)
+    fun availableSceneIds(): List<String> = SceneCatalog.selectableStyles(PARTICLE_SCENES, SHADER_SCENES.keys, PMBridge.available)
 
     fun submitShader(
         sceneId: String,
