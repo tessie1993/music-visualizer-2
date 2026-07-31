@@ -176,6 +176,41 @@ class PulseTrackerTest {
     }
 
     @Test
+    fun `the transient channel obeys the photosensitivity flash-rate cap`() {
+        // SAFETY INVARIANT. VisualSafety limits flashing by RAISING the
+        // analysis gate's minimum gap between beats - it documents that gap
+        // as "the only lever that reaches it", because the rate is set
+        // upstream in the analyzer. That argument holds for the transient
+        // channel only because transients fire on GATE CANDIDATES, which the
+        // refractory rate-caps just like beats. Anything that made transients
+        // fire straight off the flux curve would silently escape the cap, so
+        // pin the property here.
+        val intervalMs = 1000f / 3f // the WCAG 3 Hz limit
+        val t = tracker(intervalMs = intervalMs)
+        // Onsets arriving at 6 Hz - twice the 3 Hz cap - so the refractory is
+        // the only thing that can hold the rate down. (Much denser than this
+        // and the spikes dominate their own flux history, so the sigma gate
+        // stops seeing them as onsets at all: a different, weaker fixture.)
+        var lastImpulseFrame = -1
+        var impulses = 0
+        var minGap = Int.MAX_VALUE
+        for (frame in 0 until 2400) {
+            t.step(if (frame % 10 == 0) 1.5f else 0.02f, 0.6f)
+            if (t.beat || t.transient > 0f) {
+                impulses++
+                if (lastImpulseFrame >= 0) minGap = minOf(minGap, frame - lastImpulseFrame)
+                lastImpulseFrame = frame
+            }
+        }
+        assertTrue("the fixture must produce impulses, got $impulses", impulses > 20)
+        val minGapMs = minGap * 1000f / HOP
+        assertTrue(
+            "impulses came ${minGapMs}ms apart, faster than the ${intervalMs}ms floor",
+            minGapMs >= intervalMs - 1f,
+        )
+    }
+
+    @Test
     fun `motion impulse blends beats with softened transients`() {
         val f = AudioFeatures.empty()
         // A beat dominates; a lone transient contributes at reduced weight.

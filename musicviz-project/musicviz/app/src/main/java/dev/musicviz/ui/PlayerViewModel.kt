@@ -145,6 +145,15 @@ data class ExportUiState(
 )
 
 /**
+ * Graded beat impulse a "switch on a musical moment" decision (intelligent
+ * visual playlist, Random mode's switch-on-beat) treats as strong enough to
+ * act on. Track-relative by construction - [AudioFeatures.beatImpulse] folds
+ * in the macro-energy envelope - so this is "one of this song's bigger hits",
+ * not an absolute loudness that quiet masters never reach.
+ */
+private const val STRONG_MOMENT_IMPULSE = 0.6f
+
+/**
  * Owns playback (queue + audio focus + PCM tap), live analysis, offline
  * analysis/intelligence, presets and export orchestration.
  */
@@ -958,12 +967,16 @@ class PlayerViewModel(
         val intervalMs = s.vizPlaylistIntervalSec * 1000L
         val due =
             if (s.vizPlaylistIntelligent) {
-                // Intelligent: after a minimum dwell, switch on a strong musical
-                // moment (beat + high energy); force a switch at 2x interval so
-                // quiet passages still rotate.
+                // Intelligent: after a minimum dwell, switch on a strong
+                // musical moment; force a switch at 2x interval so quiet
+                // passages still rotate. "Strong" is the tracker's graded beat
+                // impulse, which is TRACK-RELATIVE (it folds in the macro-
+                // energy envelope) - the absolute rms gate this replaced never
+                // opened on a quietly mastered track, so intelligent mode
+                // silently degraded into the plain 2x-interval timer there.
                 val f = engine.features.value
                 val minDwell = maxOf(8_000L, intervalMs / 2)
-                (elapsed >= minDwell && f.beat && f.rms > 0.28f) || elapsed >= intervalMs * 2
+                (elapsed >= minDwell && f.beatImpulse >= STRONG_MOMENT_IMPULSE) || elapsed >= intervalMs * 2
             } else {
                 elapsed >= intervalMs
             }
@@ -1031,9 +1044,10 @@ class PlayerViewModel(
             if (s.randomOnBeat) {
                 // Switch on a strong musical moment after a minimum dwell;
                 // force a switch at 2x interval so quiet passages still move.
+                // Graded and track-relative, as in advanceVizPlaylist().
                 val f = engine.features.value
                 val minDwell = maxOf(6_000L, intervalMs / 2)
-                (elapsed >= minDwell && f.beat && f.rms > 0.25f) || elapsed >= intervalMs * 2
+                (elapsed >= minDwell && f.beatImpulse >= STRONG_MOMENT_IMPULSE) || elapsed >= intervalMs * 2
             } else {
                 elapsed >= intervalMs
             }

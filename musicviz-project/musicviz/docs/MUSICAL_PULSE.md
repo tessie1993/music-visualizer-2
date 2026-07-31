@@ -152,9 +152,37 @@ The consumer rule is a two-tier split:
     condition is identical either way — `beat` is true exactly when
     `beatImpulse > 0` — so only the size differs.
 
+Two more consumers are graded rather than switched:
+
+- **ADSR envelopes** (`AdsrEngine`) keep their tempo-locked attack trigger,
+  but the attack now peaks at the triggering beat's impulse — like a synth
+  envelope peaking at a note's velocity — with the attack *rate* scaled to
+  match, so the user's attack/decay/sustain/release times still mean exactly
+  what they say. A retrigger mid-attack may only raise the ceiling.
+- **"Switch on a musical moment"** (intelligent visual playlist, Random
+  mode's switch-on-beat) now requires a *strong* graded beat instead of
+  `beat && rms > 0.28`. That absolute loudness gate never opened on a
+  quietly mastered track, so intelligent mode silently degraded into the
+  plain 2×-interval timer there; `beatImpulse` is track-relative, so a quiet
+  song switches on its own biggest hits.
+
 Legacy features that carry a beat flag but no strength (synthesised idle
-features, pre-tracker cache entries) read as a full impulse on both tiers,
+features, pre-tracker cache entries) read as a full impulse everywhere,
 which keeps the historical behavior and the existing scene tests meaningful.
+
+## Photosensitivity safety
+
+`VisualSafety.beatMinIntervalMs` bounds flashing by raising the analysis
+gate's minimum gap between beats, and documents that gap as "the only lever
+that reaches it" because the flash rate is set upstream in the analyzer.
+
+That argument still holds after this change, but for a reason worth stating
+explicitly: **the transient channel fires only on gate candidates**, and the
+refractory rate-caps candidates exactly as it caps beats. Transients
+therefore inherit the same ceiling. Anything that made them fire straight off
+the flux curve would silently escape it — so the invariant is pinned by
+`PulseTrackerTest."the transient channel obeys the photosensitivity
+flash-rate cap"`.
 
 `beatPhase`, `pulseConfidence` and `macroEnergy` are available on
 `AudioFeatures` for scenes/LFOs that want anticipation motion, confidence-
