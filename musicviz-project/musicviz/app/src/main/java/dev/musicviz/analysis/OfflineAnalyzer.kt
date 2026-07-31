@@ -15,24 +15,38 @@ import java.nio.ByteOrder
  *
  * Streaming: decoded PCM is analyzed chunk-by-chunk and discarded, so memory
  * stays constant regardless of track length.
+ *
+ * The beat gate is driven by the caller's sensitivity settings, exactly as
+ * [AnalysisEngine] drives the live one - otherwise every export and every
+ * section-driven decision would silently run at the shipped defaults. The
+ * timeline also carries the raw onset curve, so [AnalysisCache] can re-decide
+ * the beats later without a second decode (see
+ * [FeatureTimeline.withBeatSensitivity]).
  */
 class OfflineAnalyzer(
     private val context: Context,
 ) {
     suspend fun analyze(
         uri: Uri,
+        beatThresholdSigma: Float = FeatureExtractor.SIGMA_DEFAULT,
+        beatMinIntervalMs: Float = FeatureExtractor.INTERVAL_MS_DEFAULT,
         onProgress: (Float) -> Unit = {},
-    ): FeatureTimeline = withContext(Dispatchers.Default) { analyzeBlocking(uri, onProgress) }
+    ): FeatureTimeline =
+        withContext(Dispatchers.Default) {
+            analyzeBlocking(uri, beatThresholdSigma, beatMinIntervalMs, onProgress)
+        }
 
     fun analyzeBlocking(
         uri: Uri,
+        beatThresholdSigma: Float = FeatureExtractor.SIGMA_DEFAULT,
+        beatMinIntervalMs: Float = FeatureExtractor.INTERVAL_MS_DEFAULT,
         onProgress: (Float) -> Unit = {},
     ): FeatureTimeline {
         // AIFF first: the platform extractor/codec stack can't read it, but
         // it's plain PCM - stream it straight into the pipeline.
         dev.musicviz.audio.AiffPcm.open(context, uri)?.let { aiff ->
             try {
-                val pipeline = StreamingPipeline()
+                val pipeline = StreamingPipeline(beatThresholdSigma, beatMinIntervalMs)
                 val buf = ShortArray(16384)
                 var last = 0f
                 while (true) {
@@ -67,7 +81,7 @@ class OfflineAnalyzer(
         codec.configure(format, null, null, 0)
         codec.start()
 
-        val pipeline = StreamingPipeline()
+        val pipeline = StreamingPipeline(beatThresholdSigma, beatMinIntervalMs)
         val info = MediaCodec.BufferInfo()
         var inputDone = false
         var outputDone = false
@@ -130,11 +144,21 @@ class OfflineAnalyzer(
     }
 
     /** Windows a mono stream at a fixed hop, running the shared FFT/feature pipeline. */
-    private class StreamingPipeline {
+    private class StreamingPipeline(
+        sigma: Float,
+        minIntervalMs: Float,
+    ) {
         private val processor = FftProcessor()
         private val keyDetector = KeyDetector()
         private val smoother = BandSmoother(processor.bandCount)
-        private val extractor = FeatureExtractor(processor.bandCount, hopRateHz = 60f)
+        private val extractor =
+            FeatureExtractor(processor.bandCount, hopRateHz = HOP_RATE_HZ).also {
+                // Clamped to the same bounds AnalysisEngine uses for the live
+                // extractor, so the two paths cannot diverge at the extremes.
+                it.beatThresholdSigma = sigma.coerceIn(FeatureExtractor.SIGMA_MIN, FeatureExtractor.SIGMA_MAX)
+                it.beatMinIntervalMs =
+                    minIntervalMs.coerceIn(FeatureExtractor.INTERVAL_MS_MIN, FeatureExtractor.INTERVAL_MS_MAX)
+            }
         private val window = FloatArray(processor.fftSize)
         private val raw = FloatArray(processor.bandCount)
         private val smoothed = FloatArray(processor.bandCount)
@@ -222,6 +246,18 @@ class OfflineAnalyzer(
             }
         }
 
-        fun finish(): FeatureTimeline = FeatureTimeline(frames, hopMs = 1000L / 60, key = keyDetector.finish())
+        fun finish(): FeatureTimeline =
+            FeatureTimeline(
+                frames,
+                hopMs = 1000L / 60,
+                key = keyDetector.finish(),
+                hopRateHz = HOP_RATE_HZ,
+            )
+
+        private companion object {
+            /** Offline hop rate. Note hopMs above truncates it to 16 ms, which
+             *  is why the timeline carries the rate separately. */
+            const val HOP_RATE_HZ = 60f
+        }
     }
 }

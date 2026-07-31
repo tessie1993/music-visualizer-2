@@ -41,6 +41,21 @@ internal class FluidEmitters(
         /** Base target speed in grid-velocity units for a full-strength splat. */
         const val BASE_SPEED = 6f
         private const val MAX_SPLATS_PER_FRAME = 16
+
+        /** "Beat response" slider domain (CustomizeDialog), neutral at 1. */
+        const val MIN_BEAT_RESPONSE = 0f
+        const val MAX_BEAT_RESPONSE = 2f
+
+        /** Below this the beat pattern stops firing (BurstScene's gate). */
+        const val BEAT_RESPONSE_GATE = 0.05f
+
+        /**
+         * Ceiling on the beat radius swell. Unreachable at the neutral beat
+         * response (envelope <= 1 and radius pulse <= 1 give exactly 2), so it
+         * only bites when the slider is pushed above 1 - where an unbounded
+         * 3x splat radius would stamp most of the screen in one capsule.
+         */
+        private const val MAX_RADIUS_SWELL = 2f
     }
 
     /**
@@ -66,9 +81,37 @@ internal class FluidEmitters(
     /** Suction splat strength at catch points, 0 disables. */
     var catchSuction = 1f
 
+    /**
+     * Customize "Beat response" (Behavior tab), 0..2, neutral at 1: the DEPTH
+     * of the beat envelope every beat-driven emitter term rides - splat
+     * radius pulse, splat momentum, beat-splat dye gain. The slider had no
+     * reader at all on FLUID/WATER before; multiplying the envelope (rather
+     * than any one term) is the same shape shader and particle scenes use,
+     * and it is an exact no-op at 1.
+     *
+     * At (near) zero the beat pattern stops firing entirely, matching
+     * `BurstScene`'s `beatResponse > 0.05f` gate, so "no beat response"
+     * really means no beat events rather than very small ones.
+     *
+     * [FlowField]'s shared emitters deliberately leave this neutral: the
+     * particle scenes that ride that field already apply the slider
+     * themselves, and setting it here as well would apply it twice.
+     */
+    var beatResponse = 1f
+
     // ---- envelopes (read after tick) ----
+
+    /**
+     * Beat envelope AFTER [beatResponse]: what the emitters actually ride.
+     * The raw attack/release lives in [beatEnvRaw] so the release curve stays
+     * independent of the slider (scaling the state would make a lowered
+     * slider also shorten the tail, and raising it back would not restore it).
+     */
     var beatEnv = 0f
         private set
+
+    private var beatEnvRaw = 0f
+
     var bassEnv = 0f
         private set
 
@@ -91,7 +134,9 @@ internal class FluidEmitters(
         hueSpan: Float,
     ): List<FluidSim.Splat> {
         // Envelopes: beat -> instant attack, ~0.3 s release; bass follower.
-        beatEnv = if (f.beat) 1f else beatEnv * exp(-dt / 0.3f)
+        // The raw envelope carries the timing, "Beat response" the depth.
+        beatEnvRaw = if (f.beat) 1f else beatEnvRaw * exp(-dt / 0.3f)
+        beatEnv = beatEnvRaw * beatResponse.coerceIn(MIN_BEAT_RESPONSE, MAX_BEAT_RESPONSE)
         val bassTarget = (f.bass * 1.2f).coerceIn(0f, 1f)
         bassEnv +=
             (bassTarget - bassEnv) *
@@ -103,7 +148,7 @@ internal class FluidEmitters(
         suctionPhase += dt
 
         val out = ArrayList<FluidSim.Splat>()
-        val radius = splatRadius * (1f + radiusPulse * beatEnv)
+        val radius = splatRadius * (1f + radiusPulse * beatEnv).coerceAtMost(MAX_RADIUS_SWELL)
         val speed = BASE_SPEED * forceScale * (0.4f + 1.6f * f.bass) * (0.3f + 0.7f * beatEnv)
 
         // Edge-detect the beat flag: the ~62.5 Hz analysis snapshot can be
@@ -115,7 +160,9 @@ internal class FluidEmitters(
         // Priority order fills the frame budget most-important first: beats
         // define the rhythm, stirrers the continuity, suction the drain,
         // sparkle/pump are garnish.
-        if (beatEdge && beatSplats > 0) beatSplats(out, f, aspect, baseHue, hueSpan, radius, speed)
+        if (beatEdge && beatSplats > 0 && beatResponse > BEAT_RESPONSE_GATE) {
+            beatSplats(out, f, aspect, baseHue, hueSpan, radius, speed)
+        }
         stirrerSplats(out, f, dt, aspect, baseHue, hueSpan, radius)
         suctionSplats(out, radius)
         if (sparkle && f.treble > trebleMean * 1.6f && f.treble > 0.08f) {

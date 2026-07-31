@@ -22,6 +22,13 @@ data class AudioFeatures(
     val sectionIndex: Int = 0,
     /** Total detected sections for the track (0 = no offline analysis). */
     val sectionCount: Int = 0,
+    /** Raw weighted spectral-flux onset strength for this frame - the quantity
+     *  [FeatureExtractor.BeatGate] thresholds to produce [beat]. Carried through
+     *  the timeline and the on-disk analysis cache so the beat decision can be
+     *  re-made later at whatever sensitivity the user has set, without
+     *  re-analysing the track. 0 for live scene fallbacks that never ran a
+     *  flux calculation. */
+    val flux: Float = 0f,
 ) {
     companion object {
         fun empty(

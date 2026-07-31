@@ -31,6 +31,9 @@ internal class FluidScene(
     private val emitters = FluidEmitters().also { it.choreography = choreography }
     private val monitor = PerformanceMonitor()
 
+    /** "Audio drive": one master reactivity gain for everything below. */
+    private val audioDrive = FluidAudioDrive()
+
     private var params = SceneParams()
     private var time = 0f
     private var lastDt = 1f / 60f
@@ -170,10 +173,17 @@ internal class FluidScene(
         // Prefer this frame's features; fall back to the last REAL features
         // for a short grace window (draw can outrun update), then idle.
         featuresAgeSec += lastDt
+        // "Audio drive" is applied HERE, once, to the snapshot the sim
+        // uniforms, the choreography and the emitters all read - not in the
+        // renderer's band-gain stage, which shader and particle scenes would
+        // then multiply by a second time. Identity at the neutral default.
         val f =
-            pendingFeatures
-                ?: lastFeatures.takeIf { featuresAgeSec < 0.25f }
-                ?: idleFeatures(lastDt)
+            audioDrive.scaled(
+                pendingFeatures
+                    ?: lastFeatures.takeIf { featuresAgeSec < 0.25f }
+                    ?: idleFeatures(lastDt),
+                p.audioDrive,
+            )
 
         // Snapshot the engine's target + blend state: the sim renders to its
         // own grids and the particle pass changes the blend function.
@@ -233,6 +243,9 @@ internal class FluidScene(
         emitters.splatRadius = p.fluidSplatRadius.coerceIn(0.02f, 0.4f)
         emitters.radiusPulse = p.fluidRadiusPulse.coerceIn(0f, 1f)
         emitters.catchSuction = p.fluidCatchPull.coerceIn(0f, 3f)
+        // "Beat response": depth of the beat envelope the splat radius,
+        // momentum and dye gain ride (neutral at 1, silent before this).
+        emitters.beatResponse = p.beatResponse
         // Fluid-only "Palette cycle" drift. The global Colour cycle / Cycle
         // speed pair is deliberately NOT folded in: the composite pass now
         // integrates that phase for the whole fluid family and rotates the

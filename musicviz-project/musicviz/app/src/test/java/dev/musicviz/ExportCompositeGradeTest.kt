@@ -156,6 +156,34 @@ class ExportCompositeGradeTest {
     }
 
     @Test
+    fun exportedBeatPulseMatchesTheLiveEnvelopeAndUsesItsOwnGate() {
+        // The pulse gate is deliberately NOT the grading gate: milkdrop grades
+        // itself (gradesItself = true) but nothing in its pipeline reads the
+        // pulse slider, so it must still be pulsed by the composite.
+        val pulsed = graded.copy(pulse = 0.75f)
+        val state = ExportGradeState()
+        val dt = 1f / 30f
+        // One beat, then a tenth of a second of decay on the export's clock.
+        state.advance(pulsed, dt, beat = true)
+        var live = CompositeGrade.integrateBeatPulse(0f, beat = true, dt = dt)
+        repeat(3) {
+            state.advance(pulsed, dt, beat = false)
+            live = CompositeGrade.integrateBeatPulse(live, beat = false, dt = dt)
+        }
+        assertEquals("envelope must decay on the export clock", live, state.beatPulse, 1e-4f)
+        assertEquals(
+            CompositeGrade.pulseAmount(pulsed.pulse, live),
+            state.pulseAmount(pulsed, pulsesItself = false),
+            1e-4f,
+        )
+        // Scenes that pulse themselves (shader, particle) get the neutral 0.
+        assertEquals(0f, state.pulseAmount(pulsed, pulsesItself = true), 0f)
+        // A parked slider is neutral even mid-beat, on every scene type.
+        assertEquals(0f, state.pulseAmount(SceneParams.DEFAULT, pulsesItself = false), 0f)
+        assertTrue("the beat envelope must be live for that to be meaningful", state.beatPulse > 0f)
+    }
+
+    @Test
     fun defaultParamsAreANoOpOnEverySceneType() {
         // A user who touched nothing must get a byte-identical export.
         val state = exportRun(SceneParams.DEFAULT, seconds = 5f, fps = 30)

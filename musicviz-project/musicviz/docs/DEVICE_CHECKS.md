@@ -198,15 +198,13 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     the app after each change: both values must persist, and a profile
     that last stored a sigma under the old 1.5-4.0 range must reload at
     that same value with the slider thumb sitting on it (not snapped).
-    KNOWN LIMITATION (not a bug to file): both settings apply to LIVE
-    analysis only. Cached/offline beat grids are built with the extractor
-    defaults, so an exported clip and any section-driven intelligence
-    still use 2.5σ / 333 ms whatever the sliders say — see todo.md
-    "Beat sensitivity does not reach the offline analyzer".
+    (The former limitation — that both settings reached LIVE analysis
+    only — is closed; check 30 covers the offline/export side.)
 27. Randomize locks + Customize labels (v0.14.0): open Visuals >
     Customize. Every control must show a "lock"/"locked" affordance,
-    INCLUDING the chip selectors — Palette, Palette 2 (visible once
-    Palette blend > 0), Particle shape (Shape tab), and Beat pattern /
+    INCLUDING the chip selectors — Palette, Palette 2 (on a SHADER style
+    only, and only once Palette blend > 0 — see check 29), Particle shape
+    (Shape tab), and Beat pattern /
     Path (Fluid tab, on a fluid style). Lock Palette, pick a palette you
     like — including a user-made one from the palette maker — then press
     "⚄ Randomize unlocked" ten times: the palette and its gradient must
@@ -220,3 +218,95 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     independently. Finally, Visuals > Customize must be the only
     customization surface: there is no second full-screen dialog to reach
     from anywhere in the app.
+28. Audio drive + Beat response on the fluid family (v1.1.x): play a
+    track with a clear kick and open Visuals > Customize > Behaviour on
+    FLUID. REGRESSION SIDE FIRST — at the defaults (Audio drive 1.0, Beat
+    response 1.0) the style must look EXACTLY as it did before this
+    change; load an old saved preset that never touched either slider and
+    confirm the same. Now drag Audio drive to 2.5: the dye splats must
+    kick harder, the curl swirl tighten and the canvas hold its ink
+    longer (the quiet-passage fade is audio-driven too). Drag it to 0.2:
+    the same track must read as a near-idle drift. It must ramp smoothly,
+    and it must NOT wash out to a blown white frame at the top — that is
+    what a double-applied gain looks like. Then Beat response: at 2.0
+    every beat must stamp a visibly wider, faster, brighter splat; at 0
+    the beat pattern must stop firing entirely while stirrers, sparkle
+    and bass pump keep running (the silence between beats is the tell).
+    Repeat the sweep on WATER — drops grow and travel harder with Audio
+    drive, beat rings vanish at Beat response 0 while stirrer wakes
+    continue — and on CURL FLOW, where Beat response was inert before: at
+    2.0 the field must lurch on the beat and the streams flash, at 0 the
+    flow must stay perfectly even through a drop. On Curl Flow also check
+    the TOP of Audio drive specifically: 2.0 -> 2.5 used to be flat and
+    must now still increase the flow. Finally MILKDROP: Beat response
+    must still change how eagerly presets react (it drives projectM's own
+    beat sensitivity) and Audio drive must do NOTHING there — deliberate,
+    not a bug to file (PARAM_MATRIX note 5). Leave FLUID at Audio drive
+    2.5 for a minute and watch the frame rate: no auto-quality downgrade
+    spiral, no NaN/black frame.
+29. Shape/Color controls only where they work (v1.1.0): the rule is "if
+    you can see it, it works". Pick a SHADER style (Visuals > Styles >
+    Shaders > julia). Customize > Shape must show "Morph"; drag it and
+    the pattern must fold toward polar. Customize > Color must show
+    "Palette blend"; raise it above 0 and a "Palette 2" chip row must
+    appear underneath, and picking a second palette must visibly mix.
+    "Duotone" (Color > Effects) must be there and must flatten the image
+    onto the palette. Now switch to a PARTICLE style (nebula), then
+    MilkDrop, then each fluid style (fluid, curlflow, water): on all of
+    them "Morph", "Palette blend", "Palette 2" and "Duotone" must be
+    GONE — no greyed rows, no empty gaps, and the sections around them
+    ("Distortion", "Palettes", "Effects") must still read as complete
+    lists. Everything else in those two tabs must stay visible AND keep
+    working on every style: Domain warp, Ripple, Twist, Kaleidoscope +
+    Folds, Tile, Pixelate, Posterize, Palette, the gradient/palette
+    maker, Hue shift, Hue range, Color cycle, Saturation, Brightness,
+    Contrast, Gamma, Intensity, Temperature, Bloom, Solarize, Invert —
+    move each one on a particle style and confirm it bites. Switch back
+    to julia: the four must return with the values they had. Finally,
+    save a preset on julia with Morph high, Palette blend 0.5 and
+    Duotone on, switch to nebula, re-apply it (no visible change is
+    correct there), switch back to julia and re-apply: the look must
+    come back intact — hiding a control must never drop its value.
+30. Beat sensitivity reaches exports and the cached analysis: pick a slow,
+    sparse track and let it analyse fully (Settings shows the analysis
+    cache growing by one track). At the shipped defaults export a short
+    clip on a beat-reactive style — the flashes in the file must land
+    where playback flashed. Now open Settings and tap "Slow track"
+    (4.5σ / 700 ms), then export the SAME track again WITHOUT
+    re-analysing: the cache entry count must NOT change (no second
+    analysis pass, no progress bar crawl), and the new file must flash
+    noticeably less — on the kick only — matching what live playback now
+    does. Drag the sliders back to "Default" and export once more: the
+    beat grid must come back to what the first clip had. Do the same in
+    MANUAL intelligence mode, which only reads the cache: the fluid
+    journey's beat response must follow the sliders there too.
+    MIGRATION SIDE — install this build OVER a build from before it with
+    tracks already analysed. Those entries are the old v1 format and are
+    silently dropped: the first play/export of such a track re-analyses it
+    once (progress bar), then behaves as above. Nothing must crash, and
+    the "Analysis cache: N tracks" line must recover to a sensible count.
+    Settings > "Clear" on the analysis cache must still empty it.
+31. "Beat pulse" on the styles that never read it: play a track with a
+    clear kick and open Visuals > Customize > Motion. On FLUID, CURL
+    FLOW, WATER and on a live MilkDrop preset, drag "Beat pulse" from 0
+    to 1 — the whole frame must now swell on each beat (a zoom-in of a
+    few percent that falls away in about a third of a second) and settle
+    back to still when the slider returns to 0. Before this change the
+    slider did nothing at all on those four. Check the swell is centred:
+    the middle of the screen must not drift while it pulses. Then set
+    Zoom well above 1 on a fluid style and pulse again — the two must
+    compound (pulse on top of the zoom), not fight.
+    REGRESSION SIDE — on a shader style (julia/plasma) and on a particle
+    style the slider must feel EXACTLY as before: those pulse in their
+    own pipeline (uPulse / a point-size swell) and are excluded from the
+    composite pulse, so a doubled swell — roughly twice the magnification
+    on a shader style, or particles that both grow AND zoom — means the
+    exclusion set is wrong. Note MilkDrop is excluded from the composite
+    GRADING block but deliberately NOT from this one.
+    EXPORT SIDE — with "Beat pulse" at ~0.8 on a fluid style and again
+    on a MilkDrop preset, record a ~10 s clip and play the mp4 next to
+    the live view: the swells must land on the same beats and be the
+    same depth. Record the same settings at 30 fps and at 60 fps — the
+    decay must look identical in both files; a 30 fps clip whose pulses
+    hang around twice as long means the envelope is not running on the
+    export's own frame delta.

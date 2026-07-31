@@ -70,6 +70,28 @@ UI OVERHAUL IS GATED: no visual redesign until P0–P4 architecture is done.
       remove milkdrop rows from BuiltInPresets, "Next preset" cycles the
       user's imported/saved .milk files only (empty state: hint to Load).
 
+- [x] Flaky `testDebugUnitTest` (CI run 30590147361 attempt 1 red, attempt 2
+      green on a byte-identical tree). NOT a flaky assertion: all 38 failures
+      were the 38 Robolectric `@Test`s, every one of them
+      `AssertionError at MavenArtifactFetcher.java:129` /
+      `Caused by: IOException`. Robolectric fetches its `android-all`
+      runtime jar mid-test with its own no-retry Maven client into
+      ~/.m2/repository, which the CI Gradle cache does not restore — so
+      every run re-downloaded ~200 MB during the test task and one transient
+      HTTP error took out every Robolectric test at once. Fixed in
+      app/build.gradle.kts: the `robolectricSdks` configuration declares the
+      android-all-instrumented jars as normal Gradle dependencies,
+      `stageRobolectricSdks` syncs them into build/robolectric-sdks, and the
+      test tasks run with `robolectric.offline=true` +
+      `robolectric.dependency.dir`, so tests need no network at all. Adding
+      an `@Config(sdk = [N])` on a new SDK level means adding its OWN
+      configuration — one per level, because they are all versions of the
+      same module and a shared configuration makes Gradle's conflict
+      resolution collapse them to the highest version and stage only that
+      jar. Test-side `testLogging` now uses `exceptionFormat = FULL`;
+      Gradle's default SHORT prints the exception class and line but no
+      message at all, which is what made this so hard to read from CI.
+
 ## P1 — Milkdrop tab + preset architecture
 - [x] Style sheet → 3 tabs: Particles | Shaders | MilkDrop
       (ui/ style chooser; keep sheet-over-canvas pattern).
@@ -289,22 +311,21 @@ docs/PARAM_MATRIX.md ("Notes" + "Divergences worth knowing"). Everything
 listed here is a real gap that was NOT closed in this round, with the reason
 it was left and what closing it involves.
 
-- [ ] **Beat sensitivity does not reach the offline analyzer.**
-      `OfflineAnalyzer.StreamingPipeline` builds its own `FeatureExtractor`
-      (analysis/OfflineAnalyzer.kt:137) and never assigns
-      `beatThresholdSigma` / `beatMinIntervalMs`, so every cached beat grid —
-      and therefore every export and every section-driven intelligence
-      decision — runs at the shipped defaults (2.5σ / 333 ms) no matter where
-      the user leaves the sliders. Pre-existing; predates the v0.14 beat
-      work. Closing it is NOT a one-liner: the two values have to be
-      threaded from GuiPrefs into `OfflineAnalyzer.analyze`, AND
-      `AnalysisCache` must stop serving a timeline analysed at other
-      settings — its key is a SHA-1 of the URI alone
-      (analysis/AnalysisCache.kt:36-40) with no sensitivity in the key or the
-      header. Either fold both values into the key or bump `VERSION`, store
-      them in the header and reject mismatches. Decide first whether beat
-      grids SHOULD follow a live-visuals slider at all, or whether the
-      offline detector wants its own (probably stricter) setting.
+- [x] **Beat sensitivity does not reach the offline analyzer.** CLOSED —
+      `OfflineAnalyzer.analyze` now takes the sigma/interval pair and clamps
+      it exactly as `AnalysisEngine` does, and the cache stops storing a beat
+      decision it cannot revise: v2 persists the raw onset curve
+      (`AudioFeatures.flux`) plus the hop rate, and `AnalysisCache.load`
+      re-decides the beats through the same `FeatureExtractor.BeatGate` the
+      live path runs (`FeatureTimeline.withBeatSensitivity`). So the key stays
+      a SHA-1 of the URI alone — one entry serves every setting, a slider drag
+      applies to already-analysed tracks with no re-analysis, and folding the
+      settings into the key (which would have re-analysed on every drag and
+      thrashed the 15-entry LRU) was not needed. v1 entries carry no curve and
+      are deleted on load, costing one re-analysis per track. The offline
+      detector deliberately follows the live slider rather than owning a
+      second setting: an export that disagrees with the playback the user just
+      watched is the bug, not a feature.
 - [ ] **`pulse` ("Beat pulse") has no reader on MilkDrop or the fluid
       family.** Shader scenes use `uPulse`, particle scenes swell their point
       size; the composite pass declares no beat pulse at all, so the slider
@@ -313,27 +334,57 @@ it was left and what closing it involves.
       `VisualizerRenderer` and `FxCompositor`, and a `CompositeGrade` mirror
       + headless test — the same shape as the v0.14 grading work. Pick the
       curve so it matches what shader scenes already do at the same value.
-- [ ] **`audioDrive` / `beatResponse` have no reader on Fluid, Water (and
-      `audioDrive` none on MilkDrop).** Those scenes consume `AudioFeatures`
-      straight after `applyBandGains`, so the per-band faders work but the
-      two master reactivity sliders do nothing. Curl Flow reads `audioDrive`
-      (CurlFlowScene.kt:170) and still ignores `beatResponse`. Do NOT fix by
-      folding `audioDrive` into `applyBandGains` — shader and particle scenes
-      apply it themselves and would double-apply. The honest fix is to scale
-      the emitter/choreography drive terms in FluidScene/WaterScene, which
-      needs on-device tuning to avoid blowing the sim out at 2.5x.
-- [ ] **Shader-only params are shown on every style.** `morph`,
-      `palette2`, `paletteMix` and `duotone` are read only by `ShaderScene`
-      (by design — they need the fragment palette/pattern machinery), but
-      since the Customize panel moved into `VisualsHub` the Shape and Color
-      tabs render unconditionally, so four live sliders do nothing on
-      particle, MilkDrop and fluid styles. Same class of bug the Fluid tab
-      gating fixed. Closing it: plumb `sceneId` into `ShapeTab`/`ColorTab`,
-      add `isShaderSceneId`-style predicates next to the fluid ones in
-      VisualsHub.kt:372-400, and pin them the way `FluidTabGatingTest` pins
-      the fluid slices. Decide the policy first — hide, or show disabled
-      with a "shader styles only" note (the `trails` slider takes the second
-      route today, labelled "Trails (particle scenes)").
+- [x] **`audioDrive` / `beatResponse` have no reader on Fluid, Water (and
+      `audioDrive` none on MilkDrop).** Fixed for the fluid family: FLUID and
+      WATER apply `audioDrive` once, in `draw`, to the feature snapshot the
+      sim uniforms, the choreography and the emitters share (`FluidAudioDrive`
+      in FluidMath.kt, reusing ShaderScene's `x * drive` clamped to 1.5 so the
+      sim can't be blown out at 2.5x), and pass `beatResponse` to
+      `FluidEmitters` as the depth of the beat envelope its radius pulse,
+      momentum and dye gain ride; Curl Flow now scales its own beat envelope
+      by `beatResponse` (`CurlFlowMath.beatDrive`) and reaches the whole
+      `audioDrive` slider instead of clamping it at 2.0. Both are exact
+      no-ops at the neutral default, pinned by `FluidAudioDriveTest`, and
+      NEITHER is folded into `applyBandGains` (shader/particle scenes apply
+      `audioDrive` themselves and would double-apply). Still deliberately
+      unwired on MilkDrop: the only audio a `.milk` preset sees is the mono
+      PCM, and libprojectM's beat detector is ratio-based, so a constant gain
+      cancels out of what presets react to while clipping the waveform they
+      draw — reasoning in `ProjectMScene.update`'s KDoc. Device check 28.
+- [x] **Shader-only params are shown on every style.** DONE (v1.1.0):
+      `morph`, `palette2`, `paletteMix` and `duotone` are read only by
+      `ShaderScene` (uMorph / uPal2Base+uPal2Range / uPaletteMix / uDuotone,
+      declared by all twenty scene frags; `composite_frag.glsl` has no
+      counterpart), so Shape and Color now hide them on every other style.
+      Policy chosen by the user: HIDE, not disable — "if you can see it, it
+      works". `VisualsHub.isShaderLookSceneId` is the predicate (next to the
+      fluid ones), `ShapeTab`/`ColorTab` take an `isShaderLookScene` flag,
+      and `ShaderLookGatingTest` pins both the predicate and the gating it
+      parses back out of `CustomizeDialog.kt`. "Palette blend" and
+      "Palette 2" are gated as ONE group: a blend slider with nothing to
+      blend would be a worse control than none.
+- [ ] **`particleShape` ("Particle shape") has no reader outside the five
+      particle scenes**, and `particleSize` none outside particles + Fluid +
+      Curl Flow — yet both sit ungated in the Shape tab's "Particles"
+      section, so they are inert on shader, MilkDrop and Water styles. Same
+      class as the item above but NOT the same one-line fix: the two
+      controls have DIFFERENT readers, so the section needs two predicates
+      (`isParticleShapeSceneId` = `VisualizerRenderer.PARTICLE_SCENES`,
+      `isPointSpriteSceneId` = that plus FLUID + CURLFLOW) and the
+      "Particles" header itself has to disappear when both are hidden.
+      Check `fluidParticlesEnabled` first: on FLUID the point layer can be
+      switched off, which would make `particleSize` conditionally inert
+      there too. Left out of the v1.1.0 gating round deliberately.
+- [ ] **MilkDrop ignores the whole "Palettes" section.** `ProjectMScene`
+      reads `colorCycle`/`cycleSpeed` but never `paletteBase`/`paletteRange`
+      — a .milk preset brings its own colours — so Palette, the gradient/
+      palette maker and `hueRange` do nothing on MILKDROP while working on
+      all five other families. Gating them there would hide the palette
+      maker (a whole card, not one slider) on one style, so decide the UX
+      first: hide the section, or teach the composite to tint MilkDrop
+      output toward the chosen palette (a new `uPostPalette*` stage, same
+      shape as the v0.14 grading work) so the controls become real instead
+      of disappearing. The second option is the better product answer.
 - [ ] `endlessZoom` is shown on the fluid styles, which have no respawn/
       outflow behaviour to drive. Same fix shape as the item above; low
       priority because the checkbox is cheap and harmless.

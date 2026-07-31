@@ -61,8 +61,8 @@ The three composite gates, all in `VisualizerRenderer.kt`:
 
 | Param | SH | PT | MD | FL | CF | WA |
 |---|---|---|---|---|---|---|
-| `audioDrive` | S `:125-128` | P (each scene) | **— ⁵** | **— ⁵** | CF `CurlFlowScene.kt:170` | **— ⁵** |
-| `beatResponse` | S `:191` | P `:143` + scenes | PM beat sensitivity `:197,220` | **— ⁵** | **— ⁵** | **— ⁵** |
+| `audioDrive` | S `:125-128` | P (each scene) | **— ⁵** | FL feature snapshot `FluidScene.kt:180` (`FluidAudioDrive`) | CF field amp `CurlFlowMath.fieldAmp` | WA feature snapshot `WaterScene.kt:200` |
+| `beatResponse` | S `:191` | P `:143` + scenes | PM beat sensitivity `:197,220` | FL emitter beat envelope `FluidEmitters.beatResponse` | CF `CurlFlowMath.beatDrive` | WA emitter beat envelope (same) |
 | `bassGain` / `midGain` / `trebGain` | G | G | G | G | G | G |
 | `turbulence` | S `:192` | P (each scene) | — | — | CF `:166` | — |
 | `density` | — ⁶ | P `ParticleSceneBase.kt:122` | — | FL point exposure `FluidScene.kt:325` | — | — |
@@ -146,11 +146,23 @@ The gate predicates live in `VisualsHub.kt:372-400` and are pinned by
    `uPulse`, particles swell their point size; the composite declares no beat
    pulse at all. Closing it means a new `uPost*` uniform plus its `FxCompositor`
    and `CompositeGrade` mirrors — written up in `todo.md`.
-5. **`audioDrive` and `beatResponse` have no reader on FL/WA (and `audioDrive`
-   none on MD).** Both styles consume raw `AudioFeatures` after `applyBandGains`
-   only, so the band-gain faders work but the two master reactivity sliders do
-   not. Curl Flow reads `audioDrive` in its field kick and still ignores
-   `beatResponse` (its beat term is a local envelope). Written up in `todo.md`.
+5. **`audioDrive` and `beatResponse` now read on the whole fluid family**
+   (v1.1.x). FL/WA apply `audioDrive` ONCE, in `draw`, to the feature snapshot
+   the sim uniforms, the choreography and the emitters all share
+   (`FluidAudioDrive`, reusing `ShaderScene`'s `x * drive` clamped to 1.5 so a
+   slider value means the same thing on both families), and hand `beatResponse`
+   to `FluidEmitters` as the DEPTH of the beat envelope every beat-driven
+   emitter term rides. CF already had `audioDrive` (its field kick) and now
+   scales its own beat envelope by `beatResponse` too. Both are exact no-ops at
+   the neutral default of 1, and neither is folded into `applyBandGains` /
+   `gainAdjusted`: SH and PT apply `audioDrive` themselves, so a central gain
+   would apply it twice there. **Still `—` on MD:** the only audio a `.milk`
+   preset ever sees is the mono PCM handed to libprojectM, whose beat detector
+   is ratio-based (instant band energy over its own running average), so a
+   constant gain cancels out of exactly what presets react to while clipping
+   the waveform many of them draw directly — the honest knob there is projectM's
+   beat sensitivity, which `beatResponse` already drives
+   (`ProjectMScene.update` KDoc).
 6. `density` thins a point population; a fullscreen fragment shader has none.
 7. Trails are a renderer-level canvas-persistence path, gated to
    `ParticleSceneBase || CurlFlowScene` (`:668`). The other styles either clear
@@ -158,11 +170,14 @@ The gate predicates live in `VisualsHub.kt:372-400` and are pinned by
    on FL, `waterDamping` on WA). The label says "(particle scenes)".
 8. **By design, shader-only:** `morph` deforms geometry inside each fragment
    pattern; `palette2`/`paletteMix`/`duotone` need the fragment palette
-   machinery. There is no meaningful post-hoc equivalent. **Gap:** since the
-   Customize panel moved into `VisualsHub`, the Shape and Color tabs are shown
-   unconditionally, so these four now render as live sliders on styles that
-   ignore them. Written up in `todo.md` (the fix is scene-family gating on
-   those tabs, matching what the Fluid tab already does).
+   machinery. There is no meaningful post-hoc equivalent. Since v1.1.0 the
+   Shape and Color tabs GATE all four on `VisualsHub.isShaderLookSceneId`, so
+   they only appear on shader styles — the same rule the Fluid tab uses, and
+   the reason a "—" in this row is no longer a visible dead control.
+   `paletteMix` and `palette2` are gated as one group (a blend slider with
+   nothing to blend is worse than no slider). Pinned by
+   `ShaderLookGatingTest`, which parses the gating back out of
+   `CustomizeDialog.kt`.
 9. MilkDrop colours are authored by the preset; `pm_post_frag` rotates hue but
    has no palette table to key off.
 

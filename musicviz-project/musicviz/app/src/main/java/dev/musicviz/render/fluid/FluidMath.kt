@@ -1,5 +1,6 @@
 package dev.musicviz.render.fluid
 
+import dev.musicviz.analysis.AudioFeatures
 import kotlin.math.sqrt
 
 /**
@@ -8,6 +9,37 @@ import kotlin.math.sqrt
  * If a formula changes in a shader, change it here too.
  */
 internal object FluidMath {
+    // ---- "Audio drive" (Behavior tab), the master reactivity gain ----
+
+    /** Slider domain, from CustomizeDialog's "Audio drive" range. */
+    const val MIN_AUDIO_DRIVE = 0.2f
+    const val MAX_AUDIO_DRIVE = 2.5f
+
+    /**
+     * Ceiling a driven feature is allowed to reach, matching the clamp
+     * `ShaderScene` puts on `features.x * audioDrive` (`:125-128`) so one
+     * slider value means the same thing on a shader style and a fluid one.
+     */
+    const val DRIVE_CEILING = 1.5f
+
+    /**
+     * Scales one non-negative audio feature by the "Audio drive" slider.
+     *
+     * EXACT identity at the neutral default (1): `value * 1f` is `value`, and
+     * the ceiling is `max(value, DRIVE_CEILING)`, so a feature that already
+     * arrives hotter than the ceiling (loud track plus a raised band gain) is
+     * passed through untouched rather than being clipped by a slider the user
+     * never moved. Above 1 the gain still cannot push a feature past that
+     * ceiling, which is what keeps 2.5x from blowing the sim out.
+     */
+    fun driven(
+        value: Float,
+        audioDrive: Float,
+    ): Float {
+        val d = audioDrive.coerceIn(MIN_AUDIO_DRIVE, MAX_AUDIO_DRIVE)
+        return (value * d).coerceIn(0f, maxOf(value, DRIVE_CEILING))
+    }
+
     // ---- CPU mirror of curl_field_frag.glsl (kept in lockstep for tests) ----
     private fun fract(x: Float) = x - kotlin.math.floor(x)
 
@@ -237,5 +269,48 @@ internal object FluidMath {
         var rq = (br - cx).coerceIn(0f, cy)
         rq = cz * rq * rq
         return maxOf(rq, br - threshold) / maxOf(br, 1e-4f)
+    }
+}
+
+/**
+ * Applies the "Audio drive" slider to a whole [AudioFeatures] snapshot, once,
+ * at the point where a fluid scene starts consuming audio.
+ *
+ * The slider used to have NO reader on FLUID or WATER: those scenes take the
+ * features straight from the renderer (already band-gained) and hand them to
+ * the sim, the choreography and the emitters, so the per-band faders worked
+ * while the master reactivity slider did nothing at all - the same class of
+ * bug as the original "customizations don't work on all styles" report.
+ *
+ * The gain is deliberately NOT folded into `SceneParams.applyBandGains` /
+ * the renderer's `gainAdjusted`: shader scenes (`ShaderScene:125-128`) and
+ * every particle scene apply `audioDrive` themselves, so a central multiply
+ * would apply it TWICE there - the quadratic-response regression that Water
+ * and Curl Flow already had to be rescued from on brightness.
+ *
+ * One scaled snapshot per frame keeps the sim uniforms, the choreography and
+ * the emitter schedule consistent with each other. At the neutral default the
+ * ORIGINAL object is returned - no copy, no arithmetic, so saved presets that
+ * never touched the slider render bit-identically.
+ */
+internal class FluidAudioDrive {
+    /** Reused scaled-band scratch: idling must not allocate an array a frame. */
+    private var bands = FloatArray(0)
+
+    fun scaled(
+        features: AudioFeatures,
+        audioDrive: Float,
+    ): AudioFeatures {
+        val d = audioDrive.coerceIn(FluidMath.MIN_AUDIO_DRIVE, FluidMath.MAX_AUDIO_DRIVE)
+        if (d == 1f) return features
+        if (bands.size != features.bands.size) bands = FloatArray(features.bands.size)
+        for (i in features.bands.indices) bands[i] = FluidMath.driven(features.bands[i], d)
+        return features.copy(
+            bands = bands,
+            rms = FluidMath.driven(features.rms, d),
+            bass = FluidMath.driven(features.bass, d),
+            mid = FluidMath.driven(features.mid, d),
+            treble = FluidMath.driven(features.treble, d),
+        )
     }
 }

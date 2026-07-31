@@ -115,6 +115,13 @@ class VisualizerRenderer(
      *  self-grading scene computes it. */
     private var postCyclePhase = 0f
 
+    /** Composite-pass beat envelope (1 on a beat, decaying), the source of the
+     *  "Beat pulse" swell for the scenes that don't pulse themselves. The
+     *  shader's own `uBeat` is a per-frame boolean, so a pulse driven from it
+     *  would be a single-frame pop; this is the same decaying envelope
+     *  ShaderScene/ParticleSceneBase keep. */
+    private var postBeatPulse = 0f
+
     /** Exponential lerp between param sets; toggles and choices snap to target. */
     private fun lerpParams(
         from: SceneParams,
@@ -602,6 +609,7 @@ class VisualizerRenderer(
         lastFinalParams = p
         postRotationAngle = CompositeGrade.integrateRotation(postRotationAngle, p.rotation, dt)
         postCyclePhase = CompositeGrade.integrateCyclePhase(postCyclePhase, p.cycleSpeed, dt, p.colorCycle)
+        postBeatPulse = CompositeGrade.integrateBeatPulse(postBeatPulse, features.beat, dt)
         if (fluidInjectionDirty) {
             fluidInjectionDirty = false
             (scenes[SceneIds.FLUID] as? dev.musicviz.render.fluid.FluidScene)
@@ -827,6 +835,19 @@ class VisualizerRenderer(
         GLES30.glUniform1f(cLoc("uPostContrast"), gradeF(fx.contrast, 1f))
         GLES30.glUniform1f(cLoc("uPostGamma"), gradeF(fx.gamma, 1f))
         GLES30.glUniform1f(cLoc("uPostHue"), gradeF(fx.colorShift + postCyclePhase, 0f))
+        // "Beat pulse": a DIFFERENT gate from gradesItself above, on purpose.
+        // Only two scene families read SceneParams.pulse themselves -
+        // ShaderScene (uPulse, folded into view()'s zoom) and the particle
+        // pipeline (a uSize swell) - so only those two get the neutral 0 here.
+        // ProjectMScene is in the grading exclusion set but NOT this one: the
+        // milkdrop post pass grades and zooms, yet nothing in it or in
+        // pm_post_frag reads pulse, so before this upload the slider was inert
+        // on MilkDrop exactly as it was on the fluid family.
+        val pulsesItself = activeScene is ShaderScene || activeScene is ParticleSceneBase
+        GLES30.glUniform1f(
+            cLoc("uPostPulse"),
+            if (pulsesItself) 0f else CompositeGrade.pulseAmount(fx.pulse, postBeatPulse),
+        )
         GLES30.glBindVertexArray(quadVao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)

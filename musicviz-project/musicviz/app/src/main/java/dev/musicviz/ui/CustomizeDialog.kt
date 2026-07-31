@@ -95,16 +95,30 @@ internal fun MotionTab(
     }
 }
 
+/**
+ * Geometry and distortion. Everything here except Morph reaches every style
+ * through the composite pass (uPostWarp, uPostRipple, uPostTwist,
+ * uPostKaleido, uPostSymmetry, uPostTile, uPostPixelate, uPostPosterize);
+ * [isShaderLookScene] gates the one control that does not - see
+ * `VisualsHub.isShaderLookSceneId`.
+ */
 @Composable
 internal fun ShapeTab(
     p: SceneParams,
     onChange: (SceneParams) -> Unit,
+    isShaderLookScene: Boolean,
 ) {
     Column {
         SectionHeader("Distortion")
         LabeledSlider("Domain warp", p.warp, 0f..1f) { onChange(p.copy(warp = it)) }
         LabeledSlider("Ripple", p.ripple, 0f..1f) { onChange(p.copy(ripple = it)) }
-        LabeledSlider("Morph", p.morph, 0f..1f) { onChange(p.copy(morph = it)) }
+        if (isShaderLookScene) {
+            // `morph` only exists as ShaderScene's uMorph (the polar-blend in
+            // each scene fragment shader). The composite has no morph stage,
+            // so on particles / MilkDrop / the fluid family this slider moved
+            // nothing at all - hidden rather than shown-and-dead.
+            LabeledSlider("Morph", p.morph, 0f..1f) { onChange(p.copy(morph = it)) }
+        }
         LabeledSlider("Twist", p.twist, -1f..1f) { onChange(p.copy(twist = it)) }
         SectionHeader("Symmetry & tiling")
         CheckRow("Kaleidoscope", p.kaleidoscope) { onChange(p.copy(kaleidoscope = it)) }
@@ -185,20 +199,33 @@ internal fun BehaviorTab(
     }
 }
 
+/**
+ * Palettes and grading. The grade, hue and effect rows all ride the composite
+ * pass, so they work on every style; the second palette slot and Duotone are
+ * ShaderScene-only and are gated by [isShaderLookScene] - see
+ * `VisualsHub.isShaderLookSceneId`.
+ */
 @Composable
 internal fun ColorTab(
     p: SceneParams,
     onChange: (SceneParams) -> Unit,
+    isShaderLookScene: Boolean,
 ) {
     val palettes = rememberSavedPalettes()
     Column {
         SectionHeader("Palettes")
         LockableChipLabel("Palette")
         PaletteSlotSelector(p, onChange, palettes)
-        LabeledSlider("Palette blend", p.paletteMix, 0f..1f) { onChange(p.copy(paletteMix = it)) }
-        if (p.paletteMix > 0.001f) {
-            LockableChipLabel("Palette 2")
-            PaletteSlotSelector(p, onChange, palettes, second = true)
+        if (isShaderLookScene) {
+            // Slot 2 and the blend are one control, not two: only ShaderScene
+            // uploads uPal2Base/uPal2Range and mixes them with uPaletteMix.
+            // Showing the blend without the slot would leave a slider with
+            // nothing to blend, so they are hidden together.
+            LabeledSlider("Palette blend", p.paletteMix, 0f..1f) { onChange(p.copy(paletteMix = it)) }
+            if (p.paletteMix > 0.001f) {
+                LockableChipLabel("Palette 2")
+                PaletteSlotSelector(p, onChange, palettes, second = true)
+            }
         }
         SectionHeader("Gradient & palette maker")
         PaletteMakerCard(p, onChange, palettes)
@@ -218,7 +245,12 @@ internal fun ColorTab(
         LabeledSlider("Temperature", p.temperature, -1f..1f) { onChange(p.copy(temperature = it)) }
         SectionHeader("Effects")
         LabeledSlider("Bloom", p.bloom, 0f..1f) { onChange(p.copy(bloom = it)) }
-        CheckRow("Duotone", p.duotone) { onChange(p.copy(duotone = it)) }
+        if (isShaderLookScene) {
+            // uDuotone recolours the shader's own luminance through pal();
+            // the composite (uPostSolarize / uPostInvert and friends) has no
+            // duotone stage, so the toggle is inert on every other style.
+            CheckRow("Duotone", p.duotone) { onChange(p.copy(duotone = it)) }
+        }
         CheckRow("Solarize", p.solarize) { onChange(p.copy(solarize = it)) }
         CheckRow("Invert", p.invert) { onChange(p.copy(invert = it)) }
     }

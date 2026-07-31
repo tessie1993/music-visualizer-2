@@ -42,6 +42,9 @@ internal class WaterScene(
     private val emitters = FluidEmitters().also { it.choreography = choreography }
     private val monitor = PerformanceMonitor()
 
+    /** "Audio drive": one master reactivity gain for everything below. */
+    private val audioDrive = FluidAudioDrive()
+
     private var params = SceneParams()
     private var time = 0f
     private var lastDt = 1f / 60f
@@ -190,10 +193,17 @@ internal class WaterScene(
         val p = params
         featuresAgeSec += lastDt
         val idle = pendingFeatures == null && featuresAgeSec >= 0.25f
+        // "Audio drive" is applied HERE, once, to the snapshot the choreography,
+        // the emitter schedule and the display pass' treble glints all read -
+        // not in the renderer's band-gain stage, which shader and particle
+        // scenes would then multiply by a second time. Identity at the default.
         val f =
-            pendingFeatures
-                ?: lastFeatures.takeIf { featuresAgeSec < 0.25f }
-                ?: idleFeatures(lastDt)
+            audioDrive.scaled(
+                pendingFeatures
+                    ?: lastFeatures.takeIf { featuresAgeSec < 0.25f }
+                    ?: idleFeatures(lastDt),
+                p.audioDrive,
+            )
 
         // Snapshot the engine's target + blend state (FluidScene pattern).
         GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, prevFbo, 0)
@@ -236,6 +246,9 @@ internal class WaterScene(
         emitters.radiusPulse = p.fluidRadiusPulse.coerceIn(0f, 1f)
         emitters.catchSuction = p.fluidCatchPull.coerceIn(0f, 3f)
         emitters.forceScale = p.fluidSplatForce.coerceIn(0f, 3f)
+        // "Beat response": depth of the beat envelope, which here decides how
+        // much harder a beat drop lands than a stirrer wake (neutral at 1).
+        emitters.beatResponse = p.beatResponse
 
         val simDt = lastDt.coerceIn(0f, 1f / 30f)
         choreography.tick(f, simDt, sim.aspect)
