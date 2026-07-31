@@ -234,7 +234,43 @@ data class GuiPrefs(
     /** Forces body/label text to pure white (dark themes only). Off keeps the
      *  theme-derived text colors, so existing users see no change. */
     val whiteFont: Boolean = false,
-)
+    /** "Safe visuals": caps how fast and how deeply the whole frame may flash.
+     *  Off by default, like every other optional visual change here, so saved
+     *  presets keep looking the way the user left them. */
+    val safeVisuals: Boolean = false,
+    /** Flashes per second ceiling while [safeVisuals] is on. */
+    val maxFlashHz: Float = dev.musicviz.render.VisualSafety.WCAG_FLASHES_PER_SECOND,
+    /** Largest full-screen luminance swing a flash may make, 0..1. */
+    val maxFlashDepth: Float = 0.25f,
+    /** Keep full-frame invert/solarize available inside [safeVisuals]. */
+    val allowInversion: Boolean = false,
+    /** Scales speed/shake/drift-style motion. Independent of [safeVisuals]:
+     *  this is a vestibular comfort setting, that one is about seizures. */
+    val reducedMotion: Boolean = false,
+) {
+    /**
+     * [beatMinIntervalMs] after the Safe-visuals floor.
+     *
+     * EVERY consumer that feeds the beat detector must use this rather than
+     * the raw slider value - the live engine, the offline analyzer, the cache
+     * re-decision and the export. They all have to agree on one number or the
+     * cached and exported beat grids would differ from what playback showed,
+     * which is the invariant the whole analysis cache is built around.
+     */
+    val effectiveBeatMinIntervalMs: Float
+        get() = dev.musicviz.render.VisualSafety.beatMinIntervalMs(beatMinIntervalMs, safety)
+
+    /** The engine-facing view of the safety settings above. */
+    val safety: dev.musicviz.render.VisualSafety.SafetyConfig
+        get() =
+            dev.musicviz.render.VisualSafety.SafetyConfig(
+                enabled = safeVisuals,
+                maxFlashHz = maxFlashHz,
+                maxFlashDepth = maxFlashDepth,
+                allowInversion = allowInversion,
+                reducedMotion = reducedMotion,
+            )
+}
 
 /** Persists the chosen [AppTheme] in shared preferences. */
 class ThemeStore(
@@ -279,6 +315,17 @@ class ThemeStore(
             followSystemDark = prefs.getBoolean(KEY_FOLLOW_DARK, false),
             clearVisualsMenu = prefs.getBoolean(KEY_CLEAR_VIZ_MENU, false),
             whiteFont = prefs.getBoolean(KEY_WHITE_FONT, false),
+            safeVisuals = prefs.getBoolean(KEY_SAFE_VISUALS, false),
+            // Coerced on read for the same reason as the beat settings above:
+            // a stored value outside the slider's range would leave the thumb
+            // and the number disagreeing with what the renderer is using.
+            maxFlashHz =
+                prefs
+                    .getFloat(KEY_MAX_FLASH_HZ, dev.musicviz.render.VisualSafety.WCAG_FLASHES_PER_SECOND)
+                    .coerceIn(1f, dev.musicviz.render.VisualSafety.DEFAULT_STROBE_HZ),
+            maxFlashDepth = prefs.getFloat(KEY_MAX_FLASH_DEPTH, 0.25f).coerceIn(0f, 1f),
+            allowInversion = prefs.getBoolean(KEY_ALLOW_INVERSION, false),
+            reducedMotion = prefs.getBoolean(KEY_REDUCED_MOTION, false),
         )
 
     fun saveGui(gui: GuiPrefs) {
@@ -297,6 +344,11 @@ class ThemeStore(
             .putBoolean(KEY_FOLLOW_DARK, gui.followSystemDark)
             .putBoolean(KEY_CLEAR_VIZ_MENU, gui.clearVisualsMenu)
             .putBoolean(KEY_WHITE_FONT, gui.whiteFont)
+            .putBoolean(KEY_SAFE_VISUALS, gui.safeVisuals)
+            .putFloat(KEY_MAX_FLASH_HZ, gui.maxFlashHz)
+            .putFloat(KEY_MAX_FLASH_DEPTH, gui.maxFlashDepth)
+            .putBoolean(KEY_ALLOW_INVERSION, gui.allowInversion)
+            .putBoolean(KEY_REDUCED_MOTION, gui.reducedMotion)
             .apply()
     }
 
@@ -312,5 +364,10 @@ class ThemeStore(
         const val KEY_CLEAR_VIZ_MENU = "gui_clear_visuals_menu"
         const val KEY_WHITE_FONT = "gui_white_font"
         const val KEY_BEAT_INTERVAL = "beat_min_interval_ms"
+        const val KEY_SAFE_VISUALS = "gui_safe_visuals"
+        const val KEY_MAX_FLASH_HZ = "gui_max_flash_hz"
+        const val KEY_MAX_FLASH_DEPTH = "gui_max_flash_depth"
+        const val KEY_ALLOW_INVERSION = "gui_allow_inversion"
+        const val KEY_REDUCED_MOTION = "gui_reduced_motion"
     }
 }

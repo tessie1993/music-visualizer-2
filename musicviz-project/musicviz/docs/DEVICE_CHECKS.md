@@ -513,3 +513,51 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     same replay and both used to stall. Confirm the beat behaviour itself
     is unchanged at the default settings — this was a cost fix, and the
     headless gate pins the decisions as byte-identical.
+
+39. Visual safety (v1.1.x) — Settings > Visual safety. Read the WARNING at
+    the end of this item before running the "off" half.
+    OFF IS UNCHANGED — with both switches off, everything must look exactly
+    as it did before this feature existed. Compare a preset with strobe and
+    flash turned up against the previous build: identical rate, identical
+    depth. This is the property the headless gate pins (the clamp returns the
+    same object instance when neutral), but it is worth one eyeball.
+    RATE, NOT JUST DEPTH — this is the point of the change. Load a preset with
+    "Strobe" at maximum. With Safe visuals OFF the whole frame flickers about
+    nine times a second. Turn Safe visuals ON: it must visibly SLOW to about
+    three, not merely get dimmer. A dimmer 9 Hz flicker means `uStrobeHz` is
+    not reaching the shader — check that both the live path and an export
+    changed, since they upload it from different files.
+    BEAT FLASH — set "Beat flash" high and play something fast (170 BPM+).
+    With Safe visuals on, flashes must be capped at the "Maximum flashes per
+    second" setting; Settings > Visuals & Analysis will show the minimum gap
+    between beats has been floored to match. Drop the flash-rate slider to
+    1 Hz and confirm the flashing slows further.
+    THE MODULATION PATH — Visuals > Customize > Mod: set LFO 1 to target
+    Brightness, wave SQUARE, and drive its rate as high as it will go (use
+    beat-sync at 1/16 on a fast track, or chain LFO 1 -> LFO 2 rate, to get
+    past the 8 Hz slider limit). With Safe visuals OFF this is the harshest
+    flash the app can make. With it ON the oscillation must slow to the flash
+    limit while keeping its shape. Repeat with Intensity, and confirm a
+    Rotation-targeted LFO is NOT slowed (that is motion, not flashing).
+    RANDOMIZER — press Randomize twenty times with Safe visuals on, on a loud
+    track. Nothing in any roll may produce a fast full-screen flash. This is
+    the realistic path to a dangerous frame, since the randomizer can roll
+    strobe, flash, glitch, invert and an LFO onto brightness.
+    TRANSITIONS — set the transition style to Cut. With Safe visuals on,
+    scene and preset changes must crossfade instead of snapping. Turning
+    safety back off must restore Cut (the stored choice is not overwritten).
+    INVERT — with Safe visuals on and "Allow invert and solarize" off, the
+    Invert and Solarize checkboxes must have no visible effect. Turning that
+    sub-switch on restores them while the rate and depth limits still hold.
+    REDUCED MOTION — independent of the above. On its own it must slow
+    movement, shake, drift and rotation and leave flashing exactly as it was.
+    EXPORT PARITY — the one that matters most. With Safe visuals on, export
+    ~20 s of a track whose preset has strobe and flash up, and play the clip
+    next to live playback. The clip must be as slow and as shallow as the
+    screen was. An export that flashes harder than the screen is the failure
+    this whole file exists to catch, and it has its own risk here because the
+    live and export paths clamp in two different files.
+    WARNING: the "Safe visuals OFF" comparisons in this item deliberately
+    produce fast full-screen flashing. Do not run them if you are
+    photosensitive, and do not hand this checklist to someone else to run
+    without saying so.

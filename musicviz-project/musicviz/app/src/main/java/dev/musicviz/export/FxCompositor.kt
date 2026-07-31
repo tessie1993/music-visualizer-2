@@ -351,6 +351,10 @@ internal class FxCompositor(
         rippleTexelH: Float = 0f,
         rippleStrength: Float = 0f,
         rippleSpecular: Float = 0f,
+        /** `uStrobeHz`; see `VisualSafety.strobeHz`. The default is the rate
+         *  that used to be a literal in the shader, so an export with safety
+         *  off is unchanged. */
+        strobeHz: Float = dev.musicviz.render.VisualSafety.DEFAULT_STROBE_HZ,
     ) {
         // Rotation and the colour cycle are SPEEDS: integrate them on the
         // export's own clock, once per exported frame, exactly as the live
@@ -400,6 +404,7 @@ internal class FxCompositor(
         GLES30.glUniform1f(loc("uGlitch"), params.glitch)
         GLES30.glUniform1f(loc("uFisheye"), params.fisheye)
         GLES30.glUniform1f(loc("uStrobe"), params.strobe)
+        GLES30.glUniform1f(loc("uStrobeHz"), strobeHz)
         GLES30.glUniform1f(loc("uPostWarp"), params.warp)
         GLES30.glUniform1f(loc("uPostRipple"), params.ripple)
         GLES30.glUniform1f(loc("uPostSymmetry"), params.symmetry.toFloat())

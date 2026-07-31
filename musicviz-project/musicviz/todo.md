@@ -561,6 +561,65 @@ real classes (the Android build cannot resolve its plugins offline).
       `FluidChoreography`, `CurlFlowScene`), so it wants a device check on
       real material, not a headless argument.
 
+## Visual safety (v1.1.x) — photosensitivity limits
+From docs/FEATURE_AUDIT.md's recommendation to move this ahead of the rest of
+the new brief. Settings > Visual safety; `render/VisualSafety.kt`, pinned by
+`VisualSafetyTest`. Device check 39.
+
+- [x] **Nothing bounded the flashing paths.** An audit of every strobe/flash/
+      invert path found zero clamps anywhere in the tree. Three were reachable
+      without doing anything unusual: `strobe` ran a **9 Hz** full-frame square
+      wave at up to 85% depth with the RATE hard-coded in
+      `composite_frag.glsl` (so "less strobe" only ever meant a dimmer 9 Hz
+      flicker); `flash` fires once per beat, so its rate is the track's and
+      nothing capped it; and an LFO can target `BRIGHTNESS`/`INTENSITY` at up
+      to **30 Hz** — which `ParamRandomizer` can roll. 9-30 Hz is the band
+      photosensitive-seizure guidance is about.
+- [x] `VisualSafety.apply` runs LAST, after `LfoEngine.apply` and
+      `AdsrEngine.apply`, at the two-line idiom both paths already share
+      (`VisualizerRenderer` and `VideoExporter`). Clamping the stored params
+      instead would be bypassed — the modulators push those values straight
+      back up to their own ceilings afterwards.
+- [x] Rate is capped, not just depth: new `uStrobeHz` uniform (defaults to the
+      old literal 9.0, uploaded by BOTH the renderer and `FxCompositor`);
+      `LfoEngine.tick` takes the config and slows any LFO pointed at a
+      luminance target; the analyzer's minimum beat gap is floored so the
+      beat-driven flash cannot outrun the limit; a hard `CUT` transition
+      becomes a crossfade.
+- [x] Thresholds follow WCAG 2.3.1 — three flashes per second, risk peaking
+      around 15-20 Hz — with the rate, the depth and inversion all separately
+      adjustable, plus an independent Reduced motion switch (vestibular
+      comfort is a different problem from seizures and the two settings say
+      so).
+- [x] Disabled is an EXACT no-op: `apply` returns the same instance, not an
+      equal copy, so saved presets and the export byte-parity tests are
+      untouched. Pinned by `assertSame`.
+
+- [ ] **DECISION FOR THE USER: should Safe visuals default ON?** It ships OFF,
+      matching this codebase's rule that optional visual additions are exact
+      no-ops so nobody's saved work changes on upgrade. But the asymmetry runs
+      the other way for a safety setting: defaulting off risks a seizure,
+      defaulting on risks tamer visuals until someone flips a switch. The real
+      answer is probably neither — ask during first-run onboarding, which does
+      not exist yet (see FEATURE_AUDIT.md). Until it does, this is a product
+      call, not one to make silently inside a clamp function.
+- [ ] `solar_frag.glsl:140` has an unconditional 9 Hz flicker
+      (`0.9 + 0.1*sin(uTime*9.0 + r*20.0)*uTreble`) with no param gate, so the
+      clamp cannot reach it. Left alone deliberately: its depth is ±10% at
+      most, weighted by treble, over the sun's disc rather than the full frame
+      — well under the "large area, ≥10% luminance change" the guidance is
+      about, and gating it means plumbing a uniform through all twenty shader
+      scenes for a shimmer. Revisit if the sun ever fills the screen.
+- [ ] Two built-in presets ship values this mode exists to bound —
+      `BuiltInPresets.kt` has one at `strobe = 0.5, flash = 0.6`. They are
+      still safe to ship (safety mode clamps them like anything else), but
+      they are the presets most likely to be the first thing a new user opens.
+      Worth a look at whether the shipped defaults should be that hot.
+- [ ] `LfoStore.kt` loads `rateHz` with no `coerceIn`, so a hand-edited or
+      migrated store can hold a rate outside the slider's range. The safety
+      cap covers the luminance targets; the general range guard is still
+      missing.
+
 ## Always
 - [ ] Update docs (NAVIGATION.md, WIREFRAME.md, PARAM_MATRIX.md) when
       behavior changes; keep README changelog per round.

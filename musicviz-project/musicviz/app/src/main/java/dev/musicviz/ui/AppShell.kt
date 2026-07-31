@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.musicviz.analysis.FeatureExtractor
 import dev.musicviz.analysis.SearchMatcher
+import dev.musicviz.render.VisualSafety
 import dev.musicviz.render.VisualizerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -645,6 +646,95 @@ fun SettingsScreen(
             }
         }
         item {
+            // Its own section, above the creative controls, because it is the
+            // one settings group a user may be looking for before they let the
+            // app draw anything at all.
+            SettingsSection("Visual safety") {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Safe visuals", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Switch(
+                            checked = gui.safeVisuals,
+                            onCheckedChange = { viewModel.setGuiPrefs(gui.copy(safeVisuals = it)) },
+                        )
+                    }
+                    Text(
+                        "Limits how fast and how strongly the whole screen can flash: caps the strobe and " +
+                            "beat flash, holds brightness and contrast near neutral, turns hard scene cuts into " +
+                            "crossfades, and slows any modulation aimed at brightness. Recommended if you or " +
+                            "anyone watching is sensitive to flashing light.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (gui.safeVisuals) {
+                    Column {
+                        Text(
+                            "Maximum flashes per second  ${"%.1f".format(gui.maxFlashHz)} Hz" +
+                                if (gui.maxFlashHz <= VisualSafety.WCAG_FLASHES_PER_SECOND) "  (within guidance)" else "",
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        Slider(
+                            value = gui.maxFlashHz,
+                            onValueChange = { viewModel.setGuiPrefs(gui.copy(maxFlashHz = it)) },
+                            valueRange = 1f..VisualSafety.DEFAULT_STROBE_HZ,
+                        )
+                        Text(
+                            "Published guidance (WCAG 2.3.1) puts the general limit at three per second; the " +
+                                "risk is highest between about 15 and 20. Without this the strobe runs at 9.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            "Maximum flash strength  ${(gui.maxFlashDepth * 100).roundToInt()}%" +
+                                if (gui.maxFlashDepth <= 0f) "  (no flashing at all)" else "",
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        Slider(
+                            value = gui.maxFlashDepth,
+                            onValueChange = { viewModel.setGuiPrefs(gui.copy(maxFlashDepth = it)) },
+                            valueRange = 0f..1f,
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Allow invert and solarize",
+                                Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Switch(
+                                checked = gui.allowInversion,
+                                onCheckedChange = { viewModel.setGuiPrefs(gui.copy(allowInversion = it)) },
+                            )
+                        }
+                        Text(
+                            "These reverse the whole frame at once. Off is safer; on keeps them available if " +
+                                "you turned Safe visuals on for the flash-rate limits alone.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Reduced motion", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Switch(
+                            checked = gui.reducedMotion,
+                            onCheckedChange = { viewModel.setGuiPrefs(gui.copy(reducedMotion = it)) },
+                        )
+                    }
+                    Text(
+                        "Slows movement, shake, drift and rotation. Separate from Safe visuals: this one is " +
+                            "about motion comfort rather than flashing, and either can be used on its own.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    "Both settings apply to exported video as well as the screen.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             SettingsSection("Visuals & Analysis") {
                 Column {
                     Text("Preset morph: ${gui.morphBeats} beats (0 = snap)")

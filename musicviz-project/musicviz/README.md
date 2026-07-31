@@ -1,3 +1,60 @@
+## v1.2.0 (code 26) - Visual safety (photosensitivity limits), and the pulse tracker stops carrying one track's beat grid into the next
+
+- **Safe visuals** (Settings > Visual safety), the first photosensitivity
+  controls in the app. An audit of every flashing path found no clamps
+  anywhere in the tree, and three hazards reachable without doing anything
+  unusual: `strobe` ran a **9 Hz** full-frame square wave at up to 85% depth
+  with the rate HARD-CODED in composite_frag.glsl (so turning the slider down
+  only ever gave a dimmer 9 Hz flicker, never a slower one); `flash` fires
+  once per detected beat, so its rate is the track's and nothing capped it;
+  and an LFO can drive `BRIGHTNESS`/`INTENSITY` at up to **30 Hz** - which the
+  Randomize button can roll. 9-30 Hz is the band photosensitive-seizure
+  guidance is about.
+- Thresholds follow WCAG 2.3.1: three flashes per second, risk peaking around
+  15-20 Hz. Rate, depth and inversion are separately adjustable, and Reduced
+  motion is an independent switch because vestibular comfort and seizures are
+  different problems.
+- Rate is capped, not just depth. New `uStrobeHz` uniform (defaulting to the
+  old literal 9.0) uploaded by BOTH the renderer and FxCompositor;
+  `LfoEngine.tick` slows any LFO pointed at a luminance target; the analyzer's
+  minimum beat gap is floored so the beat flash cannot outrun the limit; a
+  hard CUT transition becomes a crossfade.
+- `VisualSafety.apply` runs LAST, after LfoEngine/AdsrEngine, at the two-line
+  idiom the live and export paths already shared. Clamping the stored params
+  instead would be bypassed - the modulators push those values straight back
+  up to their own ceilings afterwards. Both paths clamp identically, so an
+  exported clip is as safe as the screen it was approved from.
+- Turned OFF it is an EXACT no-op: the clamp returns the same object instance,
+  not an equal copy, so saved presets and the export byte-parity tests are
+  untouched. It ships off; whether it should default on is an onboarding
+  question recorded in todo.md.
+- **Beat tracking now restarts between tracks and on seeks.** AnalysisEngine
+  holds one FeatureExtractor for the whole session, so a locked beat grid, the
+  30 s rolling energy peak and the flux history all carried into the next
+  track - the old grid then suppressed the new track's kicks as off-grid. On a
+  128 -> 75 BPM change that was 1 beat in the first five seconds where a cold
+  extractor finds 6, graded at 0.208 against 0.739: the visualizer started
+  every song nearly deaf and faded in over ~15 s. It also broke export parity,
+  since the offline replay always starts cold while live playback did not.
+  The engine resets through a volatile flag consumed by its worker loop, not
+  directly - the extractor is owned by that coroutine and player callbacks
+  arrive on the main thread.
+- **The beat-sensitivity replay no longer stalls.** It ran the tempo
+  autocorrelation on every frame - O(lags x window), ~1.5 s for a four-minute
+  track - on the path that runs at cached-track load, on every sensitivity
+  slider settle and before every export. It now refreshes every eight frames
+  (~128 ms) and reads a chronological copy of the flux window instead of two
+  modulos per term: ~1460 ms -> ~61 ms. Every time constant that depended on
+  the per-frame cadence is rescaled, so beat decisions are byte-identical
+  across four fixtures x four settings.
+- Docs corrected where they disagreed with the code: `beatStrength`'s real
+  floor is 0.168, not the documented 0.35; ADSR attack and beat-edge splat
+  firing are deliberately ungraded rather than moved to `beatImpulse`; and
+  ExportGradeState's KDoc named the wrong field. Two tests that could not fail
+  were tightened.
+- Device checks 37-39. NOTE check 39's "Safe visuals off" comparisons
+  deliberately produce fast full-screen flashing.
+
 ## v0.14.0 (code 24) - Customization actually works on every style: composite grading for the fluid family, palette maker, one randomizer
 - Composite grading + geometry for the styles that grade NOTHING themselves
   (Fluid, Curl Flow, Water): composite_frag gains uPostZoom/uPostRotation/

@@ -110,6 +110,9 @@ class VideoExporter(
         sceneParams: SceneParams,
         lfoConfigs: List<dev.musicviz.render.LfoConfig> = emptyList(),
         adsrConfigs: List<dev.musicviz.render.AdsrConfig> = emptyList(),
+        /** Photosensitivity limits, mirroring the live renderer's clamp. */
+        safety: dev.musicviz.render.VisualSafety.SafetyConfig =
+            dev.musicviz.render.VisualSafety.SafetyConfig.OFF,
         requestedFps: Int = FPS,
         destination: Uri? = null,
         onProgress: (Float) -> Unit,
@@ -129,6 +132,7 @@ class VideoExporter(
                     sceneParams,
                     lfoConfigs,
                     adsrConfigs,
+                    safety,
                     requestedFps,
                     onProgress,
                     isCancelled,
@@ -163,6 +167,7 @@ class VideoExporter(
                         sceneParams,
                         lfoConfigs,
                         adsrConfigs,
+                        safety,
                         requestedFps,
                         onProgress,
                         isCancelled,
@@ -195,6 +200,7 @@ class VideoExporter(
         sceneParams: SceneParams,
         lfoConfigs: List<dev.musicviz.render.LfoConfig>,
         adsrConfigs: List<dev.musicviz.render.AdsrConfig>,
+        safety: dev.musicviz.render.VisualSafety.SafetyConfig,
         requestedFps: Int,
         onProgress: (Float) -> Unit,
         isCancelled: () -> Boolean,
@@ -212,6 +218,7 @@ class VideoExporter(
                     sceneParams,
                     lfoConfigs,
                     adsrConfigs,
+                    safety,
                     requestedFps,
                     onProgress,
                     isCancelled,
@@ -238,6 +245,7 @@ class VideoExporter(
         sceneParams: SceneParams,
         lfoConfigs: List<dev.musicviz.render.LfoConfig>,
         adsrConfigs: List<dev.musicviz.render.AdsrConfig>,
+        safety: dev.musicviz.render.VisualSafety.SafetyConfig,
         requestedFps: Int,
         onProgress: (Float) -> Unit,
         isCancelled: () -> Boolean,
@@ -389,13 +397,19 @@ class VideoExporter(
                 val (envRate, envDepth) =
                     dev.musicviz.render.AdsrEngine
                         .lfoOffsets(adsrEngine.configs, envValues)
-                val lfoValues = lfoEngine.tick(1f / fps, features.bpm, envRate, envDepth)
+                val lfoValues = lfoEngine.tick(1f / fps, features.bpm, envRate, envDepth, safety)
                 var p =
                     dev.musicviz.render.LfoEngine
                         .apply(sceneParams, lfoEngine.configs, lfoValues)
                 p =
                     dev.musicviz.render.AdsrEngine
                         .apply(p, adsrEngine.configs, envValues)
+                // Mirrors VisualizerRenderer's third line: the photosensitivity
+                // clamp runs after every modulator, so a rendered clip is as
+                // safe as the screen the user approved it from. If these two
+                // ever diverge, an export becomes the one place the limits do
+                // not apply.
+                p = dev.musicviz.render.VisualSafety.apply(p, safety)
                 scene.setParams(p)
                 scene.update(
                     dev.musicviz.render.scene
@@ -488,6 +502,7 @@ class VideoExporter(
                     rippleTexelH = if (rippleTex != 0 && rippleOverlay != null) rippleOverlay.texelH else 0f,
                     rippleStrength = if (rippleTex != 0) p.rippleOverlayStrength.coerceIn(0f, 1f) else 0f,
                     rippleSpecular = if (rippleTex != 0) p.rippleOverlaySpecular.coerceIn(0f, 1f) else 0f,
+                    strobeHz = dev.musicviz.render.VisualSafety.strobeHz(safety),
                 )
                 egl.setPresentationTimeNs(frame * frameDurationNs)
                 egl.swapBuffers()

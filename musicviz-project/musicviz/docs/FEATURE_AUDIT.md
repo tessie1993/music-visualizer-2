@@ -65,12 +65,14 @@ Ordered by how much it costs to close, cheapest first within each block.
   `POST_NOTIFICATIONS`, `WAKE_LOCK` — none currently declared.
 
 **Cheap and high-value (do next):**
-- **Photosensitivity / "Safe visuals".** There is *nothing* here today, and
-  the app ships `strobe`, `flash`, `glitch` and full-screen invert as creative
-  parameters. For a strobing visualizer this is both an accessibility duty and
-  a Play Store content concern, and it is a clamp on a handful of existing
-  params plus a settings toggle — not new rendering. This is the most
-  underrated item on the brief's list.
+- ~~**Photosensitivity / "Safe visuals".**~~ **DONE** (v1.1.x) — see todo.md
+  and device check 39. The audit that closed it found the situation was worse
+  than "nothing here": `strobe` ran a 9 Hz full-frame square wave with the
+  rate hard-coded in the shader, `flash` fired once per beat with no rate cap,
+  and an LFO could drive brightness at 30 Hz — reachable by pressing
+  Randomize. `render/VisualSafety.kt` now bounds rate as well as depth, on
+  both the live and export paths. Still open: whether it should default ON,
+  which is really an onboarding question (below).
 - **Queue editing.** `playNext`/`enqueue` exist; reorder and remove do not
   (no `moveMediaItem`/`removeMediaItem` call anywhere). Worth noting:
   `LibraryScreen.kt:282` already tells the user to "build a queue in Now

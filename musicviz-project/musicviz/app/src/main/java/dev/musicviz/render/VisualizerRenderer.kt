@@ -76,6 +76,14 @@ class VisualizerRenderer(
     @Volatile
     var sceneParams: SceneParams = SceneParams.DEFAULT
 
+    /**
+     * Photosensitivity limits, from Settings. Applied after every modulator in
+     * [onDrawFrame] and mirrored by `FxCompositor` so an exported clip is as
+     * safe as the screen was; [VisualSafety.SafetyConfig.OFF] changes nothing.
+     */
+    @Volatile
+    var safety: VisualSafety.SafetyConfig = VisualSafety.SafetyConfig.OFF
+
     /** Smoothed params actually shown; fades toward [sceneParams] over paramFadeSec. */
     private var displayedParams: SceneParams = SceneParams.DEFAULT
 
@@ -603,9 +611,14 @@ class VisualizerRenderer(
         // offsets must exist before the LFOs tick.
         val envValues = adsrEngine.tick(dt, features)
         val (envRate, envDepth) = AdsrEngine.lfoOffsets(adsrEngine.configs, envValues)
-        val lfoValues = lfoEngine.tick(dt, features.bpm, envRate, envDepth)
+        val lfoValues = lfoEngine.tick(dt, features.bpm, envRate, envDepth, safety)
         var p = LfoEngine.apply(displayedParams, lfoEngine.configs, lfoValues)
         p = AdsrEngine.apply(p, adsrEngine.configs, envValues)
+        // LAST, after every modulator: a safe stored value is worth nothing if
+        // an LFO or envelope can push it back into the hazardous range, so the
+        // photosensitivity clamp sees the numbers the scenes actually get.
+        // An exact no-op (same instance) while Safe visuals is off.
+        p = VisualSafety.apply(p, safety)
         lastFinalParams = p
         postRotationAngle = CompositeGrade.integrateRotation(postRotationAngle, p.rotation, dt)
         postCyclePhase = CompositeGrade.integrateCyclePhase(postCyclePhase, p.cycleSpeed, dt, p.colorCycle)
@@ -771,6 +784,7 @@ class VisualizerRenderer(
         GLES30.glUniform1f(cLoc("uGlitch"), fx.glitch)
         GLES30.glUniform1f(cLoc("uFisheye"), fx.fisheye)
         GLES30.glUniform1f(cLoc("uStrobe"), fx.strobe)
+        GLES30.glUniform1f(cLoc("uStrobeHz"), VisualSafety.strobeHz(safety))
         // Universal geometric + color effects for scenes whose own pipeline
         // can't honor them (particles, milkdrop, the fluid family). Every
         // uPost* below is uploaded RAW; which groups actually run is decided

@@ -329,7 +329,7 @@ class PlayerViewModel(
 
     init {
         engine.beatThresholdSigma = _guiPrefs.value.beatThresholdSigma
-        engine.beatMinIntervalMs = _guiPrefs.value.beatMinIntervalMs
+        engine.beatMinIntervalMs = _guiPrefs.value.effectiveBeatMinIntervalMs
         // Apply the restored reactivity to the engine (setReactivity normally
         // does this, but the restored values arrive outside that path).
         engine.smoother.attack = _vizState.value.attack
@@ -343,10 +343,13 @@ class PlayerViewModel(
         themeStore.saveGui(prefs)
         _guiPrefs.value = prefs
         engine.beatThresholdSigma = prefs.beatThresholdSigma
-        engine.beatMinIntervalMs = prefs.beatMinIntervalMs
+        // Safe visuals floors the gap between beats, because `flash` fires
+        // once per beat and no visual slider governs how often that is.
+        engine.beatMinIntervalMs = prefs.effectiveBeatMinIntervalMs
         val sensitivityChanged =
             previous.beatThresholdSigma != prefs.beatThresholdSigma ||
-                previous.beatMinIntervalMs != prefs.beatMinIntervalMs
+                previous.beatMinIntervalMs != prefs.beatMinIntervalMs ||
+                previous.safety != prefs.safety
         if (sensitivityChanged) redecideCachedBeats(prefs)
     }
 
@@ -365,11 +368,11 @@ class PlayerViewModel(
         beatRedecideJob =
             viewModelScope.launch(Dispatchers.Default) {
                 delay(120)
-                val updated = base.withBeatSensitivity(prefs.beatThresholdSigma, prefs.beatMinIntervalMs)
+                val updated = base.withBeatSensitivity(prefs.beatThresholdSigma, prefs.effectiveBeatMinIntervalMs)
                 val now = _guiPrefs.value
                 val stillCurrent =
                     now.beatThresholdSigma == prefs.beatThresholdSigma &&
-                        now.beatMinIntervalMs == prefs.beatMinIntervalMs
+                        now.effectiveBeatMinIntervalMs == prefs.effectiveBeatMinIntervalMs
                 if (stillCurrent && currentUri == uri) timeline = updated
             }
     }
@@ -1324,13 +1327,13 @@ class PlayerViewModel(
         val app = getApplication<Application>()
         val gui = _guiPrefs.value
         dev.musicviz.analysis.AnalysisCache
-            .load(app, uri, gui.beatThresholdSigma, gui.beatMinIntervalMs)
+            .load(app, uri, gui.beatThresholdSigma, gui.effectiveBeatMinIntervalMs)
             ?.let {
                 onProgress(1f)
                 return it
             }
         return offlineAnalyzer
-            .analyze(uri, gui.beatThresholdSigma, gui.beatMinIntervalMs, onProgress)
+            .analyze(uri, gui.beatThresholdSigma, gui.effectiveBeatMinIntervalMs, onProgress)
             .also {
                 dev.musicviz.analysis.AnalysisCache
                     .save(app, uri, it)
@@ -1767,7 +1770,7 @@ class PlayerViewModel(
             val gui = _guiPrefs.value
             viewModelScope.launch(Dispatchers.IO) {
                 dev.musicviz.analysis.AnalysisCache
-                    .load(getApplication<Application>(), uri, gui.beatThresholdSigma, gui.beatMinIntervalMs)
+                    .load(getApplication<Application>(), uri, gui.beatThresholdSigma, gui.effectiveBeatMinIntervalMs)
                     ?.let { t ->
                         if (currentUri == uri) {
                             timeline = t
@@ -1997,7 +2000,13 @@ class PlayerViewModel(
                     // differently from the playback the user just watched is
                     // the whole bug this guards against.
                     val gui = _guiPrefs.value
-                    val t = analysed.withBeatSensitivity(gui.beatThresholdSigma, gui.beatMinIntervalMs)
+                    val t =
+                        analysed.withBeatSensitivity(
+                            gui.beatThresholdSigma,
+                            // Same floor the live engine runs under, or an
+                            // export would flash faster than the screen did.
+                            gui.effectiveBeatMinIntervalMs,
+                        )
                     // Publish the section context the exporter is about to
                     // journey through, so live playback of the same track
                     // re-seats identically from now on (journey parity even
@@ -2016,6 +2025,7 @@ class PlayerViewModel(
                             sceneParams = _vizState.value.params,
                             lfoConfigs = _lfos.value,
                             adsrConfigs = _adsrs.value,
+                            safety = gui.safety,
                             requestedFps = fps,
                             destination = destination,
                             onProgress = { p ->
