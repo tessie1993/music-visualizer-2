@@ -65,7 +65,7 @@ class HistoryStore(
                         .put("title", e.title),
                 )
             }
-            file.writeText(arr.toString())
+            AtomicWrite.text(file, arr.toString())
         }
     }
 }

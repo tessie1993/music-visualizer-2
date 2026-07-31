@@ -47,7 +47,7 @@ class PaletteStore(
     /** Writes [palette] (clamped and re-keyed) and returns the value actually stored. */
     fun save(palette: CustomPalette): CustomPalette {
         val clean = sanitized(palette)
-        File(dir, clean.id + ".json").writeText(toJson(clean))
+        AtomicWrite.text(File(dir, clean.id + ".json"), toJson(clean))
         return clean
     }
 

@@ -112,7 +112,9 @@ class TrackLibrary(
     }
 
     private fun write(tracks: List<LibraryTrack>) {
-        runCatching { file.writeText(serialize(tracks)) }
+        // AtomicWrite reports failure rather than throwing, so the runCatching
+        // this replaced has nothing left to catch.
+        AtomicWrite.text(file, serialize(tracks))
     }
 
     companion object {

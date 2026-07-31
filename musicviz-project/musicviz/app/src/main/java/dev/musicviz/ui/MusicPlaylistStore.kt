@@ -28,7 +28,7 @@ class MusicPlaylistStore(
             .orEmpty()
 
     fun save(playlist: MusicPlaylist) {
-        File(dir, sanitize(playlist.name) + ".json").writeText(toJson(playlist))
+        AtomicWrite.text(File(dir, sanitize(playlist.name) + ".json"), toJson(playlist))
     }
 
     fun delete(name: String) {
