@@ -205,8 +205,9 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     "Beat sensitivity does not reach the offline analyzer".
 27. Randomize locks + Customize labels (v0.14.0): open Visuals >
     Customize. Every control must show a "lock"/"locked" affordance,
-    INCLUDING the chip selectors — Palette, Palette 2 (visible once
-    Palette blend > 0), Particle shape (Shape tab), and Beat pattern /
+    INCLUDING the chip selectors — Palette, Palette 2 (on a SHADER style
+    only, and only once Palette blend > 0 — see check 29), Particle shape
+    (Shape tab), and Beat pattern /
     Path (Fluid tab, on a fluid style). Lock Palette, pick a palette you
     like — including a user-made one from the palette maker — then press
     "⚄ Randomize unlocked" ten times: the palette and its gradient must
@@ -246,3 +247,50 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     not a bug to file (PARAM_MATRIX note 5). Leave FLUID at Audio drive
     2.5 for a minute and watch the frame rate: no auto-quality downgrade
     spiral, no NaN/black frame.
+29. Shape/Color controls only where they work (v1.1.0): the rule is "if
+    you can see it, it works". Pick a SHADER style (Visuals > Styles >
+    Shaders > julia). Customize > Shape must show "Morph"; drag it and
+    the pattern must fold toward polar. Customize > Color must show
+    "Palette blend"; raise it above 0 and a "Palette 2" chip row must
+    appear underneath, and picking a second palette must visibly mix.
+    "Duotone" (Color > Effects) must be there and must flatten the image
+    onto the palette. Now switch to a PARTICLE style (nebula), then
+    MilkDrop, then each fluid style (fluid, curlflow, water): on all of
+    them "Morph", "Palette blend", "Palette 2" and "Duotone" must be
+    GONE — no greyed rows, no empty gaps, and the sections around them
+    ("Distortion", "Palettes", "Effects") must still read as complete
+    lists. Everything else in those two tabs must stay visible AND keep
+    working on every style: Domain warp, Ripple, Twist, Kaleidoscope +
+    Folds, Tile, Pixelate, Posterize, Palette, the gradient/palette
+    maker, Hue shift, Hue range, Color cycle, Saturation, Brightness,
+    Contrast, Gamma, Intensity, Temperature, Bloom, Solarize, Invert —
+    move each one on a particle style and confirm it bites. Switch back
+    to julia: the four must return with the values they had. Finally,
+    save a preset on julia with Morph high, Palette blend 0.5 and
+    Duotone on, switch to nebula, re-apply it (no visible change is
+    correct there), switch back to julia and re-apply: the look must
+    come back intact — hiding a control must never drop its value.
+31. "Beat pulse" on the styles that never read it: play a track with a
+    clear kick and open Visuals > Customize > Motion. On FLUID, CURL
+    FLOW, WATER and on a live MilkDrop preset, drag "Beat pulse" from 0
+    to 1 — the whole frame must now swell on each beat (a zoom-in of a
+    few percent that falls away in about a third of a second) and settle
+    back to still when the slider returns to 0. Before this change the
+    slider did nothing at all on those four. Check the swell is centred:
+    the middle of the screen must not drift while it pulses. Then set
+    Zoom well above 1 on a fluid style and pulse again — the two must
+    compound (pulse on top of the zoom), not fight.
+    REGRESSION SIDE — on a shader style (julia/plasma) and on a particle
+    style the slider must feel EXACTLY as before: those pulse in their
+    own pipeline (uPulse / a point-size swell) and are excluded from the
+    composite pulse, so a doubled swell — roughly twice the magnification
+    on a shader style, or particles that both grow AND zoom — means the
+    exclusion set is wrong. Note MilkDrop is excluded from the composite
+    GRADING block but deliberately NOT from this one.
+    EXPORT SIDE — with "Beat pulse" at ~0.8 on a fluid style and again
+    on a MilkDrop preset, record a ~10 s clip and play the mp4 next to
+    the live view: the swells must land on the same beats and be the
+    same depth. Record the same settings at 30 fps and at 60 fps — the
+    decay must look identical in both files; a 30 fps clip whose pulses
+    hang around twice as long means the envelope is not running on the
+    export's own frame delta.
