@@ -7,30 +7,26 @@ import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
 import dev.musicviz.analysis.AnalysisEngine
 import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.analysis.AudioQualityInfo
 import dev.musicviz.analysis.FeatureTimeline
 import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.analysis.OfflineAnalyzer
-import dev.musicviz.analysis.PlaybackMath
 import dev.musicviz.analysis.SceneSuggester
-import dev.musicviz.audio.AudioFxController
 import dev.musicviz.audio.AudioFxState
-import dev.musicviz.audio.PcmRingBuffer
-import dev.musicviz.audio.PcmTapSink
-import dev.musicviz.audio.TapRenderersFactory
 import dev.musicviz.export.ExportAspect
 import dev.musicviz.export.VideoExporter
+import dev.musicviz.playback.PlaybackEngine
+import dev.musicviz.playback.PlaybackService
+import dev.musicviz.playback.PlaybackSnapshot
+import dev.musicviz.render.SwitchTiming
 import dev.musicviz.render.TransitionStyle
 import dev.musicviz.render.scene.ParamRandomizer
 import dev.musicviz.render.scene.PcmChunk
@@ -44,24 +40,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-data class PlayerUiState(
-    val isPlaying: Boolean = false,
-    val positionMs: Long = 0,
-    val durationMs: Long = 0,
-    val title: String? = null,
-    val artist: String? = null,
-    val hasMedia: Boolean = false,
-    val queueSize: Int = 0,
-    val queueIndex: Int = 0,
-    val shuffle: Boolean = false,
-    val repeatMode: Int = Player.REPEAT_MODE_OFF,
-)
+// The transport state the screens render is now [PlaybackSnapshot], declared
+// next to the player it is sampled from. Screens reach it through [uiState]
+// and never name the type, so nothing outside this file changed.
 
 data class VizUiState(
     val sceneId: String = SceneIds.NEBULA,
@@ -145,13 +134,14 @@ data class ExportUiState(
 )
 
 /**
- * Graded beat impulse a "switch on a musical moment" decision (intelligent
- * visual playlist, Random mode's switch-on-beat) treats as strong enough to
- * act on. Track-relative by construction - [AudioFeatures.beatImpulse] folds
- * in the macro-energy envelope - so this is "one of this song's bigger hits",
- * not an absolute loudness that quiet masters never reach.
+ * Shortest time the intelligent visual playlist will hold a look before a
+ * strong beat may replace it. Higher than Random mode's floor because a
+ * playlist is a sequence the user arranged, not a shuffle.
  */
-private const val STRONG_MOMENT_IMPULSE = 0.6f
+private const val VIZ_PLAYLIST_MIN_DWELL_MS = 8_000L
+
+/** Random mode's equivalent floor: it is meant to feel livelier. */
+private const val RANDOM_MODE_MIN_DWELL_MS = 6_000L
 
 /**
  * Owns playback (queue + audio focus + PCM tap), live analysis, offline
@@ -161,8 +151,17 @@ private const val STRONG_MOMENT_IMPULSE = 0.6f
 class PlayerViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
-    private val ring = PcmRingBuffer()
-    private val engine = AnalysisEngine(ring)
+    /**
+     * Playback (ExoPlayer + queue + PCM tap + sleep timer). Borrowed from
+     * [PlaybackEngine] rather than constructed: audio outlives this ViewModel,
+     * so a second one here would be a second player fighting the first.
+     *
+     * Declared first because [engine] analyses the PCM its tap captures. Its
+     * callbacks are wired in the init block below, not here, so nothing can
+     * fire against a half-constructed ViewModel.
+     */
+    private val playback = PlaybackEngine.acquireForUi(application)
+    private val engine = AnalysisEngine(playback.ring)
 
     // ---- Audio-quality readout ----
     // Combines the selected track's source Format (onTracksChanged) with the
@@ -238,11 +237,6 @@ class PlayerViewModel(
             )
     }
 
-    private val sink =
-        PcmTapSink(ring) { rate, channels, encoding ->
-            engine.sampleRateHz = rate
-            onTapFormat(rate, channels, encoding)
-        }
     private val offlineAnalyzer = OfflineAnalyzer(application)
     private val presetStore = PresetStore(application)
     private val trackLibrary = TrackLibrary(application)
@@ -252,34 +246,13 @@ class PlayerViewModel(
     private val lfoStore = LfoStore(application)
     private val musicPlaylists = MusicPlaylistStore(application)
     private val exporter = VideoExporter(application)
-    private val audioFxController = AudioFxController(application)
 
-    val player: ExoPlayer =
-        ExoPlayer
-            .Builder(application, TapRenderersFactory(application, sink))
-            // AIFF/AIFC support: Media3 ships no AIFF extractor, so ours is
-            // appended after the defaults (sniff order keeps defaults first).
-            .setMediaSourceFactory(
-                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
-                    application,
-                    androidx.media3.extractor.ExtractorsFactory {
-                        androidx.media3.extractor
-                            .DefaultExtractorsFactory()
-                            .createExtractors() +
-                            dev.musicviz.audio.AiffExtractor()
-                    },
-                ),
-            ).setAudioAttributes(
-                AudioAttributes
-                    .Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                true,
-            ).build()
+    // Also borrowed: the effects chain hangs off the player's audio session,
+    // so it has to live exactly as long as the player does.
+    private val audioFxController = PlaybackEngine.audioFx(application)
 
-    private val _uiState = MutableStateFlow(PlayerUiState())
-    val uiState: StateFlow<PlayerUiState> = _uiState
+    private val _uiState = MutableStateFlow(PlaybackSnapshot())
+    val uiState: StateFlow<PlaybackSnapshot> = _uiState
 
     private val _vizState = MutableStateFlow(restoreVizState())
     val vizState: StateFlow<VizUiState> = _vizState
@@ -337,6 +310,13 @@ class PlayerViewModel(
     private val _guiPrefs = MutableStateFlow(themeStore.loadGui())
 
     init {
+        // Wired here, not at construction: the tap fires these from the
+        // playback thread and they touch fields declared further down.
+        playback.onAudioFormat = { rate, channels, encoding ->
+            engine.sampleRateHz = rate
+            onTapFormat(rate, channels, encoding)
+        }
+        playback.mediaItemFactory = ::mediaItemFor
         engine.beatThresholdSigma = _guiPrefs.value.beatThresholdSigma
         engine.beatMinIntervalMs = _guiPrefs.value.effectiveBeatMinIntervalMs
         // Apply the restored reactivity to the engine (setReactivity normally
@@ -418,14 +398,12 @@ class PlayerViewModel(
 
     /** Pushes speed/pitch, skip-silence and noisy-handling onto the ExoPlayer. */
     private fun applyPlaybackPrefs(p: PlayerPrefs) {
-        player.playbackParameters = PlaybackParameters(p.speed, PlaybackMath.semitonesToRatio(p.pitchSemitones))
-        player.skipSilenceEnabled = p.skipSilence
-        player.setHandleAudioBecomingNoisy(p.pauseOnNoisy)
+        playback.applyPlaybackPrefs(p.speed, p.pitchSemitones, p.skipSilence, p.pauseOnNoisy)
     }
 
     /** Mirrors the player's shuffle/repeat state into the persisted prefs. */
     private fun persistPlayerOptions() {
-        val p = _playerPrefs.value.copy(shuffle = player.shuffleModeEnabled, repeatMode = player.repeatMode)
+        val p = _playerPrefs.value.copy(shuffle = playback.shuffle, repeatMode = playback.repeatMode)
         _playerPrefs.value = p
         playerPrefsStore.save(p)
     }
@@ -593,8 +571,8 @@ class PlayerViewModel(
 
     /** Fresh mono PCM since the last call, for the milkdrop scene (GL thread). */
     fun latestPcm(): PcmChunk? {
-        val n = ring.copyNewSince(pcmCursor, pcmScratch)
-        pcmCursor = ring.lastCopyEndIndex
+        val n = playback.ring.copyNewSince(pcmCursor, pcmScratch)
+        pcmCursor = playback.ring.lastCopyEndIndex
         return if (n > 0) PcmChunk(pcmScratch, n) else null
     }
 
@@ -701,141 +679,151 @@ class PlayerViewModel(
     private val _autoMode = MutableStateFlow(0)
     val autoMode: StateFlow<Int> = _autoMode
 
+    /**
+     * Held so [onCleared] can unregister it. The player is shared across the
+     * process and outlives this ViewModel, so a listener left behind would
+     * keep a dead ViewModel alive and go on recording plays into its history
+     * alongside its replacement's.
+     */
+    private val playerListener =
+        object : Player.Listener {
+            override fun onEvents(
+                player: Player,
+                events: Player.Events,
+            ) {
+                refresh()
+                if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
+                    currentUri = player.currentMediaItem?.localConfiguration?.uri
+                    currentUri?.let { u ->
+                        val title =
+                            player.mediaMetadata.title?.toString()
+                                ?: player.currentMediaItem
+                                    ?.localConfiguration
+                                    ?.uri
+                                    ?.lastPathSegment
+                                    .orEmpty()
+                        historyStore.recordPlay(u.toString(), title)
+                        _historyTick.update { it + 1 }
+                    }
+                    onTrackChanged()
+                }
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                // Audio just started, so from here on it has to survive the
+                // app leaving the screen. Starting the service here rather
+                // than at each play/queue call site covers every route into
+                // playback, including the auto-advance to the next track and
+                // the notification's own transport buttons.
+                if (isPlaying) PlaybackService.ensureRunning(getApplication<Application>())
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                // A seek breaks the audio stream's continuity just as a
+                // track change does: the tracker's predicted beat frames
+                // now point at music that will not arrive, so it would
+                // suppress the real beats at the new position as off-grid
+                // until it re-locked. Covers every seek path (transport
+                // bar, gestures, the notification controls), which is why
+                // this hangs off the listener and not seekTo().
+                // Auto-advance discontinuities are left to
+                // EVENT_MEDIA_ITEM_TRANSITION, which resets anyway.
+                if (reason == Player.DISCONTINUITY_REASON_SEEK ||
+                    reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
+                ) {
+                    engine.reset()
+                }
+            }
+
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                // The audiofx chain must follow the sink's session; attach
+                // rebuilds the effects and restores persisted settings.
+                audioFxController.attach(audioSessionId)
+                refreshAudioFx()
+            }
+
+            override fun onTracksChanged(tracks: Tracks) {
+                // Selected audio track's source Format (mime, sample rate,
+                // pcm encoding, bitrate) for the quality readout. Defensive
+                // scan: take the first selected audio track, else null.
+                var fmt: Format? = null
+                outer@ for (group in tracks.groups) {
+                    if (group.type != C.TRACK_TYPE_AUDIO) continue
+                    for (i in 0 until group.length) {
+                        if (group.isTrackSelected(i)) {
+                            fmt = group.getTrackFormat(i)
+                            break@outer
+                        }
+                    }
+                }
+                sourceAudioFormat = fmt
+                recomputeAudioQuality()
+            }
+        }
+
     init {
         engine.start(viewModelScope)
         refreshNumericTitles()
-        // Restore persisted playback options onto the freshly built player.
-        // Auto-resume runs BEFORE the listener registers so the startup
-        // preparation never records a phantom play into history (ExoPlayer
-        // only delivers events to listeners registered when they occurred).
+        // Restore persisted playback options onto the player. Auto-resume runs
+        // BEFORE the listener registers so the startup preparation never
+        // records a phantom play into history (ExoPlayer only delivers events
+        // to listeners registered when they occurred).
         val pp = _playerPrefs.value
-        player.shuffleModeEnabled = pp.shuffle
-        player.repeatMode = pp.repeatMode
+        playback.shuffle = pp.shuffle
+        playback.repeatMode = pp.repeatMode
         applyPlaybackPrefs(pp)
         if (pp.autoResume) prepareLastPlayed()
-        player.addListener(
-            object : Player.Listener {
-                override fun onEvents(
-                    player: Player,
-                    events: Player.Events,
-                ) {
-                    refresh()
-                    if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
-                        currentUri = player.currentMediaItem?.localConfiguration?.uri
-                        currentUri?.let { u ->
-                            val title =
-                                player.mediaMetadata.title?.toString()
-                                    ?: player.currentMediaItem
-                                        ?.localConfiguration
-                                        ?.uri
-                                        ?.lastPathSegment
-                                        .orEmpty()
-                            historyStore.recordPlay(u.toString(), title)
-                            _historyTick.update { it + 1 }
-                        }
-                        onTrackChanged()
-                    }
-                }
-
-                override fun onPositionDiscontinuity(
-                    oldPosition: Player.PositionInfo,
-                    newPosition: Player.PositionInfo,
-                    reason: Int,
-                ) {
-                    // A seek breaks the audio stream's continuity just as a
-                    // track change does: the tracker's predicted beat frames
-                    // now point at music that will not arrive, so it would
-                    // suppress the real beats at the new position as off-grid
-                    // until it re-locked. Covers every seek path (transport
-                    // bar, gestures, any future notification controls), which
-                    // is why this hangs off the listener and not seekTo().
-                    // Auto-advance discontinuities are left to
-                    // EVENT_MEDIA_ITEM_TRANSITION, which resets anyway.
-                    if (reason == Player.DISCONTINUITY_REASON_SEEK ||
-                        reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
-                    ) {
-                        engine.reset()
-                    }
-                }
-
-                override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                    // The audiofx chain must follow the sink's session; attach
-                    // rebuilds the effects and restores persisted settings.
-                    audioFxController.attach(audioSessionId)
-                    refreshAudioFx()
-                }
-
-                override fun onTracksChanged(tracks: Tracks) {
-                    // Selected audio track's source Format (mime, sample rate,
-                    // pcm encoding, bitrate) for the quality readout. Defensive
-                    // scan: take the first selected audio track, else null.
-                    var fmt: Format? = null
-                    outer@ for (group in tracks.groups) {
-                        if (group.type != C.TRACK_TYPE_AUDIO) continue
-                        for (i in 0 until group.length) {
-                            if (group.isTrackSelected(i)) {
-                                fmt = group.getTrackFormat(i)
-                                break@outer
-                            }
-                        }
-                    }
-                    sourceAudioFormat = fmt
-                    recomputeAudioQuality()
-                }
-            },
-        )
+        playback.addListener(playerListener)
         // The sink may already have a session id (attach ignores UNSET = 0).
-        audioFxController.attach(player.audioSessionId)
+        audioFxController.attach(playback.audioSessionId)
         refreshAudioFx()
+        // Tick only while audio is actually moving. This used to be an
+        // unconditional `while (true) { ...; delay(500) }` for the ViewModel's
+        // whole life, which woke the main thread twice a second forever - with
+        // the app idle, with the screen off, with nothing playing. Everything
+        // in the tick is about a position that is advancing: refresh() resamples
+        // it, and the three rotations below all return immediately unless
+        // something is playing.
+        //
+        // collectLatest is what stops it: a pause cancels the inner loop, and a
+        // play starts a fresh one. The pause itself is not missed, because the
+        // Player.Listener calls refresh() on every event, so the final position
+        // lands before the loop is cancelled.
         viewModelScope.launch {
-            while (true) {
-                refresh()
-                applyIntelligence()
-                advanceVizPlaylist()
-                advanceRandomMode()
-                delay(500)
-            }
+            _uiState
+                .map { it.isPlaying }
+                .distinctUntilChanged()
+                .collectLatest { playing ->
+                    if (!playing) return@collectLatest
+                    while (true) {
+                        refresh()
+                        applyIntelligence()
+                        advanceVizPlaylist()
+                        advanceRandomMode()
+                        delay(500)
+                    }
+                }
         }
     }
 
     private fun refresh() {
-        _uiState.value =
-            PlayerUiState(
-                isPlaying = player.isPlaying,
-                positionMs = player.currentPosition.coerceAtLeast(0),
-                durationMs = player.duration.coerceAtLeast(0),
-                artist = player.mediaMetadata.artist?.toString(),
-                title =
-                    player.mediaMetadata.title?.toString()
-                        ?: player.currentMediaItem
-                            ?.localConfiguration
-                            ?.uri
-                            ?.lastPathSegment
-                            ?.substringAfterLast('/')
-                            ?.substringBeforeLast('.'),
-                hasMedia = player.currentMediaItem != null,
-                queueSize = player.mediaItemCount,
-                queueIndex = player.currentMediaItemIndex,
-                shuffle = player.shuffleModeEnabled,
-                repeatMode = player.repeatMode,
-            )
+        _uiState.value = playback.snapshot()
     }
 
     // ---- Player options ----
 
     fun toggleShuffle() {
-        player.shuffleModeEnabled = !player.shuffleModeEnabled
+        playback.toggleShuffle()
         persistPlayerOptions()
         refresh()
     }
 
     fun cycleRepeatMode() {
-        player.repeatMode =
-            when (player.repeatMode) {
-                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-                Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-                else -> Player.REPEAT_MODE_OFF
-            }
+        playback.cycleRepeatMode()
         persistPlayerOptions()
         refresh()
     }
@@ -849,19 +837,15 @@ class PlayerViewModel(
         val last = historyStore.recentlyPlayed(1).firstOrNull() ?: return
         runCatching {
             val uri = Uri.parse(last.uri)
-            player.setMediaItems(listOf(mediaItemFor(uri)))
-            player.prepare()
+            playback.prepareOnly(uri)
             currentUri = uri
         }
     }
 
     // ---- Sleep timer ----
 
-    private var sleepTimerJob: Job? = null
-    private val _sleepTimerRemainingMs = MutableStateFlow<Long?>(null)
-
     /** Remaining sleep-timer time, or null when no timer is running. */
-    val sleepTimerRemainingMs: StateFlow<Long?> = _sleepTimerRemainingMs
+    val sleepTimerRemainingMs: StateFlow<Long?> = playback.sleepTimerRemainingMs
 
     /**
      * Starts (or restarts) the sleep timer: counts down, fades the volume
@@ -874,31 +858,11 @@ class PlayerViewModel(
             return
         }
         setPlayerPrefs(_playerPrefs.value.copy(sleepTimerMinutes = minutes))
-        sleepTimerJob?.cancel()
-        sleepTimerJob =
-            viewModelScope.launch {
-                val endMs = android.os.SystemClock.elapsedRealtime() + minutes * 60_000L
-                while (true) {
-                    val remaining = endMs - android.os.SystemClock.elapsedRealtime()
-                    if (remaining <= 0L) break
-                    _sleepTimerRemainingMs.value = remaining
-                    player.volume = PlaybackMath.sleepFadeVolume(remaining)
-                    delay(if (remaining <= PlaybackMath.SLEEP_FADE_MS) 100 else 500)
-                }
-                player.pause()
-                player.volume = 1f
-                _sleepTimerRemainingMs.value = null
-                sleepTimerJob = null
-            }
+        playback.startSleepTimer(minutes)
     }
 
     /** Cancels a running sleep timer and restores full volume. */
-    fun cancelSleepTimer() {
-        sleepTimerJob?.cancel()
-        sleepTimerJob = null
-        _sleepTimerRemainingMs.value = null
-        player.volume = 1f
-    }
+    fun cancelSleepTimer() = playback.cancelSleepTimer()
 
     // ---- Visual playlist ----
 
@@ -968,23 +932,14 @@ class PlayerViewModel(
         val s = _vizState.value
         if (!s.vizPlaylistEnabled || s.vizPlaylist.size < 2 || !_uiState.value.isPlaying) return
         val now = android.os.SystemClock.elapsedRealtime()
-        val elapsed = now - lastVizSwitchMs
-        val intervalMs = s.vizPlaylistIntervalSec * 1000L
         val due =
-            if (s.vizPlaylistIntelligent) {
-                // Intelligent: after a minimum dwell, switch on a strong
-                // musical moment; force a switch at 2x interval so quiet
-                // passages still rotate. "Strong" is the tracker's graded beat
-                // impulse, which is TRACK-RELATIVE (it folds in the macro-
-                // energy envelope) - the absolute rms gate this replaced never
-                // opened on a quietly mastered track, so intelligent mode
-                // silently degraded into the plain 2x-interval timer there.
-                val f = engine.features.value
-                val minDwell = maxOf(8_000L, intervalMs / 2)
-                (elapsed >= minDwell && f.beatImpulse >= STRONG_MOMENT_IMPULSE) || elapsed >= intervalMs * 2
-            } else {
-                elapsed >= intervalMs
-            }
+            SwitchTiming.isDue(
+                elapsedMs = now - lastVizSwitchMs,
+                intervalMs = s.vizPlaylistIntervalSec * 1000L,
+                onStrongMoment = s.vizPlaylistIntelligent,
+                beatImpulse = engine.features.value.beatImpulse,
+                minDwellFloorMs = VIZ_PLAYLIST_MIN_DWELL_MS,
+            )
         if (!due) return
         lastVizSwitchMs = now
         vizPlaylistIndex = (vizPlaylistIndex + 1) % s.vizPlaylist.size
@@ -1042,20 +997,14 @@ class PlayerViewModel(
     private fun advanceRandomMode() {
         val s = _vizState.value
         if (!s.randomEnabled || !_uiState.value.isPlaying) return
-        val now = android.os.SystemClock.elapsedRealtime()
-        val elapsed = now - lastRandomSwitchMs
-        val intervalMs = s.randomIntervalSec * 1000L
         val due =
-            if (s.randomOnBeat) {
-                // Switch on a strong musical moment after a minimum dwell;
-                // force a switch at 2x interval so quiet passages still move.
-                // Graded and track-relative, as in advanceVizPlaylist().
-                val f = engine.features.value
-                val minDwell = maxOf(6_000L, intervalMs / 2)
-                (elapsed >= minDwell && f.beatImpulse >= STRONG_MOMENT_IMPULSE) || elapsed >= intervalMs * 2
-            } else {
-                elapsed >= intervalMs
-            }
+            SwitchTiming.isDue(
+                elapsedMs = android.os.SystemClock.elapsedRealtime() - lastRandomSwitchMs,
+                intervalMs = s.randomIntervalSec * 1000L,
+                onStrongMoment = s.randomOnBeat,
+                beatImpulse = engine.features.value.beatImpulse,
+                minDwellFloorMs = RANDOM_MODE_MIN_DWELL_MS,
+            )
         if (!due) return
         randomStepNow()
     }
@@ -1528,11 +1477,7 @@ class PlayerViewModel(
                 ?.trackUris
                 .orEmpty()
         if (uris.isEmpty()) return
-        player.setMediaItems(uris.map { mediaItemFor(Uri.parse(it)) })
-        player.prepare()
-        player.seekTo(startIndex.coerceIn(0, uris.size - 1), 0L)
-        player.play()
-        currentUri = Uri.parse(uris[startIndex.coerceIn(0, uris.size - 1)])
+        currentUri = playback.setQueue(uris.map { Uri.parse(it) }, startIndex)
         onTrackChanged()
     }
 
@@ -1554,13 +1499,12 @@ class PlayerViewModel(
     }
 
     fun playNext(uri: String) {
-        val at = (player.currentMediaItemIndex + 1).coerceAtMost(player.mediaItemCount)
-        player.addMediaItem(at, mediaItemFor(Uri.parse(uri)))
+        playback.addNext(Uri.parse(uri))
         refresh()
     }
 
     fun enqueue(uri: String) {
-        player.addMediaItem(mediaItemFor(Uri.parse(uri)))
+        playback.addLast(Uri.parse(uri))
         refresh()
     }
 
@@ -1574,9 +1518,7 @@ class PlayerViewModel(
     fun openStringsPublic(uris: List<String>) = openStrings(uris)
 
     private fun openStrings(uris: List<String>) {
-        player.setMediaItems(uris.map { mediaItemFor(Uri.parse(it)) })
-        player.prepare()
-        player.play()
+        playback.setQueue(uris.map { Uri.parse(it) })
     }
 
     // Preset folder tree
@@ -1608,11 +1550,7 @@ class PlayerViewModel(
             .orEmpty()
     }
 
-    fun seekBy(deltaMs: Long) {
-        val d = player.duration
-        val target = (player.currentPosition + deltaMs).coerceAtLeast(0L)
-        player.seekTo(if (d > 0) target.coerceAtMost(d) else target)
-    }
+    fun seekBy(deltaMs: Long) = playback.seekBy(deltaMs)
 
     /** Swipe left/right in Now Playing: step through this scene's presets. */
     private var quickPresetIndex = -1
@@ -1631,10 +1569,7 @@ class PlayerViewModel(
 
     /** Plays a single library track immediately. */
     fun playTrack(uri: String) {
-        player.setMediaItems(listOf(mediaItemFor(Uri.parse(uri))))
-        player.prepare()
-        player.play()
-        currentUri = Uri.parse(uri)
+        currentUri = playback.setQueue(listOf(Uri.parse(uri)))
         onTrackChanged()
     }
 
@@ -1729,46 +1664,62 @@ class PlayerViewModel(
 
     fun open(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        player.setMediaItems(uris.map { mediaItemFor(it) })
-        player.prepare()
-        player.play()
-        currentUri = uris.first()
+        currentUri = playback.setQueue(uris)
         onTrackChanged()
     }
 
     /** Human-readable labels for the playback queue, in play order. */
-    fun queueTitles(): List<String> =
-        (0 until player.mediaItemCount).map { i ->
-            val item = player.getMediaItemAt(i)
-            item.mediaMetadata.title?.toString()
-                ?: item.localConfiguration
-                    ?.uri
-                    ?.lastPathSegment
-                    ?.substringAfterLast('/')
-                    ?.substringBeforeLast('.')
-                ?: "Track ${i + 1}"
-        }
+    fun queueTitles(): List<String> = playback.queueTitles()
 
     /** Jumps playback to the given queue position. */
-    fun playQueueIndex(index: Int) {
-        if (index in 0 until player.mediaItemCount) {
-            player.seekTo(index, 0L)
-            player.play()
-        }
+    fun playQueueIndex(index: Int) = playback.playQueueIndex(index)
+
+    /**
+     * Reorders the queue. The player renumbers itself, so this only has to
+     * republish the snapshot the queue screen renders from.
+     */
+    fun moveQueueItem(
+        from: Int,
+        to: Int,
+    ) {
+        playback.moveInQueue(from, to)
+        refresh()
     }
 
-    fun next() = player.seekToNextMediaItem()
-
-    fun previous() = player.seekToPreviousMediaItem()
-
-    fun togglePlayPause() {
-        if (player.isPlaying) player.pause() else player.play()
+    /** Drops one queue entry; removing the playing track advances to the next. */
+    fun removeQueueItem(index: Int) {
+        playback.removeFromQueue(index)
+        refresh()
     }
 
-    fun seekTo(fraction: Float) {
-        val d = player.duration
-        if (d > 0) player.seekTo((d * fraction).toLong())
+    /** Empties the queue and stops playback. */
+    fun clearQueue() {
+        playback.clearQueue()
+        refresh()
     }
+
+    /**
+     * Saves the current queue as a named music playlist, so a queue built by
+     * hand is not lost the next time something replaces it. Returns false when
+     * the queue is empty or the name is blank or already taken.
+     */
+    fun saveQueueAsPlaylist(name: String): Boolean {
+        val trimmed = name.trim()
+        val uris = playback.queueUris()
+        if (trimmed.isEmpty() || uris.isEmpty()) return false
+        if (_library.value.playlists.any { it.name.equals(trimmed, ignoreCase = true) }) return false
+        musicPlaylists.save(MusicPlaylist(trimmed, uris))
+        _library.update { it.copy(playlists = musicPlaylists.list()) }
+        return true
+    }
+
+    fun next() = playback.next()
+
+    fun previous() = playback.previous()
+
+    fun togglePlayPause() = playback.togglePlayPause()
+
+    fun seekTo(fraction: Float) = playback.seekToFraction(fraction)
 
     // ---- Intelligence ----
 
@@ -1802,7 +1753,14 @@ class PlayerViewModel(
 
     fun setIntelligenceMode(mode: IntelligenceMode) {
         _vizState.update { it.copy(intelligenceMode = mode) }
-        if (mode != IntelligenceMode.MANUAL && timeline == null) analyzeCurrentTrack()
+        if (mode != IntelligenceMode.MANUAL && timeline == null) {
+            analyzeCurrentTrack()
+        } else {
+            // Act on the switch now rather than on the next tick: with an
+            // already-analysed track the tick may be up to half a second away,
+            // and while paused it never comes at all.
+            applyIntelligence()
+        }
     }
 
     fun analyzeCurrentTrack() {
@@ -1847,7 +1805,7 @@ class PlayerViewModel(
         val s = _vizState.value
         if (s.intelligenceMode != IntelligenceMode.AUTO) return
         val t = timeline ?: return
-        val f = t.featuresAt(player.currentPosition)
+        val f = t.featuresAt(playback.positionMs)
         val suggestion = SceneSuggester.suggest(t.bpm, f.rms, f.centroid)
         if (suggestion != s.sceneId) _vizState.value = s.copy(sceneId = suggestion)
     }
@@ -2085,9 +2043,15 @@ class PlayerViewModel(
         if (!_exportState.value.running) _exportState.value = ExportUiState()
     }
 
+    /**
+     * Drops this ViewModel's hold on playback without stopping it. The player
+     * and its effects chain belong to [PlaybackEngine] and keep going in the
+     * service; only the things that exist to feed a screen — the live analyzer
+     * and this ViewModel's player listener — go away with the screen.
+     */
     override fun onCleared() {
         engine.stop()
-        audioFxController.release()
-        player.release()
+        playback.removeListener(playerListener)
+        PlaybackEngine.releaseUi()
     }
 }

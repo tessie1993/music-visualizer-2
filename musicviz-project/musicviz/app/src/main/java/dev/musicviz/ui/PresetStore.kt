@@ -80,7 +80,7 @@ class PresetStore(
         val destDir = if (folder.isEmpty()) dir else File(dir, sanitize(folder)).apply { mkdirs() }
         val dest = File(destDir, sanitize(preset.name) + ".json")
         findFile(preset.name)?.takeIf { it != dest }?.delete()
-        dest.writeText(toJson(preset))
+        AtomicWrite.text(dest, toJson(preset))
     }
 
     fun delete(name: String) {

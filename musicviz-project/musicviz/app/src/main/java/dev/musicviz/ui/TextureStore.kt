@@ -89,7 +89,8 @@ class TextureStore(
         // sampler declaration, no per-pixel branching, and only intrinsics
         // known to translate cleanly (tex2D, basic math). GetPixel-style
         // feedback via sampler_main keeps motion without extra textures.
-        file.writeText(
+        AtomicWrite.text(
+            file,
             """
             MILKDROP_PRESET_VERSION=201
             PSVERSION=2

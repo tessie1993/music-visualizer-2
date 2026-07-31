@@ -1,6 +1,8 @@
 package dev.musicviz.ui
 
+import android.Manifest
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -58,6 +60,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import dev.musicviz.analysis.FeatureExtractor
 import dev.musicviz.analysis.SearchMatcher
 import dev.musicviz.render.VisualSafety
@@ -91,6 +94,7 @@ fun AppRoot(
     var dest by rememberSaveable { mutableStateOf(0) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
+    var showQueue by rememberSaveable { mutableStateOf(false) }
     // rememberSaveable: rotation/config changes must not replay the intro;
     // only a fresh process start does.
     var bootDone by rememberSaveable { mutableStateOf(false) }
@@ -111,6 +115,7 @@ fun AppRoot(
         )
     }
     VisualizerEngineBindings(viewModel, visualizerView)
+    NotificationPermissionOnFirstTrack(state.hasMedia)
     // System back: non-Home tabs return Home before the app exits. Composed
     // FIRST so handlers composed later (library drill-in, search overlay,
     // expanded visualizer) take priority - Compose gives the back event to
@@ -142,6 +147,7 @@ fun AppRoot(
                 onExpand = { expanded = true },
                 onPlayPause = viewModel::togglePlayPause,
                 onNext = viewModel::next,
+                onOpenQueue = { showQueue = true },
             )
         }
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -239,11 +245,41 @@ fun AppRoot(
                     },
                 )
             }
+            // After Now Playing, so the queue draws over an expanded
+            // visualizer and - being composed later - its BackHandler wins,
+            // closing the queue before anything underneath it.
+            if (showQueue) {
+                QueueSheet(viewModel, onClose = { showQueue = false })
+            }
             // Last overlay in the Box so it draws above everything else.
             if (bootAnimEnabled && !bootDone) {
                 BootIntro(onDone = { bootDone = true })
             }
         }
+    }
+}
+
+/**
+ * Asks for notification access the first time there is something to control,
+ * not at launch. On Android 13+ the media notification — the lock-screen and
+ * shade transport controls for playback that keeps going once MusicViz is off
+ * screen — needs this permission to appear at all. Playback itself works
+ * without it; only the controls go missing, so a refusal is not fatal and is
+ * never asked twice in a session.
+ */
+@Composable
+private fun NotificationPermissionOnFirstTrack(hasMedia: Boolean) {
+    if (Build.VERSION.SDK_INT < 33) return
+    val context = LocalContext.current
+    var asked by rememberSaveable { mutableStateOf(false) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(hasMedia, asked) {
+        if (!hasMedia || asked) return@LaunchedEffect
+        asked = true
+        val granted =
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!granted) launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 }
 
@@ -258,6 +294,7 @@ private fun MiniPlayer(
     onExpand: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
+    onOpenQueue: () -> Unit,
 ) {
     if (!hasMedia) return
     Column(
@@ -285,6 +322,9 @@ private fun MiniPlayer(
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyMedium,
             )
+            IconButton(onClick = onOpenQueue) {
+                Icon(Icons.AutoMirrored.Filled.QueueMusic, "Queue")
+            }
             IconButton(onClick = onPlayPause) {
                 Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play/Pause")
             }
