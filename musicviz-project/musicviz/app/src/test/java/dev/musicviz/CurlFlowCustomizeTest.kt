@@ -20,7 +20,10 @@ import kotlin.math.pow
  *
  * 1. The Trails toggle was inert: the renderer forced canvas persistence on
  *    for this scene regardless of the setting, and floored Trail length at
- *    0.85 on top, so most of that slider did nothing either.
+ *    0.85 on top, so most of that slider did nothing either. Honouring the
+ *    toggle then over-corrected into a HARD CLEAR, because `trails` defaults
+ *    to false - selecting the style from the Styles list strobed. The toggle
+ *    now picks a band (a short echo off, the whole slider on), never a wipe.
  * 2. The palette's SPAN multiplier was dropped - the scene passed the raw Hue
  *    range slider where every other family passes `hueRange * paletteRange` -
  *    so switching palette only retinted the streams instead of changing how
@@ -57,9 +60,9 @@ class CurlFlowCustomizeTest {
         // The bug: persistence was forced on, so both of these were equal.
         val off = CurlFlowMath.fadeAlpha(trails = false, trailLength = 0.5f, dt = dt)
         val on = CurlFlowMath.fadeAlpha(trails = true, trailLength = 0.5f, dt = dt)
-        assertEquals("Trails off must wipe the canvas outright", 1f, off, 1e-6f)
+        assertTrue("Trails off must fade fast", off > 0.5f)
         assertTrue("Trails on must keep most of the previous frame", on < 0.5f)
-        assertTrue("the toggle must change the frame", off - on > 0.4f)
+        assertTrue("the toggle must change the frame", off - on > 0.2f)
         // Even at the extremes of the slider the toggle still separates them.
         for (len in sliderRange) {
             assertTrue(
@@ -67,6 +70,30 @@ class CurlFlowCustomizeTest {
                 CurlFlowMath.fadeAlpha(trails = true, trailLength = len, dt = dt) <
                     CurlFlowMath.fadeAlpha(trails = false, trailLength = len, dt = dt),
             )
+        }
+    }
+
+    @Test
+    fun theDefaultParamsDoNotHardClearCurlFlow() {
+        // The regression: the renderer's trails gate became
+        // `p.trails && (isParticle || isCurl)`, but SceneParams.trails
+        // defaults to FALSE and selectScene() only writes sceneId - so
+        // Visuals -> Styles -> "Curl Flow" landed on the glClear branch and
+        // the scene drew bare GL_POINTS on a wiped canvas, i.e. strobing dots.
+        // Only the one built-in `curlflow · Streams` preset sets trails = true.
+        val defaults = SceneParams.DEFAULT
+        assertFalse("this test is about the default, which must still be off", defaults.trails)
+        val alpha = CurlFlowMath.fadeAlpha(defaults.trails, defaults.trailLength, dt)
+        assertTrue("selecting the style must never wipe the canvas outright", alpha < 1f)
+        assertTrue("the echo must survive several frames, not one", CurlFlowMath.retention(defaults.trailLength, false) > 0.3f)
+        // Still a floor, not the trails-on band: the toggle stays meaningful.
+        assertEquals(CurlFlowMath.OFF_RETENTION, CurlFlowMath.retention(defaults.trailLength, false), 1e-6f)
+        assertTrue("Trails off must stay below the streaming band", CurlFlowMath.OFF_RETENTION < CurlFlowMath.MIN_RETENTION)
+        // Whatever the slider says, Trails off is the same short echo - the
+        // slider belongs to the toggle - and always shorter than Trails on.
+        for (len in sliderRange) {
+            assertEquals(CurlFlowMath.OFF_RETENTION, CurlFlowMath.retention(len, false), 1e-6f)
+            assertTrue("trailLength=$len", CurlFlowMath.retention(len, false) < CurlFlowMath.retention(len, true))
         }
     }
 

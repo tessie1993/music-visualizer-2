@@ -8,10 +8,11 @@ import kotlin.math.sin
 
 /**
  * Pure-Kotlin mirror of the composite pass' universal grading + geometry math
- * (composite_frag.glsl's `geo()` zoom/rotation block and the `uPostGrade`
- * colour-grade block), kept in lockstep with the shader so the headless gate
- * can pin the formulas (FluidMath/RippleMath convention: if a formula changes
- * in the shader, change it here too).
+ * (composite_frag.glsl's `geo()` zoom/rotation block and the gated colour-grade
+ * block), plus the per-texture [Gate] that decides which scenes those blocks
+ * run for. Kept in lockstep with the shader so the headless gate can pin the
+ * formulas (FluidMath/RippleMath convention: if a formula changes in the
+ * shader, change it here too).
  *
  * The chain deliberately reproduces what the self-grading scenes already do -
  * plasma_frag's `grade()`, particle_frag and pm_post_frag - so one slider
@@ -25,6 +26,75 @@ import kotlin.math.sin
  * of this file pins and it shares [luma] with the grade above it.
  */
 internal object CompositeGrade {
+    /**
+     * The scene families the composite pass distinguishes. Which `uPost*`
+     * groups it must apply is a property of the SCENE, not of the frame, so
+     * the gate is derived from this alone - see [gateFor].
+     */
+    enum class SceneFamily {
+        /** `ShaderScene`: `view()` + `grade()` do everything in-shader. */
+        SHADER,
+
+        /** `ParticleSceneBase`: `particle_vert` / `particle_frag`. */
+        PARTICLE,
+
+        /** `ProjectMScene`: `pm_post_frag` grades and zooms but never pulses. */
+        MILKDROP,
+
+        /** Fluid, Curl Flow, Water: no pass of their own, composite owns all. */
+        FLUID,
+    }
+
+    /**
+     * Which `uPost*` groups the composite pass owns for ONE texture, uploaded
+     * as `uGateA` (the incoming scene) / `uGateB` (the outgoing one).
+     *
+     * Per-texture, not per-frame: `composite_frag`'s `main()` routes BOTH
+     * textures through `postFx`, and during a cross-family transition they
+     * belong to different [SceneFamily]s. A single gate taken from the
+     * incoming scene graded the outgoing frame under the wrong rule - a
+     * julia -> fluid fade graded the already-graded julia frame a second time
+     * (16x brightness, 4x zoom, contrast squared: a white flash for the whole
+     * fade) and fluid -> julia dropped the outgoing grade entirely.
+     */
+    data class Gate(
+        /** Geometry/stylize group: warp, ripple, kaleido, tile, bloom, ... */
+        val geo: Boolean,
+        /** Mirror + invert. */
+        val mirrorInvert: Boolean,
+        /** Colour grade + zoom/rotation (the `uPostZoom`..`uPostHue` block). */
+        val grade: Boolean,
+        /** Beat pulse (`uPostPulse`), gated apart from [grade] on purpose. */
+        val pulse: Boolean,
+    ) {
+        /** The uniform as the shader reads it: `vec4(geo, mirror, grade, pulse)`. */
+        fun toVec4(): FloatArray =
+            floatArrayOf(
+                if (geo) 1f else 0f,
+                if (mirrorInvert) 1f else 0f,
+                if (grade) 1f else 0f,
+                if (pulse) 1f else 0f,
+            )
+    }
+
+    /**
+     * The gate for a [family], identical for the live renderer and the export
+     * compositor so a rendered clip matches the screen.
+     *
+     * Each group is owned by the composite exactly when the family applies it
+     * nowhere else: shader scenes apply everything themselves; particle scenes
+     * grade and pulse but need mirror/invert and the screen-space geometry;
+     * milkdrop grades and zooms in `pm_post_frag` but never pulses; the fluid
+     * family applies nothing at all.
+     */
+    fun gateFor(family: SceneFamily): Gate =
+        Gate(
+            geo = family != SceneFamily.SHADER,
+            mirrorInvert = family == SceneFamily.PARTICLE || family == SceneFamily.FLUID,
+            grade = family == SceneFamily.FLUID,
+            pulse = family == SceneFamily.MILKDROP || family == SceneFamily.FLUID,
+        )
+
     /** Zoom divisor floor, matching `max(z, 0.05)` in every scene shader. */
     const val MIN_ZOOM: Float = 0.05f
 
@@ -143,6 +213,13 @@ internal object CompositeGrade {
      * the same slot and order as the shader. It defaults to 0 because the two
      * are gated on DIFFERENT scene sets - milkdrop is zoomed by its own pass
      * but pulsed by this one.
+     *
+     * The rotation matches `mat2(cos, -sin, sin, cos) * c` in `geo()`. GLSL
+     * `mat2` is COLUMN-major, so that literal is the rotation by MINUS [angle]
+     * of the sampling coordinate - which is what turns the image by plus
+     * [angle] on screen. The mirror used to spell the transpose (a +[angle]
+     * coordinate rotation), so it and its tests agreed with each other while
+     * both disagreed with the shader.
      */
     fun geometry(
         u: Float,
@@ -156,8 +233,8 @@ internal object CompositeGrade {
         if (abs(angle) > 1e-4f) {
             val cs = cos(angle)
             val sn = sin(angle)
-            val rx = cs * cx - sn * cy
-            val ry = sn * cx + cs * cy
+            val rx = cs * cx + sn * cy
+            val ry = -sn * cx + cs * cy
             cx = rx
             cy = ry
         }

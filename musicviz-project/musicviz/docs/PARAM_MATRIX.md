@@ -28,19 +28,30 @@ not from any earlier revision of this file.
 | **G** | global feature transform (`applyBandGains`, `SceneParams.kt:289`) |
 | **—** | genuinely ignored by that family (reason in the notes) |
 
-The three composite gates, all in `VisualizerRenderer.kt`:
+The four composite gates live in `CompositeGrade.gateFor(SceneFamily)` and are
+uploaded as one `vec4` **per texture** — `uGateA` for the incoming scene,
+`uGateB` for the outgoing one:
 
-* `applyGeo = activeScene !is ShaderScene` (`:770`) — geometry/stylize `uPost*`.
-  Shader scenes do these in-shader, so they get 0; **everything else**,
-  including the whole fluid family, is served by the composite.
-* `ownsMirrorInvert = ShaderScene || ProjectMScene` (`:800`) — mirror/invert.
-* `gradesItself = ShaderScene || ParticleSceneBase || ProjectMScene` (`:816`) —
-  zoom/rotation + the colour grade, switched wholesale by `uPostGrade`
-  (`:822`). Only the fluid family (FL/CF/WA) is graded by the composite; the
-  flag exists because the neutral value of these uniforms is 1.0, not the GL
-  default 0.0 (`composite_frag.glsl:43-58`).
+* `geo` (x) — geometry/stylize `uPost*`. Shader scenes do these in-shader, so
+  their component is 0; **everything else**, including the whole fluid family,
+  is served by the composite.
+* `mirrorInvert` (y) — mirror/invert. Off for SH and MD, which apply them
+  themselves.
+* `grade` (z) — zoom/rotation + the colour grade, switched wholesale. Only the
+  fluid family (FL/CF/WA) is graded by the composite; the flag exists because
+  the neutral value of these uniforms is 1.0, not the GL default 0.0.
+* `pulse` (w) — the beat swell. A deliberately different set from `grade`: MD
+  grades itself but nothing in its pipeline reads `pulse`.
 
-`FxCompositor.kt:324/378/388` reproduces all three gates so exports match.
+Per texture, not per frame: `composite_frag`'s `main()` runs BOTH textures
+through `postFx`, and a cross-family transition (julia → fluid) would otherwise
+grade the already-graded outgoing frame a second time — a white, over-zoomed
+flash for the length of the fade — or drop the outgoing grade on the reverse.
+
+`VisualizerRenderer.compositeFamily()` maps a scene to its family;
+`FxCompositor.composite()` derives the same gate from its `isShaderScene`/
+`isParticle`/`isProjectM` flags and uploads it in both slots (an export never
+transitions), so exports match the screen.
 
 ## The matrix
 
