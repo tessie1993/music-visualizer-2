@@ -2,21 +2,99 @@ package dev.musicviz.render
 
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.pow
 import kotlin.math.sin
 
 /**
  * Pure-Kotlin mirror of the composite pass' universal grading + geometry math
- * (composite_frag.glsl's `geo()` zoom/rotation block and the `uPostGrade`
- * colour-grade block), kept in lockstep with the shader so the headless gate
- * can pin the formulas (FluidMath/RippleMath convention: if a formula changes
- * in the shader, change it here too).
+ * (composite_frag.glsl's `geo()` zoom/rotation block and the gated colour-grade
+ * block), plus the per-texture [Gate] that decides which scenes those blocks
+ * run for. Kept in lockstep with the shader so the headless gate can pin the
+ * formulas (FluidMath/RippleMath convention: if a formula changes in the
+ * shader, change it here too).
  *
  * The chain deliberately reproduces what the self-grading scenes already do -
  * plasma_frag's `grade()`, particle_frag and pm_post_frag - so one slider
  * value looks the same on a fluid style as on a shader or particle style.
+ *
+ * The "Palette tint" block at the bottom is the one stage that does NOT ride
+ * the composite: it is MilkDrop's, and lives in pm_post_frag because that is
+ * the pass ProjectMScene owns (it is the reason MilkDrop is excluded from
+ * `uPostGrade` in the first place). It is mirrored here anyway rather than in
+ * a fourth mirror object, because it is the same kind of colour math the rest
+ * of this file pins and it shares [luma] with the grade above it.
  */
 internal object CompositeGrade {
+    /**
+     * The scene families the composite pass distinguishes. Which `uPost*`
+     * groups it must apply is a property of the SCENE, not of the frame, so
+     * the gate is derived from this alone - see [gateFor].
+     */
+    enum class SceneFamily {
+        /** `ShaderScene`: `view()` + `grade()` do everything in-shader. */
+        SHADER,
+
+        /** `ParticleSceneBase`: `particle_vert` / `particle_frag`. */
+        PARTICLE,
+
+        /** `ProjectMScene`: `pm_post_frag` grades and zooms but never pulses. */
+        MILKDROP,
+
+        /** Fluid, Curl Flow, Water: no pass of their own, composite owns all. */
+        FLUID,
+    }
+
+    /**
+     * Which `uPost*` groups the composite pass owns for ONE texture, uploaded
+     * as `uGateA` (the incoming scene) / `uGateB` (the outgoing one).
+     *
+     * Per-texture, not per-frame: `composite_frag`'s `main()` routes BOTH
+     * textures through `postFx`, and during a cross-family transition they
+     * belong to different [SceneFamily]s. A single gate taken from the
+     * incoming scene graded the outgoing frame under the wrong rule - a
+     * julia -> fluid fade graded the already-graded julia frame a second time
+     * (16x brightness, 4x zoom, contrast squared: a white flash for the whole
+     * fade) and fluid -> julia dropped the outgoing grade entirely.
+     */
+    data class Gate(
+        /** Geometry/stylize group: warp, ripple, kaleido, tile, bloom, ... */
+        val geo: Boolean,
+        /** Mirror + invert. */
+        val mirrorInvert: Boolean,
+        /** Colour grade + zoom/rotation (the `uPostZoom`..`uPostHue` block). */
+        val grade: Boolean,
+        /** Beat pulse (`uPostPulse`), gated apart from [grade] on purpose. */
+        val pulse: Boolean,
+    ) {
+        /** The uniform as the shader reads it: `vec4(geo, mirror, grade, pulse)`. */
+        fun toVec4(): FloatArray =
+            floatArrayOf(
+                if (geo) 1f else 0f,
+                if (mirrorInvert) 1f else 0f,
+                if (grade) 1f else 0f,
+                if (pulse) 1f else 0f,
+            )
+    }
+
+    /**
+     * The gate for a [family], identical for the live renderer and the export
+     * compositor so a rendered clip matches the screen.
+     *
+     * Each group is owned by the composite exactly when the family applies it
+     * nowhere else: shader scenes apply everything themselves; particle scenes
+     * grade and pulse but need mirror/invert and the screen-space geometry;
+     * milkdrop grades and zooms in `pm_post_frag` but never pulses; the fluid
+     * family applies nothing at all.
+     */
+    fun gateFor(family: SceneFamily): Gate =
+        Gate(
+            geo = family != SceneFamily.SHADER,
+            mirrorInvert = family == SceneFamily.PARTICLE || family == SceneFamily.FLUID,
+            grade = family == SceneFamily.FLUID,
+            pulse = family == SceneFamily.MILKDROP || family == SceneFamily.FLUID,
+        )
+
     /** Zoom divisor floor, matching `max(z, 0.05)` in every scene shader. */
     const val MIN_ZOOM: Float = 0.05f
 
@@ -135,6 +213,13 @@ internal object CompositeGrade {
      * the same slot and order as the shader. It defaults to 0 because the two
      * are gated on DIFFERENT scene sets - milkdrop is zoomed by its own pass
      * but pulsed by this one.
+     *
+     * The rotation matches `mat2(cos, -sin, sin, cos) * c` in `geo()`. GLSL
+     * `mat2` is COLUMN-major, so that literal is the rotation by MINUS [angle]
+     * of the sampling coordinate - which is what turns the image by plus
+     * [angle] on screen. The mirror used to spell the transpose (a +[angle]
+     * coordinate rotation), so it and its tests agreed with each other while
+     * both disagreed with the shader.
      */
     fun geometry(
         u: Float,
@@ -148,8 +233,8 @@ internal object CompositeGrade {
         if (abs(angle) > 1e-4f) {
             val cs = cos(angle)
             val sn = sin(angle)
-            val rx = cs * cx - sn * cy
-            val ry = sn * cx + cs * cy
+            val rx = cs * cx + sn * cy
+            val ry = -sn * cx + cs * cy
             cx = rx
             cy = ry
         }
@@ -227,5 +312,136 @@ internal object CompositeGrade {
         // Unconditional, exactly like the shader's `col *= uPostBright`.
         val graded = col
         return FloatArray(3) { graded[it] * brightness }
+    }
+
+    // ---------------------------------------------------------- Palette tint
+
+    /**
+     * Blend amounts at or below this leave the frame untouched, mirroring
+     * pm_post_frag's `if (uPalTint > 0.001)` gate. The default
+     * (`SceneParams.milkdropPaletteTint` = 0) therefore costs nothing and
+     * changes nothing.
+     */
+    const val TINT_EPSILON: Float = 0.001f
+
+    /** `TINT_CHROMA_KNEE` in pm_post_frag: below it, hue is noise. */
+    const val TINT_CHROMA_KNEE: Float = 0.15f
+
+    /** `TINT_SAT_LIFT` in pm_post_frag: chroma a fully tinted grey gains. */
+    const val TINT_SAT_LIFT: Float = 0.35f
+
+    /**
+     * Slice of the hue wheel the palette covers, as `uPalSpan`.
+     *
+     * This is the SHADER/PARTICLE form (`t * uPalRange * uHueRange` in every
+     * scene fragment shader, `paletteRange * hueRange` in
+     * `ParticleSceneBase`), NOT `FluidHue.span`: the fluid family clamps
+     * `hueRange` to 0.1..1 because a zero span kills its emission look, while
+     * here a zero span legitimately means "one hue", exactly as it does on a
+     * shader scene. pm_post_frag is ShaderScene's sibling grade path, so it
+     * follows the same side of that documented divergence.
+     */
+    fun paletteSpan(
+        hueRange: Float,
+        paletteRange: Float,
+    ): Float = hueRange.coerceAtLeast(0f) * paletteRange.coerceIn(0f, 1f)
+
+    /** The uploaded `uPalTint`: the slider, clamped to its 0..1 range. */
+    fun paletteTintAmount(tint: Float): Float = tint.coerceIn(0f, 1f)
+
+    /**
+     * Mirror of pm_post_frag's `paletteTint`: steers a colour toward the
+     * palette band ([base], [span]) by [amount], in HSV so VALUE survives
+     * untouched.
+     *
+     * The two halves are deliberate. A pixel that HAS chroma keeps its hue
+     * relationships - they are compressed into the palette's band - so two
+     * .milk presets that differ in colour still differ after the tint; a pixel
+     * with no chroma has no hue to steer, so it takes the palette entry its
+     * own luma selects (a gradient map), which is both the only way a white
+     * core can show the palette at all and smooth across the flat areas where
+     * a steered hue would be quantization noise. [TINT_SAT_LIFT] is what makes
+     * that second half visible; without it the control does nothing on the
+     * desaturated presets, which is the bug this whole stage exists to fix.
+     * The lift is weighted by the same chroma knee, so a pixel that already
+     * has a hue keeps its saturation exactly and the tint never doubles as a
+     * saturation boost.
+     *
+     * [amount] <= [TINT_EPSILON] returns the input unchanged, bit for bit.
+     */
+    fun paletteTint(
+        rgb: FloatArray,
+        base: Float,
+        span: Float,
+        amount: Float,
+    ): FloatArray {
+        if (amount <= TINT_EPSILON) return rgb.copyOf()
+        val hsv = rgbToHsv(rgb)
+        val chroma = smoothstep(0f, TINT_CHROMA_KNEE, hsv[1])
+        val t = lerp(luma(rgb), hsv[0], chroma)
+        val target = base + t * span
+        // Shortest way round the wheel: `fract(x + 0.5) - 0.5` in the shader.
+        val delta = fract(target - hsv[0] + 0.5f) - 0.5f
+        return hsvToRgb(
+            fract(hsv[0] + delta * amount),
+            lerp(hsv[1], hsv[1] + (1f - hsv[1]) * TINT_SAT_LIFT, amount * (1f - chroma)),
+            hsv[2],
+        )
+    }
+
+    /** GLSL `fract`. */
+    private fun fract(x: Float): Float = x - floor(x)
+
+    private fun lerp(
+        a: Float,
+        b: Float,
+        k: Float,
+    ): Float = a + (b - a) * k
+
+    /** GLSL `smoothstep`. */
+    private fun smoothstep(
+        edge0: Float,
+        edge1: Float,
+        x: Float,
+    ): Float {
+        val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
+        return t * t * (3f - 2f * t)
+    }
+
+    /**
+     * RGB -> (hue, saturation, value), hue in [0,1). The textbook max/min form
+     * is used here rather than the shader's branchless `k`-vector trick; the
+     * two agree everywhere except on an exact grey, where the shader's hue
+     * falls out as 0 or 1 and this returns 0 - unobservable, because a
+     * saturation of 0 makes [hsvToRgb] ignore the hue entirely.
+     */
+    private fun rgbToHsv(rgb: FloatArray): FloatArray {
+        val r = rgb[0]
+        val g = rgb[1]
+        val b = rgb[2]
+        val mx = maxOf(r, maxOf(g, b))
+        val mn = minOf(r, minOf(g, b))
+        val d = mx - mn
+        val h =
+            when {
+                d <= 0f -> 0f
+                mx == r -> fract((g - b) / d / 6f)
+                mx == g -> (2f + (b - r) / d) / 6f
+                else -> (4f + (r - g) / d) / 6f
+            }
+        return floatArrayOf(h, if (mx <= 0f) 0f else d / mx, mx)
+    }
+
+    /** (hue, saturation, value) -> RGB; mirror of pm_post_frag's `hsv2rgb`. */
+    private fun hsvToRgb(
+        h: Float,
+        s: Float,
+        v: Float,
+    ): FloatArray {
+        val k = floatArrayOf(1f, 2f / 3f, 1f / 3f)
+        return FloatArray(3) {
+            val p = abs(fract(h + k[it]) * 6f - 3f)
+            v * lerp(1f, (p - 1f).coerceIn(0f, 1f), s)
+        }
     }
 }

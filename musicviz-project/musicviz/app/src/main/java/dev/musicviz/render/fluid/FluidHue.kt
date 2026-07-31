@@ -24,13 +24,39 @@ import kotlin.math.floor
  */
 internal object FluidHue {
     /**
-     * Lower clamp on the Hue range slider, shared with the other scene
-     * families: a span of 0 collapses the style to one flat colour.
+     * Lower clamp on the Hue range slider, fluid-only: the emitters pick each
+     * splat's dye at `baseHue + frac * span`, so a span of 0 hands every splat
+     * the same colour and the style collapses to one flat tint. The slider's
+     * own floor is 0, so this floor is what keeps the bottom of its travel
+     * meaningful (narrow band, never collapsed).
      */
     const val MIN_HUE_RANGE = 0.1f
 
+    /**
+     * Upper clamp on the Hue range slider: the slider's own top
+     * (`CustomizeDialog`, 0..1.5) and the top of the randomizer's roll.
+     *
+     * It used to be 1, which killed the top THIRD of that slider on the whole
+     * fluid family while 1..1.5 stayed live on the shader and particle
+     * families (they pass `hueRange` through unclamped) - one slider value
+     * meaning different things per family is exactly what this object exists
+     * to stop. A span over 1 is not out of domain: every consumer wraps
+     * (`% 1f` in the emitters, `fract()` in the shaders), so it just means the
+     * palette walks more than one turn of the wheel, which is what the same
+     * slider value already does on `ParticleSceneBase`.
+     */
+    const val MAX_HUE_RANGE = 1.5f
+
     /** Upper clamp on the fluid-only "Palette cycle" slider. */
     const val MAX_PALETTE_CYCLE = 2f
+
+    /**
+     * The Hue range slider clamped to the domain the fluid family supports:
+     * the slider's own 0..1.5 travel, floored so the emitters can never
+     * collapse to a single flat colour. Shared with [span] so the emitter-side
+     * and shader-side spans of a scene cannot drift apart.
+     */
+    fun range(hueRange: Float): Float = hueRange.coerceIn(MIN_HUE_RANGE, MAX_HUE_RANGE)
 
     /**
      * Wraps a hue into [0,1), mirroring GLSL `fract()` (the fluid particle
@@ -70,9 +96,13 @@ internal object FluidHue {
     /**
      * Slice of the hue wheel a fluid scene spans: the Hue range slider scaled
      * by the palette's own span multiplier (WaterScene's form).
+     *
+     * [paletteRange] stays clamped to 0..1 - it is palette DATA, a fraction of
+     * the wheel, not a user control - so the slider is the only thing that can
+     * push the product past one turn, exactly as on the particle family.
      */
     fun span(
         hueRange: Float,
         paletteRange: Float,
-    ): Float = hueRange.coerceIn(MIN_HUE_RANGE, 1f) * paletteRange.coerceIn(0f, 1f)
+    ): Float = range(hueRange) * paletteRange.coerceIn(0f, 1f)
 }

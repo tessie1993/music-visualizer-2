@@ -1,5 +1,8 @@
 package dev.musicviz
 
+import dev.musicviz.analysis.AudioFeatures
+import dev.musicviz.analysis.FeatureTimeline
+import dev.musicviz.analysis.TimelineFrame
 import dev.musicviz.export.ExportGradeState
 import dev.musicviz.render.CompositeGrade
 import dev.musicviz.render.scene.SceneParams
@@ -181,6 +184,78 @@ class ExportCompositeGradeTest {
         // A parked slider is neutral even mid-beat, on every scene type.
         assertEquals(0f, state.pulseAmount(SceneParams.DEFAULT, pulsesItself = false), 0f)
         assertTrue("the beat envelope must be live for that to be meaningful", state.beatPulse > 0f)
+    }
+
+    /**
+     * A 60 Hz analysis timeline whose beat flag is ONE frame wide - the shape
+     * the offline analyzer really produces, since `BeatGate.accept` is true
+     * for a single frame per onset. Beats fall on odd and even indices alike.
+     */
+    private fun beatTimeline(
+        count: Int = 600,
+        everyN: Int = 11,
+    ): FeatureTimeline {
+        val frames =
+            (0 until count).map { i ->
+                TimelineFrame(
+                    i * 1000L / 60L,
+                    AudioFeatures(
+                        bands = FloatArray(64),
+                        waveform = FloatArray(128),
+                        beat = i % everyN == 0,
+                    ),
+                )
+            }
+        return FeatureTimeline(frames, hopMs = 16L, hopRateHz = 60f)
+    }
+
+    /**
+     * Beat pulses an export at [fps] fires over the whole timeline, driving
+     * [ExportGradeState] frame by frame from timeline features sampled the way
+     * `VideoExporter` samples them. A hit is a frame whose envelope is armed
+     * at 1 (`pulseAmount` = the slider itself); it decays immediately after,
+     * so this counts beats observed, not frames spent decaying.
+     */
+    private fun pulseHits(
+        timeline: FeatureTimeline,
+        fps: Int,
+        params: SceneParams,
+        spanned: Boolean = true,
+    ): Int {
+        val state = ExportGradeState()
+        val dt = 1f / fps
+        val total = (timeline.durationMs * fps / 1000L).toInt() + 1
+        var hits = 0
+        for (frame in 0 until total) {
+            val timeMs = frame * 1000L / fps
+            val nextMs = (frame + 1) * 1000L / fps
+            val features = timeline.progressionAt(timeMs, emptyList(), if (spanned) nextMs - timeMs else 0L)
+            state.advance(params, dt, features.beat)
+            if (state.pulseAmount(params, pulsesItself = false) >= params.pulse) hits++
+        }
+        return hits
+    }
+
+    @Test
+    fun aThirtyFpsExportPulsesOnEveryBeatASixtyFpsExportDoes() {
+        // The defect this guards: the beat flag is exactly ONE 60 Hz timeline
+        // frame wide, and an exported frame used to sample the single NEAREST
+        // frame - so a 30 fps render looked at every other timeline frame and
+        // never saw about half the track's beats. advance(beat = false) then
+        // never armed the envelope and the video pulsed on half the beats
+        // (worse at 24 fps), while the live view pulsed on all of them.
+        val pulsed = graded.copy(pulse = 0.75f)
+        val timeline = beatTimeline()
+        val expected = timeline.frames.count { it.features.beat }
+        assertEquals("a 60 fps export pulses on every beat", expected, pulseHits(timeline, 60, pulsed))
+        for (fps in listOf(24, 30, 48, 50)) {
+            assertEquals("an export at $fps fps must pulse on every beat too", expected, pulseHits(timeline, fps, pulsed))
+        }
+        // Witness: the nearest-frame sampling this replaced, at the rate the
+        // encoder falls back to when 60 fps will not configure.
+        val dropped = pulseHits(timeline, 30, pulsed, spanned = false)
+        assertTrue("nearest-frame sampling should drop about half, got $dropped of $expected", dropped < expected * 3 / 4)
+        assertEquals("...while 60 fps was always correct", expected, pulseHits(timeline, 60, pulsed, spanned = false))
     }
 
     @Test
