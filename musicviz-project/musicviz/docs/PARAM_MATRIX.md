@@ -131,17 +131,22 @@ real hue would cross zero and flicker the slot between built-in and custom.
 | `fluidIterations`, `fluidPressure`, `fluidCurl`, `fluidVelocityDissipation`, `fluidDensityDissipation`, `fluidChromaticAging` | FL only `FluidScene.kt:205-212` | `isFluidSceneId` |
 | emitter schedule: `fluidBeatPattern`, `fluidBeatSplats`, `fluidStirrers`, `fluidStirrerSpeed`, `fluidSplatRadius`, `fluidRadiusPulse`, `fluidSplatForce`, `fluidBassPump`, `fluidSparkle` | FL `:227-242`, WA `:229-238` | `isEmitterSceneId` |
 | `fluidPaletteCycleSpeed` | FL only `:241` (WATER discards splat colour) | `isFluidSceneId` |
-| journey: `fluidSpawnPath`, `fluidSpawnPoints`, `fluidSpawnProgress`, `fluidCatchPoints`, `fluidCatchPull`, `fluidCatchRadius`, `fluidParticleLife` | FL `:221-224,279-280`, CF `CurlFlowScene.kt:153-157,181-187`, WA `WaterScene.kt:222-225,237,243` | `isJourneySceneId` |
-| `fluidParticleDrag` | FL `:274`, CF `:181` | `isParticleLayerSceneId` |
+| journey: `fluidSpawnPath`, `fluidSpawnPoints`, `fluidSpawnProgress`, `fluidCatchPoints`, `fluidCatchPull`, `fluidCatchRadius` | FL `:231-234,245,292-293`, CF `CurlFlowScene.kt:161-164,191-192`, WA `WaterScene.kt:232-235,247,256` | `isJourneySceneId` |
+| `fluidParticleDrag`, `fluidParticleLife` ¹¹ | FL `:287-288`, CF `:186-187` | `isParticleLayerSceneId` |
 | `fluidParticlesEnabled`, `fluidParticleBrightness` | FL only (`:273,324`) | `isFluidSceneId` inside the particle section |
 | `fluidDyeEnabled`, `fluidShading`, `fluidBloom*`, `fluidSunrays*`, `fluidCurlAudio`, `fluidBloomAudio`, `fluidFadeAudio` | FL only `:288-306` | `isFluidSceneId` |
-| `waterWaveSpeed`, `waterDamping`, `waterRippleStrength`, `waterDepth`, `waterSpecular`, `waterFlow` | WA only `WaterScene.kt:181,218-219,242,281-283` | `isWaterSceneId` |
+| `waterRippleStrength`, `waterDepth`, `waterSpecular`, `waterFlow` | WA only `WaterScene.kt:181,242,281-283` | `isWaterSceneId` |
+| `waterWaveSpeed`, `waterDamping` ¹² | WA `WaterScene.kt:228-229` **and the all-styles ripple overlay** (`VisualizerRenderer.kt:636-637`, `VideoExporter.kt:426-427`) | `isWaterSceneId`, plus the overlay section (`!isWaterScene`) on every other style |
 | `flowEnabled`, `flowStrength`, `flowForce`, `flowCurl` | C fluidWarp for every family (`VisualizerRenderer.kt:716-729`); FL substitutes its own velocity field | always |
 | `flowAdvectParticles` | P `ParticleSceneBase.kt:96-112` | always |
-| `rippleOverlayEnabled`, `rippleOverlayStrength`, `rippleOverlaySpecular` | C for every family (`:738-750`); forced off on WATER, whose own display already refracts | always |
+| `rippleOverlayEnabled`, `rippleOverlayStrength`, `rippleOverlaySpecular` | C for every family (`:738-750`); forced off on WATER, whose own display already refracts | always (the overlay's SPEED and DAMPING are `waterWaveSpeed`/`waterDamping`, the row above) |
 
-The gate predicates live in `VisualsHub.kt:372-400` and are pinned by
-`FluidTabGatingTest` / `CurlFlowCustomizeTest`.
+The gate predicates live in `VisualsHub.kt:372-410` and are pinned by
+`FluidTabGatingTest` / `CurlFlowCustomizeTest`. `FluidTabGatingTest` also
+parses `CustomizeDialog.kt` and asserts the exact label set inside the
+`isJourneyScene` / `isParticleLayerScene` / `isWaterScene` / `!isWaterScene`
+blocks, so a control drifting into a section whose styles do not read it fails
+the build.
 
 ## Notes
 
@@ -224,6 +229,28 @@ The gate predicates live in `VisualsHub.kt:372-400` and are pinned by
     would look identical to the bug this gating fixes, with the cause a tab
     away). Pinned by `ParticleGatingTest`, which parses the gating back out of
     `CustomizeDialog.kt`.
+11. **`fluidParticleLife` is not a journey param.** It ages the FluidParticles
+    lifecycle layer, so its readers are exactly `fluidParticleDrag`'s -
+    `FluidScene` and `CurlFlowScene` set `particles.drag` / `particles.life`
+    on consecutive lines - and `WaterScene` has no particle layer at all. It
+    used to be rendered in the Journey section, which covers WATER, so
+    "Particle life (s)" appeared on a style with nothing to age. It now sits
+    next to "Particle drag" under `isParticleLayerSceneId`, behind the same
+    `fluidParticlesEnabled` condition on FLUID (the layer that reads it is not
+    stepping when the layer is off). The rest of the Journey section does have
+    a WaterScene reader for every control, listed in the table above.
+12. **Wave speed and damping are shared, not Water-only.** The all-styles
+    ripple overlay is the same heightfield solver: `VisualizerRenderer` sets
+    `ripple.waveSpeed = 1.2f * waterWaveSpeed` and `ripple.damping =
+    waterDamping` for the overlay exactly as `WaterScene` does for its own
+    surface, and `VideoExporter` mirrors it so exports match. With both
+    sliders in the WATER-only section, a user who switched the overlay on from
+    any other style got rings propagating at whatever those params happened to
+    hold, with no control anywhere - while `ParamRandomizer` kept rolling both
+    keys ("Wave speed", "Damping"). The Fluid tab now renders them in the
+    overlay section on every style except WATER, which keeps showing them in
+    its own section as the surface physics they also are: one pair of params,
+    one place per style, no duplicate live copies of the same slider.
 
 ## Divergences worth knowing
 
@@ -251,4 +278,11 @@ The gate predicates live in `VisualsHub.kt:372-400` and are pinned by
   is why `"Ripple strength"` (Water, 0..2) and `"Ripple overlay strength"`
   (all-styles overlay, 0..1) had to stop sharing a label, and why the LFO
   card's depth slider is now `"LFO depth"` rather than colliding with the
-  Water section's `"Depth"`.
+  Water section's `"Depth"`. Same rule, third case: the Behavior tab's
+  reactivity envelope is `"Reactivity attack"` / `"Reactivity decay"` and the
+  FX tab's ADSR cards are `"Env attack"` / `"Env decay"`, where both pairs
+  used to be plain `"Attack"` / `"Decay"` - two unrelated live controls under
+  one lock chip. Neither is a `ParamRandomizer` key, so that collision only
+  ever mirrored a highlight; the two ADSR CARDS still share their keys with
+  each other (as `Sustain` / `Release` / `Amount` do), which is one group with
+  one meaning rather than a collision.

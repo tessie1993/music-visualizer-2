@@ -221,8 +221,13 @@ internal fun BehaviorTab(
             LabeledSlider("Trail warp (liquid echo)", p.trailWarp, 0f..1f) { onChange(p.copy(trailWarp = it)) }
         }
         SectionHeader("Reactivity envelope")
-        LabeledSlider("Attack", attack, 0.05f..1f) { onReactivityChange(it, decay) }
-        LabeledSlider("Decay", decay, 0.02f..0.6f) { onReactivityChange(attack, it) }
+        // "Reactivity attack/decay", not the bare words: lock keys are label
+        // strings, and the FX tab's ADSR cards render their own attack/decay
+        // sliders - the shared label made one lock chip mark two unrelated
+        // live controls. Same fix as "Depth" -> "LFO depth". Neither of these
+        // is a `ParamRandomizer` key, so no roll changes hands with the rename.
+        LabeledSlider("Reactivity attack", attack, 0.05f..1f) { onReactivityChange(it, decay) }
+        LabeledSlider("Reactivity decay", decay, 0.02f..0.6f) { onReactivityChange(attack, it) }
         SectionHeader("Scene intelligence")
         ChipRow(IntelligenceMode.entries.map { it.name.lowercase() }, IntelligenceMode.entries.indexOf(intelligenceMode)) {
             onIntelligenceModeChange(IntelligenceMode.entries[it])
@@ -520,13 +525,19 @@ private fun CheckRow(
  *   verbatim" block), so hiding these on Water left it running on whatever
  *   values the params happened to hold.
  * - [isJourneyScene]: FLUID + CURLFLOW + WATER - the shared spawn/catch
- *   progression.
+ *   progression. Every control in it has a WaterScene reader
+ *   (`WaterScene.kt` choreography/emitters block); `fluidParticleLife` did
+ *   not, so it moved down to the particle-layer section.
  * - [isParticleLayerScene]: FLUID + CURLFLOW - the shared FluidParticles
- *   lifecycle layer, i.e. the styles that read `fluidParticleDrag`. CurlFlow
- *   IS that layer, so hiding the drag slider behind the FLUID-only section
- *   (and behind `fluidParticlesEnabled`, which CurlFlow never reads) made a
- *   control the style genuinely consumes unreachable.
- * - [isWaterScene]: WATER alone - the heightfield surface.
+ *   lifecycle layer, i.e. the styles that read `fluidParticleDrag` and
+ *   `fluidParticleLife`. CurlFlow IS that layer, so hiding the drag slider
+ *   behind the FLUID-only section (and behind `fluidParticlesEnabled`, which
+ *   CurlFlow never reads) made a control the style genuinely consumes
+ *   unreachable.
+ * - [isWaterScene]: WATER alone - the heightfield surface. Wave speed and
+ *   damping are the exception inside it: they are ALSO the all-styles ripple
+ *   overlay's physics, so the overlay section renders them for every other
+ *   style (`!isWaterScene`) rather than leaving that overlay uncontrollable.
  * For every other style only the FlowField / water-ripple overlay sections
  * appear - the same tab is the one home for "fluid principles" regardless
  * of style, mirroring how the GLSL tab scopes to shader scenes.
@@ -551,6 +562,11 @@ internal fun FluidTab(
                     "carve wakes, the journey decides where they land.",
                 style = MaterialTheme.typography.labelSmall,
             )
+            // Wave speed and Damping are WaterScene's own wave physics
+            // (WaterScene.kt "sim.waveSpeed / sim.damping") AND the shared
+            // ripple overlay's, so they are shown here on WATER and in the
+            // overlay section on every other style - one param, one place per
+            // style, never two live copies of the same slider.
             LabeledSlider("Wave speed", p.waterWaveSpeed, 0.2f..2f) { onChange(p.copy(waterWaveSpeed = it)) }
             LabeledSlider("Damping", p.waterDamping, 0.9f..0.999f) { onChange(p.copy(waterDamping = it)) }
             LabeledSlider("Ripple strength", p.waterRippleStrength, 0f..2f) { onChange(p.copy(waterRippleStrength = it)) }
@@ -578,7 +594,6 @@ internal fun FluidTab(
                 LabeledSlider("Catch pull", p.fluidCatchPull, 0f..3f) { onChange(p.copy(fluidCatchPull = it)) }
                 LabeledSlider("Catch radius", p.fluidCatchRadius, 0.03f..0.3f) { onChange(p.copy(fluidCatchRadius = it)) }
             }
-            LabeledSlider("Particle life (s)", p.fluidParticleLife, 1f..20f) { onChange(p.copy(fluidParticleLife = it)) }
         }
         if (isEmitterScene) {
             // Quality tiers: FluidScene sizes its sim/dye/particle buffers
@@ -637,10 +652,16 @@ internal fun FluidTab(
                 // (it never reads fluidParticlesEnabled).
                 CheckRow("Particle layer", p.fluidParticlesEnabled) { onChange(p.copy(fluidParticlesEnabled = it)) }
             }
-            // Drag is read wherever the lifecycle layer actually steps:
-            // FluidScene behind its toggle, CurlFlowScene unconditionally.
+            // Drag and life are read wherever the lifecycle layer actually
+            // steps: FluidScene behind its toggle, CurlFlowScene
+            // unconditionally - the two are set on consecutive lines in both
+            // (FluidScene "particles.drag/life", CurlFlowScene the same). Life
+            // used to sit in the Journey section, which also covers WATER, and
+            // WaterScene has no particle layer to age at all, so the slider
+            // read nothing there.
             if (!isFluidScene || p.fluidParticlesEnabled) {
                 LabeledSlider("Particle drag", p.fluidParticleDrag, 0.02f..1f) { onChange(p.copy(fluidParticleDrag = it)) }
+                LabeledSlider("Particle life (s)", p.fluidParticleLife, 1f..20f) { onChange(p.copy(fluidParticleLife = it)) }
             }
             if (isFluidScene && p.fluidParticlesEnabled) {
                 // CURLFLOW colours its points from the beat pulse and the
@@ -690,12 +711,28 @@ internal fun FluidTab(
             "The water heightfield rides on top of ANY style: beats drop " +
                 "rings that refract the image (particles, shaders, MilkDrop - " +
                 "and exports), treble sprinkles small drops, and glint adds a " +
-                "specular sparkle on the crests. The water style's own surface " +
-                "already refracts, so the overlay stays off there.",
+                "specular sparkle on the crests. Speed and damping are the same " +
+                "wave physics the water style runs - one pair of sliders drives " +
+                "both. The water style's own surface already refracts, so the " +
+                "overlay stays off there.",
             style = MaterialTheme.typography.labelSmall,
         )
         CheckRow("Water ripples enabled", p.rippleOverlayEnabled) { onChange(p.copy(rippleOverlayEnabled = it)) }
         if (p.rippleOverlayEnabled) {
+            if (!isWaterScene) {
+                // The overlay's heightfield runs on waterWaveSpeed /
+                // waterDamping exactly as the WATER style's own surface does
+                // (VisualizerRenderer "ripple.waveSpeed = 1.2f * ...", and
+                // VideoExporter's mirror of it), so these two are the overlay's
+                // wave physics on every style - not Water-only params. They sat
+                // in the WATER-only section, which left the rings on plasma /
+                // MilkDrop / particles propagating at whatever the params
+                // happened to hold, with no reachable control (the randomizer
+                // still rolls both). On WATER they appear once, up in the Water
+                // section, where they are that style's own physics.
+                LabeledSlider("Wave speed", p.waterWaveSpeed, 0.2f..2f) { onChange(p.copy(waterWaveSpeed = it)) }
+                LabeledSlider("Damping", p.waterDamping, 0.9f..0.999f) { onChange(p.copy(waterDamping = it)) }
+            }
             // NOT "Ripple strength": that is the Water section's own slider
             // (waterRippleStrength, 0..2). Lock keys are label strings, so
             // sharing the label made one lock chip freeze both params and one
@@ -842,8 +879,15 @@ private fun AdsrCard(
                 }
             }
         }
-        LabeledSlider("Attack", config.attack, 0.005f..1f) { onChange(config.copy(attack = it)) }
-        LabeledSlider("Decay", config.decay, 0.01f..1.5f) { onChange(config.copy(decay = it)) }
+        // "Env attack/decay": these used to be plain "Attack"/"Decay" and
+        // collided with the Behavior tab's reactivity envelope, which is a
+        // different live control with a different range. Lock keys are label
+        // strings, so the collision rendered a lock chip on a slider the user
+        // never touched (harmless beyond that - neither label is a randomizer
+        // key). The two cards still share these keys with each other, exactly
+        // as Sustain/Release/Amount do; that is one group, one meaning.
+        LabeledSlider("Env attack", config.attack, 0.005f..1f) { onChange(config.copy(attack = it)) }
+        LabeledSlider("Env decay", config.decay, 0.01f..1.5f) { onChange(config.copy(decay = it)) }
         LabeledSlider("Sustain", config.sustain, 0f..1f) { onChange(config.copy(sustain = it)) }
         LabeledSlider("Release", config.release, 0.02f..2f) { onChange(config.copy(release = it)) }
         LabeledSlider("Amount", config.amount, 0f..1.5f) { onChange(config.copy(amount = it)) }
