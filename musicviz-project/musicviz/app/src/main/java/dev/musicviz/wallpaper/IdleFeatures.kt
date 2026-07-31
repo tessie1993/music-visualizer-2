@@ -19,10 +19,22 @@ import kotlin.math.sin
  * visibly repeats.
  */
 class IdleFeatures(
-    private val bandCount: Int = 16,
+    /**
+     * Shaped like the real analyzer's output, not smaller.
+     *
+     * Every consumer scales by `bands.size`, so a shorter array is safe - but
+     * it is not the same: `ShaderScene` resamples the bands into a fixed-width
+     * audio texture and MilkDrop is handed the waveform verbatim, so a
+     * quarter-length spectrum would make the idle look measurably coarser than
+     * the same scene playing music. Matching the analyzer (64 bands, 128
+     * waveform samples) means the wallpaper's idle frames are shaped exactly
+     * like its live ones.
+     */
+    bandCount: Int = 64,
+    waveformSize: Int = 128,
 ) {
     private val bands = FloatArray(bandCount)
-    private val waveform = FloatArray(64)
+    private val waveform = FloatArray(waveformSize)
     private var phase = 0f
 
     /** Advances by [dt] seconds and returns the breathing "audio". */
