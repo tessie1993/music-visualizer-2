@@ -399,6 +399,24 @@ internal fun isWaterSceneId(sceneId: String): Boolean = sceneId == SceneIds.WATE
  */
 internal fun isParticleLayerSceneId(sceneId: String): Boolean = sceneId == SceneIds.FLUID || sceneId == SceneIds.CURLFLOW
 
+/**
+ * Shape/Color gating, same rule as the Fluid tab: a control only shows up on
+ * the styles that actually read it.
+ *
+ * Most of Shape and Color survived the "customizations on every style" work
+ * because the COMPOSITE pass re-implements them (`composite_frag.glsl` has
+ * uPostWarp / uPostRipple / uPostTwist / uPostKaleido / uPostTile /
+ * uPostPixelate / uPostPosterize / uPostBloom / uPostSolarize / uPostInvert /
+ * uPostHue / uPostSat ... ), so they bend particles, MilkDrop and the fluid
+ * family too. Four do not: `morph`, `paletteMix`, `duotone` and the second
+ * palette slot (`palette2`, resolved into `palette2Base`/`palette2Range`).
+ * They are uploaded ONLY by `ShaderScene` - uMorph, uPaletteMix, uDuotone,
+ * uPal2Base, uPal2Range, declared by all twenty scene fragment shaders - and
+ * the composite has no counterpart uniform for any of them. On every other
+ * style those four sliders move nothing, so they are hidden there.
+ */
+internal fun isShaderLookSceneId(sceneId: String): Boolean = sceneId in VisualizerRenderer.SHADER_SCENES
+
 @Composable
 private fun CustomizeHubTab(
     viewModel: PlayerViewModel,
@@ -406,7 +424,10 @@ private fun CustomizeHubTab(
 ) {
     val viz by viewModel.vizState.collectAsState()
     var sub by rememberSaveable { mutableStateOf(0) }
-    val isShader = viz.sceneId in dev.musicviz.render.VisualizerRenderer.SHADER_SCENES
+    // Shader styles own the GLSL tab AND are the only readers of the
+    // shader-only look params gated out of Shape/Color - one predicate, so
+    // the two can never drift apart.
+    val isShader = isShaderLookSceneId(viz.sceneId)
     val tabs = listOf("Motion", "Shape", "Behavior", "Color", "FX", "Fluid") + if (isShader) listOf("GLSL") else emptyList()
     LaunchedEffect(isShader) { if (!isShader && sub >= 6) sub = 0 }
     Column(Modifier.fillMaxSize()) {
@@ -426,7 +447,7 @@ private fun CustomizeHubTab(
                 val lfos by viewModel.lfos.collectAsState()
                 when (sub) {
                     0 -> MotionTab(p, onChange)
-                    1 -> ShapeTab(p, onChange)
+                    1 -> ShapeTab(p, onChange, isShaderLookScene = isShader)
                     2 ->
                         BehaviorTab(
                             p,
@@ -441,7 +462,7 @@ private fun CustomizeHubTab(
                             intelligenceMode = viz.intelligenceMode,
                             onIntelligenceModeChange = viewModel::setIntelligenceMode,
                         )
-                    3 -> ColorTab(p, onChange)
+                    3 -> ColorTab(p, onChange, isShaderLookScene = isShader)
                     4 -> {
                         val adsrs by viewModel.adsrs.collectAsState()
                         FxTab(
