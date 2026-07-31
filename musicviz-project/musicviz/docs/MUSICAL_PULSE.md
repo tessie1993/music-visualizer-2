@@ -66,7 +66,7 @@ rms ─────────────> EnergyFollower ──> macroEnergy 
 | Field             | Meaning                                                              |
 | ----------------- | -------------------------------------------------------------------- |
 | `beat`            | Accepted beat (tempo-gated once locked)                              |
-| `beatStrength`    | 0.35..1: how hard the hit was, scaled by the macro-energy envelope   |
+| `beatStrength`    | How hard the hit was, scaled by the macro-energy envelope (see below) |
 | `beatImpulse`     | Event trigger: 0 off-beat, `beatStrength` on it (legacy-safe)        |
 | `transient`       | Every onset, graded by its amplitude, damped + budget-metered        |
 | `motionImpulse`   | What continuous envelopes ride: `max(beatImpulse, transient × 0.5)`  |
@@ -93,9 +93,15 @@ Behavioral rules, in order of what they fix:
 - **Phase anchoring on the strongest onset** — while acquiring lock, the grid
   re-seats itself on candidates clearly stronger than the current anchor, so
   the phase settles on the kick rather than on whatever transient came first.
-- **Graded strength** — `(z − sigma) / 3σ` mapped to 0.35..1, then scaled by
-  `0.6 + 0.4 × macroEnergy`: the same hit pulses gently in a quiet passage
-  and lands full-weight in the chorus.
+- **Graded strength** — `(z − sigma) / 3σ` mapped to `STRENGTH_FLOOR`..1
+  (0.35..1), then scaled by `0.6 + 0.4 × macroEnergy` and, while the grid is
+  still unlocked, by `UNLOCKED_SCALE` (0.8): the same hit pulses gently in a
+  quiet passage and lands full-weight in the chorus. Note the *emitted* range
+  is therefore **0.168..1**, not 0.35..1 — 0.35 is the floor of the curve
+  before those two multipliers, and the weakest real value is a quiet hit on
+  an unlocked grid (`0.35 × 0.6 × 0.8`). Size any "minimum visible response"
+  against 0.168, and remember `CompositeGrade.pulseAmount` squares its
+  envelope.
 - **Transient texture, not a metronome** — the grid is a filter for *events*,
   not a deafness to the playing. Every suppressed off-grid onset still emits
   on the `transient` channel, sized by its own amplitude (the same
@@ -133,10 +139,18 @@ The consumer rule is a two-tier split:
   (renderer + export), fluid `beatEnv`s (`FluidEmitters`,
   `FluidChoreography`, `CurlFlowScene`), `FluidSim.audioBeat`,
   `FountainScene` emission boost.
-- **Discrete events stay on `beatImpulse`** (tempo-locked, graded), so
-  transients never multiply event counts: `BurstScene` firework size,
-  `RippleOverlayDrops` ring amplitude, the `uBeat` flash uniform in both
-  composite passes, ADSR attack triggers, beat-edge splat/ring firing.
+- **Discrete events stay on the tempo-locked beat**, so transients never
+  multiply event counts. Two sub-cases, and the difference is deliberate:
+  - *Graded* — the event fires on the beat AND its size follows
+    `beatImpulse`: `BurstScene` firework size, `RippleOverlayDrops` ring
+    amplitude, the `uBeat` flash uniform in both composite passes.
+  - *Ungraded* — the event fires on the raw `beat` flag at a fixed size:
+    `Adsr.kt`'s attack retrigger and `FluidEmitters`' beat-edge splat firing.
+    Both are *retriggers of something that has its own amplitude envelope*
+    (the ADSR's own A/D/S/R, the splat's `beatEnv`-driven radius and speed),
+    so scaling the trigger as well would grade the same hit twice. The gating
+    condition is identical either way — `beat` is true exactly when
+    `beatImpulse > 0` — so only the size differs.
 
 Legacy features that carry a beat flag but no strength (synthesised idle
 features, pre-tracker cache entries) read as a full impulse on both tiers,

@@ -42,6 +42,38 @@ class AnalysisEngine(
     private val _features = MutableStateFlow(AudioFeatures.empty(processor.bandCount))
     val features: StateFlow<AudioFeatures> = _features
 
+    /**
+     * Set by [reset] and consumed by the worker loop. The extractor and the
+     * smoother are single-threaded state owned by that loop, so clearing them
+     * from the caller's thread (a player callback, i.e. the main thread) would
+     * race a live [FeatureExtractor.extract] and hand the visuals a frame
+     * built from half-cleared history. The flag costs one volatile read per
+     * ~16 ms tick and moves the work to the thread that owns it.
+     */
+    @Volatile
+    private var resetPending = false
+
+    /**
+     * Drops the per-track analysis state (beat grid, energy envelope, rolling
+     * flux window, band smoothing) so the next frames are judged on their own
+     * audio. Sensitivity settings survive.
+     *
+     * The extractor lives for the whole session while the audio it sees does
+     * not: call this on every track change and every seek. The state it holds
+     * is a model of one continuous piece of music, and applying a previous
+     * track's tempo grid to a new one suppresses that track's real beats as
+     * off-grid. It also restores export parity - the offline replay always
+     * starts from a cold tracker, so the live path has to as well.
+     *
+     * Safe to call from any thread, and safe to call while stopped: the
+     * published features clear immediately, and the extractor clears on the
+     * worker's next tick (or its next [start]).
+     */
+    fun reset() {
+        resetPending = true
+        _features.value = AudioFeatures.empty(processor.bandCount)
+    }
+
     private var job: Job? = null
 
     fun start(scope: CoroutineScope) {
@@ -53,6 +85,11 @@ class AnalysisEngine(
                 val smoothed = FloatArray(processor.bandCount)
                 val waveform = FloatArray(128)
                 while (true) {
+                    if (resetPending) {
+                        resetPending = false
+                        extractor.reset()
+                        smoother.reset()
+                    }
                     if (ring.snapshotLatest(windowBuf)) {
                         processor.process(windowBuf, sampleRateHz, raw)
                         smoother.apply(raw, smoothed)

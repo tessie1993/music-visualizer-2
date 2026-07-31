@@ -463,6 +463,104 @@ it was left and what closing it involves.
       condition on FLUID. Every remaining Journey control was re-checked and
       does have a `WaterScene` reader (see `docs/PARAM_MATRIX.md`).
 
+## Known gaps — pulse-tracker review (v1.1.x)
+Findings from an adversarial review of the `PulseTracker` + graded-transient
+commits, verified by compiling the analysis package standalone and driving the
+real classes (the Android build cannot resolve its plugins offline).
+
+- [x] **The tracker's state was never cleared between tracks or on a seek.**
+      `AnalysisEngine` holds one `FeatureExtractor` for the whole session, so
+      the locked beat grid, the 30 s rolling energy peak and the flux history
+      all carried into the next track — the old grid then suppressed the new
+      track's kicks as off-grid. Measured on a 128 BPM loud → 75 BPM quiet
+      change: 1 beat in the first 5 s against 6 from a cold extractor, and the
+      survivors graded at 0.208 against 0.739. It also broke the export-parity
+      contract, since the offline replay always starts cold. CLOSED:
+      `reset()` on `PulseTracker`/`BeatGate`/`EnergyFollower`/`BandSmoother`/
+      `FeatureExtractor`/`AnalysisEngine`, called from `onTrackChanged` and
+      from a new `onPositionDiscontinuity` seek branch. The engine's reset is
+      a volatile flag consumed by the worker loop, NOT a direct call: the
+      extractor is single-threaded state owned by that coroutine and the
+      player callbacks arrive on the main thread. Pinned by
+      `PulseTrackerTest."reset makes a reused tracker identical to a fresh
+      one"`, which asserts both directions — reset output is bit-identical to
+      a fresh tracker, and the un-reset run is measurably worse, so the test
+      cannot pass by the two fixtures being trivially equal. Device check 37.
+- [x] **`withBeatSensitivity` ran the tempo autocorrelation on every frame.**
+      O(lags × window) per frame — ~1.5 s for a 4-minute track — on a path
+      that runs at cached-track load, on every beat-sensitivity slider settle
+      and before every export. CLOSED: the autocorrelation refreshes every
+      `TEMPO_REFRESH_FRAMES` (8, ~128 ms) instead of every frame, and its
+      inner loop reads a chronological copy of the flux window instead of
+      doing two modulos per term (`BeatGate.copyChronological`). ~1460 ms →
+      ~61 ms on the same fixture. Both time constants that depended on the
+      per-frame cadence are rescaled (`trackGain` uses the exact one-pole
+      equivalent `1-(1-g)^n`, `snapUpdates` converts `PERIOD_SNAP_SECONDS`),
+      so behaviour is unchanged: beat decisions are byte-identical across 4
+      fixtures × 4 settings, and live/offline replay still agrees frame for
+      frame. NOTE the BPM *readout* can differ where the autocorrelation was
+      already ambiguous between harmonics (it samples different frames); on
+      fixtures where it locks cleanly it is unchanged. `bpmSmoothed` stays
+      poled per FRAME on purpose — it is a lowpass on a displayed number, so
+      its wall-clock time constant is what matters. Device check 38.
+- [x] `updateTempo`'s early returns left `tempoClarity` stale, which kept the
+      confidence-decay gate disarmed through a breakdown (the tracker held a
+      lock it could no longer justify), and `divergentFrames` only reset in
+      the tracking branch, so divergences from unrelated passages accumulated
+      toward a spurious grid re-seat. Both returns now zero the clarity, and
+      the counter is per-refresh (`divergentUpdates`).
+- [x] Docs corrected against the code: `beatStrength`'s real range is
+      0.168..1, not the 0.35..1 that `PulseTracker`'s KDoc and
+      MUSICAL_PULSE.md both claimed (0.35 is the floor BEFORE the energy and
+      unlocked multipliers); MUSICAL_PULSE.md's consumer table claimed ADSR
+      attack and beat-edge splat firing had moved to `beatImpulse` when both
+      still branch on the raw `beat` flag — they are listed as deliberately
+      ungraded now, with the reason (both retrigger something that already
+      has its own amplitude envelope, so grading the trigger would grade the
+      same hit twice); `ExportGradeState`'s KDoc no longer says the envelope
+      is "1 on a beat" or names `beatImpulse` where production passes
+      `motionImpulse`; `decideBeats` no longer claims to be the cached-replay
+      path, which it has not been since `withBeatSensitivity` started calling
+      `decidePulse` directly.
+- [x] Tests that could not fail: the sigma-ceiling assertion was
+      `atCeiling <= atDefault`, which passes when the control does nothing
+      AND when it silences the track. Replaced with a strict reduction plus a
+      usability bound at `SLOW_SIGMA`. The export beat-parity test drove the
+      `advance(beat: Boolean)` convenience overload, so it exercised a branch
+      nothing ships; it now passes `features.motionImpulse` like
+      `FxCompositor` does, and a new test pins that the export pulse actually
+      follows the beat's graded strength.
+- [ ] `EnergyFollower.value` was dead public state (written per frame, read
+      nowhere); removed in favour of `step`'s return value. Nothing to do —
+      recorded so the removal is not re-added as a "missing accessor".
+- [ ] **Judgement call left for the user: `SIGMA_MAX = 6` can be a mute
+      switch.** Measured sweep on the slow-sparse test fixture at the default
+      gap: 2.0–3.0 → 24 beats, 3.5–5.0 → 11–12 (the twelve real kicks),
+      5.5–6.0 → **0**. The cliff is the sigma gate itself, not the tempo grid
+      (the raw candidate gate also yields 0 at 6σ), and it is inherent to
+      thresholding against a track's own flux — for sparse quiet material
+      there is always a sigma above which nothing passes. But `SIGMA_MAX`'s
+      own KDoc argues 6 was chosen because anything higher "would mean 'never
+      fire' for most material — a mute switch rather than a sensitivity
+      control", so on this material the constant is already past its stated
+      rationale. Options: lower `SIGMA_MAX` to ~5, or leave it and accept
+      that the extreme end of the slider can go silent. NOT changed here: it
+      is a user-facing change to a shipped slider range, on the evidence of
+      one synthetic fixture. Worth confirming on real tracks first
+      (device check 26 already exercises this slider).
+- [ ] Not changed, and worth stating: the review flagged
+      `integrateBeatPulse`'s `max(impulse, decayed)` as dropping soft beats.
+      Its worked example is arithmetically wrong (`max(0.4, 0.8 - 0.15×3)` is
+      0.4, not 0.35 — the soft beat wins and the envelope rises). The `max`
+      form is a peak-hold-with-decay, which is a coherent envelope follower,
+      and at `BEAT_DECAY` = 3/s a full-strength hit is spent in 333 ms, so
+      the window in which a later beat is swallowed is roughly the window in
+      which it would be perceptually masked anyway. Changing it would be a
+      taste change across seven files (`CompositeGrade`, `ShaderScene`,
+      `ParticleSceneBase`, `ProjectMScene`, `FluidEmitters`,
+      `FluidChoreography`, `CurlFlowScene`), so it wants a device check on
+      real material, not a headless argument.
+
 ## Always
 - [ ] Update docs (NAVIGATION.md, WIREFRAME.md, PARAM_MATRIX.md) when
       behavior changes; keep README changelog per round.

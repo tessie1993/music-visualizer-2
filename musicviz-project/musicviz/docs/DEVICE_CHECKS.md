@@ -473,3 +473,43 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     amount of colour spread must track across all three families. On
     WATER specifically, watch the splashes as well as the pool — both
     must widen together.
+
+37. Beat tracking restarts on a track change and on a seek (v1.1.x): the
+    analyzer keeps ONE tempo grid, energy envelope and flux window for the
+    whole session, and it now clears them whenever the audio jumps.
+    TRACK CHANGE — queue a loud, fast, four-on-the-floor track and a quiet,
+    slow one back to back, and watch the FIRST FIVE SECONDS of the second
+    track. The visuals must react to its kicks straight away and at a
+    sensible size. The bug this fixes looks like near-total deafness at the
+    start of the new track (headless measurement on a 128 -> 75 BPM change:
+    1 beat in the first 5 s instead of 6, and the few that survived came
+    through at roughly a third of their proper strength), fading in over
+    ~15 s as the old grid decayed. Try it in both orders — quiet-then-loud
+    is milder but should also be wrong-free — and on shuffle/next as well
+    as auto-advance at the end of a track.
+    SEEK — during one track, drag the transport bar a long way (a verse to
+    a chorus and back). Beats must keep landing on the music immediately
+    after the seek, not go quiet for several seconds. Repeat while paused,
+    then play: the first beats after resuming must be right too.
+    EXPORT PARITY — this is the check that matters most. Play a track from
+    the start, then WITHOUT changing anything export ~20 s of it and play
+    the clip against live playback. They must pulse on the same hits. Then
+    do the same after arriving at the track from a different one: the
+    export must still match, because both now start from a cold tracker.
+    NOT AFFECTED, and worth confirming: pause/resume in place is not a
+    discontinuity and must NOT reset — the visuals should pick up where
+    they were, not re-acquire the beat grid.
+
+38. Beat-sensitivity slider no longer stalls (v1.1.x): the tempo
+    autocorrelation used to run on every frame of an offline replay.
+    Open Settings > Visuals & Analysis on an ANALYSED track (one showing
+    the key/BPM badge) and drag "Beat sensitivity" and "Minimum gap
+    between beats" across their whole range, in both directions, without
+    pausing. The UI must stay smooth and the visuals must follow the
+    slider within a moment of each settle; the bug looks like the whole
+    app hitching for a second or more per settle (measured at ~1.5 s per
+    call on a 4-minute track, now ~60 ms on the same machine). Same check
+    when STARTING a cached track and when pressing Export: both run the
+    same replay and both used to stall. Confirm the beat behaviour itself
+    is unchanged at the default settings — this was a cost fix, and the
+    headless gate pins the decisions as byte-identical.

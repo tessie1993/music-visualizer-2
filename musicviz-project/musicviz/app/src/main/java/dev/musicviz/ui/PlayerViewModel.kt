@@ -720,6 +720,27 @@ class PlayerViewModel(
                     }
                 }
 
+                override fun onPositionDiscontinuity(
+                    oldPosition: Player.PositionInfo,
+                    newPosition: Player.PositionInfo,
+                    reason: Int,
+                ) {
+                    // A seek breaks the audio stream's continuity just as a
+                    // track change does: the tracker's predicted beat frames
+                    // now point at music that will not arrive, so it would
+                    // suppress the real beats at the new position as off-grid
+                    // until it re-locked. Covers every seek path (transport
+                    // bar, gestures, any future notification controls), which
+                    // is why this hangs off the listener and not seekTo().
+                    // Auto-advance discontinuities are left to
+                    // EVENT_MEDIA_ITEM_TRANSITION, which resets anyway.
+                    if (reason == Player.DISCONTINUITY_REASON_SEEK ||
+                        reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
+                    ) {
+                        engine.reset()
+                    }
+                }
+
                 override fun onAudioSessionIdChanged(audioSessionId: Int) {
                     // The audiofx chain must follow the sink's session; attach
                     // rebuilds the effects and restores persisted settings.
@@ -1730,6 +1751,9 @@ class PlayerViewModel(
     // ---- Intelligence ----
 
     private fun onTrackChanged() {
+        // Before anything else: the live analyzer's beat grid, energy envelope
+        // and flux history all describe the track that just ended.
+        engine.reset()
         timeline = null
         _vizState.update { it.copy(suggestedSceneId = null, bpm = 0f, sections = emptyList()) }
         if (_vizState.value.intelligenceMode != IntelligenceMode.MANUAL) {

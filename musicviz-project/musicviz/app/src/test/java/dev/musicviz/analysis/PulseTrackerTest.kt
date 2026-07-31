@@ -399,6 +399,49 @@ class PulseTrackerTest {
     }
 
     @Test
+    fun `reset makes a reused tracker identical to a fresh one`() {
+        // The live path holds ONE extractor for the whole session while the
+        // audio it sees changes underneath it. Without a reset at the track
+        // boundary the previous track's locked grid suppresses the new
+        // track's kicks as off-grid and its rolling energy peak grades what
+        // survives - and playback stops matching export, because the offline
+        // replay always starts from a cold tracker.
+        fun run(
+            t: PulseTracker,
+            period: Int,
+            level: Float,
+            frames: Int,
+        ): List<Triple<Int, Float, Float>> {
+            val hits = mutableListOf<Triple<Int, Float, Float>>()
+            for (frame in 0 until frames) {
+                t.step(kickAndOffbeatFlux(frame, period) * level, 0.4f * level)
+                if (t.beat) hits += Triple(frame, t.strength, t.phase)
+            }
+            return hits
+        }
+
+        // A loud fast track, then a quiet slow one on the same tracker.
+        val reused = tracker()
+        run(reused, period = 28, level = 1f, frames = WARMUP + 600)
+        reused.reset()
+        val afterReset = run(reused, period = 64, level = 0.3f, frames = WARMUP)
+
+        val fresh = run(tracker(), period = 64, level = 0.3f, frames = WARMUP)
+        assertEquals("reset must reproduce a fresh tracker exactly", fresh, afterReset)
+
+        // And prove the reset is doing real work on this fixture, so the
+        // assertion above cannot pass by the two runs being trivially equal.
+        val leaked = tracker()
+        run(leaked, period = 28, level = 1f, frames = WARMUP + 600)
+        val withoutReset = run(leaked, period = 64, level = 0.3f, frames = WARMUP)
+        assertTrue(
+            "carrying the previous track's grid must visibly cost beats " +
+                "(fresh=${fresh.size}, leaked=${withoutReset.size})",
+            withoutReset.size < fresh.size,
+        )
+    }
+
+    @Test
     fun `legacy beat flags without strength still read as a full impulse`() {
         // Synthesised features and pre-tracker cache entries carry beat=true
         // with no strength; scenes read beatImpulse and must see the

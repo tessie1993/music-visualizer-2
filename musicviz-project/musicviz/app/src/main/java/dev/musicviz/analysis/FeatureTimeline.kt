@@ -68,6 +68,7 @@ class FeatureTimeline(
         val rms = FloatArray(frames.size) { frames[it].features.rms }
         val pulse = PulseTracker.decidePulse(flux, rms, hopRateHz, beatThresholdSigma, beatMinIntervalMs)
         val out = ArrayList<TimelineFrame>(frames.size)
+        var anyChanged = false
         for (i in frames.indices) {
             val fr = frames[i]
             val f = fr.features
@@ -82,6 +83,7 @@ class FeatureTimeline(
                 if (unchanged) {
                     fr
                 } else {
+                    anyChanged = true
                     fr.copy(
                         features =
                             f.copy(
@@ -95,6 +97,12 @@ class FeatureTimeline(
                     )
                 }
         }
+        // Nothing moved - hand back the receiver rather than an equal copy.
+        // The beat-sensitivity slider re-runs this on every settle, and a drag
+        // that returns to the value already applied is the common case; the
+        // frames are shared either way, so this only saves the list, but it
+        // also lets callers use identity to skip their own downstream work.
+        if (!anyChanged) return this
         return FeatureTimeline(out, hopMs, key, hopRateHz)
     }
 
