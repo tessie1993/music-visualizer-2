@@ -411,3 +411,30 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     and off in turn: neither may break the streams into dots. Export
     ~10 s of Curl Flow with Trails off and again with it on: the mp4s
     must match the live look in both cases.
+36. Exported video pulses on EVERY beat at every frame rate, and the
+    Hue range slider means the same thing on every family. BEAT SIDE —
+    pick a track with an obvious four-on-the-floor kick and a style in
+    the fluid family (Fluid, Curl Flow or Water). Visuals > Customize >
+    FX: "Beat pulse" ~0.8, and turn "Beat flash"/"Beat shake" up too so
+    the beat is unmissable. Export the same ~20 s at 60 fps and again at
+    30 fps (4K also falls back to 30 fps on its own). Play the two clips
+    side by side against live playback: the 30 fps clip must swell and
+    flash on EVERY kick the 60 fps clip does — same count, same places.
+    A 30 fps clip that pulses on roughly every OTHER kick (and a 24 fps
+    one that is worse still) is the exported frame sampling one 60 Hz
+    analysis frame instead of the whole span it covers; the beat flag is
+    one frame wide, so half of them fall in the gap. Also check the
+    continuous motion is UNCHANGED against the previous build: bass
+    swell, band-driven speed and the waveform must look the same, not
+    softened — only the beat impulses were meant to change. HUE RANGE
+    SIDE — on Fluid, Curl Flow and Water, drag Visuals > Customize >
+    Color > "Hue range" across its WHOLE travel. Colour must keep
+    widening past the two-thirds mark all the way to the top (above 1.0
+    the palette walks more than one turn of the wheel); the top third
+    looking identical to the middle is the bug. At the very bottom of
+    the slider the style must narrow to a tight band but never collapse
+    to one flat colour. Compare the same slider positions against a
+    shader style (e.g. Julia) and a particle style (e.g. Swarm): the
+    amount of colour spread must track across all three families. On
+    WATER specifically, watch the splashes as well as the pool — both
+    must widen together.

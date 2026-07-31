@@ -1,6 +1,8 @@
 package dev.musicviz.analysis
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -49,6 +51,137 @@ class FeatureTimelineTest {
     }
 
     private fun beats(t: FeatureTimeline): List<Boolean> = t.frames.map { it.features.beat }
+
+    /**
+     * A 60 Hz timeline whose beat flag is ONE frame wide - what the offline
+     * analyzer produces, since `BeatGate.accept` is true for a single frame
+     * per onset. Beats land on odd and even indices alike (every 11th frame),
+     * which is what a 30 fps export - every SECOND timeline frame - misses.
+     */
+    private fun beatTimeline(
+        count: Int = 600,
+        everyN: Int = 11,
+    ): FeatureTimeline {
+        val frames =
+            (0 until count).map { i ->
+                val onBeat = i % everyN == 0
+                val level = i / count.toFloat()
+                TimelineFrame(
+                    i * 1000L / 60L,
+                    AudioFeatures(
+                        bands = FloatArray(64) { level },
+                        waveform = FloatArray(128),
+                        rms = level,
+                        onset = if (onBeat) 1f else 0.1f,
+                        beat = onBeat,
+                        bpm = 120f,
+                        centroid = level,
+                        flux = if (onBeat) 1f else 0.1f,
+                    ),
+                )
+            }
+        return FeatureTimeline(frames, hopMs = 16L, hopRateHz = 60f)
+    }
+
+    /**
+     * The features an export at [fps] observes, sampled exactly the way
+     * `VideoExporter`'s frame loop does. [spanned] = false is the plain
+     * nearest-frame lookup it used to do, kept as the regression witness.
+     */
+    private fun exportFrames(
+        timeline: FeatureTimeline,
+        fps: Int,
+        spanned: Boolean = true,
+    ): List<AudioFeatures> {
+        val total = (timeline.durationMs * fps / 1000L).toInt() + 1
+        return (0 until total).map { frame ->
+            val timeMs = frame * 1000L / fps
+            val nextMs = (frame + 1) * 1000L / fps
+            timeline.progressionAt(timeMs, emptyList(), if (spanned) nextMs - timeMs else 0L)
+        }
+    }
+
+    @Test
+    fun `a 30 fps export observes every beat a 60 fps export does`() {
+        val timeline = beatTimeline()
+        val expected = timeline.frames.count { it.features.beat }
+        assertTrue("the fixture must carry beats", expected > 20)
+        assertEquals("a 60 fps export sees the whole 60 Hz timeline", expected, exportFrames(timeline, 60).count { it.beat })
+        // Every rate the exporter can pick (it clamps to 24..60): each beat
+        // observed, and observed exactly ONCE - consecutive spans tile the
+        // timeline, so nothing is double-counted either.
+        for (fps in listOf(24, 25, 30, 40, 48, 50)) {
+            assertEquals(
+                "an export at $fps fps must observe every beat exactly once",
+                expected,
+                exportFrames(timeline, fps).count { it.beat },
+            )
+        }
+    }
+
+    @Test
+    fun `nearest-frame sampling is what dropped the beats`() {
+        // Regression witness for the defect: an export frame sampled the ONE
+        // nearest timeline frame, so at 30 fps (every other frame) roughly
+        // half the one-frame-wide beat flags were never seen and the video
+        // pulsed on the rest. 60 fps was always fine, which is why it hid.
+        val timeline = beatTimeline()
+        val expected = timeline.frames.count { it.features.beat }
+        val nearestAt30 = exportFrames(timeline, 30, spanned = false).count { it.beat }
+        assertTrue("nearest-frame sampling should have missed beats, saw $nearestAt30 of $expected", nearestAt30 < expected)
+        assertTrue("...roughly half of them", nearestAt30 < expected * 3 / 4)
+        assertEquals(expected, exportFrames(timeline, 60, spanned = false).count { it.beat })
+    }
+
+    @Test
+    fun `a 60 fps export is unchanged by the span lookup`() {
+        // At 60 fps an exported frame covers exactly one timeline frame, so
+        // the spanned lookup must return the very same features - no copies,
+        // no re-derived values, byte-identical output.
+        val timeline = beatTimeline()
+        assertEquals(exportFrames(timeline, 60, spanned = false), exportFrames(timeline, 60))
+    }
+
+    @Test
+    fun `the span only folds in impulses, never the continuous features`() {
+        val timeline = beatTimeline()
+        val spanned = exportFrames(timeline, 30)
+        val nearest = exportFrames(timeline, 30, spanned = false)
+        assertEquals(nearest.size, spanned.size)
+        for (i in spanned.indices) {
+            // Levels stay POINT-SAMPLED at the nearest frame: averaging them
+            // over the span would low-pass every exported clip (and averaging
+            // a waveform cancels its phase), which is a character change.
+            assertSame("bands at frame $i", nearest[i].bands, spanned[i].bands)
+            assertSame("waveform at frame $i", nearest[i].waveform, spanned[i].waveform)
+            assertEquals("rms at frame $i", nearest[i].rms, spanned[i].rms, 0f)
+            assertEquals("centroid at frame $i", nearest[i].centroid, spanned[i].centroid, 0f)
+            assertEquals("bpm at frame $i", nearest[i].bpm, spanned[i].bpm, 0f)
+            assertEquals("progress at frame $i", nearest[i].progress, spanned[i].progress, 0f)
+            // Impulses are peak-held, so a folded-in beat keeps the onset
+            // strength it was decided from instead of a neighbour's.
+            assertTrue("onset at frame $i", spanned[i].onset >= nearest[i].onset)
+            assertTrue("a beat frame must carry its onset peak", !spanned[i].beat || spanned[i].onset >= 1f)
+        }
+        assertTrue("the span must recover beats", spanned.count { it.beat } > nearest.count { it.beat })
+    }
+
+    @Test
+    fun `a spanned lookup never reads outside the timeline`() {
+        val timeline = beatTimeline(count = 8, everyN = 3)
+        val first = timeline.frames.first().features
+        val last = timeline.frames.last().features
+        // Before the first frame and far past the last, with spans that dwarf
+        // the whole track - both ends clamp instead of indexing out of range.
+        assertEquals(first.rms, timeline.featuresAt(-5_000L, 100L).rms, 0f)
+        assertEquals(first.rms, timeline.featuresAt(-5_000L, 1_000_000L).rms, 0f)
+        assertTrue("a span over the whole track sees its beats", timeline.featuresAt(0L, 1_000_000L).beat)
+        assertEquals(last.rms, timeline.featuresAt(999_999L, 1_000L).rms, 0f)
+        // Degenerate timelines: one frame (no spacing) and none at all.
+        val one = FeatureTimeline(listOf(timeline.frames.first()), hopMs = 16L)
+        assertEquals(first, one.featuresAt(0L, 100L))
+        assertFalse(FeatureTimeline(emptyList(), hopMs = 16L).featuresAt(0L, 100L).beat)
+    }
 
     @Test
     fun `featuresAt returns nearest frame`() {

@@ -513,8 +513,9 @@ class CompositeGradeTest {
     @Test
     fun paletteSpanIsTheShaderAndParticleForm() {
         // `paletteRange * hueRange`, the product ShaderScene and
-        // ParticleSceneBase use - NOT FluidHue.span, which clamps hueRange to
-        // 0.1..1 for reasons that belong to the fluid emitters.
+        // ParticleSceneBase use - NOT FluidHue.span, which floors hueRange at
+        // 0.1 for reasons that belong to the fluid emitters (a zero span there
+        // collapses them to one flat colour). Both now share the same TOP.
         assertEquals(0.14f, CompositeGrade.paletteSpan(1f, 0.14f), eps)
         assertEquals(0.07f, CompositeGrade.paletteSpan(0.5f, 0.14f), eps)
         // A zero hue range legitimately means "one hue" here, as on a shader

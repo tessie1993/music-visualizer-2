@@ -258,7 +258,10 @@ internal class WaterScene(
         // for this whole family, so folding it in here as well rotated the
         // pool twice per slider unit.
         val baseHue = FluidHue.base(p.paletteBase)
-        for (s in emitters.tick(f, simDt, sim.aspect, baseHue, p.hueRange.coerceIn(FluidHue.MIN_HUE_RANGE, 1f))) {
+        // Same clamp as the display pass' uHueSpan, via the shared helper -
+        // an inline `coerceIn(MIN, 1f)` here left the top third of the Hue
+        // range slider dead on the splashes while the pool colours moved.
+        for (s in emitters.tick(f, simDt, sim.aspect, baseHue, FluidHue.range(p.hueRange))) {
             val speed = kotlin.math.sqrt(s.velX * s.velX + s.velY * s.velY) / FluidEmitters.BASE_SPEED
             if (WaterMath.isCatchWell(s.r, s.g, s.b)) {
                 // Catch points are drains, not splashes: they dimple the pool

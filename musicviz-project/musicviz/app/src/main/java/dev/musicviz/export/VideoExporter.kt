@@ -372,7 +372,15 @@ class VideoExporter(
             for (frame in 0 until totalFrames) {
                 if (isCancelled()) break
                 val timeMs = frame * 1000L / fps
-                val features = timeline.progressionAt(timeMs, sections)
+                // An exported frame is on screen until the next one, so it has
+                // to see the WHOLE span of 60 Hz timeline frames it covers, not
+                // just the nearest one: the beat flag is exactly one timeline
+                // frame wide, so a 30 fps render (every other frame) used to
+                // miss about half the track's beats - no uBeat, no flash/shake
+                // and no Beat pulse on those. Spans tile exactly, so at 60 fps
+                // this is still one timeline frame and nothing changes.
+                val nextTimeMs = (frame + 1) * 1000L / fps
+                val features = timeline.progressionAt(timeMs, sections, nextTimeMs - timeMs)
                 // Mirror the live modulation order exactly (envelopes first:
                 // their offsets can drive LFO rate/depth): the export was
                 // silently dropping ALL ADSR routing - including the new
