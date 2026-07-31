@@ -94,6 +94,12 @@ class AudioTranscoder(
         isCancelled: () -> Boolean,
         onProgress: (Float) -> Unit,
     ): Result {
+        // Known assumption (salvaged from the retired PATCHES.md): the encoder is
+        // configured from the SOURCE channel count, and every timestamp below is
+        // derived from it. A decoder that reports a different output channel count
+        // than its source - rare, but HE-AAC parametric stereo can - would skew the
+        // exported PTS. Not observed in practice; recorded here so the next person
+        // debugging drifting export audio starts in the right place.
         val channels = aiff.channels.coerceAtMost(2)
         val sampleRate = aiff.sampleRate
         val encFormat =

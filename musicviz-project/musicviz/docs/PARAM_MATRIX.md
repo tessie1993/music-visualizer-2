@@ -40,8 +40,8 @@ uploaded as one `vec4` **per texture** — `uGateA` for the incoming scene,
 * `grade` (z) — zoom/rotation + the colour grade, switched wholesale. Only the
   fluid family (FL/CF/WA) is graded by the composite; the flag exists because
   the neutral value of these uniforms is 1.0, not the GL default 0.0.
-* `pulse` (w) — the beat swell. A deliberately different set from `grade`: MD
-  grades itself but nothing in its pipeline reads `pulse`.
+* `pulse` (w) — the beat swell, now delivered through the composite pass on
+  every family that has no native reader (see note 4).
 
 Per texture, not per frame: `composite_frag`'s `main()` runs BOTH textures
 through `postFx`, and a cross-family transition (julia → fluid) would otherwise
@@ -64,7 +64,7 @@ transitions), so exports match the screen.
 | `rotation` | S `:182` | P `:144` | PM `:221` | C ² | C ² | C ² |
 | `endlessZoom` / `endlessZoomSpeed` | S `:123` | P (all five) | PM `:165` | — ³ | — ³ | — ³ |
 | `sway` | S `:207` | C | C | C | C | C |
-| `pulse` | S `:208` | P point-size swell `:152` | **— ⁴** | **— ⁴** | **— ⁴** | **— ⁴** |
+| `pulse` | S `:208` | P point-size swell `:152` | C ⁴ | C ⁴ | C ⁴ | C ⁴ |
 | `driftX` / `driftY` | S `:210-211` | C | C | C | C | C |
 | `shake` | S `:212` | C | C | C | C | C |
 
@@ -159,10 +159,12 @@ the build.
 3. `endlessZoom` is a per-scene *simulation* behaviour (respawn/outflow), not a
    post transform. The fluid family has no equivalent — its "endlessness" is
    the flow field itself. **Gap:** the checkbox is still shown on those styles.
-4. **`pulse` (Beat pulse) has no reader on MD/FL/CF/WA.** Shader scenes use
-   `uPulse`, particles swell their point size; the composite declares no beat
-   pulse at all. Closing it means a new `uPost*` uniform plus its `FxCompositor`
-   and `CompositeGrade` mirrors — written up in `todo.md`.
+4. **`pulse` (Beat pulse) reaches MD/FL/CF/WA through the composite pass.**
+   Shader scenes use `uPulse` and particles swell their point size directly;
+   everything else is served by `uPostPulse` (`composite_frag.glsl`), uploaded
+   by `VisualizerRenderer` and mirrored by `FxCompositor` for exports, with a
+   `CompositeGrade.pulseAmount` mirror. This was a documented gap; it was closed
+   and this note is the record, not an open task.
 5. **`audioDrive` and `beatResponse` now read on the whole fluid family**
    (v1.1.x). FL/WA apply `audioDrive` ONCE, in `draw`, to the feature snapshot
    the sim uniforms, the choreography and the emitters all share

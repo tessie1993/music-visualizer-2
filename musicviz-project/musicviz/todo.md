@@ -2,14 +2,18 @@
 
 ## Project context (read once)
 Native Android music visualizer: Kotlin + Jetpack Compose + GL ES 3 +
-libprojectM v4.1.7 (JNI, arm64-v8a). Repo root: /home/claude/musicviz
-(git). compileSdk 36, JDK 21, Gradle 8.13, currently v0.9.5.
+libprojectM v4.1.7 (JNI, arm64-v8a).
+Git root: the repository root; the Gradle module is musicviz-project/musicviz.
+compileSdk/targetSdk 36, minSdk 26, JDK 17, Gradle 8.13.
+Version lives in app/build.gradle.kts — read it there, never from this file.
 Full plan/risks: docs/PLAN.md · nav: docs/NAVIGATION.md · wireframes:
-docs/WIREFRAME.md · features: docs/FEATURES_TODO.md.
+docs/WIREFRAME.md · param coverage: docs/PARAM_MATRIX.md ·
+release: docs/PLAY_STORE_RELEASE.md.
 
 Architecture digest:
-- analysis/  FftProcessor, FeatureExtractor (beats = mean+2.0σ spectral
-  flux, ~250 ms refractory — the flicker fix target), BandSmoother,
+- analysis/  FftProcessor, FeatureExtractor (beat threshold and minimum
+  interval are user-adjustable; defaults live in FeatureExtractor.SIGMA_DEFAULT
+  and INTERVAL_MS_DEFAULT — read them there), BandSmoother,
   AnalysisEngine → StateFlow<AudioFeatures>, OfflineAnalyzer,
   FeatureTimeline (bpm, sections).
 - render/    VisualizerRenderer (supersampled FBO A/B, transition +
@@ -32,20 +36,25 @@ Architecture digest:
 
 ## Working rules
 - FIRST CHECK, THEN DO: P0 gates everything below it.
-- Verify gate after every change set, run split to avoid timeouts:
-  1) ./gradlew ktlintFormat   2) ./gradlew ktlintCheck testDebugUnitTest
-  3) ./gradlew assembleDebug  4) ./gradlew lint
-  with ANDROID_HOME=/home/claude/android-sdk.
-- Ship each round: /mnt/user-data/outputs/musicviz-project.zip (exclude
-  .gradle/build/app-build/.kotlin/.git/local.properties) + musicviz-
-  debug.apk; bump versionCode/versionName.
+- Verify gate: there is NO Android SDK in this container, so none of the Gradle
+  tasks below can run locally. CI is the gate of record —
+  .github/workflows/android.yml runs, in order:
+    ktlintCheck + checkThirdPartyNotices · testDebugUnitTest (incl. Robolectric)
+    assembleDebug · APK verification · bundleRelease (exercises R8) ·
+    16 KB native-alignment check · "no INTERNET permission" assert · lint
+  Two of those catch things nothing else does: checkThirdPartyNotices fails if
+  app/src/main/assets/third_party_notices.txt drifts from THIRD_PARTY_NOTICES,
+  and bundleRelease is the only place a missing proguard keep rule for the
+  PMBridge JNI symbols shows up. ktlint runs on *.kt AND *.kts.
+- Ship: CI uploads app-debug.apk as a run artifact and force-pushes it to the
+  apk-drop branch from main; release.yml builds the signed AAB. Do not hand-zip
+  anything. versionCode is Play-constrained — see docs/PLAY_STORE_RELEASE.md.
 - Parallel Claude sessions may edit this tree: `git diff` uncommitted
   work you didn't write before committing; audit + integrate, never
   blind-discard, and never delete line ranges without diffing the
   surrounding declarations first.
 - GL output can't be verified headless: list what needs on-device
   confirmation (docs/DEVICE_CHECKS.md) in each round summary.
-UI OVERHAUL IS GATED: no visual redesign until P0–P4 architecture is done.
 
 ## P0 — Verify & stabilize (blocks everything)
 - [x] Preset roundtrip test: unit test asserting PresetStore save→load
@@ -126,12 +135,18 @@ UI OVERHAUL IS GATED: no visual redesign until P0–P4 architecture is done.
       persist in a store like LfoStore; tick in renderer AND export loop.
 - [x] Customize "Mod" tab: LFO 1-3 + ADSR 1-2 editors, target pickers
       with [+ add target], amount sliders, live value meters.
-- [x] Synth-inspired FX (new SceneParams + composite/prelude support):
-      filter sweep (LP cutoff sweep on beat), sidechain pump (brightness
-      duck on bass hits), S&H stutter (frame-hold on treble spikes),
-      saw/tri LFO shapes if missing. More Behavior tab params.
+- [ ] PARTIAL — Synth-inspired FX. SHIPPED: saw/tri/S&H LFO shapes
+      (render/Lfo.kt LfoWave.SAW / TRIANGLE / RANDOM) and a fluid-only
+      sidechain pump (SceneParams.fluidBassPump). STILL OPEN: LP filter
+      cutoff sweep on beat, and frame-hold stutter on treble spikes.
 
-## FLUID — Fluid dynamics scene (spec: FLUID_SIM_2.md v2 — supersedes v1)
+## FLUID — Fluid dynamics scene
+> NOTE: FLUID_SIM_2.md is cited by ~17 files but has NEVER existed in this
+> repository (checked against full git history) — it came from an earlier
+> environment. Do not go looking for it. The spec of record is the code in
+> render/fluid/ plus its headless tests (FluidMathTest, FluidLookMathTest,
+> FluidEmittersTest, FluidParticlesMathTest, FluidQualityTest,
+> FluidChoreographyTest), and the design rationale in docs/ORGANIC_MOTION.md.
 Working rules from the spec apply: clean-room for GPL-source ideas (never open
 that repo), MIT headers on ported shaders, THIRD_PARTY_NOTICES maintained,
 verify gate + on-device checklist every phase.
@@ -296,7 +311,7 @@ curl-noise + GPU-particle-lifecycle + emitter/attractor patterns surveyed.
       All three must honor the full customization set (they are
       ShaderScenes, so the prelude applies) + presets + export.
 
-## P6 — UI overhaul (GATED: only after P0–P4 are done)
+## P6 — UI overhaul (the crystal-glass redesign has SHIPPED; see ui/CrystalComponents.kt)
 - [ ] Player panel restructure: canvas bottom bar deleted; icons become
       panel row 4; tap hides whole panel; top/bottom setting moves it as
       one unit. (Structural nav — do first within P6.)
@@ -326,14 +341,10 @@ it was left and what closing it involves.
       detector deliberately follows the live slider rather than owning a
       second setting: an export that disagrees with the playback the user just
       watched is the bug, not a feature.
-- [ ] **`pulse` ("Beat pulse") has no reader on MilkDrop or the fluid
-      family.** Shader scenes use `uPulse`, particle scenes swell their point
-      size; the composite pass declares no beat pulse at all, so the slider
-      is inert on MD/FL/CF/WA. Closing it means a new `uPostPulse` uniform
-      (a beat-driven zoom/scale nudge inside `geo()`), the matching upload in
-      `VisualizerRenderer` and `FxCompositor`, and a `CompositeGrade` mirror
-      + headless test — the same shape as the v0.14 grading work. Pick the
-      curve so it matches what shader scenes already do at the same value.
+- [x] **`pulse` ("Beat pulse") now reaches MilkDrop and the fluid family.**
+      CLOSED: `uPostPulse` is declared in `composite_frag.glsl`, uploaded by
+      `VisualizerRenderer`, mirrored by `FxCompositor` for exports, with a
+      `CompositeGrade.pulseAmount` mirror. See docs/PARAM_MATRIX.md note 4.
 - [x] **`audioDrive` / `beatResponse` have no reader on Fluid, Water (and
       `audioDrive` none on MilkDrop).** Fixed for the fluid family: FLUID and
       WATER apply `audioDrive` once, in `draw`, to the feature snapshot the
@@ -428,11 +439,9 @@ it was left and what closing it involves.
 - [ ] `endlessZoom` is shown on the fluid styles, which have no respawn/
       outflow behaviour to drive. Same fix shape as the item above; low
       priority because the checkbox is cheap and harmless.
-- [ ] `hueRange` is clamped to 0.1..1 on the fluid family (`FluidHue.span`)
-      but multiplied raw on shader/particle scenes, so the slider's 1.0-1.5
-      band is flat on three of six families. Intentional today (a 0 span
-      kills the fluid look). If it is ever unified, do it in `FluidHue` so
-      all three fluid styles move together.
+- [x] `hueRange` now spans the full slider on the fluid family. CLOSED:
+      `FluidHue.MAX_HUE_RANGE = 1.5f`, so the 1.0-1.5 band is no longer flat;
+      the clamp still guards a 0 span, which would kill the fluid look.
 - [x] ADSR card labels "Attack"/"Decay" collide with the Behavior tab's
       reactivity envelope sliders of the same name. CLOSED by renaming both
       sides, since neither was a `ParamRandomizer` key and so neither side

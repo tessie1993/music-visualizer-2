@@ -1,5 +1,22 @@
 # Adding Organic, Trippy, Music-Reactive Motion to *musicviz*: An Implementation Report
 
+> **STATUS — this is a 2026-07 research report, not a plan. Read this first.**
+>
+> The port it recommends **has been built and shipped.** `render/fluid/` contains
+> FluidSim, FluidBuffers, FluidLook, FluidParticles, FluidQuality, FluidChoreography,
+> CurlFlowScene, WaterScene, RippleSim and more (18 files), driving 21 `fluid_*.glsl`
+> shaders. Curl-noise flow fields, feedback trails, the fluid sim and the water/ripple
+> scenes from the roadmap below are all live styles in the app today.
+>
+> Treat the sections below as **design rationale and GPU/GLES reference**, which is
+> why four source files cite it by section number. Do NOT treat any roadmap item as
+> outstanding work without checking `render/fluid/` first. Items 4-5 of the roadmap
+> (Physarum, reaction-diffusion, raymarched fractals) are the only ones still unbuilt.
+>
+> Section numbering in A and D is frozen: `trail_warp_frag.glsl`, `curl_field_frag.glsl`,
+> `FluidChoreography.kt` and `SceneParams.kt` cite it by ordinal. Annotate in place;
+> never renumber.
+
 ## TL;DR
 - **Build a GPU Navier-Stokes fluid sim as your flagship new scene.** Pavel Dobryakov's WebGL-Fluid-Simulation (MIT license, 16.4k+ stars, 1.9k forks, tagline "Play with fluids in your browser (works even on mobile)") is the gold-standard "liquid/gel/smoke" look; its architecture (ping-pong double FBOs, low-res sim grid + high-res dye, curl/vorticity, Jacobi pressure solve, Gaussian splats) maps almost 1:1 onto your existing FBO→composite pipeline and your FFT/beat infrastructure — drive splats from bass onsets, splat force from beat-phase, and dye color from an IQ cosine palette.
 - **The "organic" quality is not one trick but a stack of properties:** divergence-free/curl-noise velocity fields (no clumping), motion continuity/inertia (never teleport), trails and feedback persistence, soft additive blending + bloom, limited HSV/cosine palettes with slow hue cycling, and beat-synced *impulse + slow decay* envelopes. You already own kaleidoscope/warp/bloom in the composite pass, so invest in the **motion/simulation layer**, not more post-FX.
@@ -38,7 +55,7 @@ These are the levers that make motion "read" as organic. Backed by Inigo Quilez'
 - Reference: **PavelDoGreat/WebGL-Fluid-Simulation — MIT** (16.4k+ stars, 1.9k forks). Based on GPU Gems Ch. 38, mharrys/fluids-2d, haxiomic/GPU-Fluid-Experiments. [GitHub](https://github.com/PavelDoGreat/WebGL-Fluid-Simulation/blob/master/README.md)
 - Pipeline: advection (semi-Lagrangian back-trace) → divergence → curl → vorticity confinement → Jacobi pressure solve [Webgpu](https://www.webgpu.com/showcase/webgl-fluid-simulation-by-pavel-dobryakov/) (default 20–25 iterations) → gradient subtraction. [deepwiki](https://deepwiki.com/PavelDoGreat/WebGL-Fluid-Simulation/3.1-fluid-dynamics-theory) Splats inject a Gaussian velocity impulse + dye: `splat = exp(-dot(p,p)/radius) * color`. [deepwiki](https://deepwiki.com/PavelDoGreat/WebGL-Fluid-Simulation/3.1-fluid-dynamics-theory)
 - Key params: SIM_RESOLUTION 128, DYE_RESOLUTION 1024, DENSITY_DISSIPATION ~1, VELOCITY_DISSIPATION 0.2, PRESSURE 0.8, CURL 30, SPLAT_RADIUS 0.25, SPLAT_FORCE 6000. [deepwiki](https://deepwiki.com/PavelDoGreat/WebGL-Fluid-Simulation) [Joshua Lown](https://joshualown.org/2025/08/13/fluid-simulation/)
-- Music-reactive precedent exists (forks/experiments: CM-Tech/musical-ink; [GitHub](https://github.com/CM-Tech/musical-ink) type76/fluid audio demo; [GitHub](https://github.com/PavelDoGreat/WebGL-Fluid-Simulation/issues/10) rocksdanister lively-wallpaper audio fork) [GitHub](https://github.com/rocksdanister/WebGL-Fluid-Simulation) but **no faithful native-Android GLES/Kotlin port exists** — you'd port from scratch. Enhanced JS reference with palette/config options: michaelbrusegard/WebGL-Fluid-Enhanced. [GitHub](https://github.com/michaelbrusegard/WebGL-Fluid-Enhanced)
+- Music-reactive precedent exists (forks/experiments: CM-Tech/musical-ink; [GitHub](https://github.com/CM-Tech/musical-ink) type76/fluid audio demo; [GitHub](https://github.com/PavelDoGreat/WebGL-Fluid-Simulation/issues/10) rocksdanister lively-wallpaper audio fork) [GitHub](https://github.com/rocksdanister/WebGL-Fluid-Simulation) but at the time of writing **no faithful native-Android GLES/Kotlin port existed** — so this app built one. See `render/fluid/FluidSim.kt` and `fluid_*.glsl`; the port is done. Enhanced JS reference with palette/config options: michaelbrusegard/WebGL-Fluid-Enhanced. [GitHub](https://github.com/michaelbrusegard/WebGL-Fluid-Enhanced)
 - Native reference solvers worth reading: mishurov/fluid (OpenGL fragment-shader Navier-Stokes that packs floats into unsigned-byte textures [GitHub](https://github.com/mishurov/fluid) to dodge float-texture support gaps on Android GPUs); ARM's official compute_particles GLES 3.1 sample.
 
 **B2. Curl-noise / simplex flow-field GPU particles.**
@@ -103,7 +120,7 @@ Expose the salient parameters (curl, dissipation, splat radius/force, palette a/
 6. **Expose new sim parameters as sliders + LFO targets** so users (and your existing LFO/param-fade system) can animate them — the LFOs on curl/dissipation/palette-phase will multiply the organic feel for free.
 
 ## Caveats
-- **No existing native Android/Kotlin GLES port of Pavel's sim was found**; the port is from-scratch (though mechanical). The "none exists" finding is based on GitHub search and is not an absolutely exhaustive negative.
+- **No existing native Android/Kotlin GLES port of Pavel's sim was found at research time**, so this app wrote its own — `render/fluid/FluidSim.kt` + `FluidBuffers.kt`. This caveat is historical; do not read it as work outstanding.
 - **Half-float precision and linear-filtering support vary by mobile GPU;** even where FP16 linear filtering is nominally supported, arithmetic precision differs across chips. Test on a range of devices and keep the NEAREST/manual-bilinear path working.
 - **Compute shaders are GLES 3.1+**, above your min-SDK-26 / GLES-3.0 floor — so favor fragment-shader GPGPU (ping-pong) and transform feedback over compute-based Physarum/particle designs, or gate compute paths behind a capability check.
 - IQ's Shadertoy code is often **CC-BY-NC-SA** (non-commercial); the *techniques* are free to use, but don't copy his shader source verbatim into a commercial app without checking each snippet's license. Pavel's sim is MIT and safe to vendor with attribution.

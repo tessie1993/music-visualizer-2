@@ -7,7 +7,8 @@ import org.json.JSONObject
 /**
  * Lightweight play-history persistence for the Home screen: last-played
  * ordering, play counts, and the resume queue. JSON in files dir - a Room
- * database is overkill until analysis data moves in (see FEATURES_TODO).
+ * database is overkill until analysis data moves in; the per-track analysis
+ * timelines live separately in analysis/AnalysisCache.kt.
  */
 class HistoryStore(
     context: Context,

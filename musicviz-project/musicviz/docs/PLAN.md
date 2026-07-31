@@ -4,11 +4,8 @@ Read this, then work top-to-bottom through /todo.md (repo root). The brief's
 rule is FIRST CHECK, THEN DO: phase 0 verification gates everything.
 
 ## Ground rules
-- Verify gate after every change set, split to avoid timeouts:
-  1) `./gradlew ktlintFormat`  2) `ktlintCheck testDebugUnitTest`
-  3) `assembleDebug`  4) `lint`   (ANDROID_HOME=/home/claude/android-sdk)
-- Deliverables per round: /mnt/user-data/outputs/musicviz-project.zip and
-  musicviz-debug.apk. Bump versionCode/Name each round.
+- Verify gate: no Android SDK in this container; CI is the gate of record.
+  See the Working rules in todo.md for the exact CI step list.
 - Parallel Claude sessions may edit this tree. Before committing, `git diff`
   uncommitted work you didn't write; audit + integrate, don't discard.
 - GL/visual changes can't be truly verified headless: state what needs
@@ -72,8 +69,9 @@ previous-frame sampler (uPrevFrame via FBO ping-pong) — then "flow"
 ripples, scope (covered by hexgrid, waves, ring/liss).
 
 ## Decisions log (final, from user)
-- UI OVERHAUL DEFERRED until architecture done (P6 in todo.md); GUI
-  design is a later pass. Crystal themes/overlays stay deferred.
+- UI overhaul: SHIPPED. The crystal-glass redesign is merged (ui/Crystal.kt,
+  ui/Glass.kt, ui/CrystalComponents.kt across nine screens). This bullet
+  previously deferred it; that deferral no longer applies.
 - Canvas bottom bar REMOVED; icons → player panel row 4 (P6 structural).
 - ADSR (2×, multi-target params-or-LFOs): attack triggered by BEAT,
   sustain driven by band ENERGY (hold while above threshold, release on
