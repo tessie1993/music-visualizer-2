@@ -117,6 +117,59 @@ class CompositeGradeTest {
     }
 
     @Test
+    fun beatPulseEnvelopeSnapsOnABeatAndDecaysToZero() {
+        // Parity with ShaderScene/ParticleSceneBase:
+        // beatPulse = if (beat) 1f else (beatPulse - dt * 3f).coerceAtLeast(0f)
+        var env = CompositeGrade.integrateBeatPulse(0f, beat = true, dt = 1f / 60f)
+        assertEquals(1f, env, eps)
+        repeat(10) { env = CompositeGrade.integrateBeatPulse(env, beat = false, dt = 1f / 60f) }
+        assertEquals(0.5f, env, 1e-3f)
+        // A third of a second after the beat it is fully spent, never negative.
+        repeat(60) { env = CompositeGrade.integrateBeatPulse(env, beat = false, dt = 1f / 60f) }
+        assertEquals(0f, env, 0f)
+    }
+
+    @Test
+    fun pulseAmountIsNeutralWithoutASliderOrABeat() {
+        // Both factors must be able to switch the swell off on their own:
+        // pulse 0 (slider parked) and envelope 0 (no recent beat).
+        assertEquals(0f, CompositeGrade.pulseAmount(0f, 1f), 0f)
+        assertEquals(0f, CompositeGrade.pulseAmount(1f, 0f), 0f)
+        // 0 is the GL default too, so an un-uploading program is an identity.
+        assertEquals(1f, CompositeGrade.pulseScale(0f), 0f)
+        val (x, y) = CompositeGrade.geometry(0.8f, 0.3f, 0f, 1f, pulseAmount = 0f)
+        assertEquals(0.8f, x, eps)
+        assertEquals(0.3f, y, eps)
+    }
+
+    @Test
+    fun pulseUsesTheShaderScenesResponseCurve() {
+        // plasma_frag: 1.0 + uPulse * 0.22 * bump, with bump the SQUARED beat
+        // bump - so a full slider on the beat is a 22% swell, and a quarter of
+        // the way down the envelope it is already a quarter of that.
+        assertEquals(1.22f, CompositeGrade.pulseScale(CompositeGrade.pulseAmount(1f, 1f)), eps)
+        assertEquals(1.055f, CompositeGrade.pulseScale(CompositeGrade.pulseAmount(1f, 0.5f)), eps)
+        // Half the slider is half the swell at the same point in the envelope.
+        assertEquals(1.11f, CompositeGrade.pulseScale(CompositeGrade.pulseAmount(0.5f, 1f)), eps)
+    }
+
+    @Test
+    fun pulseMagnifiesAboutTheCentreLikeZoom() {
+        val amount = CompositeGrade.pulseAmount(1f, 1f)
+        val (x, y) = CompositeGrade.geometry(1f, 1f, 0f, 1f, amount)
+        // uv /= (1 + 0.22): the sampled offset shrinks, i.e. the image swells.
+        assertEquals(0.5f + 0.5f / 1.22f, x, eps)
+        assertEquals(0.5f + 0.5f / 1.22f, y, eps)
+        // The centre is a fixed point, as it is for zoom.
+        val (cx, cy) = CompositeGrade.geometry(0.5f, 0.5f, 0f, 1f, amount)
+        assertEquals(0.5f, cx, eps)
+        assertEquals(0.5f, cy, eps)
+        // Pulse and zoom compose as separate divides, in the shader's order.
+        val (zx, _) = CompositeGrade.geometry(1f, 0.5f, 0f, 2f, amount)
+        assertEquals(0.5f + 0.5f / (2f * 1.22f), zx, eps)
+    }
+
+    @Test
     fun saturationZeroCollapsesToLuma() {
         val c = floatArrayOf(0.9f, 0.2f, 0.4f)
         val lum = luma(c)
