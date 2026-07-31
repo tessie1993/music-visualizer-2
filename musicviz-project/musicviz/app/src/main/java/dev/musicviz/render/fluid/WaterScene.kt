@@ -37,7 +37,18 @@ internal class WaterScene(
 ) : Scene {
     override val id: String = SceneIds.WATER
 
-    private val sim = RippleSim(context)
+    private companion object {
+        /** Fingertip footprint in sim units (domain height is 2). */
+        const val TOUCH_RADIUS = 0.11f
+
+        /** Queued drag frames kept while the GL thread catches up. */
+        const val MAX_TOUCH_BACKLOG = 24
+
+        /** Splat colour -> film stain gain; the film is HDR, so this is < 1. */
+        const val INK_GAIN = 0.8f
+    }
+
+    private val sim = RippleSim(context).also { it.inkEnabled = true }
     private val choreography = FluidChoreography()
     private val emitters = FluidEmitters().also { it.choreography = choreography }
     private val monitor = PerformanceMonitor()
@@ -77,6 +88,7 @@ internal class WaterScene(
         quadVao = 0
         quadVbo = 0
         sim.onShaderError = { onShaderError(it) }
+        sim.inkEnabled = true
         sim.create()
         choreography.reset()
         appliedTier = -1
@@ -181,7 +193,64 @@ internal class WaterScene(
         rainAccum = 0f
         val x = (kotlin.random.Random.nextFloat() * 2f - 1f) * sim.aspect * 0.85f
         val y = kotlin.random.Random.nextFloat() * 2f - 1f
-        sim.queueDrop(x, y * 0.85f, 0.05f, 0.28f * params.waterRippleStrength.coerceIn(0f, 2f))
+        val (tr, tg, tb) = FluidHue.rgb(FluidHue.base(params.paletteBase) + 0.12f * kotlin.random.Random.nextFloat(), 0.5f)
+        sim.queueDrop(x, y * 0.85f, 0.05f, 0.28f * params.waterRippleStrength.coerceIn(0f, 2f), tr, tg, tb)
+    }
+
+    /**
+     * Finger strokes waiting for the GL thread, queued by the renderer from
+     * the UI thread. Bounded: a fast drag on a slow frame must not build an
+     * unbounded backlog, and a stroke that is a frame late is worthless.
+     */
+    private val touchStrokes = java.util.concurrent.ConcurrentLinkedQueue<FloatArray>()
+
+    /**
+     * Queues one frame of a finger drag, in NORMALIZED surface coordinates:
+     * both axes in [-1, 1] with y UP. The caller does not know this sim's
+     * aspect, so the x scaling into sim space (x in [-aspect, aspect]) happens
+     * here - on a portrait phone the domain is barely half a unit wide, and
+     * feeding it screen-normalized x would drop every touch outside the pool.
+     *
+     * Called off the GL thread; drained in [draw].
+     */
+    fun queueTouchStroke(
+        nx: Float,
+        ny: Float,
+        ndx: Float,
+        ndy: Float,
+        dt: Float,
+        strength: Float,
+    ) {
+        if (touchStrokes.size >= MAX_TOUCH_BACKLOG) return
+        touchStrokes.add(floatArrayOf(nx, ny, ndx, ndy, dt, strength))
+    }
+
+    /**
+     * Turns queued drags into crest/trough drop pairs. The stroke carries a
+     * palette colour like an emitter splat does, so dragging a finger paints
+     * into the liquid film as well as pushing the surface around.
+     */
+    private fun drainTouchStrokes(
+        rippleStrength: Float,
+        baseHue: Float,
+        p: SceneParams,
+    ) {
+        while (true) {
+            val st = touchStrokes.poll() ?: return
+            val (tr, tg, tb) = FluidHue.rgb(baseHue + 0.5f * FluidHue.range(p.hueRange), 1f)
+            sim.queueStroke(
+                st[0] * sim.aspect,
+                st[1],
+                st[2] * sim.aspect,
+                st[3],
+                st[4],
+                TOUCH_RADIUS,
+                st[5] * rippleStrength.coerceAtLeast(0.2f),
+                tr,
+                tg,
+                tb,
+            )
+        }
     }
 
     override fun draw(timeSeconds: Float) {
@@ -224,9 +293,15 @@ internal class WaterScene(
         }
         applyQualityTier()
 
-        // Wave character.
+        // Wave character. Damping now drains the HEIGHT as well as the
+        // velocity (RippleMath.HEIGHT_DECAY_RATIO) - without that the pool only
+        // ever gained volume and eventually pinned against the height rail.
         sim.waveSpeed = 1.2f * p.waterWaveSpeed.coerceIn(0.2f, 2f)
         sim.damping = p.waterDamping.coerceIn(0.9f, 0.999f)
+        // Liquid film: how hard the surface drags the colour, and how fast the
+        // pool clears back to open water.
+        sim.inkFlow = p.waterLiquidFlow.coerceIn(0f, 4f)
+        sim.inkDissipation = p.waterLiquidFade.coerceIn(0f, 2f)
 
         // Journey: the same spawn/catch progression as FLUID/CURLFLOW.
         choreography.path = p.fluidSpawnPath.coerceIn(0, FluidChoreography.PATH_LABELS.size - 1)
@@ -269,6 +344,10 @@ internal class WaterScene(
                 // that slider mean the same thing here as the particle
                 // capture radius does on FLUID/CURLFLOW.
                 val well = WaterMath.catchWellAmplitude(speed, catchRadius, rippleStrength)
+                // A drain carries no dye by definition (WaterMath.isCatchWell),
+                // so it dips the surface without staining the film - which is
+                // what makes a drain look like water leaving rather than a
+                // differently coloured splash.
                 if (abs(well) > 1e-4f) sim.queueDrop(s.curX, s.curY, catchRadius, well)
                 continue
             }
@@ -278,9 +357,16 @@ internal class WaterScene(
             // moving anchors, so their small drops naturally trail into
             // wakes that flow across the pool.
             val amp = (0.06f + 0.5f * speed.coerceAtMost(2f)) * rippleStrength
-            if (amp > 1e-4f) sim.queueDrop(s.curX, s.curY, s.radius * 0.6f, amp)
+            // The splat's own palette colour goes in with the ring: the film
+            // is coloured by the same emitter schedule that shapes the waves,
+            // which is what makes the pool read as the visual gone liquid
+            // rather than as a blue background with drops on it.
+            if (amp > 1e-4f) {
+                sim.queueDrop(s.curX, s.curY, s.radius * 0.6f, amp, s.r * INK_GAIN, s.g * INK_GAIN, s.b * INK_GAIN)
+            }
         }
         if (idle) queueIdleRain(lastDt)
+        drainTouchStrokes(rippleStrength, baseHue, p)
         sim.step(simDt)
         pendingFeatures = null
 
@@ -306,7 +392,15 @@ internal class WaterScene(
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, sim.heightTex)
         GLES30.glUniform1i(dLoc("uHeight"), 0)
+        // Liquid film. Bound even when the driver refused the extra RGBA16F
+        // pair - the sampler must stay valid - with the amount forced to 0 so
+        // the pass is an exact no-op and the plain pool renders as before.
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, if (sim.inkAvailable) sim.inkTex else sim.heightTex)
+        GLES30.glUniform1i(dLoc("uInk"), 1)
+        GLES30.glUniform1f(dLoc("uInkAmount"), if (sim.inkAvailable) p.waterLiquid.coerceIn(0f, 1f) else 0f)
         drawFullscreen()
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
 
         if (blendWas) GLES30.glEnable(GLES30.GL_BLEND) else GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glBlendFuncSeparate(prevBlendFunc[0], prevBlendFunc[1], prevBlendFunc[2], prevBlendFunc[3])
@@ -375,7 +469,7 @@ internal class WaterScene(
  * [FluidHue].
  */
 internal object WaterMath {
-    /** "Catch radius" slider domain (CustomizeDialog, shared with FLUID). */
+    /** "Catch radius" slider domain (CustomizeTabs, shared with FLUID). */
     const val MIN_CATCH_RADIUS = 0.03f
     const val MAX_CATCH_RADIUS = 0.3f
 

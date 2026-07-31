@@ -26,6 +26,7 @@ import dev.musicviz.analysis.PlaybackMath
 import dev.musicviz.analysis.SceneSuggester
 import dev.musicviz.audio.AudioFxController
 import dev.musicviz.audio.AudioFxState
+import dev.musicviz.audio.MicCapture
 import dev.musicviz.audio.PcmRingBuffer
 import dev.musicviz.audio.PcmTapSink
 import dev.musicviz.audio.TapRenderersFactory
@@ -115,6 +116,22 @@ data class MilkFile(
     val path: String,
 )
 
+/**
+ * A track a screen can hand straight to the player.
+ *
+ * Carries the title/artist the list ALREADY knows so building a queue never
+ * has to reach for the ContentResolver: [PlayerViewModel.mediaItemFor] falls
+ * back to a per-uri `DISPLAY_NAME` query when it has no metadata, which is
+ * fine for one track and a main-thread stall for a thousand of them. Every
+ * list in the app has these two strings in hand, so the queue-building path
+ * takes them instead.
+ */
+data class QueueTrack(
+    val uri: String,
+    val title: String = "",
+    val artist: String = "",
+)
+
 /** One row of the device music index (MediaStore). */
 data class DeviceTrack(
     val uri: String,
@@ -134,6 +151,12 @@ data class LibraryState(
 )
 
 private val AUDIO_EXTS = setOf("mp3", "wav", "flac", "ogg", "m4a", "aac", "opus", "wma", "aiff")
+
+/** Live-input state for the Settings switch: running, plus why it is not. */
+data class MicState(
+    val active: Boolean = false,
+    val failure: MicCapture.Failure? = null,
+)
 
 data class ExportUiState(
     val running: Boolean = false,
@@ -163,6 +186,58 @@ class PlayerViewModel(
 ) : AndroidViewModel(application) {
     private val ring = PcmRingBuffer()
     private val engine = AnalysisEngine(ring)
+
+    /**
+     * "Live input": the microphone as a second producer for the SAME ring
+     * buffer the playback tap writes into, so every consumer downstream is
+     * unchanged. Nothing is stored or transmitted - see [MicCapture].
+     */
+    private val micCapture = MicCapture(application, ring)
+
+    private val _micState = MutableStateFlow(MicState())
+
+    /** Microphone-driven visuals: on/off plus the last failure to report. */
+    val micState: StateFlow<MicState> = _micState
+
+    /**
+     * Turns live input on or off.
+     *
+     * Turning it ON pauses playback: the ring buffer has ONE analysis window,
+     * so a track and the room would be summed into a single spectrum and
+     * neither would drive the visuals recognisably. That is also what the
+     * feature asks for - visuals reacting to the room, with no music playing.
+     *
+     * Returns the failure that stopped it, or null on success. A refused
+     * permission is reported rather than swallowed so the caller can send the
+     * user to the system prompt instead of leaving a switch that silently
+     * springs back.
+     */
+    fun setMicEnabled(enabled: Boolean): MicCapture.Failure? {
+        if (!enabled) {
+            micCapture.stop()
+            engine.reset()
+            engine.sampleRateHz = tapFormat?.sampleRateHz ?: 44100
+            _micState.value = MicState(active = false)
+            setGuiPrefs(_guiPrefs.value.copy(micReactive = false))
+            return null
+        }
+        if (micCapture.active) return null
+        player.pause()
+        val failure = micCapture.start { rate -> engine.sampleRateHz = rate }
+        if (failure != null) {
+            _micState.value = MicState(active = false, failure = failure)
+            return failure
+        }
+        // The beat grid and energy envelope model one continuous piece of
+        // audio; the room is a different one, exactly like a track change.
+        engine.reset()
+        _micState.value = MicState(active = true)
+        setGuiPrefs(_guiPrefs.value.copy(micReactive = true))
+        return null
+    }
+
+    /** True when the RECORD_AUDIO permission is already granted. */
+    fun hasMicPermission(): Boolean = micCapture.hasPermission()
 
     // ---- Audio-quality readout ----
     // Combines the selected track's source Format (onTracksChanged) with the
@@ -240,7 +315,11 @@ class PlayerViewModel(
 
     private val sink =
         PcmTapSink(ring) { rate, channels, encoding ->
-            engine.sampleRateHz = rate
+            // Live input owns the analyzer's rate while it is running: the
+            // player can still reconfigure its pipeline (a queued track being
+            // prepared) and would otherwise retune the FFT to a rate no
+            // samples are arriving at.
+            if (!micCapture.active) engine.sampleRateHz = rate
             onTapFormat(rate, channels, encoding)
         }
     private val offlineAnalyzer = OfflineAnalyzer(application)
@@ -1528,12 +1607,12 @@ class PlayerViewModel(
                 ?.trackUris
                 .orEmpty()
         if (uris.isEmpty()) return
-        player.setMediaItems(uris.map { mediaItemFor(Uri.parse(it)) })
-        player.prepare()
-        player.seekTo(startIndex.coerceIn(0, uris.size - 1), 0L)
-        player.play()
-        currentUri = Uri.parse(uris[startIndex.coerceIn(0, uris.size - 1)])
-        onTrackChanged()
+        // Through the same funnel as every other list, so a later single-track
+        // play of one of these rejoins the playlist instead of truncating the
+        // queue to it (and so the titles come from the library, not a query).
+        val byUri = _library.value.tracks.associateBy { it.uri }
+        val tracks = uris.map { u -> byUri[u]?.let(PlaybackQueue::queueTrack) ?: QueueTrack(u) }
+        playFrom(tracks, uris[startIndex.coerceIn(0, uris.size - 1)])
     }
 
     // ---- Navigation v2 additions ----
@@ -1565,18 +1644,9 @@ class PlayerViewModel(
     }
 
     fun shuffleAllHistory() {
-        val uris = historyStore.recentlyPlayed(100).map { it.uri }.shuffled()
-        if (uris.isNotEmpty()) {
-            openStrings(uris)
-        }
-    }
-
-    fun openStringsPublic(uris: List<String>) = openStrings(uris)
-
-    private fun openStrings(uris: List<String>) {
-        player.setMediaItems(uris.map { mediaItemFor(Uri.parse(it)) })
-        player.prepare()
-        player.play()
+        // History rows carry their own title, so this builds the queue without
+        // a per-uri metadata lookup like every other list does.
+        playAll(historyStore.recentlyPlayed(100).map { QueueTrack(it.uri, it.title) }, shuffled = true)
     }
 
     // Preset folder tree
@@ -1629,14 +1699,58 @@ class PlayerViewModel(
         applyPreset(pool[quickPresetIndex])
     }
 
-    /** Plays a single library track immediately. */
-    fun playTrack(uri: String) {
-        player.setMediaItems(listOf(mediaItemFor(Uri.parse(uri))))
+    /**
+     * Plays [uri], with the list it belongs to as the queue.
+     *
+     * A tap on a row used to call `setMediaItems(listOf(one))`, which left the
+     * player holding a ONE-item queue - so Next and Previous had nowhere to go
+     * and did nothing unless a playlist had been started. That is the bug this
+     * funnel fixes: [PlaybackQueue.contextFor] finds the list the track came
+     * from (the screen's own ordering if it handed one over, otherwise the
+     * device index or the imported library), so the transport behaves the way
+     * it does in any other music player.
+     */
+    fun playTrack(uri: String) = playFrom(PlaybackQueue.contextFor(uri, lastBrowseContext, _deviceTracks.value, _library.value.tracks), uri)
+
+    /**
+     * Opens [tracks] as the queue and starts at [startUri]. The one path a
+     * "tap a row" play takes; screens with an explicit ordering (an album, a
+     * folder, search results) call it directly so Next follows what the user
+     * is looking at.
+     */
+    fun playFrom(
+        tracks: List<QueueTrack>,
+        startUri: String,
+    ) {
+        val window = PlaybackQueue.window(tracks, startUri)
+        if (window.tracks.isEmpty()) return
+        // One ring buffer, one source: playing a track ends live input rather
+        // than summing a song and the room into a single spectrum.
+        if (micCapture.active) setMicEnabled(false)
+        lastBrowseContext = tracks
+        player.setMediaItems(window.tracks.map { mediaItemFor(it) })
         player.prepare()
+        player.seekTo(window.startIndex, 0L)
         player.play()
-        currentUri = Uri.parse(uri)
+        currentUri = Uri.parse(window.tracks[window.startIndex].uri)
         onTrackChanged()
     }
+
+    /** Plays a whole list from the top, optionally shuffled ("Play all"). */
+    fun playAll(
+        tracks: List<QueueTrack>,
+        shuffled: Boolean = false,
+    ) {
+        val order = if (shuffled) tracks.shuffled() else tracks
+        order.firstOrNull()?.let { playFrom(order, it.uri) }
+    }
+
+    /**
+     * The last list a screen played from. Kept so a later single-track play of
+     * something in that same list (a history chip, a search hit) rejoins it
+     * instead of collapsing the queue back to one item.
+     */
+    private var lastBrowseContext: List<QueueTrack> = emptyList()
 
     /**
      * Analyzes every track in a playlist in the background, caching BPM +
@@ -1687,6 +1801,26 @@ class PlayerViewModel(
                     .Builder()
                     .setTitle(t)
                     .setArtist(a.ifBlank { null })
+                    .build(),
+            ).build()
+    }
+
+    /**
+     * [mediaItemFor] for a row a screen already has the metadata for. Skips
+     * both the O(n) library scan and the per-uri ContentResolver query, which
+     * is what makes opening a thousand-track queue instant instead of a
+     * thousand main-thread lookups.
+     */
+    private fun mediaItemFor(track: QueueTrack): MediaItem {
+        if (track.title.isBlank()) return mediaItemFor(Uri.parse(track.uri))
+        return MediaItem
+            .Builder()
+            .setUri(Uri.parse(track.uri))
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata
+                    .Builder()
+                    .setTitle(track.title)
+                    .setArtist(track.artist.ifBlank { null })
                     .build(),
             ).build()
     }
@@ -1757,11 +1891,45 @@ class PlayerViewModel(
         }
     }
 
-    fun next() = player.seekToNextMediaItem()
+    /**
+     * Next track, wrapping to the top of the queue at the end.
+     *
+     * `seekToNextMediaItem()` alone is a no-op on the last item (and on a
+     * one-item queue), which is how Next came to look broken outside a
+     * playlist. Wrapping keeps the button meaningful wherever playback
+     * started; the queue itself is built by [playFrom], so "the end" is the
+     * end of the list the user was browsing, not of a single track.
+     */
+    fun next() {
+        if (player.mediaItemCount == 0) return
+        if (player.hasNextMediaItem()) player.seekToNextMediaItem() else player.seekTo(0, 0L)
+    }
 
-    fun previous() = player.seekToPreviousMediaItem()
+    /**
+     * Previous: restarts the current track when more than
+     * [PlaybackQueue.PREV_RESTART_MS] into it, steps back otherwise - the
+     * behaviour every music player's Previous button has. Wraps to the last
+     * item from the top of the queue, mirroring [next].
+     *
+     * Neither direction starts playback: skipping while paused changes the
+     * track and leaves it paused, as it does everywhere else.
+     */
+    fun previous() {
+        if (player.mediaItemCount == 0) return
+        if (player.currentPosition > PlaybackQueue.PREV_RESTART_MS) {
+            player.seekTo(0L)
+            return
+        }
+        if (player.hasPreviousMediaItem()) {
+            player.seekToPreviousMediaItem()
+        } else {
+            player.seekTo(player.mediaItemCount - 1, 0L)
+        }
+    }
 
     fun togglePlayPause() {
+        // Starting playback ends live input: one ring buffer, one source.
+        if (!player.isPlaying && micCapture.active) setMicEnabled(false)
         if (player.isPlaying) player.pause() else player.play()
     }
 
@@ -1873,6 +2041,17 @@ class PlayerViewModel(
         _vizState.update { it.copy(params = params) }
         persistVizState()
     }
+
+    /**
+     * Puts every Customize control back to its default.
+     *
+     * Goes through [setSceneParams] like a slider does, so the renderer's
+     * settings fade glides into it and the live state is persisted - the same
+     * path a preset apply takes. The selected style, saved presets and the
+     * modulation routing (LFOs, envelopes) are untouched: this is "undo my
+     * slider fiddling", not "reset the app".
+     */
+    fun resetSceneParams() = setSceneParams(SceneParams.DEFAULT)
 
     fun reportShaderError(error: String?) {
         _vizState.update { it.copy(shaderError = error) }
@@ -2086,6 +2265,10 @@ class PlayerViewModel(
     }
 
     override fun onCleared() {
+        // The microphone goes first: an open AudioRecord outliving the
+        // ViewModel would keep the recording indicator up with nothing left
+        // to read it.
+        micCapture.stop()
         engine.stop()
         audioFxController.release()
         player.release()

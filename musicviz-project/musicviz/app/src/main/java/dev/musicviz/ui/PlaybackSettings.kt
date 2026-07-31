@@ -33,7 +33,7 @@ fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
     val sleepRemainingMs by viewModel.sleepTimerRemainingMs.collectAsState()
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         HorizontalDivider()
-        Text("Playback", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Text("Playback", style = MaterialTheme.typography.titleMedium, color = accentTextColor())
         Column {
             Text("Speed  ${"%.2f".format(prefs.speed)}x", style = MaterialTheme.typography.labelMedium)
             CrystalSlider(
@@ -96,7 +96,7 @@ fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
                 Text(
                     "Pausing in ${PlaybackMath.formatCountdown(remaining)}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = accentTextColor(),
                 )
             }
         }

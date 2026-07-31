@@ -34,7 +34,7 @@ internal object FluidHue {
 
     /**
      * Upper clamp on the Hue range slider: the slider's own top
-     * (`CustomizeDialog`, 0..1.5) and the top of the randomizer's roll.
+     * (`CustomizeTabs`, 0..1.5) and the top of the randomizer's roll.
      *
      * It used to be 1, which killed the top THIRD of that slider on the whole
      * fluid family while 1..1.5 stayed live on the shader and particle
@@ -105,4 +105,39 @@ internal object FluidHue {
         hueRange: Float,
         paletteRange: Float,
     ): Float = range(hueRange) * paletteRange.coerceIn(0f, 1f)
+
+    /**
+     * Full-value HSV -> RGB, the fluid family's one conversion. Lives here
+     * rather than beside a single caller because the emitters, the water
+     * style's idle rain and its finger strokes all have to agree: a splat
+     * colour is what [WaterMath.isCatchWell] classifies a drain by, so two
+     * copies of this arithmetic would be two ways to be wrong about it.
+     */
+    fun hsv(
+        h: Float,
+        s: Float,
+        v: Float,
+    ): Triple<Float, Float, Float> {
+        val hh = wrap01(h)
+        val sextant = hh * 6f
+        val i = sextant.toInt() % 6
+        val fr = sextant - sextant.toInt()
+        val p = v * (1f - s)
+        val q = v * (1f - fr * s)
+        val t = v * (1f - (1f - fr) * s)
+        return when (i) {
+            0 -> Triple(v, t, p)
+            1 -> Triple(q, v, p)
+            2 -> Triple(p, v, t)
+            3 -> Triple(p, q, v)
+            4 -> Triple(t, p, v)
+            else -> Triple(v, p, q)
+        }
+    }
+
+    /** [hsv] at full value, as the (r, g, b) triple splat callers want. */
+    fun rgb(
+        hue: Float,
+        saturation: Float,
+    ): Triple<Float, Float, Float> = hsv(hue, saturation.coerceIn(0f, 1f), 1f)
 }

@@ -42,7 +42,7 @@ import kotlin.math.pow
 class CurlFlowCustomizeTest {
     private val dt = 1f / 60f
 
-    /** The slider's real UI range (CustomizeDialog "Trail length"). */
+    /** The slider's real UI range (CustomizeTabs "Trail length"). */
     private val sliderRange = listOf(0.05f, 0.2f, 0.4f, 0.5f, 0.75f, 0.9f, 0.98f)
 
     /**

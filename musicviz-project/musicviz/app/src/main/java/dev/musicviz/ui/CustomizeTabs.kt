@@ -17,7 +17,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -32,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.render.LfoConfig
 import dev.musicviz.render.LfoTarget
@@ -63,10 +63,76 @@ import dev.musicviz.render.scene.SceneParams
 val LocalParamLocks =
     androidx.compose.runtime.compositionLocalOf<Pair<Set<String>, (String) -> Unit>> { emptySet<String>() to {} }
 
+/**
+ * Group heading inside a Customize tab, in the shell's own section language
+ * (gem marker, tracked caps, luminous hairline) instead of the bare divider +
+ * title it used to be - so a tab reads as a short list of named groups rather
+ * than as one undifferentiated wall of sliders.
+ */
 @Composable
 private fun SectionHeader(title: String) {
-    HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
-    Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CrystalGem(MaterialTheme.colorScheme.primary, size = 5.dp)
+        Text(
+            title.uppercase(),
+            modifier = Modifier.padding(start = 8.dp),
+            style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 2.sp),
+            color = accentTextColor(),
+        )
+    }
+    Box(Modifier.fillMaxWidth().height(1.dp).luminousHairline(MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)))
+}
+
+/**
+ * Explanatory paragraph under a section header. One helper so every hint in
+ * the panel is styled and coloured the same way, and so hints read as
+ * secondary to the controls they describe rather than competing with them.
+ */
+@Composable
+private fun ControlHint(text: String) {
+    Text(
+        text,
+        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/**
+ * The lock affordance shared by every control in the panel: a chip that holds
+ * this control against "Randomize unlocked".
+ *
+ * [label] IS the lock key - `ParamRandomizer`'s keys are control-label strings
+ * - so this exists once rather than once per control shape. It used to be
+ * copy-pasted into `LabeledSlider`, `LabeledIntSlider` and
+ * `LockableChipLabel`: three places that had to keep agreeing about what a
+ * lock looks like and, more importantly, about what it keys on.
+ */
+@Composable
+private fun LockChip(label: String) {
+    val (locked, toggle) = LocalParamLocks.current
+    val on = label in locked
+    Text(
+        if (on) "\uD83D\uDD12 locked" else "lock",
+        style = MaterialTheme.typography.labelSmall,
+        color = if (on) accentTextColor() else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+        modifier = Modifier.clickable { toggle(label) }.padding(start = 8.dp),
+    )
+}
+
+/** Label row shared by the labelled controls: name on the left, lock right. */
+@Composable
+private fun ControlLabelRow(
+    text: String,
+    lockKey: String,
+) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(text, style = MaterialTheme.typography.labelSmall)
+        LockChip(lockKey)
+    }
 }
 
 @Composable
@@ -160,10 +226,9 @@ internal fun ShapeTab(
             }
             LabeledSlider("Particle size", p.particleSize, 0.3f..2.5f) { onChange(p.copy(particleSize = it)) }
             if (particleLayerOff) {
-                Text(
+                ControlHint(
                     "The fluid particle layer is off (Fluid tab), so size has no " +
                         "sprites to scale until you switch it back on.",
-                    style = MaterialTheme.typography.labelSmall,
                 )
             }
         }
@@ -271,11 +336,10 @@ internal fun ColorTab(
         // itself (ProjectMScene's post pass, uPalTint). The label names the
         // style - as "Trails (particle scenes)" and "Glow (fluid)" do -
         // because ColorTab has no MilkDrop predicate to gate on.
-        Text(
+        ControlHint(
             "MilkDrop presets paint their own colours. This steers them toward the " +
                 "palette above (0 = the preset untouched); every other style renders " +
                 "the palette directly and ignores it.",
-            style = MaterialTheme.typography.labelSmall,
         )
         LabeledSlider("MilkDrop palette tint", p.milkdropPaletteTint, 0f..1f) {
             onChange(p.copy(milkdropPaletteTint = it))
@@ -320,9 +384,8 @@ internal fun FxTab(
 ) {
     Column {
         SectionHeader("Settings fade (automation)")
-        Text(
+        ControlHint(
             "Changes to sliders and preset loads glide to their new values over this time.",
-            style = MaterialTheme.typography.labelSmall,
         )
         LabeledSlider("Fade time (s)", p.paramFadeSec, 0f..5f) { onChange(p.copy(paramFadeSec = it)) }
         SectionHeader("Screen FX")
@@ -334,11 +397,10 @@ internal fun FxTab(
         LabeledSlider("Fisheye", p.fisheye, -1f..1f) { onChange(p.copy(fisheye = it)) }
         LabeledSlider("Strobe", p.strobe, 0f..1f) { onChange(p.copy(strobe = it)) }
         SectionHeader("Envelopes (ADSR)")
-        Text(
+        ControlHint(
             "Two beat-triggered envelopes. Each can drive SEVERAL parameters " +
                 "(or an LFO's rate/depth) at once - tap + to add targets, tap a " +
                 "target chip to remove it.",
-            style = MaterialTheme.typography.labelSmall,
         )
         for (i in 0 until dev.musicviz.render.AdsrEngine.COUNT) {
             AdsrCard(
@@ -348,10 +410,9 @@ internal fun FxTab(
             )
         }
         SectionHeader("LFO automations")
-        Text(
+        ControlHint(
             "Assign an oscillator to any parameter. LFO 1 can drive LFO 2/3's " +
                 "rate or depth for chained motion. Rates can lock to the detected BPM.",
-            style = MaterialTheme.typography.labelSmall,
         )
         for (i in 0 until 3) {
             LfoCard(index = i, config = lfos.getOrElse(i) { LfoConfig() }, onChange = { onLfoChange(i, it) })
@@ -451,22 +512,8 @@ private fun LabeledSlider(
     range: ClosedFloatingPointRange<Float>,
     onChange: (Float) -> Unit,
 ) {
-    val (locked, toggle) = LocalParamLocks.current
-    Column {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("$label ${"%.2f".format(value)}", style = MaterialTheme.typography.labelSmall)
-            Text(
-                if (label in locked) "locked" else "lock",
-                style = MaterialTheme.typography.labelSmall,
-                color =
-                    if (label in locked) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    },
-                modifier = Modifier.clickable { toggle(label) },
-            )
-        }
+    Column(Modifier.padding(vertical = 2.dp)) {
+        ControlLabelRow("$label ${"%.2f".format(value)}", label)
         CrystalSlider(value = value, onValueChange = onChange, valueRange = range, modifier = Modifier.fillMaxWidth())
     }
 }
@@ -481,23 +528,7 @@ private fun LabeledSlider(
  * user could not protect: every roll re-picked the palette they had chosen.
  */
 @Composable
-private fun LockableChipLabel(label: String) {
-    val (locked, toggle) = LocalParamLocks.current
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, style = MaterialTheme.typography.labelSmall)
-        Text(
-            if (label in locked) "locked" else "lock",
-            style = MaterialTheme.typography.labelSmall,
-            color =
-                if (label in locked) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                },
-            modifier = Modifier.clickable { toggle(label) },
-        )
-    }
-}
+private fun LockableChipLabel(label: String) = ControlLabelRow(label, label)
 
 @Composable
 private fun CheckRow(
@@ -556,10 +587,9 @@ internal fun FluidTab(
     Column {
         if (isWaterScene) {
             SectionHeader("Water")
-            Text(
+            ControlHint(
                 "Heightfield water: beats drop expanding rings, stirrers " +
                     "carve wakes, the journey decides where they land.",
-                style = MaterialTheme.typography.labelSmall,
             )
             // Wave speed and Damping are WaterScene's own wave physics
             // (WaterScene.kt "sim.waveSpeed / sim.damping") AND the shared
@@ -572,15 +602,26 @@ internal fun FluidTab(
             LabeledSlider("Depth", p.waterDepth, 0f..1f) { onChange(p.copy(waterDepth = it)) }
             LabeledSlider("Specular", p.waterSpecular, 0f..1f) { onChange(p.copy(waterSpecular = it)) }
             LabeledSlider("Flow drift", p.waterFlow, 0f..1f) { onChange(p.copy(waterFlow = it)) }
+            SectionHeader("Liquid")
+            ControlHint(
+                "Every splash stains a colour film that the surface then carries: it runs " +
+                    "down the flanks of the ripples, spirals through the stirrer wakes and " +
+                    "drains into the catch points, refracted by the same waves that move it. " +
+                    "Turn it down for a plain depth-graded pool.",
+            )
+            LabeledSlider("Liquid", p.waterLiquid, 0f..1f) { onChange(p.copy(waterLiquid = it)) }
+            if (p.waterLiquid > 0.001f) {
+                LabeledSlider("Liquid flow", p.waterLiquidFlow, 0f..4f) { onChange(p.copy(waterLiquidFlow = it)) }
+                LabeledSlider("Liquid fade", p.waterLiquidFade, 0f..2f) { onChange(p.copy(waterLiquidFade = it)) }
+            }
         }
         if (isJourneyScene) {
             SectionHeader("Journey (spawn & catch progression)")
-            Text(
+            ControlHint(
                 "Spawn points birth particles and dye; catch points pull them " +
                     "in and recycle them. Both travel through the track: song " +
                     "progress reshapes the layout, sections re-seat it, beats " +
                     "advance the bloom.",
-                style = MaterialTheme.typography.labelSmall,
             )
             LockableChipLabel("Path")
             ChipRow(SceneParams.FLUID_PATHS, p.fluidSpawnPath.coerceIn(0, SceneParams.FLUID_PATHS.size - 1)) {
@@ -691,12 +732,11 @@ internal fun FluidTab(
             LabeledSlider("Fade when quiet", p.fluidFadeAudio, 0f..1f) { onChange(p.copy(fluidFadeAudio = it)) }
         }
         SectionHeader("FlowField (all styles)")
-        Text(
+        ControlHint(
             "A shared fluid velocity field that bends ANY style: fluidWarp " +
                 "distorts the composite output (particles, shaders, MilkDrop - " +
                 "and exports), particle scenes can ride the field, and shader " +
                 "scenes see it as uFlow.",
-            style = MaterialTheme.typography.labelSmall,
         )
         CheckRow("FlowField enabled", p.flowEnabled) { onChange(p.copy(flowEnabled = it)) }
         if (p.flowEnabled) {
@@ -706,7 +746,7 @@ internal fun FluidTab(
             CheckRow("Particles ride the field", p.flowAdvectParticles) { onChange(p.copy(flowAdvectParticles = it)) }
         }
         SectionHeader("Water ripples (all styles)")
-        Text(
+        ControlHint(
             "The water heightfield rides on top of ANY style: beats drop " +
                 "rings that refract the image (particles, shaders, MilkDrop - " +
                 "and exports), treble sprinkles small drops, and glint adds a " +
@@ -714,7 +754,6 @@ internal fun FluidTab(
                 "wave physics the water style runs - one pair of sliders drives " +
                 "both. The water style's own surface already refracts, so the " +
                 "overlay stays off there.",
-            style = MaterialTheme.typography.labelSmall,
         )
         CheckRow("Water ripples enabled", p.rippleOverlayEnabled) { onChange(p.copy(rippleOverlayEnabled = it)) }
         if (p.rippleOverlayEnabled) {
@@ -743,13 +782,12 @@ internal fun FluidTab(
         }
         if (isFluidScene) {
             SectionHeader("Injection shaders (advanced)")
-            Text(
+            ControlHint(
                 "The force and dye injection passes are user-replaceable GLSL. " +
                     "Both start from the built-in capsule splat (uMode 0 = " +
                     "velocity, 1 = dye); a failed compile keeps the last good " +
                     "program. Extra uniforms: uDt, uDx, uTime, uBass, uMid, " +
                     "uTreble, uEnergy, uBeat. Clear the text to restore built-ins.",
-                style = MaterialTheme.typography.labelSmall,
             )
             val ctx = androidx.compose.ui.platform.LocalContext.current
             val template =
@@ -811,22 +849,8 @@ private fun LabeledIntSlider(
     range: IntRange,
     onChange: (Int) -> Unit,
 ) {
-    val (locked, toggle) = LocalParamLocks.current
-    Column {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("$label $value", style = MaterialTheme.typography.labelSmall)
-            Text(
-                if (label in locked) "locked" else "lock",
-                style = MaterialTheme.typography.labelSmall,
-                color =
-                    if (label in locked) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    },
-                modifier = Modifier.clickable { toggle(label) },
-            )
-        }
+    Column(Modifier.padding(vertical = 2.dp)) {
+        ControlLabelRow("$label $value", label)
         CrystalSlider(
             value = value.toFloat(),
             onValueChange = { onChange(it.toInt().coerceIn(range.first, range.last)) },

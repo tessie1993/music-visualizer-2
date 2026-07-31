@@ -211,6 +211,9 @@ class PresetStore(
                 .put("waterDepth", p.params.waterDepth.toDouble())
                 .put("waterSpecular", p.params.waterSpecular.toDouble())
                 .put("waterFlow", p.params.waterFlow.toDouble())
+                .put("waterLiquid", p.params.waterLiquid.toDouble())
+                .put("waterLiquidFlow", p.params.waterLiquidFlow.toDouble())
+                .put("waterLiquidFade", p.params.waterLiquidFade.toDouble())
                 .put("rippleOverlayEnabled", p.params.rippleOverlayEnabled)
                 .put("rippleOverlayStrength", p.params.rippleOverlayStrength.toDouble())
                 .put("rippleOverlaySpecular", p.params.rippleOverlaySpecular.toDouble())
@@ -358,6 +361,9 @@ class PresetStore(
                         waterDepth = o.optDouble("waterDepth", 0.6).toFloat(),
                         waterSpecular = o.optDouble("waterSpecular", 0.7).toFloat(),
                         waterFlow = o.optDouble("waterFlow", 0.3).toFloat(),
+                        waterLiquid = o.optDouble("waterLiquid", 0.85).toFloat(),
+                        waterLiquidFlow = o.optDouble("waterLiquidFlow", 1.4).toFloat(),
+                        waterLiquidFade = o.optDouble("waterLiquidFade", 0.35).toFloat(),
                         rippleOverlayEnabled = o.optBoolean("rippleOverlayEnabled", false),
                         rippleOverlayStrength = o.optDouble("rippleOverlayStrength", 0.4).toFloat(),
                         rippleOverlaySpecular = o.optDouble("rippleOverlaySpecular", 0.3).toFloat(),

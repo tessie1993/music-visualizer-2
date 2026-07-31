@@ -3,6 +3,7 @@ package dev.musicviz.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -83,6 +84,29 @@ fun VisualizerScreen(
             .background(Color.Black)
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { controlsVisible = !controlsVisible })
+            }
+            // Touch smear. Its own pointerInput, keyed on the setting, so
+            // turning it off restores the plain tap-to-toggle canvas exactly:
+            // taps still reach the detector above either way, because a tap is
+            // not a drag. Only this screen gets it - the clear-overlay Visuals
+            // menu puts scrolling lists on the same canvas, and a drag there
+            // belongs to the list.
+            .pointerInput(gui.touchSmear, gui.touchSmearStrength) {
+                if (!gui.touchSmear) return@pointerInput
+                val w = size.width.toFloat().coerceAtLeast(1f)
+                val h = size.height.toFloat().coerceAtLeast(1f)
+                detectDragGestures { change, drag ->
+                    // Normalized to the surface (y still DOWN here); the
+                    // renderer converts to sim space on the GL thread.
+                    visualizerView.visualizerRenderer.queueTouchStroke(
+                        nx = change.position.x / w,
+                        ny = change.position.y / h,
+                        ndx = drag.x / w,
+                        ndy = drag.y / h,
+                        dt = FRAME_DT,
+                        strength = gui.touchSmearStrength,
+                    )
+                }
             },
     ) {
         VisualizerCanvasHost(visualizerView, Modifier.fillMaxSize())
@@ -246,6 +270,14 @@ fun VisualizerScreen(
         }
     }
 }
+
+/**
+ * Timestep a drag frame is reported with. Compose delivers drag deltas per
+ * pointer event rather than per unit of time, and the sim only needs a speed
+ * scale, not a clock: a fixed nominal frame keeps a fast flick reading as fast
+ * without threading a second time source through the gesture.
+ */
+private const val FRAME_DT = 1f / 60f
 
 private fun formatTime(ms: Long): String {
     val total = (ms / 1000).coerceAtLeast(0)

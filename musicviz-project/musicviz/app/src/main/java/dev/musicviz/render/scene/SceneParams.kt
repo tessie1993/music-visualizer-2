@@ -206,6 +206,16 @@ data class SceneParams(
     val waterSpecular: Float = 0.7f,
     // 0..1
     val waterFlow: Float = 0.3f,
+    // Water - liquid ink film. The layer that turns WATER from "a pool tinted
+    // by the palette" into "the visuals themselves gone liquid": every emitter
+    // splat stains a colour film, the film is transported by the surface flow
+    // and refracted through the same ripples that carry it.
+    // 0 = the plain depth-graded pool .. 1 = the film IS the surface
+    val waterLiquid: Float = 0.85f,
+    // How hard the surface slope drags the film, 0..4
+    val waterLiquidFlow: Float = 1.4f,
+    // How fast the film clears, 0 (never) .. 2
+    val waterLiquidFade: Float = 0.35f,
     // Ripple overlay (all styles; consumed by follow-up unit F2)
     val rippleOverlayEnabled: Boolean = false,
     val rippleOverlayStrength: Float = 0.4f,

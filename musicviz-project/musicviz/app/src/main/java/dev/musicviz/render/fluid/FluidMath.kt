@@ -11,7 +11,7 @@ import kotlin.math.sqrt
 internal object FluidMath {
     // ---- "Audio drive" (Behavior tab), the master reactivity gain ----
 
-    /** Slider domain, from CustomizeDialog's "Audio drive" range. */
+    /** Slider domain, from CustomizeTabs's "Audio drive" range. */
     const val MIN_AUDIO_DRIVE = 0.2f
     const val MAX_AUDIO_DRIVE = 2.5f
 

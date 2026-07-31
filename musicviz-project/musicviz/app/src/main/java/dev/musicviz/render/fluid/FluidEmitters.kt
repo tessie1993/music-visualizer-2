@@ -43,7 +43,7 @@ internal class FluidEmitters(
         const val BASE_SPEED = 6f
         private const val MAX_SPLATS_PER_FRAME = 16
 
-        /** "Beat response" slider domain (CustomizeDialog), neutral at 1. */
+        /** "Beat response" slider domain (CustomizeTabs), neutral at 1. */
         const val MIN_BEAT_RESPONSE = 0f
         const val MAX_BEAT_RESPONSE = 2f
 
@@ -456,24 +456,14 @@ internal class FluidEmitters(
         dyeGain: Float,
     ) = FluidSim.Splat(px, py, cx, cy, radius, vx, vy, r * dyeGain, g * dyeGain, b * dyeGain)
 
+    /**
+     * Delegates to [FluidHue.hsv]. A splat's dye is how WaterScene tells a
+     * drain from a splash (`WaterMath.isCatchWell`), so the family keeps ONE
+     * conversion rather than a copy per caller.
+     */
     internal fun hsv(
         h: Float,
         s: Float,
         v: Float,
-    ): Triple<Float, Float, Float> {
-        val hh = ((h % 1f) + 1f) % 1f
-        val i = (hh * 6f).toInt() % 6
-        val fr = hh * 6f - (hh * 6f).toInt()
-        val p = v * (1f - s)
-        val q = v * (1f - fr * s)
-        val t = v * (1f - (1f - fr) * s)
-        return when (i) {
-            0 -> Triple(v, t, p)
-            1 -> Triple(q, v, p)
-            2 -> Triple(p, v, t)
-            3 -> Triple(p, q, v)
-            4 -> Triple(t, p, v)
-            else -> Triple(v, p, q)
-        }
-    }
+    ): Triple<Float, Float, Float> = FluidHue.hsv(h, s, v)
 }

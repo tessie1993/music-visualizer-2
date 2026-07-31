@@ -3,10 +3,13 @@ package dev.musicviz.ui
 import android.content.Context
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import dev.musicviz.analysis.FeatureExtractor
 
@@ -61,6 +64,18 @@ enum class AppTheme(
     LIGHT("Light"),
     PAPER("Paper"),
     ;
+
+    /**
+     * True for the two light-surface themes. "White font" is a no-op on them
+     * (white text on a near-white surface would blank the UI), so
+     * [colorScheme] and [whiteFontActive] gate on this one predicate rather
+     * than each testing the enum separately.
+     */
+    val isLight: Boolean
+        get() = anchors().light
+
+    /** True when [whiteFont] actually takes effect for this theme. */
+    fun whiteFontActive(whiteFont: Boolean): Boolean = whiteFont && !isLight
 
     private fun anchors(): Anchors =
         when (this) {
@@ -156,16 +171,82 @@ enum class AppTheme(
 }
 
 /**
- * Repaints the text-on-surface roles pure white for the "White font"
- * appearance option. Accent, container and surface roles are untouched, so
- * only text changes. [AppTheme.colorScheme] applies this to dark schemes only.
+ * Repaints the text roles pure white for the "White font" appearance option.
+ * [AppTheme.colorScheme] applies this to dark schemes only.
+ *
+ * The three surface roles were not enough: a `Text` painted with an `on*`
+ * CONTAINER role - every chip and every filled selection in the shell -
+ * stayed theme-coloured with the switch on, which is the "not all writing
+ * turns white" report. All four container roles are derived toward the dark
+ * background in [AppTheme.colorScheme] (`lerpArgb(x, background, 0.65f)`), so
+ * white reads on every one of them.
+ *
+ * `onPrimary`/`onSecondary`/`onTertiary` are deliberately NOT in this list.
+ * They sit on the SATURATED fill of a primary button, and several themes
+ * (Clear Quartz, Rose Quartz, Mono) anchor a near-white primary - white on
+ * white. Those surfaces are handled by [LocalWhiteFont]-aware call sites
+ * instead, which can pick a readable colour per fill.
+ *
+ * Accent and surface roles themselves are untouched, so gems, sliders,
+ * borders and glows keep the theme's identity - only writing changes.
  */
 private fun ColorScheme.whiteText(): ColorScheme =
     copy(
         onBackground = Color.White,
         onSurface = Color.White,
         onSurfaceVariant = Color.White,
+        onPrimaryContainer = Color.White,
+        onSecondaryContainer = Color.White,
+        onTertiaryContainer = Color.White,
+        onErrorContainer = Color.White,
     )
+
+/**
+ * True when [whiteText] produced this scheme, i.e. the Appearance option
+ * "White font" is in force.
+ *
+ * Derived rather than plumbed as a CompositionLocal because the scheme IS the
+ * signal: [whiteText] is the only producer of a pure-white `onSurface`, and
+ * `WhiteFontThemeTest` pins that no theme resolves one on its own (with the
+ * option off, and on the light themes, which opt out entirely). One
+ * `MaterialTheme.colorScheme` read is all any call site needs, so no screen
+ * has to be handed the GuiPrefs it would otherwise never look at.
+ */
+val ColorScheme.whiteFontOn: Boolean
+    get() = onSurface == Color.White
+
+/**
+ * Colour for accent-tinted WRITING - section headers, selected list rows, the
+ * lock chip, tab titles. Pure white under "White font", the theme's primary
+ * otherwise.
+ *
+ * A [ColorScheme] can only repaint the roles Material resolves for you. Every
+ * heading and selected row in this app names its colour EXPLICITLY
+ * (`color = MaterialTheme.colorScheme.primary`), and those calls are invisible
+ * to [whiteText] - which is exactly why turning the switch on used to leave
+ * the section titles, tab labels, folder headers and "‹ Back" affordances
+ * tinted while the body text went white.
+ *
+ * Deliberately text-only: icons, gems, hairlines, slider tracks and glows keep
+ * `colorScheme.primary`, because "white font" is about the legibility of
+ * writing, not about draining the colour out of the whole shell.
+ */
+@Composable
+fun accentTextColor(): Color = MaterialTheme.colorScheme.let { if (it.whiteFontOn) Color.White else it.primary }
+
+/**
+ * Colour for writing on a SATURATED accent fill (filled buttons, the play
+ * gem). White text is unreadable on the near-white primaries some themes
+ * anchor (Clear Quartz, Rose Quartz, Mono), so this picks white or black by
+ * the fill's own luminance instead of forcing either - the one place "white
+ * font" yields to legibility rather than the other way round.
+ */
+@Composable
+fun onAccentTextColor(): Color {
+    val cs = MaterialTheme.colorScheme
+    if (!cs.whiteFontOn) return cs.onPrimary
+    return if (cs.primary.luminance() > 0.55f) Color.Black else Color.White
+}
 
 /** Where the music player bar sits on screen; controls sit on the other side. */
 enum class PlayerPosition(
@@ -247,6 +328,16 @@ data class GuiPrefs(
     /** Scales speed/shake/drift-style motion. Independent of [safeVisuals]:
      *  this is a vestibular comfort setting, that one is about seizures. */
     val reducedMotion: Boolean = false,
+    /** "Live input": drive the visuals from the microphone instead of from a
+     *  track. Deliberately NOT persisted as on - an app that opens the
+     *  microphone the moment it launches, because of a switch left on weeks
+     *  ago, is not something a user has consented to. [ThemeStore.loadGui]
+     *  always reads this back as false; the switch is a per-session decision. */
+    val micReactive: Boolean = false,
+    /** Let a finger drag push the visuals around (Now Playing canvas). */
+    val touchSmear: Boolean = false,
+    /** How hard a drag displaces the surface, 0.2..2. */
+    val touchSmearStrength: Float = 1f,
 ) {
     /**
      * [beatMinIntervalMs] after the Safe-visuals floor.
@@ -328,6 +419,10 @@ class ThemeStore(
             maxFlashDepth = prefs.getFloat(KEY_MAX_FLASH_DEPTH, 0.25f).coerceIn(0f, 1f),
             allowInversion = prefs.getBoolean(KEY_ALLOW_INVERSION, false),
             reducedMotion = prefs.getBoolean(KEY_REDUCED_MOTION, false),
+            // micReactive is intentionally absent: see the field's docs. The
+            // microphone is opened only by an explicit switch in this session.
+            touchSmear = prefs.getBoolean(KEY_TOUCH_SMEAR, false),
+            touchSmearStrength = prefs.getFloat(KEY_TOUCH_SMEAR_STRENGTH, 1f).coerceIn(0.2f, 2f),
         )
 
     fun saveGui(gui: GuiPrefs) {
@@ -351,6 +446,8 @@ class ThemeStore(
             .putFloat(KEY_MAX_FLASH_DEPTH, gui.maxFlashDepth)
             .putBoolean(KEY_ALLOW_INVERSION, gui.allowInversion)
             .putBoolean(KEY_REDUCED_MOTION, gui.reducedMotion)
+            .putBoolean(KEY_TOUCH_SMEAR, gui.touchSmear)
+            .putFloat(KEY_TOUCH_SMEAR_STRENGTH, gui.touchSmearStrength)
             .apply()
     }
 
@@ -371,5 +468,7 @@ class ThemeStore(
         const val KEY_MAX_FLASH_DEPTH = "gui_max_flash_depth"
         const val KEY_ALLOW_INVERSION = "gui_allow_inversion"
         const val KEY_REDUCED_MOTION = "gui_reduced_motion"
+        const val KEY_TOUCH_SMEAR = "gui_touch_smear"
+        const val KEY_TOUCH_SMEAR_STRENGTH = "gui_touch_smear_strength"
     }
 }

@@ -130,7 +130,7 @@ fun crystalTypography(): Typography {
 fun CrystalOverline(
     text: String,
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.primary,
+    color: Color = accentTextColor(),
 ) {
     Text(
         text.uppercase(),

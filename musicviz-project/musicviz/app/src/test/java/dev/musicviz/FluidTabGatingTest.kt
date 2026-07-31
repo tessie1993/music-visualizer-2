@@ -20,7 +20,7 @@ import java.io.File
  * the FluidQuality tiers, so those controls must reach WATER, while the
  * Navier-Stokes solver / dye / look controls only FluidScene reads must not.
  *
- * The label-set tests below read the gating back out of `CustomizeDialog.kt`
+ * The label-set tests below read the gating back out of `CustomizeTabs.kt`
  * (the technique [ParticleGatingTest] / [ShaderLookGatingTest] use), so a
  * control that drifts into a section whose styles do not read it - or out of
  * one whose styles do - fails the build instead of shipping as a dead or
@@ -96,7 +96,7 @@ class FluidTabGatingTest {
         // WaterScene ignores. `fluidParticleLife` did (Water has no particle
         // layer), which put a dead "Particle life (s)" slider on that style.
         assertEquals(
-            "controls wrapped in `if (isJourneyScene)` inside CustomizeDialog.kt",
+            "controls wrapped in `if (isJourneyScene)` inside CustomizeTabs.kt",
             setOf("Path", "Spawn points", "Progression", "Catch points", "Catch pull", "Catch radius"),
             gatedLabels("isJourneyScene"),
         )
@@ -107,7 +107,7 @@ class FluidTabGatingTest {
         // FluidScene and CurlFlowScene set `particles.drag` and
         // `particles.life` on consecutive lines; WATER has neither.
         assertEquals(
-            "controls wrapped in `if (isParticleLayerScene)` inside CustomizeDialog.kt",
+            "controls wrapped in `if (isParticleLayerScene)` inside CustomizeTabs.kt",
             setOf("Particle layer", "Particle drag", "Particle life (s)", "Particle brightness"),
             gatedLabels("isParticleLayerScene"),
         )
@@ -127,7 +127,7 @@ class FluidTabGatingTest {
         val physics = setOf("Wave speed", "Damping")
         assertTrue("the Water section must keep its own wave physics", gatedLabels("isWaterScene").containsAll(physics))
         assertEquals(
-            "controls wrapped in `if (!isWaterScene)` inside CustomizeDialog.kt",
+            "controls wrapped in `if (!isWaterScene)` inside CustomizeTabs.kt",
             physics,
             gatedLabels("!isWaterScene"),
         )
@@ -138,8 +138,22 @@ class FluidTabGatingTest {
     @Test
     fun theWaterSectionStaysTheHeightfieldSurface() {
         assertEquals(
-            "controls wrapped in `if (isWaterScene)` inside CustomizeDialog.kt",
-            setOf("Wave speed", "Damping", "Ripple strength", "Depth", "Specular", "Flow drift"),
+            "controls wrapped in `if (isWaterScene)` inside CustomizeTabs.kt",
+            setOf(
+                "Wave speed",
+                "Damping",
+                "Ripple strength",
+                "Depth",
+                "Specular",
+                "Flow drift",
+                // The liquid ink film: only WaterScene allocates and steps it
+                // (RippleSim.inkEnabled), so it is WATER-only like the rest of
+                // the surface. The renderer's shared ripple overlay leaves the
+                // layer off, because there the scene underneath IS the image.
+                "Liquid",
+                "Liquid flow",
+                "Liquid fade",
+            ),
             gatedLabels("isWaterScene"),
         )
     }
@@ -155,7 +169,7 @@ class FluidTabGatingTest {
         val gated = mutableSetOf<String>()
         val gateDepths = mutableListOf<Int>()
         var depth = 0
-        for (line in customizeDialogSource().lines()) {
+        for (line in customizeTabsSource().lines()) {
             if (gateDepths.isNotEmpty()) {
                 labelRegex.findAll(line).forEach { gated += it.groupValues[1] }
             }
@@ -176,16 +190,16 @@ class FluidTabGatingTest {
                 }
             }
         }
-        assertEquals("unbalanced braces while parsing CustomizeDialog.kt", 0, depth)
-        assertTrue("no `if ($gate)` block found in CustomizeDialog.kt", gated.isNotEmpty())
+        assertEquals("unbalanced braces while parsing CustomizeTabs.kt", 0, depth)
+        assertTrue("no `if ($gate)` block found in CustomizeTabs.kt", gated.isNotEmpty())
         return gated
     }
 
-    private fun customizeDialogSource(): String {
+    private fun customizeTabsSource(): String {
         val relatives =
             listOf(
-                "src/main/java/dev/musicviz/ui/CustomizeDialog.kt",
-                "app/src/main/java/dev/musicviz/ui/CustomizeDialog.kt",
+                "src/main/java/dev/musicviz/ui/CustomizeTabs.kt",
+                "app/src/main/java/dev/musicviz/ui/CustomizeTabs.kt",
             )
         var dir: File? = File("").absoluteFile
         while (dir != null) {
@@ -195,7 +209,7 @@ class FluidTabGatingTest {
             }
             dir = dir.parentFile
         }
-        fail("CustomizeDialog.kt not found from ${File("").absolutePath}")
+        fail("CustomizeTabs.kt not found from ${File("").absolutePath}")
         error("unreachable")
     }
 }

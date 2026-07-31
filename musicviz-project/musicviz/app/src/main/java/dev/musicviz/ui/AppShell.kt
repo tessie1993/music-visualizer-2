@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -141,6 +142,7 @@ fun AppRoot(
                 barOpacity = gui.barOpacity,
                 onExpand = { expanded = true },
                 onPlayPause = viewModel::togglePlayPause,
+                onPrevious = viewModel::previous,
                 onNext = viewModel::next,
             )
         }
@@ -257,6 +259,7 @@ private fun MiniPlayer(
     compact: Boolean,
     onExpand: () -> Unit,
     onPlayPause: () -> Unit,
+    onPrevious: () -> Unit,
     onNext: () -> Unit,
 ) {
     if (!hasMedia) return
@@ -285,6 +288,10 @@ private fun MiniPlayer(
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyMedium,
             )
+            // Previous sits next to Next here too: with the queue now built
+            // from the list a track was played from, both directions mean
+            // something from the mini-player, not only in Now Playing.
+            IconButton(onClick = onPrevious) { Icon(Icons.Filled.SkipPrevious, "Previous") }
             IconButton(onClick = onPlayPause) {
                 Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play/Pause")
             }
@@ -421,7 +428,7 @@ private fun SettingsSection(
                 title.uppercase(),
                 Modifier.weight(1f).padding(start = 10.dp),
                 style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.2.sp),
-                color = MaterialTheme.colorScheme.primary,
+                color = accentTextColor(),
             )
             Icon(
                 if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
@@ -442,22 +449,50 @@ private fun SettingsSection(
     }
 }
 
-/** Settings as a nav destination; export lives in the export dialog. */
+/**
+ * Settings as a nav destination, in two tabs.
+ *
+ * "Settings" holds the app-level preferences (appearance, playback, live
+ * input, safety, analysis); "Customize" mounts the very same [CustomizePanel]
+ * the Visuals hub shows. One panel, two doors - the same relationship Visuals
+ * and Now Playing already have - so the controls a user reaches for while
+ * they are in Settings are where they expect them, without a second copy that
+ * could drift.
+ *
+ * Export lives in the export dialog.
+ */
 @Composable
 fun SettingsScreen(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
 ) {
+    var tab by rememberSaveable { mutableStateOf(0) }
+    var showExport by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
+            CrystalOverline("MusicViz")
+            GlowTitle("Settings")
+        }
+        CrystalTabs(titles = listOf("Settings", "Customize"), selected = tab, onSelect = { tab = it })
+        when (tab) {
+            0 -> AppSettingsTab(viewModel) { showExport = true }
+            else -> CustomizePanel(viewModel, visualizerView)
+        }
+    }
+    if (showExport) {
+        ExportHost(viewModel, visualizerView) { showExport = false }
+    }
+}
+
+/** The app-preferences half of [SettingsScreen]. */
+@Composable
+private fun AppSettingsTab(
+    viewModel: PlayerViewModel,
+    onOpenExport: () -> Unit,
+) {
     val gui by viewModel.guiPrefs.collectAsState()
     val appTheme by viewModel.theme.collectAsState()
-    var showExport by remember { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item {
-            Column {
-                CrystalOverline("MusicViz")
-                GlowTitle("Settings")
-            }
-        }
         item {
             SettingsSection("Appearance") {
                 CrystalOverline("Theme", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -586,6 +621,9 @@ fun SettingsScreen(
                     })
                 }
             }
+        }
+        item {
+            SettingsSection("Live input & touch") { LiveInputSettings(viewModel) }
         }
         item {
             SettingsSection("Playback") {
@@ -806,13 +844,100 @@ fun SettingsScreen(
         }
         item {
             SettingsSection("Export & About") {
-                CrystalButton(onClick = { showExport = true }) { Text("Export video…") }
+                CrystalButton(onClick = onOpenExport) { Text("Export video…") }
                 AboutSection()
             }
         }
     }
-    if (showExport) {
-        ExportHost(viewModel, visualizerView) { showExport = false }
+}
+
+/**
+ * "Live input & touch": drive the visuals from the microphone with nothing
+ * playing, and push them around with a finger.
+ *
+ * The two belong together because they are the same idea - the visualizer
+ * responding to the room it is in rather than to a file - and because the
+ * second is what you reach for the moment the first is on and there is no
+ * transport to touch.
+ *
+ * The permission is requested at the moment the switch is used, never at
+ * launch, and a denial is reported in place rather than leaving a switch that
+ * silently springs back.
+ */
+@Composable
+private fun LiveInputSettings(viewModel: PlayerViewModel) {
+    val gui by viewModel.guiPrefs.collectAsState()
+    val mic by viewModel.micState.collectAsState()
+    var denied by remember { mutableStateOf(false) }
+    val micPermission =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            denied = !granted
+            if (granted) viewModel.setMicEnabled(true)
+        }
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("React to the microphone", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Switch(
+                checked = mic.active,
+                onCheckedChange = { want ->
+                    denied = false
+                    if (!want) {
+                        viewModel.setMicEnabled(false)
+                    } else if (viewModel.hasMicPermission()) {
+                        viewModel.setMicEnabled(true)
+                    } else {
+                        micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                    }
+                },
+            )
+        }
+        Text(
+            "Plays nothing and drives the visuals from what the phone hears — a room, an " +
+                "instrument, a speaker across the street. Playback pauses while it is on, because " +
+                "the analyzer has one input and a track plus the room would just blur together. " +
+                "Audio is analysed live and never recorded, saved or sent anywhere.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        when {
+            denied || mic.failure == dev.musicviz.audio.MicCapture.Failure.PERMISSION ->
+                Text(
+                    "Microphone access is off for MusicViz. Turn it on in Android Settings › Apps › " +
+                        "MusicViz › Permissions to use live input.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            mic.failure == dev.musicviz.audio.MicCapture.Failure.UNAVAILABLE ->
+                Text(
+                    "The microphone could not be opened — another app may be using it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+        }
+    }
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Smear the visuals with a finger", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Switch(
+                checked = gui.touchSmear,
+                onCheckedChange = { viewModel.setGuiPrefs(gui.copy(touchSmear = it)) },
+            )
+        }
+        Text(
+            "Drag on the fullscreen visualizer to push the image around: the drag raises the " +
+                "surface ahead of your finger and dips it behind, and whatever is on screen bends " +
+                "through it. On the Water style it stirs the pool itself and paints into it.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (gui.touchSmear) {
+            Text("Smear strength  ${(gui.touchSmearStrength * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
+            CrystalSlider(
+                value = gui.touchSmearStrength,
+                onValueChange = { viewModel.setGuiPrefs(gui.copy(touchSmearStrength = it)) },
+                valueRange = 0.2f..2f,
+            )
+        }
     }
 }
 
@@ -926,7 +1051,12 @@ fun SearchScreen(
                                 Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        viewModel.playTrack(t.uri)
+                                        // The result list is the queue, so Next
+                                        // walks the search hits.
+                                        viewModel.playFrom(
+                                            trackResults.map { r -> QueueTrack(r.uri, r.title, r.subtitle) },
+                                            t.uri,
+                                        )
                                         onClose()
                                     },
                                 verticalAlignment = Alignment.CenterVertically,

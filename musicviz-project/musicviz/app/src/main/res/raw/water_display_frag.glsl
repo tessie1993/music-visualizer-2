@@ -25,6 +25,8 @@ uniform float uFlowDrift;    // 0..1 slow uv drift
 uniform float uRefract;      // refraction gradient scale
 uniform float uTreble;       // treble band for crest glints
 uniform float uBrightness;
+uniform sampler2D uInk;      // liquid colour film (rgb = colour, a = coverage)
+uniform float uInkAmount;    // 0 = plain pool .. 1 = the film IS the surface
 out vec4 fragColor;
 
 vec3 hsv(float h, float s, float v) {
@@ -72,6 +74,20 @@ void main() {
     bg += (0.06 + 0.05 * uDepth) * max(bands, 0.0) * shallow;
     // Beer-Lambert-ish absorption: deeper water swallows more light.
     bg *= exp(-uDepth * (0.35 + 0.9 * depthT));
+
+    // Liquid film. The ink layer is sampled through the SAME refracted lookup
+    // as the pool, so the colour the emitters poured in is bent by the very
+    // ripples that are carrying it - the difference between a picture of
+    // water and the visual itself having gone liquid. Coverage decides where
+    // the film has a body; below it the depth-graded pool still shows through,
+    // so a quiet passage drains back to open water instead of a flat wash.
+    vec4 film = texture(uInk, buv);
+    float cover = clamp(film.a, 0.0, 1.0) * clamp(uInkAmount, 0.0, 1.0);
+    // Tone-map the HDR ink before it meets the pool: the splat pass lets rgb
+    // run past 1 so bright strikes bloom, and mixing that in raw would clip to
+    // white the moment two drops overlapped.
+    vec3 liquid = film.rgb / (1.0 + film.rgb);
+    bg = mix(bg, liquid, cover);
 
     // Blinn-Phong specular + fresnel rim, scaled by uSpecular.
     vec3 lightDir = normalize(vec3(-0.4, 0.6, 0.8));
