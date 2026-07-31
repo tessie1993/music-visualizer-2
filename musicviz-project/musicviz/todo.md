@@ -70,6 +70,28 @@ UI OVERHAUL IS GATED: no visual redesign until P0–P4 architecture is done.
       remove milkdrop rows from BuiltInPresets, "Next preset" cycles the
       user's imported/saved .milk files only (empty state: hint to Load).
 
+- [x] Flaky `testDebugUnitTest` (CI run 30590147361 attempt 1 red, attempt 2
+      green on a byte-identical tree). NOT a flaky assertion: all 38 failures
+      were the 38 Robolectric `@Test`s, every one of them
+      `AssertionError at MavenArtifactFetcher.java:129` /
+      `Caused by: IOException`. Robolectric fetches its `android-all`
+      runtime jar mid-test with its own no-retry Maven client into
+      ~/.m2/repository, which the CI Gradle cache does not restore — so
+      every run re-downloaded ~200 MB during the test task and one transient
+      HTTP error took out every Robolectric test at once. Fixed in
+      app/build.gradle.kts: the `robolectricSdks` configuration declares the
+      android-all-instrumented jars as normal Gradle dependencies,
+      `stageRobolectricSdks` syncs them into build/robolectric-sdks, and the
+      test tasks run with `robolectric.offline=true` +
+      `robolectric.dependency.dir`, so tests need no network at all. Adding
+      an `@Config(sdk = [N])` on a new SDK level means adding its OWN
+      configuration — one per level, because they are all versions of the
+      same module and a shared configuration makes Gradle's conflict
+      resolution collapse them to the highest version and stage only that
+      jar. Test-side `testLogging` now uses `exceptionFormat = FULL`;
+      Gradle's default SHORT prints the exception class and line but no
+      message at all, which is what made this so hard to read from CI.
+
 ## P1 — Milkdrop tab + preset architecture
 - [x] Style sheet → 3 tabs: Particles | Shaders | MilkDrop
       (ui/ style chooser; keep sheet-over-canvas pattern).
