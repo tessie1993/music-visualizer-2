@@ -186,8 +186,7 @@ class CompositeGradeTest {
     private fun gatesFor(
         incoming: CompositeGrade.SceneFamily,
         outgoing: CompositeGrade.SceneFamily,
-    ): Pair<CompositeGrade.Gate, CompositeGrade.Gate> =
-        CompositeGrade.gateFor(incoming) to CompositeGrade.gateFor(outgoing)
+    ): Pair<CompositeGrade.Gate, CompositeGrade.Gate> = CompositeGrade.gateFor(incoming) to CompositeGrade.gateFor(outgoing)
 
     @Test
     fun rotationIsIntegratedAsASpeedAndStaysBounded() {
