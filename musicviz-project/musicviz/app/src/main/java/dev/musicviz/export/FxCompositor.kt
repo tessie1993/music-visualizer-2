@@ -347,7 +347,7 @@ internal class FxCompositor(
         // Rotation and the colour cycle are SPEEDS: integrate them on the
         // export's own clock, once per exported frame, exactly as the live
         // renderer integrates once per displayed frame.
-        grade.advance(params, dtSeconds, features.beatImpulse)
+        grade.advance(params, dtSeconds, features.motionImpulse)
         // Which uPost* groups the composite owns is decided by the gate, not
         // by neutralising the values: exports never transition, so both gate
         // slots carry the same scene family, but the two programs must declare

@@ -63,6 +63,20 @@ class PulseTracker(
     var strength: Float = 0f
         private set
 
+    /**
+     * Graded TRANSIENT impulse: unlike [strength] it fires for every gate
+     * candidate, including the off-grid ones the beat grid suppresses - but
+     * damped ([TRANSIENT_SCALE]) and metered by a leaky budget that refills
+     * over one beat period, so a run of dense transients (a hat barrage, a
+     * fill) tapers off instead of hammering the visuals. This is the "the
+     * player actually HIT something there" channel for continuous motion
+     * envelopes; discrete event triggers should stay on [beat]/[strength] or
+     * they would fire per transient again. On accepted beats it simply
+     * mirrors [strength] (a beat is a transient too).
+     */
+    var transient: Float = 0f
+        private set
+
     /** Position within the current beat interval, 0 (on the beat) rising to 1. */
     var phase: Float = 0f
         private set
@@ -88,6 +102,7 @@ class PulseTracker(
     private var divergentFrames = 0
     private var predictionStreak = 0
     private var anchorZ = 0f
+    private var transientBudget = 1f
 
     /** Feeds one frame's flux and rms; read the outputs afterwards. */
     fun step(
@@ -103,8 +118,13 @@ class PulseTracker(
 
         beat = false
         strength = 0f
+        transient = 0f
         anchorZ *= ANCHOR_DECAY
         val period = periodFrames
+        // The transient budget refills over roughly one beat period, so the
+        // texture channel can spend about one full-strength impulse per beat
+        // however the material distributes it.
+        transientBudget = (transientBudget + 1f / (if (period > 0f) period else hopRateHz * 0.5f)).coerceAtMost(1f)
         if (candidate) {
             // Distance to the NEAREST grid point, so a candidate one whole
             // period late still reads as on-grid rather than off by 100%.
@@ -120,10 +140,12 @@ class PulseTracker(
                     // No tempo estimate yet: the reactive gate, softened.
                     beat = true
                     strength = grade(z) * UNLOCKED_SCALE
+                    transient = strength
                 }
                 onGrid -> {
                     beat = true
                     strength = grade(z) * if (locked) 1f else UNLOCKED_SCALE
+                    transient = strength
                     // Confidence needs a run of CONSECUTIVELY confirmed
                     // predictions, not a hit tally: random transients land
                     // inside the window ~40% of the time, so counting lone
@@ -144,6 +166,7 @@ class PulseTracker(
                     // whatever transient happened to arrive first.
                     beat = true
                     strength = grade(z) * UNLOCKED_SCALE
+                    transient = strength
                     confidence *= CONF_OFF_GRID
                     if (z >= anchorZ * ANCHOR_TAKEOVER) {
                         predictedFrame = frame + period
@@ -156,9 +179,18 @@ class PulseTracker(
                     // keep the grid anchored where the music actually is.
                     beat = true
                     strength = grade(z)
+                    transient = strength
                     confidence *= CONF_OFF_GRID
                 }
-                else -> confidence *= CONF_OFF_GRID
+                else -> {
+                    // Locked off-grid: no BEAT (that suppression is what
+                    // stops the strobe), but the hit still happened - surface
+                    // it on the damped, budget-metered transient channel, its
+                    // size following the hit's own amplitude via grade(z).
+                    transient = grade(z) * TRANSIENT_SCALE * transientBudget
+                    transientBudget = (transientBudget - transient * TRANSIENT_COST).coerceAtLeast(0f)
+                    confidence *= CONF_OFF_GRID
+                }
             }
         } else if (period > 0f && frame > predictedFrame + period * GRID_TOLERANCE) {
             // The predicted beat came and went with nothing there: coast.
@@ -293,6 +325,7 @@ class PulseTracker(
     class PulseCurves(
         val beat: BooleanArray,
         val strength: FloatArray,
+        val transient: FloatArray,
         val phase: FloatArray,
         val confidence: FloatArray,
         val energy: FloatArray,
@@ -347,6 +380,15 @@ class PulseTracker(
         /** Weakest accepted beat's strength; a beat must still be visible. */
         const val STRENGTH_FLOOR = 0.35f
 
+        /** Damping on suppressed off-grid transients relative to their graded
+         *  amplitude: texture, audibly there, visibly smaller than a beat. */
+        const val TRANSIENT_SCALE = 0.7f
+
+        /** Budget drained per unit of emitted transient impulse; with the
+         *  one-period refill this caps how much transient motion a dense run
+         *  can inject before it tapers. */
+        const val TRANSIENT_COST = 0.6f
+
         /** Sigmas past the threshold at which strength saturates at 1. */
         const val STRENGTH_SPAN_SIGMA = 3f
 
@@ -389,6 +431,7 @@ class PulseTracker(
                 beatMinIntervalMs.coerceIn(FeatureExtractor.INTERVAL_MS_MIN, FeatureExtractor.INTERVAL_MS_MAX)
             val beat = BooleanArray(flux.size)
             val strength = FloatArray(flux.size)
+            val transient = FloatArray(flux.size)
             val phase = FloatArray(flux.size)
             val confidence = FloatArray(flux.size)
             val energy = FloatArray(flux.size)
@@ -396,11 +439,12 @@ class PulseTracker(
                 tracker.step(flux[i], if (i < rms.size) rms[i] else 0f)
                 beat[i] = tracker.beat
                 strength[i] = tracker.strength
+                transient[i] = tracker.transient
                 phase[i] = tracker.phase
                 confidence[i] = tracker.confidence
                 energy[i] = tracker.energy
             }
-            return PulseCurves(beat, strength, phase, confidence, energy)
+            return PulseCurves(beat, strength, transient, phase, confidence, energy)
         }
     }
 }

@@ -116,6 +116,81 @@ class PulseTrackerTest {
     }
 
     @Test
+    fun `suppressed off-grid hits surface as amplitude-graded transients`() {
+        // The grid must not turn the tracker into a metronome: a hit between
+        // beats still moves the transient channel, sized by how hard it was -
+        // just never as a full beat.
+        // Off-beat amplitudes chosen to clear the sigma gate but stay well
+        // under the accent-bypass margin - hits THAT strong deserve to fire.
+        val soft = tracker()
+        val hard = tracker()
+        var softT = 0f
+        var hardT = 0f
+        var offbeatBeats = 0
+        for (frame in 0 until WARMUP + 1200) {
+            soft.step(kickAndOffbeatFlux(frame, 40, offbeat = 0.5f), 0.4f)
+            hard.step(kickAndOffbeatFlux(frame, 40, offbeat = 0.65f), 0.4f)
+            if (frame >= WARMUP && frame % 40 == 20) {
+                softT = maxOf(softT, soft.transient)
+                hardT = maxOf(hardT, hard.transient)
+                if (soft.beat || hard.beat) offbeatBeats++
+            }
+        }
+        assertEquals("off-beats must stay suppressed as BEATS", 0, offbeatBeats)
+        assertTrue("but must register on the transient channel, got $softT", softT > 0f)
+        assertTrue("a harder hit moves the visuals more ($hardT vs $softT)", hardT > softT + 0.05f)
+        assertTrue(
+            "and stays below a confirmed beat's weight, got $hardT",
+            hardT <= PulseTracker.TRANSIENT_SCALE + 1e-4f,
+        )
+    }
+
+    @Test
+    fun `a dense transient barrage is budget-limited instead of strobing`() {
+        // Off-grid hits every 13 frames (just past the 200 ms refractory)
+        // against a 60-frame beat grid: the budget must make the barrage
+        // taper instead of hammering at full transient weight.
+        val t = tracker()
+        val emitted = ArrayList<Float>()
+        for (frame in 0 until WARMUP + 1200) {
+            val kick = frame % 60 == 0
+            val inBarrage = frame >= WARMUP + 300
+            val chatter = inBarrage && !kick && frame % 13 == 0
+            t.step(
+                when {
+                    kick -> 1.2f
+                    chatter -> 0.75f
+                    else -> 0.03f
+                },
+                0.4f,
+            )
+            if (chatter && t.transient > 0f && !t.beat) emitted += t.transient
+        }
+        assertTrue("the barrage must register at all, got ${emitted.size}", emitted.size > 10)
+        val average = emitted.sum() / emitted.size
+        assertTrue(
+            "the budget must pull the average well under the damped ceiling, got $average",
+            average < PulseTracker.TRANSIENT_SCALE * 0.6f,
+        )
+        assertTrue("yet never fully mute the texture, got min ${emitted.min()}", emitted.min() > 0f)
+    }
+
+    @Test
+    fun `motion impulse blends beats with softened transients`() {
+        val f = AudioFeatures.empty()
+        // A beat dominates; a lone transient contributes at reduced weight.
+        assertEquals(0.9f, f.copy(beat = true, beatStrength = 0.9f, transient = 0.9f).motionImpulse, 1e-6f)
+        assertEquals(
+            0.8f * AudioFeatures.TRANSIENT_MOTION_WEIGHT,
+            f.copy(transient = 0.8f).motionImpulse,
+            1e-6f,
+        )
+        assertEquals(0f, f.motionImpulse, 0f)
+        // Legacy strength-less beat flags still read as a full impulse.
+        assertEquals(1f, f.copy(beat = true).motionImpulse, 0f)
+    }
+
+    @Test
     fun `a huge off-grid accent still fires`() {
         val t = tracker()
         var locked = false
@@ -288,6 +363,7 @@ class PulseTrackerTest {
         for (i in 0 until n) {
             assertEquals("beat at frame $i", live[i].beat, replay.beat[i])
             assertEquals("strength at frame $i", live[i].beatStrength, replay.strength[i], 0f)
+            assertEquals("transient at frame $i", live[i].transient, replay.transient[i], 0f)
             assertEquals("phase at frame $i", live[i].beatPhase, replay.phase[i], 0f)
             assertEquals("confidence at frame $i", live[i].pulseConfidence, replay.confidence[i], 0f)
             assertEquals("energy at frame $i", live[i].macroEnergy, replay.energy[i], 0f)

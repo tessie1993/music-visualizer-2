@@ -39,6 +39,13 @@ data class AudioFeatures(
      *  motion can anticipate and land on beats instead of only reacting to
      *  them. 0 when no beat grid is known. */
     val beatPhase: Float = 0f,
+    /** Graded transient impulse from [PulseTracker], 0..1: fires for EVERY
+     *  detected onset - including the off-grid ones the beat grid holds back
+     *  - with its size following the hit's own amplitude, damped and metered
+     *  by a per-beat budget so dense runs taper off instead of strobing. The
+     *  "the player actually hit something there" texture channel; on beat
+     *  frames it mirrors [beatStrength]. */
+    val transient: Float = 0f,
     /** [PulseTracker]'s confidence that its beat grid matches the music,
      *  0..1. Low on ambient/rubato material - scenes wanting tempo-synced
      *  choreography should fall back to energy-driven motion below ~0.5. */
@@ -64,7 +71,23 @@ data class AudioFeatures(
                 else -> 1f
             }
 
+    /**
+     * What CONTINUOUS motion envelopes should ride: the tempo-locked
+     * [beatImpulse], topped up by off-grid transients at reduced weight - so
+     * the visuals breathe with what is actually being played between beats,
+     * scaled by each hit's own amplitude, without turning every transient
+     * back into a full trigger. Discrete event triggers (bursts, ripple
+     * rings, flash-style uBeat effects) should stay on [beatImpulse], or
+     * they would fire per transient again.
+     */
+    val motionImpulse: Float
+        get() = maxOf(beatImpulse, transient * TRANSIENT_MOTION_WEIGHT)
+
     companion object {
+        /** Weight of the transient channel inside [motionImpulse]: texture at
+         *  up to half the presence of a confirmed beat. */
+        const val TRANSIENT_MOTION_WEIGHT = 0.5f
+
         fun empty(
             bandCount: Int = 64,
             waveformSize: Int = 128,

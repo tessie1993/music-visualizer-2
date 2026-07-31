@@ -120,6 +120,7 @@ class FeatureExtractor(
             centroid = centroid,
             flux = flux,
             beatStrength = tracker.strength,
+            transient = tracker.transient,
             beatPhase = tracker.phase,
             pulseConfidence = tracker.confidence,
             macroEnergy = tracker.energy,

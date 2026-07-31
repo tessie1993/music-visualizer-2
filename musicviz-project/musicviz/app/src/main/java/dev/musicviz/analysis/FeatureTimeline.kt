@@ -74,6 +74,7 @@ class FeatureTimeline(
             val unchanged =
                 f.beat == pulse.beat[i] &&
                     f.beatStrength == pulse.strength[i] &&
+                    f.transient == pulse.transient[i] &&
                     f.beatPhase == pulse.phase[i] &&
                     f.pulseConfidence == pulse.confidence[i] &&
                     f.macroEnergy == pulse.energy[i]
@@ -86,6 +87,7 @@ class FeatureTimeline(
                             f.copy(
                                 beat = pulse.beat[i],
                                 beatStrength = pulse.strength[i],
+                                transient = pulse.transient[i],
                                 beatPhase = pulse.phase[i],
                                 pulseConfidence = pulse.confidence[i],
                                 macroEnergy = pulse.energy[i],
@@ -147,15 +149,17 @@ class FeatureTimeline(
         var onset = f.onset
         var flux = f.flux
         var strength = f.beatStrength
+        var transient = f.transient
         for (i in first + 1..last) {
             val g = frames[i].features
             beat = beat || g.beat
             onset = maxOf(onset, g.onset)
             flux = maxOf(flux, g.flux)
             strength = maxOf(strength, g.beatStrength)
+            transient = maxOf(transient, g.transient)
         }
-        if (beat == f.beat && onset == f.onset && flux == f.flux && strength == f.beatStrength) return f
-        return f.copy(beat = beat, onset = onset, flux = flux, beatStrength = strength)
+        if (beat == f.beat && onset == f.onset && flux == f.flux && strength == f.beatStrength && transient == f.transient) return f
+        return f.copy(beat = beat, onset = onset, flux = flux, beatStrength = strength, transient = transient)
     }
 
     /**

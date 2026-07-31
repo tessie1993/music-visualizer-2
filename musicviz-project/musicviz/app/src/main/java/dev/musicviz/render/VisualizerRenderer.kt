@@ -609,7 +609,7 @@ class VisualizerRenderer(
         lastFinalParams = p
         postRotationAngle = CompositeGrade.integrateRotation(postRotationAngle, p.rotation, dt)
         postCyclePhase = CompositeGrade.integrateCyclePhase(postCyclePhase, p.cycleSpeed, dt, p.colorCycle)
-        postBeatPulse = CompositeGrade.integrateBeatPulse(postBeatPulse, features.beatImpulse, dt)
+        postBeatPulse = CompositeGrade.integrateBeatPulse(postBeatPulse, features.motionImpulse, dt)
         if (fluidInjectionDirty) {
             fluidInjectionDirty = false
             (scenes[SceneIds.FLUID] as? dev.musicviz.render.fluid.FluidScene)

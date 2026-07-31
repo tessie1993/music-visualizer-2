@@ -63,14 +63,16 @@ rms ─────────────> EnergyFollower ──> macroEnergy 
 `PulseTracker` (analysis/PulseTracker.kt) sits between the existing
 `BeatGate` and the scenes. Per frame it emits, through `AudioFeatures`:
 
-| Field             | Meaning                                                             |
-| ----------------- | ------------------------------------------------------------------- |
-| `beat`            | Accepted beat (tempo-gated once locked)                             |
-| `beatStrength`    | 0.35..1: how hard the hit was, scaled by the macro-energy envelope  |
-| `beatImpulse`     | What scenes consume: 0 off-beat, `beatStrength` on it (legacy-safe) |
-| `beatPhase`       | 0..1 saw over the beat interval — motion *between* beats            |
-| `pulseConfidence` | 0..1 grid confidence; scenes can gate choreography on it            |
-| `macroEnergy`     | 0..1 track-relative loudness arc (verse low, chorus high)           |
+| Field             | Meaning                                                              |
+| ----------------- | -------------------------------------------------------------------- |
+| `beat`            | Accepted beat (tempo-gated once locked)                              |
+| `beatStrength`    | 0.35..1: how hard the hit was, scaled by the macro-energy envelope   |
+| `beatImpulse`     | Event trigger: 0 off-beat, `beatStrength` on it (legacy-safe)        |
+| `transient`       | Every onset, graded by its amplitude, damped + budget-metered        |
+| `motionImpulse`   | What continuous envelopes ride: `max(beatImpulse, transient × 0.5)`  |
+| `beatPhase`       | 0..1 saw over the beat interval — motion *between* beats             |
+| `pulseConfidence` | 0..1 grid confidence; scenes can gate choreography on it             |
+| `macroEnergy`     | 0..1 track-relative loudness arc (verse low, chorus high)            |
 
 Behavioral rules, in order of what they fix:
 
@@ -94,6 +96,14 @@ Behavioral rules, in order of what they fix:
 - **Graded strength** — `(z − sigma) / 3σ` mapped to 0.35..1, then scaled by
   `0.6 + 0.4 × macroEnergy`: the same hit pulses gently in a quiet passage
   and lands full-weight in the chorus.
+- **Transient texture, not a metronome** — the grid is a filter for *events*,
+  not a deafness to the playing. Every suppressed off-grid onset still emits
+  on the `transient` channel, sized by its own amplitude (the same
+  `grade(z)` curve), damped to 0.7× and metered by a leaky budget that
+  refills over one beat period — so a snare ghost stirs the motion, a hat
+  barrage tapers off instead of strobing, and nothing between beats ever
+  fires a discrete event. Continuous envelopes consume it through
+  `motionImpulse` at half a beat's weight.
 
 ## Determinism and the cache contract (unchanged)
 
@@ -115,18 +125,22 @@ user settings. The invariants the codebase is built around still hold:
 
 ## What scenes do with it
 
-Every consumer that used to branch `if (features.beat)` for a fixed-size kick
-now scales by `features.beatImpulse` (0 off-beat, graded on it, and 1 for
-legacy features that carry a flag but no strength — synthesised idle features
-and pre-tracker cache entries keep their historical behavior, which is also
-what keeps the existing scene tests meaningful):
+The consumer rule is a two-tier split:
 
-- envelope snaps: `ParticleSceneBase` / `ShaderScene` / `ProjectMScene`
-  `beatPulse`, `CompositeGrade.integrateBeatPulse` (renderer + export),
-  fluid `beatEnv`s (`FluidEmitters`, `FluidChoreography`, `CurlFlowScene`),
-  `FluidSim.audioBeat`, and the `uBeat` uniform in both composite passes;
-- event magnitude: `BurstScene` firework size, `FountainScene` emission
-  boost, `RippleOverlayDrops` ring amplitude.
+- **Continuous envelopes ride `motionImpulse`** (beat impulse topped up by
+  softened transients): `ParticleSceneBase` / `ShaderScene` /
+  `ProjectMScene` `beatPulse`, `CompositeGrade.integrateBeatPulse`
+  (renderer + export), fluid `beatEnv`s (`FluidEmitters`,
+  `FluidChoreography`, `CurlFlowScene`), `FluidSim.audioBeat`,
+  `FountainScene` emission boost.
+- **Discrete events stay on `beatImpulse`** (tempo-locked, graded), so
+  transients never multiply event counts: `BurstScene` firework size,
+  `RippleOverlayDrops` ring amplitude, the `uBeat` flash uniform in both
+  composite passes, ADSR attack triggers, beat-edge splat/ring firing.
+
+Legacy features that carry a beat flag but no strength (synthesised idle
+features, pre-tracker cache entries) read as a full impulse on both tiers,
+which keeps the historical behavior and the existing scene tests meaningful.
 
 `beatPhase`, `pulseConfidence` and `macroEnergy` are available on
 `AudioFeatures` for scenes/LFOs that want anticipation motion, confidence-
