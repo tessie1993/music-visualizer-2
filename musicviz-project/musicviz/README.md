@@ -27,8 +27,14 @@
   aligned; release.yml builds/verifies a signed AAB and hard-fails the 16 KB
   check; native-libs.yml rebuilds libprojectM with NDK r28 and
   -Wl,-z,max-page-size=16384.
-- KNOWN BLOCKER: the bundled .so are still 4 KB aligned, which Play rejects for
-  targetSdk 35+. See docs/PLAY_STORE_RELEASE.md.
+- 16 KB page size: libprojectM and the JNI bridge rebuilt from projectM v4.1.7
+  (FBO backport applied) with NDK r28+ and -Wl,-z,max-page-size=16384, then
+  stripped - every LOAD segment is now 0x4000, which is what Play requires for
+  targetSdk 35+. libprojectM-4.so also drops 12.4 MB -> 1.9 MB, because the
+  previously committed binary was never stripped. The native-libs workflow
+  gates the commit on alignment, an unversioned SONAME and every PMBridge
+  `external fun` being exported. NEEDS DEVICE_CHECKS 1-3 and 19-20: this is a
+  fresh build of the render engine, so .milk rendering is unproven headless.
 - Verify note: built without the Android SDK locally; gate = full CI (ktlint,
   106+ headless tests, assembleDebug, bundleRelease, lint) green. Background
   playback cannot be checked headless - run DEVICE_CHECKS items 21-22.

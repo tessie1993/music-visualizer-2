@@ -7,31 +7,37 @@ only you can do from a browser. Work top to bottom.
 
 ## 1. Hard blockers
 
-### 1.1 16 KB page size — **NOT FIXED YET, this one will get you rejected**
+### 1.1 16 KB page size — **DONE, but needs an on-device pass**
 
 Google Play requires 16 KB page-size support for every app targeting Android 15
-or newer (MusicViz targets 36). Both bundled native libraries are currently
-built for 4 KB pages:
+or newer (MusicViz targets 36). The bundled libraries were built for 4 KB pages
+and have been rebuilt:
 
 ```
-libprojectM-4.so   LOAD ... 0x1000     ← 4 KB
-libprojectmjni.so  LOAD ... 0x1000     ← 4 KB
+                     before      after
+libprojectM-4.so     0x1000  →  0x4000     12.4 MB → 1.9 MB
+libprojectmjni.so    0x1000  →  0x4000     12.0 KB → 8.8 KB
 ```
 
-They need `0x4000` (16384) or larger. This cannot be patched into an existing
-`.so` — the libraries have to be recompiled.
+The size drop is because the committed binaries were never stripped; the
+rebuild strips them, which is also what AGP ships anyway. Alignment cannot be
+patched into an existing `.so`, so this required a full recompile.
 
-**What to do:** run the **"Rebuild native libs (16 KB aligned)"** workflow
-(Actions → run manually). It clones projectM v4.1.7, applies
-`tools/projectm-v417-render-fbo-backport.patch`, builds with NDK r28 and
-`-Wl,-z,max-page-size=16384`, verifies the alignment and uploads both `.so` as
-an artifact. Download it, replace
-`app/src/main/jniLibs/arm64-v8a/{libprojectM-4.so,libprojectmjni.so}`, commit,
-then **run the MilkDrop device checks** in `docs/DEVICE_CHECKS.md` — this is a
-new build of the render engine, not a repackage.
+Done by the **"Rebuild native libs (16 KB aligned)"** workflow (Actions → run
+manually), which clones projectM v4.1.7, applies
+`tools/projectm-v417-render-fbo-backport.patch`, builds with NDK r28+ and
+`-Wl,-z,max-page-size=16384`, strips, verifies, and commits the result back to
+the branch. It refuses to commit unless every LOAD segment is ≥ 16384, the
+SONAME is unversioned, and every `external fun` in `PMBridge.kt` is exported.
 
-The CI build warns while the old libraries are in place; `release.yml` refuses
-to build a bundle at all.
+> **Still owed: the MilkDrop device checks.** This is a fresh build of the
+> render engine from source, not a repackage — a different NDK, a different
+> compiler. Green CI only proves the libraries link, align and export the right
+> symbols; it cannot prove a `.milk` preset still renders. Run items 1–3 and
+> 19–20 in `docs/DEVICE_CHECKS.md` before shipping.
+
+`android.yml` re-checks alignment on every push and `release.yml` hard-fails on
+it, so this cannot silently regress.
 
 ### 1.2 Signing key — **you have to create it**
 
@@ -100,6 +106,8 @@ change both.
 | Privacy policy link in-app | `ui/AboutSettings.kt` |
 | Signed-AAB pipeline + 16 KB gate | `.github/workflows/release.yml` |
 | Native rebuild pipeline | `.github/workflows/native-libs.yml` |
+| 16 KB-aligned, stripped native libraries | `app/src/main/jniLibs/arm64-v8a/` |
+| Background playback + lock-screen controls | `playback/PlaybackService.kt` |
 
 R8 is newly enabled, so **install the release build on a real device and
 exercise MilkDrop presets, export and the equalizer** before uploading. A
