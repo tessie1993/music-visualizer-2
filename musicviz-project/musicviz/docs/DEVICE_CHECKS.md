@@ -310,3 +310,28 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     decay must look identical in both files; a 30 fps clip whose pulses
     hang around twice as long means the envelope is not running on the
     export's own frame delta.
+32. Shape > "Particles" section per style. Open Visuals > Customize >
+    Shape and walk the styles. On a particle style (nebula / bursts /
+    swarm / fountain / orbits) the section must show BOTH "Particle
+    shape" and "Particle size", and both must still work: switch the
+    shape chips and the sprites change silhouette, drag the size slider
+    and they grow. On FLUID and CURL FLOW the header and "Particle size"
+    must be there but the shape chips must be GONE — those sprites are
+    always round — and the slider must visibly resize the points on both.
+    On the shader styles (julia / plasma / …), on MilkDrop and on WATER
+    the ENTIRE section must be gone: no "Particles" heading left behind
+    with nothing under it, and no gap where it used to be. Scroll the
+    whole tab on a shader style to confirm Distortion / Symmetry &
+    tiling / Stylize are untouched and it simply ends after Posterize.
+    FLUID SPECIAL CASE — on FLUID open the Fluid tab, untick "Particle
+    layer", then return to Shape: "Particle size" must STILL be visible,
+    now with a one-line note saying the layer is off. Tick the layer back
+    on and the note disappears and the slider resizes the points again.
+    A vanished slider here is the bug, not the fix.
+    REGRESSION SIDE — with a preset saved on a particle style, apply it
+    while a shader style is active and then switch to the particle style:
+    the shape/size it stored must still be in effect (gating hides the
+    controls, it must never change or reset the params). Press "⚄
+    Randomize unlocked" on a shader style, then switch to a particle
+    style: shape and size must have rolled there too, and locking either
+    on the particle style must hold it across further rolls.
