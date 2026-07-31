@@ -1,9 +1,7 @@
 package dev.musicviz.ui
 
 import android.app.Application
-import android.content.ContentUris
 import android.net.Uri
-import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -26,6 +24,7 @@ import dev.musicviz.analysis.PlaybackMath
 import dev.musicviz.analysis.SceneSuggester
 import dev.musicviz.audio.AudioFxController
 import dev.musicviz.audio.AudioFxState
+import dev.musicviz.audio.AudioQualityTracker
 import dev.musicviz.audio.PcmRingBuffer
 import dev.musicviz.audio.PcmTapSink
 import dev.musicviz.audio.TapRenderersFactory
@@ -155,86 +154,22 @@ class PlayerViewModel(
     private val ring = PcmRingBuffer()
     private val engine = AnalysisEngine(ring)
 
-    // ---- Audio-quality readout ----
-    // Combines the selected track's source Format (onTracksChanged) with the
-    // decoded output format the read-only tap reports (playback thread), so
-    // the UI can show whether playback is lossless / bit-perfect. Declared
-    // before [sink] on purpose: its callback touches these fields (see the
-    // construction-order note above the init block).
-
-    /** Decoded output format from the tap's flush callback. */
-    private data class TapFormat(
-        val sampleRateHz: Int,
-        val channelCount: Int,
-        val encoding: Int,
-    )
-
-    @Volatile
-    private var tapFormat: TapFormat? = null
-
-    @Volatile
-    private var sourceAudioFormat: Format? = null
-
-    private val _audioQuality = MutableStateFlow<AudioQualityInfo?>(null)
+    // Declared before [sink] on purpose: the sink's format callback calls
+    // into it (see the construction-order note above the init block).
+    private val audioQualityTracker = AudioQualityTracker { currentUri }
 
     /** Source vs decoded-output quality of the current track; null when idle. */
-    val audioQuality: StateFlow<AudioQualityInfo?> = _audioQuality
-
-    /** Called from the playback thread on every audio-pipeline reconfigure. */
-    private fun onTapFormat(
-        sampleRateHz: Int,
-        channelCount: Int,
-        encoding: Int,
-    ) {
-        tapFormat = TapFormat(sampleRateHz, channelCount, encoding)
-        recomputeAudioQuality()
-    }
-
-    /** Bits per sample for a Media3 PCM encoding constant; 0 = unknown. */
-    private fun bitDepthOf(pcmEncoding: Int): Int =
-        when (pcmEncoding) {
-            C.ENCODING_PCM_8BIT -> 8
-            C.ENCODING_PCM_16BIT, C.ENCODING_PCM_16BIT_BIG_ENDIAN -> 16
-            C.ENCODING_PCM_24BIT, C.ENCODING_PCM_24BIT_BIG_ENDIAN -> 24
-            C.ENCODING_PCM_32BIT, C.ENCODING_PCM_32BIT_BIG_ENDIAN -> 32
-            C.ENCODING_PCM_FLOAT -> 32
-            else -> 0
-        }
-
-    /** Container guess from the uri's file extension ("" for opaque uris). */
-    private fun containerGuess(): String {
-        val name = currentUri?.lastPathSegment?.substringAfterLast('/') ?: return ""
-        val ext = name.substringAfterLast('.', "")
-        return if (ext.length in 1..4) ext.lowercase() else ""
-    }
-
-    private fun recomputeAudioQuality() {
-        val src = sourceAudioFormat
-        if (src == null) {
-            _audioQuality.value = null
-            return
-        }
-        val tap = tapFormat
-        _audioQuality.value =
-            AudioQualityInfo.classify(
-                mime = src.sampleMimeType,
-                container = containerGuess(),
-                sourceSampleRateHz = src.sampleRate.takeIf { it != Format.NO_VALUE } ?: 0,
-                sourceChannels = src.channelCount.takeIf { it != Format.NO_VALUE } ?: 0,
-                bitDepth = bitDepthOf(src.pcmEncoding),
-                bitrateBps = src.bitrate.takeIf { it != Format.NO_VALUE } ?: 0,
-                outputSampleRateHz = tap?.sampleRateHz ?: 0,
-                outputChannels = tap?.channelCount ?: 0,
-                outputFloat = tap?.encoding == C.ENCODING_PCM_FLOAT,
-            )
-    }
+    val audioQuality: StateFlow<AudioQualityInfo?> = audioQualityTracker.info
 
     private val sink =
         PcmTapSink(ring) { rate, channels, encoding ->
             engine.sampleRateHz = rate
-            onTapFormat(rate, channels, encoding)
+            audioQualityTracker.onTapFormat(rate, channels, encoding)
         }
     private val offlineAnalyzer = OfflineAnalyzer(application)
+    private val metadataReader = TrackMetadataReader(application)
+    private val deviceIndex = DeviceMusicIndex(application)
+    private val milkAssets = MilkAssetStore(application)
     private val presetStore: PresetRepository = PresetStore(application)
     private val trackLibrary: LibraryRepository = TrackLibrary(application)
     private val themeStore = ThemeStore(application)
@@ -581,55 +516,18 @@ class PlayerViewModel(
         return if (n > 0) PcmChunk(pcmScratch, n) else null
     }
 
-    private var builtInIndex = -1
-
-    /** Async: copies bundled presets on first use, returns next path on main. */
+    /** Async: next .milk preset in name order; path arrives on main. */
     fun nextMilkPresetAsync(onDone: (String?) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
-            val path = nextBuiltInMilkPresetBlocking()
+            val path = milkAssets.nextPreset()
             withContext(Dispatchers.Main) { onDone(path) }
         }
     }
 
-    private fun nextBuiltInMilkPresetBlocking(): String? =
-        try {
-            val files =
-                importDir()
-                    .listFiles { f -> f.extension == "milk" }
-                    .orEmpty()
-                    .sortedBy { it.name }
-            if (files.isEmpty()) {
-                null
-            } else {
-                builtInIndex = (builtInIndex + 1) % files.size
-                files[builtInIndex].absolutePath
-            }
-        } catch (t: Throwable) {
-            null
-        }
-
-    private fun builtInDir(): java.io.File = java.io.File(getApplication<Application>().filesDir, "milk-builtin")
-
-    private fun importDir(): java.io.File = java.io.File(getApplication<Application>().filesDir, "milk")
-
-    /** Async listing of all .milk files (bundled + imported) for the browser. */
+    /** Async listing of all .milk files for the browser. */
     fun milkPresetFilesAsync(onDone: (List<MilkFile>) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
-            val files =
-                try {
-                    // Built-in .milk presets were removed (they were low
-                    // quality); clean up any copies from older versions so
-                    // they stop appearing, and list only the user's files.
-                    builtInDir().deleteRecursively()
-                    java.io.File(importDir(), "textures").mkdirs()
-                    importDir()
-                        .listFiles { f -> f.extension == "milk" }
-                        .orEmpty()
-                        .map { MilkFile(it.nameWithoutExtension, it.absolutePath) }
-                        .sortedBy { it.name }
-                } catch (t: Throwable) {
-                    emptyList()
-                }
+            val files = milkAssets.listPresets()
             withContext(Dispatchers.Main) { onDone(files) }
         }
     }
@@ -640,23 +538,10 @@ class PlayerViewModel(
         onDone: (String?) -> Unit,
     ) {
         viewModelScope.launch(Dispatchers.IO) {
-            val path = importMilkPresetBlocking(uri)
+            val path = milkAssets.importPreset(uri)
             withContext(Dispatchers.Main) { onDone(path) }
         }
     }
-
-    private fun importMilkPresetBlocking(uri: Uri): String? =
-        try {
-            val dir = java.io.File(getApplication<Application>().filesDir, "milk").apply { mkdirs() }
-            val name = (uri.lastPathSegment ?: "preset").substringAfterLast('/').ifBlank { "preset" }
-            val file = java.io.File(dir, if (name.endsWith(".milk")) name else "$name.milk")
-            getApplication<Application>().contentResolver.openInputStream(uri)?.use { input ->
-                file.outputStream().use { input.copyTo(it) }
-            }
-            file.absolutePath
-        } catch (t: Throwable) {
-            null
-        }
 
     private var timeline: FeatureTimeline? = null
     private var currentUri: Uri? = null
@@ -741,8 +626,7 @@ class PlayerViewModel(
                             }
                         }
                     }
-                    sourceAudioFormat = fmt
-                    recomputeAudioQuality()
+                    audioQualityTracker.onSourceFormat(fmt)
                 }
             },
         )
@@ -819,16 +703,15 @@ class PlayerViewModel(
 
     // ---- Sleep timer ----
 
-    private var sleepTimerJob: Job? = null
-    private val _sleepTimerRemainingMs = MutableStateFlow<Long?>(null)
+    private val sleepTimer = SleepTimerController(viewModelScope, player)
 
     /** Remaining sleep-timer time, or null when no timer is running. */
-    val sleepTimerRemainingMs: StateFlow<Long?> = _sleepTimerRemainingMs
+    val sleepTimerRemainingMs: StateFlow<Long?> = sleepTimer.remainingMs
 
     /**
-     * Starts (or restarts) the sleep timer: counts down, fades the volume
-     * over the final 3 s, pauses, then restores full volume for next play.
-     * Persists [minutes] as the last-chosen duration (never a running state).
+     * Starts (or restarts) the sleep timer. Persists [minutes] as the
+     * last-chosen duration (never a running state); the countdown itself
+     * lives in [SleepTimerController].
      */
     fun startSleepTimer(minutes: Int) {
         if (minutes <= 0) {
@@ -836,30 +719,12 @@ class PlayerViewModel(
             return
         }
         setPlayerPrefs(_playerPrefs.value.copy(sleepTimerMinutes = minutes))
-        sleepTimerJob?.cancel()
-        sleepTimerJob =
-            viewModelScope.launch {
-                val endMs = android.os.SystemClock.elapsedRealtime() + minutes * 60_000L
-                while (true) {
-                    val remaining = endMs - android.os.SystemClock.elapsedRealtime()
-                    if (remaining <= 0L) break
-                    _sleepTimerRemainingMs.value = remaining
-                    player.volume = PlaybackMath.sleepFadeVolume(remaining)
-                    delay(if (remaining <= PlaybackMath.SLEEP_FADE_MS) 100 else 500)
-                }
-                player.pause()
-                player.volume = 1f
-                _sleepTimerRemainingMs.value = null
-                sleepTimerJob = null
-            }
+        sleepTimer.start(minutes)
     }
 
     /** Cancels a running sleep timer and restores full volume. */
     fun cancelSleepTimer() {
-        sleepTimerJob?.cancel()
-        sleepTimerJob = null
-        _sleepTimerRemainingMs.value = null
-        player.volume = 1f
+        sleepTimer.cancel()
     }
 
     // ---- Visual playlist ----
@@ -1074,16 +939,6 @@ class PlayerViewModel(
 
     // ---- Music library & playlists ----
 
-    /** Embedded-tag metadata read from a file; fields blank/zero when absent. */
-    private data class FileMeta(
-        val title: String,
-        val artist: String = "",
-        val album: String = "",
-        val genre: String = "",
-        val year: Int = 0,
-        val trackNo: Int = 0,
-    )
-
     private val _deviceTracks = MutableStateFlow<List<DeviceTrack>>(emptyList())
 
     /** Device music index (MediaStore); refreshed on demand from the UI. */
@@ -1097,144 +952,14 @@ class PlayerViewModel(
      */
     fun refreshDeviceTracks() {
         viewModelScope.launch(Dispatchers.IO) {
-            _deviceTracks.value = queryDeviceTracksBlocking()
+            _deviceTracks.value = deviceIndex.query()
         }
     }
-
-    /** Full MediaStore music query; call on Dispatchers.IO. */
-    private fun queryDeviceTracksBlocking(): List<DeviceTrack> {
-        val app = getApplication<Application>()
-        val permission =
-            if (android.os.Build.VERSION.SDK_INT >= 33) {
-                android.Manifest.permission.READ_MEDIA_AUDIO
-            } else {
-                android.Manifest.permission.READ_EXTERNAL_STORAGE
-            }
-        val granted =
-            androidx.core.content.ContextCompat
-                .checkSelfPermission(app, permission) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (!granted) return emptyList()
-        val out = mutableListOf<DeviceTrack>()
-        val proj =
-            arrayOf(
-                MediaStore.Audio.Media._ID,
-                MediaStore.Audio.Media.TITLE,
-                MediaStore.Audio.Media.ARTIST,
-                MediaStore.Audio.Media.ALBUM,
-                MediaStore.Audio.Media.DURATION,
-                MediaStore.Audio.Media.DATA,
-            )
-        runCatching {
-            app.contentResolver
-                .query(
-                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                    proj,
-                    "${MediaStore.Audio.Media.IS_MUSIC} != 0",
-                    null,
-                    "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC",
-                )?.use { c ->
-                    val id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-                    val ti = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-                    val ar = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-                    val al = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-                    val du = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-                    val da = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
-                    while (c.moveToNext()) {
-                        val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, c.getLong(id))
-                        val path = c.getString(da).orEmpty()
-                        out +=
-                            DeviceTrack(
-                                uri = uri.toString(),
-                                title = c.getString(ti) ?: "Unknown",
-                                artist = c.getString(ar) ?: "Unknown artist",
-                                album = c.getString(al) ?: "Unknown album",
-                                folder = path.substringBeforeLast('/', ""),
-                                durationMs = c.getLong(du),
-                            )
-                    }
-                }
-        }
-        return out
-    }
-
-    /**
-     * Resolves tag metadata the way real media players do: embedded tags
-     * first (MediaMetadataRetriever), then the provider's display name, and
-     * only then the URI path - so content URIs never surface as bare
-     * document numbers. Call on Dispatchers.IO; the retriever hits disk.
-     */
-    private fun metadataFor(uri: Uri): FileMeta {
-        val app = getApplication<Application>()
-        var title: String? = null
-        var artist: String? = null
-        var album = ""
-        var genre = ""
-        var year = 0
-        var trackNo = 0
-        runCatching {
-            val r = android.media.MediaMetadataRetriever()
-            try {
-                r.setDataSource(app, uri)
-
-                fun tag(key: Int): String? = r.extractMetadata(key)?.trim()?.ifBlank { null }
-                title = tag(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE)
-                artist = tag(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                album = tag(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: ""
-                genre = tag(android.media.MediaMetadataRetriever.METADATA_KEY_GENRE) ?: ""
-                // Year tags arrive as "1997" or full dates; track numbers as "3" or "3/12".
-                year =
-                    tag(android.media.MediaMetadataRetriever.METADATA_KEY_YEAR)
-                        ?.filter { it.isDigit() }
-                        ?.take(4)
-                        ?.toIntOrNull() ?: 0
-                trackNo =
-                    tag(android.media.MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
-                        ?.substringBefore('/')
-                        ?.trim()
-                        ?.toIntOrNull() ?: 0
-            } finally {
-                runCatching { r.release() }
-            }
-        }
-        if (title == null) {
-            title =
-                runCatching {
-                    app.contentResolver
-                        .query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
-                        ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
-                }.getOrNull()?.substringBeforeLast('.')
-        }
-        return FileMeta(
-            title = title ?: uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Track",
-            artist = artist ?: "",
-            album = album,
-            genre = genre,
-            year = year,
-            trackNo = trackNo,
-        )
-    }
-
-    private fun libraryTrackFor(
-        uriStr: String,
-        m: FileMeta,
-    ): LibraryTrack =
-        LibraryTrack(
-            uri = uriStr,
-            title = m.title,
-            artist = m.artist,
-            album = m.album,
-            genre = m.genre,
-            year = m.year,
-            trackNo = m.trackNo,
-        )
-
-    private fun titleFor(uri: Uri): String = metadataFor(uri).title
 
     /** Imports picked audio files into the library (persist read permission first). */
     fun importTracks(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        // titleFor() runs a content-resolver metadata query per file; a large
+        // Tag reading runs a content-resolver query per file; a large
         // multi-select would jank/ANR the main thread, so do it on IO.
         viewModelScope.launch(Dispatchers.IO) {
             val app = getApplication<Application>()
@@ -1246,7 +971,7 @@ class PlayerViewModel(
                             android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
                         )
                     }
-                    libraryTrackFor(uri.toString(), metadataFor(uri))
+                    metadataReader.libraryTrack(uri)
                 }
             val merged = trackLibrary.addAll(tracks)
             _library.update { it.copy(tracks = merged) }
@@ -1262,7 +987,7 @@ class PlayerViewModel(
      */
     suspend fun trackInfoFor(uriStr: String): LibraryTrack =
         trackOverride(uriStr) ?: withContext(Dispatchers.IO) {
-            libraryTrackFor(uriStr, metadataFor(Uri.parse(uriStr)))
+            metadataReader.libraryTrack(uriStr, metadataReader.read(Uri.parse(uriStr)))
         }
 
     /**
@@ -1392,7 +1117,7 @@ class PlayerViewModel(
                             f.type?.startsWith("audio/") == true ||
                                 name.substringAfterLast('.', "").lowercase() in AUDIO_EXTS
                         if (isAudio) {
-                            found += libraryTrackFor(f.uri.toString(), metadataFor(f.uri))
+                            found += metadataReader.libraryTrack(f.uri)
                         }
                     }
                 }
@@ -1471,7 +1196,7 @@ class PlayerViewModel(
                 .firstOrNull { it.name == playlist }
                 ?.trackUris
                 .orEmpty()
-        return names.map { uri -> byUri[uri] ?: LibraryTrack(uri = uri, title = titleFor(Uri.parse(uri))) }
+        return names.map { uri -> byUri[uri] ?: LibraryTrack(uri = uri, title = metadataReader.titleOf(Uri.parse(uri))) }
     }
 
     /** Plays a music playlist from the given start index. */
@@ -1557,13 +1282,7 @@ class PlayerViewModel(
     }
 
     /** User .milk files (imports + saves), newest first. Built-ins removed. */
-    fun userMilkPresets(): List<java.io.File> {
-        val dir = java.io.File(getApplication<Application>().filesDir, "milk")
-        return dir
-            .listFiles { f -> f.isFile && f.extension == "milk" }
-            ?.sortedByDescending { it.lastModified() }
-            .orEmpty()
-    }
+    fun userMilkPresets(): List<java.io.File> = milkAssets.userPresets()
 
     fun seekBy(deltaMs: Long) {
         val d = player.duration
@@ -1613,7 +1332,7 @@ class PlayerViewModel(
                 val merged =
                     runCatching {
                         val t = analyzeCached(uri) { }
-                        trackLibrary.updateAnalysis(uriStr, titleFor(uri), t.durationMs, t.bpm, t.key)
+                        trackLibrary.updateAnalysis(uriStr, metadataReader.titleOf(uri), t.durationMs, t.bpm, t.key)
                     }.getOrNull()
                 // Progress advances even for tracks that fail to decode, so
                 // the bar never freezes on a bad file.
@@ -1635,7 +1354,7 @@ class PlayerViewModel(
      *  (and lockscreen) shows real titles, never document-id numbers. */
     private fun mediaItemFor(uri: Uri): MediaItem {
         val known = _library.value.tracks.firstOrNull { it.uri == uri.toString() }
-        val (t, a) = if (known != null) known.title to known.artist else metadataQuick(uri)
+        val (t, a) = if (known != null) known.title to known.artist else metadataReader.quick(uri)
         return MediaItem
             .Builder()
             .setUri(uri)
@@ -1646,18 +1365,6 @@ class PlayerViewModel(
                     .setArtist(a.ifBlank { null })
                     .build(),
             ).build()
-    }
-
-    /** Main-thread-safe metadata: display name only (no retriever I/O). */
-    private fun metadataQuick(uri: Uri): Pair<String, String> {
-        val app = getApplication<Application>()
-        val name =
-            runCatching {
-                app.contentResolver
-                    .query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
-                    ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
-            }.getOrNull()?.substringBeforeLast('.')
-        return (name ?: "Track") to ""
     }
 
     /**
@@ -1674,7 +1381,7 @@ class PlayerViewModel(
             var latest: List<LibraryTrack>? = null
             for (t in bad) {
                 runCatching {
-                    val (title, artist) = metadataFor(Uri.parse(t.uri))
+                    val (title, artist) = metadataReader.read(Uri.parse(t.uri))
                     if (title != t.title || artist != t.artist) {
                         latest = trackLibrary.updateMetadata(t.uri, title, artist)
                     }
@@ -1769,7 +1476,7 @@ class PlayerViewModel(
                     analyzeCached(uri) { p ->
                         _vizState.update { it.copy(analysisProgress = p) }
                     }
-                val merged = trackLibrary.updateAnalysis(uri.toString(), titleFor(uri), t.durationMs, t.bpm, t.key)
+                val merged = trackLibrary.updateAnalysis(uri.toString(), metadataReader.titleOf(uri), t.durationMs, t.bpm, t.key)
                 _library.update { it.copy(tracks = merged) }
                 if (currentUri == uri) {
                     timeline = t
@@ -1848,14 +1555,7 @@ class PlayerViewModel(
         // milk-preset dir under the given name; the SceneParams bundle is
         // saved alongside so post-processing customizations are kept too.
         if (s.sceneId == SceneIds.MILKDROP) {
-            activeMilkPath?.let { src ->
-                runCatching {
-                    val app = getApplication<Application>()
-                    val dir = java.io.File(app.filesDir, "milk").apply { mkdirs() }
-                    val dest = java.io.File(dir, if (name.endsWith(".milk")) name else "$name.milk")
-                    java.io.File(src).copyTo(dest, overwrite = true)
-                }
-            }
+            activeMilkPath?.let { src -> milkAssets.savePresetCopy(src, name) }
         }
         presetStore.save(Preset(name, s.sceneId, s.attack, s.decay, customShader, s.params), folder)
         mirrorPresetToChosenFolder(name)
@@ -1890,7 +1590,11 @@ class PlayerViewModel(
                     }
                 }
                 presetStore.fileOf(name)?.let { copyInto(it, "application/json") }
-                java.io.File(java.io.File(app.filesDir, "milk"), "$name.milk").let { copyInto(it, "application/octet-stream") }
+                // Deliberately "$name.milk" rather than MilkAssetStore's
+                // endsWith-aware naming: a preset literally named "x.milk"
+                // saves as x.milk but has always mirrored as x.milk.milk (so
+                // not at all). Kept as-is here so this stays a pure refactor.
+                java.io.File(milkAssets.importDir(), "$name.milk").let { copyInto(it, "application/octet-stream") }
             }
         }
     }
