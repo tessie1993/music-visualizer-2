@@ -258,7 +258,9 @@ data class GuiPrefs(
      * which is the invariant the whole analysis cache is built around.
      */
     val effectiveBeatMinIntervalMs: Float
-        get() = dev.musicviz.render.VisualSafety.beatMinIntervalMs(beatMinIntervalMs, safety)
+        get() =
+            dev.musicviz.render.VisualSafety
+                .beatMinIntervalMs(beatMinIntervalMs, safety)
 
     /** The engine-facing view of the safety settings above. */
     val safety: dev.musicviz.render.VisualSafety.SafetyConfig

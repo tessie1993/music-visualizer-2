@@ -250,7 +250,11 @@ class ParamRandomizerFluidTest {
     @Test
     fun lock_keys_are_unique() {
         // A key used twice would let one r() call silently undo another's lock.
-        val dupes = ParamRandomizer.KEYS.groupBy { it }.filterValues { it.size > 1 }.keys
+        val dupes =
+            ParamRandomizer.KEYS
+                .groupBy { it }
+                .filterValues { it.size > 1 }
+                .keys
         assertEquals("duplicate randomizer lock keys", emptySet<String>(), dupes)
     }
 

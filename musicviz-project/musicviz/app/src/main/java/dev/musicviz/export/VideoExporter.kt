@@ -409,7 +409,9 @@ class VideoExporter(
                 // safe as the screen the user approved it from. If these two
                 // ever diverge, an export becomes the one place the limits do
                 // not apply.
-                p = dev.musicviz.render.VisualSafety.apply(p, safety)
+                p =
+                    dev.musicviz.render.VisualSafety
+                        .apply(p, safety)
                 scene.setParams(p)
                 scene.update(
                     dev.musicviz.render.scene
@@ -502,7 +504,9 @@ class VideoExporter(
                     rippleTexelH = if (rippleTex != 0 && rippleOverlay != null) rippleOverlay.texelH else 0f,
                     rippleStrength = if (rippleTex != 0) p.rippleOverlayStrength.coerceIn(0f, 1f) else 0f,
                     rippleSpecular = if (rippleTex != 0) p.rippleOverlaySpecular.coerceIn(0f, 1f) else 0f,
-                    strobeHz = dev.musicviz.render.VisualSafety.strobeHz(safety),
+                    strobeHz =
+                        dev.musicviz.render.VisualSafety
+                            .strobeHz(safety),
                 )
                 egl.setPresentationTimeNs(frame * frameDurationNs)
                 egl.swapBuffers()

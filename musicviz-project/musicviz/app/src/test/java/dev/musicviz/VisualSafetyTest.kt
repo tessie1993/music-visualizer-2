@@ -102,16 +102,17 @@ class VisualSafetyTest {
         // WCAG 2.3.1 names separately from luminance. None of these are
         // clamped by apply(), so the rate cap is their only bound.
         val safe = SafetyConfig(enabled = true)
-        for (target in
-            listOf(
-                LfoTarget.VIGNETTE,
-                LfoTarget.COLOR_SHIFT,
-                LfoTarget.PALETTE_MIX,
-                LfoTarget.TEMPERATURE,
-                LfoTarget.SATURATION,
-                LfoTarget.BLOOM,
-                LfoTarget.GLITCH,
-            )
+        for (
+        target in
+        listOf(
+            LfoTarget.VIGNETTE,
+            LfoTarget.COLOR_SHIFT,
+            LfoTarget.PALETTE_MIX,
+            LfoTarget.TEMPERATURE,
+            LfoTarget.SATURATION,
+            LfoTarget.BLOOM,
+            LfoTarget.GLITCH,
+        )
         ) {
             assertEquals("$target must be rate-capped", 3f, VisualSafety.limitLfoRate(30f, target, safe), eps)
         }
@@ -254,8 +255,12 @@ class VisualSafetyTest {
         for (v in listOf(0f, 0.1f, 0.25f, 0.5f, 0.9f, 1f)) {
             val src =
                 SceneParams.DEFAULT.copy(
-                    strobe = v, flash = v, glitch = v, bloom = v,
-                    brightness = 1f + v, contrast = 1f + v,
+                    strobe = v,
+                    flash = v,
+                    glitch = v,
+                    bloom = v,
+                    brightness = 1f + v,
+                    contrast = 1f + v,
                 )
             val out = VisualSafety.apply(src, safe)
             assertTrue("strobe rose at $v", out.strobe <= src.strobe + eps)

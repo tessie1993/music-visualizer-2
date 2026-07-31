@@ -241,8 +241,7 @@ object VisualSafety {
     fun transitionStyle(
         requested: TransitionStyle,
         config: SafetyConfig,
-    ): TransitionStyle =
-        if (config.enabled && requested == TransitionStyle.CUT) TransitionStyle.FADE else requested
+    ): TransitionStyle = if (config.enabled && requested == TransitionStyle.CUT) TransitionStyle.FADE else requested
 
     /**
      * Whether oscillating this target quickly reads as the SCREEN FLASHING
