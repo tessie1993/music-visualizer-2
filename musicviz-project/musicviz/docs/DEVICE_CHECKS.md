@@ -165,10 +165,11 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     (c) Fluid tab > Particles: "Particle drag" must be VISIBLE on Curl
     Flow (there is no "Particle layer" checkbox or "Particle brightness"
     there — Curl Flow ignores both) and dragging it must visibly change
-    how fast the streams settle into the flow; "Particle life (s)" in the
-    Journey section must still work. On FLUID nothing changes: the layer
-    checkbox still gates drag and brightness. On WATER the Particles
-    section stays absent.
+    how fast the streams settle into the flow; "Particle life (s)" sits
+    directly under it (it moved out of the Journey section — see item 35)
+    and must still work. On FLUID nothing changes: the layer checkbox
+    still gates drag, life and brightness. On WATER the Particles section
+    stays absent.
 25. Composite grading in EXPORTS: with Zoom, Rotation, Saturation,
     Brightness, Contrast, Gamma, Hue shift, Intensity, Color cycle,
     Mirror and Invert all pushed well off neutral on a fluid style
@@ -310,7 +311,169 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     decay must look identical in both files; a 30 fps clip whose pulses
     hang around twice as long means the envelope is not running on the
     export's own frame delta.
-32. Background playback (1.0.0): start a track, then lock the screen —
+32. Shape > "Particles" section per style. Open Visuals > Customize >
+    Shape and walk the styles. On a particle style (nebula / bursts /
+    swarm / fountain / orbits) the section must show BOTH "Particle
+    shape" and "Particle size", and both must still work: switch the
+    shape chips and the sprites change silhouette, drag the size slider
+    and they grow. On FLUID and CURL FLOW the header and "Particle size"
+    must be there but the shape chips must be GONE — those sprites are
+    always round — and the slider must visibly resize the points on both.
+    On the shader styles (julia / plasma / …), on MilkDrop and on WATER
+    the ENTIRE section must be gone: no "Particles" heading left behind
+    with nothing under it, and no gap where it used to be. Scroll the
+    whole tab on a shader style to confirm Distortion / Symmetry &
+    tiling / Stylize are untouched and it simply ends after Posterize.
+    FLUID SPECIAL CASE — on FLUID open the Fluid tab, untick "Particle
+    layer", then return to Shape: "Particle size" must STILL be visible,
+    now with a one-line note saying the layer is off. Tick the layer back
+    on and the note disappears and the slider resizes the points again.
+    A vanished slider here is the bug, not the fix.
+    REGRESSION SIDE — with a preset saved on a particle style, apply it
+    while a shader style is active and then switch to the particle style:
+    the shape/size it stored must still be in effect (gating hides the
+    controls, it must never change or reset the params). Press "⚄
+    Randomize unlocked" on a shader style, then switch to a particle
+    style: shape and size must have rolled there too, and locking either
+    on the particle style must hold it across further rolls.
+33. MilkDrop palette tint (Color > Palettes, "MilkDrop palette tint"):
+    load a handful of your own .milk presets, pick one with strong
+    colour and one that is mostly white/grey, and start at 0. AT 0
+    NOTHING MAY CHANGE — that is the whole contract: apply a preset
+    saved before this build and confirm it looks exactly as it did.
+    Now drag the slider up on the saturated preset with the palette set
+    to Fire: the frame must slide into the reds while keeping its
+    shapes, its light and shade and its motion — VALUE is never touched,
+    so nothing may get brighter, darker or flatter, only differently
+    coloured. Cycle the palette chips (Ocean, Aurora, Mono) at tint 1:
+    each must be a clearly different colour world. Then switch between
+    two DIFFERENT presets at tint 1 — they must still look like two
+    different presets, not one. If they read as identical the tint is
+    replacing colour instead of steering it, and the stage is wrong.
+    GREY SIDE — on the white/grey preset the tint must still bite: its
+    cores take the palette entry their own brightness selects. Watch a
+    large flat white area as the slider moves; it must colour up
+    smoothly, with no speckle or banding at the edge of the flat region.
+    INTERACTION SIDE — with the tint at ~0.7 drag "Hue range" from 0 to
+    1.5: at 0 the frame collapses toward one hue and it must widen
+    smoothly, the 1.0–1.5 band included (unlike the fluid styles, which
+    clamp it). Drag "Hue shift" and switch "Color cycle" on: the tinted
+    frame must rotate as a whole, one turn per slider unit — a hue that
+    travels twice as far as on a shader style means the tint is being
+    applied after the rotation instead of before it. Build a palette in
+    the gradient/palette maker, save it and select it: the tint must
+    follow it with no separate handling, and the same for a custom
+    palette restored from a saved preset.
+    REGRESSION SIDE — switch to a shader, a particle and each fluid
+    style with the tint at 1: nothing may change on any of them, since
+    only MilkDrop reads it. Tap "⚄ Randomize unlocked" a few times on
+    MilkDrop: the tint must move sometimes and mostly sit at 0, and
+    locking "MilkDrop palette tint" must hold it.
+    EXPORT SIDE — export a ~10 s clip of a MilkDrop preset at tint ~0.7
+    and play it beside the live view: the colours must match. The tint
+    lives in the scene's own post pass, so the exporter gets it for
+    free — a clip that comes out untinted means the export path is
+    building the scene without it.
+34. Cross-family TRANSITIONS must not flash, and Curl Flow must look
+    right the moment it is selected. TRANSITION SIDE — Visuals >
+    Customize > Transition: style "Fade", duration 1200 ms (the
+    default). Now push the grade hard: Brightness 2.0, Intensity 2.0,
+    Zoom 2.0, Contrast 2.0. Play a track on JULIA, then switch to FLUID
+    and watch the OLD image for the whole 1.2 s: it must fade out
+    looking exactly as it did while it was live — same exposure, same
+    zoom. A white, blown-out, over-zoomed old frame means the outgoing
+    texture is being graded under the incoming scene's rule (it was
+    already graded in julia's own shader, so it lands twice: 16x
+    brightness, 4x zoom, contrast squared). Switch straight back
+    (FLUID -> JULIA) and watch the outgoing FLUID frame: it must KEEP
+    its exposure and zoom for the whole fade, not snap dark/small the
+    instant the switch starts. Repeat both ways with the SLIDE, ZOOM and
+    MELT transition styles, and again with a cross-family PRESET switch
+    (a julia preset -> a fluid preset) and with auto-switch on with
+    "Include styles" enabled — every one of those routes through the
+    same composite. Also do a same-family switch (julia -> plasma,
+    nebula -> bursts) as the control: those looked fine before and must
+    be unchanged. REGRESSION SIDE — with no transition in flight, every
+    style must look EXACTLY as it did in the previous build; sweep
+    Warp/Kaleido/Tile/Posterize/Mirror/Invert/Temperature/Solarize on a
+    shader style (must still be applied once, in-shader) and on a fluid
+    style (must still be applied once, in the composite). Record a ~10 s
+    export on a fluid style and on a shader style and compare each with
+    the live view — exports never transition, so they must be pixel-wise
+    unchanged. CURL FLOW SIDE — from a clean install (or after Reset),
+    open Visuals > Styles and tap "Curl Flow" WITHOUT touching anything
+    else. Trails is off by default: the streams must still read as
+    moving strands with a short motion-blur tail, never as a field of
+    dots strobing on a black canvas. Now switch Trails ON — the tails
+    must visibly lengthen into long ribbons, and the "Trail length"
+    slider must sweep smoothly from short to nearly-permanent. Switch
+    Trails back off — the tails must shorten again (the toggle is a
+    band, not a wipe). Turn "Trail zoom"/"Trail warp" up with Trails on
+    and off in turn: neither may break the streams into dots. Export
+    ~10 s of Curl Flow with Trails off and again with it on: the mp4s
+    must match the live look in both cases.
+35. Ripple-overlay physics and particle life reach exactly the styles that
+    read them (Visuals > Customize > Fluid). OVERLAY SIDE — pick PLASMA (or
+    any non-fluid style), switch "Water ripples enabled" on and confirm
+    "Wave speed" and "Damping" now appear right under it, above "Ripple
+    overlay strength". Drag Wave speed 0.2 -> 2.0 on a beat-heavy track: the
+    rings must visibly expand slower/faster from where they drop. Drag
+    Damping 0.9 -> 0.999: at 0.9 a ring must die almost immediately, at
+    0.999 it must ring on for seconds and the surface never settle. Both
+    must behave the same on a MilkDrop preset and on a particle style, and a
+    ~10 s export at an extreme setting (Damping 0.999) must match the live
+    look — the exporter runs the same solver. Switch the overlay off: both
+    sliders disappear with the rest of its controls.
+    WATER SIDE — select WATER: "Wave speed" and "Damping" must appear ONCE,
+    in the "Water" section at the top of the tab (that style's own surface
+    physics), and must NOT be repeated in the "Water ripples (all styles)"
+    section even with the overlay checkbox on. Sweep both there and confirm
+    the surface responds exactly as it did before this change.
+    PARTICLE LIFE SIDE — on WATER, "Particle life (s)" must NOT appear
+    anywhere (Water has no particle layer); the rest of the Journey section
+    — Path, Spawn points, Progression, Catch points, Catch pull, Catch
+    radius — must still be there and each must still visibly move where the
+    drops and wakes land. On CURL FLOW the slider must appear next to
+    "Particle drag" in the Particles section, and sweeping it 1 -> 20 s must
+    visibly change how far a strand travels before it is recycled. On FLUID
+    the same, and switching "Particle layer" off must take BOTH Particle
+    drag and Particle life away, then bring both back when switched on.
+    LOCK SIDE — lock "Wave speed" on a non-water style and press "⚄
+    Randomize unlocked" ten times: the ripple speed must hold (the roll
+    moves it otherwise), and the chip must still read "locked" after
+    switching to WATER, since it is the same param.
+    LABEL SIDE — the Behaviour tab now reads "Reactivity attack" /
+    "Reactivity decay" and the FX tab's envelope cards "Env attack" / "Env
+    decay". Lock "Reactivity attack" and confirm the envelope cards' attack
+    sliders show NO lock chip (they used to mirror it), and the reverse.
+36. Exported video pulses on EVERY beat at every frame rate, and the
+    Hue range slider means the same thing on every family. BEAT SIDE —
+    pick a track with an obvious four-on-the-floor kick and a style in
+    the fluid family (Fluid, Curl Flow or Water). Visuals > Customize >
+    FX: "Beat pulse" ~0.8, and turn "Beat flash"/"Beat shake" up too so
+    the beat is unmissable. Export the same ~20 s at 60 fps and again at
+    30 fps (4K also falls back to 30 fps on its own). Play the two clips
+    side by side against live playback: the 30 fps clip must swell and
+    flash on EVERY kick the 60 fps clip does — same count, same places.
+    A 30 fps clip that pulses on roughly every OTHER kick (and a 24 fps
+    one that is worse still) is the exported frame sampling one 60 Hz
+    analysis frame instead of the whole span it covers; the beat flag is
+    one frame wide, so half of them fall in the gap. Also check the
+    continuous motion is UNCHANGED against the previous build: bass
+    swell, band-driven speed and the waveform must look the same, not
+    softened — only the beat impulses were meant to change. HUE RANGE
+    SIDE — on Fluid, Curl Flow and Water, drag Visuals > Customize >
+    Color > "Hue range" across its WHOLE travel. Colour must keep
+    widening past the two-thirds mark all the way to the top (above 1.0
+    the palette walks more than one turn of the wheel); the top third
+    looking identical to the middle is the bug. At the very bottom of
+    the slider the style must narrow to a tight band but never collapse
+    to one flat colour. Compare the same slider positions against a
+    shader style (e.g. Julia) and a particle style (e.g. Swarm): the
+    amount of colour spread must track across all three families. On
+    WATER specifically, watch the splashes as well as the pool — both
+    must widen together.
+37. Background playback (1.1.0): start a track, then lock the screen —
     audio must continue, and the lock screen must show title/artist with
     working play/pause/next. Swipe the notification's transport controls
     from the shade too. Now leave it playing and open several heavy apps
@@ -323,7 +486,7 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     the notification disappear. With playback running, swipe Recents —
     audio must keep going. Bluetooth/wired headset play-pause and
     next-track buttons must work while the screen is off.
-33. Equalizer + sleep timer after the service change (1.0.0): the audio
+38. Equalizer + sleep timer after the service change (1.1.0): the audio
     session id now comes from a process-wide player, so re-verify that
     Settings > Playback > Equalizer still applies live, and that the
     sleep timer's 3 s fade still ramps and pauses.

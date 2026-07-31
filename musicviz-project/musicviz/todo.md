@@ -363,28 +363,68 @@ it was left and what closing it involves.
       parses back out of `CustomizeDialog.kt`. "Palette blend" and
       "Palette 2" are gated as ONE group: a blend slider with nothing to
       blend would be a worse control than none.
-- [ ] **`particleShape` ("Particle shape") has no reader outside the five
-      particle scenes**, and `particleSize` none outside particles + Fluid +
-      Curl Flow — yet both sit ungated in the Shape tab's "Particles"
-      section, so they are inert on shader, MilkDrop and Water styles. Same
-      class as the item above but NOT the same one-line fix: the two
-      controls have DIFFERENT readers, so the section needs two predicates
-      (`isParticleShapeSceneId` = `VisualizerRenderer.PARTICLE_SCENES`,
-      `isPointSpriteSceneId` = that plus FLUID + CURLFLOW) and the
-      "Particles" header itself has to disappear when both are hidden.
-      Check `fluidParticlesEnabled` first: on FLUID the point layer can be
-      switched off, which would make `particleSize` conditionally inert
-      there too. Left out of the v1.1.0 gating round deliberately.
-- [ ] **MilkDrop ignores the whole "Palettes" section.** `ProjectMScene`
-      reads `colorCycle`/`cycleSpeed` but never `paletteBase`/`paletteRange`
-      — a .milk preset brings its own colours — so Palette, the gradient/
-      palette maker and `hueRange` do nothing on MILKDROP while working on
-      all five other families. Gating them there would hide the palette
-      maker (a whole card, not one slider) on one style, so decide the UX
-      first: hide the section, or teach the composite to tint MilkDrop
-      output toward the chosen palette (a new `uPostPalette*` stage, same
-      shape as the v0.14 grading work) so the controls become real instead
-      of disappearing. The second option is the better product answer.
+- [x] **`particleShape` / `particleSize` were shown on styles that cannot
+      read them.** CLOSED. Verified by grep before hiding anything:
+      `particleShape` has exactly one reader, `ParticleSceneBase.kt:149`
+      (`uShape` → `particle_frag.glsl` shapeMask), whose five subclasses are
+      exactly `VisualizerRenderer.PARTICLE_SCENES`; `particleSize` has three,
+      `ParticleSceneBase.kt:152` plus `FluidScene.kt:333` (`pointScale`) and
+      `CurlFlowScene.kt:212`. Nothing in `composite_frag.glsl`,
+      `ProjectMScene`, `WaterScene` or `FxCompositor` touches either. So the
+      Shape tab's "Particles" section now takes TWO predicates —
+      `VisualsHub.isParticleShapeSceneId` (= `PARTICLE_SCENES`) and
+      `isPointSpriteSceneId`, composed as `isParticleShapeSceneId ||
+      isParticleLayerSceneId` so the fluid half is not restated a third time
+      — with the section HEADER on the wider gate, so it leaves no empty
+      heading on shader / MilkDrop / Water. Note the shape chips are hidden
+      on FLUID and CURLFLOW too: FluidParticles has no shape uniform at all,
+      its sprites are always round. `fluidParticlesEnabled` was deliberately
+      NOT folded into the gate: it is a user-revertible switch that lives in
+      another tab, so on FLUID with the layer off the slider stays put and
+      shows a one-line note instead of vanishing (a control disappearing with
+      no visible cause reads exactly like the bug being fixed). Pinned by
+      `ParticleGatingTest`, which asserts both predicates against the real
+      scene-id sets and parses the gating back out of `CustomizeDialog.kt` so
+      over-gating fails too. Device check 32.
+- [x] **MilkDrop ignores the whole "Palettes" section.** CLOSED by the
+      second option, teaching the render path to tint: `ProjectMScene` now
+      uploads `uPalBase` / `uPalSpan` / `uPalTint` to its OWN post pass
+      (`pm_post_frag`, not the shared composite — that pass is why MilkDrop
+      is excluded from `uPostGrade` in the first place), so Palette, the
+      gradient/palette maker and `hueRange` all bite on MILKDROP. Nothing is
+      hidden. The new `SceneParams.milkdropPaletteTint` is the blend amount
+      and is **0 by default — an exact no-op**, pinned by
+      `CompositeGradeTest`, so every saved preset and the default experience
+      are untouched until the user opts in.
+      SHAPE OF THE TINT (the part that decides whether this was worth doing):
+      it runs in HSV and never touches VALUE, so a preset keeps its
+      structure, contrast and motion. A pixel that HAS chroma keeps its hue
+      RELATIONSHIPS — they are compressed into the palette's band — which is
+      what stops every .milk preset from collapsing onto one look; a pixel
+      with none has no hue to steer, so it is gradient-mapped from its own
+      luma (the only way the white cores most presets draw can show the
+      palette, and smooth across flat areas where a steered hue would just
+      amplify quantization noise). The saturation lift is weighted by the
+      same chroma knee, so an already-coloured pixel keeps its saturation
+      exactly and the tint never doubles as a saturation boost. Applied
+      BEFORE `uHue`, mirroring the fluid family's identity/rotation split, so
+      "Hue shift" and the colour cycle still turn the frame exactly once.
+      Span is `paletteRange * hueRange` (the shader/particle form, not
+      `FluidHue.span`). Custom palettes need no branch: they arrive through
+      `paletteBase`/`paletteRange`. Export inherits it for free — the tint is
+      in the scene's own pass, which the exporter builds too.
+      TWO CONSTANTS ARE JUDGEMENT CALLS awaiting device check 33: the chroma
+      knee (0.15, where a pixel stops having a hue worth steering) and the
+      grey saturation lift (0.35, how much colour a white core gains at full
+      tint). Both are bounded, both are continuous in the blend, and the user
+      owns the blend — but they are the numbers to retune if the tint reads
+      as too timid or too plastic on real presets.
+      ONE THING LEFT: the slider is shown on every style with the family in
+      its label ("MilkDrop palette tint", as with "Trails (particle scenes)"
+      and "Glow (fluid)") because `ColorTab` is handed no MilkDrop predicate.
+      When `VisualsHub` next gains one (`isMilkdropSceneId`), gate it there
+      and drop the qualifier from the label — remembering that the label IS
+      the `ParamRandomizer` lock key.
 - [ ] `endlessZoom` is shown on the fluid styles, which have no respawn/
       outflow behaviour to drive. Same fix shape as the item above; low
       priority because the checkbox is cheap and harmless.
@@ -393,11 +433,35 @@ it was left and what closing it involves.
       band is flat on three of six families. Intentional today (a 0 span
       kills the fluid look). If it is ever unified, do it in `FluidHue` so
       all three fluid styles move together.
-- [ ] ADSR card labels "Attack"/"Decay" collide with the Behavior tab's
-      reactivity envelope sliders of the same name. Harmless right now —
-      neither is a `ParamRandomizer` key, so the shared lock chip only
-      mirrors a highlight — but it becomes a real collision the moment
-      either gets randomized. Rename to "Env attack"/"Env decay" if so.
+- [x] ADSR card labels "Attack"/"Decay" collide with the Behavior tab's
+      reactivity envelope sliders of the same name. CLOSED by renaming both
+      sides, since neither was a `ParamRandomizer` key and so neither side
+      had to be preserved verbatim: the ADSR cards are now "Env attack" /
+      "Env decay" (the names this item proposed) and the Behavior tab's
+      reactivity pair is "Reactivity attack" / "Reactivity decay". Same
+      precedent as "Depth" → "LFO depth" and "Ripple strength" → "Ripple
+      overlay strength". The two ADSR CARDS still share those keys with each
+      other, exactly as Sustain/Release/Amount do — one group, one meaning,
+      and still nothing the randomizer rolls; if envelope params ever become
+      rollable, index the labels per card ("Env 1 attack").
+- [x] "Wave speed" and "Damping" were shown only on WATER, but they are the
+      all-styles ripple overlay's physics too (`VisualizerRenderer` sets
+      `ripple.waveSpeed`/`ripple.damping` from them, `VideoExporter` mirrors
+      it), so a user who switched "Water ripples (all styles)" on from any
+      other style had no way to change the ring speed or decay while
+      `ParamRandomizer` kept rolling both keys. CLOSED: the Fluid tab renders
+      them in the overlay section on every style except WATER, which keeps
+      them in its own section as the surface physics they also are. One pair
+      of params, one place per style. Pinned by `FluidTabGatingTest`, which
+      now parses the gated label sets out of `CustomizeDialog.kt`.
+      Device check 35.
+- [x] "Particle life (s)" sat in the Journey section, which covers WATER, but
+      `fluidParticleLife` is read only by `FluidScene` / `CurlFlowScene` (the
+      FluidParticles lifecycle layer) — WaterScene has no particle layer at
+      all. CLOSED: moved next to "Particle drag" under
+      `isParticleLayerSceneId`, behind the same `fluidParticlesEnabled`
+      condition on FLUID. Every remaining Journey control was re-checked and
+      does have a `WaterScene` reader (see `docs/PARAM_MATRIX.md`).
 
 ## Always
 - [ ] Update docs (NAVIGATION.md, WIREFRAME.md, PARAM_MATRIX.md) when

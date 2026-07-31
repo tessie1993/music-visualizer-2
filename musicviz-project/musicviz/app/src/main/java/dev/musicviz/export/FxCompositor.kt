@@ -15,9 +15,10 @@ import kotlin.math.pow
  *
  * [enabled] is load-bearing rather than decorative: the neutral value of the
  * rest of this block is 1.0, not 0.0, so a program that leaves them unset
- * reads GL's default 0 and renders black at 20x zoom. When a scene grades
- * itself, [enabled] is false AND every value is the identity, so the block is
- * a no-op either way.
+ * reads GL's default 0 and renders black at 20x zoom. It is the `z` component
+ * of the shader's per-texture gate (`CompositeGrade.Gate.grade`); when a scene
+ * grades itself the gate is off AND every value here is the identity, so the
+ * block is a no-op either way.
  */
 internal data class ExportGradeUniforms(
     val enabled: Boolean,
@@ -338,12 +339,19 @@ internal class FxCompositor(
         // export's own clock, once per exported frame, exactly as the live
         // renderer integrates once per displayed frame.
         grade.advance(params, dtSeconds, features.beat)
-        // Shader scenes apply all geometric/stylize FX in-shader already;
-        // pass neutral values so they aren't applied twice (matches the
-        // live renderer's guard).
-        val applyGeo = !isShaderScene
-
-        fun geoF(v: Float) = if (applyGeo) v else 0f
+        // Which uPost* groups the composite owns is decided by the gate, not
+        // by neutralising the values: exports never transition, so both gate
+        // slots carry the same scene family, but the two programs must declare
+        // and upload the same uniform set or a later change to one desyncs the
+        // other (an export that no longer matches the screen).
+        val family =
+            when {
+                isShaderScene -> CompositeGrade.SceneFamily.SHADER
+                isParticle -> CompositeGrade.SceneFamily.PARTICLE
+                isProjectM -> CompositeGrade.SceneFamily.MILKDROP
+                else -> CompositeGrade.SceneFamily.FLUID
+            }
+        val gate = CompositeGrade.gateFor(family)
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
         GLES30.glViewport(0, 0, width, height)
         GLES30.glDisable(GLES30.GL_BLEND)
@@ -375,29 +383,28 @@ internal class FxCompositor(
         GLES30.glUniform1f(loc("uGlitch"), params.glitch)
         GLES30.glUniform1f(loc("uFisheye"), params.fisheye)
         GLES30.glUniform1f(loc("uStrobe"), params.strobe)
-        GLES30.glUniform1f(loc("uPostWarp"), geoF(params.warp))
-        GLES30.glUniform1f(loc("uPostRipple"), geoF(params.ripple))
+        GLES30.glUniform1f(loc("uPostWarp"), params.warp)
+        GLES30.glUniform1f(loc("uPostRipple"), params.ripple)
         GLES30.glUniform1f(loc("uPostSymmetry"), params.symmetry.toFloat())
-        GLES30.glUniform1f(loc("uPostKaleido"), if (applyGeo && params.kaleidoscope) 1f else 0f)
-        GLES30.glUniform1f(loc("uPostPixelate"), geoF(params.pixelate))
-        GLES30.glUniform1f(loc("uPostTile"), geoF(params.tile))
-        GLES30.glUniform1f(loc("uPostTwist"), geoF(params.twist))
-        GLES30.glUniform1f(loc("uPostBloom"), geoF(params.bloom))
-        GLES30.glUniform1f(loc("uPostPosterize"), geoF(params.posterize))
-        GLES30.glUniform1f(loc("uPostDriftX"), geoF(params.driftX))
-        GLES30.glUniform1f(loc("uPostDriftY"), geoF(params.driftY))
-        GLES30.glUniform1f(loc("uPostSway"), geoF(params.sway))
-        GLES30.glUniform1f(loc("uPostShake"), geoF(params.shake))
-        GLES30.glUniform1f(loc("uPostFlash"), geoF(params.flash))
-        GLES30.glUniform1f(loc("uPostTemp"), geoF(params.temperature))
-        GLES30.glUniform1f(loc("uPostSolarize"), if (applyGeo && params.solarize) 1f else 0f)
+        GLES30.glUniform1f(loc("uPostKaleido"), if (params.kaleidoscope) 1f else 0f)
+        GLES30.glUniform1f(loc("uPostPixelate"), params.pixelate)
+        GLES30.glUniform1f(loc("uPostTile"), params.tile)
+        GLES30.glUniform1f(loc("uPostTwist"), params.twist)
+        GLES30.glUniform1f(loc("uPostBloom"), params.bloom)
+        GLES30.glUniform1f(loc("uPostPosterize"), params.posterize)
+        GLES30.glUniform1f(loc("uPostDriftX"), params.driftX)
+        GLES30.glUniform1f(loc("uPostDriftY"), params.driftY)
+        GLES30.glUniform1f(loc("uPostSway"), params.sway)
+        GLES30.glUniform1f(loc("uPostShake"), params.shake)
+        GLES30.glUniform1f(loc("uPostFlash"), params.flash)
+        GLES30.glUniform1f(loc("uPostTemp"), params.temperature)
+        GLES30.glUniform1f(loc("uPostSolarize"), if (params.solarize) 1f else 0f)
         // Match the live renderer: shader scenes AND the milkdrop post pass
         // apply mirror/invert themselves; everything else needs them here -
         // particle scenes (whose fragment shader defers invert to this pass)
-        // and the fluid family, which applies neither.
-        val ownsMirrorInvert = isShaderScene || isProjectM
-        GLES30.glUniform1f(loc("uPostMirror"), if (!ownsMirrorInvert && params.mirror) 1f else 0f)
-        GLES30.glUniform1f(loc("uPostInvert"), if (!ownsMirrorInvert && params.invert) 1f else 0f)
+        // and the fluid family, which applies neither. (Gate component y.)
+        GLES30.glUniform1f(loc("uPostMirror"), if (params.mirror) 1f else 0f)
+        GLES30.glUniform1f(loc("uPostInvert"), if (params.invert) 1f else 0f)
         // Universal grading + zoom/rotation, same gate as the live renderer:
         // ShaderScene (view()/grade()), the particle pipeline (particle_vert's
         // uZoom/uRotation, particle_frag's uSat/uBright/uContrast/uGamma) and
@@ -405,9 +412,7 @@ internal class FxCompositor(
         // identity here; only the fluid family (Fluid, Curl Flow, Water) is
         // graded in the composite. Without this block an exported fluid clip
         // came out ungraded while the live view was graded.
-        val gradesItself = isShaderScene || isParticle || isProjectM
-        val gu = grade.uniforms(params, gradesItself)
-        GLES30.glUniform1f(loc("uPostGrade"), if (gu.enabled) 1f else 0f)
+        val gu = grade.uniforms(params, gradesItself = !gate.grade)
         GLES30.glUniform1f(loc("uPostZoom"), gu.zoom)
         GLES30.glUniform1f(loc("uPostRotation"), gu.rotation)
         GLES30.glUniform1f(loc("uPostSat"), gu.saturation)
@@ -420,7 +425,12 @@ internal class FxCompositor(
         // pulsed here, because nothing in its pipeline reads `pulse`. Uploaded
         // unconditionally so exports never diverge from the live view; the
         // uniform is neutral at 0, so a self-pulsing scene is a no-op.
-        GLES30.glUniform1f(loc("uPostPulse"), grade.pulseAmount(params, isShaderScene || isParticle))
+        GLES30.glUniform1f(loc("uPostPulse"), grade.pulseAmount(params, pulsesItself = !gate.pulse))
+        // Both gate slots carry the same family: an export renders one scene,
+        // never a transition (uProgress = 1, uStyle = 0, so uTexB is unread).
+        val gateVec = gate.toVec4()
+        GLES30.glUniform4fv(loc("uGateA"), 1, gateVec, 0)
+        GLES30.glUniform4fv(loc("uGateB"), 1, gateVec, 0)
         GLES30.glBindVertexArray(vao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)

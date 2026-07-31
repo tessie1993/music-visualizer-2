@@ -372,7 +372,15 @@ class VideoExporter(
             for (frame in 0 until totalFrames) {
                 if (isCancelled()) break
                 val timeMs = frame * 1000L / fps
-                val features = timeline.progressionAt(timeMs, sections)
+                // An exported frame is on screen until the next one, so it has
+                // to see the WHOLE span of 60 Hz timeline frames it covers, not
+                // just the nearest one: the beat flag is exactly one timeline
+                // frame wide, so a 30 fps render (every other frame) used to
+                // miss about half the track's beats - no uBeat, no flash/shake
+                // and no Beat pulse on those. Spans tile exactly, so at 60 fps
+                // this is still one timeline frame and nothing changes.
+                val nextTimeMs = (frame + 1) * 1000L / fps
+                val features = timeline.progressionAt(timeMs, sections, nextTimeMs - timeMs)
                 // Mirror the live modulation order exactly (envelopes first:
                 // their offsets can drive LFO rate/depth): the export was
                 // silently dropping ALL ADSR routing - including the new
@@ -435,14 +443,16 @@ class VideoExporter(
                 // Draw the scene into the FX FBO, then composite (with the full
                 // FX chain) onto the encoder surface, matching the live path.
                 fx.bindSceneTarget()
-                if (p.trails && (isParticle || isCurlFlow) && frame > 0) {
+                if ((isCurlFlow || (p.trails && isParticle)) && frame > 0) {
                     // Mirror the live trails gate (VisualizerRenderer): Curl
-                    // Flow HONORS the Trails toggle, and while trails are on it
-                    // remaps Trail length onto its own persistence band - the
-                    // same remap in the plain-fade and the trail-warp branch.
+                    // Flow ALWAYS persists - its bare GL_POINTS strobe on a
+                    // cleared canvas and `trails` defaults to false - but the
+                    // toggle still picks the band, a short OFF_RETENTION echo
+                    // versus the remapped Trail length slider. Same remap in
+                    // the plain-fade and the trail-warp branch.
                     val fadeParams =
                         if (isCurlFlow) {
-                            p.copy(trailLength = CurlFlowMath.retention(p.trailLength))
+                            p.copy(trailLength = CurlFlowMath.retention(p.trailLength, p.trails))
                         } else {
                             p
                         }

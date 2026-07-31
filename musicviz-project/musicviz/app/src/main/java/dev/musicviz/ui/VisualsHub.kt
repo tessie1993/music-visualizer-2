@@ -390,7 +390,15 @@ private fun selectMilk(
 /** Only FluidScene runs the Navier-Stokes solver, dye/ink and its look passes. */
 internal fun isFluidSceneId(sceneId: String): Boolean = sceneId == SceneIds.FLUID
 
-/** Styles driven by FluidChoreography's spawn/catch journey progression. */
+/**
+ * Styles driven by FluidChoreography's spawn/catch journey progression.
+ * Every control in that section has a reader on all three: `fluidSpawnPath`,
+ * `fluidSpawnPoints`, `fluidSpawnProgress` and `fluidCatchPoints` feed
+ * `choreography` (`WaterScene.kt:232-235`), `fluidCatchPull` the emitters
+ * (`:247`) and `fluidCatchRadius` `WaterMath.catchWellRadius` (`:256`).
+ * `fluidParticleLife` does NOT - WaterScene has no particle layer to age -
+ * so that slider hangs off [isParticleLayerSceneId] instead.
+ */
 internal fun isJourneySceneId(sceneId: String): Boolean =
     sceneId == SceneIds.FLUID ||
         sceneId == SceneIds.CURLFLOW ||
@@ -410,11 +418,13 @@ internal fun isWaterSceneId(sceneId: String): Boolean = sceneId == SceneIds.WATE
 
 /**
  * Styles that run the shared FluidParticles lifecycle layer, i.e. the ones
- * that read `fluidParticleDrag`. CURLFLOW *is* that layer (CurlFlowScene's
+ * that read `fluidParticleDrag` and `fluidParticleLife` (set on consecutive
+ * lines in both scenes). CURLFLOW *is* that layer (CurlFlowScene's
  * "particles.drag = params.fluidParticleDrag"), yet the drag slider used to
  * live in the FLUID-only Particles section AND behind `fluidParticlesEnabled`,
  * a param CurlFlow never reads - so a control the style genuinely consumes was
- * unreachable on it. WATER has no particle layer at all.
+ * unreachable on it. WATER has no particle layer at all, which is why
+ * "Particle life (s)" moved here from the WATER-inclusive Journey section.
  */
 internal fun isParticleLayerSceneId(sceneId: String): Boolean = sceneId == SceneIds.FLUID || sceneId == SceneIds.CURLFLOW
 
@@ -435,6 +445,36 @@ internal fun isParticleLayerSceneId(sceneId: String): Boolean = sceneId == Scene
  * style those four sliders move nothing, so they are hidden there.
  */
 internal fun isShaderLookSceneId(sceneId: String): Boolean = sceneId in VisualizerRenderer.SHADER_SCENES
+
+/**
+ * Styles that draw the CPU particle system, i.e. the only readers of
+ * `particleShape`. `ParticleSceneBase.draw` is the one place `uShape` is
+ * uploaded (`particle_frag.glsl`'s shapeMask), and its five subclasses -
+ * Nebula / Bursts / Swarm / Fountain / Orbits - are exactly
+ * [VisualizerRenderer.PARTICLE_SCENES]. The fluid point layer
+ * (`FluidParticles`) has no shape uniform at all: its sprites are always
+ * round, so the chip row is dead on FLUID and CURLFLOW too, not only on
+ * shader / MilkDrop / Water styles.
+ */
+internal fun isParticleShapeSceneId(sceneId: String): Boolean = sceneId in VisualizerRenderer.PARTICLE_SCENES
+
+/**
+ * Styles that size a point sprite from `particleSize`, a strictly wider set
+ * than [isParticleShapeSceneId]: `ParticleSceneBase.kt` uploads it as `uSize`
+ * (`:152`), `FluidScene.kt` folds it into `pointScale` (`:333`) and
+ * `CurlFlowScene.kt` into its `particles.draw` point scale (`:212`). The fluid
+ * half of that is exactly [isParticleLayerSceneId] - the same FluidParticles
+ * layer that reads `fluidParticleDrag` - so this predicate is composed from
+ * the two rather than restating FLUID/CURLFLOW a third time; if the layer ever
+ * gains or loses a style, both move together.
+ *
+ * Note FLUID can switch its point layer off (`fluidParticlesEnabled`), which
+ * makes the slider *temporarily* inert there. That is deliberately NOT part of
+ * this predicate: gating is about what a style can read, and a control the
+ * user can revive with one checkbox should not vanish from a different tab
+ * with no visible cause. The Shape tab says so instead.
+ */
+internal fun isPointSpriteSceneId(sceneId: String): Boolean = isParticleShapeSceneId(sceneId) || isParticleLayerSceneId(sceneId)
 
 @Composable
 private fun CustomizeHubTab(
@@ -469,7 +509,15 @@ private fun CustomizeHubTab(
                 val lfos by viewModel.lfos.collectAsState()
                 when (sub) {
                     0 -> MotionTab(p, onChange)
-                    1 -> ShapeTab(p, onChange, isShaderLookScene = isShader)
+                    1 ->
+                        ShapeTab(
+                            p,
+                            onChange,
+                            isShaderLookScene = isShader,
+                            isParticleShapeScene = isParticleShapeSceneId(viz.sceneId),
+                            isPointSpriteScene = isPointSpriteSceneId(viz.sceneId),
+                            particleLayerOff = isFluidSceneId(viz.sceneId) && !p.fluidParticlesEnabled,
+                        )
                     2 ->
                         BehaviorTab(
                             p,

@@ -664,17 +664,19 @@ class VisualizerRenderer(
         // Active scene renders into FBO A (fade instead of clear for trails).
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboA.fbo)
         GLES30.glViewport(0, 0, renderWidth, renderHeight)
-        // Curl Flow persists like a particle scene: it draws bare GL_POINTS,
-        // which need canvas echo to read as streams rather than strobing
-        // dots. That used to be forced ON regardless of the Trails toggle
-        // (and floored Trail length at 0.85), which made both controls inert
-        // on the style. Now it HONORS Trails, and while trails are on it
-        // remaps Trail length onto CurlFlowMath's usable band - a floor the
-        // user can still override by switching Trails off, with the whole
-        // slider staying live above it.
+        // Curl Flow always persists: it draws bare GL_POINTS, which need canvas
+        // echo to read as streams rather than strobing dots, and SceneParams
+        // .trails defaults to FALSE - so gating its persistence on the toggle
+        // alone made the style strobe the moment it was selected from Styles
+        // (only the one built-in "Streams" preset sets trails = true).
+        // The toggle stays live all the same: CurlFlowMath.retention gives
+        // Trails OFF a short, fixed echo (OFF_RETENTION, motion blur) and
+        // Trails ON the whole Trail length slider remapped onto its long
+        // streaming band. Every other scene keeps the plain toggle gate.
         val isCurl = scene is dev.musicviz.render.fluid.CurlFlowScene
-        if (p.trails && (scene is ParticleSceneBase || isCurl) && !sceneJustSwitched) {
-            val keep = if (isCurl) CurlFlowMath.retention(p.trailLength) else p.trailLength
+        val persists = isCurl || (p.trails && scene is ParticleSceneBase)
+        if (persists && !sceneJustSwitched) {
+            val keep = if (isCurl) CurlFlowMath.retention(p.trailLength, p.trails) else p.trailLength
             if (p.trailZoom != 0f || p.trailWarp > 0f) {
                 drawTrailWarp(p, keep, timeSeconds, dt)
             } else {
@@ -770,89 +772,93 @@ class VisualizerRenderer(
         GLES30.glUniform1f(cLoc("uFisheye"), fx.fisheye)
         GLES30.glUniform1f(cLoc("uStrobe"), fx.strobe)
         // Universal geometric + color effects for scenes whose own pipeline
-        // can't honor them (particles, milkdrop). Shader scenes already apply
-        // ALL of these in-shader via view()/grade(), so for them we pass
-        // neutral values - otherwise warp/ripple/kaleido/pixelate/tile/twist/
+        // can't honor them (particles, milkdrop, the fluid family). Every
+        // uPost* below is uploaded RAW; which groups actually run is decided
+        // per TEXTURE by uGateA/uGateB (see the gate upload after this block),
+        // because composite_frag routes the outgoing texture through the same
+        // postFx() and a transition can cross scene families. Shader scenes
+        // already apply all of these in-shader via view()/grade(), so their
+        // gate is off - otherwise warp/ripple/kaleido/pixelate/tile/twist/
         // bloom/posterize would each apply TWICE (double warp strength, double
         // kaleido segmentation, double-quantized posterize, over-bloom).
-        val applyGeo = activeScene !is ShaderScene
-
-        fun geoF(v: Float) = if (applyGeo) v else 0f
-        GLES30.glUniform1f(cLoc("uPostWarp"), geoF(fx.warp))
-        GLES30.glUniform1f(cLoc("uPostRipple"), geoF(fx.ripple))
+        GLES30.glUniform1f(cLoc("uPostWarp"), fx.warp)
+        GLES30.glUniform1f(cLoc("uPostRipple"), fx.ripple)
         GLES30.glUniform1f(cLoc("uPostSymmetry"), fx.symmetry.toFloat())
-        GLES30.glUniform1f(
-            cLoc("uPostKaleido"),
-            if (applyGeo && fx.kaleidoscope) 1f else 0f,
-        )
-        GLES30.glUniform1f(cLoc("uPostPixelate"), geoF(fx.pixelate))
-        GLES30.glUniform1f(cLoc("uPostTile"), geoF(fx.tile))
-        GLES30.glUniform1f(cLoc("uPostTwist"), geoF(fx.twist))
-        GLES30.glUniform1f(cLoc("uPostBloom"), geoF(fx.bloom))
-        GLES30.glUniform1f(cLoc("uPostPosterize"), geoF(fx.posterize))
-        GLES30.glUniform1f(cLoc("uPostDriftX"), geoF(fx.driftX))
-        GLES30.glUniform1f(cLoc("uPostDriftY"), geoF(fx.driftY))
-        GLES30.glUniform1f(cLoc("uPostSway"), geoF(fx.sway))
-        GLES30.glUniform1f(cLoc("uPostShake"), geoF(fx.shake))
-        GLES30.glUniform1f(cLoc("uPostFlash"), geoF(fx.flash))
-        GLES30.glUniform1f(cLoc("uPostTemp"), geoF(fx.temperature))
-        GLES30.glUniform1f(
-            cLoc("uPostSolarize"),
-            if (applyGeo && fx.solarize) 1f else 0f,
-        )
+        GLES30.glUniform1f(cLoc("uPostKaleido"), if (fx.kaleidoscope) 1f else 0f)
+        GLES30.glUniform1f(cLoc("uPostPixelate"), fx.pixelate)
+        GLES30.glUniform1f(cLoc("uPostTile"), fx.tile)
+        GLES30.glUniform1f(cLoc("uPostTwist"), fx.twist)
+        GLES30.glUniform1f(cLoc("uPostBloom"), fx.bloom)
+        GLES30.glUniform1f(cLoc("uPostPosterize"), fx.posterize)
+        GLES30.glUniform1f(cLoc("uPostDriftX"), fx.driftX)
+        GLES30.glUniform1f(cLoc("uPostDriftY"), fx.driftY)
+        GLES30.glUniform1f(cLoc("uPostSway"), fx.sway)
+        GLES30.glUniform1f(cLoc("uPostShake"), fx.shake)
+        GLES30.glUniform1f(cLoc("uPostFlash"), fx.flash)
+        GLES30.glUniform1f(cLoc("uPostTemp"), fx.temperature)
+        GLES30.glUniform1f(cLoc("uPostSolarize"), if (fx.solarize) 1f else 0f)
         // Mirror/invert: shader scenes AND the milkdrop post pass handle these
         // themselves. Everything else needs them here - particle scenes (whose
         // fragment shader explicitly defers invert to this pass) and the fluid
         // family, which was previously excluded and so had no mirror/invert at
-        // all.
-        val ownsMirrorInvert = activeScene is ShaderScene || activeScene is ProjectMScene
-        GLES30.glUniform1f(cLoc("uPostMirror"), if (!ownsMirrorInvert && fx.mirror) 1f else 0f)
-        GLES30.glUniform1f(cLoc("uPostInvert"), if (!ownsMirrorInvert && fx.invert) 1f else 0f)
-        // Universal grading + zoom/rotation, same gate idiom as applyGeo above
-        // but for a SMALLER set of scenes: ShaderScene (view()/grade()), the
+        // all. (Gate component y.)
+        GLES30.glUniform1f(cLoc("uPostMirror"), if (fx.mirror) 1f else 0f)
+        GLES30.glUniform1f(cLoc("uPostInvert"), if (fx.invert) 1f else 0f)
+        // Universal grading + zoom/rotation (gate component z), a SMALLER set
+        // of scenes than the geometry group: ShaderScene (view()/grade()), the
         // particle pipeline (particle_vert's uZoom/uRotation, particle_frag's
         // uSat/uBright/uContrast/uGamma) and the milkdrop post pass all apply
-        // these in their OWN pass, so they get the neutral identity here -
-        // otherwise every one of them would be zoomed twice and graded twice
-        // (squared brightness, doubled contrast). Only scenes that grade
-        // nothing themselves - the fluid family (Fluid, Curl Flow, Water) -
-        // are graded here, which is what made Zoom/Rotation/Saturation/
-        // Brightness/Contrast/Gamma/Hue/Intensity dead on those styles.
-        // uPostGrade switches the shader block off wholesale, so the neutral
-        // case is an exact no-op and any program that never uploads these
-        // uniforms (the export FxCompositor) keeps its current output.
-        val gradesItself = activeScene is ShaderScene || activeScene is ParticleSceneBase || activeScene is ProjectMScene
-
-        fun gradeF(
-            value: Float,
-            neutral: Float,
-        ) = if (gradesItself) neutral else value
-        GLES30.glUniform1f(cLoc("uPostGrade"), if (gradesItself) 0f else 1f)
-        GLES30.glUniform1f(cLoc("uPostZoom"), gradeF(fx.zoom, 1f))
-        GLES30.glUniform1f(cLoc("uPostRotation"), gradeF(postRotationAngle, 0f))
-        GLES30.glUniform1f(cLoc("uPostSat"), gradeF(fx.saturation, 1f))
-        GLES30.glUniform1f(cLoc("uPostBright"), gradeF(CompositeGrade.brightness(fx.brightness, fx.intensity), 1f))
-        GLES30.glUniform1f(cLoc("uPostContrast"), gradeF(fx.contrast, 1f))
-        GLES30.glUniform1f(cLoc("uPostGamma"), gradeF(fx.gamma, 1f))
-        GLES30.glUniform1f(cLoc("uPostHue"), gradeF(fx.colorShift + postCyclePhase, 0f))
-        // "Beat pulse": a DIFFERENT gate from gradesItself above, on purpose.
-        // Only two scene families read SceneParams.pulse themselves -
+        // these in their OWN pass, so the gate is off for them - otherwise
+        // every one of them would be zoomed twice and graded twice (squared
+        // brightness, doubled contrast). Only scenes that grade nothing
+        // themselves - the fluid family (Fluid, Curl Flow, Water) - are graded
+        // here, which is what made Zoom/Rotation/Saturation/Brightness/
+        // Contrast/Gamma/Hue/Intensity dead on those styles. The gate switches
+        // the shader block off wholesale, so the off case is an exact no-op.
+        GLES30.glUniform1f(cLoc("uPostZoom"), fx.zoom)
+        GLES30.glUniform1f(cLoc("uPostRotation"), postRotationAngle)
+        GLES30.glUniform1f(cLoc("uPostSat"), fx.saturation)
+        GLES30.glUniform1f(cLoc("uPostBright"), CompositeGrade.brightness(fx.brightness, fx.intensity))
+        GLES30.glUniform1f(cLoc("uPostContrast"), fx.contrast)
+        GLES30.glUniform1f(cLoc("uPostGamma"), fx.gamma)
+        GLES30.glUniform1f(cLoc("uPostHue"), fx.colorShift + postCyclePhase)
+        // "Beat pulse": gate component w, a DIFFERENT set from the grade on
+        // purpose. Only two scene families read SceneParams.pulse themselves -
         // ShaderScene (uPulse, folded into view()'s zoom) and the particle
-        // pipeline (a uSize swell) - so only those two get the neutral 0 here.
-        // ProjectMScene is in the grading exclusion set but NOT this one: the
-        // milkdrop post pass grades and zooms, yet nothing in it or in
-        // pm_post_frag reads pulse, so before this upload the slider was inert
-        // on MilkDrop exactly as it was on the fluid family.
-        val pulsesItself = activeScene is ShaderScene || activeScene is ParticleSceneBase
-        GLES30.glUniform1f(
-            cLoc("uPostPulse"),
-            if (pulsesItself) 0f else CompositeGrade.pulseAmount(fx.pulse, postBeatPulse),
-        )
+        // pipeline (a uSize swell). ProjectMScene is in the grading exclusion
+        // set but NOT this one: the milkdrop post pass grades and zooms, yet
+        // nothing in it or in pm_post_frag reads pulse, so before this upload
+        // the slider was inert on MilkDrop exactly as on the fluid family.
+        GLES30.glUniform1f(cLoc("uPostPulse"), CompositeGrade.pulseAmount(fx.pulse, postBeatPulse))
+        // One gate per texture. uTexA is the ACTIVE scene, uTexB the OUTGOING
+        // one, and they can belong to different families for the whole length
+        // of a cross-family transition: gating both from the active scene
+        // graded the outgoing julia frame a second time on a julia -> fluid
+        // fade (white, over-zoomed flash) and dropped the outgoing fluid grade
+        // on the reverse. Outside a transition uTexB is unread (uStyle = CUT),
+        // so it simply carries the active gate.
+        val gateA = CompositeGrade.gateFor(compositeFamily(activeScene))
+        val gateB = CompositeGrade.gateFor(compositeFamily(outgoingScene ?: activeScene))
+        GLES30.glUniform4fv(cLoc("uGateA"), 1, gateA.toVec4(), 0)
+        GLES30.glUniform4fv(cLoc("uGateB"), 1, gateB.toVec4(), 0)
         GLES30.glBindVertexArray(quadVao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
     }
+
+    /**
+     * Which composite-pass gate a scene falls under. The fluid family (Fluid,
+     * Curl Flow, Water) is the `else` branch: it has no pass of its own, so
+     * the composite owns every group for it.
+     */
+    private fun compositeFamily(scene: Scene?): CompositeGrade.SceneFamily =
+        when (scene) {
+            is ShaderScene -> CompositeGrade.SceneFamily.SHADER
+            is ParticleSceneBase -> CompositeGrade.SceneFamily.PARTICLE
+            is ProjectMScene -> CompositeGrade.SceneFamily.MILKDROP
+            else -> CompositeGrade.SceneFamily.FLUID
+        }
 
     /**
      * Feedback-trail warp: copies the persisted frame aside, then redraws it

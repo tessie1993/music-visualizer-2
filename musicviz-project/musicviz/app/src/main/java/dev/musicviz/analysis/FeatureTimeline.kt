@@ -33,6 +33,14 @@ class FeatureTimeline(
         if (frames.isEmpty()) 0f else frames.count { it.features.beat } / (frames.size / 60f + 1e-6f)
 
     /**
+     * The frames' ACTUAL spacing in ms (durationMs / (n-1)), not the nominal
+     * [hopMs]: the offline hop is sampleRate/60 samples (16.67 ms), so
+     * dividing by a truncated 16 ms would drift ~4% over a track.
+     */
+    private val frameSpacingMs: Double =
+        if (frames.size > 1) durationMs.toDouble() / (frames.size - 1) else hopMs.toDouble()
+
+    /**
      * Re-decides every frame's [AudioFeatures.beat] from the stored onset
      * curve at the given sensitivity, returning a new timeline.
      *
@@ -63,19 +71,63 @@ class FeatureTimeline(
         return FeatureTimeline(out, hopMs, key, hopRateHz)
     }
 
-    fun featuresAt(timeMs: Long): AudioFeatures {
+    /** Index of the frame nearest [timeMs], clamped to the timeline. */
+    private fun indexAt(timeMs: Long): Int =
+        if (frameSpacingMs > 0.0) {
+            Math.round(timeMs / frameSpacingMs).toInt().coerceIn(0, frames.size - 1)
+        } else {
+            0
+        }
+
+    /**
+     * Features for the half-open span `[timeMs, timeMs + spanMs)`.
+     *
+     * With [spanMs] <= 0 (the default, and what live playback uses) this is
+     * the plain nearest-frame lookup it always was.
+     *
+     * A consumer that samples this 60 Hz timeline at a LOWER rate - an export
+     * at 24 or 30 fps - only ever looks at every second or third frame, and
+     * `AudioFeatures.beat` is exactly ONE frame wide by construction
+     * ([FeatureExtractor.BeatGate] raises it for a single frame per onset). A
+     * 30 fps export therefore never observed about half the track's beats: no
+     * `uBeat`, no flash/shake, and no "Beat pulse" envelope on those. Passing
+     * the exported frame's own duration as [spanMs] fixes that - the flag is
+     * OR-ed across every timeline frame that exported frame is on screen for,
+     * along with a peak-hold of the onset curve it was decided from
+     * ([AudioFeatures.onset] / [AudioFeatures.flux]) so strength and flag stay
+     * consistent with each other.
+     *
+     * Everything CONTINUOUS - bands, waveform, rms/bass/mid/treble, centroid,
+     * bpm - stays point-sampled at the nearest frame, exactly as before.
+     * Averaging those over the span would low-pass every exported clip (and
+     * averaging a waveform cancels its phase outright): that is a change of
+     * character, not a bug fix. Impulses get a max, levels get a sample.
+     *
+     * Consecutive spans tile the timeline exactly - one span's last index is
+     * the next span's first minus one - so no frame is observed twice and none
+     * is skipped, and both ends clamp to the timeline.
+     */
+    fun featuresAt(
+        timeMs: Long,
+        spanMs: Long = 0L,
+    ): AudioFeatures {
         if (frames.isEmpty()) return AudioFeatures.empty()
-        // Index by the frames' actual spacing (durationMs / (n-1)), not the
-        // nominal hopMs: the offline hop is sampleRate/60 samples (16.67 ms),
-        // so dividing by a truncated 16 ms would drift ~4% over a track.
-        val spacing = if (frames.size > 1) durationMs.toDouble() / (frames.size - 1) else hopMs.toDouble()
-        val index =
-            if (spacing > 0.0) {
-                Math.round(timeMs / spacing).toInt().coerceIn(0, frames.size - 1)
-            } else {
-                0
-            }
-        return frames[index].features
+        val first = indexAt(timeMs)
+        val f = frames[first].features
+        if (spanMs <= 0L || frameSpacingMs <= 0.0) return f
+        val last = (indexAt(timeMs + spanMs) - 1).coerceIn(first, frames.size - 1)
+        if (last <= first) return f
+        var beat = f.beat
+        var onset = f.onset
+        var flux = f.flux
+        for (i in first + 1..last) {
+            val g = frames[i].features
+            beat = beat || g.beat
+            onset = maxOf(onset, g.onset)
+            flux = maxOf(flux, g.flux)
+        }
+        if (beat == f.beat && onset == f.onset && flux == f.flux) return f
+        return f.copy(beat = beat, onset = onset, flux = flux)
     }
 
     /**
@@ -83,12 +135,17 @@ class FeatureTimeline(
      * for progression-driven scenes. [sections] is a detectSections() result
      * the caller computed once - recomputing per frame would be O(n) each.
      * Deterministic, so live playback and export agree exactly.
+     *
+     * [spanMs] is forwarded to [featuresAt]: an export passes the exported
+     * frame's duration so a sub-60 fps render still observes every one-frame
+     * beat flag. The progress/section context is taken at [timeMs] itself.
      */
     fun progressionAt(
         timeMs: Long,
         sections: List<Long>,
+        spanMs: Long = 0L,
     ): AudioFeatures {
-        val f = featuresAt(timeMs)
+        val f = featuresAt(timeMs, spanMs)
         if (durationMs <= 0L) return f
         var idx = 0
         for (s in sections) {

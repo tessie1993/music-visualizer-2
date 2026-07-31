@@ -28,19 +28,30 @@ not from any earlier revision of this file.
 | **G** | global feature transform (`applyBandGains`, `SceneParams.kt:289`) |
 | **—** | genuinely ignored by that family (reason in the notes) |
 
-The three composite gates, all in `VisualizerRenderer.kt`:
+The four composite gates live in `CompositeGrade.gateFor(SceneFamily)` and are
+uploaded as one `vec4` **per texture** — `uGateA` for the incoming scene,
+`uGateB` for the outgoing one:
 
-* `applyGeo = activeScene !is ShaderScene` (`:770`) — geometry/stylize `uPost*`.
-  Shader scenes do these in-shader, so they get 0; **everything else**,
-  including the whole fluid family, is served by the composite.
-* `ownsMirrorInvert = ShaderScene || ProjectMScene` (`:800`) — mirror/invert.
-* `gradesItself = ShaderScene || ParticleSceneBase || ProjectMScene` (`:816`) —
-  zoom/rotation + the colour grade, switched wholesale by `uPostGrade`
-  (`:822`). Only the fluid family (FL/CF/WA) is graded by the composite; the
-  flag exists because the neutral value of these uniforms is 1.0, not the GL
-  default 0.0 (`composite_frag.glsl:43-58`).
+* `geo` (x) — geometry/stylize `uPost*`. Shader scenes do these in-shader, so
+  their component is 0; **everything else**, including the whole fluid family,
+  is served by the composite.
+* `mirrorInvert` (y) — mirror/invert. Off for SH and MD, which apply them
+  themselves.
+* `grade` (z) — zoom/rotation + the colour grade, switched wholesale. Only the
+  fluid family (FL/CF/WA) is graded by the composite; the flag exists because
+  the neutral value of these uniforms is 1.0, not the GL default 0.0.
+* `pulse` (w) — the beat swell. A deliberately different set from `grade`: MD
+  grades itself but nothing in its pipeline reads `pulse`.
 
-`FxCompositor.kt:324/378/388` reproduces all three gates so exports match.
+Per texture, not per frame: `composite_frag`'s `main()` runs BOTH textures
+through `postFx`, and a cross-family transition (julia → fluid) would otherwise
+grade the already-graded outgoing frame a second time — a white, over-zoomed
+flash for the length of the fade — or drop the outgoing grade on the reverse.
+
+`VisualizerRenderer.compositeFamily()` maps a scene to its family;
+`FxCompositor.composite()` derives the same gate from its `isShaderScene`/
+`isParticle`/`isProjectM` flags and uploads it in both slots (an export never
+transitions), so exports match the screen.
 
 ## The matrix
 
@@ -79,15 +90,16 @@ The three composite gates, all in `VisualizerRenderer.kt`:
 | `kaleidoscope` + `symmetry` | S `:202-203` | C | C | C | C | C |
 | `pixelate`, `posterize` | S `:205-206` | C | C | C | C | C |
 | `morph` | S `:204` | — ⁸ | — ⁸ | — ⁸ | — ⁸ | — ⁸ |
-| `particleShape` | — | P `:149` | — | — | — | — |
-| `particleSize` | — | P `:152` | — | FL `FluidScene.kt:320` | CF `CurlFlowScene.kt:207` | — |
+| `particleShape` | — ¹⁰ | P `:149` | — ¹⁰ | — ¹⁰ | — ¹⁰ | — ¹⁰ |
+| `particleSize` | — ¹⁰ | P `:152` | — ¹⁰ | FL `FluidScene.kt:333` | CF `CurlFlowScene.kt:212` | — ¹⁰ |
 
 ### Colour
 
 | Param | SH | PT | MD | FL | CF | WA |
 |---|---|---|---|---|---|---|
-| `palette` → `paletteBase`/`paletteRange` | S `:193-194` | P `ParticleSceneBase.kt:123-124` | — ⁹ | FL `FluidScene.kt:258-259` | CF `CurlFlowScene.kt:208-209` | WA `WaterScene.kt:247,280` |
-| `hueRange` | S `:185` | P `:124` | — ⁹ | FL (via `FluidHue.span`) | CF (same) | WA (same) |
+| `palette` → `paletteBase`/`paletteRange` | S `:193-194` | P `ParticleSceneBase.kt:123-124` | PM ⁹ (`uPalBase`/`uPalSpan`) | FL `FluidScene.kt:258-259` | CF `CurlFlowScene.kt:208-209` | WA `WaterScene.kt:247,280` |
+| `hueRange` | S `:185` | P `:124` | PM ⁹ (folded into `uPalSpan`) | FL (via `FluidHue.span`) | CF (same) | WA (same) |
+| `milkdropPaletteTint` | — | — | PM `uPalTint` ⁹ | — | — | — |
 | `palette*Override` / `customPalette*Id` | resolved inside `paletteBase`/`paletteRange` (`SceneParams.kt:271-281`) — every family that reads a palette reads overrides for free | | | | | |
 | `colorShift` | S `:184` | P `:123` | PM `:224` | C `:829` | C | C |
 | `colorCycle` / `cycleSpeed` | S `:124,184` | P `:88,123` | PM `:166,224` | C (`postCyclePhase`) | C | C |
@@ -119,17 +131,22 @@ real hue would cross zero and flicker the slot between built-in and custom.
 | `fluidIterations`, `fluidPressure`, `fluidCurl`, `fluidVelocityDissipation`, `fluidDensityDissipation`, `fluidChromaticAging` | FL only `FluidScene.kt:205-212` | `isFluidSceneId` |
 | emitter schedule: `fluidBeatPattern`, `fluidBeatSplats`, `fluidStirrers`, `fluidStirrerSpeed`, `fluidSplatRadius`, `fluidRadiusPulse`, `fluidSplatForce`, `fluidBassPump`, `fluidSparkle` | FL `:227-242`, WA `:229-238` | `isEmitterSceneId` |
 | `fluidPaletteCycleSpeed` | FL only `:241` (WATER discards splat colour) | `isFluidSceneId` |
-| journey: `fluidSpawnPath`, `fluidSpawnPoints`, `fluidSpawnProgress`, `fluidCatchPoints`, `fluidCatchPull`, `fluidCatchRadius`, `fluidParticleLife` | FL `:221-224,279-280`, CF `CurlFlowScene.kt:153-157,181-187`, WA `WaterScene.kt:222-225,237,243` | `isJourneySceneId` |
-| `fluidParticleDrag` | FL `:274`, CF `:181` | `isParticleLayerSceneId` |
+| journey: `fluidSpawnPath`, `fluidSpawnPoints`, `fluidSpawnProgress`, `fluidCatchPoints`, `fluidCatchPull`, `fluidCatchRadius` | FL `:231-234,245,292-293`, CF `CurlFlowScene.kt:161-164,191-192`, WA `WaterScene.kt:232-235,247,256` | `isJourneySceneId` |
+| `fluidParticleDrag`, `fluidParticleLife` ¹¹ | FL `:287-288`, CF `:186-187` | `isParticleLayerSceneId` |
 | `fluidParticlesEnabled`, `fluidParticleBrightness` | FL only (`:273,324`) | `isFluidSceneId` inside the particle section |
 | `fluidDyeEnabled`, `fluidShading`, `fluidBloom*`, `fluidSunrays*`, `fluidCurlAudio`, `fluidBloomAudio`, `fluidFadeAudio` | FL only `:288-306` | `isFluidSceneId` |
-| `waterWaveSpeed`, `waterDamping`, `waterRippleStrength`, `waterDepth`, `waterSpecular`, `waterFlow` | WA only `WaterScene.kt:181,218-219,242,281-283` | `isWaterSceneId` |
+| `waterRippleStrength`, `waterDepth`, `waterSpecular`, `waterFlow` | WA only `WaterScene.kt:184,255,294-296` | `isWaterSceneId` |
+| `waterWaveSpeed`, `waterDamping` ¹² | WA `WaterScene.kt:228-229` **and the all-styles ripple overlay** (`VisualizerRenderer.kt:636-637`, `VideoExporter.kt:426-427`) | `isWaterSceneId`, plus the overlay section (`!isWaterScene`) on every other style |
 | `flowEnabled`, `flowStrength`, `flowForce`, `flowCurl` | C fluidWarp for every family (`VisualizerRenderer.kt:716-729`); FL substitutes its own velocity field | always |
 | `flowAdvectParticles` | P `ParticleSceneBase.kt:96-112` | always |
-| `rippleOverlayEnabled`, `rippleOverlayStrength`, `rippleOverlaySpecular` | C for every family (`:738-750`); forced off on WATER, whose own display already refracts | always |
+| `rippleOverlayEnabled`, `rippleOverlayStrength`, `rippleOverlaySpecular` | C for every family (`:738-750`); forced off on WATER, whose own display already refracts | always (the overlay's SPEED and DAMPING are `waterWaveSpeed`/`waterDamping`, the row above) |
 
-The gate predicates live in `VisualsHub.kt:372-400` and are pinned by
-`FluidTabGatingTest` / `CurlFlowCustomizeTest`.
+The gate predicates live in `VisualsHub.kt:372-410` and are pinned by
+`FluidTabGatingTest` / `CurlFlowCustomizeTest`. `FluidTabGatingTest` also
+parses `CustomizeDialog.kt` and asserts the exact label set inside the
+`isJourneyScene` / `isParticleLayerScene` / `isWaterScene` / `!isWaterScene`
+blocks, so a control drifting into a section whose styles do not read it fails
+the build.
 
 ## Notes
 
@@ -178,8 +195,62 @@ The gate predicates live in `VisualsHub.kt:372-400` and are pinned by
    nothing to blend is worse than no slider). Pinned by
    `ShaderLookGatingTest`, which parses the gating back out of
    `CustomizeDialog.kt`.
-9. MilkDrop colours are authored by the preset; `pm_post_frag` rotates hue but
-   has no palette table to key off.
+9. **MilkDrop tints, it does not repaint.** A `.milk` preset authors its own
+   colours, so the Palettes card reaches it as a BLEND toward the palette
+   (`pm_post_frag`'s `paletteTint`, uploaded by `ProjectMScene.draw`) rather
+   than as the colour itself. `milkdropPaletteTint` is that blend and is 0 by
+   default — an exact no-op, so every preset a user already saved looks
+   unchanged. The stage works in HSV and never touches VALUE, so the preset
+   keeps its structure and contrast; a pixel that has chroma keeps its hue
+   RELATIONSHIPS (compressed into the palette's band), which is what stops the
+   whole format from collapsing onto one look, and a pixel that has none is
+   gradient-mapped from its own luma so white cores can show the palette at
+   all. The span is `paletteRange * hueRange`, the shader/particle form, not
+   `FluidHue.span`. Mirrored and pinned by `CompositeGrade.paletteTint` /
+   `CompositeGradeTest`. The slider is labelled "MilkDrop palette tint" and is
+   shown on every style — `ColorTab` is handed no MilkDrop predicate, so the
+   style lives in the label, as with "Trails (particle scenes)" and
+   "Glow (fluid)".
+10. **By design, point-sprite only, and the two halves differ.** Nothing in the
+    composite draws points, so neither param has a post-hoc mirror.
+    `particleShape` is `ParticleSceneBase`'s `uShape` alone (consumed by
+    `particle_frag.glsl`'s shapeMask); the FluidParticles layer has no shape
+    uniform, so its sprites are always round and the chip row is dead on FL/CF
+    too. `particleSize` additionally scales those sprites (`FluidScene`
+    `pointScale`, `CurlFlowScene` `particles.draw`). The Shape tab therefore
+    gates the "Particles" section with TWO predicates —
+    `VisualsHub.isParticleShapeSceneId` (= `VisualizerRenderer.PARTICLE_SCENES`)
+    and `isPointSpriteSceneId` (that plus `isParticleLayerSceneId`, i.e. FL+CF)
+    — and hangs the section HEADER on the wider one so it disappears with the
+    last control instead of leaving an empty heading. On FLUID,
+    `fluidParticlesEnabled` can switch the point layer off, which makes
+    `particleSize` temporarily idle; that is a user-revertible state, not a
+    style limit, so the slider stays visible and the tab says why (hiding it
+    would look identical to the bug this gating fixes, with the cause a tab
+    away). Pinned by `ParticleGatingTest`, which parses the gating back out of
+    `CustomizeDialog.kt`.
+11. **`fluidParticleLife` is not a journey param.** It ages the FluidParticles
+    lifecycle layer, so its readers are exactly `fluidParticleDrag`'s -
+    `FluidScene` and `CurlFlowScene` set `particles.drag` / `particles.life`
+    on consecutive lines - and `WaterScene` has no particle layer at all. It
+    used to be rendered in the Journey section, which covers WATER, so
+    "Particle life (s)" appeared on a style with nothing to age. It now sits
+    next to "Particle drag" under `isParticleLayerSceneId`, behind the same
+    `fluidParticlesEnabled` condition on FLUID (the layer that reads it is not
+    stepping when the layer is off). The rest of the Journey section does have
+    a WaterScene reader for every control, listed in the table above.
+12. **Wave speed and damping are shared, not Water-only.** The all-styles
+    ripple overlay is the same heightfield solver: `VisualizerRenderer` sets
+    `ripple.waveSpeed = 1.2f * waterWaveSpeed` and `ripple.damping =
+    waterDamping` for the overlay exactly as `WaterScene` does for its own
+    surface, and `VideoExporter` mirrors it so exports match. With both
+    sliders in the WATER-only section, a user who switched the overlay on from
+    any other style got rings propagating at whatever those params happened to
+    hold, with no control anywhere - while `ParamRandomizer` kept rolling both
+    keys ("Wave speed", "Damping"). The Fluid tab now renders them in the
+    overlay section on every style except WATER, which keeps showing them in
+    its own section as the surface physics they also are: one pair of params,
+    one place per style, no duplicate live copies of the same slider.
 
 ## Divergences worth knowing
 
@@ -188,11 +259,16 @@ The gate predicates live in `VisualsHub.kt:372-400` and are pinned by
   styles the slider's 1.0–1.5 range is flat and 0 does not collapse the
   palette to one colour. Shader and particle scenes multiply the raw value.
   Intentional (a 0 span kills the fluid look), documented here rather than
-  fixed, because it also means those styles cannot over-span.
+  fixed, because it also means those styles cannot over-span. MilkDrop's
+  palette tint joins the shader/particle side of that divergence
+  (`CompositeGrade.paletteSpan`): a 0 span there legitimately means "one hue".
 * **Hue rotation is applied exactly once on the fluid family.** The scene owns
   palette IDENTITY (base + span, decided at emission time), the composite owns
   ROTATION (`colorShift + cyclePhase`). See `FluidHue.kt:5-24`; folding either
-  into the scene as well turned the wheel twice per slider unit.
+  into the scene as well turned the wheel twice per slider unit. `pm_post_frag`
+  runs the same split inside one shader: the palette tint (identity) is applied
+  BEFORE `uHue` (rotation), so "Hue shift" turns the tinted frame instead of
+  being cancelled by it.
 * **Brightness/intensity is applied exactly once.** `CurlFlowMath` and
   `WaterMath` deliberately return exposure-free values; the composite's
   `uPostBright = brightness * intensity` is the single owner for FL/CF/WA.
@@ -202,4 +278,11 @@ The gate predicates live in `VisualsHub.kt:372-400` and are pinned by
   is why `"Ripple strength"` (Water, 0..2) and `"Ripple overlay strength"`
   (all-styles overlay, 0..1) had to stop sharing a label, and why the LFO
   card's depth slider is now `"LFO depth"` rather than colliding with the
-  Water section's `"Depth"`.
+  Water section's `"Depth"`. Same rule, third case: the Behavior tab's
+  reactivity envelope is `"Reactivity attack"` / `"Reactivity decay"` and the
+  FX tab's ADSR cards are `"Env attack"` / `"Env decay"`, where both pairs
+  used to be plain `"Attack"` / `"Decay"` - two unrelated live controls under
+  one lock chip. Neither is a `ParamRandomizer` key, so that collision only
+  ever mirrored a highlight; the two ADSR CARDS still share their keys with
+  each other (as `Sustain` / `Release` / `Amount` do), which is one group with
+  one meaning rather than a collision.
