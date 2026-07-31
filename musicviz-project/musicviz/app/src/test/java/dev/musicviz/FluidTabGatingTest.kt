@@ -118,21 +118,31 @@ class FluidTabGatingTest {
 
     @Test
     fun waveSpeedAndDampingAreReachableOnEveryStyle() {
-        // They are the WATER surface's physics AND the all-styles ripple
-        // overlay's (VisualizerRenderer's `ripple.waveSpeed/damping`, mirrored
-        // by VideoExporter), so WATER shows them in its own section and every
-        // other style gets them in the overlay section. Living only in the
+        // They are the WATER surface's physics AND the ripple overlay's
+        // (VisualizerRenderer's `ripple.waveSpeed/damping`, mirrored by
+        // VideoExporter), so WATER shows them in its own section and every
+        // style that CAN show the overlay gets them there. Living only in the
         // WATER block left the overlay's rings uncontrollable everywhere else
         // while the randomizer kept rolling both.
         val physics = setOf("Wave speed", "Damping")
         assertTrue("the Water section must keep its own wave physics", gatedLabels("isWaterScene").containsAll(physics))
-        assertEquals(
-            "controls wrapped in `if (!isWaterScene)` inside CustomizeDialog.kt",
-            physics,
-            gatedLabels("!isWaterScene"),
-        )
+        assertTrue("the overlay must carry its own wave physics", gatedLabels("!isWaterScene").containsAll(physics))
         // Both are still rolled, so both still have to be lockable by label.
         physics.forEach { assertTrue("\"$it\" is no longer a randomizer key", it in ParamRandomizer.KEYS) }
+    }
+
+    @Test
+    fun theRippleOverlaySectionIsHiddenOnWater() {
+        // The renderer hard-disables the overlay while WaterScene is active
+        // (`&& !waterActive`, mirrored by VideoExporter's
+        // `exportWaterScene == null`), so on WATER the enable checkbox and both
+        // overlay sliders used to be live controls driving nothing. The whole
+        // section is gated off WATER now.
+        assertEquals(
+            "controls wrapped in `if (!isWaterScene)` inside CustomizeDialog.kt",
+            setOf("Water ripples enabled", "Wave speed", "Damping", "Ripple overlay strength", "Ripple glint"),
+            gatedLabels("!isWaterScene"),
+        )
     }
 
     @Test

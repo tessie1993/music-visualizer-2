@@ -733,41 +733,42 @@ internal fun FluidTab(
             LabeledSlider("Flow curl", p.flowCurl, 0f..50f) { onChange(p.copy(flowCurl = it)) }
             CheckRow("Particles ride the field", p.flowAdvectParticles) { onChange(p.copy(flowAdvectParticles = it)) }
         }
-        SectionHeader("Water ripples (all styles)")
-        Text(
-            "The water heightfield rides on top of ANY style: beats drop " +
-                "rings that refract the image (particles, shaders, MilkDrop - " +
-                "and exports), treble sprinkles small drops, and glint adds a " +
-                "specular sparkle on the crests. Speed and damping are the same " +
-                "wave physics the water style runs - one pair of sliders drives " +
-                "both. The water style's own surface already refracts, so the " +
-                "overlay stays off there.",
-            style = MaterialTheme.typography.labelSmall,
-        )
-        CheckRow("Water ripples enabled", p.rippleOverlayEnabled) { onChange(p.copy(rippleOverlayEnabled = it)) }
-        if (p.rippleOverlayEnabled) {
-            if (!isWaterScene) {
+        // The renderer hard-disables the overlay whenever WaterScene is
+        // active (VisualizerRenderer's `&& !waterActive`, mirrored by
+        // VideoExporter's `exportWaterScene == null`) because that style's own
+        // surface already refracts. The whole section is therefore gated off
+        // WATER: it used to render there in full, so the toggle and both
+        // sliders were live controls driving nothing at all.
+        if (!isWaterScene) {
+            SectionHeader("Water ripples (every style but Water)")
+            Text(
+                "The water heightfield rides on top of any other style: beats " +
+                    "drop rings that refract the image (particles, shaders, " +
+                    "MilkDrop - and exports), treble sprinkles small drops, and " +
+                    "glint adds a specular sparkle on the crests. Speed and " +
+                    "damping are the same wave physics the water style runs.",
+                style = MaterialTheme.typography.labelSmall,
+            )
+            CheckRow("Water ripples enabled", p.rippleOverlayEnabled) { onChange(p.copy(rippleOverlayEnabled = it)) }
+            if (p.rippleOverlayEnabled) {
                 // The overlay's heightfield runs on waterWaveSpeed /
-                // waterDamping exactly as the WATER style's own surface does
-                // (VisualizerRenderer "ripple.waveSpeed = 1.2f * ...", and
-                // VideoExporter's mirror of it), so these two are the overlay's
-                // wave physics on every style - not Water-only params. They sat
-                // in the WATER-only section, which left the rings on plasma /
-                // MilkDrop / particles propagating at whatever the params
-                // happened to hold, with no reachable control (the randomizer
-                // still rolls both). On WATER they appear once, up in the Water
+                // waterDamping exactly as the WATER style's own surface does,
+                // so these two are the overlay's wave physics on every style
+                // that shows it. WATER has its own pair up in the Water
                 // section, where they are that style's own physics.
                 LabeledSlider("Wave speed", p.waterWaveSpeed, 0.2f..2f) { onChange(p.copy(waterWaveSpeed = it)) }
                 LabeledSlider("Damping", p.waterDamping, 0.9f..0.999f) { onChange(p.copy(waterDamping = it)) }
+                // NOT "Ripple strength": that is the Water section's own slider
+                // (waterRippleStrength, 0..2). Lock keys are label strings, so
+                // sharing the label made one lock chip freeze both params and
+                // one roll write both - two different controls behind one switch.
+                LabeledSlider("Ripple overlay strength", p.rippleOverlayStrength, 0f..1f) {
+                    onChange(p.copy(rippleOverlayStrength = it))
+                }
+                LabeledSlider("Ripple glint", p.rippleOverlaySpecular, 0f..1f) {
+                    onChange(p.copy(rippleOverlaySpecular = it))
+                }
             }
-            // NOT "Ripple strength": that is the Water section's own slider
-            // (waterRippleStrength, 0..2). Lock keys are label strings, so
-            // sharing the label made one lock chip freeze both params and one
-            // roll write both - two different controls behind one switch.
-            LabeledSlider("Ripple overlay strength", p.rippleOverlayStrength, 0f..1f) {
-                onChange(p.copy(rippleOverlayStrength = it))
-            }
-            LabeledSlider("Ripple glint", p.rippleOverlaySpecular, 0f..1f) { onChange(p.copy(rippleOverlaySpecular = it)) }
         }
         if (isFluidScene) {
             SectionHeader("Injection shaders (advanced)")
