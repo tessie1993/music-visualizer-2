@@ -79,8 +79,8 @@ The three composite gates, all in `VisualizerRenderer.kt`:
 | `kaleidoscope` + `symmetry` | S `:202-203` | C | C | C | C | C |
 | `pixelate`, `posterize` | S `:205-206` | C | C | C | C | C |
 | `morph` | S `:204` | — ⁸ | — ⁸ | — ⁸ | — ⁸ | — ⁸ |
-| `particleShape` | — | P `:149` | — | — | — | — |
-| `particleSize` | — | P `:152` | — | FL `FluidScene.kt:320` | CF `CurlFlowScene.kt:207` | — |
+| `particleShape` | — ¹⁰ | P `:149` | — ¹⁰ | — ¹⁰ | — ¹⁰ | — ¹⁰ |
+| `particleSize` | — ¹⁰ | P `:152` | — ¹⁰ | FL `FluidScene.kt:333` | CF `CurlFlowScene.kt:212` | — ¹⁰ |
 
 ### Colour
 
@@ -180,6 +180,24 @@ The gate predicates live in `VisualsHub.kt:372-400` and are pinned by
    `CustomizeDialog.kt`.
 9. MilkDrop colours are authored by the preset; `pm_post_frag` rotates hue but
    has no palette table to key off.
+10. **By design, point-sprite only, and the two halves differ.** Nothing in the
+    composite draws points, so neither param has a post-hoc mirror.
+    `particleShape` is `ParticleSceneBase`'s `uShape` alone (consumed by
+    `particle_frag.glsl`'s shapeMask); the FluidParticles layer has no shape
+    uniform, so its sprites are always round and the chip row is dead on FL/CF
+    too. `particleSize` additionally scales those sprites (`FluidScene`
+    `pointScale`, `CurlFlowScene` `particles.draw`). The Shape tab therefore
+    gates the "Particles" section with TWO predicates —
+    `VisualsHub.isParticleShapeSceneId` (= `VisualizerRenderer.PARTICLE_SCENES`)
+    and `isPointSpriteSceneId` (that plus `isParticleLayerSceneId`, i.e. FL+CF)
+    — and hangs the section HEADER on the wider one so it disappears with the
+    last control instead of leaving an empty heading. On FLUID,
+    `fluidParticlesEnabled` can switch the point layer off, which makes
+    `particleSize` temporarily idle; that is a user-revertible state, not a
+    style limit, so the slider stays visible and the tab says why (hiding it
+    would look identical to the bug this gating fixes, with the cause a tab
+    away). Pinned by `ParticleGatingTest`, which parses the gating back out of
+    `CustomizeDialog.kt`.
 
 ## Divergences worth knowing
 
