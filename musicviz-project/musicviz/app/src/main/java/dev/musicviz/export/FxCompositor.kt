@@ -52,14 +52,34 @@ internal class ExportGradeState {
     var cyclePhase: Float = 0f
         private set
 
-    /** Advances one exported frame; [dtSeconds] is the export's 1/fps. */
+    /** Beat envelope (1 on a beat, decaying) driving the "Beat pulse" swell. */
+    var beatPulse: Float = 0f
+        private set
+
+    /** Advances one exported frame; [dtSeconds] is the export's 1/fps.
+     *  [beat] is the exported frame's beat flag; it decays on the export's own
+     *  clock so a 30 fps and a 60 fps render pulse for the same wall time. */
     fun advance(
         params: SceneParams,
         dtSeconds: Float,
+        beat: Boolean = false,
     ) {
         rotationAngle = CompositeGrade.integrateRotation(rotationAngle, params.rotation, dtSeconds)
         cyclePhase = CompositeGrade.integrateCyclePhase(cyclePhase, params.cycleSpeed, dtSeconds, params.colorCycle)
+        beatPulse = CompositeGrade.integrateBeatPulse(beatPulse, beat, dtSeconds)
     }
+
+    /**
+     * The value to upload as `uPostPulse`, gated on a DIFFERENT set from
+     * [uniforms]: only ShaderScene (uPulse) and the particle pipeline (a uSize
+     * swell) read `pulse` themselves, so only they are neutralised. MilkDrop
+     * grades itself but never pulses, so it is graded in its own pass yet
+     * pulsed in the composite - see `VisualizerRenderer`'s matching comment.
+     */
+    fun pulseAmount(
+        params: SceneParams,
+        pulsesItself: Boolean,
+    ): Float = if (pulsesItself) 0f else CompositeGrade.pulseAmount(params.pulse, beatPulse)
 
     /**
      * The uniforms to upload, gated exactly like `VisualizerRenderer`'s
@@ -317,7 +337,7 @@ internal class FxCompositor(
         // Rotation and the colour cycle are SPEEDS: integrate them on the
         // export's own clock, once per exported frame, exactly as the live
         // renderer integrates once per displayed frame.
-        grade.advance(params, dtSeconds)
+        grade.advance(params, dtSeconds, features.beat)
         // Shader scenes apply all geometric/stylize FX in-shader already;
         // pass neutral values so they aren't applied twice (matches the
         // live renderer's guard).
@@ -395,6 +415,12 @@ internal class FxCompositor(
         GLES30.glUniform1f(loc("uPostContrast"), gu.contrast)
         GLES30.glUniform1f(loc("uPostGamma"), gu.gamma)
         GLES30.glUniform1f(loc("uPostHue"), gu.hue)
+        // "Beat pulse": mirrors the live renderer, including its deliberately
+        // different gate - milkdrop is excluded from the grade block above but
+        // pulsed here, because nothing in its pipeline reads `pulse`. Uploaded
+        // unconditionally so exports never diverge from the live view; the
+        // uniform is neutral at 0, so a self-pulsing scene is a no-op.
+        GLES30.glUniform1f(loc("uPostPulse"), grade.pulseAmount(params, isShaderScene || isParticle))
         GLES30.glBindVertexArray(vao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)

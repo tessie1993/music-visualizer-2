@@ -56,6 +56,15 @@ uniform float uPostBright;   // brightness * intensity, as everywhere else
 uniform float uPostContrast;
 uniform float uPostGamma;
 uniform float uPostHue;
+// Beat pulse for scenes that don't swell on the beat themselves (the fluid
+// family AND milkdrop - a DIFFERENT set from the grading block above, which
+// milkdrop is excluded from because pm_post_frag grades but never pulses).
+// This is the pulse AMOUNT with the beat envelope already folded in on the
+// CPU (CompositeGrade.pulseAmount), because the composite pass has no BPM
+// phase clock of its own. Unlike the grading uniforms it needs no enable
+// flag: it is neutral at 0.0, which is also GL's default, so a program that
+// never uploads it (an older export path) still renders identically.
+uniform float uPostPulse;
 // FlowField fluidWarp: the shared fluid velocity field bends the sampling
 // coordinate of ANY scene's output (particles, shaders, milkdrop) before the
 // scene-texture fetch. A 1x1 zero texture is bound when disabled so the
@@ -109,6 +118,15 @@ vec2 geo(vec2 uv) {
     // same amount on a fluid style as on julia/mandel.
     if (uPostGrade > 0.5 && abs(uPostZoom - 1.0) > 0.0001) {
         c /= max(uPostZoom, 0.05);
+    }
+    // Beat pulse: a swell about the centre, the same geometric form and 0.22
+    // magnitude the shader scenes give it (plasma_frag: pulse = 1.0 + uPulse *
+    // 0.22 * bump; z = uZoom * pulse; uv /= z), so one slider value swells the
+    // image by the same amount on a fluid or milkdrop style as on julia. Kept
+    // OUT of the uPostGrade block on purpose: milkdrop grades itself but does
+    // not pulse, so it is graded elsewhere yet pulsed here.
+    if (uPostPulse > 0.0001) {
+        c /= 1.0 + uPostPulse * 0.22;
     }
     if (uPostMirror > 0.5) c.x = abs(c.x);
     if (uPostKaleido > 0.5 && uPostSymmetry >= 2.0) {
