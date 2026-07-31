@@ -43,7 +43,7 @@ class AppSmokeTest {
         navTo("Library")
         compose.onNodeWithText("Allow music access").assertExists()
         navTo("Visuals")
-        compose.onAllNodesWithText("Presets").onFirst().assertExists()
+        compose.onAllNodesWithText("Presets", ignoreCase = true).onFirst().assertExists()
         navTo("Settings")
         // First collapsible section header; later ones may sit below the fold
         // of the lazy list on the small Robolectric display. Headers render
@@ -76,7 +76,7 @@ class AppSmokeTest {
         // The crystal redesign renders this as a CrystalButton labelled
         // "Randomize Unlocked" (the decorative die glyph is gone).
         compose.onNodeWithText("Randomize unlocked", ignoreCase = true).assertExists()
-        compose.onAllNodesWithText("Speed", substring = true).onFirst().assertExists()
+        compose.onAllNodesWithText("Speed", substring = true, ignoreCase = true).onFirst().assertExists()
     }
 
     @Test
