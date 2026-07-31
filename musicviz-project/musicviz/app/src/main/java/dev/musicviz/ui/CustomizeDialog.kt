@@ -36,6 +36,7 @@ import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.render.LfoConfig
 import dev.musicviz.render.LfoTarget
 import dev.musicviz.render.LfoWave
+import dev.musicviz.render.scene.ParamRandomizer
 import dev.musicviz.render.scene.SceneParams
 
 /*
@@ -451,25 +452,46 @@ private fun LabeledSlider(
     range: ClosedFloatingPointRange<Float>,
     onChange: (Float) -> Unit,
 ) {
-    val (locked, toggle) = LocalParamLocks.current
     Column {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("$label ${"%.2f".format(value)}", style = MaterialTheme.typography.labelSmall)
-            Text(
-                if (label in locked) "locked" else "lock",
-                style = MaterialTheme.typography.labelSmall,
-                color =
-                    if (label in locked) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    },
-                modifier = Modifier.clickable { toggle(label) },
-            )
+            LockChip(label)
         }
         CrystalSlider(value = value, onValueChange = onChange, valueRange = range, modifier = Modifier.fillMaxWidth())
     }
 }
+
+/**
+ * The lock chip that holds a parameter against "Randomize unlocked".
+ *
+ * Renders NOTHING for a label the randomizer does not roll. That gate is the
+ * point: [ParamRandomizer.KEYS] is derived from the roll itself, so it cannot
+ * drift from what is actually rolled, and a chip on a control the randomizer
+ * never touches did nothing except write a permanent dead string into the
+ * stored lock set. Eighteen controls used to offer exactly that.
+ *
+ * [label] IS the lock key - see `ParamRandomizer`, whose keys are the
+ * control-label strings this renders.
+ */
+@Composable
+private fun LockChip(label: String) {
+    if (label !in LOCKABLE_KEYS) return
+    val (locked, toggle) = LocalParamLocks.current
+    Text(
+        if (label in locked) "locked" else "lock",
+        style = MaterialTheme.typography.labelSmall,
+        color =
+            if (label in locked) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            },
+        modifier = Modifier.clickable { toggle(label) },
+    )
+}
+
+/** Keys the randomizer actually rolls, as a set for per-control lookup. */
+private val LOCKABLE_KEYS: Set<String> = ParamRandomizer.KEYS.toSet()
 
 /**
  * Header for a chip selector, carrying the same lock chip [LabeledSlider]
@@ -482,32 +504,38 @@ private fun LabeledSlider(
  */
 @Composable
 private fun LockableChipLabel(label: String) {
-    val (locked, toggle) = LocalParamLocks.current
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label, style = MaterialTheme.typography.labelSmall)
-        Text(
-            if (label in locked) "locked" else "lock",
-            style = MaterialTheme.typography.labelSmall,
-            color =
-                if (label in locked) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                },
-            modifier = Modifier.clickable { toggle(label) },
-        )
+        LockChip(label)
     }
 }
 
+/**
+ * A checkbox row, with the lock chip when the randomizer rolls this parameter.
+ *
+ * Fourteen rolled parameters were rendered ONLY here and so could not be
+ * locked at all - Endless zoom, Kaleidoscope, Mirror, Trails, Color cycle,
+ * Duotone, Solarize, Invert, Bass pump, Treble sparkle, Shading, Glow,
+ * Sunrays and "Particles ride the field". That is the same gap
+ * [LockableChipLabel] was added to close for the five chip selectors; it was
+ * never closed for checkboxes.
+ */
 @Composable
 private fun CheckRow(
     label: String,
     checked: Boolean,
     onChange: (Boolean) -> Unit,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = checked, onCheckedChange = onChange)
-        Text(label, style = MaterialTheme.typography.bodySmall)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = checked, onCheckedChange = onChange)
+            Text(label, style = MaterialTheme.typography.bodySmall)
+        }
+        LockChip(label)
     }
 }
 
@@ -811,21 +839,10 @@ private fun LabeledIntSlider(
     range: IntRange,
     onChange: (Int) -> Unit,
 ) {
-    val (locked, toggle) = LocalParamLocks.current
     Column {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("$label $value", style = MaterialTheme.typography.labelSmall)
-            Text(
-                if (label in locked) "locked" else "lock",
-                style = MaterialTheme.typography.labelSmall,
-                color =
-                    if (label in locked) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    },
-                modifier = Modifier.clickable { toggle(label) },
-            )
+            LockChip(label)
         }
         CrystalSlider(
             value = value.toFloat(),

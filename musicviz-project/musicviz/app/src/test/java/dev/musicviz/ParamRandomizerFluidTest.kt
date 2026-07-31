@@ -286,6 +286,36 @@ class ParamRandomizerFluidTest {
         assertEquals("test knobs naming a key the randomizer does not roll", emptyList<String>(), unknown)
     }
 
+    /**
+     * The lock chip must have exactly ONE implementation, and it must be the
+     * gated one.
+     *
+     * Before this, the "locked"/"lock" text was copy-pasted into three
+     * renderers and absent from a fourth. The consequences were symmetric and
+     * both shipped: fourteen rolled parameters rendered only by CheckRow had
+     * no chip at all and could not be protected, while eighteen controls the
+     * randomizer never rolls DID show one, so clicking them wrote permanent
+     * dead strings into the stored lock set.
+     *
+     * A fourth copy would silently reintroduce one half or the other, so the
+     * count is what is pinned - LockChip itself gates on
+     * [ParamRandomizer.KEYS], which is derived from the roll and cannot drift.
+     */
+    @Test
+    fun the_lock_chip_has_a_single_gated_implementation() {
+        val source = customizeDialogSource()
+        val chipRenders = Regex("\"locked\"\\s+else\\s+\"lock\"").findAll(source).count()
+        assertEquals("the lock chip must be rendered in exactly one place", 1, chipRenders)
+        assertTrue(
+            "the one lock chip must skip labels the randomizer does not roll",
+            source.contains("if (label !in LOCKABLE_KEYS) return"),
+        )
+        assertTrue(
+            "LOCKABLE_KEYS must come from ParamRandomizer.KEYS, not a second hand-kept list",
+            Regex("LOCKABLE_KEYS[^=]*=\\s*ParamRandomizer\\.KEYS").containsMatchIn(source),
+        )
+    }
+
     /** Labels of every Customize control that renders a lock chip. */
     private fun lockableLabels(): Set<String> {
         val regex = Regex("(?:LabeledSlider|LabeledIntSlider|CheckRow|LockableChipLabel)\\(\\s*\"([^\"]+)\"")
