@@ -65,28 +65,52 @@ class RippleOverlayTest {
     fun beatDropsRingsAndQuietFramesDropNothing() {
         val drops = RippleOverlayDrops()
         var count = 0
-        drops.tick(features(beat = true, bass = 1f), 1f) { _, _, _, amp ->
+        drops.tick(features(beat = true, bass = 1f), 1f, DT_60) { _, _, _, amp ->
             count++
             assertTrue("beat drop must have positive amplitude", amp > 0f)
         }
         assertEquals(RippleOverlayDrops.BEAT_DROPS, count)
         // No beat, treble under threshold: silence stays glassy.
         repeat(120) {
-            drops.tick(features(treble = RippleOverlayDrops.SPARKLE_THRESHOLD * 0.5f), 1f) { _, _, _, _ ->
+            drops.tick(features(treble = RippleOverlayDrops.SPARKLE_THRESHOLD * 0.5f), 1f, DT_60) { _, _, _, _ ->
                 throw AssertionError("quiet frame must not drop")
             }
         }
     }
 
-    @Test
-    fun sparkleDropsAreRateCapped() {
+    /** Sparkle count over [seconds] of solid treble, ticked at [fps]. */
+    private fun sparklesOver(
+        seconds: Float,
+        fps: Int,
+    ): Int {
         val drops = RippleOverlayDrops()
         var count = 0
-        val frames = 120
-        repeat(frames) {
-            drops.tick(features(treble = 1.5f), 1f) { _, _, _, _ -> count++ }
+        repeat((seconds * fps).toInt()) {
+            drops.tick(features(treble = 1.5f), 1f, 1f / fps) { _, _, _, _ -> count++ }
         }
-        assertEquals(frames / RippleOverlayDrops.SPARKLE_INTERVAL, count)
+        return count
+    }
+
+    @Test
+    fun sparkleDropsAreRateCapped() {
+        // Solid treble for 2 s at a 0.1 s cap: ~20 sparkles, give or take the
+        // one that depends on whether a tick lands exactly on the boundary.
+        val expected = (2f / RippleOverlayDrops.SPARKLE_INTERVAL_SEC).toInt()
+        val actual = sparklesOver(2f, 60)
+        assertTrue("expected ~$expected sparkles in 2 s, got $actual", abs(actual - expected) <= 1)
+    }
+
+    @Test
+    fun theSparkleRateDoesNotDependOnTheFrameRate() {
+        // The regression this guards: the cap used to be "every 6th frame", so
+        // playback at 120 Hz sprinkled twice as fast as a 60 fps export of the
+        // same track - and since sparkles and beat rings share one drop
+        // counter, the extra sparkles also shifted every subsequent RING.
+        val at24 = sparklesOver(4f, 24)
+        val at60 = sparklesOver(4f, 60)
+        val at120 = sparklesOver(4f, 120)
+        assertTrue("24 fps gave $at24, 60 fps gave $at60", abs(at24 - at60) <= 1)
+        assertTrue("120 fps gave $at120, 60 fps gave $at60", abs(at120 - at60) <= 1)
     }
 
     @Test
@@ -99,9 +123,14 @@ class RippleOverlayTest {
         val b = ArrayList<List<Float>>()
         val dropsA = RippleOverlayDrops()
         val dropsB = RippleOverlayDrops()
-        for (f in stream) dropsA.tick(f, 1.78f) { x, y, r, amp -> a.add(listOf(x, y, r, amp)) }
-        for (f in stream) dropsB.tick(f, 1.78f) { x, y, r, amp -> b.add(listOf(x, y, r, amp)) }
+        for (f in stream) dropsA.tick(f, 1.78f, DT_60) { x, y, r, amp -> a.add(listOf(x, y, r, amp)) }
+        for (f in stream) dropsB.tick(f, 1.78f, DT_60) { x, y, r, amp -> b.add(listOf(x, y, r, amp)) }
         assertTrue("schedule must produce drops", a.isNotEmpty())
         assertEquals(a, b)
+    }
+
+    private companion object {
+        /** One frame at 60 fps, the rate the old frame-counted cap assumed. */
+        const val DT_60 = 1f / 60f
     }
 }

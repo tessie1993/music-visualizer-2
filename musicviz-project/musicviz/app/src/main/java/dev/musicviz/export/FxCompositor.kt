@@ -7,6 +7,8 @@ import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.render.CompositeGrade
 import dev.musicviz.render.scene.GlUtil
 import dev.musicviz.render.scene.SceneParams
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlin.math.pow
 
 /**
@@ -201,6 +203,12 @@ internal class FxCompositor(
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, emptyTex)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+        // Explicitly zero-filled, not `null`. A null upload allocates the
+        // texture with UNDEFINED contents, and this is the sentinel bound to
+        // uFlow/uRipple when those effects are off - it only read as harmless
+        // because their strength uniforms happen to be 0. The live renderer
+        // has always filled its equivalent with zero bytes; this matches it.
+        val zero = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
         GLES30.glTexImage2D(
             GLES30.GL_TEXTURE_2D,
             0,
@@ -210,7 +218,7 @@ internal class FxCompositor(
             0,
             GLES30.GL_RGBA,
             GLES30.GL_UNSIGNED_BYTE,
-            null,
+            zero,
         )
     }
 

@@ -628,7 +628,7 @@ class VisualizerRenderer(
         if (rippleOverlayOn && ripple != null) {
             ripple.waveSpeed = 1.2f * p.waterWaveSpeed.coerceIn(0.2f, 2f)
             ripple.damping = p.waterDamping.coerceIn(0.9f, 0.999f)
-            rippleDrops.tick(gainAdjusted(features, p), ripple.aspect) { x, y, radius, amp ->
+            rippleDrops.tick(gainAdjusted(features, p), ripple.aspect, dt) { x, y, radius, amp ->
                 ripple.queueDrop(x, y, radius, amp)
             }
             ripple.step(dt)

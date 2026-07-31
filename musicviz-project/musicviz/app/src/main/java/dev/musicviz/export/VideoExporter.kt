@@ -393,12 +393,6 @@ class VideoExporter(
                 p =
                     dev.musicviz.render.AdsrEngine
                         .apply(p, adsrEngine.configs, envValues)
-                scene.setParams(p)
-                scene.update(
-                    dev.musicviz.render.scene
-                        .applyBandGains(features, p),
-                    1f / fps,
-                )
                 if (p.flowEnabled && flowField != null && flowField.available) {
                     // Steps into the FlowField's own FBOs, before the scene
                     // target is bound - mirrors the live frame order.
@@ -434,6 +428,7 @@ class VideoExporter(
                         dev.musicviz.render.scene
                             .applyBandGains(features, p),
                         rippleOverlay.aspect,
+                        1f / fps,
                     ) { x, y, radius, amp -> rippleOverlay.queueDrop(x, y, radius, amp) }
                     rippleOverlay.step(1f / fps)
                 }
@@ -458,6 +453,19 @@ class VideoExporter(
                     GLES30.glClearColor(0f, 0f, 0f, 1f)
                     GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
                 }
+                // Update AFTER the scene target is bound and after the flow
+                // readback, which is what the live renderer does. Two bugs
+                // lived in doing it first: a particle scene advected on the
+                // PREVIOUS frame's flowGrid (the readback below had not run
+                // yet), and update() ran while the ENCODER SURFACE was still
+                // the bound draw framebuffer, so any scene drawing during its
+                // update wrote straight into the video instead of the FBO.
+                scene.setParams(p)
+                scene.update(
+                    dev.musicviz.render.scene
+                        .applyBandGains(features, p),
+                    1f / fps,
+                )
                 scene.draw(timeMs / 1000f)
                 val flowTex =
                     when {
