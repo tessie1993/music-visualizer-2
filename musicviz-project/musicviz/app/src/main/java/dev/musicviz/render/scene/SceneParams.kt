@@ -67,6 +67,15 @@ data class SceneParams(
     // edit; rendering only ever reads the *Override floats above.
     val customPaletteId: String = NO_CUSTOM_PALETTE,
     val customPalette2Id: String = NO_CUSTOM_PALETTE,
+    // How far MilkDrop's own colours are steered toward the palette above, 0..1
+    // (read by ProjectMScene's post pass as `uPalTint`; every other family
+    // renders the palette directly and ignores this).
+    //
+    // 0 IS THE DEFAULT AND IS AN EXACT NO-OP, deliberately: a .milk preset
+    // authors its own colours, so the palette can only be an opt-in blend
+    // TOWARD - anything else would repaint every preset a user already saved
+    // and flatten the whole format onto one look.
+    val milkdropPaletteTint: Float = 0f,
     val colorShift: Float = 0f,
     val hueRange: Float = 1f,
     val saturation: Float = 1f,
