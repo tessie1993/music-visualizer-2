@@ -22,10 +22,16 @@ import dev.musicviz.render.scene.SceneParams
  *
  * Music mapping: mids drive field morph rate, treble gains the fine
  * turbulence octave, beats kick field amplitude and brightness (impulse +
- * exponential release), bass pulls toward the catch points. Existing
- * Customize controls map on: Speed = morph rate, Turbulence = spatial
- * frequency, Audio drive = flow strength, Particle size/Palette/Hue range =
- * rendering, plus the shared fluid spawn/catch params.
+ * exponential release, scaled by Beat response), bass pulls toward the catch
+ * points. Existing Customize controls map on: Speed = morph rate, Turbulence =
+ * spatial frequency, Audio drive = flow strength, Beat response = how far a
+ * beat kicks the field and the points, Particle size/Palette/Hue range =
+ * rendering (the palette span via [FluidHue], shared with the other fluid
+ * styles), Trails/Trail length = canvas persistence (via [CurlFlowMath]),
+ * Particle drag/Particle life = the lifecycle layer, plus the shared fluid
+ * spawn/catch params. Grading and hue rotation (Brightness, Intensity,
+ * Contrast, Gamma, Hue shift, Zoom, Rotation) belong to the composite pass,
+ * which grades this style - the scene must not apply them a second time.
  */
 internal class CurlFlowScene(
     private val context: Context,
@@ -46,6 +52,9 @@ internal class CurlFlowScene(
     private var noiseTime = 0f
     private var wallTime = 0f
     private var beatEnv = 0f
+
+    /** [beatEnv] after "Beat response" - the value both beat terms ride. */
+    private var beatDrive = 0f
     private var aspect = 1f
     private var available = false
 
@@ -142,6 +151,10 @@ internal class CurlFlowScene(
         if (f != null) {
             wallTime += lastDt
             beatEnv = if (f.beat) 1f else beatEnv * kotlin.math.exp(-lastDt / 0.35f)
+            // The envelope carries the timing, "Beat response" the depth: the
+            // slider had no reader on this style, so it moved nothing while
+            // "Audio drive" (the field kick below) worked.
+            beatDrive = CurlFlowMath.beatDrive(beatEnv, params.beatResponse)
             noiseTime += lastDt * (0.15f + f.mid * 1.4f) * params.speed.coerceIn(0.1f, 2f)
 
             // Shared spawn/catch progression: same params as the fluid scene.
@@ -160,10 +173,7 @@ internal class CurlFlowScene(
             GLES30.glUniform1f(loc("uTime"), noiseTime)
             GLES30.glUniform1f(loc("uFreq"), 1.2f * (0.5f + params.turbulence.coerceIn(0.1f, 2f)))
             GLES30.glUniform1f(loc("uDetail"), (f.treble * 3f).coerceIn(0f, 1.5f))
-            GLES30.glUniform1f(
-                loc("uAmp"),
-                0.55f * params.audioDrive.coerceIn(0.2f, 2f) * (1f + beatEnv * 0.9f),
-            )
+            GLES30.glUniform1f(loc("uAmp"), CurlFlowMath.fieldAmp(params.audioDrive, beatDrive))
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fld.fbo)
             GLES30.glViewport(0, 0, fld.width, fld.height)
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
@@ -191,15 +201,23 @@ internal class CurlFlowScene(
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
         GLES30.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3])
         val dpiScale = (prevViewport[3].coerceAtLeast(1) / 1080f).coerceIn(0.75f, 2.5f)
+        // Colour split, shared by the whole fluid family: the SCENE owns
+        // palette identity (base hue + the palette's own span, which decides
+        // the colours at emission time), the COMPOSITE owns hue rotation
+        // (colorShift + colour-cycle phase, which it already applies to this
+        // style). The span used to be dropped here - raw hueRange - so every
+        // palette painted the same streams in a different tint.
         particles.draw(
             aspect,
             params.particleSize.coerceIn(0.4f, 4f) * dpiScale,
             params.paletteBase,
-            params.hueRange.coerceIn(0.1f, 1f),
+            FluidHue.span(params.hueRange, params.paletteRange),
             // Beat response lives in the FIELD kick (uAmp); keeping the
             // brightness pulse gentle stops the compound amp+brightness+size
-            // jump from reading as a strobe on busy tracks.
-            (0.85f + beatEnv * 0.35f) * params.intensity.coerceIn(0.2f, 2f),
+            // jump from reading as a strobe on busy tracks. Exposure
+            // (brightness * intensity) is the composite pass's job - folding
+            // intensity in here too made that slider quadratic.
+            CurlFlowMath.particleBrightness(beatDrive),
         )
     }
 

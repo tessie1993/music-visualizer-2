@@ -1,5 +1,7 @@
-## v1.0.0 (code 24-25) - Play Store release build + background playback
-- Background playback (code 25): the ExoPlayer, PCM tap, analysis loop and
+## v1.1.0 (code 26) - Play Store release build + background playback
+- Merged onto main's v1.1.0 (customization/palette work, PRs #14-#34).
+  versionCode 25 was already published from main, so this is code 26.
+- Background playback: the ExoPlayer, PCM tap, analysis loop and
   audiofx chain moved out of PlayerViewModel into a process-wide
   playback/PlaybackEngine, and a MediaSessionService (playback/PlaybackService)
   publishes a MediaSession over that same player. Music now survives a locked
@@ -12,7 +14,7 @@
   player, and auto-resume only runs when no queue is already loaded - returning
   to the app must not replace what is playing. New permissions:
   FOREGROUND_SERVICE(_MEDIA_PLAYBACK), POST_NOTIFICATIONS, WAKE_LOCK.
-- Release build (code 24): first real release buildType - R8 + resource
+- Release build: first real release buildType - R8 + resource
   shrinking with keep rules for the projectM JNI symbols (pm_jni.c registers
   statically, so PMBridge's class and method names must survive), signing from
   keystore.properties or MUSICVIZ_* env vars, uncompressed page-aligned
@@ -38,6 +40,68 @@
 - Verify note: built without the Android SDK locally; gate = full CI (ktlint,
   106+ headless tests, assembleDebug, bundleRelease, lint) green. Background
   playback cannot be checked headless - run DEVICE_CHECKS items 21-22.
+
+## v0.14.0 (code 24) - Customization actually works on every style: composite grading for the fluid family, palette maker, one randomizer
+- Composite grading + geometry for the styles that grade NOTHING themselves
+  (Fluid, Curl Flow, Water): composite_frag gains uPostZoom/uPostRotation/
+  uPostSat/uPostBright/uPostContrast/uPostGamma/uPostHue behind a uPostGrade
+  enable flag, uploaded only when the active scene is not a ShaderScene /
+  ParticleSceneBase / ProjectMScene. Zoom, Rotation, Saturation, Brightness,
+  Contrast, Gamma, Hue shift, Intensity, Colour cycle, Mirror and Invert were
+  dead on all three fluid styles and now work, at the same slider response as
+  everywhere else. Rotation and the colour cycle are integrated as SPEEDS on
+  the composite's own clock (CompositeGrade, CPU-mirrored and tested).
+- Export parity: FxCompositor uploads the same grading uniforms behind the
+  same gate, so an exported fluid clip matches the live view — including the
+  spin/cycle distance travelled, at 30 and 60 fps alike.
+- Hue applied exactly ONCE on the fluid family: the SCENE owns palette
+  identity (base hue + the palette's own span, via FluidHue.span, decided at
+  emission time), the COMPOSITE owns rotation (Hue shift + cycle phase).
+  Fluid/Water/Curl Flow previously folded the rotation in as well and turned
+  the wheel twice per slider unit; Curl Flow and Water also dropped the span,
+  so every palette looked the same in a different tint.
+- Brightness/Intensity de-quadratised: Water and Curl Flow no longer multiply
+  their own output by the exposure the composite grade already applies.
+- Palettes: Cyan / Magenta / Yellow appended to PALETTES (append-only — saved
+  presets index into it), plus a full gradient/palette maker: build a palette
+  from base hue + span, audition it live, save it to a JSON-per-file library,
+  and pick it from the same chip row as the built-ins. Backed by four
+  override fields on SceneParams with a documented UNSET_OVERRIDE (-1f)
+  sentinel, so a custom palette renders through the existing
+  paletteBase/paletteRange path with no render-side change.
+- Customize tab gating narrowed to what each style actually READS
+  (isEmitterSceneId / isParticleLayerSceneId / isJourneySceneId / …): Water
+  regained the emitter + quality sections it has always consumed, Curl Flow
+  regained "Particle drag", and Fluid-only controls stopped appearing on
+  styles that ignore them. Water's Catch radius and Hue shift are wired.
+- Randomizer: ParamRandomizer is the single implementation (102 label-keyed
+  entries covering the fluid/water/FlowField blocks it used to skip), with
+  curated per-slider ranges so a roll is always reproducible by hand. Chip
+  selectors (Palette, Palette 2, Particle shape, Beat pattern, Path) now
+  render a lock chip, so every rolled param can be held — previously a roll
+  always re-picked the user's palette. Two label collisions split: LFO
+  "Depth" -> "LFO depth" (was sharing a lock with Water's Depth) and the
+  all-styles overlay's "Ripple strength" -> "Ripple overlay strength".
+- Beat sensitivity: sigma ceiling raised 4 -> 6, new "Minimum gap between
+  beats" (the lever that actually tames slow tracks, since sigma is relative
+  to the track's own flux history), plus Slow track / Default presets.
+- Trail-warp decay bugfix: drawTrailWarp took the caller's remapped retention
+  but computed uDecay from the raw Trail length slider, so switching Trail
+  zoom or Trail warp on dropped Curl Flow below its stream floor. Now shares
+  CurlFlowMath.warpDecay with the plain fade path (headless test).
+- Cleanup: the orphaned full-screen CustomizeDialog() composable (no callers
+  since the navigation refactor, and it had no Fluid tab) is deleted;
+  ParamRandomizer no longer imports ui.PaletteStore — the palette-override
+  sentinel rule moved onto SceneParams.withoutCustomPalette(), which both
+  layers already depend on, removing the only render.scene -> ui edge.
+- Docs: docs/PARAM_MATRIX.md rebuilt as a six-family × every-param matrix with
+  file:line citations and an explicit gap list; DEVICE_CHECKS items 21-27
+  merged and renumbered (fluid colour, water controls, composite grading,
+  Curl Flow trails, export grading, beat sensitivity, randomize locks).
+- Verify note: built in a container without the Android SDK (dl.google.com
+  unreachable), so the gate is GitHub Actions: ktlintCheck +
+  testDebugUnitTest + assembleDebug + lint. Run DEVICE_CHECKS items 21-27
+  on-device before release.
 
 ## v0.13.1 (code 23) - Player settings, library metadata & search, WATER style + ripple overlay, glass UI, boot intro
 - Player: PlayerPrefs store (shuffle/repeat now persisted and restored),

@@ -17,12 +17,17 @@ Architecture digest:
   uniforms), Lfo.kt (LfoEngine: configs / tick() / companion apply() —
   the ADSR engine must mirror this shape), scene/ (ShaderScene ×20 frags
   with shared prelude view()/pal()/grade(), ParticleSceneBase ×5,
-  ProjectMScene + PMBridge JNI, SceneParams = 57-field data class).
+  ProjectMScene + PMBridge JNI, SceneParams = 117-field data class,
+  ParamRandomizer), fluid/ (FluidScene, CurlFlowScene, WaterScene + the
+  pure CPU mirrors FluidMath/FluidHue/CurlFlowMath/WaterMath/RippleMath).
+  Which family reads which param: docs/PARAM_MATRIX.md.
 - export/    VideoExporter + FxCompositor (mirrors live composite; every
   live-path modulator must also run here), AudioTranscoder.
 - ui/        PlayerViewModel (~1000 lines — split as it grows),
-  VisualizerScreen, CustomizeDialog, SettingsDialog, BrowserDialog,
-  MusicLibraryDialog, PresetStore (JSON), BuiltInPresets, TextureStore.
+  VisualizerScreen, VisualsHub (the ONE customization surface; hosts the
+  tab composables that live in CustomizeDialog.kt), SettingsDialog,
+  PresetStore (JSON), BuiltInPresets, PaletteStore/PaletteMaker,
+  TextureStore.
 - res/raw/   shader sources; composite_frag.glsl is the FX chain.
 
 ## Working rules
@@ -64,6 +69,28 @@ UI OVERHAUL IS GATED: no visual redesign until P0–P4 architecture is done.
 - [x] Remove built-in milkdrop presets: delete assets/presets/*.milk,
       remove milkdrop rows from BuiltInPresets, "Next preset" cycles the
       user's imported/saved .milk files only (empty state: hint to Load).
+
+- [x] Flaky `testDebugUnitTest` (CI run 30590147361 attempt 1 red, attempt 2
+      green on a byte-identical tree). NOT a flaky assertion: all 38 failures
+      were the 38 Robolectric `@Test`s, every one of them
+      `AssertionError at MavenArtifactFetcher.java:129` /
+      `Caused by: IOException`. Robolectric fetches its `android-all`
+      runtime jar mid-test with its own no-retry Maven client into
+      ~/.m2/repository, which the CI Gradle cache does not restore — so
+      every run re-downloaded ~200 MB during the test task and one transient
+      HTTP error took out every Robolectric test at once. Fixed in
+      app/build.gradle.kts: the `robolectricSdks` configuration declares the
+      android-all-instrumented jars as normal Gradle dependencies,
+      `stageRobolectricSdks` syncs them into build/robolectric-sdks, and the
+      test tasks run with `robolectric.offline=true` +
+      `robolectric.dependency.dir`, so tests need no network at all. Adding
+      an `@Config(sdk = [N])` on a new SDK level means adding its OWN
+      configuration — one per level, because they are all versions of the
+      same module and a shared configuration makes Gradle's conflict
+      resolution collapse them to the highest version and stage only that
+      jar. Test-side `testLogging` now uses `exceptionFormat = FULL`;
+      Gradle's default SHORT prints the exception class and line but no
+      message at all, which is what made this so hard to read from CI.
 
 ## P1 — Milkdrop tab + preset architecture
 - [x] Style sheet → 3 tabs: Particles | Shaders | MilkDrop
@@ -277,6 +304,100 @@ curl-noise + GPU-particle-lifecycle + emitter/attractor patterns surveyed.
       (theme overhaul), player panel settings. (0.13.x round)
 - [ ] Touch press feedback. Crystal themes/overlays remain DEFERRED until
       the user re-opens them after the overhaul.
+
+## Known gaps — visual/customization audit (v0.14.0)
+Re-derived against the merged tree; the full evidence is in
+docs/PARAM_MATRIX.md ("Notes" + "Divergences worth knowing"). Everything
+listed here is a real gap that was NOT closed in this round, with the reason
+it was left and what closing it involves.
+
+- [x] **Beat sensitivity does not reach the offline analyzer.** CLOSED —
+      `OfflineAnalyzer.analyze` now takes the sigma/interval pair and clamps
+      it exactly as `AnalysisEngine` does, and the cache stops storing a beat
+      decision it cannot revise: v2 persists the raw onset curve
+      (`AudioFeatures.flux`) plus the hop rate, and `AnalysisCache.load`
+      re-decides the beats through the same `FeatureExtractor.BeatGate` the
+      live path runs (`FeatureTimeline.withBeatSensitivity`). So the key stays
+      a SHA-1 of the URI alone — one entry serves every setting, a slider drag
+      applies to already-analysed tracks with no re-analysis, and folding the
+      settings into the key (which would have re-analysed on every drag and
+      thrashed the 15-entry LRU) was not needed. v1 entries carry no curve and
+      are deleted on load, costing one re-analysis per track. The offline
+      detector deliberately follows the live slider rather than owning a
+      second setting: an export that disagrees with the playback the user just
+      watched is the bug, not a feature.
+- [ ] **`pulse` ("Beat pulse") has no reader on MilkDrop or the fluid
+      family.** Shader scenes use `uPulse`, particle scenes swell their point
+      size; the composite pass declares no beat pulse at all, so the slider
+      is inert on MD/FL/CF/WA. Closing it means a new `uPostPulse` uniform
+      (a beat-driven zoom/scale nudge inside `geo()`), the matching upload in
+      `VisualizerRenderer` and `FxCompositor`, and a `CompositeGrade` mirror
+      + headless test — the same shape as the v0.14 grading work. Pick the
+      curve so it matches what shader scenes already do at the same value.
+- [x] **`audioDrive` / `beatResponse` have no reader on Fluid, Water (and
+      `audioDrive` none on MilkDrop).** Fixed for the fluid family: FLUID and
+      WATER apply `audioDrive` once, in `draw`, to the feature snapshot the
+      sim uniforms, the choreography and the emitters share (`FluidAudioDrive`
+      in FluidMath.kt, reusing ShaderScene's `x * drive` clamped to 1.5 so the
+      sim can't be blown out at 2.5x), and pass `beatResponse` to
+      `FluidEmitters` as the depth of the beat envelope its radius pulse,
+      momentum and dye gain ride; Curl Flow now scales its own beat envelope
+      by `beatResponse` (`CurlFlowMath.beatDrive`) and reaches the whole
+      `audioDrive` slider instead of clamping it at 2.0. Both are exact
+      no-ops at the neutral default, pinned by `FluidAudioDriveTest`, and
+      NEITHER is folded into `applyBandGains` (shader/particle scenes apply
+      `audioDrive` themselves and would double-apply). Still deliberately
+      unwired on MilkDrop: the only audio a `.milk` preset sees is the mono
+      PCM, and libprojectM's beat detector is ratio-based, so a constant gain
+      cancels out of what presets react to while clipping the waveform they
+      draw — reasoning in `ProjectMScene.update`'s KDoc. Device check 28.
+- [x] **Shader-only params are shown on every style.** DONE (v1.1.0):
+      `morph`, `palette2`, `paletteMix` and `duotone` are read only by
+      `ShaderScene` (uMorph / uPal2Base+uPal2Range / uPaletteMix / uDuotone,
+      declared by all twenty scene frags; `composite_frag.glsl` has no
+      counterpart), so Shape and Color now hide them on every other style.
+      Policy chosen by the user: HIDE, not disable — "if you can see it, it
+      works". `VisualsHub.isShaderLookSceneId` is the predicate (next to the
+      fluid ones), `ShapeTab`/`ColorTab` take an `isShaderLookScene` flag,
+      and `ShaderLookGatingTest` pins both the predicate and the gating it
+      parses back out of `CustomizeDialog.kt`. "Palette blend" and
+      "Palette 2" are gated as ONE group: a blend slider with nothing to
+      blend would be a worse control than none.
+- [ ] **`particleShape` ("Particle shape") has no reader outside the five
+      particle scenes**, and `particleSize` none outside particles + Fluid +
+      Curl Flow — yet both sit ungated in the Shape tab's "Particles"
+      section, so they are inert on shader, MilkDrop and Water styles. Same
+      class as the item above but NOT the same one-line fix: the two
+      controls have DIFFERENT readers, so the section needs two predicates
+      (`isParticleShapeSceneId` = `VisualizerRenderer.PARTICLE_SCENES`,
+      `isPointSpriteSceneId` = that plus FLUID + CURLFLOW) and the
+      "Particles" header itself has to disappear when both are hidden.
+      Check `fluidParticlesEnabled` first: on FLUID the point layer can be
+      switched off, which would make `particleSize` conditionally inert
+      there too. Left out of the v1.1.0 gating round deliberately.
+- [ ] **MilkDrop ignores the whole "Palettes" section.** `ProjectMScene`
+      reads `colorCycle`/`cycleSpeed` but never `paletteBase`/`paletteRange`
+      — a .milk preset brings its own colours — so Palette, the gradient/
+      palette maker and `hueRange` do nothing on MILKDROP while working on
+      all five other families. Gating them there would hide the palette
+      maker (a whole card, not one slider) on one style, so decide the UX
+      first: hide the section, or teach the composite to tint MilkDrop
+      output toward the chosen palette (a new `uPostPalette*` stage, same
+      shape as the v0.14 grading work) so the controls become real instead
+      of disappearing. The second option is the better product answer.
+- [ ] `endlessZoom` is shown on the fluid styles, which have no respawn/
+      outflow behaviour to drive. Same fix shape as the item above; low
+      priority because the checkbox is cheap and harmless.
+- [ ] `hueRange` is clamped to 0.1..1 on the fluid family (`FluidHue.span`)
+      but multiplied raw on shader/particle scenes, so the slider's 1.0-1.5
+      band is flat on three of six families. Intentional today (a 0 span
+      kills the fluid look). If it is ever unified, do it in `FluidHue` so
+      all three fluid styles move together.
+- [ ] ADSR card labels "Attack"/"Decay" collide with the Behavior tab's
+      reactivity envelope sliders of the same name. Harmless right now —
+      neither is a `ParamRandomizer` key, so the shared lock chip only
+      mirrors a highlight — but it becomes a real collision the moment
+      either gets randomized. Rename to "Env attack"/"Env decay" if so.
 
 ## Always
 - [ ] Update docs (NAVIGATION.md, WIREFRAME.md, PARAM_MATRIX.md) when

@@ -134,6 +134,12 @@ class PresetStore(
                 .put("particleSize", p.params.particleSize.toDouble())
                 .put("palette2", p.params.palette2)
                 .put("paletteMix", p.params.paletteMix.toDouble())
+                .put("paletteBaseOverride", p.params.paletteBaseOverride.toDouble())
+                .put("paletteRangeOverride", p.params.paletteRangeOverride.toDouble())
+                .put("palette2BaseOverride", p.params.palette2BaseOverride.toDouble())
+                .put("palette2RangeOverride", p.params.palette2RangeOverride.toDouble())
+                .put("customPaletteId", p.params.customPaletteId)
+                .put("customPalette2Id", p.params.customPalette2Id)
                 .put("duotone", p.params.duotone)
                 .put("bloom", p.params.bloom.toDouble())
                 .put("driftX", p.params.driftX.toDouble())
@@ -253,6 +259,19 @@ class PresetStore(
                         palette = o.optInt("palette", 0),
                         palette2 = o.optInt("palette2", 1),
                         paletteMix = o.optDouble("paletteMix", 0.0).toFloat(),
+                        // Presets saved before the palette maker carry no
+                        // override keys; the UNSET sentinel keeps them on the
+                        // built-in PALETTES entry they were tuned with.
+                        paletteBaseOverride =
+                            o.optDouble("paletteBaseOverride", SceneParams.UNSET_OVERRIDE.toDouble()).toFloat(),
+                        paletteRangeOverride =
+                            o.optDouble("paletteRangeOverride", SceneParams.UNSET_OVERRIDE.toDouble()).toFloat(),
+                        palette2BaseOverride =
+                            o.optDouble("palette2BaseOverride", SceneParams.UNSET_OVERRIDE.toDouble()).toFloat(),
+                        palette2RangeOverride =
+                            o.optDouble("palette2RangeOverride", SceneParams.UNSET_OVERRIDE.toDouble()).toFloat(),
+                        customPaletteId = o.optString("customPaletteId", SceneParams.NO_CUSTOM_PALETTE),
+                        customPalette2Id = o.optString("customPalette2Id", SceneParams.NO_CUSTOM_PALETTE),
                         colorShift = o.optDouble("colorShift", 0.0).toFloat(),
                         hueRange = o.optDouble("hueRange", 1.0).toFloat(),
                         saturation = o.optDouble("saturation", 1.0).toFloat(),

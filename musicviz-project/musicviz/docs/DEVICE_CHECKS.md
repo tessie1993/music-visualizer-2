@@ -94,7 +94,223 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     must show the same refraction/glint as the live view. Watch frame
     time on a Min-tier device with overlay + FlowField both on (two
     extra sims per frame).
-21. Background playback (1.0.0): start a track, then lock the screen —
+21. Fluid-family colour — palette identity + hue applied ONCE (v0.14.0;
+    covers FLUID, CURL FLOW and WATER, run all three):
+    (a) Sweep Color > Palette. Each palette must change the CHARACTER of
+    the image, not just its tint — Fire/Cherry/Copper stay inside one
+    narrow hot band while Spectrum/Aurora/Galaxy sweep visibly across the
+    wheel in a single frame, on the dye splats AND the particle layer
+    (FLUID), on the streams (CURL FLOW), on the pool (WATER). Repeat with
+    a user-made custom palette selected, and with one of the palettes
+    added in v0.14 (Cyan / Magenta / Yellow) — those must read as the
+    named colour, not as a wash.
+    (b) Pull "Hue range" to 0 — colours must narrow to a tight band but
+    never collapse to one flat colour.
+    (c) With Color cycle off, walk "Hue shift" 0 -> 0.25 -> 0.5 -> 0.75
+    -> 1. Each quarter step advances the image a quarter turn: ONE full
+    turn across the whole slider, not two. If 0.5 already lands back on
+    the starting colours, a scene is folding the shift into its palette
+    base on top of the composite's rotation again. Dye and particles must
+    move together, no jump at the wrap, and 1.0 lands exactly on the 0
+    colours.
+    (d) Turn Color cycle ON at mid-scale Cycle speed and time one full
+    trip round the wheel: it must take the SAME time as on a shader style
+    (julia/plasma) at the same setting, not half. With Color cycle off,
+    the fluid-only "Palette cycle" slider (Fluid tab) must still drift the
+    dye on its own.
+    (e) Export a ~10 s clip of each and walk the same sweeps against the
+    recording: palette, hue range, hue shift and colour cycle must all
+    match the live view (the export compositor uploads the same grading
+    uniforms — see item 25).
+22. Water-specific controls: on the WATER style, with Catch points >= 1,
+    sweep "Catch radius" (Journey) — the drain dimples on the pool must
+    visibly grow/shrink with the slider (they used to be inert), and each
+    well must read as a DIP that radiates rings, not as a splash. Sweep
+    "Wave speed", "Damping", "Ripple strength" (0..2), "Depth",
+    "Specular" and "Flow drift" — each must change the surface. Check
+    against a saved preset roundtrip and confirm a 10 s export matches.
+    Grading on WATER (Brightness/Intensity/Hue shift/…) is item 23.
+23. Composite grading + geometry (fluid styles): on Fluid, Curl Flow AND
+    Water, sweep Zoom, Rotation, Saturation, Brightness, Contrast, Gamma,
+    Hue shift, Intensity, Color cycle, Mirror and Invert — every one must
+    visibly change the image (they were dead: the fluid family grades
+    nothing itself and the composite pass declared no grading uniforms).
+    Rotation must SPIN continuously (it is a speed, not a static offset)
+    and Zoom must magnify about the screen centre.
+    Brightness and Intensity are now applied exactly ONCE, by the
+    composite: the response must be smooth and LINEAR on all three styles
+    — no blow-out in the top third, which is what the old double-apply
+    looked like — the three styles must track each other at the same
+    slider value, and both sliders at minimum must dim rather than leave
+    the image fully lit.
+    REGRESSION SIDE — the same sweep on a shader style (julia/plasma), a
+    particle style (nebula/orbits) and a live MilkDrop preset must look
+    EXACTLY as before: those grade themselves, so the composite sends the
+    neutral identity (uPostGrade = 0). Anything twice as bright, twice as
+    contrasty or twice as zoomed as before means the gate regressed.
+    Switch fluid <-> shader mid-sweep and watch the transition for a
+    grading pop on the outgoing image.
+    (The export side of this is covered by item 25.)
+24. Curl Flow trails + particle layer: on the CURL FLOW style,
+    (a) Toggle Motion > Trails OFF — the streams must turn into crisp
+    per-frame points with no echo (it used to be impossible to switch
+    off); toggle it back ON and sweep "Trail length" across its WHOLE
+    range — the echo must lengthen continuously, with the shortest
+    setting still reading as streams rather than strobing dots.
+    (b) With Trails ON, set "Trail zoom (echo in/out)" and "Trail warp
+    (liquid echo)" non-zero: the warp path must decay at the SAME rate as
+    the plain fade — the streams must not break up into dots the moment
+    either knob leaves zero (they did: the warp path read the raw slider
+    instead of Curl Flow's remapped retention band).
+    (c) Fluid tab > Particles: "Particle drag" must be VISIBLE on Curl
+    Flow (there is no "Particle layer" checkbox or "Particle brightness"
+    there — Curl Flow ignores both) and dragging it must visibly change
+    how fast the streams settle into the flow; "Particle life (s)" in the
+    Journey section must still work. On FLUID nothing changes: the layer
+    checkbox still gates drag and brightness. On WATER the Particles
+    section stays absent.
+25. Composite grading in EXPORTS: with Zoom, Rotation, Saturation,
+    Brightness, Contrast, Gamma, Hue shift, Intensity, Color cycle,
+    Mirror and Invert all pushed well off neutral on a fluid style
+    (Fluid, Curl Flow AND Water), record a ~10 s clip and play the mp4
+    back next to the live view: the grade, the mirror/invert and the
+    zoom must match, and the rotation/colour cycle must have travelled
+    the SAME distance over those 10 s (it is a speed integrated on the
+    export's own clock). Repeat the recording at 30 fps and at 60 fps —
+    the spin rate must be identical in both files; a 30 fps clip that
+    spins at half speed means the frame delta is wrong.
+    REGRESSION SIDE — export a shader style, a particle style and a live
+    MilkDrop preset with the same sliders: those grade themselves, so
+    their files must look exactly as they did before (uPostGrade = 0).
+    A black or near-black exported frame at high Zoom is the signature
+    of the grading uniforms being left unset.
+26. Beat sensitivity for slow tracks: play a slow, sparse track (ballad,
+    ambient, ~60-80 BPM) on a beat-reactive style (flash/pulse/strobe).
+    At the shipped defaults note how often it flashes. Drag "Beat
+    sensitivity" toward 6.0σ — flashes must get RARER, not denser, and
+    the top of the range must be reachable (it used to stop at 4.0σ).
+    Then drag "Minimum gap between beats" to 1200 ms: flashes must be at
+    least ~1.2 s apart no matter how busy the track gets. Tap "Slow
+    track": both sliders jump to 4.5σ / 700 ms and the visual should
+    pulse on the kick only. Tap "Default": back to 2.5σ / 333 ms.
+    REGRESSION SIDE — on a busy dance track at the defaults the beat
+    response must look EXACTLY as before this change. Kill and relaunch
+    the app after each change: both values must persist, and a profile
+    that last stored a sigma under the old 1.5-4.0 range must reload at
+    that same value with the slider thumb sitting on it (not snapped).
+    (The former limitation — that both settings reached LIVE analysis
+    only — is closed; check 30 covers the offline/export side.)
+27. Randomize locks + Customize labels (v0.14.0): open Visuals >
+    Customize. Every control must show a "lock"/"locked" affordance,
+    INCLUDING the chip selectors — Palette, Palette 2 (on a SHADER style
+    only, and only once Palette blend > 0 — see check 29), Particle shape
+    (Shape tab), and Beat pattern /
+    Path (Fluid tab, on a fluid style). Lock Palette, pick a palette you
+    like — including a user-made one from the palette maker — then press
+    "⚄ Randomize unlocked" ten times: the palette and its gradient must
+    survive every roll, while unlocked params keep changing. Unlock it
+    and roll again: the palette must now change AND a custom palette must
+    be dropped back to the rolled built-in (no stale custom gradient).
+    Then confirm the labels that used to collide are independent: locking
+    the Water section's "Depth" must NOT lock an LFO's "LFO depth", and
+    locking "Ripple strength" (Water) must NOT lock "Ripple overlay
+    strength" (Water ripples, all styles) — roll and watch both move
+    independently. Finally, Visuals > Customize must be the only
+    customization surface: there is no second full-screen dialog to reach
+    from anywhere in the app.
+28. Audio drive + Beat response on the fluid family (v1.1.x): play a
+    track with a clear kick and open Visuals > Customize > Behaviour on
+    FLUID. REGRESSION SIDE FIRST — at the defaults (Audio drive 1.0, Beat
+    response 1.0) the style must look EXACTLY as it did before this
+    change; load an old saved preset that never touched either slider and
+    confirm the same. Now drag Audio drive to 2.5: the dye splats must
+    kick harder, the curl swirl tighten and the canvas hold its ink
+    longer (the quiet-passage fade is audio-driven too). Drag it to 0.2:
+    the same track must read as a near-idle drift. It must ramp smoothly,
+    and it must NOT wash out to a blown white frame at the top — that is
+    what a double-applied gain looks like. Then Beat response: at 2.0
+    every beat must stamp a visibly wider, faster, brighter splat; at 0
+    the beat pattern must stop firing entirely while stirrers, sparkle
+    and bass pump keep running (the silence between beats is the tell).
+    Repeat the sweep on WATER — drops grow and travel harder with Audio
+    drive, beat rings vanish at Beat response 0 while stirrer wakes
+    continue — and on CURL FLOW, where Beat response was inert before: at
+    2.0 the field must lurch on the beat and the streams flash, at 0 the
+    flow must stay perfectly even through a drop. On Curl Flow also check
+    the TOP of Audio drive specifically: 2.0 -> 2.5 used to be flat and
+    must now still increase the flow. Finally MILKDROP: Beat response
+    must still change how eagerly presets react (it drives projectM's own
+    beat sensitivity) and Audio drive must do NOTHING there — deliberate,
+    not a bug to file (PARAM_MATRIX note 5). Leave FLUID at Audio drive
+    2.5 for a minute and watch the frame rate: no auto-quality downgrade
+    spiral, no NaN/black frame.
+29. Shape/Color controls only where they work (v1.1.0): the rule is "if
+    you can see it, it works". Pick a SHADER style (Visuals > Styles >
+    Shaders > julia). Customize > Shape must show "Morph"; drag it and
+    the pattern must fold toward polar. Customize > Color must show
+    "Palette blend"; raise it above 0 and a "Palette 2" chip row must
+    appear underneath, and picking a second palette must visibly mix.
+    "Duotone" (Color > Effects) must be there and must flatten the image
+    onto the palette. Now switch to a PARTICLE style (nebula), then
+    MilkDrop, then each fluid style (fluid, curlflow, water): on all of
+    them "Morph", "Palette blend", "Palette 2" and "Duotone" must be
+    GONE — no greyed rows, no empty gaps, and the sections around them
+    ("Distortion", "Palettes", "Effects") must still read as complete
+    lists. Everything else in those two tabs must stay visible AND keep
+    working on every style: Domain warp, Ripple, Twist, Kaleidoscope +
+    Folds, Tile, Pixelate, Posterize, Palette, the gradient/palette
+    maker, Hue shift, Hue range, Color cycle, Saturation, Brightness,
+    Contrast, Gamma, Intensity, Temperature, Bloom, Solarize, Invert —
+    move each one on a particle style and confirm it bites. Switch back
+    to julia: the four must return with the values they had. Finally,
+    save a preset on julia with Morph high, Palette blend 0.5 and
+    Duotone on, switch to nebula, re-apply it (no visible change is
+    correct there), switch back to julia and re-apply: the look must
+    come back intact — hiding a control must never drop its value.
+30. Beat sensitivity reaches exports and the cached analysis: pick a slow,
+    sparse track and let it analyse fully (Settings shows the analysis
+    cache growing by one track). At the shipped defaults export a short
+    clip on a beat-reactive style — the flashes in the file must land
+    where playback flashed. Now open Settings and tap "Slow track"
+    (4.5σ / 700 ms), then export the SAME track again WITHOUT
+    re-analysing: the cache entry count must NOT change (no second
+    analysis pass, no progress bar crawl), and the new file must flash
+    noticeably less — on the kick only — matching what live playback now
+    does. Drag the sliders back to "Default" and export once more: the
+    beat grid must come back to what the first clip had. Do the same in
+    MANUAL intelligence mode, which only reads the cache: the fluid
+    journey's beat response must follow the sliders there too.
+    MIGRATION SIDE — install this build OVER a build from before it with
+    tracks already analysed. Those entries are the old v1 format and are
+    silently dropped: the first play/export of such a track re-analyses it
+    once (progress bar), then behaves as above. Nothing must crash, and
+    the "Analysis cache: N tracks" line must recover to a sensible count.
+    Settings > "Clear" on the analysis cache must still empty it.
+31. "Beat pulse" on the styles that never read it: play a track with a
+    clear kick and open Visuals > Customize > Motion. On FLUID, CURL
+    FLOW, WATER and on a live MilkDrop preset, drag "Beat pulse" from 0
+    to 1 — the whole frame must now swell on each beat (a zoom-in of a
+    few percent that falls away in about a third of a second) and settle
+    back to still when the slider returns to 0. Before this change the
+    slider did nothing at all on those four. Check the swell is centred:
+    the middle of the screen must not drift while it pulses. Then set
+    Zoom well above 1 on a fluid style and pulse again — the two must
+    compound (pulse on top of the zoom), not fight.
+    REGRESSION SIDE — on a shader style (julia/plasma) and on a particle
+    style the slider must feel EXACTLY as before: those pulse in their
+    own pipeline (uPulse / a point-size swell) and are excluded from the
+    composite pulse, so a doubled swell — roughly twice the magnification
+    on a shader style, or particles that both grow AND zoom — means the
+    exclusion set is wrong. Note MilkDrop is excluded from the composite
+    GRADING block but deliberately NOT from this one.
+    EXPORT SIDE — with "Beat pulse" at ~0.8 on a fluid style and again
+    on a MilkDrop preset, record a ~10 s clip and play the mp4 next to
+    the live view: the swells must land on the same beats and be the
+    same depth. Record the same settings at 30 fps and at 60 fps — the
+    decay must look identical in both files; a 30 fps clip whose pulses
+    hang around twice as long means the envelope is not running on the
+    export's own frame delta.
+32. Background playback (1.0.0): start a track, then lock the screen —
     audio must continue, and the lock screen must show title/artist with
     working play/pause/next. Swipe the notification's transport controls
     from the shade too. Now leave it playing and open several heavy apps
@@ -107,7 +323,7 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     the notification disappear. With playback running, swipe Recents —
     audio must keep going. Bluetooth/wired headset play-pause and
     next-track buttons must work while the screen is off.
-22. Equalizer + sleep timer after the service change (1.0.0): the audio
+33. Equalizer + sleep timer after the service change (1.0.0): the audio
     session id now comes from a process-wide player, so re-verify that
     Settings > Playback > Equalizer still applies live, and that the
     sleep timer's 3 s fade still ramps and pauses.
