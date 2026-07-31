@@ -435,14 +435,16 @@ class VideoExporter(
                 // Draw the scene into the FX FBO, then composite (with the full
                 // FX chain) onto the encoder surface, matching the live path.
                 fx.bindSceneTarget()
-                if (p.trails && (isParticle || isCurlFlow) && frame > 0) {
+                if ((isCurlFlow || (p.trails && isParticle)) && frame > 0) {
                     // Mirror the live trails gate (VisualizerRenderer): Curl
-                    // Flow HONORS the Trails toggle, and while trails are on it
-                    // remaps Trail length onto its own persistence band - the
-                    // same remap in the plain-fade and the trail-warp branch.
+                    // Flow ALWAYS persists - its bare GL_POINTS strobe on a
+                    // cleared canvas and `trails` defaults to false - but the
+                    // toggle still picks the band, a short OFF_RETENTION echo
+                    // versus the remapped Trail length slider. Same remap in
+                    // the plain-fade and the trail-warp branch.
                     val fadeParams =
                         if (isCurlFlow) {
-                            p.copy(trailLength = CurlFlowMath.retention(p.trailLength))
+                            p.copy(trailLength = CurlFlowMath.retention(p.trailLength, p.trails))
                         } else {
                             p
                         }

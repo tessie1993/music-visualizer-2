@@ -335,3 +335,41 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     Randomize unlocked" on a shader style, then switch to a particle
     style: shape and size must have rolled there too, and locking either
     on the particle style must hold it across further rolls.
+34. Cross-family TRANSITIONS must not flash, and Curl Flow must look
+    right the moment it is selected. TRANSITION SIDE — Visuals >
+    Customize > Transition: style "Fade", duration 1200 ms (the
+    default). Now push the grade hard: Brightness 2.0, Intensity 2.0,
+    Zoom 2.0, Contrast 2.0. Play a track on JULIA, then switch to FLUID
+    and watch the OLD image for the whole 1.2 s: it must fade out
+    looking exactly as it did while it was live — same exposure, same
+    zoom. A white, blown-out, over-zoomed old frame means the outgoing
+    texture is being graded under the incoming scene's rule (it was
+    already graded in julia's own shader, so it lands twice: 16x
+    brightness, 4x zoom, contrast squared). Switch straight back
+    (FLUID -> JULIA) and watch the outgoing FLUID frame: it must KEEP
+    its exposure and zoom for the whole fade, not snap dark/small the
+    instant the switch starts. Repeat both ways with the SLIDE, ZOOM and
+    MELT transition styles, and again with a cross-family PRESET switch
+    (a julia preset -> a fluid preset) and with auto-switch on with
+    "Include styles" enabled — every one of those routes through the
+    same composite. Also do a same-family switch (julia -> plasma,
+    nebula -> bursts) as the control: those looked fine before and must
+    be unchanged. REGRESSION SIDE — with no transition in flight, every
+    style must look EXACTLY as it did in the previous build; sweep
+    Warp/Kaleido/Tile/Posterize/Mirror/Invert/Temperature/Solarize on a
+    shader style (must still be applied once, in-shader) and on a fluid
+    style (must still be applied once, in the composite). Record a ~10 s
+    export on a fluid style and on a shader style and compare each with
+    the live view — exports never transition, so they must be pixel-wise
+    unchanged. CURL FLOW SIDE — from a clean install (or after Reset),
+    open Visuals > Styles and tap "Curl Flow" WITHOUT touching anything
+    else. Trails is off by default: the streams must still read as
+    moving strands with a short motion-blur tail, never as a field of
+    dots strobing on a black canvas. Now switch Trails ON — the tails
+    must visibly lengthen into long ribbons, and the "Trail length"
+    slider must sweep smoothly from short to nearly-permanent. Switch
+    Trails back off — the tails must shorten again (the toggle is a
+    band, not a wipe). Turn "Trail zoom"/"Trail warp" up with Trails on
+    and off in turn: neither may break the streams into dots. Export
+    ~10 s of Curl Flow with Trails off and again with it on: the mp4s
+    must match the live look in both cases.

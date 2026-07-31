@@ -20,10 +20,18 @@ import kotlin.math.pow
  * Curl Flow does need MORE persistence than a particle scene to read well: it
  * draws bare `GL_POINTS`, which on a hard-cleared canvas strobe as dots instead
  * of streaming as ribbons. So instead of ignoring the controls, the style keeps
- * a scene-specific FLOOR that the user can still override - Trails off wipes
- * the canvas like any other style, and while Trails is on the whole Trail
- * length slider stays live, remapped onto the band [MIN_RETENTION, 1] where the
- * points still join into streams.
+ * a scene-specific FLOOR the user still moves with them: with Trails ON the
+ * whole Trail length slider is live, remapped onto the band [MIN_RETENTION, 1]
+ * where the points join into streams; with Trails OFF the canvas retains
+ * [OFF_RETENTION] - a few frames of echo, read as motion blur.
+ *
+ * Trails OFF is deliberately NOT a hard clear here, which is the third shipped
+ * bug this guards: `SceneParams.trails` defaults to FALSE and selecting a style
+ * keeps the current params, so "Visuals -> Styles -> Curl Flow" landed on the
+ * cleared branch and strobed exactly as described above. Only the single
+ * built-in `curlflow · Streams` preset ever switched it on. The floor gives the
+ * style its intended look out of the box while keeping the toggle a real,
+ * visible control (a short blur versus long ribbons).
  */
 internal object CurlFlowMath {
     /**
@@ -32,6 +40,14 @@ internal object CurlFlowMath {
      * keeps the slider monotonic rather than clamping its lower half flat.
      */
     const val MIN_RETENTION = 0.6f
+
+    /**
+     * Retention with Trails OFF: low, but never zero. At 60 Hz a point's echo
+     * is spent inside ~4 frames, so the style reads as a motion-blurred spray
+     * instead of the strobing dots a `glClear` gives it - and still visibly
+     * shorter than anything the Trails-on band ([MIN_RETENTION]..1) produces.
+     */
+    const val OFF_RETENTION = 0.45f
 
     /** Baseline point brightness with no beat in flight. */
     const val BASE_BRIGHTNESS = 0.85f
@@ -75,8 +91,16 @@ internal object CurlFlowMath {
      * Frame retention for a given "Trail length" slider value. Strictly
      * increasing over the slider's whole 0.05..0.98 range, so no part of the
      * control is dead.
+     *
+     * [trails] off returns the fixed [OFF_RETENTION] floor rather than 0: the
+     * slider belongs to the toggle, so it goes inert there, but the canvas is
+     * never hard-cleared on this style (see the class doc).
      */
-    fun retention(trailLength: Float): Float {
+    fun retention(
+        trailLength: Float,
+        trails: Boolean = true,
+    ): Float {
+        if (!trails) return OFF_RETENTION
         val t = trailLength.coerceIn(0f, 1f)
         return MIN_RETENTION + (1f - MIN_RETENTION) * t
     }
@@ -84,17 +108,14 @@ internal object CurlFlowMath {
     /**
      * Per-frame fade alpha the renderer blends over the canvas, mirroring its
      * `1 - (keep * 0.97)^(dt * 60)` framerate-independent decay. Trails OFF
-     * returns 1 - a full wipe, which is exactly what the renderer's `glClear`
-     * branch does.
+     * fades fast but never wipes: the renderer takes the fade branch on this
+     * style either way, so the value is always < 1.
      */
     fun fadeAlpha(
         trails: Boolean,
         trailLength: Float,
         dt: Float,
-    ): Float {
-        if (!trails) return 1f
-        return 1f - (retention(trailLength) * 0.97f).pow(dt * 60f)
-    }
+    ): Float = 1f - (retention(trailLength, trails) * 0.97f).pow(dt * 60f)
 
     /**
      * Frame retention the feedback-trail WARP path writes as `uDecay`

@@ -2,21 +2,25 @@ package dev.musicviz
 
 import dev.musicviz.render.CompositeGrade
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.pow
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
  * Headless gate for the composite pass' universal grading + geometry math
- * (the CPU mirror of composite_frag's `uPostGrade` block). The fluid family
- * has no grading pass of its own, so the composite shader IS the delivery
- * path for Zoom/Rotation/Saturation/Brightness/Contrast/Gamma/Hue on those
- * styles - and the neutral values sent to the self-grading scenes must be an
- * exact identity so nothing is ever graded twice.
+ * (the CPU mirror of composite_frag's grade block) and for the per-texture
+ * gates that decide who it runs on. The fluid family has no grading pass of
+ * its own, so the composite shader IS the delivery path for Zoom/Rotation/
+ * Saturation/Brightness/Contrast/Gamma/Hue on those styles - and the values
+ * sent to the self-grading scenes must be an exact identity, on BOTH the
+ * incoming and the outgoing texture, so nothing is ever graded twice.
  */
 class CompositeGradeTest {
     private val eps = 1e-4f
@@ -79,11 +83,111 @@ class CompositeGradeTest {
 
     @Test
     fun rotationTurnsAboutTheCentre() {
-        // A quarter turn maps the +x offset onto the +y offset.
+        // A quarter turn maps the +x offset onto the -y offset: the SAMPLING
+        // coordinate turns by -angle, which is what turns the picture by
+        // +angle on screen.
         val (x, y) = CompositeGrade.geometry(1f, 0.5f, (PI / 2).toFloat(), 1f)
         assertEquals(0.5f, x, eps)
-        assertEquals(1f, y, eps)
+        assertEquals(0f, y, eps)
+        // The centre is a fixed point at any angle.
+        val (cx, cy) = CompositeGrade.geometry(0.5f, 0.5f, 1.3f, 1f)
+        assertEquals(0.5f, cx, eps)
+        assertEquals(0.5f, cy, eps)
     }
+
+    @Test
+    fun rotationMatchesTheShadersColumnMajorMat2() {
+        // GLSL `mat2(a, b, c, d)` is COLUMN-major - column 0 is (a, b) - so
+        // geo()'s `mat2(cos(sa), -sin(sa), sin(sa), cos(sa)) * c` expands to
+        // (cos*cx + sin*cy, -sin*cx + cos*cy). This mirror used to spell the
+        // TRANSPOSE of that (a rotation by +sa), and its own tests agreed with
+        // it, so both drifted away from the shader they exist to pin.
+        for (angle in listOf(0.35f, 1.1f, -0.8f, 2.6f)) {
+            val cs = cos(angle)
+            val sn = sin(angle)
+            for (u in listOf(0f, 0.25f, 1f)) {
+                for (v in listOf(0.1f, 0.5f, 0.9f)) {
+                    val cx = u - 0.5f
+                    val cy = v - 0.5f
+                    val (x, y) = CompositeGrade.geometry(u, v, angle, 1f)
+                    assertEquals("x at $angle/$u/$v", cs * cx + sn * cy + 0.5f, x, eps)
+                    assertEquals("y at $angle/$u/$v", -sn * cx + cs * cy + 0.5f, y, eps)
+                }
+            }
+        }
+        // Still a rigid rotation: the radius from the centre is preserved.
+        val (rx, ry) = CompositeGrade.geometry(0.9f, 0.2f, 0.6f, 1f)
+        val before = sqrt(0.4f * 0.4f + 0.3f * 0.3f)
+        val after = sqrt((rx - 0.5f) * (rx - 0.5f) + (ry - 0.5f) * (ry - 0.5f))
+        assertEquals(before, after, eps)
+    }
+
+    @Test
+    fun everyFamilyOnlyGetsTheGroupsItDoesNotApplyItself() {
+        val shader = CompositeGrade.gateFor(CompositeGrade.SceneFamily.SHADER)
+        val particle = CompositeGrade.gateFor(CompositeGrade.SceneFamily.PARTICLE)
+        val milkdrop = CompositeGrade.gateFor(CompositeGrade.SceneFamily.MILKDROP)
+        val fluid = CompositeGrade.gateFor(CompositeGrade.SceneFamily.FLUID)
+        // Shader scenes do the lot in view()/grade().
+        assertEquals(CompositeGrade.Gate(geo = false, mirrorInvert = false, grade = false, pulse = false), shader)
+        // The fluid family applies nothing of its own.
+        assertEquals(CompositeGrade.Gate(geo = true, mirrorInvert = true, grade = true, pulse = true), fluid)
+        // Particles grade and pulse themselves; milkdrop grades and zooms in
+        // pm_post_frag but nothing in it reads `pulse`.
+        assertEquals(CompositeGrade.Gate(geo = true, mirrorInvert = true, grade = false, pulse = false), particle)
+        assertEquals(CompositeGrade.Gate(geo = true, mirrorInvert = false, grade = false, pulse = true), milkdrop)
+        // Nobody but the fluid family may be graded by the composite, or the
+        // grade lands twice (squared brightness, doubled contrast).
+        assertEquals(
+            listOf(CompositeGrade.SceneFamily.FLUID),
+            CompositeGrade.SceneFamily.entries.filter { CompositeGrade.gateFor(it).grade },
+        )
+    }
+
+    @Test
+    fun theOutgoingTexturesGateIsIndependentOfTheIncomingScene() {
+        // composite_frag routes BOTH uTexA (incoming) and uTexB (outgoing)
+        // through postFx, so each texture carries its own gate. Gating both
+        // from the ACTIVE scene graded the outgoing julia frame a second time
+        // for the whole of a julia -> fluid fade (a white, over-zoomed flash)
+        // and dropped the outgoing fluid grade on the reverse switch.
+        for (incoming in CompositeGrade.SceneFamily.entries) {
+            for (outgoing in CompositeGrade.SceneFamily.entries) {
+                val (gateA, gateB) = gatesFor(incoming, outgoing)
+                assertEquals("uGateA at $incoming <- $outgoing", CompositeGrade.gateFor(incoming), gateA)
+                // The invariant: the outgoing texture is treated exactly as it
+                // was on the frame before the switch, whatever replaced it.
+                assertEquals("uGateB at $incoming <- $outgoing", CompositeGrade.gateFor(outgoing), gateB)
+            }
+        }
+        // The reported case, both directions.
+        val (juliaIn, fluidOut) = gatesFor(CompositeGrade.SceneFamily.FLUID, CompositeGrade.SceneFamily.SHADER)
+        assertTrue("the incoming fluid frame must be graded here", juliaIn.grade)
+        assertFalse("the outgoing julia frame already graded itself", fluidOut.grade)
+        val (back, fluidBack) = gatesFor(CompositeGrade.SceneFamily.SHADER, CompositeGrade.SceneFamily.FLUID)
+        assertFalse(back.grade)
+        assertTrue("the outgoing fluid frame must keep its grade", fluidBack.grade)
+    }
+
+    @Test
+    fun theGateUploadsInTheShadersComponentOrder() {
+        // vec4(geo, mirrorInvert, grade, pulse) - the order composite_frag
+        // reads as gate.x/.y/.z/.w.
+        val v = CompositeGrade.Gate(geo = true, mirrorInvert = false, grade = true, pulse = false).toVec4()
+        assertEquals(4, v.size)
+        assertEquals(floatArrayOf(1f, 0f, 1f, 0f).toList(), v.toList())
+        // A fully-off gate is all zeros, which is also GL's default: a program
+        // that forgets the upload can only under-apply, never double-apply.
+        val off = CompositeGrade.gateFor(CompositeGrade.SceneFamily.SHADER).toVec4()
+        assertEquals(listOf(0f, 0f, 0f, 0f), off.toList())
+    }
+
+    /** What the renderer uploads as (uGateA, uGateB) during a transition. */
+    private fun gatesFor(
+        incoming: CompositeGrade.SceneFamily,
+        outgoing: CompositeGrade.SceneFamily,
+    ): Pair<CompositeGrade.Gate, CompositeGrade.Gate> =
+        CompositeGrade.gateFor(incoming) to CompositeGrade.gateFor(outgoing)
 
     @Test
     fun rotationIsIntegratedAsASpeedAndStaysBounded() {
