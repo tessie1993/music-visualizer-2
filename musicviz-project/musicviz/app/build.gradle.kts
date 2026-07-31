@@ -124,6 +124,13 @@ android {
 // the root THIRD_PARTY_NOTICES for the in-app "Open source licenses" screen.
 // This task refreshes that copy; `checkThirdPartyNotices` (also run in CI)
 // fails the build if the two ever drift.
+// A deadlocked Robolectric test produces no output at all, so without a bound
+// it silently burns the whole CI job timeout and reports nothing useful. Fail
+// fast instead: the suite normally finishes in about two minutes.
+tasks.withType<Test>().configureEach {
+    timeout.set(java.time.Duration.ofMinutes(15))
+}
+
 tasks.register<Copy>("syncThirdPartyNotices") {
     description = "Refreshes the bundled copy of THIRD_PARTY_NOTICES."
     from(rootProject.file("THIRD_PARTY_NOTICES")) {

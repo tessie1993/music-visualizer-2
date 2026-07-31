@@ -104,13 +104,25 @@ class PlaybackEngine private constructor(
         analysis.start(scope)
     }
 
-    /** Tears everything down; failures are ignored because it only runs on a
-     *  stale engine that is being discarded anyway. */
+    /**
+     * Quiesces a stale engine. Only reachable when the Application instance
+     * changes, which on a device never happens — a process has exactly one
+     * Application — so this exists purely to keep Robolectric's per-test
+     * Application from being served an engine built against the previous one.
+     *
+     * Deliberately does NOT call player.release(): ExoPlayer.release() blocks
+     * the calling thread until its internal playback thread acknowledges, and
+     * under Robolectric's paused looper mode that background looper only
+     * advances when the test drives it — which it cannot, because the test
+     * thread is the one blocked. The result is a hung test run rather than a
+     * failing one. The stale player is left to GC; it holds no foreground
+     * service and, in the only situation that reaches this code, the test JVM
+     * is about to move on anyway.
+     */
     private fun releaseQuietly() {
         runCatching { analysis.stop() }
         runCatching { scope.cancel() }
         runCatching { audioFx.release() }
-        runCatching { player.release() }
     }
 
     companion object {
