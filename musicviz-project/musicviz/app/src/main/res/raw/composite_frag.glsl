@@ -55,7 +55,8 @@ uniform float uPostBloom;
 uniform float uPostPosterize;
 uniform float uPostInvert;
 // Motion + color params that particle/milkdrop pipelines can't honor natively
-// (shader scenes do these in-shader; the uploads pass 0 for them).
+// (shader scenes do these in-shader, so the gate's x is 0 for them and every
+// block below is skipped - the values themselves are uploaded raw).
 uniform float uPostDriftX;
 uniform float uPostDriftY;
 uniform float uPostSway;
