@@ -17,6 +17,11 @@
     <uses-feature
         android:name="android.hardware.microphone"
         android:required="false" />
+    <!-- The live wallpaper is optional; the app is fully usable without a
+         launcher that supports one. -->
+    <uses-feature
+        android:name="android.software.live_wallpaper"
+        android:required="false" />
 
     <application
         android:name=".MusicVizApp"
@@ -51,6 +56,24 @@
                     android:host="preset" />
             </intent-filter>
         </activity>
+
+        <!--
+          The visualizer as a live wallpaper: the same renderer, on the style
+          and parameters the app was last left showing. It reacts to what the
+          app is playing and breathes on its own the rest of the time.
+        -->
+        <service
+            android:name=".wallpaper.VisualizerWallpaperService"
+            android:exported="true"
+            android:label="@string/wallpaper_label"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/wallpaper" />
+        </service>
 
         <!-- Sharing a preset too long to be a link sends its .json; a raw
              file:// uri cannot leave the app, so it goes out through here.

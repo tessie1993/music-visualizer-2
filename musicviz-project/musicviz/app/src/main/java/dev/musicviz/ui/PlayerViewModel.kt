@@ -2776,6 +2776,10 @@ class PlayerViewModel(
         // ViewModel would keep the recording indicator up with nothing left
         // to read it.
         micCapture.stop()
+        // Stop feeding the wallpaper, so it falls back to its own idle motion
+        // instead of holding the last frame this session produced.
+        dev.musicviz.audio.AudioBus
+            .clear()
         engine.stop()
         audioFxController.release()
         player.release()

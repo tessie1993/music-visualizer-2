@@ -102,6 +102,14 @@ fun AppRoot(
                 .getBoolean("boot_anim", true)
         }
     val state by viewModel.uiState.collectAsState()
+    // Second screen. The canvas is MOVED to the external display rather than
+    // duplicated, so the screens below must not try to host it at the same
+    // time - a View has one parent.
+    val externalDisplay = rememberExternalDisplay()
+    val onSecondScreen = gui.secondScreen && externalDisplay != null
+    if (onSecondScreen && externalDisplay != null) {
+        SecondScreenCanvas(externalDisplay, visualizerView)
+    }
 
     var crashText by remember {
         mutableStateOf(
@@ -195,8 +203,9 @@ fun AppRoot(
                                 visualizerView,
                                 onOpenNowPlaying = { expanded = true },
                                 // The single GL view can't live in two parents:
-                                // only host it here while Now Playing is closed.
-                                liveBackdrop = gui.clearVisualsMenu && !expanded,
+                                // only host it here while Now Playing is closed
+                                // and it has not been sent to a second screen.
+                                liveBackdrop = gui.clearVisualsMenu && !expanded && !onSecondScreen,
                             )
                         3 -> SettingsScreen(viewModel, visualizerView)
                     }
@@ -234,6 +243,7 @@ fun AppRoot(
                 VisualizerScreen(
                     viewModel = viewModel,
                     visualizerView = visualizerView,
+                    externalDisplayName = if (onSecondScreen) externalDisplay?.name else null,
                     onCollapse = { expanded = false },
                     onOpenVisuals = {
                         expanded = false
@@ -857,6 +867,40 @@ private fun AppSettingsTab(
             }
         }
         item {
+            SettingsSection("Live wallpaper") {
+                val ctx = LocalContext.current
+                Text(
+                    "Set the visualizer as your wallpaper. It uses the style and settings the app was " +
+                        "last showing, reacts to whatever MusicViz is playing, and drifts gently on its " +
+                        "own the rest of the time. It draws nothing while another app is in front, so it " +
+                        "is not a background battery drain.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                CrystalButton(onClick = {
+                    // The direct "change to THIS wallpaper" screen; some
+                    // launchers do not implement it, so fall back to the
+                    // system's live-wallpaper list rather than doing nothing.
+                    val direct =
+                        android.content.Intent(
+                            android.app.WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER,
+                        ).putExtra(
+                            android.app.WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
+                            android.content.ComponentName(
+                                ctx,
+                                dev.musicviz.wallpaper.VisualizerWallpaperService::class.java,
+                            ),
+                        )
+                    val ok = runCatching { ctx.startActivity(direct) }.isSuccess
+                    if (!ok) {
+                        runCatching {
+                            ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_SET_WALLPAPER))
+                        }
+                    }
+                }) { Text("Set as live wallpaper") }
+            }
+        }
+        item {
             SettingsSection("Export & About") {
                 CrystalButton(onClick = onOpenExport) { Text("Export video…") }
                 AboutSection()
@@ -976,6 +1020,28 @@ private fun LiveInputSettings(viewModel: PlayerViewModel) {
                 valueRange = 0.2f..2f,
             )
         }
+    }
+    Column {
+        val external = rememberExternalDisplay()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Use a connected display", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Switch(
+                checked = gui.secondScreen,
+                onCheckedChange = { viewModel.setGuiPrefs(gui.copy(secondScreen = it)) },
+            )
+        }
+        Text(
+            if (external != null) {
+                "Connected: ${external.name}. The visuals play there and the phone becomes the control " +
+                    "surface — the canvas moves rather than being mirrored, so the big screen shows " +
+                    "exactly what the app renders."
+            } else {
+                "Nothing connected. Plug in HDMI or start casting, and the visuals move to that screen " +
+                    "while the phone keeps the controls."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {

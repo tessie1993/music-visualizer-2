@@ -64,6 +64,12 @@ import dev.musicviz.render.scene.TouchTransform
 fun VisualizerScreen(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
+    /**
+     * Name of the display the canvas has been sent to, or null when it is
+     * here. Non-null means this screen must NOT host the view - it has one
+     * parent, and that parent is currently the presentation.
+     */
+    externalDisplayName: String? = null,
     onCollapse: () -> Unit,
     onOpenVisuals: () -> Unit,
 ) {
@@ -121,7 +127,32 @@ fun VisualizerScreen(
                 }
             },
     ) {
-        VisualizerCanvasHost(visualizerView, Modifier.fillMaxSize())
+        if (externalDisplayName == null) {
+            VisualizerCanvasHost(visualizerView, Modifier.fillMaxSize())
+        } else {
+            // The canvas is on the other screen; this one is the control
+            // surface. Say where it went rather than showing a black rectangle
+            // that reads as a crash.
+            CrystalBackground(Modifier.fillMaxSize())
+            Column(
+                Modifier.align(Alignment.Center).padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                CrystalOverline("Showing on")
+                Text(
+                    externalDisplayName,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Text(
+                    "The visuals are on the connected display. Everything here still controls them — " +
+                        "turn this off in Settings › Live input & touch to bring them back.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        }
 
         if (controlsVisible) {
             Row(

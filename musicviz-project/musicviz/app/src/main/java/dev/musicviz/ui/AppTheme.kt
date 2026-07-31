@@ -342,6 +342,9 @@ data class GuiPrefs(
      *  Hue shift slider, so it is visible and undoable rather than a hidden
      *  second colour source; turning it off restores the value it replaced. */
     val keyColor: Boolean = false,
+    /** Send the visuals to a connected TV/projector and keep the phone as the
+     *  control surface. Ignored when nothing is connected. */
+    val secondScreen: Boolean = true,
     /** Pinch to zoom and twist to spin on the fullscreen canvas. On by
      *  default: both are standard gestures, and both land on ordinary sliders
      *  that undo them, so there is nothing to get stuck in. */
@@ -433,6 +436,7 @@ class ThemeStore(
             touchSmearStrength = prefs.getFloat(KEY_TOUCH_SMEAR_STRENGTH, 1f).coerceIn(0.2f, 2f),
             touchTransform = prefs.getBoolean(KEY_TOUCH_TRANSFORM, true),
             keyColor = prefs.getBoolean(KEY_KEY_COLOR, false),
+            secondScreen = prefs.getBoolean(KEY_SECOND_SCREEN, true),
         )
 
     fun saveGui(gui: GuiPrefs) {
@@ -460,6 +464,7 @@ class ThemeStore(
             .putFloat(KEY_TOUCH_SMEAR_STRENGTH, gui.touchSmearStrength)
             .putBoolean(KEY_TOUCH_TRANSFORM, gui.touchTransform)
             .putBoolean(KEY_KEY_COLOR, gui.keyColor)
+            .putBoolean(KEY_SECOND_SCREEN, gui.secondScreen)
             .apply()
     }
 
@@ -484,5 +489,6 @@ class ThemeStore(
         const val KEY_TOUCH_SMEAR_STRENGTH = "gui_touch_smear_strength"
         const val KEY_TOUCH_TRANSFORM = "gui_touch_transform"
         const val KEY_KEY_COLOR = "gui_key_color"
+        const val KEY_SECOND_SCREEN = "gui_second_screen"
     }
 }
