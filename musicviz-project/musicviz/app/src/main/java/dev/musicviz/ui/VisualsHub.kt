@@ -371,7 +371,15 @@ private fun selectMilk(
 /** Only FluidScene runs the Navier-Stokes solver, dye/ink and its look passes. */
 internal fun isFluidSceneId(sceneId: String): Boolean = sceneId == SceneIds.FLUID
 
-/** Styles driven by FluidChoreography's spawn/catch journey progression. */
+/**
+ * Styles driven by FluidChoreography's spawn/catch journey progression.
+ * Every control in that section has a reader on all three: `fluidSpawnPath`,
+ * `fluidSpawnPoints`, `fluidSpawnProgress` and `fluidCatchPoints` feed
+ * `choreography` (`WaterScene.kt:232-235`), `fluidCatchPull` the emitters
+ * (`:247`) and `fluidCatchRadius` `WaterMath.catchWellRadius` (`:256`).
+ * `fluidParticleLife` does NOT - WaterScene has no particle layer to age -
+ * so that slider hangs off [isParticleLayerSceneId] instead.
+ */
 internal fun isJourneySceneId(sceneId: String): Boolean =
     sceneId == SceneIds.FLUID ||
         sceneId == SceneIds.CURLFLOW ||
@@ -391,11 +399,13 @@ internal fun isWaterSceneId(sceneId: String): Boolean = sceneId == SceneIds.WATE
 
 /**
  * Styles that run the shared FluidParticles lifecycle layer, i.e. the ones
- * that read `fluidParticleDrag`. CURLFLOW *is* that layer (CurlFlowScene's
+ * that read `fluidParticleDrag` and `fluidParticleLife` (set on consecutive
+ * lines in both scenes). CURLFLOW *is* that layer (CurlFlowScene's
  * "particles.drag = params.fluidParticleDrag"), yet the drag slider used to
  * live in the FLUID-only Particles section AND behind `fluidParticlesEnabled`,
  * a param CurlFlow never reads - so a control the style genuinely consumes was
- * unreachable on it. WATER has no particle layer at all.
+ * unreachable on it. WATER has no particle layer at all, which is why
+ * "Particle life (s)" moved here from the WATER-inclusive Journey section.
  */
 internal fun isParticleLayerSceneId(sceneId: String): Boolean = sceneId == SceneIds.FLUID || sceneId == SceneIds.CURLFLOW
 

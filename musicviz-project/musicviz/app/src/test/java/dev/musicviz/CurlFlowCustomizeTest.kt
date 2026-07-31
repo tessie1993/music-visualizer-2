@@ -246,8 +246,17 @@ class CurlFlowCustomizeTest {
 
     @Test
     fun particleLifeIsReachableOnCurlFlowToo() {
-        // The other particle param the scene reads lives in the Journey
-        // section, which already covers CURLFLOW - keep it that way.
+        // The other particle param the scene reads sits next to Drag in the
+        // particle-layer section: CurlFlowScene sets `particles.life` on the
+        // line after `particles.drag`, so the two share a visibility rule.
+        // It used to live in the Journey section, which also covers WATER -
+        // a style with no particle layer at all, so the slider read nothing
+        // there while being one row away from controls that do.
+        assertTrue(isParticleLayerSceneId(SceneIds.CURLFLOW))
+        assertTrue(dragRowVisible(SceneIds.CURLFLOW, particlesEnabled = false))
+        assertFalse("WATER ages no particles", dragRowVisible(SceneIds.WATER, particlesEnabled = true))
+        // The rest of the Journey section still reaches all three styles.
         assertTrue(isJourneySceneId(SceneIds.CURLFLOW))
+        assertTrue(isJourneySceneId(SceneIds.WATER))
     }
 }

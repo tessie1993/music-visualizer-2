@@ -433,11 +433,35 @@ it was left and what closing it involves.
       band is flat on three of six families. Intentional today (a 0 span
       kills the fluid look). If it is ever unified, do it in `FluidHue` so
       all three fluid styles move together.
-- [ ] ADSR card labels "Attack"/"Decay" collide with the Behavior tab's
-      reactivity envelope sliders of the same name. Harmless right now —
-      neither is a `ParamRandomizer` key, so the shared lock chip only
-      mirrors a highlight — but it becomes a real collision the moment
-      either gets randomized. Rename to "Env attack"/"Env decay" if so.
+- [x] ADSR card labels "Attack"/"Decay" collide with the Behavior tab's
+      reactivity envelope sliders of the same name. CLOSED by renaming both
+      sides, since neither was a `ParamRandomizer` key and so neither side
+      had to be preserved verbatim: the ADSR cards are now "Env attack" /
+      "Env decay" (the names this item proposed) and the Behavior tab's
+      reactivity pair is "Reactivity attack" / "Reactivity decay". Same
+      precedent as "Depth" → "LFO depth" and "Ripple strength" → "Ripple
+      overlay strength". The two ADSR CARDS still share those keys with each
+      other, exactly as Sustain/Release/Amount do — one group, one meaning,
+      and still nothing the randomizer rolls; if envelope params ever become
+      rollable, index the labels per card ("Env 1 attack").
+- [x] "Wave speed" and "Damping" were shown only on WATER, but they are the
+      all-styles ripple overlay's physics too (`VisualizerRenderer` sets
+      `ripple.waveSpeed`/`ripple.damping` from them, `VideoExporter` mirrors
+      it), so a user who switched "Water ripples (all styles)" on from any
+      other style had no way to change the ring speed or decay while
+      `ParamRandomizer` kept rolling both keys. CLOSED: the Fluid tab renders
+      them in the overlay section on every style except WATER, which keeps
+      them in its own section as the surface physics they also are. One pair
+      of params, one place per style. Pinned by `FluidTabGatingTest`, which
+      now parses the gated label sets out of `CustomizeDialog.kt`.
+      Device check 35.
+- [x] "Particle life (s)" sat in the Journey section, which covers WATER, but
+      `fluidParticleLife` is read only by `FluidScene` / `CurlFlowScene` (the
+      FluidParticles lifecycle layer) — WaterScene has no particle layer at
+      all. CLOSED: moved next to "Particle drag" under
+      `isParticleLayerSceneId`, behind the same `fluidParticlesEnabled`
+      condition on FLUID. Every remaining Journey control was re-checked and
+      does have a `WaterScene` reader (see `docs/PARAM_MATRIX.md`).
 
 ## Always
 - [ ] Update docs (NAVIGATION.md, WIREFRAME.md, PARAM_MATRIX.md) when

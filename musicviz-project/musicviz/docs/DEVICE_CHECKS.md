@@ -165,10 +165,11 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     (c) Fluid tab > Particles: "Particle drag" must be VISIBLE on Curl
     Flow (there is no "Particle layer" checkbox or "Particle brightness"
     there — Curl Flow ignores both) and dragging it must visibly change
-    how fast the streams settle into the flow; "Particle life (s)" in the
-    Journey section must still work. On FLUID nothing changes: the layer
-    checkbox still gates drag and brightness. On WATER the Particles
-    section stays absent.
+    how fast the streams settle into the flow; "Particle life (s)" sits
+    directly under it (it moved out of the Journey section — see item 35)
+    and must still work. On FLUID nothing changes: the layer checkbox
+    still gates drag, life and brightness. On WATER the Particles section
+    stays absent.
 25. Composite grading in EXPORTS: with Zoom, Rotation, Saturation,
     Brightness, Contrast, Gamma, Hue shift, Intensity, Color cycle,
     Mirror and Invert all pushed well off neutral on a fluid style
@@ -411,3 +412,37 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     and off in turn: neither may break the streams into dots. Export
     ~10 s of Curl Flow with Trails off and again with it on: the mp4s
     must match the live look in both cases.
+35. Ripple-overlay physics and particle life reach exactly the styles that
+    read them (Visuals > Customize > Fluid). OVERLAY SIDE — pick PLASMA (or
+    any non-fluid style), switch "Water ripples enabled" on and confirm
+    "Wave speed" and "Damping" now appear right under it, above "Ripple
+    overlay strength". Drag Wave speed 0.2 -> 2.0 on a beat-heavy track: the
+    rings must visibly expand slower/faster from where they drop. Drag
+    Damping 0.9 -> 0.999: at 0.9 a ring must die almost immediately, at
+    0.999 it must ring on for seconds and the surface never settle. Both
+    must behave the same on a MilkDrop preset and on a particle style, and a
+    ~10 s export at an extreme setting (Damping 0.999) must match the live
+    look — the exporter runs the same solver. Switch the overlay off: both
+    sliders disappear with the rest of its controls.
+    WATER SIDE — select WATER: "Wave speed" and "Damping" must appear ONCE,
+    in the "Water" section at the top of the tab (that style's own surface
+    physics), and must NOT be repeated in the "Water ripples (all styles)"
+    section even with the overlay checkbox on. Sweep both there and confirm
+    the surface responds exactly as it did before this change.
+    PARTICLE LIFE SIDE — on WATER, "Particle life (s)" must NOT appear
+    anywhere (Water has no particle layer); the rest of the Journey section
+    — Path, Spawn points, Progression, Catch points, Catch pull, Catch
+    radius — must still be there and each must still visibly move where the
+    drops and wakes land. On CURL FLOW the slider must appear next to
+    "Particle drag" in the Particles section, and sweeping it 1 -> 20 s must
+    visibly change how far a strand travels before it is recycled. On FLUID
+    the same, and switching "Particle layer" off must take BOTH Particle
+    drag and Particle life away, then bring both back when switched on.
+    LOCK SIDE — lock "Wave speed" on a non-water style and press "⚄
+    Randomize unlocked" ten times: the ripple speed must hold (the roll
+    moves it otherwise), and the chip must still read "locked" after
+    switching to WATER, since it is the same param.
+    LABEL SIDE — the Behaviour tab now reads "Reactivity attack" /
+    "Reactivity decay" and the FX tab's envelope cards "Env attack" / "Env
+    decay". Lock "Reactivity attack" and confirm the envelope cards' attack
+    sliders show NO lock chip (they used to mirror it), and the reverse.
