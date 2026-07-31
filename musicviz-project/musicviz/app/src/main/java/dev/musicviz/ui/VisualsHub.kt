@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -22,17 +23,13 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.LayersClear
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ProvideTextStyle
-import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -109,15 +106,9 @@ fun VisualsHub(
                             tint = if (liveBackdrop) MaterialTheme.colorScheme.primary else LocalContentColor.current,
                         )
                     }
-                    OutlinedButton(onClick = onOpenNowPlaying) { Text("View live") }
+                    CrystalButton(compact = true, filled = false, onClick = onOpenNowPlaying) { Text("View live") }
                 }
-                ScrollableTabRow(
-                    selectedTabIndex = tab,
-                    edgePadding = 8.dp,
-                    containerColor = Color.Transparent,
-                ) {
-                    tabs.forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) }) }
-                }
+                CrystalTabs(titles = tabs, selected = tab, onSelect = { tab = it })
                 when (tab) {
                     0 -> PresetsTreeTab(viewModel, visualizerView)
                     1 -> StylesTab(viewModel, visualizerView, onOpenTextures = { tab = 3 })
@@ -155,7 +146,7 @@ private fun PresetsTreeTab(
                     placeholder = { Text("New folder name") },
                     singleLine = true,
                 )
-                Button(onClick = {
+                CrystalButton(onClick = {
                     if (newFolder.isNotBlank()) {
                         viewModel.addPresetFolder(newFolder.trim())
                         newFolder = ""
@@ -226,7 +217,7 @@ private fun PresetsTreeTab(
                     placeholder = { Text("Save current as…") },
                     singleLine = true,
                 )
-                Button(onClick = {
+                CrystalButton(onClick = {
                     if (saveName.isNotBlank()) {
                         viewModel.savePreset(
                             saveName.trim(),
@@ -240,8 +231,8 @@ private fun PresetsTreeTab(
             if (folders.isNotEmpty()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 12.dp)) {
                     (listOf("") + folders).forEach { f ->
-                        OutlinedButton(onClick = { saveFolder = f }) {
-                            Text((if (saveFolder == f) "● " else "") + f.ifEmpty { "root" }, style = MaterialTheme.typography.bodySmall)
+                        CrystalButton(compact = true, filled = saveFolder == f, onClick = { saveFolder = f }) {
+                            Text(f.ifEmpty { "root" }, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -276,11 +267,11 @@ private fun StylesTab(
     // state flow. One source of truth is what keeps switching stable.
     val pickScene: (String) -> Unit = { viewModel.selectScene(it) }
     Column(Modifier.fillMaxSize()) {
-        ScrollableTabRow(selectedTabIndex = sub, edgePadding = 8.dp, containerColor = Color.Transparent) {
-            listOf("Particles", "Shaders", "Fluid", "MilkDrop").forEachIndexed { i, t ->
-                Tab(selected = sub == i, onClick = { sub = i }, text = { Text(t) })
-            }
-        }
+        CrystalTabs(
+            titles = listOf("Particles", "Shaders", "Fluid", "MilkDrop"),
+            selected = sub,
+            onSelect = { sub = it },
+        )
         when (sub) {
             0 -> SceneList(VisualizerRenderer.PARTICLE_SCENES, viz.sceneId, pickScene)
             1 -> SceneList(VisualizerRenderer.SHADER_SCENES.keys.toList(), viz.sceneId, pickScene)
@@ -298,10 +289,20 @@ private fun SceneList(
 ) {
     LazyColumn(Modifier.fillMaxSize()) {
         items(ids) { id ->
-            Text(
-                (if (id == current) "● " else "") + id,
+            val sel = id == current
+            Row(
                 Modifier.fillMaxWidth().clickable { onPick(id) }.padding(horizontal = 16.dp, vertical = 10.dp),
-            )
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(6.dp), contentAlignment = Alignment.Center) {
+                    if (sel) CrystalGem(MaterialTheme.colorScheme.primary, size = 6.dp)
+                }
+                Text(
+                    id,
+                    Modifier.padding(start = 10.dp),
+                    color = if (sel) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                )
+            }
         }
     }
 }
@@ -332,8 +333,8 @@ private fun MilkDropTab(
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { milkPicker.launch(arrayOf("*/*")) }) { Text("Load .milk file") }
-            OutlinedButton(onClick = onOpenTextures) { Text("Textures…") }
+            CrystalButton(onClick = { milkPicker.launch(arrayOf("*/*")) }) { Text("Load .milk file") }
+            CrystalButton(filled = false, onClick = onOpenTextures) { Text("Textures…") }
         }
         Text("Your .milk presets", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
         if (milkFiles.isEmpty()) {
@@ -471,11 +472,9 @@ private fun CustomizeHubTab(
     val tabs = listOf("Motion", "Shape", "Behavior", "Color", "FX", "Fluid") + if (isShader) listOf("GLSL") else emptyList()
     LaunchedEffect(isShader) { if (!isShader && sub >= 6) sub = 0 }
     Column(Modifier.fillMaxSize()) {
-        ScrollableTabRow(selectedTabIndex = sub, edgePadding = 8.dp, containerColor = Color.Transparent) {
-            tabs.forEachIndexed { i, t -> Tab(selected = sub == i, onClick = { sub = i }, text = { Text(t) }) }
-        }
+        CrystalTabs(titles = tabs, selected = sub, onSelect = { sub = it })
         Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-            Button(onClick = viewModel::randomizeParams) { Text("⚄ Randomize unlocked") }
+            CrystalButton(compact = true, onClick = viewModel::randomizeParams) { Text("⚄ Randomize unlocked") }
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             val locked by viewModel.lockedParams.collectAsState()
@@ -558,11 +557,11 @@ private fun TexturesHubTab(
             }
         }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { picker.launch(arrayOf("image/*")) }) { Text("Import images") }
+        CrystalButton(onClick = { picker.launch(arrayOf("image/*")) }) { Text("Import images") }
         textures.forEach { tex ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(tex.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                OutlinedButton(onClick = {
+                CrystalButton(compact = true, filled = false, onClick = {
                     viewModel.useTexture(tex.name) { path -> selectMilk(viewModel, visualizerView, path) }
                 }) { Text("Use") }
             }
@@ -606,7 +605,7 @@ private fun GlslHubTab(
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { viewModel.applyCustomShader(source) }) { Text("Apply shader") }
+            CrystalButton(onClick = { viewModel.applyCustomShader(source) }) { Text("Apply shader") }
             TextButton(onClick = {
                 source = visualizerView.visualizerRenderer.customShaderFor(viz.sceneId) ?: ""
             }) { Text("Revert") }

@@ -18,9 +18,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
@@ -82,6 +85,33 @@ fun BootIntro(onDone: () -> Unit) {
             val startRadius = min(size.width, size.height) * 0.16f
             val endRadius = max(size.width, size.height) * 0.72f
             val strokeWidth = 2.dp.toPx()
+            // Crystalline motif: two nested gem outlines materialize with the
+            // wordmark, settling from a slight over-rotation as they land.
+            val gem = textAlpha.value
+            if (gem > 0f) {
+                val settle = 1f - textScale.value
+
+                fun gemOutline(
+                    radius: Float,
+                    baseDeg: Float,
+                    color: Color,
+                    alpha: Float,
+                    width: Float,
+                ) {
+                    rotate(baseDeg + 24f * settle, center) {
+                        drawRect(
+                            color = color.copy(alpha = alpha * gem),
+                            topLeft = Offset(center.x - radius, center.y - radius),
+                            size = Size(radius * 2f, radius * 2f),
+                            style = Stroke(width = width),
+                        )
+                    }
+                }
+                val r = startRadius * 1.15f * textScale.value
+                gemOutline(r, 45f, primary, 0.10f, strokeWidth * 5f)
+                gemOutline(r, 45f, Color.White, 0.35f, strokeWidth)
+                gemOutline(r * 0.72f, 15f, primary, 0.45f, strokeWidth)
+            }
             rings.forEach { ring ->
                 val p = ring.value
                 if (p > 0f && p < 1f) {
