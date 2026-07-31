@@ -41,15 +41,18 @@ class FeatureTimeline(
         if (frames.size > 1) durationMs.toDouble() / (frames.size - 1) else hopMs.toDouble()
 
     /**
-     * Re-decides every frame's [AudioFeatures.beat] from the stored onset
-     * curve at the given sensitivity, returning a new timeline.
+     * Re-decides every frame's beat fields ([AudioFeatures.beat] plus the
+     * graded [AudioFeatures.beatStrength] / [AudioFeatures.beatPhase] /
+     * [AudioFeatures.pulseConfidence] / [AudioFeatures.macroEnergy]) from the
+     * stored onset and rms curves at the given sensitivity, returning a new
+     * timeline.
      *
      * This is why the analysis cache stores the raw flux rather than the
      * decided beats: changing "Beat sensitivity" or "Minimum gap between
      * beats" then applies to already-analysed tracks immediately, and an
      * exported video keeps matching what playback just showed - the live
-     * gate and this one are the same [FeatureExtractor.BeatGate] code fed the
-     * same numbers in the same order.
+     * path and this one are the same [PulseTracker] code fed the same
+     * numbers in the same order.
      *
      * Timelines with no onset curve (analysed before it was stored, or
      * synthesised) are returned untouched: re-deciding from all-zero flux
@@ -62,11 +65,35 @@ class FeatureTimeline(
         if (frames.isEmpty()) return this
         val flux = FloatArray(frames.size) { frames[it].features.flux }
         if (flux.none { it > 0f }) return this
-        val beats = FeatureExtractor.decideBeats(flux, hopRateHz, beatThresholdSigma, beatMinIntervalMs)
+        val rms = FloatArray(frames.size) { frames[it].features.rms }
+        val pulse = PulseTracker.decidePulse(flux, rms, hopRateHz, beatThresholdSigma, beatMinIntervalMs)
         val out = ArrayList<TimelineFrame>(frames.size)
         for (i in frames.indices) {
             val fr = frames[i]
-            out += if (fr.features.beat == beats[i]) fr else fr.copy(features = fr.features.copy(beat = beats[i]))
+            val f = fr.features
+            val unchanged =
+                f.beat == pulse.beat[i] &&
+                    f.beatStrength == pulse.strength[i] &&
+                    f.transient == pulse.transient[i] &&
+                    f.beatPhase == pulse.phase[i] &&
+                    f.pulseConfidence == pulse.confidence[i] &&
+                    f.macroEnergy == pulse.energy[i]
+            out +=
+                if (unchanged) {
+                    fr
+                } else {
+                    fr.copy(
+                        features =
+                            f.copy(
+                                beat = pulse.beat[i],
+                                beatStrength = pulse.strength[i],
+                                transient = pulse.transient[i],
+                                beatPhase = pulse.phase[i],
+                                pulseConfidence = pulse.confidence[i],
+                                macroEnergy = pulse.energy[i],
+                            ),
+                    )
+                }
         }
         return FeatureTimeline(out, hopMs, key, hopRateHz)
     }
@@ -94,8 +121,9 @@ class FeatureTimeline(
      * the exported frame's own duration as [spanMs] fixes that - the flag is
      * OR-ed across every timeline frame that exported frame is on screen for,
      * along with a peak-hold of the onset curve it was decided from
-     * ([AudioFeatures.onset] / [AudioFeatures.flux]) so strength and flag stay
-     * consistent with each other.
+     * ([AudioFeatures.onset] / [AudioFeatures.flux]) and of the graded
+     * [AudioFeatures.beatStrength], so strength and flag stay consistent
+     * with each other.
      *
      * Everything CONTINUOUS - bands, waveform, rms/bass/mid/treble, centroid,
      * bpm - stays point-sampled at the nearest frame, exactly as before.
@@ -120,14 +148,18 @@ class FeatureTimeline(
         var beat = f.beat
         var onset = f.onset
         var flux = f.flux
+        var strength = f.beatStrength
+        var transient = f.transient
         for (i in first + 1..last) {
             val g = frames[i].features
             beat = beat || g.beat
             onset = maxOf(onset, g.onset)
             flux = maxOf(flux, g.flux)
+            strength = maxOf(strength, g.beatStrength)
+            transient = maxOf(transient, g.transient)
         }
-        if (beat == f.beat && onset == f.onset && flux == f.flux) return f
-        return f.copy(beat = beat, onset = onset, flux = flux)
+        if (beat == f.beat && onset == f.onset && flux == f.flux && strength == f.beatStrength && transient == f.transient) return f
+        return f.copy(beat = beat, onset = onset, flux = flux, beatStrength = strength, transient = transient)
     }
 
     /**

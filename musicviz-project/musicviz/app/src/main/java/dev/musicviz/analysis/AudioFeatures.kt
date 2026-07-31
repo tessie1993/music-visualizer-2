@@ -29,8 +29,65 @@ data class AudioFeatures(
      *  re-analysing the track. 0 for live scene fallbacks that never ran a
      *  flux calculation. */
     val flux: Float = 0f,
+    /** Graded weight of this frame's beat from [PulseTracker], 0..1: how hard
+     *  the hit was relative to the track's own dynamics. 0 between beats and
+     *  on features that predate the tracker - consumers should read
+     *  [beatImpulse], which folds that legacy case back to full strength. */
+    val beatStrength: Float = 0f,
+    /** Position within the tracked beat interval, 0 (on the beat) rising to 1
+     *  just before the next - a continuous ramp scenes can ease against, so
+     *  motion can anticipate and land on beats instead of only reacting to
+     *  them. 0 when no beat grid is known. */
+    val beatPhase: Float = 0f,
+    /** Graded transient impulse from [PulseTracker], 0..1: fires for EVERY
+     *  detected onset - including the off-grid ones the beat grid holds back
+     *  - with its size following the hit's own amplitude, damped and metered
+     *  by a per-beat budget so dense runs taper off instead of strobing. The
+     *  "the player actually hit something there" texture channel; on beat
+     *  frames it mirrors [beatStrength]. */
+    val transient: Float = 0f,
+    /** [PulseTracker]'s confidence that its beat grid matches the music,
+     *  0..1. Low on ambient/rubato material - scenes wanting tempo-synced
+     *  choreography should fall back to energy-driven motion below ~0.5. */
+    val pulseConfidence: Float = 0f,
+    /** Track-relative macro-dynamics envelope, 0..1: how loud this moment is
+     *  against the song's own recent peak (fast attack, slow release). The
+     *  continuous "arc of the song" signal - verses sit low, choruses high -
+     *  where [rms] is the instantaneous level. */
+    val macroEnergy: Float = 0f,
 ) {
+    /**
+     * What a beat should DO to the visuals this frame: 0 off beats, the
+     * graded [beatStrength] on them - except for beat flags that carry no
+     * strength (synthesised features, pre-tracker cache entries), which keep
+     * their historical full-strength kick. Every consumer that used to branch
+     * on [beat] alone should scale by this instead.
+     */
+    val beatImpulse: Float
+        get() =
+            when {
+                !beat -> 0f
+                beatStrength > 0f -> beatStrength
+                else -> 1f
+            }
+
+    /**
+     * What CONTINUOUS motion envelopes should ride: the tempo-locked
+     * [beatImpulse], topped up by off-grid transients at reduced weight - so
+     * the visuals breathe with what is actually being played between beats,
+     * scaled by each hit's own amplitude, without turning every transient
+     * back into a full trigger. Discrete event triggers (bursts, ripple
+     * rings, flash-style uBeat effects) should stay on [beatImpulse], or
+     * they would fire per transient again.
+     */
+    val motionImpulse: Float
+        get() = maxOf(beatImpulse, transient * TRANSIENT_MOTION_WEIGHT)
+
     companion object {
+        /** Weight of the transient channel inside [motionImpulse]: texture at
+         *  up to half the presence of a confirmed beat. */
+        const val TRANSIENT_MOTION_WEIGHT = 0.5f
+
         fun empty(
             bandCount: Int = 64,
             waveformSize: Int = 128,

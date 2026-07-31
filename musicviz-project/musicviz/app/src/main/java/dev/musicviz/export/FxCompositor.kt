@@ -58,17 +58,26 @@ internal class ExportGradeState {
         private set
 
     /** Advances one exported frame; [dtSeconds] is the export's 1/fps.
-     *  [beat] is the exported frame's beat flag; it decays on the export's own
-     *  clock so a 30 fps and a 60 fps render pulse for the same wall time. */
+     *  [impulse] is the exported frame's graded beat impulse
+     *  ([AudioFeatures.beatImpulse]); it decays on the export's own clock so
+     *  a 30 fps and a 60 fps render pulse for the same wall time. */
+    fun advance(
+        params: SceneParams,
+        dtSeconds: Float,
+        impulse: Float,
+    ) {
+        rotationAngle = CompositeGrade.integrateRotation(rotationAngle, params.rotation, dtSeconds)
+        cyclePhase = CompositeGrade.integrateCyclePhase(cyclePhase, params.cycleSpeed, dtSeconds, params.colorCycle)
+        beatPulse = CompositeGrade.integrateBeatPulse(beatPulse, impulse, dtSeconds)
+    }
+
+    /** Boolean convenience (a beat = a full-strength kick), for callers and
+     *  tests without a graded impulse. */
     fun advance(
         params: SceneParams,
         dtSeconds: Float,
         beat: Boolean = false,
-    ) {
-        rotationAngle = CompositeGrade.integrateRotation(rotationAngle, params.rotation, dtSeconds)
-        cyclePhase = CompositeGrade.integrateCyclePhase(cyclePhase, params.cycleSpeed, dtSeconds, params.colorCycle)
-        beatPulse = CompositeGrade.integrateBeatPulse(beatPulse, beat, dtSeconds)
-    }
+    ) = advance(params, dtSeconds, if (beat) 1f else 0f)
 
     /**
      * The value to upload as `uPostPulse`, gated on a DIFFERENT set from
@@ -338,7 +347,7 @@ internal class FxCompositor(
         // Rotation and the colour cycle are SPEEDS: integrate them on the
         // export's own clock, once per exported frame, exactly as the live
         // renderer integrates once per displayed frame.
-        grade.advance(params, dtSeconds, features.beat)
+        grade.advance(params, dtSeconds, features.motionImpulse)
         // Which uPost* groups the composite owns is decided by the gate, not
         // by neutralising the values: exports never transition, so both gate
         // slots carry the same scene family, but the two programs must declare
@@ -375,7 +384,7 @@ internal class FxCompositor(
         GLES30.glUniform1f(loc("uProgress"), 1f)
         GLES30.glUniform1i(loc("uStyle"), 0)
         GLES30.glUniform1f(loc("uTime"), timeSeconds)
-        GLES30.glUniform1f(loc("uBeat"), if (features.beat) 1f else 0f)
+        GLES30.glUniform1f(loc("uBeat"), features.beatImpulse)
         GLES30.glUniform1f(loc("uChroma"), params.chromaAb)
         GLES30.glUniform1f(loc("uVignette"), params.vignette)
         GLES30.glUniform1f(loc("uScanline"), params.scanlines)

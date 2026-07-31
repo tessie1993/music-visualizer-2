@@ -35,7 +35,12 @@ class BurstScene(
             val cx = if (p.endlessZoom) 0f else random.nextFloat() * 1.2f - 0.6f
             val cy = if (p.endlessZoom) 0f else random.nextFloat() * 1.2f - 0.6f
             val burstHue = random.nextFloat()
-            val n = ((180 + (features.bass * p.audioDrive * 220).toInt()) * p.beatResponse).toInt().coerceIn(20, 900)
+            // Firework size rides the graded impulse: soft beats launch small
+            // shells, only real accents fill the sky.
+            val n =
+                ((180 + (features.bass * p.audioDrive * 220).toInt()) * p.beatResponse * features.beatImpulse)
+                    .toInt()
+                    .coerceIn(20, 900)
             repeat(n) {
                 val i = nextIndex
                 nextIndex = (nextIndex + 1) % count

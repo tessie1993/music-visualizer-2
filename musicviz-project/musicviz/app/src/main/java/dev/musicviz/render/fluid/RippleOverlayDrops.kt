@@ -49,7 +49,8 @@ internal class RippleOverlayDrops {
         val beatEdge = features.beat && !prevBeat
         prevBeat = features.beat
         if (beatEdge) {
-            val amp = 0.22f + 0.4f * features.bass.coerceIn(0f, 1.5f)
+            // Scaled by the graded impulse: soft beats land soft rings.
+            val amp = (0.22f + 0.4f * features.bass.coerceIn(0f, 1.5f)) * features.beatImpulse
             repeat(BEAT_DROPS) {
                 val (x, y) = RippleMath.overlayDropPosition(dropIndex++, aspect)
                 queue(x, y, 0.055f, amp)
