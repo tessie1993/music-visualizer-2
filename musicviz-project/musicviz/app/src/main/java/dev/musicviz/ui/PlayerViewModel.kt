@@ -839,14 +839,17 @@ class PlayerViewModel(
         val intervalMs = s.vizPlaylistIntervalSec * 1000L
         val due =
             if (s.vizPlaylistIntelligent) {
-                // Intelligent: after a minimum dwell, switch on a strong musical
-                // moment (beat + high energy); force a switch at 2x interval so
-                // quiet passages still rotate.
                 val f = engine.features.value
-                val minDwell = maxOf(8_000L, intervalMs / 2)
-                (elapsed >= minDwell && f.beat && f.rms > 0.28f) || elapsed >= intervalMs * 2
+                AutoSwitch.isDueOnMusic(
+                    elapsedMs = elapsed,
+                    intervalMs = intervalMs,
+                    beat = f.beat,
+                    rms = f.rms,
+                    minDwellMs = AutoSwitch.PLAYLIST_MIN_DWELL_MS,
+                    rmsThreshold = AutoSwitch.PLAYLIST_RMS,
+                )
             } else {
-                elapsed >= intervalMs
+                AutoSwitch.isDue(elapsed, intervalMs)
             }
         if (!due) return
         lastVizSwitchMs = now
@@ -910,13 +913,17 @@ class PlayerViewModel(
         val intervalMs = s.randomIntervalSec * 1000L
         val due =
             if (s.randomOnBeat) {
-                // Switch on a strong musical moment after a minimum dwell;
-                // force a switch at 2x interval so quiet passages still move.
                 val f = engine.features.value
-                val minDwell = maxOf(6_000L, intervalMs / 2)
-                (elapsed >= minDwell && f.beat && f.rms > 0.25f) || elapsed >= intervalMs * 2
+                AutoSwitch.isDueOnMusic(
+                    elapsedMs = elapsed,
+                    intervalMs = intervalMs,
+                    beat = f.beat,
+                    rms = f.rms,
+                    minDwellMs = AutoSwitch.RANDOM_MIN_DWELL_MS,
+                    rmsThreshold = AutoSwitch.RANDOM_RMS,
+                )
             } else {
-                elapsed >= intervalMs
+                AutoSwitch.isDue(elapsed, intervalMs)
             }
         if (!due) return
         randomStepNow()
@@ -927,45 +934,33 @@ class PlayerViewModel(
         if (_presetLocked.value) return
         val s = _vizState.value
         lastRandomSwitchMs = android.os.SystemClock.elapsedRealtime()
-        val choices = mutableListOf<VizPlaylistEntry>()
         // Every selectable style except MilkDrop, which random mode offers
-        // through its own toggle below. Built here from the shared catalog:
-        // spelling the pool out again is what once left the whole fluid
-        // family unreachable from random mode.
-        val sceneIds =
-            SceneCatalog.randomStyles(
-                dev.musicviz.render.VisualizerRenderer.PARTICLE_SCENES,
-                dev.musicviz.render.VisualizerRenderer.SHADER_SCENES.keys,
-            )
-        if (s.randomIncludeStyles) sceneIds.forEach { choices += VizPlaylistEntry(sceneId = it, label = it) }
-        if (s.randomIncludePresets) {
-            s.presets.forEach { choices += VizPlaylistEntry(sceneId = it.sceneId, presetName = it.name, label = it.name) }
-        }
-        if (s.randomIncludeMilk && dev.musicviz.render.scene.PMBridge.available) {
-            cachedMilkFiles.forEach {
-                choices += VizPlaylistEntry(sceneId = SceneIds.MILKDROP, milkPath = it.path, label = it.name)
+        // through its own toggle: spelling the pool out again is what once
+        // left the whole fluid family unreachable from random mode.
+        val styles =
+            if (s.randomIncludeStyles) {
+                SceneCatalog.randomStyles(
+                    dev.musicviz.render.VisualizerRenderer.PARTICLE_SCENES,
+                    dev.musicviz.render.VisualizerRenderer.SHADER_SCENES.keys,
+                )
+            } else {
+                emptyList()
             }
-        }
-        if (choices.isEmpty()) return
-        var pick = choices[randomRng.nextInt(choices.size)]
-        // One retry to avoid landing on the scene already showing.
-        if (choices.size > 1 && pick.sceneId == s.sceneId && pick.presetName == null && pick.milkPath == null) {
-            pick = choices[randomRng.nextInt(choices.size)]
-        }
+        val presets = if (s.randomIncludePresets) s.presets else emptyList()
+        // PMBridge.available is a native-library check, so it stays here
+        // rather than inside the picker.
+        val milk =
+            if (s.randomIncludeMilk && dev.musicviz.render.scene.PMBridge.available) cachedMilkFiles else emptyList()
+        val pick =
+            RandomVizPicker.pick(
+                RandomVizPicker.choices(styles, presets, milk),
+                currentSceneId = s.sceneId,
+                rng = randomRng,
+            ) ?: return
         applyVizEntry(pick)
         if (s.randomizeColors) {
             val cur = _vizState.value
-            val rolled =
-                cur.params.copy(
-                    palette = randomRng.nextInt(SceneParams.PALETTES.size),
-                    palette2 = randomRng.nextInt(SceneParams.PALETTES.size),
-                    paletteMix = if (randomRng.nextBoolean()) randomRng.nextFloat() * 0.6f else 0f,
-                    colorShift = randomRng.nextFloat(),
-                )
-            // A custom-palette override outranks the PALETTES lookup, so the
-            // new indices stay invisible unless both slots are cleared too.
-            _vizState.value =
-                cur.copy(params = PaletteStore.clear(PaletteStore.clear(rolled), second = true))
+            _vizState.value = cur.copy(params = RandomVizPicker.rollColors(cur.params, randomRng))
         }
     }
 
