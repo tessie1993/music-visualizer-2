@@ -33,6 +33,7 @@ import dev.musicviz.export.VideoExporter
 import dev.musicviz.render.TransitionStyle
 import dev.musicviz.render.scene.ParamRandomizer
 import dev.musicviz.render.scene.PcmChunk
+import dev.musicviz.render.scene.SceneCatalog
 import dev.musicviz.render.scene.SceneFactory
 import dev.musicviz.render.scene.SceneIds
 import dev.musicviz.render.scene.SceneParams
@@ -927,9 +928,15 @@ class PlayerViewModel(
         val s = _vizState.value
         lastRandomSwitchMs = android.os.SystemClock.elapsedRealtime()
         val choices = mutableListOf<VizPlaylistEntry>()
+        // Every selectable style except MilkDrop, which random mode offers
+        // through its own toggle below. Built here from the shared catalog:
+        // spelling the pool out again is what once left the whole fluid
+        // family unreachable from random mode.
         val sceneIds =
-            dev.musicviz.render.VisualizerRenderer.PARTICLE_SCENES +
-                dev.musicviz.render.VisualizerRenderer.SHADER_SCENES.keys
+            SceneCatalog.randomStyles(
+                dev.musicviz.render.VisualizerRenderer.PARTICLE_SCENES,
+                dev.musicviz.render.VisualizerRenderer.SHADER_SCENES.keys,
+            )
         if (s.randomIncludeStyles) sceneIds.forEach { choices += VizPlaylistEntry(sceneId = it, label = it) }
         if (s.randomIncludePresets) {
             s.presets.forEach { choices += VizPlaylistEntry(sceneId = it.sceneId, presetName = it.name, label = it.name) }

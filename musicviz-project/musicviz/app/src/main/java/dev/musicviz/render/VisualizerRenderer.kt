@@ -17,6 +17,7 @@ import dev.musicviz.render.scene.ParticleSceneBase
 import dev.musicviz.render.scene.PcmChunk
 import dev.musicviz.render.scene.ProjectMScene
 import dev.musicviz.render.scene.Scene
+import dev.musicviz.render.scene.SceneCatalog
 import dev.musicviz.render.scene.SceneFactory
 import dev.musicviz.render.scene.SceneIds
 import dev.musicviz.render.scene.SceneParams
@@ -370,14 +371,7 @@ class VisualizerRenderer(
     }
 
     fun availableSceneIds(): List<String> =
-        buildList {
-            addAll(PARTICLE_SCENES)
-            addAll(SHADER_SCENES.keys)
-            if (PMBridge.available) add(SceneIds.MILKDROP)
-            add(SceneIds.FLUID)
-            add(SceneIds.CURLFLOW)
-            add(SceneIds.WATER)
-        }
+        SceneCatalog.selectableStyles(PARTICLE_SCENES, SHADER_SCENES.keys, PMBridge.available)
 
     fun submitShader(
         sceneId: String,

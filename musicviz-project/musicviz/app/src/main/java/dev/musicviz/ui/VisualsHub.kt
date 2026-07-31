@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.musicviz.render.VisualizerRenderer
 import dev.musicviz.render.VisualizerView
+import dev.musicviz.render.scene.SceneCatalog
 import dev.musicviz.render.scene.SceneIds
 
 /**
@@ -275,7 +276,7 @@ private fun StylesTab(
         when (sub) {
             0 -> SceneList(VisualizerRenderer.PARTICLE_SCENES, viz.sceneId, pickScene)
             1 -> SceneList(VisualizerRenderer.SHADER_SCENES.keys.toList(), viz.sceneId, pickScene)
-            2 -> SceneList(listOf(SceneIds.FLUID, SceneIds.CURLFLOW, SceneIds.WATER), viz.sceneId, pickScene)
+            2 -> SceneList(SceneCatalog.FLUID_FAMILY, viz.sceneId, pickScene)
             3 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
         }
     }

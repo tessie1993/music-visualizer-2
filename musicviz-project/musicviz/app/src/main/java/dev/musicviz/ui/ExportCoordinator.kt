@@ -16,10 +16,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** Beat-detection settings in force right now, applied to every export. */
+/**
+ * Beat-detection settings in force right now, applied to every export.
+ *
+ * [minIntervalMs] is a Float because that is what the refractory gate takes —
+ * it comes off a slider and feeds [FeatureTimeline.withBeatSensitivity]
+ * directly.
+ */
 data class BeatSensitivity(
     val thresholdSigma: Float,
-    val minIntervalMs: Int,
+    val minIntervalMs: Float,
 )
 
 /** The visual configuration an export renders with, sampled when it starts. */
