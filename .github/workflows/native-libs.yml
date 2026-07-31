@@ -172,6 +172,20 @@ jobs:
             -Wl,--no-undefined \
             $PAGE_FLAGS
 
+      # CMake leaves debug_info and a full .symtab in the build output (~5 MB
+      # here). AGP strips native libs when packaging, so this changes nothing
+      # about the shipped app — it keeps the committed binaries the same shape
+      # as what actually ships instead of growing the repo on every rebuild.
+      - name: Strip debug symbols
+        run: |
+          set -euo pipefail
+          STRIP="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+          for so in out/*.so; do
+            before=$(stat -c%s "$so")
+            "$STRIP" --strip-unneeded "$so"
+            printf '%s: %s -> %s bytes\n' "$so" "$before" "$(stat -c%s "$so")"
+          done
+
       - name: Verify 16 KB alignment
         run: |
           set -euo pipefail
