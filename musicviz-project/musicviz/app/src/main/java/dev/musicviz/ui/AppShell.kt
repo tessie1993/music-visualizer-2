@@ -658,7 +658,7 @@ fun SettingsScreen(
                                 if (gui.maxFlashHz <= VisualSafety.WCAG_FLASHES_PER_SECOND) "  (within guidance)" else "",
                             style = MaterialTheme.typography.labelMedium,
                         )
-                        Slider(
+                        CrystalSlider(
                             value = gui.maxFlashHz,
                             onValueChange = { viewModel.setGuiPrefs(gui.copy(maxFlashHz = it)) },
                             valueRange = 1f..VisualSafety.DEFAULT_STROBE_HZ,
@@ -674,7 +674,7 @@ fun SettingsScreen(
                                 if (gui.maxFlashDepth <= 0f) "  (no flashing at all)" else "",
                             style = MaterialTheme.typography.labelMedium,
                         )
-                        Slider(
+                        CrystalSlider(
                             value = gui.maxFlashDepth,
                             onValueChange = { viewModel.setGuiPrefs(gui.copy(maxFlashDepth = it)) },
                             valueRange = 0f..1f,
