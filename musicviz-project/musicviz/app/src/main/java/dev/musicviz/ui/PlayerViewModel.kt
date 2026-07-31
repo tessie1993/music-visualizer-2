@@ -1674,6 +1674,45 @@ class PlayerViewModel(
     /** Jumps playback to the given queue position. */
     fun playQueueIndex(index: Int) = playback.playQueueIndex(index)
 
+    /**
+     * Reorders the queue. The player renumbers itself, so this only has to
+     * republish the snapshot the queue screen renders from.
+     */
+    fun moveQueueItem(
+        from: Int,
+        to: Int,
+    ) {
+        playback.moveInQueue(from, to)
+        refresh()
+    }
+
+    /** Drops one queue entry; removing the playing track advances to the next. */
+    fun removeQueueItem(index: Int) {
+        playback.removeFromQueue(index)
+        refresh()
+    }
+
+    /** Empties the queue and stops playback. */
+    fun clearQueue() {
+        playback.clearQueue()
+        refresh()
+    }
+
+    /**
+     * Saves the current queue as a named music playlist, so a queue built by
+     * hand is not lost the next time something replaces it. Returns false when
+     * the queue is empty or the name is blank or already taken.
+     */
+    fun saveQueueAsPlaylist(name: String): Boolean {
+        val trimmed = name.trim()
+        val uris = playback.queueUris()
+        if (trimmed.isEmpty() || uris.isEmpty()) return false
+        if (_library.value.playlists.any { it.name.equals(trimmed, ignoreCase = true) }) return false
+        musicPlaylists.save(MusicPlaylist(trimmed, uris))
+        _library.update { it.copy(playlists = musicPlaylists.list()) }
+        return true
+    }
+
     fun next() = playback.next()
 
     fun previous() = playback.previous()

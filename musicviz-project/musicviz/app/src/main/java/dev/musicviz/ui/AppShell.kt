@@ -94,6 +94,7 @@ fun AppRoot(
     var dest by rememberSaveable { mutableStateOf(0) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
+    var showQueue by rememberSaveable { mutableStateOf(false) }
     // rememberSaveable: rotation/config changes must not replay the intro;
     // only a fresh process start does.
     var bootDone by rememberSaveable { mutableStateOf(false) }
@@ -146,6 +147,7 @@ fun AppRoot(
                 onExpand = { expanded = true },
                 onPlayPause = viewModel::togglePlayPause,
                 onNext = viewModel::next,
+                onOpenQueue = { showQueue = true },
             )
         }
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -243,6 +245,12 @@ fun AppRoot(
                     },
                 )
             }
+            // After Now Playing, so the queue draws over an expanded
+            // visualizer and - being composed later - its BackHandler wins,
+            // closing the queue before anything underneath it.
+            if (showQueue) {
+                QueueSheet(viewModel, onClose = { showQueue = false })
+            }
             // Last overlay in the Box so it draws above everything else.
             if (bootAnimEnabled && !bootDone) {
                 BootIntro(onDone = { bootDone = true })
@@ -286,6 +294,7 @@ private fun MiniPlayer(
     onExpand: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
+    onOpenQueue: () -> Unit,
 ) {
     if (!hasMedia) return
     Column(
@@ -313,6 +322,9 @@ private fun MiniPlayer(
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyMedium,
             )
+            IconButton(onClick = onOpenQueue) {
+                Icon(Icons.AutoMirrored.Filled.QueueMusic, "Queue")
+            }
             IconButton(onClick = onPlayPause) {
                 Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play/Pause")
             }

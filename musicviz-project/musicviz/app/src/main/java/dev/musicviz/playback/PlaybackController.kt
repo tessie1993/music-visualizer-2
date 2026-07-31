@@ -185,6 +185,46 @@ class PlaybackController(
             titleOf(player.getMediaItemAt(i)) ?: "Track ${i + 1}"
         }
 
+    /** Queue entries in play order, as uris; entries without one are skipped. */
+    fun queueUris(): List<String> =
+        (0 until player.mediaItemCount).mapNotNull {
+            player
+                .getMediaItemAt(it)
+                .localConfiguration
+                ?.uri
+                ?.toString()
+        }
+
+    /**
+     * Reorders the queue. The player keeps playing the same track across the
+     * move and renumbers the rest itself, so there is no index bookkeeping to
+     * do here.
+     */
+    fun moveInQueue(
+        from: Int,
+        to: Int,
+    ) {
+        val size = player.mediaItemCount
+        if (from !in 0 until size) return
+        val target = to.coerceIn(0, size - 1)
+        if (target == from) return
+        player.moveMediaItem(from, target)
+    }
+
+    /**
+     * Drops one entry. Removing the playing track advances to the next one,
+     * which is ExoPlayer's own behaviour and the same thing the user means by
+     * deleting what they are hearing.
+     */
+    fun removeFromQueue(index: Int) {
+        if (index in 0 until player.mediaItemCount) player.removeMediaItem(index)
+    }
+
+    /** Empties the queue and stops playback. */
+    fun clearQueue() {
+        player.clearMediaItems()
+    }
+
     /** Jumps playback to the given queue position. */
     fun playQueueIndex(index: Int) {
         if (index in 0 until player.mediaItemCount) {
