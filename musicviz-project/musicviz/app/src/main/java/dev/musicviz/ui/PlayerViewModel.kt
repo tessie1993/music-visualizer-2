@@ -339,16 +339,39 @@ class PlayerViewModel(
     val guiPrefs: StateFlow<GuiPrefs> = _guiPrefs
 
     fun setGuiPrefs(prefs: GuiPrefs) {
+        val previous = _guiPrefs.value
         themeStore.saveGui(prefs)
         _guiPrefs.value = prefs
         engine.beatThresholdSigma = prefs.beatThresholdSigma
         engine.beatMinIntervalMs = prefs.beatMinIntervalMs
-        // The offline timeline drives export and the intelligence modes; it
-        // stores the raw onset curve, so the new sensitivity can be applied
-        // to the already-analysed track right now instead of only after a
-        // re-analysis. Without this, an export would keep the beat grid the
-        // track happened to be analysed under.
-        timeline = timeline?.withBeatSensitivity(prefs.beatThresholdSigma, prefs.beatMinIntervalMs)
+        val sensitivityChanged =
+            previous.beatThresholdSigma != prefs.beatThresholdSigma ||
+                previous.beatMinIntervalMs != prefs.beatMinIntervalMs
+        if (sensitivityChanged) redecideCachedBeats(prefs)
+    }
+
+    /**
+     * Re-decides the offline timeline's beats from its stored onset curve, so
+     * a sensitivity change reaches an already-analysed track without a second
+     * analysis pass. Off the main thread and debounced: a slider drag calls
+     * this on every tick and a full track is tens of thousands of frames.
+     * (Export re-applies the current settings itself, so a drag racing the
+     * export button cannot produce a stale beat grid in the file.)
+     */
+    private fun redecideCachedBeats(prefs: GuiPrefs) {
+        val base = timeline ?: return
+        val uri = currentUri
+        beatRedecideJob?.cancel()
+        beatRedecideJob =
+            viewModelScope.launch(Dispatchers.Default) {
+                delay(120)
+                val updated = base.withBeatSensitivity(prefs.beatThresholdSigma, prefs.beatMinIntervalMs)
+                val now = _guiPrefs.value
+                val stillCurrent =
+                    now.beatThresholdSigma == prefs.beatThresholdSigma &&
+                        now.beatMinIntervalMs == prefs.beatMinIntervalMs
+                if (stillCurrent && currentUri == uri) timeline = updated
+            }
     }
 
     fun setTheme(theme: AppTheme) {
@@ -638,6 +661,7 @@ class PlayerViewModel(
     private var timeline: FeatureTimeline? = null
     private var currentUri: Uri? = null
     private var exportJob: Job? = null
+    private var beatRedecideJob: Job? = null
 
     @Volatile
     private var exportCancelled = false
@@ -1938,10 +1962,18 @@ class PlayerViewModel(
         exportJob =
             viewModelScope.launch(Dispatchers.Default) {
                 try {
-                    val t =
+                    val analysed =
                         timeline ?: analyzeCached(uri) { p ->
                             _exportState.update { it.copy(progress = p * 0.2f) }
                         }.also { if (currentUri == uri) timeline = it }
+                    // Always re-decide the beats from the stored onset curve
+                    // at the sensitivity in force right now: the in-memory
+                    // timeline may have been analysed (or last re-decided)
+                    // under other settings, and a video that flashes
+                    // differently from the playback the user just watched is
+                    // the whole bug this guards against.
+                    val gui = _guiPrefs.value
+                    val t = analysed.withBeatSensitivity(gui.beatThresholdSigma, gui.beatMinIntervalMs)
                     // Publish the section context the exporter is about to
                     // journey through, so live playback of the same track
                     // re-seats identically from now on (journey parity even
