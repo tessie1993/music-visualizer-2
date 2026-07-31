@@ -310,3 +310,41 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     decay must look identical in both files; a 30 fps clip whose pulses
     hang around twice as long means the envelope is not running on the
     export's own frame delta.
+33. MilkDrop palette tint (Color > Palettes, "MilkDrop palette tint"):
+    load a handful of your own .milk presets, pick one with strong
+    colour and one that is mostly white/grey, and start at 0. AT 0
+    NOTHING MAY CHANGE — that is the whole contract: apply a preset
+    saved before this build and confirm it looks exactly as it did.
+    Now drag the slider up on the saturated preset with the palette set
+    to Fire: the frame must slide into the reds while keeping its
+    shapes, its light and shade and its motion — VALUE is never touched,
+    so nothing may get brighter, darker or flatter, only differently
+    coloured. Cycle the palette chips (Ocean, Aurora, Mono) at tint 1:
+    each must be a clearly different colour world. Then switch between
+    two DIFFERENT presets at tint 1 — they must still look like two
+    different presets, not one. If they read as identical the tint is
+    replacing colour instead of steering it, and the stage is wrong.
+    GREY SIDE — on the white/grey preset the tint must still bite: its
+    cores take the palette entry their own brightness selects. Watch a
+    large flat white area as the slider moves; it must colour up
+    smoothly, with no speckle or banding at the edge of the flat region.
+    INTERACTION SIDE — with the tint at ~0.7 drag "Hue range" from 0 to
+    1.5: at 0 the frame collapses toward one hue and it must widen
+    smoothly, the 1.0–1.5 band included (unlike the fluid styles, which
+    clamp it). Drag "Hue shift" and switch "Color cycle" on: the tinted
+    frame must rotate as a whole, one turn per slider unit — a hue that
+    travels twice as far as on a shader style means the tint is being
+    applied after the rotation instead of before it. Build a palette in
+    the gradient/palette maker, save it and select it: the tint must
+    follow it with no separate handling, and the same for a custom
+    palette restored from a saved preset.
+    REGRESSION SIDE — switch to a shader, a particle and each fluid
+    style with the tint at 1: nothing may change on any of them, since
+    only MilkDrop reads it. Tap "⚄ Randomize unlocked" a few times on
+    MilkDrop: the tint must move sometimes and mostly sit at 0, and
+    locking "MilkDrop palette tint" must hold it.
+    EXPORT SIDE — export a ~10 s clip of a MilkDrop preset at tint ~0.7
+    and play it beside the live view: the colours must match. The tint
+    lives in the scene's own post pass, so the exporter gets it for
+    free — a clip that comes out untinted means the export path is
+    building the scene without it.

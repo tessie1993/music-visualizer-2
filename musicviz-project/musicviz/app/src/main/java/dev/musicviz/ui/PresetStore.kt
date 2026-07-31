@@ -140,6 +140,7 @@ class PresetStore(
                 .put("palette2RangeOverride", p.params.palette2RangeOverride.toDouble())
                 .put("customPaletteId", p.params.customPaletteId)
                 .put("customPalette2Id", p.params.customPalette2Id)
+                .put("milkdropPaletteTint", p.params.milkdropPaletteTint.toDouble())
                 .put("duotone", p.params.duotone)
                 .put("bloom", p.params.bloom.toDouble())
                 .put("driftX", p.params.driftX.toDouble())
@@ -272,6 +273,10 @@ class PresetStore(
                             o.optDouble("palette2RangeOverride", SceneParams.UNSET_OVERRIDE.toDouble()).toFloat(),
                         customPaletteId = o.optString("customPaletteId", SceneParams.NO_CUSTOM_PALETTE),
                         customPalette2Id = o.optString("customPalette2Id", SceneParams.NO_CUSTOM_PALETTE),
+                        // Absent in every preset saved before the MilkDrop
+                        // palette tint existed; 0 keeps those looking exactly
+                        // as they were authored.
+                        milkdropPaletteTint = o.optDouble("milkdropPaletteTint", 0.0).toFloat(),
                         colorShift = o.optDouble("colorShift", 0.0).toFloat(),
                         hueRange = o.optDouble("hueRange", 1.0).toFloat(),
                         saturation = o.optDouble("saturation", 1.0).toFloat(),

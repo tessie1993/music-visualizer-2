@@ -86,8 +86,9 @@ The three composite gates, all in `VisualizerRenderer.kt`:
 
 | Param | SH | PT | MD | FL | CF | WA |
 |---|---|---|---|---|---|---|
-| `palette` → `paletteBase`/`paletteRange` | S `:193-194` | P `ParticleSceneBase.kt:123-124` | — ⁹ | FL `FluidScene.kt:258-259` | CF `CurlFlowScene.kt:208-209` | WA `WaterScene.kt:247,280` |
-| `hueRange` | S `:185` | P `:124` | — ⁹ | FL (via `FluidHue.span`) | CF (same) | WA (same) |
+| `palette` → `paletteBase`/`paletteRange` | S `:193-194` | P `ParticleSceneBase.kt:123-124` | PM ⁹ (`uPalBase`/`uPalSpan`) | FL `FluidScene.kt:258-259` | CF `CurlFlowScene.kt:208-209` | WA `WaterScene.kt:247,280` |
+| `hueRange` | S `:185` | P `:124` | PM ⁹ (folded into `uPalSpan`) | FL (via `FluidHue.span`) | CF (same) | WA (same) |
+| `milkdropPaletteTint` | — | — | PM `uPalTint` ⁹ | — | — | — |
 | `palette*Override` / `customPalette*Id` | resolved inside `paletteBase`/`paletteRange` (`SceneParams.kt:271-281`) — every family that reads a palette reads overrides for free | | | | | |
 | `colorShift` | S `:184` | P `:123` | PM `:224` | C `:829` | C | C |
 | `colorCycle` / `cycleSpeed` | S `:124,184` | P `:88,123` | PM `:166,224` | C (`postCyclePhase`) | C | C |
@@ -178,8 +179,22 @@ The gate predicates live in `VisualsHub.kt:372-400` and are pinned by
    nothing to blend is worse than no slider). Pinned by
    `ShaderLookGatingTest`, which parses the gating back out of
    `CustomizeDialog.kt`.
-9. MilkDrop colours are authored by the preset; `pm_post_frag` rotates hue but
-   has no palette table to key off.
+9. **MilkDrop tints, it does not repaint.** A `.milk` preset authors its own
+   colours, so the Palettes card reaches it as a BLEND toward the palette
+   (`pm_post_frag`'s `paletteTint`, uploaded by `ProjectMScene.draw`) rather
+   than as the colour itself. `milkdropPaletteTint` is that blend and is 0 by
+   default — an exact no-op, so every preset a user already saved looks
+   unchanged. The stage works in HSV and never touches VALUE, so the preset
+   keeps its structure and contrast; a pixel that has chroma keeps its hue
+   RELATIONSHIPS (compressed into the palette's band), which is what stops the
+   whole format from collapsing onto one look, and a pixel that has none is
+   gradient-mapped from its own luma so white cores can show the palette at
+   all. The span is `paletteRange * hueRange`, the shader/particle form, not
+   `FluidHue.span`. Mirrored and pinned by `CompositeGrade.paletteTint` /
+   `CompositeGradeTest`. The slider is labelled "MilkDrop palette tint" and is
+   shown on every style — `ColorTab` is handed no MilkDrop predicate, so the
+   style lives in the label, as with "Trails (particle scenes)" and
+   "Glow (fluid)".
 
 ## Divergences worth knowing
 
@@ -188,11 +203,16 @@ The gate predicates live in `VisualsHub.kt:372-400` and are pinned by
   styles the slider's 1.0–1.5 range is flat and 0 does not collapse the
   palette to one colour. Shader and particle scenes multiply the raw value.
   Intentional (a 0 span kills the fluid look), documented here rather than
-  fixed, because it also means those styles cannot over-span.
+  fixed, because it also means those styles cannot over-span. MilkDrop's
+  palette tint joins the shader/particle side of that divergence
+  (`CompositeGrade.paletteSpan`): a 0 span there legitimately means "one hue".
 * **Hue rotation is applied exactly once on the fluid family.** The scene owns
   palette IDENTITY (base + span, decided at emission time), the composite owns
   ROTATION (`colorShift + cyclePhase`). See `FluidHue.kt:5-24`; folding either
-  into the scene as well turned the wheel twice per slider unit.
+  into the scene as well turned the wheel twice per slider unit. `pm_post_frag`
+  runs the same split inside one shader: the palette tint (identity) is applied
+  BEFORE `uHue` (rotation), so "Hue shift" turns the tinted frame instead of
+  being cancelled by it.
 * **Brightness/intensity is applied exactly once.** `CurlFlowMath` and
   `WaterMath` deliberately return exposure-free values; the composite's
   `uPostBright = brightness * intensity` is the single owner for FL/CF/WA.

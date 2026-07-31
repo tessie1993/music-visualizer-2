@@ -3,6 +3,7 @@ package dev.musicviz.render.scene
 import android.opengl.GLES30
 import android.os.SystemClock
 import dev.musicviz.analysis.AudioFeatures
+import dev.musicviz.render.CompositeGrade
 import java.io.File
 
 /** A chunk of fresh mono PCM samples; [count] entries of [data] are valid. */
@@ -18,6 +19,10 @@ class PcmChunk(
  * Customize panel (zoom, rotation, mirror, endless zoom, hue/saturation/
  * brightness/contrast/gamma/invert, intensity) work on .milk presets too.
  * Beat response maps to projectM's own beat sensitivity.
+ *
+ * The same pass is where the Palettes card reaches MilkDrop: see [draw] for
+ * why the palette can only ever TINT a .milk preset, never replace its
+ * colours.
  *
  * "Audio drive" is deliberately NOT wired here - see [update] for why.
  *
@@ -193,6 +198,22 @@ class ProjectMScene(
         }
     }
 
+    /**
+     * Renders the engine into [pmTex] and draws it through the Customize post
+     * pass.
+     *
+     * WHY THE PALETTE ONLY TINTS HERE: every other style GENERATES its colour,
+     * so `paletteBase`/`paletteRange` simply decide what it emits. A .milk
+     * preset arrives already coloured by its author, so the only honest thing
+     * the palette can do is steer those colours (`uPalTint`, a blend that is 0
+     * - an exact no-op - until the user asks for it). Replacing them outright
+     * would repaint every saved preset and make the whole format read as one
+     * look, which is the opposite of what a MilkDrop collection is for. The
+     * split of labour matches the fluid family's: this stage owns palette
+     * IDENTITY (base hue + span) and runs BEFORE `uHue`, which owns rotation
+     * ("Hue shift" + the colour cycle), so one slider unit turns the wheel
+     * exactly once.
+     */
     override fun draw(timeSeconds: Float) {
         ensureCreated()
         ensureFbo()
@@ -240,6 +261,12 @@ class ProjectMScene(
         setUniform1f("uRotation", rotationAngle)
         setUniform1f("uZoomPhase", zoomPhase)
         setUniform1f("uMirrorX", if (p.mirror) 1f else 0f)
+        // paletteBase/paletteRange resolve a user-made palette from the
+        // palette maker transparently (SceneParams' override fields), so the
+        // maker works here with no custom-palette branch of its own.
+        setUniform1f("uPalBase", p.paletteBase)
+        setUniform1f("uPalSpan", CompositeGrade.paletteSpan(p.hueRange, p.paletteRange))
+        setUniform1f("uPalTint", CompositeGrade.paletteTintAmount(p.milkdropPaletteTint))
         setUniform1f("uHue", p.colorShift + cyclePhase)
         setUniform1f("uSat", p.saturation)
         setUniform1f("uBright", p.brightness)

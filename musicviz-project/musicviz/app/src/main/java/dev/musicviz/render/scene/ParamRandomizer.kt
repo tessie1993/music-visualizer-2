@@ -146,6 +146,9 @@ object ParamRandomizer {
             it.copy(palette2 = rng.nextInt(SceneParams.PALETTES.size)).withoutCustomPalette(second = true)
         }
         r("Palette blend") { it.copy(paletteMix = sometimes(0.5f, 0.2f, 0.8f)) }
+        // Rolled like any other look param, but `sometimes` keeps 0 - the
+        // preset's own colours - the most common outcome on MilkDrop.
+        r("MilkDrop palette tint") { it.copy(milkdropPaletteTint = sometimes(0.4f, 0.2f, 0.9f)) }
         r("Hue shift") { it.copy(colorShift = f(0f, 1f)) }
         r("Hue range") { it.copy(hueRange = f(0.5f, 1.5f)) }
         r("Color cycle") { it.copy(colorCycle = chance(0.3f)) }

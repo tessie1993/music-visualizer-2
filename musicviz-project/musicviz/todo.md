@@ -375,16 +375,45 @@ it was left and what closing it involves.
       Check `fluidParticlesEnabled` first: on FLUID the point layer can be
       switched off, which would make `particleSize` conditionally inert
       there too. Left out of the v1.1.0 gating round deliberately.
-- [ ] **MilkDrop ignores the whole "Palettes" section.** `ProjectMScene`
-      reads `colorCycle`/`cycleSpeed` but never `paletteBase`/`paletteRange`
-      — a .milk preset brings its own colours — so Palette, the gradient/
-      palette maker and `hueRange` do nothing on MILKDROP while working on
-      all five other families. Gating them there would hide the palette
-      maker (a whole card, not one slider) on one style, so decide the UX
-      first: hide the section, or teach the composite to tint MilkDrop
-      output toward the chosen palette (a new `uPostPalette*` stage, same
-      shape as the v0.14 grading work) so the controls become real instead
-      of disappearing. The second option is the better product answer.
+- [x] **MilkDrop ignores the whole "Palettes" section.** CLOSED by the
+      second option, teaching the render path to tint: `ProjectMScene` now
+      uploads `uPalBase` / `uPalSpan` / `uPalTint` to its OWN post pass
+      (`pm_post_frag`, not the shared composite — that pass is why MilkDrop
+      is excluded from `uPostGrade` in the first place), so Palette, the
+      gradient/palette maker and `hueRange` all bite on MILKDROP. Nothing is
+      hidden. The new `SceneParams.milkdropPaletteTint` is the blend amount
+      and is **0 by default — an exact no-op**, pinned by
+      `CompositeGradeTest`, so every saved preset and the default experience
+      are untouched until the user opts in.
+      SHAPE OF THE TINT (the part that decides whether this was worth doing):
+      it runs in HSV and never touches VALUE, so a preset keeps its
+      structure, contrast and motion. A pixel that HAS chroma keeps its hue
+      RELATIONSHIPS — they are compressed into the palette's band — which is
+      what stops every .milk preset from collapsing onto one look; a pixel
+      with none has no hue to steer, so it is gradient-mapped from its own
+      luma (the only way the white cores most presets draw can show the
+      palette, and smooth across flat areas where a steered hue would just
+      amplify quantization noise). The saturation lift is weighted by the
+      same chroma knee, so an already-coloured pixel keeps its saturation
+      exactly and the tint never doubles as a saturation boost. Applied
+      BEFORE `uHue`, mirroring the fluid family's identity/rotation split, so
+      "Hue shift" and the colour cycle still turn the frame exactly once.
+      Span is `paletteRange * hueRange` (the shader/particle form, not
+      `FluidHue.span`). Custom palettes need no branch: they arrive through
+      `paletteBase`/`paletteRange`. Export inherits it for free — the tint is
+      in the scene's own pass, which the exporter builds too.
+      TWO CONSTANTS ARE JUDGEMENT CALLS awaiting device check 33: the chroma
+      knee (0.15, where a pixel stops having a hue worth steering) and the
+      grey saturation lift (0.35, how much colour a white core gains at full
+      tint). Both are bounded, both are continuous in the blend, and the user
+      owns the blend — but they are the numbers to retune if the tint reads
+      as too timid or too plastic on real presets.
+      ONE THING LEFT: the slider is shown on every style with the family in
+      its label ("MilkDrop palette tint", as with "Trails (particle scenes)"
+      and "Glow (fluid)") because `ColorTab` is handed no MilkDrop predicate.
+      When `VisualsHub` next gains one (`isMilkdropSceneId`), gate it there
+      and drop the qualifier from the label — remembering that the label IS
+      the `ParamRandomizer` lock key.
 - [ ] `endlessZoom` is shown on the fluid styles, which have no respawn/
       outflow behaviour to drive. Same fix shape as the item above; low
       priority because the checkbox is cheap and harmless.
