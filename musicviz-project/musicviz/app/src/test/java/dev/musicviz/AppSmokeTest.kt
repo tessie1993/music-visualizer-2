@@ -29,7 +29,7 @@ class AppSmokeTest {
     val compose = createAndroidComposeRule<MainActivity>()
 
     private fun navTo(label: String) {
-        compose.onNode(hasText(label) and isSelectable()).performClick()
+        compose.onNode(hasText(label, ignoreCase = true) and isSelectable()).performClick()
         compose.waitForIdle()
     }
 
@@ -56,14 +56,14 @@ class AppSmokeTest {
     fun visuals_hub_all_tabs_compose() {
         navTo("Visuals")
         listOf("Styles", "Customize", "Textures", "Presets").forEach { tab ->
-            compose.onNode(hasText(tab) and isSelectable()).performClick()
+            compose.onNode(hasText(tab, ignoreCase = true) and isSelectable()).performClick()
             compose.waitForIdle()
         }
         // Styles sub-tabs including the MilkDrop tab
-        compose.onNode(hasText("Styles") and isSelectable()).performClick()
+        compose.onNode(hasText("Styles", ignoreCase = true) and isSelectable()).performClick()
         compose.waitForIdle()
         listOf("Particles", "Shaders", "MilkDrop").forEach { sub ->
-            compose.onNode(hasText(sub) and isSelectable()).performClick()
+            compose.onNode(hasText(sub, ignoreCase = true) and isSelectable()).performClick()
             compose.waitForIdle()
         }
     }
@@ -71,9 +71,11 @@ class AppSmokeTest {
     @Test
     fun customize_hub_shows_sliders_and_randomize() {
         navTo("Visuals")
-        compose.onNode(hasText("Customize") and isSelectable()).performClick()
+        compose.onNode(hasText("Customize", ignoreCase = true) and isSelectable()).performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("⚄ Randomize unlocked").assertExists()
+        // The crystal redesign renders this as a CrystalButton labelled
+        // "Randomize Unlocked" (the decorative die glyph is gone).
+        compose.onNodeWithText("Randomize unlocked", ignoreCase = true).assertExists()
         compose.onAllNodesWithText("Speed", substring = true).onFirst().assertExists()
     }
 

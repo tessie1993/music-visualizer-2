@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -40,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -251,7 +253,7 @@ fun CrystalTabRow(
             Column(
                 Modifier
                     .clip(RoundedCornerShape(8.dp))
-                    .clickable { onSelect(i) }
+                    .selectable(selected = sel, role = Role.Tab, onClick = { onSelect(i) })
                     .padding(horizontal = 10.dp, vertical = 8.dp)
                     .width(IntrinsicSize.Max),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -313,7 +315,7 @@ fun CrystalSegmented(
                         } else {
                             Modifier
                         },
-                    ).clickable { onSelect(i) }
+                    ).selectable(selected = sel, role = Role.Tab, onClick = { onSelect(i) })
                     .padding(horizontal = 14.dp, vertical = 7.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -642,7 +644,7 @@ fun CrystalNavBar(
                 Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(14.dp))
-                    .clickable { onSelect(i) }
+                    .selectable(selected = sel, role = Role.Tab, onClick = { onSelect(i) })
                     .padding(vertical = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
