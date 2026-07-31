@@ -33,6 +33,7 @@ import dev.musicviz.export.VideoExporter
 import dev.musicviz.render.TransitionStyle
 import dev.musicviz.render.scene.ParamRandomizer
 import dev.musicviz.render.scene.PcmChunk
+import dev.musicviz.render.scene.SceneFactory
 import dev.musicviz.render.scene.SceneIds
 import dev.musicviz.render.scene.SceneParams
 import kotlinx.coroutines.Dispatchers
@@ -237,8 +238,50 @@ class PlayerViewModel(
         vizPrefs().edit().putString("live_state", json).apply()
     }
 
-    private val _exportState = MutableStateFlow(ExportUiState())
-    val exportState: StateFlow<ExportUiState> = _exportState
+    /**
+     * What export reaches into. Declared as its own object rather than making
+     * the ViewModel implement [ExportSource]: `currentUri` and `timeline` are
+     * private state, and they must not become public just to satisfy an
+     * interface.
+     */
+    private val exportSource =
+        object : ExportSource {
+            override val currentUri: Uri?
+                get() = this@PlayerViewModel.currentUri
+
+            override val timeline: FeatureTimeline?
+                get() = this@PlayerViewModel.timeline
+
+            override fun cacheTimeline(
+                uri: Uri,
+                timeline: FeatureTimeline,
+            ) {
+                if (this@PlayerViewModel.currentUri == uri) this@PlayerViewModel.timeline = timeline
+            }
+
+            override suspend fun analyze(
+                uri: Uri,
+                onProgress: (Float) -> Unit,
+            ): FeatureTimeline = analyzeCached(uri, onProgress)
+
+            override fun beatSensitivity(): BeatSensitivity =
+                BeatSensitivity(_guiPrefs.value.beatThresholdSigma, _guiPrefs.value.beatMinIntervalMs)
+
+            override fun visuals(): ExportVisuals = ExportVisuals(_vizState.value.params, _lfos.value, _adsrs.value)
+
+            override fun publishJourney(
+                uri: Uri,
+                timeline: FeatureTimeline,
+            ) {
+                if (this@PlayerViewModel.currentUri == uri && _vizState.value.sections.isEmpty()) {
+                    _vizState.update { it.copy(bpm = timeline.bpm, sections = timeline.detectSections()) }
+                }
+            }
+        }
+
+    private val exportCoordinator = ExportCoordinator(viewModelScope, exporter, exportSource)
+
+    val exportState: StateFlow<ExportUiState> = exportCoordinator.state
 
     private val _library = MutableStateFlow(LibraryState(trackLibrary.list(), musicPlaylists.list()))
     val library: StateFlow<LibraryState> = _library
@@ -545,11 +588,7 @@ class PlayerViewModel(
 
     private var timeline: FeatureTimeline? = null
     private var currentUri: Uri? = null
-    private var exportJob: Job? = null
     private var beatRedecideJob: Job? = null
-
-    @Volatile
-    private var exportCancelled = false
 
     // Fields used by the construction-time main loop (launched in the init
     // block below on Main.immediate, which executes synchronously until its
@@ -1656,84 +1695,19 @@ class PlayerViewModel(
     fun startExport(
         aspect: ExportAspect,
         fps: Int,
-        sceneFactory: VideoExporter.SceneFactory,
+        sceneFactory: SceneFactory,
         destination: Uri? = null,
     ) {
-        val uri = currentUri ?: return
-        if (_exportState.value.running) return
-        exportCancelled = false
-        _exportState.value = ExportUiState(running = true, customDestination = destination != null)
-        exportJob =
-            viewModelScope.launch(Dispatchers.Default) {
-                try {
-                    val analysed =
-                        timeline ?: analyzeCached(uri) { p ->
-                            _exportState.update { it.copy(progress = p * 0.2f) }
-                        }.also { if (currentUri == uri) timeline = it }
-                    // Always re-decide the beats from the stored onset curve
-                    // at the sensitivity in force right now: the in-memory
-                    // timeline may have been analysed (or last re-decided)
-                    // under other settings, and a video that flashes
-                    // differently from the playback the user just watched is
-                    // the whole bug this guards against.
-                    val gui = _guiPrefs.value
-                    val t = analysed.withBeatSensitivity(gui.beatThresholdSigma, gui.beatMinIntervalMs)
-                    // Publish the section context the exporter is about to
-                    // journey through, so live playback of the same track
-                    // re-seats identically from now on (journey parity even
-                    // in MANUAL mode, where onTrackChanged only reads cache).
-                    if (currentUri == uri && _vizState.value.sections.isEmpty()) {
-                        _vizState.update { it.copy(bpm = t.bpm, sections = t.detectSections()) }
-                    }
-                    val name = "musicviz_${System.currentTimeMillis()}.mp4"
-                    val result =
-                        exporter.export(
-                            audioUri = uri,
-                            timeline = t,
-                            sceneFactory = sceneFactory,
-                            aspect = aspect,
-                            fileName = name,
-                            sceneParams = _vizState.value.params,
-                            lfoConfigs = _lfos.value,
-                            adsrConfigs = _adsrs.value,
-                            requestedFps = fps,
-                            destination = destination,
-                            onProgress = { p ->
-                                _exportState.update { it.copy(progress = 0.2f + p * 0.8f) }
-                            },
-                            isCancelled = { exportCancelled },
-                        )
-                    _exportState.value =
-                        ExportUiState(
-                            running = false,
-                            progress = 1f,
-                            resultUri = result,
-                            customDestination = destination != null,
-                        )
-                } catch (t: Throwable) {
-                    if (exportCancelled) {
-                        // User-initiated cancel (can surface as our own
-                        // CancellationException from the transcoder): not an
-                        // error, just reset the state.
-                        _exportState.value = ExportUiState(running = false)
-                    } else if (t is kotlinx.coroutines.CancellationException) {
-                        _exportState.value = ExportUiState(running = false)
-                        throw t
-                    } else {
-                        val detail = "${t.javaClass.simpleName}: ${t.message ?: "no message"}"
-                        _exportState.value = ExportUiState(running = false, error = detail)
-                    }
-                }
-            }
+        exportCoordinator.start(aspect, fps, sceneFactory, destination)
     }
 
     fun cancelExport() {
-        exportCancelled = true
+        exportCoordinator.cancel()
     }
 
     /** Clears a finished export's result/error so the next dialog open shows the options again. */
     fun resetExportState() {
-        if (!_exportState.value.running) _exportState.value = ExportUiState()
+        exportCoordinator.reset()
     }
 
     override fun onCleared() {

@@ -6,7 +6,6 @@ import android.opengl.GLSurfaceView
 import android.os.SystemClock
 import dev.musicviz.R
 import dev.musicviz.analysis.AudioFeatures
-import dev.musicviz.export.VideoExporter
 import dev.musicviz.render.fluid.CurlFlowMath
 import dev.musicviz.render.scene.BurstScene
 import dev.musicviz.render.scene.FountainScene
@@ -18,6 +17,7 @@ import dev.musicviz.render.scene.ParticleSceneBase
 import dev.musicviz.render.scene.PcmChunk
 import dev.musicviz.render.scene.ProjectMScene
 import dev.musicviz.render.scene.Scene
+import dev.musicviz.render.scene.SceneFactory
 import dev.musicviz.render.scene.SceneIds
 import dev.musicviz.render.scene.SceneParams
 import dev.musicviz.render.scene.ShaderScene
@@ -987,8 +987,8 @@ class VisualizerRenderer(
      * Builds fresh scene instances for the export GL context. Never reuses
      * live-context objects: GL handles are not shareable across contexts.
      */
-    fun exportSceneFactory(sceneId: String): VideoExporter.SceneFactory =
-        object : VideoExporter.SceneFactory {
+    fun exportSceneFactory(sceneId: String): SceneFactory =
+        object : SceneFactory {
             override fun create(): Scene {
                 val exportParams = sceneParams
                 val particleShaders = particleShaderSources(context)

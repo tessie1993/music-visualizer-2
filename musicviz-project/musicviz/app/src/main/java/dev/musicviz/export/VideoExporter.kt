@@ -14,6 +14,7 @@ import android.provider.MediaStore
 import dev.musicviz.analysis.FeatureTimeline
 import dev.musicviz.render.fluid.CurlFlowMath
 import dev.musicviz.render.scene.Scene
+import dev.musicviz.render.scene.SceneFactory
 import dev.musicviz.render.scene.SceneParams
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -95,10 +96,6 @@ class VideoExporter(
 
         /** Ripple overlay grid short side - matches the live renderer's. */
         private const val RIPPLE_OVERLAY_RES = 256
-    }
-
-    interface SceneFactory {
-        fun create(): Scene
     }
 
     suspend fun export(
