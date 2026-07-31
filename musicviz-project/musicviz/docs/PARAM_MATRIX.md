@@ -158,11 +158,14 @@ The gate predicates live in `VisualsHub.kt:372-400` and are pinned by
    on FL, `waterDamping` on WA). The label says "(particle scenes)".
 8. **By design, shader-only:** `morph` deforms geometry inside each fragment
    pattern; `palette2`/`paletteMix`/`duotone` need the fragment palette
-   machinery. There is no meaningful post-hoc equivalent. **Gap:** since the
-   Customize panel moved into `VisualsHub`, the Shape and Color tabs are shown
-   unconditionally, so these four now render as live sliders on styles that
-   ignore them. Written up in `todo.md` (the fix is scene-family gating on
-   those tabs, matching what the Fluid tab already does).
+   machinery. There is no meaningful post-hoc equivalent. Since v1.1.0 the
+   Shape and Color tabs GATE all four on `VisualsHub.isShaderLookSceneId`, so
+   they only appear on shader styles — the same rule the Fluid tab uses, and
+   the reason a "—" in this row is no longer a visible dead control.
+   `paletteMix` and `palette2` are gated as one group (a blend slider with
+   nothing to blend is worse than no slider). Pinned by
+   `ShaderLookGatingTest`, which parses the gating back out of
+   `CustomizeDialog.kt`.
 9. MilkDrop colours are authored by the preset; `pm_post_frag` rotates hue but
    has no palette table to key off.
 
