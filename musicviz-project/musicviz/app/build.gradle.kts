@@ -1,3 +1,4 @@
+import java.time.Duration
 import java.util.Properties
 
 plugins {
@@ -127,8 +128,10 @@ android {
 // A deadlocked Robolectric test produces no output at all, so without a bound
 // it silently burns the whole CI job timeout and reports nothing useful. Fail
 // fast instead: the suite normally finishes in about two minutes.
+// Duration is imported at the top: inside a build script `java` resolves to the
+// Java plugin extension, so the fully qualified java.time.Duration does not.
 tasks.withType<Test>().configureEach {
-    timeout.set(java.time.Duration.ofMinutes(15))
+    timeout.set(Duration.ofMinutes(15))
 }
 
 tasks.register<Copy>("syncThirdPartyNotices") {
