@@ -232,6 +232,7 @@ dependencies {
     implementation(libs.core.splashscreen)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.common)
+    implementation(libs.media3.session)
     implementation(libs.documentfile)
     implementation(libs.jtransforms)
     implementation(platform(libs.compose.bom))

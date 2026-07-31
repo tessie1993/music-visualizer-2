@@ -102,6 +102,8 @@ class PlaybackController(
 
     fun addListener(listener: Player.Listener) = player.addListener(listener)
 
+    fun removeListener(listener: Player.Listener) = player.removeListener(listener)
+
     val audioSessionId: Int get() = player.audioSessionId
 
     val positionMs: Long get() = player.currentPosition

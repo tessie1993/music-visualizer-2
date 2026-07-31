@@ -20,11 +20,11 @@ import dev.musicviz.analysis.FeatureTimeline
 import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.analysis.OfflineAnalyzer
 import dev.musicviz.analysis.SceneSuggester
-import dev.musicviz.audio.AudioFxController
 import dev.musicviz.audio.AudioFxState
 import dev.musicviz.export.ExportAspect
 import dev.musicviz.export.VideoExporter
-import dev.musicviz.playback.PlaybackController
+import dev.musicviz.playback.PlaybackEngine
+import dev.musicviz.playback.PlaybackService
 import dev.musicviz.playback.PlaybackSnapshot
 import dev.musicviz.render.TransitionStyle
 import dev.musicviz.render.scene.ParamRandomizer
@@ -148,12 +148,15 @@ class PlayerViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
     /**
-     * Playback (ExoPlayer + queue + PCM tap + sleep timer). Declared first
-     * because [engine] analyses the PCM its tap captures. Its callbacks are
-     * wired in the init block below, not here, so nothing can fire against a
-     * half-constructed ViewModel.
+     * Playback (ExoPlayer + queue + PCM tap + sleep timer). Borrowed from
+     * [PlaybackEngine] rather than constructed: audio outlives this ViewModel,
+     * so a second one here would be a second player fighting the first.
+     *
+     * Declared first because [engine] analyses the PCM its tap captures. Its
+     * callbacks are wired in the init block below, not here, so nothing can
+     * fire against a half-constructed ViewModel.
      */
-    private val playback = PlaybackController(application)
+    private val playback = PlaybackEngine.acquireForUi(application)
     private val engine = AnalysisEngine(playback.ring)
 
     // ---- Audio-quality readout ----
@@ -239,7 +242,10 @@ class PlayerViewModel(
     private val lfoStore = LfoStore(application)
     private val musicPlaylists = MusicPlaylistStore(application)
     private val exporter = VideoExporter(application)
-    private val audioFxController = AudioFxController(application)
+
+    // Also borrowed: the effects chain hangs off the player's audio session,
+    // so it has to live exactly as long as the player does.
+    private val audioFxController = PlaybackEngine.audioFx(application)
 
     private val _uiState = MutableStateFlow(PlaybackSnapshot())
     val uiState: StateFlow<PlaybackSnapshot> = _uiState
@@ -669,89 +675,105 @@ class PlayerViewModel(
     private val _autoMode = MutableStateFlow(0)
     val autoMode: StateFlow<Int> = _autoMode
 
+    /**
+     * Held so [onCleared] can unregister it. The player is shared across the
+     * process and outlives this ViewModel, so a listener left behind would
+     * keep a dead ViewModel alive and go on recording plays into its history
+     * alongside its replacement's.
+     */
+    private val playerListener =
+        object : Player.Listener {
+            override fun onEvents(
+                player: Player,
+                events: Player.Events,
+            ) {
+                refresh()
+                if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
+                    currentUri = player.currentMediaItem?.localConfiguration?.uri
+                    currentUri?.let { u ->
+                        val title =
+                            player.mediaMetadata.title?.toString()
+                                ?: player.currentMediaItem
+                                    ?.localConfiguration
+                                    ?.uri
+                                    ?.lastPathSegment
+                                    .orEmpty()
+                        historyStore.recordPlay(u.toString(), title)
+                        _historyTick.update { it + 1 }
+                    }
+                    onTrackChanged()
+                }
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                // Audio just started, so from here on it has to survive the
+                // app leaving the screen. Starting the service here rather
+                // than at each play/queue call site covers every route into
+                // playback, including the auto-advance to the next track and
+                // the notification's own transport buttons.
+                if (isPlaying) PlaybackService.ensureRunning(getApplication<Application>())
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                // A seek breaks the audio stream's continuity just as a
+                // track change does: the tracker's predicted beat frames
+                // now point at music that will not arrive, so it would
+                // suppress the real beats at the new position as off-grid
+                // until it re-locked. Covers every seek path (transport
+                // bar, gestures, the notification controls), which is why
+                // this hangs off the listener and not seekTo().
+                // Auto-advance discontinuities are left to
+                // EVENT_MEDIA_ITEM_TRANSITION, which resets anyway.
+                if (reason == Player.DISCONTINUITY_REASON_SEEK ||
+                    reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
+                ) {
+                    engine.reset()
+                }
+            }
+
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                // The audiofx chain must follow the sink's session; attach
+                // rebuilds the effects and restores persisted settings.
+                audioFxController.attach(audioSessionId)
+                refreshAudioFx()
+            }
+
+            override fun onTracksChanged(tracks: Tracks) {
+                // Selected audio track's source Format (mime, sample rate,
+                // pcm encoding, bitrate) for the quality readout. Defensive
+                // scan: take the first selected audio track, else null.
+                var fmt: Format? = null
+                outer@ for (group in tracks.groups) {
+                    if (group.type != C.TRACK_TYPE_AUDIO) continue
+                    for (i in 0 until group.length) {
+                        if (group.isTrackSelected(i)) {
+                            fmt = group.getTrackFormat(i)
+                            break@outer
+                        }
+                    }
+                }
+                sourceAudioFormat = fmt
+                recomputeAudioQuality()
+            }
+        }
+
     init {
         engine.start(viewModelScope)
         refreshNumericTitles()
-        // Restore persisted playback options onto the freshly built player.
-        // Auto-resume runs BEFORE the listener registers so the startup
-        // preparation never records a phantom play into history (ExoPlayer
-        // only delivers events to listeners registered when they occurred).
+        // Restore persisted playback options onto the player. Auto-resume runs
+        // BEFORE the listener registers so the startup preparation never
+        // records a phantom play into history (ExoPlayer only delivers events
+        // to listeners registered when they occurred).
         val pp = _playerPrefs.value
         playback.shuffle = pp.shuffle
         playback.repeatMode = pp.repeatMode
         applyPlaybackPrefs(pp)
         if (pp.autoResume) prepareLastPlayed()
-        playback.addListener(
-            object : Player.Listener {
-                override fun onEvents(
-                    player: Player,
-                    events: Player.Events,
-                ) {
-                    refresh()
-                    if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
-                        currentUri = player.currentMediaItem?.localConfiguration?.uri
-                        currentUri?.let { u ->
-                            val title =
-                                player.mediaMetadata.title?.toString()
-                                    ?: player.currentMediaItem
-                                        ?.localConfiguration
-                                        ?.uri
-                                        ?.lastPathSegment
-                                        .orEmpty()
-                            historyStore.recordPlay(u.toString(), title)
-                            _historyTick.update { it + 1 }
-                        }
-                        onTrackChanged()
-                    }
-                }
-
-                override fun onPositionDiscontinuity(
-                    oldPosition: Player.PositionInfo,
-                    newPosition: Player.PositionInfo,
-                    reason: Int,
-                ) {
-                    // A seek breaks the audio stream's continuity just as a
-                    // track change does: the tracker's predicted beat frames
-                    // now point at music that will not arrive, so it would
-                    // suppress the real beats at the new position as off-grid
-                    // until it re-locked. Covers every seek path (transport
-                    // bar, gestures, any future notification controls), which
-                    // is why this hangs off the listener and not seekTo().
-                    // Auto-advance discontinuities are left to
-                    // EVENT_MEDIA_ITEM_TRANSITION, which resets anyway.
-                    if (reason == Player.DISCONTINUITY_REASON_SEEK ||
-                        reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
-                    ) {
-                        engine.reset()
-                    }
-                }
-
-                override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                    // The audiofx chain must follow the sink's session; attach
-                    // rebuilds the effects and restores persisted settings.
-                    audioFxController.attach(audioSessionId)
-                    refreshAudioFx()
-                }
-
-                override fun onTracksChanged(tracks: Tracks) {
-                    // Selected audio track's source Format (mime, sample rate,
-                    // pcm encoding, bitrate) for the quality readout. Defensive
-                    // scan: take the first selected audio track, else null.
-                    var fmt: Format? = null
-                    outer@ for (group in tracks.groups) {
-                        if (group.type != C.TRACK_TYPE_AUDIO) continue
-                        for (i in 0 until group.length) {
-                            if (group.isTrackSelected(i)) {
-                                fmt = group.getTrackFormat(i)
-                                break@outer
-                            }
-                        }
-                    }
-                    sourceAudioFormat = fmt
-                    recomputeAudioQuality()
-                }
-            },
-        )
+        playback.addListener(playerListener)
         // The sink may already have a session id (attach ignores UNSET = 0).
         audioFxController.attach(playback.audioSessionId)
         refreshAudioFx()
@@ -1968,9 +1990,15 @@ class PlayerViewModel(
         if (!_exportState.value.running) _exportState.value = ExportUiState()
     }
 
+    /**
+     * Drops this ViewModel's hold on playback without stopping it. The player
+     * and its effects chain belong to [PlaybackEngine] and keep going in the
+     * service; only the things that exist to feed a screen — the live analyzer
+     * and this ViewModel's player listener — go away with the screen.
+     */
     override fun onCleared() {
         engine.stop()
-        audioFxController.release()
-        playback.release()
+        playback.removeListener(playerListener)
+        PlaybackEngine.releaseUi()
     }
 }

@@ -15,6 +15,7 @@ core-splashscreen = { module = "androidx.core:core-splashscreen", version = "1.0
 documentfile = { module = "androidx.documentfile:documentfile", version = "1.0.1" }
 media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }
 media3-common = { module = "androidx.media3:media3-common", version.ref = "media3" }
+media3-session = { module = "androidx.media3:media3-session", version.ref = "media3" }
 jtransforms = { module = "com.github.wendykierp:JTransforms", version.ref = "jtransforms" }
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
 compose-material3 = { module = "androidx.compose.material3:material3" }
