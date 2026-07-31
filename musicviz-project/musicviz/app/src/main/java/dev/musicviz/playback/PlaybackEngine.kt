@@ -40,9 +40,14 @@ object PlaybackEngine {
     private fun rebindTo(context: Context): Context {
         val current = context.applicationContext
         if (app !== current) {
-            audioFx?.release()
+            // Dropped, deliberately NOT released. ExoPlayer.release() blocks
+            // until its playback thread acknowledges, and the only situation
+            // that reaches this branch is a Robolectric test whose loopers are
+            // paused — so the acknowledgement never arrives and the whole
+            // suite hangs on the main thread. The stale player belongs to an
+            // Application that is already gone; letting it be garbage is both
+            // correct and the only thing that terminates.
             audioFx = null
-            controller?.release()
             controller = null
             uiHolds = 0
             app = current
