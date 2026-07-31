@@ -561,3 +561,42 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     produce fast full-screen flashing. Do not run them if you are
     photosensitive, and do not hand this checklist to someone else to run
     without saying so.
+
+40. Background playback and system transport (v1.3.0) — the whole point of
+    the playback service, and none of it is observable headless.
+    KEEPS PLAYING — start a track, press Home. Audio must continue. Open the
+    shade: a MusicViz notification with title, artist and transport. Pause,
+    skip and resume from the notification itself; the in-app mini-player must
+    already agree when you return, not correct itself a moment later.
+    LOCK SCREEN — with the screen locked, the same controls appear there.
+    Seeking or skipping from the lock screen must not make the visualizer's
+    beat grid drift when you unlock (the analyzer resets on every seek path,
+    including this one).
+    HEADSET — with wired or Bluetooth headphones, the play/pause button
+    toggles and a double-press skips. Unplugging pauses if "Pause when
+    headphones unplug" is on.
+    SWIPE AWAY WHILE PLAYING — swipe MusicViz out of Recents mid-track.
+    Audio must keep going and the notification must survive. Reopening from
+    the notification must land in the app with the same track and position,
+    and exactly one player: if the mini-player shows a different position
+    than the notification, two ExoPlayers exist and PlaybackEngine is broken.
+    SWIPE AWAY WHILE PAUSED — pause first, then swipe away. The notification
+    must disappear and the service stop; nothing should hold a foreground
+    service over silence.
+    NOTIFICATION PERMISSION — on Android 13+, first install, play a track:
+    the permission is requested then, not at launch. Deny it and confirm
+    audio still plays in the background with only the controls missing.
+    ROTATE / RECREATE — rotate the device mid-track several times. Audio must
+    not restart or gap; the play count in Home must not tick up per rotation
+    (a leaked listener from the previous ViewModel would double-count).
+    IDLE COST — leave the app paused and on screen for a few minutes, then
+    check battery/CPU. The 500 ms tick is supposed to stop while paused.
+
+41. Queue editing (v1.3.0): queue several tracks ("Play next" / "Add to
+    queue" from the library), then open the queue from the mini-player.
+    Reorder with the arrows — the highlighted row must stay on the track you
+    are hearing, not jump. Remove a track above the playing one: playback
+    must not skip or restart. Remove the playing track: it advances to the
+    next one. "Save as playlist" must produce a playlist with the tracks in
+    the order shown; a blank or duplicate name must leave the dialog open.
+    Clear must empty the queue and stop playback.
