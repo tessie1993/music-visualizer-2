@@ -1478,12 +1478,12 @@ class PlayerViewModel(
                 ?.trackUris
                 .orEmpty()
         if (uris.isEmpty()) return
-        player.setMediaItems(uris.map { mediaItemFor(Uri.parse(it)) })
-        player.prepare()
-        player.seekTo(startIndex.coerceIn(0, uris.size - 1), 0L)
-        player.play()
-        currentUri = Uri.parse(uris[startIndex.coerceIn(0, uris.size - 1)])
-        onTrackChanged()
+        // currentUri/onTrackChanged must run AFTER the queue is set, not beside
+        // it: setQueueOffThread resolves metadata on IO and returns immediately.
+        setQueueOffThread(uris.map { Uri.parse(it) }, startIndex) {
+            currentUri = Uri.parse(uris[startIndex.coerceIn(0, uris.size - 1)])
+            onTrackChanged()
+        }
     }
 
     // ---- Navigation v2 additions ----
@@ -1524,9 +1524,7 @@ class PlayerViewModel(
     fun openStringsPublic(uris: List<String>) = openStrings(uris)
 
     private fun openStrings(uris: List<String>) {
-        player.setMediaItems(uris.map { mediaItemFor(Uri.parse(it)) })
-        player.prepare()
-        player.play()
+        setQueueOffThread(uris.map { Uri.parse(it) })
     }
 
     // Preset folder tree
@@ -1624,6 +1622,32 @@ class PlayerViewModel(
 
     // ---- Queue ----
 
+    /**
+     * Builds a queue off the main thread, then hands it to the player.
+     *
+     * [mediaItemFor] falls back to [metadataQuick], which does a blocking
+     * ContentResolver query per uri. Mapping that inline over a queue - up to
+     * 100 tracks from "shuffle all" - ran that many binder round trips on the
+     * main thread and was long enough to ANR on a cold content provider.
+     * Resolution happens on IO; only setMediaItems/prepare/play touch the
+     * player, and those stay on the main thread as ExoPlayer requires.
+     */
+    private fun setQueueOffThread(
+        uris: List<Uri>,
+        startIndex: Int = 0,
+        onReady: (() -> Unit)? = null,
+    ) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            val items = withContext(Dispatchers.IO) { uris.map { mediaItemFor(it) } }
+            player.setMediaItems(items)
+            player.prepare()
+            if (startIndex > 0) player.seekTo(startIndex.coerceIn(0, items.size - 1), 0L)
+            player.play()
+            onReady?.invoke()
+        }
+    }
+
     /** Builds a MediaItem carrying library/tag metadata so the player state
      *  (and lockscreen) shows real titles, never document-id numbers. */
     private fun mediaItemFor(uri: Uri): MediaItem {
@@ -1679,11 +1703,10 @@ class PlayerViewModel(
 
     fun open(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        player.setMediaItems(uris.map { mediaItemFor(it) })
-        player.prepare()
-        player.play()
-        currentUri = uris.first()
-        onTrackChanged()
+        setQueueOffThread(uris) {
+            currentUri = uris.first()
+            onTrackChanged()
+        }
     }
 
     /** Human-readable labels for the playback queue, in play order. */
@@ -2033,6 +2056,16 @@ class PlayerViewModel(
      */
     override fun onCleared() {
         player.removeListener(playerListener)
+        // The sleep timer lives on viewModelScope, but the volume it ramps
+        // belongs to the process-wide player. Being cleared mid-fade used to
+        // cancel the coroutine at whatever volume the ramp had reached and
+        // leave it there for the life of the process — playback returning
+        // near-silent with no control that restores it. Always hand the volume
+        // back.
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        _sleepTimerRemainingMs.value = null
+        runCatching { player.volume = 1f }
         // Only clear the hook if a newer ViewModel has not already replaced it.
         if (playback.onTapFormat === tapFormatListener) playback.onTapFormat = null
     }

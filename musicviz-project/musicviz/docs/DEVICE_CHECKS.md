@@ -490,3 +490,27 @@ Run after installing musicviz-debug.apk. Log: `adb logcat -s projectM-jni`
     session id now comes from a process-wide player, so re-verify that
     Settings > Playback > Equalizer still applies live, and that the
     sleep timer's 3 s fade still ramps and pauses.
+39. Background playback ACTUALLY engages (1.1.0 — this was broken and is the
+    reason to re-run item 37): start a track, then pull down the notification
+    shade. A media notification with title/artist and working play/pause/next
+    MUST be there. Its absence is the exact symptom of the bug fixed here —
+    the MediaSession was built but never registered with the service, so no
+    notification was posted and startForeground() was never called, leaving a
+    plain background service Android stops once the app idles. Confirm with
+    `adb shell dumpsys activity services dev.musicviz` — the PlaybackService
+    record must show isForeground=true while playing. Then: lock the screen and
+    leave it 10+ minutes with the app backgrounded; audio must survive.
+40. Service revival (1.1.0): with playback paused, swipe the app off Recents
+    (the service stops). Reopen the app and press play — playback, the
+    notification and the lock-screen controls must all work again. Before the
+    fix, onCreate started the service once and nothing ever restarted it, so
+    everything media-related stayed dead for the life of that Activity.
+41. Sleep timer volume is never stranded (1.1.0): start the sleep timer, let it
+    enter the final 3 s fade, then rotate the device or navigate away so the
+    ViewModel is recreated mid-fade. Playback must return to FULL volume, not
+    stay near-silent. The player is process-wide now, so a volume left mid-ramp
+    used to persist for the life of the process.
+42. Bulk queue actions do not ANR (1.1.0): with a large library, use Home >
+    "Shuffle all" over 100 history tracks and start a long playlist. Neither
+    may freeze the UI — metadata for each track is resolved on IO now, not with
+    one blocking ContentResolver query per track on the main thread.

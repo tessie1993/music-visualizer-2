@@ -25,6 +25,18 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        // Media3 only notices a session when addSession() runs, and it calls that
+        // itself from exactly two places: a MediaController connecting through
+        // onGetSession, or an ACTION_MEDIA_BUTTON intent. This app drives the
+        // ExoPlayer directly and never builds a MediaController, and MainActivity
+        // starts the service with an action-less Intent, so neither ever fired.
+        // The result was a session that existed but was invisible to
+        // MediaNotificationManager: no notification was ever posted and
+        // startForeground() was never called, leaving this a plain background
+        // service that Android stops once the app goes idle — taking background
+        // playback with it. Registering the session here is what actually arms
+        // the notification and the foreground transition.
+        setListener(ForegroundStartListener())
         val openApp =
             PendingIntent.getActivity(
                 this,
@@ -39,9 +51,23 @@ class PlaybackService : MediaSessionService() {
                 // to the visualizer rather than cold-starting a new task.
                 .setSessionActivity(openApp)
                 .build()
+                .also { addSession(it) }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+
+    /**
+     * Android 12+ refuses a foreground start when the app has no exemption — for
+     * example a headset button resuming playback long after the app was swiped
+     * away. Media3 surfaces that instead of letting it become an uncaught
+     * ForegroundServiceStartNotAllowedException; pausing is the honest response,
+     * since audio that cannot hold a foreground service will be killed anyway.
+     */
+    private inner class ForegroundStartListener : Listener {
+        override fun onForegroundServiceStartNotAllowedException() {
+            runCatching { session?.player?.pause() }
+        }
+    }
 
     /**
      * Swiping the app away should not kill music that is still playing — but

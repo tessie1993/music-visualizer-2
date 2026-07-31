@@ -28,11 +28,6 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // Starts the media service while this Activity is visible, so it may
-        // later promote itself to the foreground when playback begins. Started
-        // here rather than on first play because a background start would be
-        // refused on Android 12+.
-        startService(Intent(this, PlaybackService::class.java))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -54,5 +49,21 @@ class MainActivity : ComponentActivity() {
                 },
             )
         }
+    }
+
+    /**
+     * Re-asserts the media service every time the app becomes visible.
+     *
+     * Starting it once from onCreate was not enough: the service can stop for
+     * reasons this Activity never sees — onTaskRemoved, a system stop, or the
+     * user force-stopping playback — and nothing then brought it back for the
+     * rest of the Activity's life, silently losing background playback and the
+     * lock-screen controls. startService on an already-running service is
+     * idempotent (it just delivers another onStartCommand), and onStart is by
+     * definition a foreground moment, so this is never a background start.
+     */
+    override fun onStart() {
+        super.onStart()
+        runCatching { startService(Intent(this, PlaybackService::class.java)) }
     }
 }
