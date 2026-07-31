@@ -17,6 +17,13 @@ class FeatureTimeline(
     val hopMs: Long,
     /** Estimated musical key, e.g. "A minor"; empty when unknown. */
     val key: String = "",
+    /**
+     * Rate the frames were produced at. Not derivable from [hopMs], which is
+     * an integer-truncated 16 for the offline analyzer's true 60 Hz hop - and
+     * [withBeatSensitivity] measures both the refractory window and the flux
+     * history in frames, so a 62.5 vs 60 mix-up would shift every beat.
+     */
+    val hopRateHz: Float = 60f,
 ) {
     val durationMs: Long = frames.lastOrNull()?.timeMs ?: 0L
     val averageEnergy: Float = if (frames.isEmpty()) 0f else frames.map { it.features.rms }.average().toFloat()
@@ -24,6 +31,37 @@ class FeatureTimeline(
     val bpm: Float = frames.lastOrNull()?.features?.bpm ?: 0f
     val beatDensity: Float =
         if (frames.isEmpty()) 0f else frames.count { it.features.beat } / (frames.size / 60f + 1e-6f)
+
+    /**
+     * Re-decides every frame's [AudioFeatures.beat] from the stored onset
+     * curve at the given sensitivity, returning a new timeline.
+     *
+     * This is why the analysis cache stores the raw flux rather than the
+     * decided beats: changing "Beat sensitivity" or "Minimum gap between
+     * beats" then applies to already-analysed tracks immediately, and an
+     * exported video keeps matching what playback just showed - the live
+     * gate and this one are the same [FeatureExtractor.BeatGate] code fed the
+     * same numbers in the same order.
+     *
+     * Timelines with no onset curve (analysed before it was stored, or
+     * synthesised) are returned untouched: re-deciding from all-zero flux
+     * would silently erase every beat.
+     */
+    fun withBeatSensitivity(
+        beatThresholdSigma: Float,
+        beatMinIntervalMs: Float,
+    ): FeatureTimeline {
+        if (frames.isEmpty()) return this
+        val flux = FloatArray(frames.size) { frames[it].features.flux }
+        if (flux.none { it > 0f }) return this
+        val beats = FeatureExtractor.decideBeats(flux, hopRateHz, beatThresholdSigma, beatMinIntervalMs)
+        val out = ArrayList<TimelineFrame>(frames.size)
+        for (i in frames.indices) {
+            val fr = frames[i]
+            out += if (fr.features.beat == beats[i]) fr else fr.copy(features = fr.features.copy(beat = beats[i]))
+        }
+        return FeatureTimeline(out, hopMs, key, hopRateHz)
+    }
 
     fun featuresAt(timeMs: Long): AudioFeatures {
         if (frames.isEmpty()) return AudioFeatures.empty()
