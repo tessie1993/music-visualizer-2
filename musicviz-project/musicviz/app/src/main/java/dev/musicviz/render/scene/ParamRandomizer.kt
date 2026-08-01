@@ -34,19 +34,10 @@ import kotlin.random.Random
  * user switches over. Same for Cymatics, whose tab only appears on its own
  * style anyway.
  *
- * Deliberately never randomized:
- *  - the custom-palette override fields (`paletteBaseOverride` and friends,
- *    plus `customPaletteId`/`customPalette2Id`) - a roll must not hijack a
- *    palette the user built and saved by inventing hues for it. Rolling a
- *    slot's *built-in* index does [SceneParams.withoutCustomPalette] on that
- *    slot, because an active override outranks the `PALETTES` lookup: without
- *    the clear, a rolled index would be invisible to anyone using a custom
- *    palette. That clear always writes `UNSET_OVERRIDE`, never 0f (0f is red);
- *  - performance settings (fluid quality / auto quality) and `paramFadeSec`;
- *  - the FlowField and water-ripple master toggles, and the fluid particle/ink
- *    layer toggles - switching both fluid layers off yields a blank screen, so
- *    only their *amounts* roll;
- *  - `fluidSpawnProgress`, which expresses how much the song drives the look.
+ * What is deliberately never randomized is declared in [NEVER_ROLLED], with
+ * the reason for each - `CustomizeSurfaceTest` checks that list against the
+ * parameters this file actually leaves alone, so a parameter added later is
+ * either rolled or explained, and can never quietly become neither.
  */
 object ParamRandomizer {
     /**
@@ -55,6 +46,41 @@ object ParamRandomizer {
      * billion, and bounds the loop when every key in scope is locked.
      */
     private const val REROLLS = 8
+
+    /**
+     * The [SceneParams] fields a roll must never write, and why.
+     *
+     * A declaration rather than a paragraph, because it is the half of the
+     * randomizer that is easiest to break by accident: adding a parameter and
+     * forgetting to roll it looks exactly like deciding not to.
+     * `CustomizeSurfaceTest` compares this to the fields no `r(...)` call
+     * below writes and fails on any difference in either direction.
+     */
+    val NEVER_ROLLED: Map<String, String> =
+        mapOf(
+            // A roll must not hijack a palette the user built and saved by
+            // inventing hues for it. Rolling a slot's BUILT-IN index does
+            // clear that slot (withoutCustomPalette), because an active
+            // override outranks the PALETTES lookup and the roll would
+            // otherwise be invisible to anyone using a custom palette.
+            "paletteBaseOverride" to "a user-made palette's own hue",
+            "paletteRangeOverride" to "a user-made palette's own hue span",
+            "palette2BaseOverride" to "a user-made palette's own hue (slot 2)",
+            "palette2RangeOverride" to "a user-made palette's own hue span (slot 2)",
+            "customPaletteId" to "which saved palette slot 1 uses",
+            "customPalette2Id" to "which saved palette slot 2 uses",
+            "paramFadeSec" to "an automation preference, not a look",
+            "fluidQuality" to "a performance setting, not a look",
+            "fluidAutoQuality" to "a performance setting, not a look",
+            "fluidSpawnProgress" to "how much the song itself drives the look",
+            // Switching both fluid layers off yields a blank screen, and a
+            // master toggle the user turned on is a decision, not a look, so
+            // only the amounts behind these roll.
+            "fluidParticlesEnabled" to "the fluid particle layer's master switch",
+            "fluidDyeEnabled" to "the fluid ink layer's master switch",
+            "flowEnabled" to "the FlowField's master switch",
+            "rippleOverlayEnabled" to "the water-ripple overlay's master switch",
+        )
 
     /**
      * Randomizes the unlocked parameters of [tab] within their slider ranges.

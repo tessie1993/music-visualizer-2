@@ -11,7 +11,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.io.File
 import kotlin.random.Random
 
 /**
@@ -28,7 +27,7 @@ import kotlin.random.Random
  * PLACEMENT. A key's tab has to be the tab whose panel actually renders that
  * control, or "only this tab" is a lie in a different way -
  * [every_key_is_rolled_by_the_tab_that_renders_it] reads the labels straight
- * out of each `CustomizeTabs.kt` composable, the same way
+ * out of each `CustomizeTabs.kt` composable ([ParamSurface]), the same way
  * `ParamRandomizerFluidTest` reads them for the lock keys.
  *
  * RANDOMNESS. [a_roll_is_actually_random] and [a_seeded_roll_is_reproducible]
@@ -115,10 +114,9 @@ class ParamRandomizerTabScopeTest {
 
     @Test
     fun every_key_is_rolled_by_the_tab_that_renders_it() {
-        val panels = tabPanels()
         val misplaced = mutableListOf<String>()
         for (tab in CustomizeTab.entries) {
-            val labels = lockableLabels(panels.getValue(tab))
+            val labels = ParamSurface.lockableLabels(ParamSurface.tabBodies.getValue(tab))
             ParamRandomizer.keysFor(tab).filterNot { it in labels }.forEach {
                 misplaced += "\"$it\" rolls with ${tab.title} but is not rendered there"
             }
@@ -156,52 +154,5 @@ class ParamRandomizerTabScopeTest {
                 }
             }
         }
-    }
-
-    /** Labels of every control [source] renders with a lock chip. */
-    private fun lockableLabels(source: String): Set<String> =
-        Regex("(?:LabeledSlider|LabeledIntSlider|CheckRow|LockableChipLabel)\\(\\s*\"([^\"]+)\"")
-            .findAll(source)
-            .map { it.groupValues[1] }
-            .toSet()
-
-    /**
-     * The body of each tab's composable, sliced out of `CustomizeTabs.kt` at
-     * its top-level `fun` boundaries. Read from source rather than declared
-     * here so a control MOVED between tabs fails this test instead of quietly
-     * being rolled from the tab it left.
-     */
-    private fun tabPanels(): Map<CustomizeTab, String> {
-        val source = customizeTabsSource()
-        val bounds =
-            Regex("(?m)^(?:internal |private |)fun (\\w+)\\(")
-                .findAll(source)
-                .map { it.groupValues[1] to it.range.first }
-                .toList()
-        val bodies =
-            bounds.mapIndexed { i, (name, start) ->
-                name to source.substring(start, bounds.getOrNull(i + 1)?.second ?: source.length)
-            }.toMap()
-        return CustomizeTab.entries.associateWith { tab ->
-            val composable = if (tab == CustomizeTab.FX) "FxTab" else "${tab.title}Tab"
-            bodies[composable] ?: error("no $composable in CustomizeTabs.kt")
-        }
-    }
-
-    private fun customizeTabsSource(): String {
-        val relatives =
-            listOf(
-                "src/main/java/dev/musicviz/ui/CustomizeTabs.kt",
-                "app/src/main/java/dev/musicviz/ui/CustomizeTabs.kt",
-            )
-        var dir: File? = File("").absoluteFile
-        while (dir != null) {
-            for (rel in relatives) {
-                val candidate = File(dir, rel)
-                if (candidate.isFile) return candidate.readText()
-            }
-            dir = dir.parentFile
-        }
-        error("CustomizeTabs.kt not found from ${File("").absolutePath}")
     }
 }

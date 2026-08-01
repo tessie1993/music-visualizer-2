@@ -259,6 +259,23 @@ data class SceneParams(
         val DEFAULT: SceneParams = SceneParams()
 
         /**
+         * The fields no scene renders, and what they are for instead.
+         *
+         * Every other parameter here exists to change a picture, so one that
+         * nothing reads is normally a dead control - `CustomizeSurfaceTest`
+         * fails the build on any field missing from both the scenes and this
+         * list, and on any entry here that a scene has since started reading.
+         * These two are genuinely bookkeeping: they record WHICH saved palette
+         * a slot uses so the panel can show it and re-resolve it after an
+         * edit, while rendering reads the resolved override hues.
+         */
+        val NOT_RENDERED: Map<String, String> =
+            mapOf(
+                "customPaletteId" to "which saved palette slot 1 uses; rendering reads the resolved hues",
+                "customPalette2Id" to "which saved palette slot 2 uses; rendering reads the resolved hues",
+            )
+
+        /**
          * Palette definitions: name, base hue, hue span multiplier.
          *
          * APPEND ONLY. Presets persist `palette`/`palette2` as indices into
