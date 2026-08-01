@@ -80,6 +80,11 @@ object ParamRandomizer {
             "fluidDyeEnabled" to "the fluid ink layer's master switch",
             "flowEnabled" to "the FlowField's master switch",
             "rippleOverlayEnabled" to "the water-ripple overlay's master switch",
+            // A rolled march budget could hand a slow phone one it cannot
+            // hold, and a rolled journey would silently switch a held act
+            // back to following the music.
+            "hyperDetail" to "a performance setting, not a look",
+            "hyperJourney" to "how HYPERSPACE picks its act; a roll would unpin a held one",
         )
 
     /**
@@ -354,6 +359,26 @@ object ParamRandomizer {
         r("Nodal glow") { it.copy(cymaticsGlow = f(0.3f, 1.7f)) }
         r("Iridescence") { it.copy(cymaticsIridescence = f(0f, 1f)) }
         r("Caustic sheen") { it.copy(cymaticsCaustic = f(0.2f, 1.3f)) }
+
+        // ---- Hyperspace (the room of living 3D fractals) ----
+        section(CustomizeTab.HYPERSPACE)
+        // Rolled unconditionally like the blocks above; "Detail" and
+        // "Journey" are held back, with their reasons, in [NEVER_ROLLED].
+        r("Act") { it.copy(hyperAct = rng.nextInt(HyperspaceMath.ACTS.size)) }
+        r("Act length (s)") { it.copy(hyperCycleSeconds = f(12f, 90f)) }
+        r("Fractal") { it.copy(hyperSpecies = rng.nextInt(SceneParams.HYPERSPACE_SPECIES.size)) }
+        r("Bodies") { it.copy(hyperBodies = f(0.5f, 1.6f)) }
+        r("Body life (s)") { it.copy(hyperLifetime = f(6f, 30f)) }
+        r("Body spin") { it.copy(hyperSpin = f(0.3f, 2f)) }
+        r("Orbit drift") { it.copy(hyperOrbit = f(0.3f, 2f)) }
+        r("Camera drift") { it.copy(hyperCamera = f(0.3f, 2f)) }
+        r("Fold") { it.copy(hyperFold = f(0.15f, 0.9f)) }
+        r("Body glow") { it.copy(hyperGlow = f(0.4f, 1.6f)) }
+        r("Neon rim") { it.copy(hyperNeon = f(0.3f, 1.8f)) }
+        r("Filigree") { it.copy(hyperField = f(0.2f, 1.6f)) }
+        r("Haze") { it.copy(hyperHaze = f(0.2f, 1.4f)) }
+        r("Mirror folds") { it.copy(hyperMirrorFolds = n(3, 12)) }
+        r("Colour banding") { it.copy(hyperTrap = f(0.2f, 1.3f)) }
 
         return s
     }

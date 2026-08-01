@@ -244,6 +244,43 @@ data class SceneParams(
     val cymaticsFlow: Float = 0.35f,
     // whole-field rotation in radians/second, -1..1
     val cymaticsSwirl: Float = 0.05f,
+    // Hyperspace (HYPERSPACE scene): a room of 3D fractals, each alive on its
+    // own clock, walking a five-act story. See HyperspaceMath for the acts and
+    // the body lifecycle these tune.
+    // how the act is chosen: 0 music, 1 hold, 2 cycle (HYPERSPACE_JOURNEYS)
+    val hyperJourney: Int = 0,
+    // which act "Hold" pins, and where "Cycle" starts (HyperspaceMath.ACT_NAMES)
+    val hyperAct: Int = 2,
+    // seconds per act in "Cycle", 5..180
+    val hyperCycleSeconds: Float = 30f,
+    // multiplier on the act's body count, 0.2..2
+    val hyperBodies: Float = 1f,
+    // seconds a body lives before it dissolves, 3..45
+    val hyperLifetime: Float = 14f,
+    // multiplier on every body's own rotation rate, 0..3
+    val hyperSpin: Float = 1f,
+    // multiplier on every body's own orbit rate, 0..3
+    val hyperOrbit: Float = 1f,
+    // 0 = a mixed room, 1..5 = every body the same species (HYPERSPACE_SPECIES)
+    val hyperSpecies: Int = 0,
+    // where in each fractal's usable band it is iterated, 0..1
+    val hyperFold: Float = 0.5f,
+    // march steps and fractal iterations, 0.25..1.5 (MarchBudget)
+    val hyperDetail: Float = 1f,
+    // multiplier on the act's emissive glow, 0..2
+    val hyperGlow: Float = 1f,
+    // silhouette rim light, 0..2
+    val hyperNeon: Float = 1f,
+    // multiplier on the act's background filigree, 0..2
+    val hyperField: Float = 1f,
+    // how fast distance fades a body into the void, 0..2
+    val hyperHaze: Float = 0.7f,
+    // multiplier on the camera's drift rate, 0..3
+    val hyperCamera: Float = 1f,
+    // mirror sectors in the acts that fold the view, 2..16
+    val hyperMirrorFolds: Int = 6,
+    // orbit-trap colour banding within a body, 0..1.5
+    val hyperTrap: Float = 0.8f,
     // Ripple overlay (all styles; consumed by follow-up unit F2)
     val rippleOverlayEnabled: Boolean = false,
     val rippleOverlayStrength: Float = 0.4f,
@@ -327,6 +364,18 @@ data class SceneParams(
          * or a square Chladni plate, whose modes are a nodal lattice.
          */
         val CYMATICS_GEOMETRIES: List<String> = listOf("Water dish", "Chladni plate")
+
+        /** How HYPERSPACE picks its act (index = hyperJourney). */
+        val HYPERSPACE_JOURNEYS: List<String> = HyperspaceMath.JOURNEY_MODES
+
+        /**
+         * What the bodies in HYPERSPACE are (index = hyperSpecies). Index 0 is
+         * a mixed room - every body rolls its own - and is the default,
+         * because a room of five different fractals is the whole idea; the
+         * rest force one species for anyone who wants a study of it.
+         */
+        val HYPERSPACE_SPECIES: List<String> =
+            listOf("Mixed") + HyperspaceMath.SPECIES.map { it.name.lowercase().replaceFirstChar(Char::uppercase) }
     }
 
     /** True when this slot renders a user-made palette rather than a PALETTES entry. */

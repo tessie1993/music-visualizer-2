@@ -239,6 +239,23 @@ class PresetStore(
                 .put("cymaticsCaustic", p.params.cymaticsCaustic.toDouble())
                 .put("cymaticsFlow", p.params.cymaticsFlow.toDouble())
                 .put("cymaticsSwirl", p.params.cymaticsSwirl.toDouble())
+                .put("hyperJourney", p.params.hyperJourney)
+                .put("hyperAct", p.params.hyperAct)
+                .put("hyperCycleSeconds", p.params.hyperCycleSeconds.toDouble())
+                .put("hyperBodies", p.params.hyperBodies.toDouble())
+                .put("hyperLifetime", p.params.hyperLifetime.toDouble())
+                .put("hyperSpin", p.params.hyperSpin.toDouble())
+                .put("hyperOrbit", p.params.hyperOrbit.toDouble())
+                .put("hyperSpecies", p.params.hyperSpecies)
+                .put("hyperFold", p.params.hyperFold.toDouble())
+                .put("hyperDetail", p.params.hyperDetail.toDouble())
+                .put("hyperGlow", p.params.hyperGlow.toDouble())
+                .put("hyperNeon", p.params.hyperNeon.toDouble())
+                .put("hyperField", p.params.hyperField.toDouble())
+                .put("hyperHaze", p.params.hyperHaze.toDouble())
+                .put("hyperCamera", p.params.hyperCamera.toDouble())
+                .put("hyperMirrorFolds", p.params.hyperMirrorFolds)
+                .put("hyperTrap", p.params.hyperTrap.toDouble())
                 .put("rippleOverlayEnabled", p.params.rippleOverlayEnabled)
                 .put("rippleOverlayStrength", p.params.rippleOverlayStrength.toDouble())
                 .put("rippleOverlaySpecular", p.params.rippleOverlaySpecular.toDouble())
@@ -444,6 +461,23 @@ class PresetStore(
                         cymaticsCaustic = o.optDouble("cymaticsCaustic", 0.8).toFloat(),
                         cymaticsFlow = o.optDouble("cymaticsFlow", 0.35).toFloat(),
                         cymaticsSwirl = o.optDouble("cymaticsSwirl", 0.05).toFloat(),
+                        hyperJourney = o.optInt("hyperJourney", 0),
+                        hyperAct = o.optInt("hyperAct", 2),
+                        hyperCycleSeconds = o.optDouble("hyperCycleSeconds", 30.0).toFloat(),
+                        hyperBodies = o.optDouble("hyperBodies", 1.0).toFloat(),
+                        hyperLifetime = o.optDouble("hyperLifetime", 14.0).toFloat(),
+                        hyperSpin = o.optDouble("hyperSpin", 1.0).toFloat(),
+                        hyperOrbit = o.optDouble("hyperOrbit", 1.0).toFloat(),
+                        hyperSpecies = o.optInt("hyperSpecies", 0),
+                        hyperFold = o.optDouble("hyperFold", 0.5).toFloat(),
+                        hyperDetail = o.optDouble("hyperDetail", 1.0).toFloat(),
+                        hyperGlow = o.optDouble("hyperGlow", 1.0).toFloat(),
+                        hyperNeon = o.optDouble("hyperNeon", 1.0).toFloat(),
+                        hyperField = o.optDouble("hyperField", 1.0).toFloat(),
+                        hyperHaze = o.optDouble("hyperHaze", 0.7).toFloat(),
+                        hyperCamera = o.optDouble("hyperCamera", 1.0).toFloat(),
+                        hyperMirrorFolds = o.optInt("hyperMirrorFolds", 6),
+                        hyperTrap = o.optDouble("hyperTrap", 0.8).toFloat(),
                         rippleOverlayEnabled = o.optBoolean("rippleOverlayEnabled", false),
                         rippleOverlayStrength = o.optDouble("rippleOverlayStrength", 0.4).toFloat(),
                         rippleOverlaySpecular = o.optDouble("rippleOverlaySpecular", 0.3).toFloat(),

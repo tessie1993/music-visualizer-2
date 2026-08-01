@@ -29,4 +29,7 @@ enum class CustomizeTab(
 
     /** Shown only while the CYMATICS style is active - see `CustomizeTabs.CymaticsTab`. */
     CYMATICS("Cymatics"),
+
+    /** Shown only while the HYPERSPACE style is active, for the same reason. */
+    HYPERSPACE("Hyperspace"),
 }

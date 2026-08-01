@@ -409,11 +409,12 @@ private fun StylesTab(
     val pickScene: (String) -> Unit = { viewModel.selectScene(it) }
     Column(Modifier.fillMaxSize()) {
         CrystalTabs(
-            // Cymatics is its own family, not a fluid style and not a shader
-            // one: it is the only style that draws real 3D geometry, and the
-            // only one whose picture IS the sound (a Chladni plate) rather
-            // than a look driven by it.
-            titles = listOf("Particles", "Shaders", "Fluid", "Cymatics", "MilkDrop"),
+            // Cymatics and Hyperspace are each their own family, neither a
+            // fluid style nor a shader one. Cymatics is the style whose
+            // picture IS the sound (a Chladni plate) rather than a look driven
+            // by it; Hyperspace is the only raymarched one - a room of 3D
+            // fractals, each alive on its own clock, walking a five-act story.
+            titles = listOf("Particles", "Shaders", "Fluid", "Cymatics", "Hyperspace", "MilkDrop"),
             selected = sub,
             onSelect = { sub = it },
         )
@@ -422,7 +423,8 @@ private fun StylesTab(
             1 -> SceneList(VisualizerRenderer.SHADER_SCENES.keys.toList(), viz.sceneId, pickScene)
             2 -> SceneList(listOf(SceneIds.FLUID, SceneIds.CURLFLOW, SceneIds.WATER), viz.sceneId, pickScene)
             3 -> SceneList(listOf(SceneIds.CYMATICS), viz.sceneId, pickScene)
-            4 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
+            4 -> SceneList(listOf(SceneIds.HYPERSPACE), viz.sceneId, pickScene)
+            5 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
         }
     }
 }
@@ -582,6 +584,12 @@ internal fun isWaterSceneId(sceneId: String): Boolean = sceneId == SceneIds.WATE
 internal fun isCymaticsSceneId(sceneId: String): Boolean = sceneId == SceneIds.CYMATICS
 
 /**
+ * Only HyperspaceScene reads the fractal-room params, so the whole Hyperspace
+ * tab appears and disappears with that style - same rule as the Cymatics tab.
+ */
+internal fun isHyperspaceSceneId(sceneId: String): Boolean = sceneId == SceneIds.HYPERSPACE
+
+/**
  * Styles that run the shared FluidParticles lifecycle layer, i.e. the ones
  * that read `fluidParticleDrag` and `fluidParticleLife` (set on consecutive
  * lines in both scenes). CURLFLOW *is* that layer (CurlFlowScene's
@@ -659,6 +667,7 @@ internal fun CustomizePanel(
     // the two can never drift apart.
     val isShader = isShaderLookSceneId(viz.sceneId)
     val isCymatics = isCymaticsSceneId(viz.sceneId)
+    val isHyperspace = isHyperspaceSceneId(viz.sceneId)
     // Tabs are dispatched by the CustomizeTab they carry, not by index: two of
     // them come and go with the active style, so positions do not identify a
     // panel. The parameter tabs come from the enum itself so the panel and the
@@ -666,8 +675,13 @@ internal fun CustomizePanel(
     // GLSL is appended as a null-tab entry because it edits shader source
     // rather than SceneParams.
     val tabs: List<CustomizeTab?> =
-        CustomizeTab.entries.filter { it != CustomizeTab.CYMATICS || isCymatics } +
-            if (isShader) listOf(null) else emptyList()
+        CustomizeTab.entries.filter {
+            when (it) {
+                CustomizeTab.CYMATICS -> isCymatics
+                CustomizeTab.HYPERSPACE -> isHyperspace
+                else -> true
+            }
+        } + if (isShader) listOf(null) else emptyList()
     val titles = tabs.map { it?.title ?: "GLSL" }
     LaunchedEffect(tabs.size) { if (sub >= tabs.size) sub = 0 }
     Column(Modifier.fillMaxSize()) {
@@ -742,6 +756,7 @@ internal fun CustomizePanel(
                             },
                         )
                     CustomizeTab.CYMATICS -> CymaticsTab(p, onChange)
+                    CustomizeTab.HYPERSPACE -> HyperspaceTab(p, onChange)
                     // The GLSL tab: shader source, not scene parameters.
                     null -> GlslHubTab(viewModel, visualizerView)
                 }

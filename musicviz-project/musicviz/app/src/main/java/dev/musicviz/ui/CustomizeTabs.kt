@@ -37,6 +37,7 @@ import dev.musicviz.render.LfoConfig
 import dev.musicviz.render.LfoTarget
 import dev.musicviz.render.LfoWave
 import dev.musicviz.render.scene.CymaticsMath
+import dev.musicviz.render.scene.HyperspaceMath
 import dev.musicviz.render.scene.SceneParams
 
 /*
@@ -918,6 +919,86 @@ internal fun CymaticsTab(
         LabeledSlider("Nodal glow", p.cymaticsGlow, 0f..2f) { onChange(p.copy(cymaticsGlow = it)) }
         LabeledSlider("Iridescence", p.cymaticsIridescence, 0f..1f) { onChange(p.copy(cymaticsIridescence = it)) }
         LabeledSlider("Caustic sheen", p.cymaticsCaustic, 0f..1.5f) { onChange(p.copy(cymaticsCaustic = it)) }
+    }
+}
+
+/**
+ * Customize -> Hyperspace tab: a room of living 3D fractals.
+ *
+ * Shown only while that style is active (`VisualsHub.isHyperspaceSceneId`),
+ * for the same reason the Cymatics tab is: every control here is read by
+ * exactly one scene.
+ *
+ * Four groups answering four questions. JOURNEY is the story - whether the
+ * music chooses the act, one act is held, or the five cycle on a timer. LIFE
+ * is what the bodies are and how they behave: how many, which fractal, how
+ * long each lives, how fast each turns on its own axis and drifts on its own
+ * orbit. LOOK is how they are drawn. QUALITY is the one control that costs
+ * frames, kept apart so it reads as the performance setting it is.
+ */
+@Composable
+internal fun HyperspaceTab(
+    p: SceneParams,
+    onChange: (SceneParams) -> Unit,
+) {
+    Column {
+        SectionHeader("Journey")
+        ControlHint(
+            "Five acts, walked over a track: Threshold, Chrysanthemum, Magic eye, " +
+                "Waiting room, Breakthrough. On Music, loud passages take it deeper " +
+                "and quiet ones bring it back; Hold pins one act, Cycle walks them on " +
+                "a timer.",
+        )
+        LockableChipLabel("Journey")
+        ChipRow(
+            SceneParams.HYPERSPACE_JOURNEYS,
+            p.hyperJourney,
+        ) { onChange(p.copy(hyperJourney = it)) }
+        LockableChipLabel("Act")
+        ChipRow(
+            HyperspaceMath.ACT_NAMES,
+            p.hyperAct,
+        ) { onChange(p.copy(hyperAct = it)) }
+        LabeledSlider("Act length (s)", p.hyperCycleSeconds, 5f..180f) {
+            onChange(p.copy(hyperCycleSeconds = it))
+        }
+
+        SectionHeader("Life")
+        ControlHint(
+            "Every body is its own fractal on its own clock - it buds in on a hit, " +
+                "turns on its own axis, drifts on its own orbit, and dissolves. " +
+                "Mixed gives a room of all five at once.",
+        )
+        LockableChipLabel("Fractal")
+        ChipRow(
+            SceneParams.HYPERSPACE_SPECIES,
+            p.hyperSpecies,
+        ) { onChange(p.copy(hyperSpecies = it)) }
+        LabeledSlider("Bodies", p.hyperBodies, 0.2f..2f) { onChange(p.copy(hyperBodies = it)) }
+        LabeledSlider("Body life (s)", p.hyperLifetime, 3f..45f) { onChange(p.copy(hyperLifetime = it)) }
+        LabeledSlider("Body spin", p.hyperSpin, 0f..3f) { onChange(p.copy(hyperSpin = it)) }
+        LabeledSlider("Orbit drift", p.hyperOrbit, 0f..3f) { onChange(p.copy(hyperOrbit = it)) }
+        LabeledSlider("Camera drift", p.hyperCamera, 0f..3f) { onChange(p.copy(hyperCamera = it)) }
+        LabeledSlider("Fold", p.hyperFold, 0f..1f) { onChange(p.copy(hyperFold = it)) }
+
+        SectionHeader("Look")
+        ControlHint("Filigree is the fabric behind everything; Colour banding is the nested shells within a body.")
+        LabeledSlider("Body glow", p.hyperGlow, 0f..2f) { onChange(p.copy(hyperGlow = it)) }
+        LabeledSlider("Neon rim", p.hyperNeon, 0f..2f) { onChange(p.copy(hyperNeon = it)) }
+        LabeledSlider("Filigree", p.hyperField, 0f..2f) { onChange(p.copy(hyperField = it)) }
+        LabeledSlider("Haze", p.hyperHaze, 0f..2f) { onChange(p.copy(hyperHaze = it)) }
+        LabeledSlider("Colour banding", p.hyperTrap, 0f..1.5f) { onChange(p.copy(hyperTrap = it)) }
+        LabeledIntSlider("Mirror folds", p.hyperMirrorFolds, 2..16) {
+            onChange(p.copy(hyperMirrorFolds = it))
+        }
+
+        SectionHeader("Quality")
+        ControlHint(
+            "How many march steps and fractal iterations each pixel gets. " +
+                "This is the frame-rate control: turn it down on a slower phone, " +
+                "up for finer detail.",
+        )
+        LabeledSlider("Detail", p.hyperDetail, 0.25f..1.5f) { onChange(p.copy(hyperDetail = it)) }
     }
 }
 
