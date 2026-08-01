@@ -5,17 +5,25 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -35,16 +43,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
+import kotlin.math.roundToInt
 
 @Composable
 fun LibraryScreen(
@@ -122,6 +140,10 @@ private fun TrackRow(
     val overrides by viewModel.trackOverrides.collectAsState()
     val stored = overrides[t.uri]
     val title = stored?.title?.ifBlank { null } ?: t.title
+    // Analysis is reported by the chip below, not as another subtitle field:
+    // a well-tagged track fills that one line with artist/album/genre and
+    // ellipsises the tail away, which is exactly where the BPM used to sit.
+    val analyzed = stored?.takeIf { it.analyzed }
     val subtitle =
         subtitleOverride
             ?: listOf(
@@ -130,7 +152,6 @@ private fun TrackRow(
                 stored?.genre.orEmpty(),
                 dev.musicviz.analysis.KeyDetector
                     .compact(stored?.key.orEmpty()),
-                stored?.takeIf { it.analyzed && it.bpm > 0f }?.let { "${it.bpm.toInt()} BPM" } ?: "",
             ).filter { it.isNotBlank() }.joinToString(" \u00b7 ")
     var menu by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
@@ -154,6 +175,7 @@ private fun TrackRow(
                 )
             }
         }
+        if (analyzed != null) AnalyzedBadge(analyzed.bpm, Modifier.padding(start = 8.dp))
         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem(text = { Text("Play next") }, onClick = {
@@ -176,6 +198,44 @@ private fun TrackRow(
     }
     if (editing) {
         TrackInfoEditor(uri = t.uri, viewModel = viewModel, onDismiss = { editing = false })
+    }
+}
+
+/**
+ * The "this track has been analysed" marker: a crystal chip carrying the gem
+ * and, when analysis found one, the BPM.
+ *
+ * It has to be a chip rather than one more `·`-separated subtitle field, and
+ * it has to live outside the weighted title column. As a subtitle field it
+ * was the LAST field, on a single ellipsised line, so every well-tagged track
+ * hid the one fact the user cannot read off the file itself — whether we have
+ * analysed it. Here the row gives the chip its intrinsic width first and the
+ * title truncates instead.
+ */
+@Composable
+private fun AnalyzedBadge(
+    bpm: Float,
+    modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    val shape = crystalShardShape(8.dp, 3.dp)
+    val label = if (bpm > 0f) "${bpm.toInt()} BPM" else ""
+    Row(
+        modifier
+            .clip(shape)
+            .background(cs.primary.copy(alpha = 0.16f))
+            .border(1.dp, cs.primary.copy(alpha = 0.45f), shape)
+            .padding(horizontal = 7.dp, vertical = 3.dp)
+            // The gem is decoration a screen reader cannot see, so the whole
+            // chip announces itself as one phrase.
+            .semantics { contentDescription = if (label.isEmpty()) "Analysed" else "Analysed, $label" },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CrystalGem(cs.primary, size = 5.dp)
+        if (label.isNotEmpty()) {
+            Spacer(Modifier.width(5.dp))
+            Text(label, style = MaterialTheme.typography.labelSmall, color = accentTextColor(), maxLines = 1)
+        }
     }
 }
 
@@ -255,29 +315,7 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
                     }
                 }
                 if (expanded == pl.name) {
-                    pl.trackUris.forEachIndexed { i, uri ->
-                        val t = library.tracks.firstOrNull { it.uri == uri }
-                        Row(
-                            Modifier.fillMaxWidth().padding(start = 28.dp, end = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                t?.title ?: "Track ${i + 1}",
-                                Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                            IconButton(
-                                onClick = { viewModel.moveMusicPlaylistTrack(pl.name, i, i - 1) },
-                                enabled = i > 0,
-                            ) { Icon(Icons.Filled.KeyboardArrowUp, "Up") }
-                            IconButton(
-                                onClick = { viewModel.moveMusicPlaylistTrack(pl.name, i, i + 1) },
-                                enabled = i < pl.trackUris.size - 1,
-                            ) { Icon(Icons.Filled.KeyboardArrowDown, "Down") }
-                        }
-                    }
+                    PlaylistTracks(pl, library.tracks, viewModel)
                 }
             }
         }
@@ -298,6 +336,150 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
             },
             dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
         )
+    }
+}
+
+/**
+ * Where a row picked up at [from] is dropped after the finger has carried it
+ * [offsetPx] down (negative is up) a list of [count] rows, each [rowHeightPx]
+ * tall. Rows in this list are uniform, so the drop is just how many whole
+ * rows the finger travelled: rounded, so a row changes places once it has
+ * passed the halfway mark of its neighbour, and clamped, so dragging beyond
+ * either end parks there rather than wrapping around.
+ */
+internal fun playlistDropIndex(
+    from: Int,
+    offsetPx: Float,
+    rowHeightPx: Int,
+    count: Int,
+): Int {
+    if (count <= 0) return from
+    // Before the first layout pass we do not know the row height; refusing to
+    // move is the only safe answer, dividing by it would not be.
+    if (rowHeightPx <= 0) return from.coerceIn(0, count - 1)
+    return (from + (offsetPx / rowHeightPx).roundToInt()).coerceIn(0, count - 1)
+}
+
+/**
+ * How far the row at [index] slides, in whole rows, while a row picked up at
+ * [from] hovers over [to]: everything the dragged row has passed shuffles one
+ * place the other way to open the gap it will drop into. The dragged row
+ * itself is 0 — it follows the finger, not this offset.
+ */
+internal fun playlistRowShift(
+    index: Int,
+    from: Int,
+    to: Int,
+): Int =
+    when {
+        index == from -> 0
+        from < to && index in (from + 1)..to -> -1
+        from > to && index in to until from -> 1
+        else -> 0
+    }
+
+/**
+ * The expanded playlist's tracks, reordered by long-pressing a row and
+ * dragging it where it belongs. Sending track 50 to the top used to be 49
+ * taps of the up arrow; [MusicPlaylistStore.move] has always accepted an
+ * arbitrary from/to, so only the gesture was missing.
+ *
+ * No reorderable-list library is on the classpath and this does not warrant
+ * adding one: the rows are a plain uniform-height Column, which reduces the
+ * whole gesture to a drag distance in rows (see [playlistDropIndex]) plus an
+ * animated offset on the rows it passes (see [playlistRowShift]). The drag
+ * starts on a LONG press specifically so the enclosing LazyColumn keeps its
+ * ordinary scroll, and the pick-up is anywhere on the row rather than on the
+ * handle alone, which is far more forgiving on a row this short.
+ *
+ * The up/down buttons stay. They do not compete for the gesture — they only
+ * claim their own taps — and they are the only way through this list for
+ * anyone using a switch, a screen reader, or one hand on a moving train.
+ *
+ * A drag does not scroll the enclosing list, so a destination off-screen
+ * needs the list scrolled to it first; the rows are the tracks of ONE
+ * expanded playlist, so that is a screenful or two, not the whole library.
+ */
+@Composable
+private fun PlaylistTracks(
+    playlist: MusicPlaylist,
+    tracks: List<LibraryTrack>,
+    viewModel: PlayerViewModel,
+) {
+    val count = playlist.trackUris.size
+    // Keyed on the name so collapsing one playlist and opening another cannot
+    // leave a half-finished drag pointing at a row that is no longer there.
+    var dragFrom by remember(playlist.name) { mutableIntStateOf(-1) }
+    var dragOffset by remember(playlist.name) { mutableFloatStateOf(0f) }
+    var rowHeight by remember(playlist.name) { mutableIntStateOf(0) }
+    val dropIndex = playlistDropIndex(dragFrom, dragOffset, rowHeight, count)
+    val liftTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+    playlist.trackUris.forEachIndexed { i, uri ->
+        val t = tracks.firstOrNull { it.uri == uri }
+        val dragging = i == dragFrom
+        val shift by animateFloatAsState(
+            if (dragFrom < 0) 0f else (playlistRowShift(i, dragFrom, dropIndex) * rowHeight).toFloat(),
+            label = "playlistRowShift",
+        )
+        Row(
+            Modifier
+                .fillMaxWidth()
+                // The lifted row draws over its neighbours, and reads the
+                // offsets inside the layer block so following the finger costs
+                // a redraw rather than a recomposition of the whole list.
+                .zIndex(if (dragging) 1f else 0f)
+                .graphicsLayer { translationY = if (dragging) dragOffset else shift }
+                .then(if (dragging) Modifier.background(liftTint) else Modifier)
+                .onSizeChanged { rowHeight = it.height }
+                .pointerInput(playlist.name, i, count) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = {
+                            dragFrom = i
+                            dragOffset = 0f
+                        },
+                        onDragEnd = {
+                            // Recomputed from this row's own index: the state
+                            // read here must not depend on which row recomposed.
+                            val to = playlistDropIndex(i, dragOffset, rowHeight, count)
+                            if (to != i) viewModel.moveMusicPlaylistTrack(playlist.name, i, to)
+                            dragFrom = -1
+                            dragOffset = 0f
+                        },
+                        onDragCancel = {
+                            dragFrom = -1
+                            dragOffset = 0f
+                        },
+                    ) { change, drag ->
+                        change.consume()
+                        dragOffset += drag.y
+                    }
+                }.padding(start = 28.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Affordance only: the gesture is on the whole row, so announcing
+            // this as a control would promise a target that is not special.
+            Icon(
+                Icons.Filled.DragHandle,
+                null,
+                Modifier.size(18.dp).padding(end = 2.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            )
+            Text(
+                t?.title ?: "Track ${i + 1}",
+                Modifier.weight(1f).padding(start = 6.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            IconButton(
+                onClick = { viewModel.moveMusicPlaylistTrack(playlist.name, i, i - 1) },
+                enabled = i > 0,
+            ) { Icon(Icons.Filled.KeyboardArrowUp, "Up") }
+            IconButton(
+                onClick = { viewModel.moveMusicPlaylistTrack(playlist.name, i, i + 1) },
+                enabled = i < count - 1,
+            ) { Icon(Icons.Filled.KeyboardArrowDown, "Down") }
+        }
     }
 }
 
