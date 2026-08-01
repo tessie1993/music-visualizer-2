@@ -243,6 +243,15 @@ object ParamRandomizer {
         r("Palette") {
             it.copy(palette = rng.nextInt(SceneParams.PALETTES.size)).withoutCustomPalette()
         }
+        // A colour map is a different KIND of palette, so it rolls on its own
+        // key: mostly off, because the procedural palettes are the app's own
+        // look and a roll that replaced them half the time would flatten it.
+        r("Colour map") {
+            it.copy(
+                paletteLut =
+                    if (chance(0.25f)) rng.nextInt(SceneParams.CYCLIC_PALETTES.size) else SceneParams.NO_PALETTE_LUT,
+            )
+        }
         r("Palette 2") {
             it.copy(palette2 = rng.nextInt(SceneParams.PALETTES.size)).withoutCustomPalette(second = true)
         }

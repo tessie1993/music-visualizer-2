@@ -226,6 +226,7 @@ class PresetStore(
                 .put("waterLiquid", p.params.waterLiquid.toDouble())
                 .put("waterLiquidFlow", p.params.waterLiquidFlow.toDouble())
                 .put("waterLiquidFade", p.params.waterLiquidFade.toDouble())
+                .put("paletteLut", p.params.paletteLut)
                 .put("beamXy", p.params.beamXy)
                 .put("beamWidth", p.params.beamWidth.toDouble())
                 .put("beamIntensity", p.params.beamIntensity.toDouble())
@@ -459,6 +460,7 @@ class PresetStore(
                         waterLiquid = o.optDouble("waterLiquid", 0.85).toFloat(),
                         waterLiquidFlow = o.optDouble("waterLiquidFlow", 1.4).toFloat(),
                         waterLiquidFade = o.optDouble("waterLiquidFade", 0.35).toFloat(),
+                        paletteLut = o.optInt("paletteLut", SceneParams.NO_PALETTE_LUT),
                         beamXy = o.optBoolean("beamXy", false),
                         beamWidth = o.optDouble("beamWidth", 1.0).toFloat(),
                         beamIntensity = o.optDouble("beamIntensity", 1.0).toFloat(),

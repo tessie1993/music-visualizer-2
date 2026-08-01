@@ -92,14 +92,9 @@ internal class CurlFlowScene(
         try {
             fieldProgram =
                 GlUtil.buildProgram(
-                    context.resources
-                        .openRawResource(R.raw.fluid_base_vert)
-                        .bufferedReader()
-                        .use { it.readText() },
-                    context.resources
-                        .openRawResource(R.raw.curl_field_frag)
-                        .bufferedReader()
-                        .use { it.readText() },
+                    GlUtil.loadShader(context, R.raw.fluid_base_vert),
+                    // Resolves the psrdnoise include the field is built on.
+                    GlUtil.loadShader(context, R.raw.curl_field_frag),
                 )
         } catch (e: GlUtil.ShaderCompileException) {
             android.util.Log.w("FluidSim", "curl field shader rejected by driver: ${e.message}")
@@ -174,6 +169,9 @@ internal class CurlFlowScene(
             GLES30.glUniform1f(loc("uFreq"), 1.2f * (0.5f + params.turbulence.coerceIn(0.1f, 2f)))
             GLES30.glUniform1f(loc("uDetail"), (f.treble * 3f).coerceIn(0f, 1.5f))
             GLES30.glUniform1f(loc("uAmp"), CurlFlowMath.fieldAmp(params.audioDrive, beatDrive))
+            // 0 = aperiodic. A whole number of cells here would make the
+            // field tile exactly, which is how a seamless loop is built.
+            GLES30.glUniform2f(loc("uPeriod"), 0f, 0f)
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fld.fbo)
             GLES30.glViewport(0, 0, fld.width, fld.height)
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)

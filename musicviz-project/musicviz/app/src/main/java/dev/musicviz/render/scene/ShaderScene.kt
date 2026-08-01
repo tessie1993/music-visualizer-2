@@ -59,6 +59,14 @@ class ShaderScene(
     private var flowTex = 0
     private var flowStrength = 0f
 
+    /** Cyclic colour-map atlas; 0 means the procedural palettes only. */
+    private var paletteLutTex = 0
+
+    /** Binds the cyclic colour-map atlas. GL thread. */
+    fun setPaletteLut(tex: Int) {
+        paletteLutTex = tex
+    }
+
     fun setFlow(
         tex: Int,
         strength: Float,
@@ -230,6 +238,18 @@ class ShaderScene(
             setUniform1f("uFlowStrength", flowStrength)
             GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         }
+        // Cyclic colour maps on unit 2. The mix is forced to 0 when the atlas
+        // is missing, so a failed resource load degrades to the procedural
+        // palette instead of sampling an unbound texture.
+        val lutSelected = p.paletteLut >= 0 && paletteLutTex != 0
+        if (paletteLutTex != 0) {
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, paletteLutTex)
+            GLES30.glUniform1i(GLES30.glGetUniformLocation(program, "uPalLut"), 2)
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+        }
+        setUniform1f("uPalLutMix", if (lutSelected) 1f else 0f)
+        setUniform1f("uPalLutRow", dev.musicviz.render.CyclicPalettes.rowCoordinate(p.paletteLut.coerceAtLeast(0)))
         GLES30.glBindVertexArray(vao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)
