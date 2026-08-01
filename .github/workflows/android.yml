@@ -1,13 +1,12 @@
 name: Build MusicViz Debug APK
 
+# Pull-request CI, plus a manual build when an APK is wanted from a branch.
+# Pushes to main are handled by ship-apk.yml, which runs the same build and
+# checks and then publishes the APK as a GitHub Release — running both on main
+# would build the app twice per push for the same result.
+
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "musicviz-project/musicviz/**"
-      - ".github/workflows/android.yml"
   pull_request:
     paths:
       - "musicviz-project/musicviz/**"

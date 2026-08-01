@@ -211,11 +211,42 @@ class PresetStore(
                 .put("waterDepth", p.params.waterDepth.toDouble())
                 .put("waterSpecular", p.params.waterSpecular.toDouble())
                 .put("waterFlow", p.params.waterFlow.toDouble())
+                .put("waterLiquid", p.params.waterLiquid.toDouble())
+                .put("waterLiquidFlow", p.params.waterLiquidFlow.toDouble())
+                .put("waterLiquidFade", p.params.waterLiquidFade.toDouble())
                 .put("rippleOverlayEnabled", p.params.rippleOverlayEnabled)
                 .put("rippleOverlayStrength", p.params.rippleOverlayStrength.toDouble())
                 .put("rippleOverlaySpecular", p.params.rippleOverlaySpecular.toDouble())
                 .apply { if (p.customShader != null) put("customShader", p.customShader) }
                 .toString(2)
+
+        /** Preset-envelope keys; everything else in the object is a parameter. */
+        internal val ENVELOPE_KEYS = setOf("name", "sceneId", "attack", "decay", "customShader")
+
+        /**
+         * Scene parameters alone, without the preset envelope.
+         *
+         * Routed through [toJson] rather than written out a second time
+         * because that serializer is the ONE place every [SceneParams] field
+         * has to be listed - `PresetRoundtripTest` fails the build if a new
+         * field is missing from it. A parallel writer here would be a second
+         * list to remember, and the failure mode of forgetting is silent:
+         * performance takes and change counts would just quietly ignore the
+         * new parameter.
+         */
+        internal fun paramsToJson(params: SceneParams): JSONObject =
+            JSONObject(toJson(Preset("", "", 0f, 0f, null, params)))
+                .also { o -> ENVELOPE_KEYS.forEach(o::remove) }
+
+        /** Inverse of [paramsToJson]; unknown/missing keys fall back to the default. */
+        internal fun paramsFromJson(o: JSONObject): SceneParams {
+            val full = JSONObject(o.toString())
+            full.put("name", "")
+            full.put("sceneId", "")
+            full.put("attack", 0.0)
+            full.put("decay", 0.0)
+            return fromJson(full.toString()).params
+        }
 
         internal fun fromJson(json: String): Preset {
             val o = JSONObject(json)
@@ -358,6 +389,9 @@ class PresetStore(
                         waterDepth = o.optDouble("waterDepth", 0.6).toFloat(),
                         waterSpecular = o.optDouble("waterSpecular", 0.7).toFloat(),
                         waterFlow = o.optDouble("waterFlow", 0.3).toFloat(),
+                        waterLiquid = o.optDouble("waterLiquid", 0.85).toFloat(),
+                        waterLiquidFlow = o.optDouble("waterLiquidFlow", 1.4).toFloat(),
+                        waterLiquidFade = o.optDouble("waterLiquidFade", 0.35).toFloat(),
                         rippleOverlayEnabled = o.optBoolean("rippleOverlayEnabled", false),
                         rippleOverlayStrength = o.optDouble("rippleOverlayStrength", 0.4).toFloat(),
                         rippleOverlaySpecular = o.optDouble("rippleOverlaySpecular", 0.3).toFloat(),

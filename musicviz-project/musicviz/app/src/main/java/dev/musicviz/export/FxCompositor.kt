@@ -55,13 +55,21 @@ internal class ExportGradeState {
     var cyclePhase: Float = 0f
         private set
 
-    /** Beat envelope (1 on a beat, decaying) driving the "Beat pulse" swell. */
+    /**
+     * Beat envelope driving the "Beat pulse" swell: a peak-hold of the graded
+     * impulse that decays at [CompositeGrade.BEAT_DECAY]. NOT 1 on every beat
+     * - it rises to how hard the hit actually was, so a soft verse hit leaves
+     * a smaller swell than a drop. [pulseAmount] then SQUARES it.
+     */
     var beatPulse: Float = 0f
         private set
 
     /** Advances one exported frame; [dtSeconds] is the export's 1/fps.
-     *  [impulse] is the exported frame's graded beat impulse
-     *  ([AudioFeatures.beatImpulse]); it decays on the export's own clock so
+     *  [impulse] is the exported frame's graded motion impulse - production
+     *  passes [dev.musicviz.analysis.AudioFeatures.motionImpulse], matching
+     *  `VisualizerRenderer`'s live `postBeatPulse`; it is the beat impulse
+     *  topped up by off-grid transients, so the two differ whenever a
+     *  suppressed transient is present. It decays on the export's own clock so
      *  a 30 fps and a 60 fps render pulse for the same wall time. */
     fun advance(
         params: SceneParams,
@@ -351,6 +359,10 @@ internal class FxCompositor(
         rippleTexelH: Float = 0f,
         rippleStrength: Float = 0f,
         rippleSpecular: Float = 0f,
+        /** `uStrobeHz`; see `VisualSafety.strobeHz`. The default is the rate
+         *  that used to be a literal in the shader, so an export with safety
+         *  off is unchanged. */
+        strobeHz: Float = dev.musicviz.render.VisualSafety.DEFAULT_STROBE_HZ,
     ) {
         // Rotation and the colour cycle are SPEEDS: integrate them on the
         // export's own clock, once per exported frame, exactly as the live
@@ -400,6 +412,7 @@ internal class FxCompositor(
         GLES30.glUniform1f(loc("uGlitch"), params.glitch)
         GLES30.glUniform1f(loc("uFisheye"), params.fisheye)
         GLES30.glUniform1f(loc("uStrobe"), params.strobe)
+        GLES30.glUniform1f(loc("uStrobeHz"), strobeHz)
         GLES30.glUniform1f(loc("uPostWarp"), params.warp)
         GLES30.glUniform1f(loc("uPostRipple"), params.ripple)
         GLES30.glUniform1f(loc("uPostSymmetry"), params.symmetry.toFloat())

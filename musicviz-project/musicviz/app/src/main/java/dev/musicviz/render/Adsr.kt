@@ -52,6 +52,16 @@ class AdsrEngine {
     private val stage = IntArray(COUNT) // 0 idle, 1 attack, 2 decay, 3 sustain, 4 release
     private val out = FloatArray(COUNT)
 
+    /**
+     * Per-envelope attack ceiling, captured from the triggering beat's graded
+     * impulse. A synth envelope triggered by a MIDI note peaks at that note's
+     * VELOCITY, not always at full scale; these envelopes now do the same, so
+     * a soft hit opens them part-way and only a real accent drives them to
+     * the top. Attack RATE is scaled to match, keeping the user's attack time
+     * the duration it says it is. 1 for legacy beat flags with no strength.
+     */
+    private val peak = FloatArray(COUNT) { 1f }
+
     fun tick(
         dt: Float,
         features: AudioFeatures,
@@ -61,6 +71,7 @@ class AdsrEngine {
             if (c == null || !c.enabled || c.targets.none { it != LfoTarget.NONE }) {
                 level[i] = 0f
                 stage[i] = 0
+                peak[i] = 1f
                 out[i] = 0f
                 continue
             }
@@ -74,20 +85,31 @@ class AdsrEngine {
             val gateOpen = energy >= c.gateThreshold
             // Hysteresis so sustain doesn't chatter right at the threshold.
             val gateHolds = energy >= c.gateThreshold * 0.85f
+            // Attacks stay TEMPO-LOCKED (the tracker's beat, not every
+            // transient) so the envelopes keep their rhythmic role; what the
+            // beat's amplitude decides is how far the attack goes.
             if (features.beat && (c.retrigger || stage[i] == 0 || stage[i] == 4)) {
+                val wasAttacking = stage[i] == 1
                 stage[i] = 1
+                // A retrigger mid-attack may only RAISE the ceiling, never
+                // yank a rising envelope back down to a softer hit's peak.
+                val hit = features.beatImpulse.coerceIn(0f, 1f)
+                peak[i] = if (wasAttacking) maxOf(peak[i], hit) else maxOf(hit, level[i])
             }
+            val ceiling = peak[i].coerceIn(0f, 1f)
             val sustainTarget =
                 if (c.sustainTrack) {
                     (c.sustain * (energy / c.gateThreshold.coerceAtLeast(0.05f)).coerceIn(0f, 1f))
                 } else {
                     c.sustain
-                }
+                } * ceiling
             when (stage[i]) {
                 1 -> {
-                    level[i] += dt / c.attack.coerceAtLeast(0.005f)
-                    if (level[i] >= 1f) {
-                        level[i] = 1f
+                    // Rate scaled by the ceiling: the attack still TAKES
+                    // c.attack seconds, it just travels a shorter distance.
+                    level[i] += dt / c.attack.coerceAtLeast(0.005f) * ceiling
+                    if (level[i] >= ceiling) {
+                        level[i] = ceiling
                         stage[i] = 2
                     }
                 }

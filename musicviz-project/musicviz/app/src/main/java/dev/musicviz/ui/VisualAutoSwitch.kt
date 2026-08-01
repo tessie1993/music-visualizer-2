@@ -14,13 +14,11 @@ import kotlin.random.Random
  * without a player, a clock or a GL context.
  */
 object AutoSwitch {
-    /** Visual playlist: dwell floor and the energy a beat needs to count. */
+    /** Visual playlist: how long a look must hold before a beat may replace it. */
     const val PLAYLIST_MIN_DWELL_MS: Long = 8_000L
-    const val PLAYLIST_RMS: Float = 0.28f
 
-    /** Random mode hops sooner and on slightly quieter beats. */
+    /** Random mode hops sooner. Both gate on the same impulse threshold. */
     const val RANDOM_MIN_DWELL_MS: Long = 6_000L
-    const val RANDOM_RMS: Float = 0.25f
 
     /** Plain interval switching. */
     fun isDue(
@@ -29,9 +27,13 @@ object AutoSwitch {
     ): Boolean = elapsedMs >= intervalMs
 
     /**
-     * Musical switching: after a minimum dwell, hop on a strong moment (a beat
-     * with real energy behind it), and force a hop at twice the interval so a
-     * quiet passage still rotates.
+     * Musical switching: after a minimum dwell, hop on a strong moment, and
+     * force a hop at twice the interval so a quiet passage still rotates.
+     *
+     * "Strong" is the tracker's graded beat impulse, which is TRACK-RELATIVE
+     * because it folds in the macro-energy envelope. The absolute rms gate this
+     * replaced never opened on a quietly mastered track, so musical switching
+     * silently degraded into the plain 2x-interval timer there.
      *
      * The dwell floor is `max(minDwellMs, intervalMs / 2)`, so shortening the
      * interval below twice the floor stops shortening the dwell — the switcher
@@ -40,13 +42,12 @@ object AutoSwitch {
     fun isDueOnMusic(
         elapsedMs: Long,
         intervalMs: Long,
-        beat: Boolean,
-        rms: Float,
+        beatImpulse: Float,
         minDwellMs: Long,
-        rmsThreshold: Float,
+        impulseThreshold: Float,
     ): Boolean {
         val minDwell = maxOf(minDwellMs, intervalMs / 2)
-        return (elapsedMs >= minDwell && beat && rms > rmsThreshold) || elapsedMs >= intervalMs * 2
+        return (elapsedMs >= minDwell && beatImpulse >= impulseThreshold) || elapsedMs >= intervalMs * 2
     }
 }
 

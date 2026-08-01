@@ -2,6 +2,7 @@ package dev.musicviz
 
 import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.analysis.FeatureTimeline
+import dev.musicviz.analysis.PulseTracker
 import dev.musicviz.analysis.TimelineFrame
 import dev.musicviz.export.ExportGradeState
 import dev.musicviz.render.CompositeGrade
@@ -215,6 +216,14 @@ class ExportCompositeGradeTest {
      * `VideoExporter` samples them. A hit is a frame whose envelope is armed
      * at 1 (`pulseAmount` = the slider itself); it decays immediately after,
      * so this counts beats observed, not frames spent decaying.
+     *
+     * Drives `advance` with [AudioFeatures.motionImpulse] - the field
+     * `FxCompositor` passes in production - and NOT the `beat: Boolean`
+     * convenience overload. Feeding the Boolean here would hard-code a
+     * full-strength 1 and quietly take a branch nothing ships, so a
+     * regression in the graded impulse would leave this test green. The
+     * fixture's beats carry no `beatStrength`, so `motionImpulse` is 1 on
+     * them by the documented legacy rule and the counts are unchanged.
      */
     private fun pulseHits(
         timeline: FeatureTimeline,
@@ -230,7 +239,7 @@ class ExportCompositeGradeTest {
             val timeMs = frame * 1000L / fps
             val nextMs = (frame + 1) * 1000L / fps
             val features = timeline.progressionAt(timeMs, emptyList(), if (spanned) nextMs - timeMs else 0L)
-            state.advance(params, dt, features.beat)
+            state.advance(params, dt, features.motionImpulse)
             if (state.pulseAmount(params, pulsesItself = false) >= params.pulse) hits++
         }
         return hits
@@ -256,6 +265,40 @@ class ExportCompositeGradeTest {
         val dropped = pulseHits(timeline, 30, pulsed, spanned = false)
         assertTrue("nearest-frame sampling should drop about half, got $dropped of $expected", dropped < expected * 3 / 4)
         assertEquals("...while 60 fps was always correct", expected, pulseHits(timeline, 60, pulsed, spanned = false))
+    }
+
+    @Test
+    fun theExportPulseFollowsTheBeatsOwnStrength() {
+        // ExportGradeState exists so a headless render matches the screen, and
+        // since v0.14 the thing being matched is GRADED: a soft hit must swell
+        // less than a hard one. Nothing else in this file would notice if the
+        // export path went back to a full-strength kick per beat - the parity
+        // fixture's beats carry no strength, so they ride the legacy 1.0 rule.
+        val pulsed = graded.copy(pulse = 1f)
+        val dt = 1f / 60f
+
+        fun peakFor(strength: Float): Float {
+            val state = ExportGradeState()
+            state.advance(pulsed, dt, AudioFeatures.empty().copy(beat = true, beatStrength = strength).motionImpulse)
+            return state.pulseAmount(pulsed, pulsesItself = false)
+        }
+
+        val hard = peakFor(1f)
+        val soft = peakFor(0.4f)
+        val faint = peakFor(PulseTracker.STRENGTH_FLOOR * PulseTracker.ENERGY_BASE * PulseTracker.UNLOCKED_SCALE)
+        assertTrue("a full-strength beat should reach the slider, got $hard", hard >= 0.99f)
+        // pulseAmount SQUARES the envelope, so the ordering is preserved but
+        // the spread is wider than the strengths themselves - which is the
+        // property a "why is my soft beat invisible" bug would break.
+        assertEquals("a soft beat swells by strength squared", 0.16f, soft, 1e-4f)
+        assertTrue("the weakest real beat must still be non-zero, got $faint", faint > 0f)
+        assertTrue("...and clearly smaller than a soft one, got $faint vs $soft", faint < soft / 2f)
+        // beatStrength = 0 with beat = true is the LEGACY case (a synthesised
+        // or pre-tracker frame) and reads as a full kick by design, so the
+        // no-pulse case has to be an actual absence of a beat.
+        val noBeat = ExportGradeState()
+        noBeat.advance(pulsed, dt, AudioFeatures.empty().motionImpulse)
+        assertEquals("no beat, no pulse", 0f, noBeat.pulseAmount(pulsed, pulsesItself = false), 0f)
     }
 
     @Test

@@ -27,6 +27,9 @@ import kotlin.random.Random
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class VisualAutoSwitchTest {
+    /** Mirrors PlayerViewModel's STRONG_MOMENT_IMPULSE. */
+    private val strongImpulse = 0.6f
+
     // ---- AutoSwitch ----
 
     @Test
@@ -42,30 +45,27 @@ class VisualAutoSwitchTest {
             AutoSwitch.isDueOnMusic(
                 elapsedMs = 9_000,
                 intervalMs = 20_000,
-                beat = true,
-                rms = 0.9f,
+                beatImpulse = 0.9f,
                 minDwellMs = AutoSwitch.PLAYLIST_MIN_DWELL_MS,
-                rmsThreshold = AutoSwitch.PLAYLIST_RMS,
+                impulseThreshold = strongImpulse,
             ),
         )
     }
 
     @Test
-    fun past_the_dwell_a_loud_beat_switches_but_a_quiet_one_does_not() {
-        fun due(
-            beat: Boolean,
-            rms: Float,
-        ) = AutoSwitch.isDueOnMusic(
-            elapsedMs = 12_000,
-            intervalMs = 20_000,
-            beat = beat,
-            rms = rms,
-            minDwellMs = AutoSwitch.PLAYLIST_MIN_DWELL_MS,
-            rmsThreshold = AutoSwitch.PLAYLIST_RMS,
-        )
-        assertTrue(due(beat = true, rms = 0.5f))
-        assertFalse(due(beat = true, rms = 0.1f))
-        assertFalse(due(beat = false, rms = 0.9f))
+    fun past_the_dwell_a_strong_moment_switches_but_a_weak_one_does_not() {
+        fun due(impulse: Float) =
+            AutoSwitch.isDueOnMusic(
+                elapsedMs = 12_000,
+                intervalMs = 20_000,
+                beatImpulse = impulse,
+                minDwellMs = AutoSwitch.PLAYLIST_MIN_DWELL_MS,
+                impulseThreshold = strongImpulse,
+            )
+        assertTrue(due(strongImpulse))
+        assertTrue(due(0.9f))
+        assertFalse(due(strongImpulse - 0.01f))
+        assertFalse(due(0f))
     }
 
     @Test
@@ -74,10 +74,9 @@ class VisualAutoSwitchTest {
             AutoSwitch.isDueOnMusic(
                 elapsedMs = 40_000,
                 intervalMs = 20_000,
-                beat = false,
-                rms = 0f,
+                beatImpulse = 0f,
                 minDwellMs = AutoSwitch.PLAYLIST_MIN_DWELL_MS,
-                rmsThreshold = AutoSwitch.PLAYLIST_RMS,
+                impulseThreshold = strongImpulse,
             ),
         )
     }
@@ -91,18 +90,18 @@ class VisualAutoSwitchTest {
             AutoSwitch.isDueOnMusic(
                 elapsedMs = 3_000,
                 intervalMs = 5_000,
-                beat = true,
-                rms = 0.9f,
+                beatImpulse = 0.9f,
                 minDwellMs = AutoSwitch.PLAYLIST_MIN_DWELL_MS,
-                rmsThreshold = AutoSwitch.PLAYLIST_RMS,
+                impulseThreshold = strongImpulse,
             ),
         )
     }
 
     @Test
     fun random_mode_is_the_more_eager_of_the_two() {
+        // Both modes now gate on the same track-relative impulse, so the dwell
+        // floor is the only thing that still distinguishes them.
         assertTrue(AutoSwitch.RANDOM_MIN_DWELL_MS < AutoSwitch.PLAYLIST_MIN_DWELL_MS)
-        assertTrue(AutoSwitch.RANDOM_RMS < AutoSwitch.PLAYLIST_RMS)
     }
 
     // ---- RandomVizPicker ----

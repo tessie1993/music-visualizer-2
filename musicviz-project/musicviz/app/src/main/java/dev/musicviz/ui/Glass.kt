@@ -59,6 +59,42 @@ fun Modifier.glassPanel(
 }
 
 /**
+ * Semi-transparent reading plate for chrome that sits ON the live visualizer
+ * (the clear-overlay Visuals menu).
+ *
+ * The clear overlay used to be a flat 28% black wash over the whole screen:
+ * enough to grey the visuals down, never enough to make small label text on a
+ * moving bright scene comfortable to read. This is the other trade - the
+ * visuals stay bright and legible THROUGH the plate, while the text has a
+ * consistent surface behind it instead of whatever colour the animation
+ * happens to be under a given word.
+ *
+ * [opacity] comes from the Settings "Bar opacity" slider, so the one control
+ * that governs how see-through the app's chrome is governs this too. The
+ * gradient is deliberately stronger at the top and bottom edges, where the
+ * header and the scrolling list's ends sit, and thinnest across the middle
+ * where the visuals are worth looking at.
+ */
+fun Modifier.readingPlate(
+    opacity: Float,
+    tint: Color,
+    corner: Dp = 0.dp,
+): Modifier {
+    val a = opacity.coerceIn(0f, 0.92f)
+    val shape: Shape = if (corner > 0.dp) RoundedCornerShape(corner) else RectangleShape
+    return this
+        .clip(shape)
+        .background(
+            Brush.verticalGradient(
+                0f to lerp(tint, Color.Black, 0.4f).copy(alpha = (a + 0.14f).coerceAtMost(0.94f)),
+                0.14f to tint.copy(alpha = a),
+                0.86f to tint.copy(alpha = a),
+                1f to lerp(tint, Color.Black, 0.4f).copy(alpha = (a + 0.1f).coerceAtMost(0.94f)),
+            ),
+        )
+}
+
+/**
  * Vertical scrim (transparent at the top, [color] at [maxAlpha] at the
  * bottom) for text/control readability over bright visuals - use under
  * bottom-anchored glass chrome when the panel opacity can be low.

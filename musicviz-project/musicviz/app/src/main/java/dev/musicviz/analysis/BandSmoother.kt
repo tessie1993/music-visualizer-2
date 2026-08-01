@@ -11,6 +11,13 @@ class BandSmoother(
 ) {
     private val state = FloatArray(bandCount)
 
+    /** Drops the decaying band levels, keeping [attack]/[decay]. Called on a
+     *  track change or seek so a loud track's tail does not bleed into the
+     *  first frames of a quiet one. */
+    fun reset() {
+        java.util.Arrays.fill(state, 0f)
+    }
+
     fun apply(
         raw: FloatArray,
         out: FloatArray,

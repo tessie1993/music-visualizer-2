@@ -101,8 +101,11 @@ private fun TrackList(
     tracks: List<DeviceTrack>,
     viewModel: PlayerViewModel,
 ) {
+    // The visible ordering IS the queue a tap opens, so Next walks the list
+    // the user is looking at rather than running out after one track.
+    val queue = remember(tracks) { tracks.map(PlaybackQueue::queueTrack) }
     LazyColumn(Modifier.fillMaxSize()) {
-        items(tracks, key = { it.uri }) { t -> TrackRow(t, viewModel) }
+        items(tracks, key = { it.uri }) { t -> TrackRow(t, viewModel, queue = queue) }
         if (tracks.isEmpty()) item { Text("No music found on device.", Modifier.padding(16.dp)) }
     }
 }
@@ -112,6 +115,7 @@ private fun TrackRow(
     t: DeviceTrack,
     viewModel: PlayerViewModel,
     subtitleOverride: String? = null,
+    queue: List<QueueTrack> = emptyList(),
 ) {
     // Analysis results (key/BPM) and user-edited metadata overrides live in
     // the library store keyed by uri; join them onto the device row.
@@ -131,7 +135,11 @@ private fun TrackRow(
     var menu by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     Row(
-        Modifier.fillMaxWidth().clickable { viewModel.playTrack(t.uri) }.padding(horizontal = 16.dp, vertical = 8.dp),
+        Modifier
+            .fillMaxWidth()
+            .clickable {
+                if (queue.isEmpty()) viewModel.playTrack(t.uri) else viewModel.playFrom(queue, t.uri)
+            }.padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -185,19 +193,20 @@ private fun GroupList(
     if (sel != null && groups.containsKey(sel)) {
         Column {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("‹ Back", Modifier.clickable { open = null }.padding(end = 12.dp), color = MaterialTheme.colorScheme.primary)
+                Text("‹ Back", Modifier.clickable { open = null }.padding(end = 12.dp), color = accentTextColor())
                 Text(sel, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            val queue = remember(sel, groups) { groups.getValue(sel).map(PlaybackQueue::queueTrack) }
             Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CrystalButton(compact = true, onClick = {
-                    viewModel.openStringsPublic(groups.getValue(sel).map { it.uri })
-                }) { Text("Play all") }
+                CrystalButton(compact = true, onClick = { viewModel.playAll(queue) }) { Text("Play all") }
                 CrystalButton(compact = true, filled = false, onClick = {
-                    viewModel.openStringsPublic(groups.getValue(sel).map { it.uri }.shuffled())
+                    viewModel.playAll(queue, shuffled = true)
                 }) { Text("Shuffle") }
             }
             LazyColumn(Modifier.fillMaxSize()) {
-                items(groups.getValue(sel), key = { it.uri }) { t -> TrackRow(t, viewModel, subtitleOverride = t.album) }
+                items(groups.getValue(sel), key = { it.uri }) { t ->
+                    TrackRow(t, viewModel, subtitleOverride = t.album, queue = queue)
+                }
             }
         }
     } else {

@@ -19,12 +19,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.LayersClear
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -70,14 +76,16 @@ fun VisualsHub(
     liveBackdrop: Boolean = false,
 ) {
     var tab by rememberSaveable { mutableStateOf(0) }
-    val tabs = listOf("Presets", "Styles", "Customize", "Textures")
+    val tabs = listOf("Presets", "Styles", "Customize", "Textures", "Takes")
     val gui by viewModel.guiPrefs.collectAsState()
+    val takes by viewModel.takeState.collectAsState()
     Box(Modifier.fillMaxSize()) {
         if (liveBackdrop) {
             VisualizerCanvasHost(visualizerView, Modifier.fillMaxSize())
-            // Gentle dim so text stays legible over bright visuals; the
-            // menu itself stays clear (no panel fills in this mode).
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
+            // A whisper of dim over the whole canvas - the reading plate below
+            // does the legibility work, so this only takes the very brightest
+            // frames off the top rather than greying the visuals down.
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.1f)))
         }
         val bodyStyle =
             if (liveBackdrop) {
@@ -87,16 +95,59 @@ fun VisualsHub(
             } else {
                 LocalTextStyle.current
             }
+        // Semi-transparent plate under the menu: the visuals read through it,
+        // the text reads on it. Inset so the live canvas frames the panel and
+        // it is obvious the visuals are still running underneath. Its opacity
+        // follows the Settings "Bar opacity" slider like the rest of the
+        // chrome, scaled down because this one has to stay see-through.
+        val plate =
+            if (liveBackdrop) {
+                Modifier
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                    .readingPlate(
+                        opacity = (gui.barOpacity * 0.62f).coerceIn(0.18f, 0.7f),
+                        tint = MaterialTheme.colorScheme.surface,
+                        corner = 20.dp,
+                    )
+            } else {
+                Modifier
+            }
         ProvideTextStyle(bodyStyle) {
-            Column(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().then(plate)) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Column(Modifier.weight(1f)) {
-                        CrystalOverline(if (liveBackdrop) "Live overlay" else "MusicViz")
+                        CrystalOverline(
+                            when {
+                                takes.recording -> "● Recording  ${formatTakeTime(takes.recordedMs)}"
+                                takes.replaying != null -> "▶ ${takes.replaying}"
+                                liveBackdrop -> "Live overlay"
+                                else -> "MusicViz"
+                            },
+                            color = if (takes.recording) MaterialTheme.colorScheme.error else accentTextColor(),
+                        )
                         GlowTitle("Visuals")
+                    }
+                    // Record sits in the header, not in the Takes tab: a
+                    // performance is made on the Customize and Styles tabs, and
+                    // a control you have to leave the thing you are performing
+                    // on to reach is a control you do not use mid-set.
+                    IconButton(onClick = {
+                        if (takes.recording) viewModel.stopRecording() else viewModel.startRecording()
+                    }) {
+                        Icon(
+                            if (takes.recording) Icons.Filled.StopCircle else Icons.Filled.FiberManualRecord,
+                            if (takes.recording) "Stop recording this take" else "Record a take",
+                            tint =
+                                if (takes.recording) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    LocalContentColor.current
+                                },
+                        )
                     }
                     IconButton(onClick = {
                         viewModel.setGuiPrefs(gui.copy(clearVisualsMenu = !gui.clearVisualsMenu))
@@ -113,8 +164,9 @@ fun VisualsHub(
                 when (tab) {
                     0 -> PresetsTreeTab(viewModel, visualizerView)
                     1 -> StylesTab(viewModel, visualizerView, onOpenTextures = { tab = 3 })
-                    2 -> CustomizeHubTab(viewModel, visualizerView)
+                    2 -> CustomizePanel(viewModel, visualizerView)
                     3 -> TexturesHubTab(viewModel, visualizerView)
+                    4 -> TakesTab(viewModel)
                 }
             }
         }
@@ -136,9 +188,34 @@ private fun PresetsTreeTab(
     var saveFolder by rememberSaveable { mutableStateOf("") }
     val userPresets = viz.presets.filterNot { BuiltInPresets.isBuiltIn(it.name) }.distinctBy { it.name }
     val byFolder = userPresets.groupBy { viewModel.presetFolderOf(it.name) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var importNote by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         item {
+            // Share and import live at the top of the list, together: a preset
+            // arrives as a message, and the thing you do on receiving one is
+            // paste it, not go looking for a menu.
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 6.dp)) {
+                CrystalButton(compact = true, filled = false, onClick = {
+                    val pasted = clipboardText(context)
+                    importNote =
+                        when {
+                            pasted.isNullOrBlank() -> "The clipboard is empty."
+                            else ->
+                                viewModel.importPresetLink(pasted)?.let { "Imported \"$it\"." }
+                                    ?: "That clipboard text is not a MusicViz preset link."
+                        }
+                }) { Text("Paste a shared preset") }
+            }
+            importNote?.let { note ->
+                Text(
+                    note,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+            }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = newFolder,
@@ -163,7 +240,7 @@ private fun PresetsTreeTab(
                     Text(
                         if (folder.isEmpty()) "Presets" else "📁 $folder",
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = accentTextColor(),
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 }
@@ -173,6 +250,9 @@ private fun PresetsTreeTab(
                     Text(p.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     IconButton(onClick = { applyPresetLive(viewModel, visualizerView, p) }) {
                         Icon(Icons.Filled.PlayArrow, "Apply", tint = MaterialTheme.colorScheme.primary)
+                    }
+                    IconButton(onClick = { sharePreset(context, viewModel, p.name) }) {
+                        Icon(Icons.Filled.Share, "Share this preset")
                     }
                     IconButton(
                         onClick = {
@@ -193,7 +273,7 @@ private fun PresetsTreeTab(
             Text(
                 "Built-in",
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
+                color = accentTextColor(),
                 modifier = Modifier.padding(top = 8.dp),
             )
         }
@@ -240,6 +320,51 @@ private fun PresetsTreeTab(
             }
         }
     }
+}
+
+/** Clipboard text, or null when the clipboard holds nothing readable. */
+private fun clipboardText(context: android.content.Context): String? =
+    runCatching {
+        context
+            .getSystemService(android.content.ClipboardManager::class.java)
+            ?.primaryClip
+            ?.takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)
+            ?.coerceToText(context)
+            ?.toString()
+    }.getOrNull()
+
+/**
+ * Shares a preset as a link, falling back to its file when the link would be
+ * too long to survive a chat app (a preset carrying a custom shader).
+ */
+private fun sharePreset(
+    context: android.content.Context,
+    viewModel: PlayerViewModel,
+    name: String,
+) {
+    val link = viewModel.presetShareLink(name)
+    val send =
+        if (link != null) {
+            android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(android.content.Intent.EXTRA_SUBJECT, "MusicViz preset: $name")
+                putExtra(android.content.Intent.EXTRA_TEXT, link)
+            }
+        } else {
+            // Too long for a message: send the .json itself, which has no
+            // length limit and is what a shader-carrying preset needs.
+            val file = viewModel.presetFile(name) ?: return
+            val uri =
+                androidx.core.content.FileProvider
+                    .getUriForFile(context, context.packageName + ".presets", file)
+            android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "application/json"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }
+    runCatching { context.startActivity(android.content.Intent.createChooser(send, "Share preset")) }
 }
 
 /** Applies a preset; its shader side reaches the renderer via vizApply. */
@@ -301,7 +426,7 @@ private fun SceneList(
                 Text(
                     id,
                     Modifier.padding(start = 10.dp),
-                    color = if (sel) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                    color = if (sel) accentTextColor() else LocalContentColor.current,
                 )
             }
         }
@@ -337,7 +462,7 @@ private fun MilkDropTab(
             CrystalButton(onClick = { milkPicker.launch(arrayOf("*/*")) }) { Text("Load .milk file") }
             CrystalButton(filled = false, onClick = onOpenTextures) { Text("Textures…") }
         }
-        Text("Your .milk presets", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Text("Your .milk presets", style = MaterialTheme.typography.titleMedium, color = accentTextColor())
         if (milkFiles.isEmpty()) {
             Text("None yet — load a .milk file or save one from the milkdrop scene.", style = MaterialTheme.typography.bodySmall)
         }
@@ -459,8 +584,14 @@ internal fun isParticleShapeSceneId(sceneId: String): Boolean = sceneId in Visua
  */
 internal fun isPointSpriteSceneId(sceneId: String): Boolean = isParticleShapeSceneId(sceneId) || isParticleLayerSceneId(sceneId)
 
+/**
+ * The Customize panel: the scene-parameter tabs plus the tools that act on
+ * them (Randomize unlocked, Reset). Mounted by the Visuals hub AND by the
+ * Settings destination's Customize tab - one panel, two doors, so the two
+ * can never drift apart.
+ */
 @Composable
-private fun CustomizeHubTab(
+internal fun CustomizePanel(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
 ) {
@@ -474,9 +605,7 @@ private fun CustomizeHubTab(
     LaunchedEffect(isShader) { if (!isShader && sub >= 6) sub = 0 }
     Column(Modifier.fillMaxSize()) {
         CrystalTabs(titles = tabs, selected = sub, onSelect = { sub = it })
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-            CrystalButton(compact = true, onClick = viewModel::randomizeParams) { Text("⚄ Randomize unlocked") }
-        }
+        CustomizeToolbar(viewModel, viz.params)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             val locked by viewModel.lockedParams.collectAsState()
             androidx.compose.runtime.CompositionLocalProvider(
@@ -510,7 +639,16 @@ private fun CustomizeHubTab(
                             intelligenceMode = viz.intelligenceMode,
                             onIntelligenceModeChange = viewModel::setIntelligenceMode,
                         )
-                    3 -> ColorTab(p, onChange, isShaderLookScene = isShader)
+                    3 -> {
+                        val artNote by viewModel.artPaletteNote.collectAsState()
+                        ColorTab(
+                            p,
+                            onChange,
+                            isShaderLookScene = isShader,
+                            onTakeArtworkPalette = viewModel::applyArtworkPalette,
+                            artworkNote = artNote,
+                        )
+                    }
                     4 -> {
                         val adsrs by viewModel.adsrs.collectAsState()
                         FxTab(
@@ -540,6 +678,196 @@ private fun CustomizeHubTab(
                 }
             }
         }
+    }
+}
+
+/**
+ * The tools that act on the whole parameter set, above the controls they act
+ * on: roll everything unlocked, and put it all back.
+ *
+ * Reset is confirmed rather than immediate. It discards every slider in every
+ * tab at once, and the panel it sits in exists for people who spend a long
+ * time moving those sliders; a mis-tap next to Randomize would be expensive
+ * and there is no undo. The row also reports how far the live look has drifted
+ * from the defaults, which is the question "should I reset?" answered before
+ * it is asked.
+ */
+@Composable
+private fun CustomizeToolbar(
+    viewModel: PlayerViewModel,
+    params: dev.musicviz.render.scene.SceneParams,
+) {
+    var confirmReset by remember { mutableStateOf(false) }
+    val changed = remember(params) { CustomizeSummary.changedCount(params) }
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        CrystalButton(compact = true, onClick = viewModel::randomizeParams) { Text("⚄ Randomize unlocked") }
+        CrystalButton(compact = true, filled = false, enabled = changed > 0, onClick = { confirmReset = true }) {
+            Text("Reset")
+        }
+        Text(
+            if (changed == 0) "defaults" else "$changed changed",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    if (confirmReset) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmReset = false },
+            title = { Text("Reset customizations?") },
+            text = {
+                Text(
+                    "Puts all $changed changed controls back to their defaults, across every tab. " +
+                        "Saved presets are not touched — reapply one to get its look back.",
+                )
+            },
+            confirmButton = {
+                CrystalButton(onClick = {
+                    viewModel.resetSceneParams()
+                    confirmReset = false
+                }) { Text("Reset") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmReset = false }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+// ------------------------------------------------------------------ Takes
+
+/** mm:ss for a take's clock. */
+private fun formatTakeTime(ms: Long): String {
+    val total = (ms / 1000).coerceAtLeast(0)
+    return "%d:%02d".format(total / 60, total % 60)
+}
+
+/**
+ * Saved performance takes: what the visuals were DOING over time, rather than
+ * the pixels that came out.
+ *
+ * Recording is started from the header (a set is performed on the Customize
+ * and Styles tabs, so the control cannot live here); this tab is where takes
+ * are replayed, renamed, chosen for export and deleted.
+ */
+@Composable
+private fun TakesTab(viewModel: PlayerViewModel) {
+    val takes by viewModel.takeState.collectAsState()
+    var renaming by remember { mutableStateOf<String?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    LazyColumn(
+        Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        item {
+            Text(
+                if (takes.recording) {
+                    "Recording — ${takes.recordedEvents} keyframes, ${formatTakeTime(takes.recordedMs)}. " +
+                        "Go and perform; press the stop button in the header when you are done."
+                } else {
+                    "A take stores what the visuals were doing, moment by moment — every slider, " +
+                        "colour and style change, as you made them. It replays over the live canvas " +
+                        "and can be re-rendered at any quality later. Press ● in the header to start."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 8.dp),
+            )
+        }
+        if (takes.replaying != null) {
+            item {
+                Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                    Text(
+                        "Replaying ${takes.replaying} — ${formatTakeTime(takes.replayMs)} / " +
+                            formatTakeTime(takes.replayEndMs),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = accentTextColor(),
+                    )
+                    LinearProgressIndicator(
+                        progress = {
+                            if (takes.replayEndMs > 0) {
+                                (takes.replayMs.toFloat() / takes.replayEndMs).coerceIn(0f, 1f)
+                            } else {
+                                0f
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(2.dp).padding(top = 4.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+        items(takes.takes, key = { "take_${it.name}" }) { take ->
+            val playing = takes.replaying == take.name
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                    Text(take.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        "${formatTakeTime(take.durationMs)} · ${take.eventCount} keyframes · " +
+                            "${take.sizeBytes / 1024} KB" +
+                            if (takes.exportTake == take.name) " · exports this" else "",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                IconButton(onClick = {
+                    if (playing) viewModel.stopReplay() else viewModel.playTake(take.name)
+                }) {
+                    Icon(
+                        if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                        if (playing) "Stop replay" else "Replay this take",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                IconButton(onClick = {
+                    viewModel.setExportTake(if (takes.exportTake == take.name) null else take.name)
+                }) {
+                    Icon(
+                        Icons.Filled.Favorite,
+                        "Render this take on the next export",
+                        tint =
+                            if (takes.exportTake == take.name) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                LocalContentColor.current
+                            },
+                    )
+                }
+                IconButton(onClick = {
+                    renaming = take.name
+                    renameText = take.name
+                }) { Icon(Icons.Filled.Edit, "Rename") }
+                IconButton(onClick = { viewModel.deleteTake(take.name) }) {
+                    Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+        if (takes.takes.isEmpty() && !takes.recording) {
+            item {
+                Text("No takes recorded yet.", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+    renaming?.let { old ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("Rename take") },
+            text = {
+                OutlinedTextField(value = renameText, onValueChange = { renameText = it }, singleLine = true)
+            },
+            confirmButton = {
+                CrystalButton(onClick = {
+                    viewModel.renameTake(old, renameText.trim())
+                    renaming = null
+                }) { Text("Rename") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
+        )
     }
 }
 

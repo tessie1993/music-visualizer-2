@@ -28,7 +28,7 @@ import java.io.File
  * Shape and Color hide them there: if you can see it, it works.
  *
  * [exactlyTheShaderOnlyControlsAreGated] reads the gating straight out of
- * `CustomizeDialog.kt`, so gating a control that DOES work everywhere (or
+ * `CustomizeTabs.kt`, so gating a control that DOES work everywhere (or
  * un-gating one of these four) fails the build instead of silently shipping.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -65,7 +65,7 @@ class ShaderLookGatingTest {
     @Test
     fun exactlyTheShaderOnlyControlsAreGated() {
         assertEquals(
-            "controls wrapped in `if (isShaderLookScene)` inside CustomizeDialog.kt",
+            "controls wrapped in `if (isShaderLookScene)` inside CustomizeTabs.kt",
             shaderOnlyLabels,
             gatedLabels(),
         )
@@ -91,7 +91,7 @@ class ShaderLookGatingTest {
         val gated = mutableSetOf<String>()
         val gateDepths = mutableListOf<Int>()
         var depth = 0
-        for (line in customizeDialogSource().lines()) {
+        for (line in customizeTabsSource().lines()) {
             if (gateDepths.isNotEmpty()) {
                 labelRegex.findAll(line).forEach { gated += it.groupValues[1] }
             }
@@ -112,15 +112,15 @@ class ShaderLookGatingTest {
                 }
             }
         }
-        assertEquals("unbalanced braces while parsing CustomizeDialog.kt", 0, depth)
+        assertEquals("unbalanced braces while parsing CustomizeTabs.kt", 0, depth)
         return gated
     }
 
-    private fun customizeDialogSource(): String {
+    private fun customizeTabsSource(): String {
         val relatives =
             listOf(
-                "src/main/java/dev/musicviz/ui/CustomizeDialog.kt",
-                "app/src/main/java/dev/musicviz/ui/CustomizeDialog.kt",
+                "src/main/java/dev/musicviz/ui/CustomizeTabs.kt",
+                "app/src/main/java/dev/musicviz/ui/CustomizeTabs.kt",
             )
         var dir: File? = File("").absoluteFile
         while (dir != null) {
@@ -130,7 +130,7 @@ class ShaderLookGatingTest {
             }
             dir = dir.parentFile
         }
-        fail("CustomizeDialog.kt not found from ${File("").absolutePath}")
+        fail("CustomizeTabs.kt not found from ${File("").absolutePath}")
         error("unreachable")
     }
 }

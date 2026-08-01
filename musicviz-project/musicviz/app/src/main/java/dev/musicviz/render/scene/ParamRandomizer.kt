@@ -6,12 +6,12 @@ import kotlin.random.Random
  * One-tap randomization of the Customize parameters ("Randomize unlocked").
  *
  * Locks are keyed by the **control label string** shown in the Customize panel
- * (`CustomizeDialog`'s `LabeledSlider` / `LabeledIntSlider` / `CheckRow` /
+ * (`CustomizeTabs`'s `LabeledSlider` / `LabeledIntSlider` / `CheckRow` /
  * `LockableChipLabel`), because that label is exactly what the lock chip next
  * to each control persists. Every key used here therefore has to match its
  * label verbatim - a typo silently turns the lock into a no-op, which is the
  * regression `ParamRandomizerFluidTest` guards by parsing the labels back out
- * of `CustomizeDialog.kt`. Chip selectors (Palette, Palette 2, Particle shape,
+ * of `CustomizeTabs.kt`. Chip selectors (Palette, Palette 2, Particle shape,
  * Beat pattern, Path) render `LockableChipLabel` for exactly that reason:
  * without it they were the only rolled params a user could not protect.
  *
@@ -235,6 +235,12 @@ object ParamRandomizer {
         r("Depth") { it.copy(waterDepth = f(0.3f, 0.9f)) }
         r("Specular") { it.copy(waterSpecular = f(0.3f, 0.9f)) }
         r("Flow drift") { it.copy(waterFlow = f(0.05f, 0.6f)) }
+        // The liquid film's own three knobs. Rolled like the rest of the water
+        // block: WATER ignores nothing here, and a scene that never reads them
+        // is unaffected, so a roll taken elsewhere still leaves Water sane.
+        r("Liquid") { it.copy(waterLiquid = f(0.4f, 1f)) }
+        r("Liquid flow") { it.copy(waterLiquidFlow = f(0.6f, 2.6f)) }
+        r("Liquid fade") { it.copy(waterLiquidFade = f(0.1f, 1.2f)) }
         r("Ripple overlay strength") { it.copy(rippleOverlayStrength = f(0.15f, 0.7f)) }
         r("Ripple glint") { it.copy(rippleOverlaySpecular = f(0.1f, 0.6f)) }
 

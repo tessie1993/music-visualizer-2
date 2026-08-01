@@ -42,11 +42,18 @@ class HistoryStore(
         title: String,
     ) {
         val e = entries.getOrPut(uri) { Entry(uri, 0L, 0, title) }
-        e.lastPlayedMs = System.currentTimeMillis()
+        // Strictly increasing, not just "now". The wall clock has millisecond
+        // resolution and two plays can land inside one tick - skipping through
+        // a queue, or a test - which left "recently played" ordering two
+        // entries by whatever order the map happened to hold them in. Nudging
+        // past the newest stamp keeps the order the user actually created.
+        e.lastPlayedMs = maxOf(System.currentTimeMillis(), newestStamp() + 1)
         e.playCount++
         e.title = title
         persist()
     }
+
+    private fun newestStamp(): Long = entries.values.maxOfOrNull { it.lastPlayedMs } ?: 0L
 
     override fun recentlyPlayed(limit: Int): List<Entry> = entries.values.sortedByDescending { it.lastPlayedMs }.take(limit)
 

@@ -107,7 +107,28 @@ class VideoExporter(
         sceneParams: SceneParams,
         lfoConfigs: List<dev.musicviz.render.LfoConfig> = emptyList(),
         adsrConfigs: List<dev.musicviz.render.AdsrConfig> = emptyList(),
+        /** Photosensitivity limits, mirroring the live renderer's clamp. */
+        safety: dev.musicviz.render.VisualSafety.SafetyConfig =
+            dev.musicviz.render.VisualSafety.SafetyConfig.OFF,
         requestedFps: Int = FPS,
+        /**
+         * Per-frame parameter override: a recorded performance take, sampled
+         * at the frame's own timestamp. Null renders [sceneParams] flat, which
+         * is what every export did before takes existed.
+         *
+         * Returns the parameters ONLY - the style a take switches to mid-set
+         * is not applied here, because this renderer builds one scene up front
+         * and drawing through several would mean creating, swapping and
+         * releasing them inside the frame loop. The export dialog says as much
+         * where the take is chosen.
+         */
+        paramsAt: ((Long) -> SceneParams)? = null,
+        /**
+         * Trim the render to a whole number of bars so the clip loops without
+         * a stumble at the seam. Applies to the audio as well as the video -
+         * a loop-safe video over full-length audio is not loop-safe.
+         */
+        loopSafe: Boolean = false,
         destination: Uri? = null,
         onProgress: (Float) -> Unit,
         isCancelled: () -> Boolean,
@@ -126,7 +147,10 @@ class VideoExporter(
                     sceneParams,
                     lfoConfigs,
                     adsrConfigs,
+                    safety,
                     requestedFps,
+                    paramsAt,
+                    loopSafe,
                     onProgress,
                     isCancelled,
                 )
@@ -160,7 +184,10 @@ class VideoExporter(
                         sceneParams,
                         lfoConfigs,
                         adsrConfigs,
+                        safety,
                         requestedFps,
+                        paramsAt,
+                        loopSafe,
                         onProgress,
                         isCancelled,
                     )
@@ -192,7 +219,10 @@ class VideoExporter(
         sceneParams: SceneParams,
         lfoConfigs: List<dev.musicviz.render.LfoConfig>,
         adsrConfigs: List<dev.musicviz.render.AdsrConfig>,
+        safety: dev.musicviz.render.VisualSafety.SafetyConfig,
         requestedFps: Int,
+        paramsAt: ((Long) -> SceneParams)?,
+        loopSafe: Boolean,
         onProgress: (Float) -> Unit,
         isCancelled: () -> Boolean,
     ): Uri? {
@@ -209,7 +239,10 @@ class VideoExporter(
                     sceneParams,
                     lfoConfigs,
                     adsrConfigs,
+                    safety,
                     requestedFps,
+                    paramsAt,
+                    loopSafe,
                     onProgress,
                     isCancelled,
                 )
@@ -235,7 +268,10 @@ class VideoExporter(
         sceneParams: SceneParams,
         lfoConfigs: List<dev.musicviz.render.LfoConfig>,
         adsrConfigs: List<dev.musicviz.render.AdsrConfig>,
+        safety: dev.musicviz.render.VisualSafety.SafetyConfig,
         requestedFps: Int,
+        paramsAt: ((Long) -> SceneParams)?,
+        loopSafe: Boolean,
         onProgress: (Float) -> Unit,
         isCancelled: () -> Boolean,
     ) {
@@ -312,9 +348,19 @@ class VideoExporter(
             // FlowField export parity (F7): run the shared field in the export GL
             // context so fluidWarp bends exported frames exactly like the live
             // view. The FLUID scene reuses its own velocity field instead.
+            // Both services are allocated ONCE, before the frame loop, from
+            // params that a replayed take can change mid-render. Sampling the
+            // take at its start and end is enough to decide: these are
+            // allocate-or-not questions, and allocating a field the render
+            // never uses costs a few small FBOs, while NOT allocating one the
+            // take switches on halfway would silently drop the effect from the
+            // second half of the video.
+            val takeEnd = paramsAt?.invoke(Long.MAX_VALUE / 2)
+            val usesFlowField = sceneParams.flowEnabled || takeEnd?.flowEnabled == true
+            val usesRippleOverlay = sceneParams.rippleOverlayEnabled || takeEnd?.rippleOverlayEnabled == true
             val exportFluidScene = scene as? dev.musicviz.render.fluid.FluidScene
             val flowField =
-                if (sceneParams.flowEnabled && exportFluidScene == null) {
+                if (usesFlowField && exportFluidScene == null) {
                     dev.musicviz.render.fluid.FlowField(context).also {
                         flowFieldRef = it
                         it.create()
@@ -330,7 +376,7 @@ class VideoExporter(
             // (matches the live renderer's exclusivity guard).
             val exportWaterScene = scene as? dev.musicviz.render.fluid.WaterScene
             val rippleOverlay =
-                if (sceneParams.rippleOverlayEnabled && exportWaterScene == null) {
+                if (usesRippleOverlay && exportWaterScene == null) {
                     dev.musicviz.render.fluid.RippleSim(context).also {
                         rippleRef = it
                         it.create()
@@ -358,7 +404,17 @@ class VideoExporter(
             // Video length is derived from the ACTUAL transcoded audio duration so
             // the export always matches the music exactly. The analysis timeline is
             // only used for per-frame features (featuresAt clamps at its end).
-            val exportDurationUs = if (aac.durationUs > 0) aac.durationUs else timeline.durationMs * 1000
+            val sourceDurationUs = if (aac.durationUs > 0) aac.durationUs else timeline.durationMs * 1000
+            // Loop-safe: cut on a bar boundary so the last beat runs into the
+            // first. Down to the nearest bar, never up - rounding up would end
+            // the clip in silence, which is worse than the seam it fixes.
+            val exportDurationUs =
+                if (loopSafe) {
+                    dev.musicviz.analysis.BarTrim
+                        .trimToBars(sourceDurationUs, timeline.bpm)
+                } else {
+                    sourceDurationUs
+                }
             val totalFrames = (exportDurationUs * fps / 1_000_000L).toInt().coerceAtLeast(1)
             val frameDurationNs = 1_000_000_000L / fps
             // Section boundaries once (O(n)); per-frame features then carry the
@@ -386,13 +442,31 @@ class VideoExporter(
                 val (envRate, envDepth) =
                     dev.musicviz.render.AdsrEngine
                         .lfoOffsets(adsrEngine.configs, envValues)
-                val lfoValues = lfoEngine.tick(1f / fps, features.bpm, envRate, envDepth)
+                val lfoValues = lfoEngine.tick(1f / fps, features.bpm, envRate, envDepth, safety)
+                // A replayed take supplies the frame's own parameters; the
+                // modulators then run on top of them exactly as they do live,
+                // so an LFO the user set up still moves during a take render.
+                val frameParams = paramsAt?.invoke(timeMs) ?: sceneParams
                 var p =
                     dev.musicviz.render.LfoEngine
-                        .apply(sceneParams, lfoEngine.configs, lfoValues)
+                        .apply(frameParams, lfoEngine.configs, lfoValues)
                 p =
                     dev.musicviz.render.AdsrEngine
                         .apply(p, adsrEngine.configs, envValues)
+                // Mirrors VisualizerRenderer's third line: the photosensitivity
+                // clamp runs after every modulator, so a rendered clip is as
+                // safe as the screen the user approved it from. If these two
+                // ever diverge, an export becomes the one place the limits do
+                // not apply.
+                p =
+                    dev.musicviz.render.VisualSafety
+                        .apply(p, safety)
+                scene.setParams(p)
+                scene.update(
+                    dev.musicviz.render.scene
+                        .applyBandGains(features, p),
+                    1f / fps,
+                )
                 if (p.flowEnabled && flowField != null && flowField.available) {
                     // Steps into the FlowField's own FBOs, before the scene
                     // target is bound - mirrors the live frame order.
@@ -493,6 +567,9 @@ class VideoExporter(
                     rippleTexelH = if (rippleTex != 0 && rippleOverlay != null) rippleOverlay.texelH else 0f,
                     rippleStrength = if (rippleTex != 0) p.rippleOverlayStrength.coerceIn(0f, 1f) else 0f,
                     rippleSpecular = if (rippleTex != 0) p.rippleOverlaySpecular.coerceIn(0f, 1f) else 0f,
+                    strobeHz =
+                        dev.musicviz.render.VisualSafety
+                            .strobeHz(safety),
                 )
                 egl.setPresentationTimeNs(frame * frameDurationNs)
                 egl.swapBuffers()
@@ -541,7 +618,11 @@ class VideoExporter(
             // empty/broken file.
             check(muxerStarted || isCancelled()) { "Video encoder produced no output (encoder/format unsupported?)" }
             if (muxerStarted && !isCancelled() && audioTrack >= 0) {
-                writeTranscodedAudio(muxer, audioTrack, aac) { onProgress(0.95f + it * 0.05f) }
+                // The audio is trimmed to the same instant as the video: a
+                // loop-safe picture over full-length sound still stumbles.
+                writeTranscodedAudio(muxer, audioTrack, aac, exportDurationUs) {
+                    onProgress(0.95f + it * 0.05f)
+                }
             }
         } finally {
             // Cleanup failures (e.g. stopping a muxer after a mid-export error)
@@ -580,6 +661,8 @@ class VideoExporter(
         muxer: MediaMuxer,
         track: Int,
         aac: AudioTranscoder.Result,
+        /** Samples at or after this timestamp are dropped (loop-safe trim). */
+        limitUs: Long,
         onProgress: (Float) -> Unit,
     ) {
         val info = MediaCodec.BufferInfo()
@@ -588,6 +671,7 @@ class VideoExporter(
             val channel = raf.channel
             var scratch = ByteBuffer.allocate(64 * 1024)
             aac.sampleInfos.forEachIndexed { index, sample ->
+                if (sample.presentationTimeUs >= limitUs) return@forEachIndexed
                 if (scratch.capacity() < sample.size) scratch = ByteBuffer.allocate(sample.size)
                 scratch.clear()
                 scratch.limit(sample.size)

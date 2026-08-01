@@ -69,17 +69,28 @@ class VmBehaviorTest {
     }
 
     @Test
-    fun auto_mode_tristate_maps_random_and_intelligence() {
+    fun auto_mode_cycles_through_every_mode_exclusively() {
+        // One control, four mutually exclusive modes: "rotate randomly" and
+        // "hold a look per section" are opposite instructions, so the cycle is
+        // what keeps them from both being on with no visible winner.
         val v = vm()
         v.cycleAutoMode() // 1 = random
         assertEquals(1, v.autoMode.value)
         assertTrue(v.vizState.value.randomEnabled)
+        assertFalse(v.vizState.value.sectionStaging)
         v.cycleAutoMode() // 2 = intelligent
         assertEquals(2, v.autoMode.value)
         assertFalse(v.vizState.value.randomEnabled)
+        assertFalse(v.vizState.value.sectionStaging)
         assertEquals(IntelligenceMode.AUTO, v.vizState.value.intelligenceMode)
+        v.cycleAutoMode() // 3 = sections
+        assertEquals(3, v.autoMode.value)
+        assertTrue(v.vizState.value.sectionStaging)
+        assertFalse(v.vizState.value.randomEnabled)
+        assertEquals(IntelligenceMode.MANUAL, v.vizState.value.intelligenceMode)
         v.cycleAutoMode() // 0 = off
         assertEquals(0, v.autoMode.value)
+        assertFalse(v.vizState.value.sectionStaging)
         assertEquals(IntelligenceMode.MANUAL, v.vizState.value.intelligenceMode)
     }
 
