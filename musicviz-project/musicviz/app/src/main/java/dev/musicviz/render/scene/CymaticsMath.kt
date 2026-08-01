@@ -2,6 +2,7 @@ package dev.musicviz.render.scene
 
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.ln
@@ -105,6 +106,14 @@ object CymaticsMath {
 
     /** Half-width, in bands, of the local mean the tonal-focus whitening uses. */
     const val WHITEN_RADIUS: Int = 4
+
+    /**
+     * Amplitude scale of [besselApprox]. The asymptotic envelope is
+     * sqrt(2/(pi x)) ~ 0.8 / sqrt(x); written as `1 / sqrt(1 + 2x)` (finite at
+     * the centre, where the real envelope is not) that is short by about this
+     * factor over the range a dish actually shows.
+     */
+    const val BESSEL_GAIN: Float = 1.7f
 
     /**
      * Visible oscillation rate per unit wavenumber, in Hz.
@@ -261,9 +270,9 @@ object CymaticsMath {
     }
 
     /**
-     * The plate's surface: the superposition of [count] modes packed into
-     * [modes] as (n, m, amplitude) triples - the exact layout the shader's
-     * `uModes[]` takes, so this doubles as the CPU mirror of the vertex pass.
+     * The square plate's surface: the superposition of [count] modes packed
+     * into [modes] as (n, m, amplitude, phase) quads - the shader's `uModes[]`
+     * layout - so this is the CPU mirror of the plate half of `field()`.
      */
     fun surfaceHeight(
         modes: FloatArray,
@@ -273,45 +282,96 @@ object CymaticsMath {
     ): Float {
         var h = 0f
         for (i in 0 until count) {
-            val base = i * 3
-            h += modes[base + 2] * modeHeight(modes[base].toInt(), modes[base + 1].toInt(), x, y)
+            val base = i * 4
+            h += modes[base + 2] * cos(modes[base + 3]) * modeHeight(modes[base].toInt(), modes[base + 1].toInt(), x, y)
         }
         return h
     }
 
     /**
-     * Gradient of the superposed surface at [x], [y], written into [out] as
-     * (d/dx, d/dy).
+     * Angular order of [mode] when the field is read as a circular dish: how
+     * many petals the figure has around the centre.
      *
-     * The CPU mirror of `cymatics_plate_vert.glsl`'s `grad`, which the shader
-     * uses for the surface normal: an analytic derivative rather than a
-     * finite difference, so the lighting stays exact however coarse the
-     * vertex grid is. Nothing at runtime calls this - the GPU does that work -
-     * but a normal that silently disagrees with its own surface is invisible
-     * until it looks wrong on a device, so the formula is pinned here against
-     * finite differences of [modeHeight] (CompositeGrade's convention for
-     * shader maths that has to be provably right).
+     * The mode table is enumerated once, as square-plate (n, m) pairs, and
+     * BOTH geometries read those two orders - the dish as (angular, radial),
+     * the plate as its own (n, m). One table means one resonator bank and one
+     * pitch -> figure law however the field is drawn, rather than two that can
+     * disagree about what the music is doing.
      */
-    fun surfaceGradient(
+    fun angularOrder(mode: Mode): Int = mode.m
+
+    /** Radial order of [mode] on a dish: how many rings out from the centre. */
+    fun radialOrder(mode: Mode): Int = maxOf(mode.n - mode.m, 1)
+
+    /**
+     * Where the [radialOrder]-th zero of J_[angularOrder] falls - McMahon's
+     * expansion, `pi * (s + m/2 - 1/4)` - which is the radial wavenumber the
+     * dish rings at. Twin of `cymatics_field_frag.glsl`'s `beta`.
+     */
+    fun dishBeta(mode: Mode): Float = PI.toFloat() * (radialOrder(mode) + 0.5f * angularOrder(mode) - 0.25f)
+
+    /**
+     * Bessel J_m, cheap: the asymptotic form - amplitude ~ sqrt(2/(pi x)),
+     * zeros a half period apart - with a core factor so an angular order above
+     * 0 vanishes at the centre of the dish as the real function does, and J_0
+     * peaks there as IT does.
+     *
+     * Twin of the shader's `besselApprox`. Exact enough for the visual claim
+     * that matters (rings land where the real function's zeros are);
+     * `CymaticsMathTest` pins it against a series expansion of the real J_m.
+     *
+     * [phase] is the travelling-wave offset behind the "Flow" control: a
+     * standing wave at 0, rings marching outward above it. It rides the
+     * oscillating factor rather than the radius, because shifting the radius
+     * takes the argument negative near the centre - where the amplitude term
+     * is not defined, which showed up as a black hole punched through the
+     * middle of the dish.
+     */
+    fun besselApprox(
+        m: Float,
+        x: Float,
+        phase: Float = 0f,
+    ): Float {
+        val ax = abs(x)
+        val pi = PI.toFloat()
+        val core = if (m < 0.5f) 1f else ax * ax / (ax * ax + 0.45f * m * m + 0.05f)
+        val w = x - m * pi * 0.5f - pi * 0.25f - phase
+        // Two terms of Hankel's expansion, not one: the leading cosine alone
+        // puts the INNERMOST rings badly out (J_4's first zero at 7.85 instead
+        // of 7.59), and those are the rings filling the middle of the screen.
+        // Clamped only to bound the terms near the centre, where they diverge
+        // and the core factor above owns the shape anyway.
+        val inv = 1f / (8f * maxOf(ax, 0.75f))
+        val mu = 4f * m * m
+        val c1 = ((mu - 1f) * inv).coerceIn(-3f, 3f)
+        val c0 = (1f - (mu - 1f) * (mu - 9f) * inv * inv * 0.5f).coerceIn(-3f, 3f)
+        return (c0 * cos(w) - c1 * sin(w)) / sqrt(1f + 2f * ax) * core * BESSEL_GAIN
+    }
+
+    /**
+     * The dish's displacement at plate coordinates [x], [y]: the superposition
+     * of [count] modes packed into [modes] as (n, m, amplitude, phase) quads -
+     * the shader's `uModes[]` layout. CPU mirror of the circular half of
+     * `field()`.
+     */
+    fun dishHeight(
         modes: FloatArray,
         count: Int,
         x: Float,
         y: Float,
-        out: FloatArray,
-    ) {
-        val pi = PI.toFloat()
-        var gx = 0f
-        var gy = 0f
+        travel: Float = 0f,
+    ): Float {
+        val r = sqrt(x * x + y * y)
+        val a = atan2(y, x)
+        var h = 0f
         for (i in 0 until count) {
-            val base = i * 3
-            val n = modes[base]
-            val m = modes[base + 1]
-            val a = modes[base + 2]
-            gx += a * pi * (m * sin(m * pi * x) * cos(n * pi * y) - n * sin(n * pi * x) * cos(m * pi * y))
-            gy += a * pi * (n * cos(m * pi * x) * sin(n * pi * y) - m * cos(n * pi * x) * sin(m * pi * y))
+            val base = i * 4
+            val mode = Mode(modes[base].toInt(), modes[base + 1].toInt())
+            val ang = angularOrder(mode).toFloat()
+            val beta = dishBeta(mode)
+            h += modes[base + 2] * besselApprox(ang, beta * r, travel) * cos(ang * a + modes[base + 3])
         }
-        out[0] = gx
-        out[1] = gy
+        return h
     }
 
     /** "Ring" slider (0..1) as a decay time constant in seconds. */
@@ -324,29 +384,16 @@ object CymaticsMath {
     ): Float = if (tau <= 0f) 1f else (1f - exp(-dt / tau)).coerceIn(0f, 1f)
 
     /**
-     * How fast the strobed-down surface oscillates for a figure of this
-     * order, in Hz. Finer figures move quicker, as they physically do, inside
-     * a band chosen so the plate never flickers.
+     * How fast a figure of this order MOVES, in Hz: the rate its phase
+     * advances, so finer figures shimmer and coarse ones swell, and the field
+     * is never still while something is playing.
+     *
+     * A real plate vibrates at the frequency it is driven at - hundreds of
+     * hertz, invisible, and inside the band the app's visual-safety work
+     * exists to stay out of. This is that motion strobed down into a band
+     * capped well under the WCAG three flashes per second.
      */
     fun vibrationHz(wavenumber: Float): Float = (VIBRATION_HZ_PER_ORDER * wavenumber).coerceIn(MIN_VIBRATION_HZ, MAX_VIBRATION_HZ)
-
-    /**
-     * The factor the whole surface is displaced by this frame: every mode of a
-     * driven plate oscillates together, in phase, so this multiplies the
-     * height and NOT the pattern.
-     *
-     * That distinction is the whole reason the sand stays put: the nodal lines
-     * are where the summed pattern is zero, and zero times anything is still
-     * zero, so the figure is unmoved while the surface between the lines rises
-     * and falls. [depth] 0 freezes the surface at full relief.
-     */
-    fun vibrationFactor(
-        phaseRadians: Float,
-        depth: Float,
-    ): Float {
-        val d = depth.coerceIn(0f, 1f)
-        return 1f - d + d * cos(phaseRadians)
-    }
 }
 
 /**
@@ -379,11 +426,17 @@ class CymaticsPlate {
     /** Scratch for the whitening mean; grown to the band count on first use. */
     private var smoothed = FloatArray(0)
 
-    /** Phase of the strobed-down surface oscillation, in radians. */
-    var vibrationPhase: Float = 0f
-        private set
+    /**
+     * Phase of every mode, in radians.
+     *
+     * Per mode rather than one global clock, and kept across frames rather
+     * than recomputed from elapsed time: a mode that drops out of the rendered
+     * set and comes back has to return where it would have been, or the figure
+     * jumps every time the loudest handful changes.
+     */
+    private val phases = FloatArray(CymaticsMath.MODES.size)
 
-    /** Wavenumber of the loudest mode, 0 when the plate is silent. */
+    /** Wavenumber of the loudest mode, 0 when nothing is ringing. */
     var dominantWavenumber: Float = 0f
         private set
 
@@ -391,7 +444,7 @@ class CymaticsPlate {
     fun reset() {
         amplitudes.fill(0f)
         excitation.fill(0f)
-        vibrationPhase = 0f
+        phases.fill(0f)
         dominantWavenumber = 0f
     }
 
@@ -450,37 +503,42 @@ class CymaticsPlate {
     }
 
     /**
-     * Advances the surface oscillation and returns this frame's displacement
-     * factor (see [CymaticsMath.vibrationFactor]). The rate follows the
-     * loudest mode, so a bass note swells slowly and a top-octave figure
-     * shimmers.
+     * Advances every mode's phase by [dt].
+     *
+     * Each runs at its own [CymaticsMath.vibrationHz] - finer figures shimmer,
+     * coarse ones swell - which is what keeps the field alive between changes
+     * in the music instead of freezing into a still image whenever a note is
+     * held. Advancing ALL of them, not only the rendered ones, is what makes
+     * the set of loudest modes safe to change from frame to frame.
      */
-    fun advanceVibration(
+    fun advancePhases(
         dt: Float,
-        depth: Float,
         speed: Float,
-    ): Float {
-        val hz = CymaticsMath.vibrationHz(dominantWavenumber) * speed.coerceIn(0.05f, 4f)
-        vibrationPhase = (vibrationPhase + TWO_PI * hz * dt) % TWO_PI
-        return CymaticsMath.vibrationFactor(vibrationPhase, depth)
+    ) {
+        if (dt <= 0f) return
+        val rate = speed.coerceIn(0.05f, 4f) * TWO_PI * dt
+        for (i in phases.indices) {
+            if (amplitudes[i] <= CymaticsMath.SILENCE) continue
+            phases[i] = (phases[i] + CymaticsMath.vibrationHz(CymaticsMath.MODES[i].wavenumber) * rate) % TWO_PI
+        }
     }
 
     /**
-     * Packs the [limit] loudest modes into [out] as (n, m, amplitude) triples
-     * and returns how many were written.
+     * Packs the [limit] loudest modes into [out] as (n, m, amplitude, phase)
+     * quads - the shader's `uModes[]` layout - and returns how many were
+     * written, loudest first.
      *
-     * Amplitudes are normalized so the summed relief is at most 1 before
-     * [gain] is applied: a plate answering a full mix would otherwise stack
-     * eight modes of the same displacement each and tear itself apart, and a
-     * chord would be eight times taller than a single note for reasons the
-     * listener cannot see.
+     * Amplitudes are normalized so their sum is at most 1: a field answering a
+     * full mix would otherwise stack eight modes of full displacement each and
+     * blow out, and a chord would read eight times louder than a single note
+     * for reasons the listener cannot see. Only ever scales DOWN, so quiet
+     * passages stay quiet.
      */
     fun snapshot(
         limit: Int,
-        gain: Float,
         out: FloatArray,
     ): Int {
-        val want = limit.coerceIn(1, CymaticsMath.MAX_RENDERED_MODES).coerceAtMost(out.size / 3)
+        val want = limit.coerceIn(1, CymaticsMath.MAX_RENDERED_MODES).coerceAtMost(out.size / 4)
         var written = 0
         var total = 0f
         // Partial selection: `want` passes over ~100 modes, allocation-free.
@@ -498,18 +556,17 @@ class CymaticsPlate {
             if (bestIndex < 0 || best <= CymaticsMath.SILENCE) return@repeat
             taken[bestIndex] = true
             val mode = CymaticsMath.MODES[bestIndex]
-            val base = written * 3
+            val base = written * 4
             out[base] = mode.n.toFloat()
             out[base + 1] = mode.m.toFloat()
             out[base + 2] = best
+            out[base + 3] = phases[bestIndex]
             total += best
             written++
         }
         if (written == 0) return 0
-        // Normalize against the summed amplitude, never below 1: quiet
-        // passages must stay quiet, so this only ever scales a loud plate DOWN.
-        val norm = gain / maxOf(1f, total)
-        for (i in 0 until written) out[i * 3 + 2] *= norm
+        val norm = 1f / maxOf(1f, total)
+        for (i in 0 until written) out[i * 4 + 2] *= norm
         return written
     }
 

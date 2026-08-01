@@ -858,19 +858,20 @@ internal fun FluidTab(
 }
 
 /**
- * Customize -> Cymatics tab: the Chladni plate the CYMATICS style plays the
- * sound into.
+ * Customize -> Cymatics tab: the standing-wave field of the sound.
  *
  * Shown only while that style is active (`VisualsHub.isCymaticsSceneId`),
- * unlike the Fluid tab: every control here is read by exactly one scene, and
- * a whole tab of sliders that move nothing is worse than a tab that comes and
+ * unlike the Fluid tab: every control here is read by exactly one scene, and a
+ * whole tab of sliders that move nothing is worse than a tab that comes and
  * goes with the style it belongs to.
  *
- * The two that decide what the plate HEARS are "Fundamental" and "Tonal
- * focus": the first is the pitch that answers with the coarsest figure, i.e.
- * how fine the whole spectrum lands on the plate, and the second chooses
- * between raw band energy (bass-led, big slow shapes) and spectral peaks
- * (pitch-led, the figure follows the notes). See [CymaticsMath].
+ * Three groups, and they answer three different questions. WAVE is what the
+ * field hears - which geometry it rings in, what pitch answers the coarsest
+ * figure ("Fundamental"), how many standing waves are superposed, how long
+ * they ring, and whether the field follows raw band energy or the spectral
+ * peaks ("Tonal focus", see [CymaticsMath]). FIELD is how much of it is on
+ * screen and how fast it moves. LOOK is how it is drawn: from bare nodal
+ * filigree on dark cells to a fully filled iridescent surface.
  */
 @Composable
 internal fun CymaticsTab(
@@ -878,15 +879,17 @@ internal fun CymaticsTab(
     onChange: (SceneParams) -> Unit,
 ) {
     Column {
-        SectionHeader("Plate")
+        SectionHeader("Wave")
         ControlHint(
-            "A Chladni plate driven by what is playing - or by the mic, on " +
-                "live input. Sand collects along the lines that do not move, " +
-                "so the figure on screen is the shape the sound itself makes: " +
-                "a pure tone draws one clean pattern, a chord draws the " +
-                "superposition of its notes'.",
+            "The standing-wave field of whatever is playing - or of the mic, " +
+                "on live input - drawn fullscreen. A pure tone gives one clean " +
+                "symmetric figure, a chord the superposition of its notes'.",
         )
-        CheckRow("Plate view (3D)", p.cymatics3d) { onChange(p.copy(cymatics3d = it)) }
+        LockableChipLabel("Geometry")
+        ChipRow(
+            SceneParams.CYMATICS_GEOMETRIES,
+            p.cymaticsGeometry,
+        ) { onChange(p.copy(cymaticsGeometry = it)) }
         LabeledSlider(
             "Fundamental (Hz)",
             p.cymaticsFundamental,
@@ -898,21 +901,19 @@ internal fun CymaticsTab(
         LabeledSlider("Tonal focus", p.cymaticsFocus, 0f..1f) { onChange(p.copy(cymaticsFocus = it)) }
         LabeledSlider("Plate ring", p.cymaticsRing, 0f..1f) { onChange(p.copy(cymaticsRing = it)) }
 
-        SectionHeader("Surface")
-        LabeledSlider("Relief", p.cymaticsRelief, 0f..2f) { onChange(p.copy(cymaticsRelief = it)) }
-        LabeledSlider("Vibration", p.cymaticsVibration, 0f..1f) { onChange(p.copy(cymaticsVibration = it)) }
-        LabeledSlider("Sand", p.cymaticsSand, 0f..2f) { onChange(p.copy(cymaticsSand = it)) }
+        SectionHeader("Field")
+        ControlHint("How much of the wave field fills the screen, and how it moves through it.")
+        LabeledSlider("Field scale", p.cymaticsScale, 0.5f..8f) { onChange(p.copy(cymaticsScale = it)) }
+        LabeledSlider("Wave flow", p.cymaticsFlow, 0f..1f) { onChange(p.copy(cymaticsFlow = it)) }
+        LabeledSlider("Field swirl", p.cymaticsSwirl, -1f..1f) { onChange(p.copy(cymaticsSwirl = it)) }
 
-        if (p.cymatics3d) {
-            SectionHeader("Camera")
-            ControlHint("Tilt runs from straight down over the plate to almost edge-on with it.")
-            LabeledSlider("Camera tilt", p.cymaticsTilt, 0f..1f) { onChange(p.copy(cymaticsTilt = it)) }
-            LabeledSlider("Plate spin", p.cymaticsSpin, -1f..1f) { onChange(p.copy(cymaticsSpin = it)) }
-        }
-
-        SectionHeader("Performance")
-        ControlHint("Grid detail of the plate mesh: finer resolves finer figures, and costs more.")
-        LabeledIntSlider("Plate detail", p.cymaticsGrid, 0..2) { onChange(p.copy(cymaticsGrid = it)) }
+        SectionHeader("Look")
+        ControlHint("Fill runs from bare nodal filigree on dark cells to a fully filled iridescent surface.")
+        LabeledSlider("Fill", p.cymaticsFill, 0f..1f) { onChange(p.copy(cymaticsFill = it)) }
+        LabeledSlider("Nodal lines", p.cymaticsLine, 0f..2f) { onChange(p.copy(cymaticsLine = it)) }
+        LabeledSlider("Nodal glow", p.cymaticsGlow, 0f..2f) { onChange(p.copy(cymaticsGlow = it)) }
+        LabeledSlider("Iridescence", p.cymaticsIridescence, 0f..1f) { onChange(p.copy(cymaticsIridescence = it)) }
+        LabeledSlider("Caustic sheen", p.cymaticsCaustic, 0f..1.5f) { onChange(p.copy(cymaticsCaustic = it)) }
     }
 }
 

@@ -1,64 +1,74 @@
-## v1.3.0 (code 27) - Cymatics: the sound itself, drawn as the shape it makes
+## v1.3.0 (code 27) - Cymatics: the sound itself, fullscreen
 
-- **A new visualizer style, `cymatics`** (Visuals > Styles > Cymatics), modelled
-  on the Chladni-plate maths in `codenlighten/3D-Cymatics`. Play a tone into a
-  metal plate, scatter sand on it, and the grains collect along the lines that
-  do not move. This style is that plate, driven by whatever is playing - a
-  track, or the microphone on live input - so the picture is a depiction of the
-  sound rather than a look reacting to it: a pure tone draws one clean
-  symmetric figure, a chord draws the superposition of its notes' figures, and
-  silence draws nothing.
-- **Two views off one geometry pass.** "Plate view (3D)" renders the lit
-  surface - the physical demonstration, orbiting slowly, sand still marking the
-  nodal lines - and switching it off renders the flat figure seen from straight
-  above: the photograph of the experiment, sand on dark metal. Both ship as
-  built-in presets (`cymatics · Chladni plate`, `cymatics · Sand figure`).
+- **A new visualizer style, `cymatics`** (Visuals > Styles > Cymatics): the
+  standing-wave field of whatever is playing - a track, or the microphone on
+  live input - evaluated PER PIXEL and filling the whole screen. Play a tone
+  into a dish of water and the surface answers with a figure; this style is
+  that figure, so the picture is a depiction of the sound rather than a look
+  reacting to it. A pure tone draws one clean symmetric figure, a chord draws
+  the superposition of its notes' figures, and silence draws almost nothing.
+- **Two geometries off the same ringing modes.** "Water dish" runs
+  circular-membrane modes - `J_m(beta*r)cos(m*a)`, concentric rings crossed by
+  petals, the CymaScope look - and "Chladni plate" runs the square-plate
+  formula's nodal lattice (`cos(n PI x)cos(m PI y) - cos(m PI x)cos(n PI y)`,
+  the maths of `codenlighten/3D-Cymatics`). One mode table, one resonator bank
+  and one pitch -> figure law feed both, so they can never disagree about what
+  the music is doing.
+- **No object, no camera, no black surround.** It is one fullscreen fragment
+  pass: the field continues past every edge of the screen, and detail comes
+  from the modes the music excites - higher pitch, finer figure - plus a
+  "Field scale" control for how much of the field is on screen at once. The
+  modes keep MOVING: each carries its own phase, advancing at its own rate,
+  and "Wave flow" turns the standing waves into travelling ones that march
+  outward the way a driven dish sheds them.
 - **The pitch -> figure law is the real one.** A stiff plate's modal
   frequencies rise with the SQUARE of the mode order (Kirchhoff plate theory,
   and the reason Chladni's own law is quadratic), so `wavenumber =
   sqrt(hz / fundamental)`: an octave up is 1.41x finer, not 2x, which is what
   lets a 40 Hz - 16 kHz spectrum land inside the enumerated modes instead of
-  running off the plate within three octaves. `z = cos(n PI x) cos(m PI y) -
-  cos(m PI x) cos(n PI y)` is antisymmetric and flat at n == m, so the mode
-  table enumerates n > m only.
+  running off the field within three octaves. On the dish, each mode's rings
+  sit at the zeros of J_m, placed by McMahon's expansion.
+- **Bessel, cheaply but not wrongly.** The dish evaluates J_m per pixel from
+  two terms of Hankel's asymptotic expansion. One term is not enough: the
+  leading cosine alone puts J_4's first ring at 7.85 instead of 7.59, and the
+  innermost rings are exactly the ones filling the middle of the screen. With
+  both terms every ring lands within ~0.05 of the real function's zero, which
+  `CymaticsMathTest` pins against a series expansion. J_0 peaks at the centre
+  and every higher order vanishes there - getting that backwards punched a
+  black hole through the middle of the dish, which is now a test.
 - **Modes are resonators, not FFT bins.** Each of the ~100 modes has its own
   attack and a "Plate ring" decay, so a figure holds its shape through a note
   and dissolves after it rather than flickering with the frame rate. "Tonal
-  focus" chooses what the plate hears: raw band energy (bass-led, big slow
+  focus" chooses what the field hears: raw band energy (bass-led, big slow
   shapes) or spectral peaks above the local mean (pitch-led, so a melody or a
-  hi-hat can put a fine figure on the plate at all).
+  hi-hat can put a fine figure up at all).
 - The band -> frequency map mirrors `FftProcessor.bandEdges` INCLUDING its bin
   quantization: at 44.1 kHz a bin is ~21.5 Hz, so the bottom ~20 log-spaced
   band edges round onto the same bin and get bumped apart. Band 12 covers
-  280-323 Hz, not the 130 Hz the pure logarithm suggests, and a plate that
+  280-323 Hz, not the 130 Hz the pure logarithm suggests, and a field that
   believed the logarithm answered every bass note an order too coarse.
-  `CymaticsMathTest` asserts the two edge tables agree bin for bin.
-- **Visual safety, by construction.** A real plate vibrates at the frequency it
-  is driven at - hundreds of hertz, in the band the photosensitivity work
-  exists to stay out of. The surface motion is that oscillation strobed down to
-  0.12-1.6 Hz, well under the WCAG three-flashes-per-second threshold, and
-  pinned there by a test. The sand is unaffected either way: every mode of a
-  driven plate moves in phase, so the vibration scales the height and leaves
-  the nodal lines - where the height is zero - exactly where they were.
-- **Depth buffers, for the first time in the tree.** This is the only style
-  that draws real 3D geometry, so `Scene.needsDepth` was added and both render
-  targets - the live renderer's FBO pair and the exporter's `FxCompositor` -
-  attach a depth renderbuffer LAZILY for the scenes that ask. Nothing else
-  pays for it, a driver that refuses the attachment falls back to rendering
-  without depth testing rather than losing the style, and exports get the same
-  treatment as the screen. The plate mesh itself has no vertex buffer at all:
-  the vertex shader derives plate coordinates from `gl_VertexID`, so a detail
-  change costs one index-buffer rebuild and nothing per frame.
-- Customize gains a **Cymatics** tab (visible only on that style, like GLSL):
-  Fundamental, Standing waves, Tonal focus, Plate ring, Relief, Vibration,
-  Sand, Camera tilt, Plate spin and Plate detail. All ten are randomizable and
-  lockable; the detail tier stays out of the roll like fluid quality does. The
+- **Visual safety, by construction.** A real plate vibrates at the frequency
+  it is driven at - hundreds of hertz, in the band the photosensitivity work
+  exists to stay out of. The mode phases are that motion strobed down to
+  0.12-1.6 Hz, well under the WCAG three flashes per second, and pinned there
+  by a test.
+- Customize gains a **Cymatics** tab (visible only on that style, like GLSL),
+  grouped as Wave (geometry, Fundamental, Standing waves, Tonal focus, Plate
+  ring), Field (scale, Wave flow, Field swirl) and Look (Fill, Nodal lines,
+  Nodal glow, Iridescence, Caustic sheen). All thirteen are randomizable and
+  lockable. Three built-in presets ship with it: `cymatics · CymaScope`
+  (filigree over dark cells), `cymatics · Psychedelic` (the same field filled
+  in and banded into iridescent rings) and `cymatics · Chladni plate`. The
   style joins the composite-graded family, so Hue shift, Brightness, Contrast,
   Gamma, Zoom, Rotation and the whole FX chain work on it exactly as they do
   on the fluid styles.
-- 17 new tests (`CymaticsMathTest`) pin the plate formula, its analytic
-  gradient against finite differences of the surface it shades, the band map,
-  the resonator envelopes, snapshot normalization and the vibration band.
+- 20 new tests (`CymaticsMathTest`) pin both field formulas, the Bessel
+  approximation against a series expansion, the m-fold rotational symmetry of
+  a dish mode, the band map, the resonator envelopes, per-mode phase advance,
+  snapshot normalization and the safety band.
+- Attribution: the nodal rendering approach (narrow Gaussian for the filigree,
+  wide one for its halo) follows Naadara, the MIT licensed open cymatics
+  laboratory - see THIRD_PARTY_NOTICES. No source is copied.
 
 ## v1.2.0 (code 26) - Visual safety (photosensitivity limits), and the pulse tracker stops carrying one track's beat grid into the next
 

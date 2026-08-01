@@ -348,9 +348,6 @@ class VideoExporter(
             // does. Without this, exports - especially of particle scenes - would
             // omit every FX/shape customization, which are composite-only.
             val fx = FxCompositor(context, aspect.width, aspect.height).also { fxRef = it }
-            // A scene that draws real geometry needs a depth buffer on the
-            // target it is composited from, exactly as it does live.
-            if (scene.needsDepth) fx.ensureSceneDepth()
             // FlowField export parity (F7): run the shared field in the export GL
             // context so fluidWarp bends exported frames exactly like the live
             // view. The FLUID scene reuses its own velocity field instead.

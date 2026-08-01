@@ -164,9 +164,6 @@ internal class FxCompositor(
     private val sceneTex: Int
     private val emptyTex: Int
 
-    /** Depth renderbuffer for 3D scenes; 0 until [ensureSceneDepth]. */
-    private var sceneDepth = 0
-
     /** Integrated rotation angle / colour-cycle phase for the grade block. */
     private val grade = ExportGradeState()
 
@@ -223,35 +220,6 @@ internal class FxCompositor(
             GLES30.GL_UNSIGNED_BYTE,
             null,
         )
-    }
-
-    /**
-     * Attaches a depth renderbuffer to [sceneFbo], for scenes that draw real
-     * 3D geometry ([dev.musicviz.render.scene.Scene.needsDepth]).
-     *
-     * The live renderer does the same to its own targets, and for the same
-     * reason: without it the far side of a surface paints over the near side.
-     * Called once, before the frame loop - an export renders exactly one
-     * scene, so there is nothing to re-decide per frame.
-     */
-    fun ensureSceneDepth() {
-        if (sceneDepth != 0) return
-        val ids = IntArray(1)
-        GLES30.glGenRenderbuffers(1, ids, 0)
-        sceneDepth = ids[0]
-        GLES30.glBindRenderbuffer(GLES30.GL_RENDERBUFFER, sceneDepth)
-        GLES30.glRenderbufferStorage(GLES30.GL_RENDERBUFFER, GLES30.GL_DEPTH_COMPONENT16, width, height)
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, sceneFbo)
-        GLES30.glFramebufferRenderbuffer(GLES30.GL_FRAMEBUFFER, GLES30.GL_DEPTH_ATTACHMENT, GLES30.GL_RENDERBUFFER, sceneDepth)
-        if (GLES30.glCheckFramebufferStatus(GLES30.GL_FRAMEBUFFER) != GLES30.GL_FRAMEBUFFER_COMPLETE) {
-            // Same fallback as the live path: render without depth testing
-            // rather than fail the export outright.
-            GLES30.glFramebufferRenderbuffer(GLES30.GL_FRAMEBUFFER, GLES30.GL_DEPTH_ATTACHMENT, GLES30.GL_RENDERBUFFER, 0)
-            GLES30.glDeleteRenderbuffers(1, intArrayOf(sceneDepth), 0)
-            sceneDepth = 0
-        }
-        GLES30.glBindRenderbuffer(GLES30.GL_RENDERBUFFER, 0)
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
     }
 
     /** Binds the scene FBO so the next scene.draw() renders into it. */
@@ -495,7 +463,6 @@ internal class FxCompositor(
         val ids = intArrayOf(sceneTex, emptyTex)
         GLES30.glDeleteTextures(2, ids, 0)
         GLES30.glDeleteFramebuffers(1, intArrayOf(sceneFbo), 0)
-        if (sceneDepth != 0) GLES30.glDeleteRenderbuffers(1, intArrayOf(sceneDepth), 0)
         GLES30.glDeleteVertexArrays(1, intArrayOf(vao), 0)
         GLES30.glDeleteProgram(program)
         GLES30.glDeleteProgram(fadeProgram)
