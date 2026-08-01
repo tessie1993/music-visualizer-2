@@ -222,6 +222,73 @@ object BuiltInPresets {
         )
 
     /**
+     * Launch variants for the two shader styles that are more than a look on a
+     * field, and so want a starting point of their own on top of the twelve
+     * [LOOKS] every shader scene already gets.
+     *
+     * "winter · Flurry" turns the FlowField on. The style itself no longer
+     * samples `uFlow` - the composite pass warps every style through that same
+     * field, and reading it twice is a double-apply - so the toggle is what
+     * makes a finger drag (or the vector field's own drift) blow the snow
+     * around, which is the gesture the style was written for.
+     *
+     * "lava · Lamp" is the style at its own pace: slow clock, long parameter
+     * fade, and a warm two-palette blend, so the 18-40 s rise-and-sink of a
+     * blob reads as a lifecycle rather than as motion.
+     */
+    private val SHADER_VARIANTS: List<Preset> =
+        listOf(
+            Preset(
+                name = "winter · Flurry",
+                sceneId = dev.musicviz.render.scene.SceneIds.WINTER,
+                attack = 0.5f,
+                decay = 0.12f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        palette = 9,
+                        palette2 = 4,
+                        paletteMix = 0.25f,
+                        speed = 0.8f,
+                        sway = 0.4f,
+                        audioDrive = 1.1f,
+                        beatResponse = 0.9f,
+                        saturation = 0.85f,
+                        brightness = 1.05f,
+                        bloom = 0.35f,
+                        vignette = 0.3f,
+                        flowEnabled = true,
+                        flowStrength = 0.55f,
+                        flowCurl = 30f,
+                        paramFadeSec = 1.0f,
+                    ),
+            ),
+            Preset(
+                name = "lava · Lamp",
+                sceneId = dev.musicviz.render.scene.SceneIds.LAVA,
+                attack = 0.3f,
+                decay = 0.08f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        palette = 1,
+                        palette2 = 5,
+                        paletteMix = 0.3f,
+                        speed = 0.55f,
+                        audioDrive = 1.0f,
+                        beatResponse = 0.8f,
+                        saturation = 1.15f,
+                        brightness = 1.05f,
+                        bloom = 0.45f,
+                        vignette = 0.45f,
+                        trails = true,
+                        trailLength = 0.5f,
+                        paramFadeSec = 2.0f,
+                    ),
+            ),
+        )
+
+    /**
      * The six fluid launch variants: strongly differentiated starting points
      * for the FLUID scene, each leaning on a different part of the system
      * (emitter pattern, particle layer, chromatic aging, look chain).
@@ -721,7 +788,7 @@ object BuiltInPresets {
                     params = look.params,
                 )
             }
-        } + FLUID_VARIANTS + CYMATICS_VARIANTS + HYPERSPACE_VARIANTS
+        } + SHADER_VARIANTS + FLUID_VARIANTS + CYMATICS_VARIANTS + HYPERSPACE_VARIANTS
 
     fun isBuiltIn(name: String): Boolean = name.contains(" · ")
 }

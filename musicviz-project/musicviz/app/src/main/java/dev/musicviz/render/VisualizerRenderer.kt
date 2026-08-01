@@ -69,6 +69,8 @@ class VisualizerRenderer(
                 SceneIds.SPIRAL to R.raw.spiral_frag,
                 SceneIds.AURORA to R.raw.aurora_frag,
                 SceneIds.SOLAR to R.raw.solar_frag,
+                SceneIds.WINTER to R.raw.winter_frag,
+                SceneIds.LAVA to R.raw.lava_frag,
             )
         val PARTICLE_SCENES: List<String> =
             listOf(
