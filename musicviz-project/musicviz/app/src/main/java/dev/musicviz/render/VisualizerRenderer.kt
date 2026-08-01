@@ -261,6 +261,13 @@ class VisualizerRenderer(
             hyperHaze = f(from.hyperHaze, to.hyperHaze),
             hyperCamera = f(from.hyperCamera, to.hyperCamera),
             hyperTrap = f(from.hyperTrap, to.hyperTrap),
+            hyperMelt = f(from.hyperMelt, to.hyperMelt),
+            hyperStain = f(from.hyperStain, to.hyperStain),
+            hyperLiquid = f(from.hyperLiquid, to.hyperLiquid),
+            hyperRidges = f(from.hyperRidges, to.hyperRidges),
+            hyperStir = f(from.hyperStir, to.hyperStir),
+            hyperSwirl = f(from.hyperSwirl, to.hyperSwirl),
+            hyperFlowFade = f(from.hyperFlowFade, to.hyperFlowFade),
             rippleOverlayStrength = f(from.rippleOverlayStrength, to.rippleOverlayStrength),
             rippleOverlaySpecular = f(from.rippleOverlaySpecular, to.rippleOverlaySpecular),
         )
@@ -1111,12 +1118,24 @@ class VisualizerRenderer(
         // owns the refraction - the overlay stays off there, so routing a
         // stroke to both would be two responses to one finger.
         val water = scene as? dev.musicviz.render.fluid.WaterScene
+        // HYPERSPACE gets the stroke too: its medium is what molds the
+        // fractals, so a drag across the screen pulls the geometry it crosses
+        // out of shape and stains it in the same gesture.
+        val hyper = scene as? HyperspaceScene
         // WaterScene takes normalized coordinates and scales by its own sim
         // aspect; the shared overlay is scaled here, from its own.
         val aspect = ripple?.aspect ?: 1f
         while (true) {
             val st = touchStrokes.poll() ?: return
-            if (water != null) {
+            if (hyper != null) {
+                hyper.queueTouchStroke(
+                    st.nx * 2f - 1f,
+                    1f - st.ny * 2f,
+                    st.ndx * 2f,
+                    -st.ndy * 2f,
+                    st.strength,
+                )
+            } else if (water != null) {
                 water.queueTouchStroke(
                     st.nx * 2f - 1f,
                     1f - st.ny * 2f,

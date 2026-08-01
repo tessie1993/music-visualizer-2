@@ -379,6 +379,18 @@ object ParamRandomizer {
         r("Haze") { it.copy(hyperHaze = f(0.2f, 1.4f)) }
         r("Mirror folds") { it.copy(hyperMirrorFolds = n(3, 12)) }
         r("Colour banding") { it.copy(hyperTrap = f(0.2f, 1.3f)) }
+        // The melt. "Melt" itself is rolled modestly: it is the one control
+        // here that costs frames (two texture fetches per march step AND a
+        // relaxed step, so a high roll marches further for the same picture),
+        // and it is also the one that can pull a fractal past the point where
+        // it still reads as a fractal.
+        r("Melt") { it.copy(hyperMelt = f(0.15f, 1.1f)) }
+        r("Ink stain") { it.copy(hyperStain = f(0.15f, 1.1f)) }
+        r("Liquid light") { it.copy(hyperLiquid = f(0.1f, 1.1f)) }
+        r("Ridges") { it.copy(hyperRidges = f(0f, 0.9f)) }
+        r("Stir") { it.copy(hyperStir = f(0.4f, 2f)) }
+        r("Vorticity") { it.copy(hyperSwirl = f(8f, 42f)) }
+        r("Flow fade") { it.copy(hyperFlowFade = f(0.1f, 1.2f)) }
 
         return s
     }

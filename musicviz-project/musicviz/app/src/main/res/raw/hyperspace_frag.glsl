@@ -87,6 +87,46 @@ uniform float uTreble;
 uniform float uBeat;
 uniform float uExposure;
 
+// ---- the melt: the fluid the bodies are suspended in, and made of --------
+// A full velocity + dye simulation (MeltField.kt), world-anchored: sim space
+// IS the world's xy plane over uMeltScale. The bodies stir it as they drift,
+// the music and the finger stir it, and it stirs them back.
+/** Velocity field, RG = grid velocity. */
+uniform sampler2D uFlowTex;
+/** Dye field, RGB. */
+uniform sampler2D uDyeTex;
+/** 0 when the medium is unavailable on this GPU - everything below no-ops. */
+uniform float uHasMelt;
+/** 0 disables the warp entirely (and skips its texture reads). */
+uniform float uMelt;
+/**
+ * Raw texel -> world displacement. The velocity field is in the sim's own
+ * grid units, which are nothing like world units, so the conversion (grid ->
+ * sim units/second -> world units/second -> displacement) is folded into one
+ * number on the CPU rather than being three multiplies per sample.
+ */
+uniform float uMeltGain;
+/**
+ * Hard ceiling on |displacement|, in world units. NOT a taste control: it is
+ * the same number the CPU inflated every bounding sphere by
+ * (`MeltMath.reach`). A spike in the velocity field that displaced further
+ * than this would push geometry outside the sphere the ray used to decide
+ * whether to look at it at all, and the body would be cut off along a
+ * perfect circle.
+ */
+uniform float uMeltReach;
+/** World units per sim unit. */
+uniform float uMeltScale;
+uniform float uMeltAspect;
+/** How much the dye lights the surfaces it has run over. */
+uniform float uStain;
+/** How much the dye glows in the space between the bodies. */
+uniform float uLiquid;
+/** Flow-aligned combing of the surface. */
+uniform float uRidges;
+/** March-step relaxation for the warped domain (MeltMath.stepRelaxation). */
+uniform float uMeltRelax;
+
 // Written by map() for the body that owns the nearest distance, so the shading
 // below can colour by WHICH body was hit and by where in its iteration the
 // point sits. Globals rather than out-parameters: the march calls map() up to
@@ -115,6 +155,50 @@ vec3 hsv2rgb(vec3 c) {
  */
 vec3 palette(float t, float sat) {
     return hsv2rgb(vec3(fract(uBaseHue + uHueSpan * uHueSpread * t), sat, 1.0));
+}
+
+// ========================================================================
+//  The melt
+// ========================================================================
+
+/** Sim space (x in [-aspect, aspect], y in [-1,1]) -> texture coordinates. */
+vec2 simUv(vec2 s) {
+    return vec2(s.x / max(uMeltAspect, 1e-3), s.y) * 0.5 + 0.5;
+}
+
+/**
+ * The medium's velocity at a world point, as a 3D vector.
+ *
+ * The simulation is two-dimensional, so the third dimension is borrowed: the
+ * field is sampled twice, once on the world's xy plane and once on its zy
+ * plane, and the two are woven into one vector. Two fetches rather than the
+ * three a full tri-planar sample would take - this runs on every march step,
+ * and on every normal and occlusion tap after it, so the third fetch would
+ * cost more than the extra coherence is worth at these amplitudes.
+ *
+ * Returns zero when the medium is off, which is what makes "Melt" at 0 an
+ * exact no-op rather than a warp of zero size that still costs the fetches.
+ */
+vec3 meltAt(vec3 p) {
+    if (uHasMelt < 0.5 || uMelt <= 0.001) return vec3(0.0);
+    vec3 s = p / max(uMeltScale, 0.05);
+    vec2 a = texture(uFlowTex, simUv(s.xy)).xy;
+    vec2 b = texture(uFlowTex, simUv(vec2(s.z, s.y))).xy;
+    // a pushes x and y, b pushes z and y; y is the axis both saw, so it is
+    // averaged rather than counted twice.
+    vec3 v = vec3(a.x, (a.y + b.y) * 0.5, b.x) * uMeltGain;
+    // Clamped to the reach the bounding spheres were inflated by. A beat can
+    // put a large spike in one corner of the velocity field, and without this
+    // that one frame would displace geometry clean out of the sphere the ray
+    // culled it with.
+    float m = length(v);
+    return m > uMeltReach ? v * (uMeltReach / max(m, 1e-6)) : v;
+}
+
+/** The dye at a world point. */
+vec3 dyeAt(vec3 p) {
+    if (uHasMelt < 0.5) return vec3(0.0);
+    return texture(uDyeTex, simUv((p / max(uMeltScale, 0.05)).xy)).rgb;
 }
 
 // ========================================================================
@@ -312,6 +396,19 @@ float map(vec3 p) {
     gAuraW = 0.0;
     gAuraH = 0.0;
     gSurface = 0.0;
+    // THE MELT. One displacement for the whole scene, sampled once per march
+    // step: every body is then evaluated at the moved point, so they are all
+    // stirred by the same medium and stretch INTO each other instead of each
+    // wobbling on its own. This is what turns eight rigid fractals into one
+    // moldable substance.
+    //
+    // The bound below is deliberately measured on the UNMOVED point. The
+    // bounding spheres are what let a ray skip seven of the eight bodies, and
+    // they only stay valid if they are tested in the frame they were built in
+    // - the CPU inflates each radius by the melt's reach (MeltMath.reach) so
+    // the sphere still contains the body after the medium has pulled it out
+    // of shape.
+    vec3 pw = p + meltAt(p);
     for (int i = 0; i < MAX_BLOOMS; i++) {
         if (i >= uBloomCount) break;
         vec4 P = uBloomPos[i];
@@ -335,8 +432,9 @@ float map(vec3 p) {
             d = min(d, bound);
             continue;
         }
-        // Into the body's frame: rotate by ITS rotation, scale by ITS scale.
-        vec3 q = (uBloomRot[i] * rel) / max(S.y, 1e-4);
+        // Into the body's frame: rotate by ITS rotation, scale by ITS scale -
+        // from the MOVED point, so the medium reaches inside the fractal.
+        vec3 q = (uBloomRot[i] * (pw - P.xyz)) / max(S.y, 1e-4);
         // The body breathes: a slow wobble of its own fold constant, on its
         // own phase, so a body is never quite the same shape twice - and the
         // bass leans on it, gently and equally for every body.
@@ -473,7 +571,15 @@ void main() {
     vec3 ro = uCamPos;
     vec3 rd = normalize(uCamBasis * vec3(uv * uFov, 1.0));
 
-    float t = 0.35;
+    // Per-pixel start offset. A volumetric integral taken at the same depths
+    // on every pixel quantizes into visible concentric shells - the medium
+    // looked like contour lines on a map. Jittering the whole march by a
+    // fraction of a step turns that banding into fine noise, which the eye
+    // reads as grain rather than as structure. The surface epsilon is wider
+    // than the jitter, so hits are unaffected.
+    float jitter = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+    float t = 0.35 + jitter * 0.02;
+    float trans = 1.0;
     float hitT = -1.0;
     float hitHue = 0.0;
     float hitTrap = 1e9;
@@ -508,12 +614,42 @@ void main() {
         // merely grazing a bounding sphere cannot paint a bright edge in a
         // colour nothing there has. The broad one is the aura, smooth
         // everywhere, and it is what the bodies float in.
-        float step = d * 0.82;
+        // Relaxed by the melt: warping the domain breaks the estimate's
+        // Lipschitz bound, and a ray still stepping the full estimate walks
+        // straight through thin geometry (holes and shimmer, not anything
+        // that reads as an overshoot). MeltMath.stepRelaxation owns the
+        // number; it arrives folded into uMeltRelax.
+        float step = d * 0.82 * uMeltRelax;
         glow +=
             palette(gHue + log(max(gTrap, 1e-6)) * 0.14 * uTrapColor, 0.78) *
                 gGlow * gSurface * exp(-d * 12.0) * step;
         if (gAuraW > 1e-4) {
             glow += palette(gAuraH / gAuraW, 0.80) * gAuraW * step * 0.05;
+        }
+        // Liquid light: the dye is a glowing medium in its own right, so the
+        // space BETWEEN the bodies carries colour and the room reads as full
+        // of something rather than as objects in a void.
+        //
+        // Integrated WITH extinction, not as a plain sum. A plain sum has no
+        // upper bound - a long ray through a well-inked region just keeps
+        // adding until the frame is one flat colour, which is exactly what it
+        // did - whereas ink that absorbs what is behind it is self-limiting,
+        // and gives depth for free: the near side of a cloud of dye is
+        // brighter than the far side, so the medium has a shape.
+        if (uLiquid > 0.001) {
+            // Sampled a jittered fraction of a step along the ray, not at the
+            // step itself. Every pixel otherwise samples the medium at the
+            // same depths, and the integral quantizes into concentric shells -
+            // it looked like contour lines drawn on the fog. Offsetting by a
+            // whole step decorrelates neighbours completely.
+            vec3 ink = dyeAt(p + rd * (jitter * step));
+            float dens = uLiquid * dot(ink, vec3(0.333));
+            glow += ink * trans * dens * step * 0.35;
+            // Absorbs faster than it emits, so the medium stays a set of
+            // wisps and streaks. Emitting as fast as it absorbs makes an
+            // inked region a solid wall of colour once the ray is a few units
+            // into it, which is a wash, not a fluid.
+            trans *= exp(-dens * step * 1.6);
         }
         t += step;
         if (t > uFar) break;
@@ -546,7 +682,30 @@ void main() {
         vec3 body = palette(hitHue + band * uTrapColor, 0.88);
         vec3 rim = palette(hitHue + band * uTrapColor + 0.34, 0.72);
 
+        // Flow-aligned combing. Ridges running ALONG the medium's own flow are
+        // the single most recognisable mark in the reference paintings - every
+        // surface in them is combed, and the combing follows the current
+        // rather than the geometry. Measured on the flow direction at the
+        // surface, so it swims when the medium moves and stands still when it
+        // does not.
+        float comb = 0.0;
+        if (uRidges > 0.001 && uHasMelt >= 0.5) {
+            vec3 flow = meltAt(p);
+            float speed = length(flow);
+            if (speed > 1e-5) {
+                // Across the flow, not along it: a wave measured along its own
+                // direction of travel is invisible, because the whole pattern
+                // moves with it.
+                vec3 across = normalize(cross(flow / speed, n));
+                comb = sin(dot(p, across) * 26.0 - uTime * 0.6) * clamp(speed * 6.0, 0.0, 1.0);
+            }
+        }
+        // Comb the hue as well as the light: a purely tonal ridge reads as
+        // corrugation, an iridescent one reads as a wet surface.
+        body = mix(body, palette(hitHue + band * uTrapColor + 0.12 * comb, 0.88), uRidges * 0.5);
+
         col = body * (0.09 + 0.72 * dif + 0.30 * bounce) * ao;
+        col *= 1.0 + uRidges * 0.30 * comb;
         // The neon outline every one of these paintings has: light gathering
         // along the silhouette, warmed a little on beats.
         col += rim * fres * uNeon * (1.5 + 0.5 * clamp(uBeat, 0.0, 1.0));
@@ -558,6 +717,13 @@ void main() {
         float thin = clamp(map(p - n * 0.12) / 0.12, 0.0, 1.0);
         col += body * thin * min(hitGlow, 2.5) * 0.16;
 
+        // The stain: dye the medium has carried over this surface lights it.
+        // Added rather than mixed, and lit by the same key - ink that ignored
+        // the lighting sat ON the body like a decal instead of being wet on it.
+        if (uStain > 0.001) {
+            col += dyeAt(p) * uStain * (0.30 + 0.70 * dif) * ao;
+        }
+
         // Into the haze with distance, so depth reads and the far bodies sit
         // behind the near ones rather than beside them. The haze is the DARK
         // of the void plus whatever filigree is behind - not the filigree
@@ -568,6 +734,10 @@ void main() {
         col = sky;
     }
 
+    // Whatever the ray passed through occludes what it reached: the ink in
+    // front of a body dims it, which is what puts the medium IN FRONT rather
+    // than making it a wash laid over the top of a finished picture.
+    col *= trans;
     col += glow * uGlow * 0.30;
 
     // Sum of three additive layers, HDR by construction. Clipping it would

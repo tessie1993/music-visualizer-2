@@ -5,6 +5,8 @@ import android.opengl.GLES30
 import dev.musicviz.R
 import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.render.fluid.FluidHue
+import dev.musicviz.render.fluid.MeltField
+import dev.musicviz.render.fluid.MeltMath
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.max
@@ -82,11 +84,36 @@ internal class HyperspaceScene(
          * Brightness and Intensity are the composite pass' job.
          */
         const val EXPOSURE = 1.45f
+
+        /**
+         * Dye gain for a body's own wake. Low: eight bodies each laying ink
+         * every frame saturates the field within a second at anything higher,
+         * and a saturated dye field is one flat colour, not a medium.
+         */
+        const val BODY_INK = 0.22f
     }
 
     private val journey = HyperspaceJourney()
     private val camera = HyperspaceCamera()
     private var bank = BloomBank()
+
+    /**
+     * The medium. Owned by this scene rather than borrowed from the shared
+     * FlowField service, because that one is velocity-only and half of what
+     * makes this style liquid is the DYE - the colour a body leaves behind it
+     * and then gets lit by.
+     */
+    private val melt = MeltField(context)
+
+    /**
+     * Where each body was last frame, in world xy, indexed by BANK SLOT.
+     * Slot, not snapshot position: the snapshot packs live bodies together, so
+     * its indices shuffle whenever one dies, and a capsule drawn from the
+     * wrong previous point is a wake across the room to a body that never
+     * went there.
+     */
+    private val prevBodyXy = FloatArray(HyperspaceMath.MAX_BLOOMS * 2)
+    private val hasPrevBody = BooleanArray(HyperspaceMath.MAX_BLOOMS)
 
     private val bloomPos = FloatArray(HyperspaceMath.MAX_BLOOMS * HyperspaceMath.FLOATS_PER_VEC4)
     private val bloomShape = FloatArray(HyperspaceMath.MAX_BLOOMS * HyperspaceMath.FLOATS_PER_VEC4)
@@ -133,6 +160,9 @@ internal class HyperspaceScene(
         journey.reset()
         camera.reset()
         bloomCount = 0
+        hasPrevBody.fill(false)
+        melt.onShaderError = { onShaderError(it) }
+        melt.create()
         try {
             program = GlUtil.buildProgram(loadRaw(R.raw.quad_vert), loadRaw(R.raw.hyperspace_frag))
             programOk = true
@@ -156,7 +186,21 @@ internal class HyperspaceScene(
     ) {
         this.width = max(width, 1)
         this.height = max(height, 1)
+        melt.resize(this.width, this.height)
     }
+
+    /**
+     * A drag, in normalized screen coordinates. Routed here by the renderer so
+     * a finger stirs the medium, which then pulls the fractals it was dragged
+     * across out of shape and stains them in the same gesture.
+     */
+    fun queueTouchStroke(
+        nx: Float,
+        ny: Float,
+        ndx: Float,
+        ndy: Float,
+        strength: Float,
+    ) = melt.queueTouchStroke(nx, ny, ndx, ndy, strength)
 
     override fun update(
         features: AudioFeatures,
@@ -225,7 +269,34 @@ internal class HyperspaceScene(
             motion = profile.motion * pace * p.hyperSpin.coerceIn(0f, 3f),
             orbitScale = p.hyperOrbit.coerceIn(0f, 3f),
         )
-        bloomCount = bank.snapshot(p.hyperFold, bloomPos, bloomShape, bloomLook, bloomRot)
+        // ---- the medium ----------------------------------------------------
+        // Stepped BEFORE the snapshot so this frame's uniforms and this
+        // frame's fluid describe the same instant, and before anything is
+        // drawn: the sim binds its own framebuffers, and the renderer already
+        // has the scene target bound by the time draw() runs.
+        val meltAmount = if (melt.available) p.hyperMelt.coerceIn(0f, 2f) else 0f
+        val hueBase = FluidHue.base(p.paletteBase)
+        val hueSpan = FluidHue.span(p.hueRange, p.paletteRange)
+        if (melt.available) {
+            val prevFbo = IntArray(1)
+            val prevViewport = IntArray(4)
+            GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, prevFbo, 0)
+            GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
+            stirWithBodies(p, hueBase, hueSpan)
+            melt.step(f, dt, p, hueBase, hueSpan)
+            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
+            GLES30.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3])
+        }
+
+        bloomCount =
+            bank.snapshot(
+                p.hyperFold,
+                bloomPos,
+                bloomShape,
+                bloomLook,
+                bloomRot,
+                boundInflate = MeltMath.reach(meltAmount, MeltMath.DEFAULT_SCALE),
+            )
 
         // ---- the camera ----------------------------------------------------
         // Kept outside every body: a raymarcher started inside a folded
@@ -276,8 +347,32 @@ internal class HyperspaceScene(
         GLES30.glUniform1f(loc("uHaze"), p.hyperHaze.coerceIn(0f, 2f))
         GLES30.glUniform1f(loc("uTrapColor"), p.hyperTrap.coerceIn(0f, 1.5f))
         GLES30.glUniform1f(loc("uHueSpread"), profile.hueSpread)
-        GLES30.glUniform1f(loc("uBaseHue"), FluidHue.base(p.paletteBase))
-        GLES30.glUniform1f(loc("uHueSpan"), FluidHue.span(p.hueRange, p.paletteRange))
+        GLES30.glUniform1f(loc("uBaseHue"), hueBase)
+        GLES30.glUniform1f(loc("uHueSpan"), hueSpan)
+        // The melt. uHasMelt is the single gate: on a GPU that cannot give us
+        // half-float buffers the style still runs, just as solid geometry.
+        GLES30.glUniform1f(loc("uHasMelt"), if (melt.available) 1f else 0f)
+        GLES30.glUniform1f(loc("uMelt"), meltAmount)
+        // Grid texel -> sim units/s -> world units/s -> displacement, folded
+        // into one multiply, and the reach the spheres were inflated by.
+        GLES30.glUniform1f(
+            loc("uMeltGain"),
+            melt.flowScale * MeltMath.DEFAULT_SCALE * MeltMath.MELT_SECONDS * meltAmount,
+        )
+        GLES30.glUniform1f(loc("uMeltReach"), MeltMath.reach(meltAmount, MeltMath.DEFAULT_SCALE))
+        GLES30.glUniform1f(loc("uMeltScale"), MeltMath.DEFAULT_SCALE)
+        GLES30.glUniform1f(loc("uMeltAspect"), melt.aspect)
+        GLES30.glUniform1f(loc("uMeltRelax"), MeltMath.stepRelaxation(meltAmount))
+        GLES30.glUniform1f(loc("uStain"), if (melt.available) p.hyperStain.coerceIn(0f, 1.5f) else 0f)
+        GLES30.glUniform1f(loc("uLiquid"), if (melt.available) p.hyperLiquid.coerceIn(0f, 1.5f) else 0f)
+        GLES30.glUniform1f(loc("uRidges"), p.hyperRidges.coerceIn(0f, 1f))
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, melt.velocityTex)
+        GLES30.glUniform1i(loc("uFlowTex"), 0)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, melt.dyeTex)
+        GLES30.glUniform1i(loc("uDyeTex"), 1)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glUniform1f(loc("uEnergy"), f.rms.coerceIn(0f, 1.5f))
         GLES30.glUniform1f(loc("uBass"), f.bass.coerceIn(0f, 1.5f))
         GLES30.glUniform1f(loc("uTreble"), f.treble.coerceIn(0f, 1.5f))
@@ -286,6 +381,78 @@ internal class HyperspaceScene(
         GLES30.glBindVertexArray(vao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)
+    }
+
+    /**
+     * Every living body drops a capsule of its own colour into the medium,
+     * from where it was to where it is. This is the half of the loop that
+     * makes the fluid belong to the scene rather than float in front of it: a
+     * body drifting past leaves a wake, a body being born blooms ink outward,
+     * and the medium then carries all of it back into the geometry as the
+     * melt.
+     *
+     * Walks the bank's SLOTS, not the packed snapshot: slots are stable across
+     * frames, and the previous position is what the capsule is drawn from.
+     */
+    private fun stirWithBodies(
+        p: SceneParams,
+        hueBase: Float,
+        hueSpan: Float,
+    ) {
+        val strength = p.hyperStain.coerceIn(0f, 1.5f) + p.hyperLiquid.coerceIn(0f, 1.5f)
+        if (strength <= 0.01f) {
+            // Nothing is going to look at the dye, so nothing needs to be laid
+            // down - but the previous positions must still be tracked, or the
+            // first frame after it is turned back on draws one capsule from
+            // wherever each body was when it was turned off.
+            trackBodyPositions()
+            return
+        }
+        val blooms = bank.blooms
+        for (i in blooms.indices) {
+            val b = blooms[i]
+            if (!b.alive || b.fade <= 0.01f) {
+                hasPrevBody[i] = false
+                continue
+            }
+            val x = b.centre[0]
+            val y = b.centre[1]
+            if (hasPrevBody[i]) {
+                val (r, g, bl) = FluidHue.rgb(hueBase + b.hue * hueSpan, 0.95f)
+                melt.queueBodySplat(
+                    prevWorldX = prevBodyXy[i * 2],
+                    prevWorldY = prevBodyXy[i * 2 + 1],
+                    worldX = x,
+                    worldY = y,
+                    radius = HyperspaceMath.localRadius(b.species) * b.scale * b.fade,
+                    life = b.fade,
+                    scale = MeltMath.DEFAULT_SCALE,
+                    r = r,
+                    g = g,
+                    b = bl,
+                    // Scaled by the body's own life, so ink arrives with it and
+                    // stops when it goes rather than snapping on and off.
+                    strength = BODY_INK * strength * b.fade,
+                )
+            }
+            prevBodyXy[i * 2] = x
+            prevBodyXy[i * 2 + 1] = y
+            hasPrevBody[i] = true
+        }
+    }
+
+    private fun trackBodyPositions() {
+        val blooms = bank.blooms
+        for (i in blooms.indices) {
+            val b = blooms[i]
+            if (!b.alive) {
+                hasPrevBody[i] = false
+                continue
+            }
+            prevBodyXy[i * 2] = b.centre[0]
+            prevBodyXy[i * 2 + 1] = b.centre[1]
+            hasPrevBody[i] = true
+        }
     }
 
     /**
@@ -299,6 +466,7 @@ internal class HyperspaceScene(
     private fun loc(name: String): Int = uniforms.getOrPut(name) { GLES30.glGetUniformLocation(program, name) }
 
     override fun release() {
+        melt.release()
         if (program != 0) GLES30.glDeleteProgram(program)
         if (vao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(vao), 0)
         program = 0
