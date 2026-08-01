@@ -209,6 +209,11 @@ class AudioTranscoder(
                 }
             }
             out.flush()
+            // Inside the try so the catch below deletes the temp file: the AAC
+            // bytes are written whether or not the encoder ever reported its
+            // output format, so failing this check after the finally orphaned
+            // a file that can be the whole ~86 MB stream.
+            return Result(requireNotNull(outFormat) { "AAC encoder produced no format" }, outFile, infos)
         } catch (t: Throwable) {
             runCatching { out.close() }
             runCatching { outFile.delete() }
@@ -219,7 +224,6 @@ class AudioTranscoder(
             runCatching { encoder.release() }
             runCatching { aiff.close() }
         }
-        return Result(requireNotNull(outFormat) { "AAC encoder produced no format" }, outFile, infos)
     }
 
     fun transcode(
@@ -426,6 +430,10 @@ class AudioTranscoder(
                 }
             }
             out.flush()
+            // Inside the try so the catch below deletes the temp file, exactly
+            // as in the AIFF path: the AAC bytes are written whether or not
+            // the encoder ever reported its output format.
+            return Result(requireNotNull(outFormat) { "AAC encoder produced no format" }, outFile, infos)
         } catch (t: Throwable) {
             runCatching { out.close() }
             runCatching { outFile.delete() }
@@ -438,6 +446,5 @@ class AudioTranscoder(
             runCatching { encoder.release() }
             runCatching { extractor.release() }
         }
-        return Result(requireNotNull(outFormat) { "AAC encoder produced no format" }, outFile, infos)
     }
 }

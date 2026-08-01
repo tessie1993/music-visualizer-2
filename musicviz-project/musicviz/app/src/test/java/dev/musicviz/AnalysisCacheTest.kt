@@ -181,6 +181,39 @@ class AnalysisCacheTest {
         assertTrue(cacheFile(uri).exists())
     }
 
+    /**
+     * A v2 header whose lengths are garbage - the shape a crash or a full disk
+     * leaves behind - must be refused on the header alone, before those
+     * lengths reach `FloatArray(...)`.
+     *
+     * Note what this test can and cannot see: [AnalysisCache.load] wraps the
+     * read in runCatching, so an entry with an absurd `bandCount` ends up null
+     * either way. What the header check changes is that the doomed allocation
+     * is never attempted - and that is invisible from here.
+     */
+    @Test
+    fun garbageHeaderLengthsAreRejected() {
+        AnalysisCache.clear(ctx)
+        for ((i, lengths) in listOf(1_000_000_000 to 16, 8 to 1_000_000_000, -1 to 16, 8 to -1).withIndex()) {
+            val uri = Uri.parse("content://media/audio/corrupt-$i")
+            val f = cacheFile(uri)
+            f.parentFile?.mkdirs()
+            DataOutputStream(f.outputStream().buffered()).use { d ->
+                d.writeInt(0x4D564143)
+                d.writeInt(2)
+                d.writeLong(16L)
+                d.writeFloat(60f)
+                d.writeUTF("A minor")
+                d.writeInt(1)
+                d.writeInt(lengths.first)
+                d.writeInt(lengths.second)
+                // Truncated here, exactly as an interrupted write leaves it.
+            }
+            assertNull("bandCount/waveSize $lengths", AnalysisCache.load(ctx, uri, defaultSigma, defaultInterval))
+            assertFalse("damaged entry should be deleted", f.exists())
+        }
+    }
+
     @Test
     fun v1EntriesAreDiscardedNotMisread() {
         val uri = Uri.parse("content://media/audio/legacy")

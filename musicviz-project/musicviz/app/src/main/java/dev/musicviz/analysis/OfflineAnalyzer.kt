@@ -64,29 +64,31 @@ class OfflineAnalyzer(
             }
         }
         val extractor = MediaExtractor()
-        extractor.setDataSource(context, uri, null)
-        val trackIndex =
-            (0 until extractor.trackCount).firstOrNull {
-                extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
-            } ?: run {
-                extractor.release()
-                throw IllegalArgumentException("No audio track in file")
-            }
-        val format = extractor.getTrackFormat(trackIndex)
-        extractor.selectTrack(trackIndex)
-        val durationUs =
-            if (format.containsKey(MediaFormat.KEY_DURATION)) format.getLong(MediaFormat.KEY_DURATION) else 0L
-        val mime = requireNotNull(format.getString(MediaFormat.KEY_MIME))
-        val codec = MediaCodec.createDecoderByType(mime)
-        codec.configure(format, null, null, 0)
-        codec.start()
-
+        var codecRef: MediaCodec? = null
         val pipeline = StreamingPipeline(beatThresholdSigma, beatMinIntervalMs)
         val info = MediaCodec.BufferInfo()
         var inputDone = false
         var outputDone = false
         var lastProgress = 0f
+        // Setup runs inside the try as well: setDataSource on a truncated or
+        // DRM file, and createDecoderByType on a codec this device does not
+        // have, throw as readily as the decode loop does, and used to leave
+        // the extractor holding an open descriptor and the decoder a native
+        // instance - which a batch of files accumulates.
         try {
+            extractor.setDataSource(context, uri, null)
+            val trackIndex =
+                (0 until extractor.trackCount).firstOrNull {
+                    extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+                } ?: throw IllegalArgumentException("No audio track in file")
+            val format = extractor.getTrackFormat(trackIndex)
+            extractor.selectTrack(trackIndex)
+            val durationUs =
+                if (format.containsKey(MediaFormat.KEY_DURATION)) format.getLong(MediaFormat.KEY_DURATION) else 0L
+            val mime = requireNotNull(format.getString(MediaFormat.KEY_MIME))
+            val codec = MediaCodec.createDecoderByType(mime).also { codecRef = it }
+            codec.configure(format, null, null, 0)
+            codec.start()
             while (!outputDone) {
                 if (!inputDone) {
                     val inIndex = codec.dequeueInputBuffer(10_000)
@@ -135,8 +137,10 @@ class OfflineAnalyzer(
                 }
             }
         } finally {
-            runCatching { codec.stop() }
-            codec.release()
+            codecRef?.let {
+                runCatching { it.stop() }
+                it.release()
+            }
             extractor.release()
         }
         onProgress(1f)
