@@ -238,6 +238,17 @@ data class ExternalAudioState(
     val refusingApp: String? get() = if (refusedByApp) nowPlaying?.appLabel else null
 }
 
+/** Clip list and export progress behind the Studio tab. */
+data class StudioUiState(
+    val clips: List<dev.musicviz.export.StudioClip> = emptyList(),
+    val loading: Boolean = false,
+    val running: Boolean = false,
+    val progress: Float = 0f,
+    /** Where the finished file landed, for the Share and Open actions. */
+    val resultUri: Uri? = null,
+    val error: String? = null,
+)
+
 /** The player's queue as the Now Playing queue tab reads it. */
 data class QueueUiState(
     val tracks: List<QueueTrack> = emptyList(),
@@ -3391,6 +3402,85 @@ class PlayerViewModel(
     /** Clears a finished export's result/error so the next dialog open shows the options again. */
     fun resetExportState() {
         if (!_exportState.value.running) _exportState.value = ExportUiState()
+    }
+
+    // ---- Export Studio ----
+
+    private val studioExporter = dev.musicviz.export.StudioExporter(application)
+
+    private val _studio = MutableStateFlow(StudioUiState())
+
+    /** Clip list and export progress for the Studio tab. */
+    val studio: StateFlow<StudioUiState> = _studio
+
+    private var studioJob: Job? = null
+
+    /** Re-reads Movies/MusicViz. Cheap enough to run on every tab entry. */
+    fun refreshStudioClips() {
+        viewModelScope.launch {
+            _studio.update { it.copy(loading = true) }
+            val clips = withContext(Dispatchers.IO) { dev.musicviz.export.StudioClips.list(getApplication()) }
+            _studio.update { it.copy(clips = clips, loading = false) }
+        }
+    }
+
+    /** Describes a clip the user picked through the system file picker. */
+    fun describeStudioClip(
+        uri: Uri,
+        onReady: (dev.musicviz.export.StudioClip) -> Unit,
+    ) {
+        viewModelScope.launch {
+            val clip = withContext(Dispatchers.IO) { dev.musicviz.export.StudioClips.describe(getApplication(), uri) }
+            onReady(clip)
+        }
+    }
+
+    /**
+     * Renders an edit to a new file in Movies/MusicViz.
+     *
+     * Always a new file: an edit that overwrote its source would make the one
+     * irreversible action in the app the DEFAULT one, and the original render
+     * can be minutes of GPU time.
+     */
+    fun startStudioExport(
+        clip: dev.musicviz.export.StudioClip,
+        edit: dev.musicviz.export.ClipEdit,
+    ) {
+        if (_studio.value.running) return
+        _studio.update { it.copy(running = true, progress = 0f, resultUri = null, error = null) }
+        studioJob =
+            viewModelScope.launch {
+                val name = "musicviz_studio_${System.currentTimeMillis()}.mp4"
+                val result =
+                    studioExporter.export(
+                        source = Uri.parse(clip.uri),
+                        sourceDurationMs = clip.durationMs,
+                        edit = edit,
+                        displayName = name,
+                    ) { p -> _studio.update { it.copy(progress = p.coerceIn(0f, 1f)) } }
+                when (result) {
+                    is dev.musicviz.export.StudioExporter.Result.Saved ->
+                        _studio.update { it.copy(running = false, progress = 1f, resultUri = result.uri) }
+                    is dev.musicviz.export.StudioExporter.Result.Failed ->
+                        _studio.update { it.copy(running = false, error = result.message) }
+                    dev.musicviz.export.StudioExporter.Result.Cancelled ->
+                        _studio.update { it.copy(running = false, progress = 0f) }
+                }
+                refreshStudioClips()
+                studioJob = null
+            }
+    }
+
+    fun cancelStudioExport() {
+        studioExporter.cancel()
+        studioJob?.cancel()
+        studioJob = null
+        _studio.update { it.copy(running = false, progress = 0f) }
+    }
+
+    /** Clears a finished Studio export so the editor shows its controls again. */
+    fun clearStudioResult() {
+        _studio.update { it.copy(resultUri = null, error = null, progress = 0f) }
     }
 
     override fun onCleared() {

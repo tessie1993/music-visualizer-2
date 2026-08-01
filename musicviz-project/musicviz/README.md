@@ -1,3 +1,81 @@
+## v1.7.0 (code 31) - Home rebuilt, other apps' audio, a player with a face, and the Export Studio
+
+- **Home is about your listening now, not a list of titles.** It used to be
+  two rows of text chips - the Library tab, with less information in it. The
+  hero card is live: artwork, transport, progress and the actual spectrum of
+  whatever is feeding the analyser, sampled on its own 20 Hz clock rather than
+  collected as state (the analyser emits at the FFT hop rate, and recomposing
+  a scrolling list that often stutters for a decoration). Below it: five quick
+  actions, a week of REAL listening time, and shelves of artwork - Jump back
+  in, Favourites, On repeat, Recently added, and your saved looks. A shelf IS
+  the queue a tap starts, the same rule the Library and search already follow.
+  `ArtworkCache` decodes sleeves down to 384 px off the main thread and caches
+  misses as misses; tracks with no picture get a gradient derived from their
+  uri, so they still look like themselves everywhere they appear.
+- **Listening time is measured, not counted.** `HistoryStore` accumulates
+  milliseconds actually played, per track and per day, so "this week" is a
+  measurement rather than a tally of taps. Time is booked between poll ticks,
+  so a seek is not charged as listening and a suspended process does not bank
+  the hours it was asleep. The week strip scales to its own busiest day. The
+  v1 history file (a bare JSON array) is still read, so no install loses its
+  history.
+- **Visualize whatever is playing** (Settings > Other apps' audio, or one tap
+  on Home). Android 10's playback-capture API feeds the SAME ring buffer the
+  player's tap and the microphone already share, so the FFT, the beat tracker,
+  every scene, the exporter and the live wallpaper are unchanged and unaware
+  of where the samples came from.
+  - **Spotify will not be captured, and the app says so.** An app declares
+    whether it may be captured and the system honours that; Spotify declares
+    no. What makes it nasty is that a refusal is not an error - the recorder
+    opens happily and is handed perfect digital silence, which looks exactly
+    like a working visualizer with nothing to draw. So it is diagnosed
+    explicitly, and needs both halves to agree: four seconds without a single
+    non-zero sample AND a media session saying something is playing. Then it
+    names the app and offers the microphone, which hears the same speaker.
+    YouTube, podcast players and games allow capture and simply work.
+  - A foreground service holds the projection and an ongoing notification for
+    as long as it runs - the platform requires it, and it is the honest
+    statement that this app can currently hear the device. Revoking capture
+    from the system UI tears it all down.
+  - Naming the foreign track is separate and optional: it reads the media
+    session (structured metadata) rather than scraping notifications, and
+    needs notification access the visuals do not.
+  - Nothing captured is written to disk or sent anywhere.
+- **The player grew a face.** Now / Lyrics / Queue, over the live canvas.
+  - The **seek bar is the track's own loudness**, reduced from the per-frame
+    RMS curve the offline analyser already computes for the visuals. Peak per
+    bucket, not mean - a mean flattens a song into a grey ridge. Unanalysed
+    tracks fall back to a plain bar. Dragging commits on release, because
+    seeking per pointer event would re-prepare the decoder dozens of times.
+  - **Timed lyrics.** An `.lrc` beside the track beats the file's own tags.
+    Several timestamps on one line (how LRC writes a repeated chorus) become
+    several lines; hundredths and thousandths are told apart by width. Tapping
+    a line seeks to it. Nothing is fetched - the app has no network access.
+  - **The queue is visible and editable**: jump, pull forward, remove. Buttons
+    rather than drag, because this list sits on a full-screen gesture surface.
+  - **Favourites** (a heart in the player, a shelf on Home, a star in the
+    queue), **A-B repeat** painted into the waveform, **fades** on pause,
+    resume and skip (0-6 s; explicitly not a crossfade, which one player
+    cannot do), and a sleep timer that can **let the track finish**.
+- **The Export Studio** (new bottom-nav tab). The exporter made a file and
+  stopped, leaving "cut the good bit out" and "get it somewhere" to a second
+  app. Studio lists what MusicViz has rendered (or opens any video), and does
+  both: trim over a filmstrip, seven looks that write ordinary grade sliders,
+  brightness/contrast/saturation/hue, speed, rotate, reframe to any of the six
+  export ratios (cropping, not pillarboxing), mute, and a burnt-in caption.
+  Built on Media3's Transformer - it knows when NOT to re-encode, and a
+  trim-only edit becomes a lossless container rewrite. Every render is a NEW
+  file in Movies/MusicViz; the original is never overwritten. "Send" is the
+  system share sheet on purpose: the app holds no network permission and no
+  API keys, and the sheet reaches YouTube, Instagram, TikTok and Drive with
+  the account the phone is already signed in to.
+- **The audio-quality panel is gone.** The LOSSLESS/LOSSY badge and its
+  codec/bitrate card sat under the artist line on Now Playing, competing with
+  the visuals for attention and reporting something you cannot act on.
+- 45 new tests: LRC parsing and the line-at-position lookup, plays vs
+  listening time, the per-day week, the v1 history file, favourites ordering
+  across a reload, and the Studio's trim/speed/identity arithmetic.
+
 ## v1.6.0 (code 30) - The melt: Hyperspace poured into the fluid engine
 
 - **The fluid engine now runs underneath the fractals.** HYPERSPACE gains a

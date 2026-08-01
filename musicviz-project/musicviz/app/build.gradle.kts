@@ -42,8 +42,8 @@ android {
         applicationId = "dev.musicviz"
         minSdk = 26
         targetSdk = 36
-        versionCode = 30
-        versionName = "1.6.0"
+        versionCode = 31
+        versionName = "1.7.0"
         ndk {
             abiFilters += "arm64-v8a"
         }
@@ -232,6 +232,10 @@ dependencies {
     implementation(libs.core.splashscreen)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.common)
+    // Export Studio: trim, effects and re-encode over the same MediaCodec
+    // stack the visualizer exporter already uses.
+    implementation(libs.media3.transformer)
+    implementation(libs.media3.effect)
     implementation(libs.documentfile)
     implementation(libs.jtransforms)
     implementation(platform(libs.compose.bom))

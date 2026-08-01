@@ -93,6 +93,91 @@ object ArtworkCache {
 }
 
 /**
+ * Frames pulled out of video files, for the Studio's clip list and its trim
+ * filmstrip.
+ *
+ * Separate cache from [ArtworkCache] because the key is different: a sleeve is
+ * identified by its track, a frame by a track AND a timestamp, and mixing the
+ * two would make a filmstrip evict every album cover on the screen behind it.
+ */
+object VideoFrameCache {
+    private val NONE = Any()
+
+    // Enough for a clip list plus one open filmstrip.
+    private val cache = LruCache<String, Any>(32)
+
+    suspend fun frame(
+        context: Context,
+        uri: String,
+        atMs: Long,
+    ): ImageBitmap? {
+        val key = "$uri@$atMs"
+        cache.get(key)?.let { return if (it === NONE) null else it as ImageBitmap }
+        val decoded = withContext(Dispatchers.IO) { extract(context, uri, atMs) }
+        cache.put(key, decoded ?: NONE)
+        return decoded
+    }
+
+    fun peek(
+        uri: String,
+        atMs: Long,
+    ): ImageBitmap? = cache.get("$uri@$atMs")?.takeIf { it !== NONE } as? ImageBitmap
+
+    private fun extract(
+        context: Context,
+        uri: String,
+        atMs: Long,
+    ): ImageBitmap? =
+        runCatching {
+            // try/finally rather than use(): MediaMetadataRetriever only became
+            // AutoCloseable in API 29 and this app runs from 26.
+            val retriever = android.media.MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(context, Uri.parse(uri))
+                // CLOSEST_SYNC rather than CLOSEST: a filmstrip wants six cheap
+                // keyframes, not six exact frames each decoded from the
+                // preceding GOP.
+                retriever
+                    .getFrameAtTime(
+                        atMs * 1000L,
+                        android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    )?.asImageBitmap()
+            } finally {
+                retriever.release()
+            }
+        }.getOrNull()
+}
+
+/** A frame from a video, with the same gradient stand-in when it has none. */
+@Composable
+fun VideoFrame(
+    uri: String?,
+    atMs: Long,
+    modifier: Modifier = Modifier,
+    corner: Dp = 12.dp,
+) {
+    val context = LocalContext.current
+    val inspecting = LocalInspectionMode.current
+    var frame by remember(uri, atMs) { mutableStateOf(uri?.let { VideoFrameCache.peek(it, atMs) }) }
+    LaunchedEffect(uri, atMs) {
+        if (uri != null && frame == null && !inspecting) frame = VideoFrameCache.frame(context, uri, atMs)
+    }
+    Box(modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(corner))) {
+        val bitmap = frame
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Box(Modifier.fillMaxSize().background(placeholderBrush(uri)))
+        }
+    }
+}
+
+/**
  * A track's sleeve, or - when it has none - a deterministic gradient standing
  * in for it.
  *

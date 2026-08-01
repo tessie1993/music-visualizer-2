@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -68,7 +69,8 @@ import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 /**
- * Navigation-v2 app shell: bottom nav (Home / Library / Visuals / Settings)
+ * Navigation-v2 app shell: bottom nav (Home / Library / Visuals / Studio /
+ * Settings)
  * with a persistent mini-player docked above it, and the fullscreen
  * visualizer (Now Playing) as an overlay expanded from the mini-player.
  * The single VisualizerView is owned here so renderer state (custom shaders,
@@ -183,6 +185,7 @@ fun AppRoot(
                                     CrystalNavItem("Home", Icons.Filled.Home),
                                     CrystalNavItem("Library", Icons.Filled.LibraryMusic),
                                     CrystalNavItem("Visuals", Icons.Filled.MusicNote),
+                                    CrystalNavItem("Studio", Icons.Filled.Movie),
                                     CrystalNavItem("Settings", Icons.Filled.Settings),
                                 ),
                             selected = dest,
@@ -213,7 +216,8 @@ fun AppRoot(
                                 // and it has not been sent to a second screen.
                                 liveBackdrop = gui.clearVisualsMenu && !expanded && !onSecondScreen,
                             )
-                        3 -> SettingsScreen(viewModel, visualizerView)
+                        3 -> StudioScreen(viewModel)
+                        4 -> SettingsScreen(viewModel, visualizerView)
                     }
                 }
             }
