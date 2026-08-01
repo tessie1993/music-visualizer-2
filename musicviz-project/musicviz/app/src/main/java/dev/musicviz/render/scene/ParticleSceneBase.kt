@@ -39,22 +39,6 @@ abstract class ParticleSceneBase(
 
         /** Triangle-strip corners of the unit billboard, [-1,1]^2. */
         private val QUAD_CORNERS = floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)
-
-        /**
-         * Seconds of travel folded into the streak length: a particle moving
-         * 400 px/s stretches to 1.4x. Deliberately small - the streak is a
-         * motion cue, not a smear - and hard-capped in the shader.
-         */
-        private const val STRETCH_SECONDS = 0.0025f
-
-        /**
-         * Aura weight at Bloom 0, and how far the Bloom slider lifts it. The
-         * composite bloom pass blurs what the scene already drew, so tying the
-         * per-sprite glow to the same slider keeps the two moving together
-         * instead of fighting.
-         */
-        private const val GLOW_BASE = 0.85f
-        private const val GLOW_PER_BLOOM = 1.2f
     }
 
     protected val vertexData: FloatArray = FloatArray(count * FLOATS_PER_PARTICLE)
@@ -128,6 +112,58 @@ abstract class ParticleSceneBase(
      *  GL thread before [update]. */
     internal var flowGrid: dev.musicviz.render.fluid.FlowField.CpuGrid? = null
 
+    /**
+     * True for styles whose whole identity is the fluid field, so the renderer
+     * runs and reads back the FlowField for them even though `flowEnabled`
+     * ships off. A style that shows nothing until the user finds a checkbox in
+     * a different tab is not a style.
+     */
+    internal open val requiresFlowField: Boolean get() = false
+
+    /**
+     * Kicks this scene wants pushed BACK into the shared field, drained by the
+     * renderer after [update]. This is the return leg of the coupling: without
+     * it particles are passengers, and the field never carries any trace of
+     * where they have been.
+     */
+    internal val flowKicks = FlowKicks()
+
+    /**
+     * A fixed-capacity, allocation-free batch of velocity kicks in clip space
+     * (x and y in -1..1, velocity in clip units per second).
+     */
+    internal class FlowKicks(
+        val capacity: Int = 8,
+    ) {
+        val x = FloatArray(capacity)
+        val y = FloatArray(capacity)
+        val vx = FloatArray(capacity)
+        val vy = FloatArray(capacity)
+        val radius = FloatArray(capacity)
+        var size = 0
+            private set
+
+        fun clear() {
+            size = 0
+        }
+
+        fun add(
+            x: Float,
+            y: Float,
+            vx: Float,
+            vy: Float,
+            radius: Float,
+        ) {
+            if (size >= capacity) return
+            this.x[size] = x
+            this.y[size] = y
+            this.vx[size] = vx
+            this.vy[size] = vy
+            this.radius[size] = radius
+            size++
+        }
+    }
+
     private val flowSample = FloatArray(2)
 
     final override fun update(
@@ -151,8 +187,12 @@ abstract class ParticleSceneBase(
         dt: Float,
     ) {
         val grid = flowGrid ?: return
-        if (!p.flowEnabled || !p.flowAdvectParticles) return
-        val strength = p.flowStrength.coerceIn(0f, 1f)
+        // A field-defined style advects unconditionally; for everything else
+        // this stays the opt-in it has always been.
+        val forced = requiresFlowField
+        if (!forced && (!p.flowEnabled || !p.flowAdvectParticles)) return
+        val strength =
+            p.flowStrength.coerceIn(0f, 1f).let { if (forced) it.coerceAtLeast(0.35f) else it }
         val k = strength * dt
         if (k <= 0f) return
         for (i in 0 until count) {
@@ -168,6 +208,27 @@ abstract class ParticleSceneBase(
             vertexData[o + VELOCITY_OFFSET + 1] += flowSample[1] * strength
         }
     }
+
+    /**
+     * The packed particle records as [update] left them, for headless tests.
+     * `update` is pure CPU, so a style can be stepped for seconds of simulated
+     * time with no GL context - which is the only way to catch the failures
+     * that do not show up in a screenshot (a chaotic map latching NaN, a
+     * population drifting out of frame, a scene that quietly froze).
+     */
+    internal fun particleRecords(): FloatArray = vertexData
+
+    /**
+     * Per-style streak length, as a multiple of the shared
+     * [ParticleLook.STRETCH_SECONDS], and the ceiling on the resulting factor.
+     * The default is a motion CUE - fast particles lean, nothing smears. A
+     * style whose subject IS the motion (rain) overrides both; one whose
+     * particles teleport rather than travel (a chaotic map) leaves them alone
+     * and publishes no velocity at all.
+     */
+    protected open val stretchScale: Float get() = 1f
+
+    protected open val stretchMax: Float get() = 2f
 
     /** Advances the particle simulation and fills [vertexData]. */
     protected abstract fun simulate(
@@ -202,10 +263,7 @@ abstract class ParticleSceneBase(
         GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, viewport, 0)
         val widthPx = viewport[2].coerceAtLeast(1)
         val heightPx = viewport[3].coerceAtLeast(1)
-        // Sizes are authored in px against a 1080p-tall target; without this
-        // the whole system shrank to specks on a 1440p panel and bloated on a
-        // downscaled render target. Same convention as the fluid point layer.
-        val dpiScale = (heightPx / 1080f).coerceIn(0.75f, 2.5f)
+        val dpiScale = ParticleLook.dpiScale(heightPx)
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         GLES30.glUseProgram(program)
@@ -217,8 +275,9 @@ abstract class ParticleSceneBase(
         GLES30.glUniform1f(loc("uContrast"), p.contrast)
         GLES30.glUniform1f(loc("uGamma"), p.gamma)
         GLES30.glUniform1f(loc("uShape"), p.particleShape.toFloat())
-        GLES30.glUniform1f(loc("uStretch"), STRETCH_SECONDS)
-        GLES30.glUniform1f(loc("uGlow"), GLOW_BASE + p.bloom.coerceIn(0f, 1f) * GLOW_PER_BLOOM)
+        GLES30.glUniform1f(loc("uStretch"), ParticleLook.STRETCH_SECONDS * stretchScale)
+        GLES30.glUniform1f(loc("uStretchMax"), stretchMax)
+        GLES30.glUniform1f(loc("uGlow"), ParticleLook.glow(p.bloom))
         GLES30.glUniform1f(loc("uTime"), timeSeconds)
         // Pulse: beat-driven size swell so the parameter works on particles
         // (it previously only affected shader scenes).

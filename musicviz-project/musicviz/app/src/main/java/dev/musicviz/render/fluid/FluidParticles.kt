@@ -83,8 +83,18 @@ internal class FluidParticles(
             val vert = loadRaw(R.raw.fluid_base_vert)
             seedProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_particle_seed_frag))
             updateProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_particle_update_frag))
+            // The app-wide particle look, the same chunks ParticleSceneBase
+            // splices into the CPU styles' shaders: constants and shapes in
+            // both stages, the fwidth-based shading in the fragment stage only.
+            val common = loadRaw(R.raw.particle_common)
             renderProgram =
-                GlUtil.buildProgram(loadRaw(R.raw.fluid_particle_vert), loadRaw(R.raw.fluid_particle_frag))
+                GlUtil.buildProgram(
+                    GlUtil.withChunk(loadRaw(R.raw.fluid_particle_vert), common),
+                    GlUtil.withChunk(
+                        loadRaw(R.raw.fluid_particle_frag),
+                        common + "\n" + loadRaw(R.raw.particle_shade),
+                    ),
+                )
         } catch (e: GlUtil.ShaderCompileException) {
             android.util.Log.w("FluidSim", "particle shader rejected by driver: ${e.message}")
             release()
@@ -197,13 +207,23 @@ internal class FluidParticles(
         GLES30.glBindVertexArray(0)
     }
 
-    /** Draws additively into the currently bound framebuffer/viewport. */
+    /**
+     * Draws additively into the currently bound framebuffer/viewport.
+     *
+     * [shape] is `SceneParams.particleShape` and [glow] the aura weight, both
+     * fed straight to the shared look in `particle_shade.glsl`; [timeSeconds]
+     * drives its twinkle. They are the reason Particle shape is live on the
+     * fluid styles rather than a dead chip row.
+     */
     fun draw(
         aspect: Float,
         pointScale: Float,
         hueBase: Float,
         hueSpan: Float,
         brightness: Float,
+        shape: Float = 0f,
+        glow: Float = 0.85f,
+        timeSeconds: Float = 0f,
     ) {
         val st = state ?: return
         GLES30.glEnable(GLES30.GL_BLEND)
@@ -221,6 +241,9 @@ internal class FluidParticles(
         GLES30.glUniform1f(loc(renderProgram, "uHueBase"), hueBase)
         GLES30.glUniform1f(loc(renderProgram, "uHueSpan"), hueSpan)
         GLES30.glUniform1f(loc(renderProgram, "uBrightness"), brightness)
+        GLES30.glUniform1f(loc(renderProgram, "uShape"), shape)
+        GLES30.glUniform1f(loc(renderProgram, "uGlow"), glow)
+        GLES30.glUniform1f(loc(renderProgram, "uTime"), timeSeconds)
         GLES30.glDrawArrays(GLES30.GL_POINTS, 0, count)
         GLES30.glBindVertexArray(0)
         GLES30.glDisable(GLES30.GL_BLEND)

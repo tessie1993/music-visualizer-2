@@ -8,12 +8,15 @@ import dev.musicviz.R
 import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.export.VideoExporter
 import dev.musicviz.render.fluid.CurlFlowMath
+import dev.musicviz.render.scene.AttractorScene
 import dev.musicviz.render.scene.BeamScene
 import dev.musicviz.render.scene.BurstScene
 import dev.musicviz.render.scene.CymaticsScene
 import dev.musicviz.render.scene.FountainScene
+import dev.musicviz.render.scene.GalaxyScene
 import dev.musicviz.render.scene.GlUtil
 import dev.musicviz.render.scene.HyperspaceScene
+import dev.musicviz.render.scene.InkflowScene
 import dev.musicviz.render.scene.NebulaScene
 import dev.musicviz.render.scene.OrbitScene
 import dev.musicviz.render.scene.PMBridge
@@ -24,6 +27,7 @@ import dev.musicviz.render.scene.Scene
 import dev.musicviz.render.scene.SceneIds
 import dev.musicviz.render.scene.SceneParams
 import dev.musicviz.render.scene.ShaderScene
+import dev.musicviz.render.scene.StormScene
 import dev.musicviz.render.scene.SwarmScene
 import java.io.File
 import javax.microedition.khronos.egl.EGLConfig
@@ -67,7 +71,17 @@ class VisualizerRenderer(
                 SceneIds.SOLAR to R.raw.solar_frag,
             )
         val PARTICLE_SCENES: List<String> =
-            listOf(SceneIds.NEBULA, SceneIds.BURSTS, SceneIds.SWARM, SceneIds.FOUNTAIN, SceneIds.ORBITS)
+            listOf(
+                SceneIds.NEBULA,
+                SceneIds.BURSTS,
+                SceneIds.SWARM,
+                SceneIds.FOUNTAIN,
+                SceneIds.ORBITS,
+                SceneIds.GALAXY,
+                SceneIds.ATTRACTOR,
+                SceneIds.STORM,
+                SceneIds.INKFLOW,
+            )
 
         /** Fingertip footprint for the touch smear, in sim units. */
         private const val TOUCH_RADIUS = 0.11f
@@ -604,6 +618,10 @@ class VisualizerRenderer(
         scenes[SceneIds.SWARM] = SwarmScene(particleShaders)
         scenes[SceneIds.FOUNTAIN] = FountainScene(particleShaders)
         scenes[SceneIds.ORBITS] = OrbitScene(particleShaders)
+        scenes[SceneIds.GALAXY] = GalaxyScene(particleShaders)
+        scenes[SceneIds.ATTRACTOR] = AttractorScene(particleShaders)
+        scenes[SceneIds.STORM] = StormScene(particleShaders)
+        scenes[SceneIds.INKFLOW] = InkflowScene(particleShaders)
         val quadVert = loadRaw(R.raw.quad_vert)
         for ((id, res) in SHADER_SCENES) {
             scenes[id] = ShaderScene(id, quadVert, loadRaw(res)) { onShaderError(it) }
@@ -835,7 +853,12 @@ class VisualizerRenderer(
         // its own field is reused instead - never both (one source of truth).
         val ff = flowField
         val fluidActive = scene is dev.musicviz.render.fluid.FluidScene
-        if (p.flowEnabled && ff != null && ff.available && !fluidActive) {
+        // A field-DEFINED particle style (Inkflow) runs the service whatever
+        // the Flow toggle says: `flowEnabled` ships off, and a style that
+        // renders a frozen screen until the user finds a checkbox in another
+        // tab would read as broken, not as opt-in.
+        val sceneNeedsFlow = (scene as? ParticleSceneBase)?.requiresFlowField == true
+        if ((p.flowEnabled || sceneNeedsFlow) && ff != null && ff.available && !fluidActive) {
             ff.step(gainAdjusted(features, p), dt, p)
         }
         // F2 ripple overlay: advance the shared heightfield (its own tiny
@@ -921,15 +944,15 @@ class VisualizerRenderer(
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
         }
         // FlowField consumers on the active scene: CPU grid for particle
-        // scenes (16x16 readback), uFlow sampler for shader scenes.
-        if (p.flowEnabled && ff != null) {
-            if (scene is ParticleSceneBase && p.flowAdvectParticles && ff.available) {
+        // scenes (CPU_GRID readback), uFlow sampler for shader scenes.
+        if ((p.flowEnabled || sceneNeedsFlow) && ff != null) {
+            if (scene is ParticleSceneBase && (p.flowAdvectParticles || sceneNeedsFlow) && ff.available) {
                 ff.readback(ff.velocityTex, ff.flowScale, ff.aspect)
                 scene.flowGrid = ff.cpuGrid
             } else if (scene is ParticleSceneBase) {
                 scene.flowGrid = null
             }
-            if (scene is ShaderScene) {
+            if (scene is ShaderScene && p.flowEnabled) {
                 scene.setFlow(if (ff.available) ff.velocityTex else zeroTex, p.flowStrength)
             }
         } else {
@@ -938,6 +961,18 @@ class VisualizerRenderer(
         }
         scene.setParams(p)
         scene.update(gainAdjusted(features, p), dt)
+        // Two-way coupling, the return leg: a particle style that rides the
+        // field can also push into it. Drained here, right after the update
+        // that produced them, so the kicks are queued before the next frame's
+        // step() consumes them - one frame of latency, and the field carries a
+        // trace of where the population has been.
+        if (ff != null && ff.available && !fluidActive && scene is ParticleSceneBase) {
+            val kicks = scene.flowKicks
+            for (i in 0 until kicks.size) {
+                ff.queueKick(kicks.x[i], kicks.y[i], kicks.vx[i], kicks.vy[i], kicks.radius[i])
+            }
+            kicks.clear()
+        }
         scene.draw(timeSeconds)
 
         // Composite to screen.
@@ -1348,6 +1383,10 @@ class VisualizerRenderer(
                         sceneId == SceneIds.SWARM -> SwarmScene(particleShaders)
                         sceneId == SceneIds.FOUNTAIN -> FountainScene(particleShaders)
                         sceneId == SceneIds.ORBITS -> OrbitScene(particleShaders)
+                        sceneId == SceneIds.GALAXY -> GalaxyScene(particleShaders)
+                        sceneId == SceneIds.ATTRACTOR -> AttractorScene(particleShaders)
+                        sceneId == SceneIds.STORM -> StormScene(particleShaders)
+                        sceneId == SceneIds.INKFLOW -> InkflowScene(particleShaders)
                         SHADER_SCENES.containsKey(sceneId) ->
                             ShaderScene(sceneId, quadVert, activeCustomShaders[sceneId] ?: loadRaw(SHADER_SCENES.getValue(sceneId)))
                         else -> NebulaScene(particleShaders)
@@ -1357,6 +1396,16 @@ class VisualizerRenderer(
             }
         }
 
-    private fun particleShaderSources(context: Context): ParticleSceneBase.ShaderSources =
-        ParticleSceneBase.ShaderSources(loadRaw(R.raw.particle_vert), loadRaw(R.raw.particle_frag))
+    private fun particleShaderSources(context: Context): ParticleSceneBase.ShaderSources {
+        // The app-wide particle look, shared with the fluid styles' own
+        // particle layer. Both stages take the common chunk (constants, the
+        // SDF shapes, the billboard and sub-pixel math); only the fragment
+        // stage takes the shading, which antialiases with fwidth() and would
+        // not compile in a vertex shader.
+        val common = loadRaw(R.raw.particle_common)
+        return ParticleSceneBase.ShaderSources(
+            GlUtil.withChunk(loadRaw(R.raw.particle_vert), common),
+            GlUtil.withChunk(loadRaw(R.raw.particle_frag), common + "\n" + loadRaw(R.raw.particle_shade)),
+        )
+    }
 }

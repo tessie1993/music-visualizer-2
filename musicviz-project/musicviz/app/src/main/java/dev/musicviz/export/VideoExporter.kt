@@ -359,7 +359,12 @@ class VideoExporter(
             // take switches on halfway would silently drop the effect from the
             // second half of the video.
             val takeEnd = paramsAt?.invoke(Long.MAX_VALUE / 2)
-            val usesFlowField = sceneParams.flowEnabled || takeEnd?.flowEnabled == true
+            // A field-defined particle style needs the service allocated even
+            // with Flow off, or its export would be the one place the style
+            // renders as a dead screen.
+            val styleNeedsFlowField =
+                (scene as? dev.musicviz.render.scene.ParticleSceneBase)?.requiresFlowField == true
+            val usesFlowField = sceneParams.flowEnabled || takeEnd?.flowEnabled == true || styleNeedsFlowField
             val usesRippleOverlay = sceneParams.rippleOverlayEnabled || takeEnd?.rippleOverlayEnabled == true
             val exportFluidScene = scene as? dev.musicviz.render.fluid.FluidScene
             val flowField =
@@ -470,7 +475,21 @@ class VideoExporter(
                         .applyBandGains(features, p),
                     1f / fps,
                 )
-                if (p.flowEnabled && flowField != null && flowField.available) {
+                // A field-defined particle style runs the service whatever the
+                // Flow toggle says, exactly as the live renderer does - the
+                // exported clip has to be the style the user approved.
+                val sceneNeedsFlow =
+                    (scene as? dev.musicviz.render.scene.ParticleSceneBase)?.requiresFlowField == true
+                // Two-way coupling's return leg, drained after the update that
+                // produced the kicks and before the step that consumes them.
+                if (flowField != null && flowField.available && isParticle) {
+                    val kicks = (scene as dev.musicviz.render.scene.ParticleSceneBase).flowKicks
+                    for (i in 0 until kicks.size) {
+                        flowField.queueKick(kicks.x[i], kicks.y[i], kicks.vx[i], kicks.vy[i], kicks.radius[i])
+                    }
+                    kicks.clear()
+                }
+                if ((p.flowEnabled || sceneNeedsFlow) && flowField != null && flowField.available) {
                     // Steps into the FlowField's own FBOs, before the scene
                     // target is bound - mirrors the live frame order.
                     flowField.step(
@@ -484,14 +503,14 @@ class VideoExporter(
                 // for particle scenes ("Particles ride the field"), uFlow
                 // sampler for shader scenes. Without this, exported particles
                 // ignored the field and shader-scene flow distortion was 0.
-                if (p.flowEnabled && flowField != null && flowField.available) {
-                    if (isParticle && p.flowAdvectParticles) {
+                if ((p.flowEnabled || sceneNeedsFlow) && flowField != null && flowField.available) {
+                    if (isParticle && (p.flowAdvectParticles || sceneNeedsFlow)) {
                         flowField.readback(flowField.velocityTex, flowField.flowScale, flowField.aspect)
                         (scene as dev.musicviz.render.scene.ParticleSceneBase).flowGrid = flowField.cpuGrid
                     } else if (isParticle) {
                         (scene as dev.musicviz.render.scene.ParticleSceneBase).flowGrid = null
                     }
-                    if (scene is dev.musicviz.render.scene.ShaderScene) {
+                    if (scene is dev.musicviz.render.scene.ShaderScene && p.flowEnabled) {
                         scene.setFlow(flowField.velocityTex, p.flowStrength)
                     }
                 }
