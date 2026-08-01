@@ -51,6 +51,20 @@ internal class FluidChoreography {
         /** Golden angle (radians): successive florets never overlap. */
         const val GOLDEN_ANGLE = 2.399963f
 
+        /**
+         * The Motion tab's Speed slider, clamped to its OWN range.
+         *
+         * The fluid family (Fluid, Curl Flow, Water) used to clamp it to
+         * 0.1..2 while the slider ran 0.05..4, so the whole top half of the
+         * control was dead: dragging Speed from 2 to 4 changed nothing on any
+         * of the three. The clamp exists to keep a zero or a negative out of
+         * the rate expressions below, not to pick a taste ceiling, so it is
+         * the slider's bounds - the same shape `HyperspaceScene` and
+         * `CymaticsScene` already use (`coerceIn(0.05f, 4f)`). Every consumer
+         * multiplies by it, so widening it costs nothing but reach.
+         */
+        fun sceneSpeed(speed: Float): Float = speed.coerceIn(0.05f, 4f)
+
         /** Per-second anchor chase rate (exponential approach). */
         private const val FOLLOW_RATE = 2.2f
 
