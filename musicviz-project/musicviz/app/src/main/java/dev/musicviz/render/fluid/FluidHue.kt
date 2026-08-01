@@ -118,6 +118,27 @@ internal object FluidHue {
         s: Float,
         v: Float,
     ): Triple<Float, Float, Float> {
+        val out = FloatArray(3)
+        hsv(h, s, v, out)
+        return Triple(out[0], out[1], out[2])
+    }
+
+    /**
+     * [hsv] writing into [out] (r, g, b) instead of returning a `Triple`,
+     * which boxes all three floats. Identical arithmetic - this IS the
+     * arithmetic; the `Triple` form above delegates to it - so a caller can
+     * move to this form without the colour changing.
+     *
+     * The per-splat and per-body callers use it because they convert several
+     * times a frame forever; [out] is theirs, so no state is shared between
+     * them and this object stays free of mutable state.
+     */
+    fun hsv(
+        h: Float,
+        s: Float,
+        v: Float,
+        out: FloatArray,
+    ) {
         val hh = wrap01(h)
         val sextant = hh * 6f
         val i = sextant.toInt() % 6
@@ -125,14 +146,25 @@ internal object FluidHue {
         val p = v * (1f - s)
         val q = v * (1f - fr * s)
         val t = v * (1f - (1f - fr) * s)
-        return when (i) {
-            0 -> Triple(v, t, p)
-            1 -> Triple(q, v, p)
-            2 -> Triple(p, v, t)
-            3 -> Triple(p, q, v)
-            4 -> Triple(t, p, v)
-            else -> Triple(v, p, q)
+        when (i) {
+            0 -> set(out, v, t, p)
+            1 -> set(out, q, v, p)
+            2 -> set(out, p, v, t)
+            3 -> set(out, p, q, v)
+            4 -> set(out, t, p, v)
+            else -> set(out, v, p, q)
         }
+    }
+
+    private fun set(
+        out: FloatArray,
+        r: Float,
+        g: Float,
+        b: Float,
+    ) {
+        out[0] = r
+        out[1] = g
+        out[2] = b
     }
 
     /** [hsv] at full value, as the (r, g, b) triple splat callers want. */
@@ -140,4 +172,11 @@ internal object FluidHue {
         hue: Float,
         saturation: Float,
     ): Triple<Float, Float, Float> = hsv(hue, saturation.coerceIn(0f, 1f), 1f)
+
+    /** [rgb] into a caller-owned array; see the [hsv] out-param overload. */
+    fun rgb(
+        hue: Float,
+        saturation: Float,
+        out: FloatArray,
+    ) = hsv(hue, saturation.coerceIn(0f, 1f), 1f, out)
 }

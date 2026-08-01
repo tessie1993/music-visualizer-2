@@ -126,7 +126,27 @@ internal class FluidEmitters(
     private var suctionIndex = 0
     private var prevBeat = false
 
-    /** Advances envelopes + emitters; returns this frame's splat requests. */
+    /**
+     * Per-frame scratch, all of it consumed inside one [tick] before anything
+     * else can look at it and none of it escaping this object: the band
+     * energies the stirrers index, the anchor position [anchor] reports, and
+     * the dye colour each splat is built from. Fields rather than locals
+     * because this whole class runs once per frame forever, and these were
+     * a `FloatArray`, a boxed `Pair` per stirrer and per beat splat, and a
+     * boxed `Triple` per splat respectively.
+     */
+    private val bands = FloatArray(4)
+    private var anchorX = 0f
+    private var anchorY = 0f
+    private val splatRgb = FloatArray(3)
+
+    /**
+     * Advances envelopes + emitters; returns this frame's splat requests.
+     *
+     * Allocates the list it returns, so the returned value is a snapshot the
+     * caller may keep. The scenes use the [tick] overload below, which fills
+     * a list they own, instead.
+     */
     fun tick(
         f: AudioFeatures,
         dt: Float,
@@ -134,6 +154,29 @@ internal class FluidEmitters(
         baseHue: Float,
         hueSpan: Float,
     ): List<FluidSim.Splat> {
+        val out = ArrayList<FluidSim.Splat>(MAX_SPLATS_PER_FRAME)
+        tick(f, dt, aspect, baseHue, hueSpan, out)
+        return out
+    }
+
+    /**
+     * [tick] appending into [out], which is cleared first: the scenes call
+     * this every frame and immediately drain the result into their sim, so
+     * they keep one list for the life of the scene rather than allocating an
+     * `ArrayList` per frame in the draw path.
+     *
+     * The list is only safe to reuse because of that drain-immediately
+     * contract - the splats are read before the next tick can clear them.
+     */
+    fun tick(
+        f: AudioFeatures,
+        dt: Float,
+        aspect: Float,
+        baseHue: Float,
+        hueSpan: Float,
+        out: MutableList<FluidSim.Splat>,
+    ) {
+        out.clear()
         // Envelopes: beat -> instant attack to the beat's graded impulse
         // (plus budgeted off-grid transient texture), ~0.3 s release; bass
         // follower. The raw envelope carries the timing, "Beat response" the
@@ -150,7 +193,6 @@ internal class FluidEmitters(
         palettePhase = (palettePhase + dt * paletteCycleSpeed * 0.05f) % 1f
         suctionPhase += dt
 
-        val out = ArrayList<FluidSim.Splat>()
         val radius = splatRadius * (1f + radiusPulse * beatEnv).coerceAtMost(MAX_RADIUS_SWELL)
         val speed = BASE_SPEED * forceScale * (0.4f + 1.6f * f.bass) * (0.3f + 0.7f * beatEnv)
 
@@ -173,22 +215,32 @@ internal class FluidEmitters(
         }
         if (bassPump && bassEnv > 0.15f) pumpSplats(out, baseHue, hueSpan, radius)
 
-        return if (out.size > MAX_SPLATS_PER_FRAME) out.subList(0, MAX_SPLATS_PER_FRAME) else out
+        // Frame budget. Dropped from the tail in place rather than returned
+        // as a subList view, which is another object on every over-budget
+        // frame; the kept splats are the same first [MAX_SPLATS_PER_FRAME].
+        while (out.size > MAX_SPLATS_PER_FRAME) out.removeAt(out.size - 1)
     }
 
-    /** Spawn-anchor position for slot [i]; virtual center orbit without one. */
+    /**
+     * Spawn-anchor position for slot [i]; virtual center orbit without one.
+     * Reports through [anchorX]/[anchorY]: it is called once per stirrer and
+     * once per beat splat, and a `Pair<Float, Float>` boxes both floats.
+     */
     private fun anchor(
         i: Int,
         aspect: Float,
-    ): Pair<Float, Float> {
+    ) {
         val c = choreography
         if (c != null) {
             val n = c.spawnCount.coerceIn(1, FluidChoreography.MAX_SPAWN)
             val a = c.spawns[i % n]
-            return a.x to a.y
+            anchorX = a.x
+            anchorY = a.y
+            return
         }
         val ang = suctionPhase * 0.4f + i * 2.1f
-        return (cos(ang) * 0.45f * aspect.coerceAtMost(1.4f)) to (sin(ang) * 0.45f)
+        anchorX = cos(ang) * 0.45f * aspect.coerceAtMost(1.4f)
+        anchorY = sin(ang) * 0.45f
     }
 
     /**
@@ -205,7 +257,6 @@ internal class FluidEmitters(
         hueSpan: Float,
         radius: Float,
     ) {
-        val bands = floatArrayOf(f.bass, f.mid, f.treble, f.rms)
         val n = stirrers.coerceIn(0, 4)
         // Re-enabled stirrers must not fire a splat from their stale previous
         // position (one giant velocity kick); reset history on count change.
@@ -216,9 +267,17 @@ internal class FluidEmitters(
             }
             activeStirrers = n
         }
+        // With the stirrers off there is nothing below to read the bands for.
+        if (n == 0) return
+        bands[0] = f.bass
+        bands[1] = f.mid
+        bands[2] = f.treble
+        bands[3] = f.rms
         for (i in 0 until n) {
             val band = bands[i % bands.size]
-            val (cxA, cyA) = anchor(i, aspect)
+            anchor(i, aspect)
+            val cxA = anchorX
+            val cyA = anchorY
             val orbitR = 0.14f + 0.10f * (i % 3)
             stirrerAngle[i] += dt * stirrerSpeed * (0.3f + band * 1.7f) * (if (i % 2 == 0) 1f else -1f)
             val x = cxA + cos(stirrerAngle[i]) * orbitR
@@ -227,7 +286,10 @@ internal class FluidEmitters(
             val py = stirrerPrevY[i]
             if (!px.isNaN()) {
                 val invDt = 1f / dt.coerceAtLeast(1e-3f)
-                val (cr, cg, cb) = hsv((baseHue + palettePhase + i * hueSpan / 4f) % 1f, 0.85f, 1f)
+                hsv((baseHue + palettePhase + i * hueSpan / 4f) % 1f, 0.85f, 1f, splatRgb)
+                val cr = splatRgb[0]
+                val cg = splatRgb[1]
+                val cb = splatRgb[2]
                 val amp = 0.1f + 0.55f * band
                 out +=
                     FluidSim.Splat(
@@ -263,8 +325,13 @@ internal class FluidEmitters(
         for (i in 0 until n) {
             val frac = i / n.toFloat()
             val hue = (baseHue + palettePhase + frac * hueSpan) % 1f
-            val (cr, cg, cb) = hsv(hue, 0.9f, 1f)
-            val (ax, ay) = anchor(i, aspect)
+            hsv(hue, 0.9f, 1f, splatRgb)
+            val cr = splatRgb[0]
+            val cg = splatRgb[1]
+            val cb = splatRgb[2]
+            anchor(i, aspect)
+            val ax = anchorX
+            val ay = anchorY
             when (beatPattern) {
                 PATTERN_CENTER -> {
                     // Radial burst out of each anchor.
@@ -391,11 +458,16 @@ internal class FluidEmitters(
         radius: Float,
     ) {
         repeat(1 + random.nextInt(2)) {
-            val (ax, ay) = anchor(random.nextInt(8), aspect)
+            anchor(random.nextInt(8), aspect)
+            val ax = anchorX
+            val ay = anchorY
             val x = ax + (random.nextFloat() * 2f - 1f) * 0.3f
             val y = ay + (random.nextFloat() * 2f - 1f) * 0.3f
             val a = random.nextFloat() * 2f * PI.toFloat()
-            val (cr, cg, cb) = hsv((baseHue + palettePhase + hueSpan * 0.5f) % 1f, 0.35f, 1f)
+            hsv((baseHue + palettePhase + hueSpan * 0.5f) % 1f, 0.35f, 1f, splatRgb)
+            val cr = splatRgb[0]
+            val cg = splatRgb[1]
+            val cb = splatRgb[2]
             out +=
                 capsule(
                     x,
@@ -421,10 +493,15 @@ internal class FluidEmitters(
         radius: Float,
     ) {
         val v = BASE_SPEED * forceScale * bassEnv
-        val (ax, ay) = anchor(0, 1f)
+        anchor(0, 1f)
+        val ax = anchorX
+        val ay = anchorY
         for (i in 0 until 6) {
             val a = i / 6f * 2f * PI.toFloat()
-            val (cr, cg, cb) = hsv((baseHue + palettePhase) % 1f, 0.95f, 1f)
+            hsv((baseHue + palettePhase) % 1f, 0.95f, 1f, splatRgb)
+            val cr = splatRgb[0]
+            val cg = splatRgb[1]
+            val cb = splatRgb[2]
             out +=
                 capsule(
                     ax + cos(a) * 0.06f,
@@ -466,4 +543,12 @@ internal class FluidEmitters(
         s: Float,
         v: Float,
     ): Triple<Float, Float, Float> = FluidHue.hsv(h, s, v)
+
+    /** [hsv] into [out]; the form the per-splat callers use. Same values. */
+    private fun hsv(
+        h: Float,
+        s: Float,
+        v: Float,
+        out: FloatArray,
+    ) = FluidHue.hsv(h, s, v, out)
 }

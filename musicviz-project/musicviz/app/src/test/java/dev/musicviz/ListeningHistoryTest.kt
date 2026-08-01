@@ -105,8 +105,38 @@ class ListeningHistoryTest {
             recordPlay("a", "A", "Artist")
             addListenTime("a", 45_000L)
             flush()
+            // The write is queued onto the store's writer thread rather than
+            // done where flush() is called - it is called from the player's
+            // 500 ms poll and from track transitions, both on the main thread.
+            // Teardown is the one place that has to wait for it.
+            awaitWrites()
         }
         assertEquals(45_000L, HistoryStore(context).entryFor("a")?.listenedMs)
+    }
+
+    @Test
+    fun `a play is readable immediately and durable once the writer catches up`() {
+        // Moving the file write off the main thread must not make the store's
+        // own answers lag behind: Home reads the numbers back from the same
+        // event that recorded them.
+        val store = HistoryStore(context)
+        store.recordPlay("a", "A", "Artist")
+        assertEquals(1, store.entryFor("a")?.playCount)
+        store.awaitWrites()
+        assertEquals(1, HistoryStore(context).entryFor("a")?.playCount)
+    }
+
+    @Test
+    fun `a burst of plays is coalesced but the last one still lands`() {
+        // recordPlay fires once per track transition, so once per tap while
+        // skipping a queue. The writes coalesce; what must not happen is the
+        // final state being the one that got folded away.
+        val store = HistoryStore(context)
+        repeat(50) { store.recordPlay("uri://$it", "T$it") }
+        store.awaitWrites()
+        val reloaded = HistoryStore(context)
+        assertEquals(50, reloaded.stats().trackCount)
+        assertEquals("uri://49", reloaded.recentlyPlayed(1).single().uri)
     }
 
     @Test

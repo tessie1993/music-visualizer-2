@@ -69,6 +69,8 @@ class VisualizerRenderer(
                 SceneIds.SPIRAL to R.raw.spiral_frag,
                 SceneIds.AURORA to R.raw.aurora_frag,
                 SceneIds.SOLAR to R.raw.solar_frag,
+                SceneIds.WINTER to R.raw.winter_frag,
+                SceneIds.LAVA to R.raw.lava_frag,
             )
         val PARTICLE_SCENES: List<String> =
             listOf(
@@ -94,6 +96,47 @@ class VisualizerRenderer(
 
         /** Refraction floor while a finger is on the glass. */
         private const val TOUCH_MIN_OVERLAY_STRENGTH = 0.35f
+
+        /**
+         * Wrap period for [timeSeconds], the uniform uploaded as `uTime`.
+         *
+         * Every other clock in the app is wrapped for this reason already
+         * (`FluidParticles` `% 256f`, `CompositeGrade.integrateRotation`
+         * `% TAU`, `ShaderScene`'s `% 1f` phases). This one is the exception,
+         * and it is the one that needs it most: the per-scene clocks live on
+         * objects [onSurfaceCreated] rebuilds, so an EGL context loss resets
+         * them, while this field lives on the RENDERER and survives every
+         * context loss for the life of the process - and the live wallpaper
+         * renders continuously. Unwrapped, `uTime * 91.7` (the composite
+         * pass' Shake) reaches ~7.9e6 after a day of visible time, where the
+         * float32 ULP is ~1 rad against a 1.53 rad per-frame phase advance:
+         * the jitter degenerates into a two-value stutter and then freezes.
+         *
+         * 7100 s is the period that keeps EVERY consumer continuous across
+         * the wrap, because it satisfies both families of multiplier at once:
+         *
+         * - Sines/cosines need `k * period` to be a whole number of turns.
+         *   7100 s is 1130 turns of 2*pi to within 0.6 ms (355/113 is the
+         *   classical convergent of pi), and every multiplier in the shaders
+         *   has one decimal place - 0.7, 0.9, 1.0, 1.2, 3.0, 5.3, 77.3, 91.7
+         *   - so `k * 1130` is a whole number of turns for all of them. The
+         *   residual jump is at most 0.055 rad on the fastest term (Shake),
+         *   which is BELOW the 0.0625 rad float32 ULP the same term already
+         *   carries there: the wrap is indistinguishable from rounding.
+         * - The non-sine terms multiply time by a plain number and take
+         *   `fract`/`floor` of it: drift scroll (`uTime * 0.1`), the glitch
+         *   band clock (`uTime * 12.0`) and the strobe (`uTime * 9.0`, or any
+         *   whole-Hz rate). 7100 is a whole number of seconds, so all of them
+         *   land on an exact integer and step across the wrap without a jump.
+         *
+         * A multiple of 2*pi alone (20*pi = 62.8 s, the smallest period that
+         * makes the sines exact) fails the second family: `fract(0.1 * 20pi)`
+         * = 0.28, i.e. the drift-scrolled image would pop by 28% of the frame
+         * every minute. And 7100 s of unique phase leaves the fastest term at
+         * 24 ULP-steps per frame of phase advance - the same precision the
+         * app has today two hours in, held there forever instead of decaying.
+         */
+        private const val TIME_WRAP_SEC = 7100f
     }
 
     @Volatile
@@ -137,6 +180,17 @@ class VisualizerRenderer(
 
     /** Beat-triggered ADSR envelope, applied after the LFOs. */
     val adsrEngine = AdsrEngine()
+
+    /**
+     * The envelopes' LFO rate/depth contributions for this frame. GL-thread
+     * only, written by [AdsrEngine.lfoOffsets] and read by [LfoEngine.tick]
+     * a line later, both inside [onDrawFrame] - so reusing them costs nothing
+     * in lifetime and saves a `Pair` plus two `FloatArray(3)` every frame.
+     * [LfoEngine.tick] copies before it accumulates, so it cannot write back
+     * into these.
+     */
+    private val envRateOffsets = FloatArray(3)
+    private val envDepthOffsets = FloatArray(3)
 
     /** Final params of the current frame (after fade + LFO), for the composite FX pass. */
     private var lastFinalParams: SceneParams = SceneParams.DEFAULT
@@ -427,6 +481,8 @@ class VisualizerRenderer(
     private var renderWidth = 1
     private var renderHeight = 1
     private var lastFrameMs = 0L
+
+    /** Visible-time clock uploaded as `uTime`; wrapped, see [TIME_WRAP_SEC]. */
     private var timeSeconds = 0f
     private var fadeProgram = 0
     private var trailWarpProgram = 0
@@ -873,7 +929,7 @@ class VisualizerRenderer(
         val now = SystemClock.elapsedRealtime()
         val dt = ((now - lastFrameMs).coerceIn(1, 100)) / 1000f
         lastFrameMs = now
-        timeSeconds += dt
+        timeSeconds = (timeSeconds + dt) % TIME_WRAP_SEC
 
         while (true) {
             val (sceneId, src) = pendingCustomShaders.poll() ?: break
@@ -914,8 +970,8 @@ class VisualizerRenderer(
         // Envelopes first: their outputs can drive LFO rate/depth, so the
         // offsets must exist before the LFOs tick.
         val envValues = adsrEngine.tick(dt, features)
-        val (envRate, envDepth) = AdsrEngine.lfoOffsets(adsrEngine.configs, envValues)
-        val lfoValues = lfoEngine.tick(dt, features.bpm, envRate, envDepth, safety)
+        AdsrEngine.lfoOffsets(adsrEngine.configs, envValues, envRateOffsets, envDepthOffsets)
+        val lfoValues = lfoEngine.tick(dt, features.bpm, envRateOffsets, envDepthOffsets, safety)
         var p = LfoEngine.apply(displayedParams, lfoEngine.configs, lfoValues)
         p = AdsrEngine.apply(p, adsrEngine.configs, envValues)
         // LAST, after every modulator: a safe stored value is worth nothing if

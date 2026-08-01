@@ -74,6 +74,18 @@ internal class BeamScene(
     private val samples = FloatArray(SAMPLES)
     private val upload = ByteBuffer.allocateDirect(SAMPLES * 4).order(ByteOrder.nativeOrder())
 
+    /**
+     * Typed view of [upload], made once instead of once per frame:
+     * `asFloatBuffer()` allocates a fresh DirectFloatBufferU on every call and
+     * this ran in [draw]. Safe to keep because the view is created while
+     * [upload] is at position 0 (so it spans the whole buffer), [upload] is
+     * never re-allocated, and only the GL thread touches either of them.
+     */
+    private val uploadFloats = upload.asFloatBuffer()
+
+    /** Scratch for the one HSV->RGB conversion per frame; see [draw]. */
+    private val beamRgb = FloatArray(3)
+
     /** Smoothed peak, so a quiet passage still fills the screen sensibly. */
     private var autoGain = 1f
 
@@ -152,9 +164,8 @@ internal class BeamScene(
         GlUtil.resetFrameState()
         val p = params
 
-        upload.clear()
-        val fb = upload.asFloatBuffer()
-        fb.put(samples)
+        uploadFloats.clear()
+        uploadFloats.put(samples)
         upload.position(0)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, waveTex)
@@ -173,8 +184,10 @@ internal class BeamScene(
             loc("uIntensity"),
             p.beamIntensity.coerceIn(0f, 3f) * (1f + beatPulse * p.beatResponse.coerceIn(0f, 2f) * 0.4f),
         )
-        val (r, g, b) = FluidHue.rgb(FluidHue.base(p.paletteBase), 1f)
-        GLES30.glUniform3f(loc("uColor"), r, g, b)
+        // Out-param form: the Triple the pure [FluidHue.rgb] returns boxes all
+        // three floats, once per frame, for a value read immediately here.
+        FluidHue.rgb(FluidHue.base(p.paletteBase), 1f, beamRgb)
+        GLES30.glUniform3f(loc("uColor"), beamRgb[0], beamRgb[1], beamRgb[2])
 
         // Additive, like light landing on phosphor: overlapping passes of the
         // beam sum instead of replacing, which is what makes a dense turning

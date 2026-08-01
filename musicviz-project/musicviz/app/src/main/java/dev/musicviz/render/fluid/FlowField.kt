@@ -101,10 +101,34 @@ internal class FlowField(
     private var copyProgram = 0
     private var copyVao = 0
     private var copyVbo = 0
-    private var readBuf =
+    private val readBuf =
         java.nio.ByteBuffer
             .allocateDirect(CPU_GRID * CPU_GRID * 4 * 4)
             .order(java.nio.ByteOrder.nativeOrder())
+
+    /**
+     * Typed view of [readBuf], made once rather than once per [readback]:
+     * `asFloatBuffer()` allocates a fresh DirectFloatBufferU every call and
+     * this runs every frame a particle style rides the field. Safe to keep
+     * because [readBuf] is a `val` created at position 0, so the view spans
+     * it for good, and both are GL-thread only.
+     */
+    private val readFloats = readBuf.asFloatBuffer()
+
+    /**
+     * GL state snapshot for [readback], hoisted the way [WaterScene] and
+     * [CurlFlowScene] keep theirs. Written and read back inside one call,
+     * which is what makes reusing them safe.
+     */
+    private val prevFbo = IntArray(1)
+    private val prevViewport = IntArray(4)
+
+    /**
+     * This frame's splat requests, reused across frames: [step] fills it and
+     * drains it into the sim in the same call, so nothing is still reading
+     * last frame's contents when it is cleared.
+     */
+    private val splats = ArrayList<FluidSim.Splat>()
     private var canReadback = false
 
     val available: Boolean get() = sim.available
@@ -256,7 +280,8 @@ internal class FlowField(
         emitters.forceScale = p.flowForce.coerceIn(0f, 3f)
         emitters.stirrerSpeed = p.speed.coerceIn(0.1f, 2f)
         val simDt = dt.coerceIn(0f, 1f / 30f)
-        for (s in emitters.tick(features, simDt, sim.aspect, 0f, 1f)) sim.queueSplat(s)
+        emitters.tick(features, simDt, sim.aspect, 0f, 1f, splats)
+        for (i in splats.indices) sim.queueSplat(splats[i])
         sim.step(simDt)
     }
 
@@ -273,8 +298,6 @@ internal class FlowField(
         if (!canReadback || sourceTex == 0) return
         // Callers invoke this mid-frame with their scene target already bound;
         // the binding and viewport must survive the detour into readFbo.
-        val prevFbo = IntArray(1)
-        val prevViewport = IntArray(4)
         GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, prevFbo, 0)
         GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
         GLES30.glDisable(GLES30.GL_BLEND)
@@ -291,8 +314,8 @@ internal class FlowField(
         GLES30.glReadPixels(0, 0, CPU_GRID, CPU_GRID, GLES30.GL_RGBA, GLES30.GL_FLOAT, readBuf)
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
         GLES30.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3])
-        readBuf.position(0)
-        readBuf.asFloatBuffer().get(cpuGrid.data)
+        readFloats.clear()
+        readFloats.get(cpuGrid.data)
         cpuGrid.scale = sourceFlowScale
         cpuGrid.aspect = sourceAspect
     }

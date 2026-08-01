@@ -717,7 +717,7 @@ internal fun isParticleLayerSceneId(sceneId: String): Boolean = sceneId == Scene
  * family too. Four do not: `morph`, `paletteMix`, `duotone` and the second
  * palette slot (`palette2`, resolved into `palette2Base`/`palette2Range`).
  * They are uploaded ONLY by `ShaderScene` - uMorph, uPaletteMix, uDuotone,
- * uPal2Base, uPal2Range, declared by all twenty scene fragment shaders - and
+ * uPal2Base, uPal2Range, declared by every scene fragment shader - and
  * the composite has no counterpart uniform for any of them. On every other
  * style those four sliders move nothing, so they are hidden there.
  */

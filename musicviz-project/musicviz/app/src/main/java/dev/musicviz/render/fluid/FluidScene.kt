@@ -48,6 +48,24 @@ internal class FluidScene(
     private val spawnPack = FloatArray(FluidChoreography.MAX_SPAWN * 4)
     private val catchPack = FloatArray(FluidChoreography.MAX_CATCH * 4)
 
+    /**
+     * GL state snapshot for [draw], as fields the way [WaterScene] and
+     * [CurlFlowScene] already keep theirs: `draw` runs once per frame and
+     * these were three `IntArray` allocations each time. Written by the
+     * glGetIntegerv calls at the top of the pass and read back at the bottom
+     * of the same call - one owner, one thread, no overlap.
+     */
+    private val prevFbo = IntArray(1)
+    private val prevViewport = IntArray(4)
+    private val prevBlendFunc = IntArray(4)
+
+    /**
+     * This frame's splat requests. Reused across frames: the emitters fill it
+     * and the loop below drains it into the sim within the same call, so
+     * nothing is still reading last frame's contents when it is cleared.
+     */
+    private val splats = ArrayList<FluidSim.Splat>()
+
     /** Latched automatic downgrade steps; never upgrades during a session. */
     private var autoDowngrade = 0
     private var lastUserQuality = -1
@@ -187,9 +205,6 @@ internal class FluidScene(
 
         // Snapshot the engine's target + blend state: the sim renders to its
         // own grids and the particle pass changes the blend function.
-        val prevFbo = IntArray(1)
-        val prevViewport = IntArray(4)
-        val prevBlendFunc = IntArray(4)
         GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, prevFbo, 0)
         GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
         GLES30.glGetIntegerv(GLES30.GL_BLEND_SRC_RGB, prevBlendFunc, 0)
@@ -271,9 +286,8 @@ internal class FluidScene(
         val hueBase = FluidHue.base(p.paletteBase)
         val hueSpan = FluidHue.span(p.hueRange, p.paletteRange)
         choreography.tick(f, simDt, sim.aspect)
-        for (s in emitters.tick(f, simDt, sim.aspect, hueBase, hueSpan)) {
-            sim.queueSplat(s)
-        }
+        emitters.tick(f, simDt, sim.aspect, hueBase, hueSpan, splats)
+        for (i in splats.indices) sim.queueSplat(splats[i])
         sim.step(simDt)
         if (diagFrames < 3) {
             val err = GLES30.glGetError()

@@ -533,8 +533,12 @@ private fun FoldersTab(
                 Text(if (scanning) "Scanning…" else "Rescan")
             }
         }
+        // Device folders is the whole story, not the first half of one: the
+        // app holds no INTERNET permission (AndroidManifest.xml), so a cloud
+        // source is not a feature that has not been built yet - it is one the
+        // architecture rules out.
         Text(
-            "Device folders · Google Drive coming soon",
+            "Device folders",
             Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             style = MaterialTheme.typography.bodySmall,
         )

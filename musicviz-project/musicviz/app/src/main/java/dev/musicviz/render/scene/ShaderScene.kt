@@ -34,6 +34,17 @@ class ShaderScene(
     private var pendingFragment: String? = initialFragmentSrc
     private var currentFragment: String = initialFragmentSrc
     private val texData = ByteBuffer.allocateDirect(AUDIO_TEX_WIDTH * 2 * 4).order(ByteOrder.nativeOrder())
+
+    /**
+     * Typed view of [texData], made once instead of once per frame.
+     * `asFloatBuffer()` allocates a fresh DirectFloatBufferU each call, and
+     * [update] runs in the draw path. Safe to keep: the view is created while
+     * [texData] is at position 0 so it spans the whole buffer, [texData] is
+     * never re-allocated or repositioned before the upload reads it, and both
+     * ends stay on the GL thread. Only the view's own cursor moves, and
+     * [update] rewinds it before every fill.
+     */
+    private val texFloats = texData.asFloatBuffer()
     private var bass = 0f
     private var mid = 0f
     private var treble = 0f
@@ -151,13 +162,12 @@ class ShaderScene(
         } else {
             beatPhase = (beatPhase + dt) % 1f
         }
-        texData.clear()
-        val fb = texData.asFloatBuffer()
+        texFloats.clear()
         for (i in 0 until AUDIO_TEX_WIDTH) {
-            fb.put(features.bands[i * features.bands.size / AUDIO_TEX_WIDTH])
+            texFloats.put(features.bands[i * features.bands.size / AUDIO_TEX_WIDTH])
         }
         for (i in 0 until AUDIO_TEX_WIDTH) {
-            fb.put(features.waveform[i * features.waveform.size / AUDIO_TEX_WIDTH] * 0.5f + 0.5f)
+            texFloats.put(features.waveform[i * features.waveform.size / AUDIO_TEX_WIDTH] * 0.5f + 0.5f)
         }
     }
 

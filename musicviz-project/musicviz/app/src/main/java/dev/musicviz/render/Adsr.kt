@@ -156,6 +156,9 @@ class AdsrEngine {
         /**
          * Rate/depth offsets the envelopes contribute to the LFOs; pass into
          * [LfoEngine.tick]. Rate scaled x4 like the LFO chain targets.
+         *
+         * Allocates its two result arrays, so a per-frame caller should use
+         * the [lfoOffsets] overload that fills arrays it owns instead.
          */
         fun lfoOffsets(
             configs: List<AdsrConfig>,
@@ -163,6 +166,27 @@ class AdsrEngine {
         ): Pair<FloatArray, FloatArray> {
             val rate = FloatArray(3)
             val depth = FloatArray(3)
+            lfoOffsets(configs, envs, rate, depth)
+            return rate to depth
+        }
+
+        /**
+         * [lfoOffsets] into caller-owned arrays: the same arithmetic without
+         * the `Pair` and the two `FloatArray(3)` per frame, for the draw path.
+         *
+         * Both arrays are overwritten in full (they are accumulators, so they
+         * are zeroed first) and must be at least 3 long.
+         */
+        fun lfoOffsets(
+            configs: List<AdsrConfig>,
+            envs: FloatArray,
+            rate: FloatArray,
+            depth: FloatArray,
+        ) {
+            for (i in 0 until 3) {
+                rate[i] = 0f
+                depth[i] = 0f
+            }
             for (i in envs.indices) {
                 val c = configs.getOrNull(i) ?: continue
                 if (!c.enabled || envs[i] <= 0f) continue
@@ -179,10 +203,26 @@ class AdsrEngine {
                     }
                 }
             }
-            return rate to depth
         }
 
-        /** Applies param targets (LFO targets are handled via [lfoOffsets]). */
+        /**
+         * Applies param targets (LFO targets are handled via [lfoOffsets]).
+         *
+         * Routed straight through [LfoEngine.applyTarget]: describing one
+         * (target, value) pair to [LfoEngine.apply] used to cost a throwaway
+         * `LfoConfig`, a `listOf` and a `floatArrayOf` per target per frame.
+         *
+         * The `SceneParams.copy` inside that table is deliberately left
+         * alone. The params object this returns is not scratch: the renderer
+         * keeps it as `lastFinalParams`, hands it to every scene via
+         * `setParams`, and freezes it into `outgoingParams` for the length of
+         * a transition - several seconds and many frames later. A reused
+         * mutable instance would retroactively rewrite that frozen snapshot,
+         * which is precisely the aliasing bug the copy prevents. Folding the
+         * copies together into one buffered write is not equivalent either:
+         * each step clamps, and clamping is not associative, so two
+         * modulators on one target would land somewhere else.
+         */
         fun apply(
             p: SceneParams,
             configs: List<AdsrConfig>,
@@ -194,8 +234,7 @@ class AdsrEngine {
                 if (!c.enabled || envs[i] <= 0f) continue
                 for (t in c.targets) {
                     if (t == LfoTarget.NONE || isLfoTarget(t)) continue
-                    val asLfo = LfoConfig(enabled = true, target = t)
-                    r = LfoEngine.apply(r, listOf(asLfo), floatArrayOf(envs[i] * c.amount))
+                    r = LfoEngine.applyTarget(r, t, envs[i] * c.amount)
                 }
             }
             return r

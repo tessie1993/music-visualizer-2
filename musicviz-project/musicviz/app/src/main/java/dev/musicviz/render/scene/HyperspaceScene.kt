@@ -121,6 +121,22 @@ internal class HyperspaceScene(
     private val bloomRot = FloatArray(HyperspaceMath.MAX_BLOOMS * HyperspaceMath.FLOATS_PER_MAT3)
     private var bloomCount = 0
 
+    /**
+     * GL state snapshot around the melt sim's own passes, as fields the way
+     * `WaterScene` and `CurlFlowScene` keep theirs: [update] runs once per
+     * frame and this was two `IntArray` allocations each time. Written and
+     * read back inside the same block, so nothing else can observe them.
+     */
+    private val prevFbo = IntArray(1)
+    private val prevViewport = IntArray(4)
+
+    /**
+     * Scratch for the per-body dye colour in [stirWithBodies], which converts
+     * once per live body per frame; the `Triple` form boxes all three floats.
+     * Consumed by the `queueBodySplat` call directly below each conversion.
+     */
+    private val bodyRgb = FloatArray(3)
+
     private var params = SceneParams.DEFAULT
     private var time = 0f
     private var lastDt = 1f / 60f
@@ -278,8 +294,6 @@ internal class HyperspaceScene(
         val hueBase = FluidHue.base(p.paletteBase)
         val hueSpan = FluidHue.span(p.hueRange, p.paletteRange)
         if (melt.available) {
-            val prevFbo = IntArray(1)
-            val prevViewport = IntArray(4)
             GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, prevFbo, 0)
             GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
             stirWithBodies(p, hueBase, hueSpan)
@@ -418,7 +432,7 @@ internal class HyperspaceScene(
             val x = b.centre[0]
             val y = b.centre[1]
             if (hasPrevBody[i]) {
-                val (r, g, bl) = FluidHue.rgb(hueBase + b.hue * hueSpan, 0.95f)
+                FluidHue.rgb(hueBase + b.hue * hueSpan, 0.95f, bodyRgb)
                 melt.queueBodySplat(
                     prevWorldX = prevBodyXy[i * 2],
                     prevWorldY = prevBodyXy[i * 2 + 1],
@@ -427,9 +441,9 @@ internal class HyperspaceScene(
                     radius = HyperspaceMath.localRadius(b.species) * b.scale * b.fade,
                     life = b.fade,
                     scale = MeltMath.DEFAULT_SCALE,
-                    r = r,
-                    g = g,
-                    b = bl,
+                    r = bodyRgb[0],
+                    g = bodyRgb[1],
+                    b = bodyRgb[2],
                     // Scaled by the body's own life, so ink arrives with it and
                     // stops when it goes rather than snapping on and off.
                     strength = BODY_INK * strength * b.fade,

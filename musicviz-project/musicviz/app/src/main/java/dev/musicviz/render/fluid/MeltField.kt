@@ -67,6 +67,15 @@ internal class MeltField(
             splatRadius = 0.16f
         }
 
+    /**
+     * This frame's splat requests, reused across frames: the emitters fill it
+     * and the loop that drains it into the sim runs in the same call, so no
+     * one is still reading last frame's contents when it is cleared. Stays on
+     * the GL thread - unlike [touchStrokes], which crosses from the UI thread
+     * and therefore has to be a queue.
+     */
+    private val splats = ArrayList<FluidSim.Splat>()
+
     private val touchStrokes = java.util.concurrent.ConcurrentLinkedQueue<FloatArray>()
 
     val available: Boolean get() = sim.available
@@ -187,7 +196,8 @@ internal class MeltField(
         emitters.forceScale = p.hyperStir.coerceIn(0f, 3f)
         emitters.stirrerSpeed = p.speed.coerceIn(0.1f, 2f)
         emitters.beatResponse = p.beatResponse
-        for (s in emitters.tick(features, simDt, sim.aspect, hueBase, hueSpan)) sim.queueSplat(s)
+        emitters.tick(features, simDt, sim.aspect, hueBase, hueSpan, splats)
+        for (i in splats.indices) sim.queueSplat(splats[i])
         drainTouchStrokes(hueBase, hueSpan)
         sim.step(simDt)
     }
