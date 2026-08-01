@@ -717,21 +717,6 @@ internal fun FluidTab(
         if (isEmitterScene) {
             // Quality tiers: FluidScene sizes its sim/dye/particle buffers
             // from them, WaterScene its ripple grid (WaterScene.gridResFor).
-            SectionHeader("Melt")
-            ControlHint(
-                "A fluid simulation runs underneath the fractals. The bodies stir it " +
-                    "as they drift, the music and your finger stir it, and it stirs " +
-                    "them back - Melt is how far it can pull the geometry out of " +
-                    "shape. Drag on the visualizer to mold it by hand.",
-            )
-            LabeledSlider("Melt", p.hyperMelt, 0f..2f) { onChange(p.copy(hyperMelt = it)) }
-            LabeledSlider("Ink stain", p.hyperStain, 0f..1.5f) { onChange(p.copy(hyperStain = it)) }
-            LabeledSlider("Liquid light", p.hyperLiquid, 0f..1.5f) { onChange(p.copy(hyperLiquid = it)) }
-            LabeledSlider("Ridges", p.hyperRidges, 0f..1f) { onChange(p.copy(hyperRidges = it)) }
-            LabeledSlider("Stir", p.hyperStir, 0f..3f) { onChange(p.copy(hyperStir = it)) }
-            LabeledSlider("Vorticity", p.hyperSwirl, 0f..50f) { onChange(p.copy(hyperSwirl = it)) }
-            LabeledSlider("Flow fade", p.hyperFlowFade, 0f..4f) { onChange(p.copy(hyperFlowFade = it)) }
-
             SectionHeader("Quality")
             ChipRow(
                 dev.musicviz.render.fluid.FluidQuality.LABELS,
@@ -1065,6 +1050,21 @@ internal fun HyperspaceTab(
         LabeledIntSlider("Mirror folds", p.hyperMirrorFolds, 2..16) {
             onChange(p.copy(hyperMirrorFolds = it))
         }
+
+        SectionHeader("Melt")
+        ControlHint(
+            "A fluid simulation runs underneath the fractals. The bodies stir it " +
+                "as they drift, the music and your finger stir it, and it stirs " +
+                "them back - Melt is how far it can pull the geometry out of " +
+                "shape. Drag on the visualizer to mold it by hand.",
+        )
+        LabeledSlider("Melt", p.hyperMelt, 0f..2f) { onChange(p.copy(hyperMelt = it)) }
+        LabeledSlider("Ink stain", p.hyperStain, 0f..1.5f) { onChange(p.copy(hyperStain = it)) }
+        LabeledSlider("Liquid light", p.hyperLiquid, 0f..1.5f) { onChange(p.copy(hyperLiquid = it)) }
+        LabeledSlider("Ridges", p.hyperRidges, 0f..1f) { onChange(p.copy(hyperRidges = it)) }
+        LabeledSlider("Stir", p.hyperStir, 0f..3f) { onChange(p.copy(hyperStir = it)) }
+        LabeledSlider("Vorticity", p.hyperSwirl, 0f..50f) { onChange(p.copy(hyperSwirl = it)) }
+        LabeledSlider("Flow fade", p.hyperFlowFade, 0f..4f) { onChange(p.copy(hyperFlowFade = it)) }
 
         SectionHeader("Quality")
         ControlHint(
