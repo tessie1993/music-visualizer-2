@@ -33,6 +33,7 @@ import dev.musicviz.audio.TapRenderersFactory
 import dev.musicviz.export.ExportAspect
 import dev.musicviz.export.VideoExporter
 import dev.musicviz.render.TransitionStyle
+import dev.musicviz.render.scene.CustomizeTab
 import dev.musicviz.render.scene.ParamRandomizer
 import dev.musicviz.render.scene.PcmChunk
 import dev.musicviz.render.scene.SceneIds
@@ -83,6 +84,13 @@ data class VizUiState(
     val vizPlaylistIntervalSec: Int = 30,
     val vizPlaylistIntelligent: Boolean = false,
     val transitionStyle: TransitionStyle = TransitionStyle.FADE,
+    /**
+     * Selected transition as a [dev.musicviz.render.TransitionCatalog] id: one
+     * of the five built-in style names, or a gl-transitions corpus name. The
+     * id is what the renderer takes; [transitionStyle] survives as the enum
+     * the base shader's built-ins are indexed by.
+     */
+    val transitionId: String = TransitionStyle.FADE.name.lowercase(),
     val transitionDurationSec: Float = 1.2f,
     // Random mode: hops to a random style/preset on an interval (or on strong
     // musical moments). Mutually exclusive with the visual playlist.
@@ -648,13 +656,17 @@ class PlayerViewModel(
     }
 
     /**
-     * Randomizes every unlocked Customize parameter within its slider range.
+     * Randomizes the unlocked Customize parameters of [tab] within their
+     * slider ranges; `null` rolls every tab.
      *
      * The roll itself lives in [ParamRandomizer] so it stays pure and unit
      * testable; locks are keyed by the slider label the lock chip persists.
+     * The panel always passes the tab the button was pressed on - a roll that
+     * also moved the other tabs' sliders discarded work the user could not get
+     * back.
      */
-    fun randomizeParams() {
-        setSceneParams(ParamRandomizer.randomize(_vizState.value.params, _lockedParams.value))
+    fun randomizeParams(tab: CustomizeTab? = null) {
+        setSceneParams(ParamRandomizer.randomize(_vizState.value.params, _lockedParams.value, tab = tab))
     }
 
     fun setAdsr(
@@ -1126,7 +1138,21 @@ class PlayerViewModel(
     }
 
     fun setTransitionStyle(style: TransitionStyle) {
-        _vizState.update { it.copy(transitionStyle = style) }
+        _vizState.update { it.copy(transitionStyle = style, transitionId = style.name.lowercase()) }
+    }
+
+    /**
+     * Picks a transition by id - a built-in style name or a gl-transitions
+     * corpus name. Keeps [VizState.transitionStyle] in step for the built-ins
+     * so the two never disagree about which one is selected.
+     */
+    fun setTransitionId(id: String) {
+        _vizState.update {
+            it.copy(
+                transitionId = id,
+                transitionStyle = dev.musicviz.render.TransitionCatalog.builtIn(id) ?: it.transitionStyle,
+            )
+        }
     }
 
     fun setTransitionDuration(seconds: Float) {
@@ -2324,7 +2350,7 @@ class PlayerViewModel(
         if (_takeState.value.recording) return
         stopReplay()
         val s = _vizState.value
-        recorder = PerformanceTake.Recorder(s.sceneId, s.params, activeMilkPath)
+        recorder = PerformanceTake.Recorder(s.sceneId, s.params, _activeMilkPath.value)
         recordStartMs = android.os.SystemClock.elapsedRealtime()
         _takeState.update { it.copy(recording = true, recordedEvents = 1, recordedMs = 0L) }
         recordJob =
@@ -2335,7 +2361,7 @@ class PlayerViewModel(
                 _vizState.collect { live ->
                     val rec = recorder ?: return@collect
                     val at = android.os.SystemClock.elapsedRealtime() - recordStartMs
-                    rec.append(at, live.sceneId, live.params, activeMilkPath)
+                    rec.append(at, live.sceneId, live.params, _activeMilkPath.value)
                     _takeState.update { it.copy(recordedEvents = rec.size, recordedMs = at) }
                     if (!rec.hasRoom) stopRecording()
                 }
@@ -2400,7 +2426,7 @@ class PlayerViewModel(
                             selectScene(state.sceneId)
                         }
                         if (state.params != _vizState.value.params) setSceneParams(state.params)
-                        state.milkPath?.takeIf { it != activeMilkPath }?.let { path ->
+                        state.milkPath?.takeIf { it != _activeMilkPath.value }?.let { path ->
                             _vizApply.tryEmit(VizApply(milkPath = path, sceneId = state.sceneId))
                         }
                     }
@@ -2524,22 +2550,21 @@ class PlayerViewModel(
         @Suppress("NAME_SHADOWING")
         val name = name.replace(" · ", " - ").trim().ifEmpty { "Preset" }
         val s = _vizState.value
-        // For the milkdrop scene, ALSO persist the actual .milk file so the
-        // saved preset is a real MilkDrop preset the user can reload/share,
-        // not just a Customize bundle. The .milk is copied into the user
-        // milk-preset dir under the given name; the SceneParams bundle is
-        // saved alongside so post-processing customizations are kept too.
-        if (s.sceneId == SceneIds.MILKDROP) {
-            activeMilkPath?.let { src ->
-                runCatching {
-                    val app = getApplication<Application>()
-                    val dir = java.io.File(app.filesDir, "milk").apply { mkdirs() }
-                    val dest = java.io.File(dir, if (name.endsWith(".milk")) name else "$name.milk")
-                    java.io.File(src).copyTo(dest, overwrite = true)
-                }
+        // On the milkdrop scene the parameters are only half the look: the
+        // .milk preset paints the picture they post-process. Its SOURCE goes
+        // into the preset itself so the saved state is the whole visual - a
+        // preset that carries only the params reloads as projectM's idle "M"
+        // logo, which is the bug this closes - and a copy is materialized in
+        // the user's milk dir so the file is reachable from the MilkDrop tab
+        // like any other .milk they loaded.
+        val milkSource =
+            if (s.sceneId == SceneIds.MILKDROP) {
+                _activeMilkPath.value?.let { src -> runCatching { java.io.File(src).readText() }.getOrNull() }
+            } else {
+                null
             }
-        }
-        presetStore.save(Preset(name, s.sceneId, s.attack, s.decay, customShader, s.params), folder)
+        milkSource?.let { source -> runCatching { milkFileFor(name).writeText(source) } }
+        presetStore.save(Preset(name, s.sceneId, s.attack, s.decay, customShader, s.params, milkSource), folder)
         mirrorPresetToChosenFolder(name)
         _vizState.value = s.copy(presets = BuiltInPresets.ALL + presetStore.list())
     }
@@ -2572,16 +2597,63 @@ class PlayerViewModel(
                     }
                 }
                 presetStore.fileOf(name)?.let { copyInto(it, "application/json") }
-                java.io.File(java.io.File(app.filesDir, "milk"), "$name.milk").let { copyInto(it, "application/octet-stream") }
+                // Same sanitized base name the .json got (PresetStore.milkFileName):
+                // the raw name was a different file for anything with a slash or
+                // a colon in it, so the mirror silently skipped the .milk.
+                milkFileFor(name).let { copyInto(it, "text/plain") }
             }
         }
     }
 
-    /** Path of the .milk preset currently shown, tracked so it can be saved. */
-    private var activeMilkPath: String? = null
+    /**
+     * The .milk file a preset named [presetName] owns, whether or not it
+     * exists yet. Named through [PresetStore.milkFileName] so a preset's
+     * .milk and its .json always share one sanitized base name.
+     */
+    private fun milkFileFor(presetName: String): java.io.File =
+        java.io.File(
+            java.io.File(getApplication<Application>().filesDir, "milk").apply { mkdirs() },
+            PresetStore.milkFileName(presetName),
+        )
+
+    /**
+     * The .milk file [preset] should render, materializing its carried source
+     * on the way, or null when it has none.
+     *
+     * Two eras resolve here. Presets saved with their source (the [Preset]
+     * `milkPreset` field) write it out under the preset's own name, so they
+     * work after a share, an import or a reinstall. Presets saved before that
+     * only ever left the copied file behind, so an existing file under the
+     * same name is used as-is rather than declaring the preset broken.
+     */
+    internal fun milkPresetPathFor(preset: Preset): String? {
+        if (preset.sceneId != SceneIds.MILKDROP) return null
+        val file = milkFileFor(preset.name)
+        preset.milkPreset?.let { source ->
+            runCatching { if (!file.isFile || file.readText() != source) file.writeText(source) }
+        }
+        return file.takeIf { it.isFile }?.absolutePath
+    }
+
+    /**
+     * The .milk preset the engine is showing, or null on a style that is not
+     * MilkDrop (or before one was ever loaded).
+     *
+     * Persisted, because the selected style survives a restart
+     * (`restoreVizState`) while the engine's loaded preset did not:
+     * relaunching on the milkdrop style came back to projectM's idle "M"
+     * instead of the visual that was on screen. Restored only if the file is
+     * still there, so a path left behind by a deleted preset is not offered to
+     * the engine. `VisualizerEngineBindings` re-queues it on the first
+     * composition after launch, and the wallpaper reads the same key.
+     */
+    private val _activeMilkPath =
+        MutableStateFlow(vizPrefs().getString("milk_path", null)?.takeIf { java.io.File(it).isFile })
+    val activeMilkPath: StateFlow<String?> = _activeMilkPath
 
     fun noteMilkPreset(path: String) {
-        activeMilkPath = path
+        _activeMilkPath.value = path
+        vizPrefs().edit().putString("milk_path", path).apply()
     }
 
     /** Preset morphing: applied params fade over [GuiPrefs.morphBeats] beats
@@ -2621,6 +2693,12 @@ class PlayerViewModel(
         preset.customShader?.let {
             _vizApply.tryEmit(VizApply(customShader = it, sceneId = preset.sceneId))
         }
+        // The MilkDrop half of the same rule: params alone are not the look,
+        // and a preset applied without its .milk left the engine on whatever
+        // was loaded before - projectM's idle "M" logo on a cold start.
+        milkPresetPathFor(preset)?.let {
+            _vizApply.tryEmit(VizApply(milkPath = it, sceneId = preset.sceneId))
+        }
     }
 
     /**
@@ -2644,13 +2722,35 @@ class PlayerViewModel(
      */
     fun importPresetLink(text: String): String? {
         val link = PresetLink.findIn(text) ?: return null
-        val json = PresetLink.decode(link) ?: return null
+        return importPresetJson(PresetLink.decode(link) ?: return null)
+    }
+
+    /**
+     * Imports a preset from a picked `.json` file - the other half of sharing.
+     *
+     * A preset too long to survive a chat message goes out as its file
+     * instead ([presetFile]), and MilkDrop presets always do now that they
+     * carry their .milk source. Without a way back IN, that branch of Share
+     * produced a file the receiving app could do nothing with.
+     */
+    fun importPresetFile(uri: Uri): String? =
+        runCatching {
+            getApplication<Application>()
+                .contentResolver
+                .openInputStream(uri)
+                ?.bufferedReader()
+                ?.use { it.readText() }
+        }.getOrNull()?.let { importPresetJson(it) }
+
+    /** Saves an incoming preset document; the shared tail of both imports. */
+    private fun importPresetJson(json: String): String? {
         val incoming = runCatching { PresetStore.fromJson(json) }.getOrNull() ?: return null
         val existing = _vizState.value.presets.map { it.name }.toSet()
-        var name = incoming.name.ifBlank { "Shared preset" }
+        val base = incoming.name.ifBlank { "Shared preset" }
+        var name = base
         var n = 2
         while (name in existing) {
-            name = "${incoming.name} $n"
+            name = "$base $n"
             n++
         }
         presetStore.save(incoming.copy(name = name))

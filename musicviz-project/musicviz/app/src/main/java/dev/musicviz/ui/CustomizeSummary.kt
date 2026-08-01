@@ -15,9 +15,6 @@ import org.json.JSONObject
  * has on the test classpath.
  */
 object CustomizeSummary {
-    /** Preset envelope keys that are not scene parameters. */
-    private val ENVELOPE = setOf("name", "sceneId", "attack", "decay", "customShader")
-
     private val defaults: JSONObject by lazy { paramsJson(SceneParams.DEFAULT) }
 
     /** Number of scene parameters in [params] that differ from the default. */
@@ -34,9 +31,8 @@ object CustomizeSummary {
         return changed
     }
 
-    private fun paramsJson(params: SceneParams): JSONObject {
-        val all = JSONObject(PresetStore.toJson(Preset("", "", 0f, 0f, null, params)))
-        for (key in ENVELOPE) all.remove(key)
-        return all
-    }
+    // PresetStore's own splitter, not a second copy of the envelope key list:
+    // a key added to the envelope (the .milk source was the last one) has to
+    // stop counting as a changed parameter everywhere at once.
+    private fun paramsJson(params: SceneParams): JSONObject = PresetStore.paramsToJson(params)
 }

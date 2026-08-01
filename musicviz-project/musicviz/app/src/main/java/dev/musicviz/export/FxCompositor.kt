@@ -159,6 +159,9 @@ internal class FxCompositor(
     private var trailFbo = 0
     private var trailW = 0
     private var trailH = 0
+
+    /** Blue-noise dither mask, so an exported frame is dithered like the screen. */
+    private val noiseTex: Int = dev.musicviz.render.BlueNoise.createTexture(context)
     private val vao: Int
     val sceneFbo: Int
     private val sceneTex: Int
@@ -387,6 +390,10 @@ internal class FxCompositor(
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, if (flowTex != 0) flowTex else emptyTex)
         GLES30.glUniform1i(loc("uFlow"), 2)
         GLES30.glUniform1f(loc("uFlowStrength"), if (flowTex != 0) flowStrength else 0f)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, noiseTex)
+        GLES30.glUniform1i(loc("uNoise"), 4)
+        GLES30.glUniform1f(loc("uDither"), if (noiseTex != 0) dev.musicviz.render.BlueNoise.DITHER_AMOUNT else 0f)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE3)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, if (rippleTex != 0) rippleTex else emptyTex)
         GLES30.glUniform1i(loc("uRipple"), 3)
@@ -394,7 +401,12 @@ internal class FxCompositor(
         GLES30.glUniform1f(loc("uRippleStrength"), if (rippleTex != 0) rippleStrength else 0f)
         GLES30.glUniform1f(loc("uRippleSpecular"), if (rippleTex != 0) rippleSpecular else 0f)
         GLES30.glUniform1f(loc("uProgress"), 1f)
+        // The export never transitions - it renders one scene for the whole
+        // clip - so uStyle is always CUT and the spliced-transition path is
+        // unreachable here. uRatio is uploaded regardless so the two composite
+        // call sites stay uniform-for-uniform identical.
         GLES30.glUniform1i(loc("uStyle"), 0)
+        GLES30.glUniform1f(loc("uRatio"), width.toFloat() / height.toFloat())
         GLES30.glUniform1f(loc("uTime"), timeSeconds)
         GLES30.glUniform1f(loc("uBeat"), features.beatImpulse)
         GLES30.glUniform1f(loc("uChroma"), params.chromaAb)
@@ -460,8 +472,8 @@ internal class FxCompositor(
     }
 
     fun release() {
-        val ids = intArrayOf(sceneTex, emptyTex)
-        GLES30.glDeleteTextures(2, ids, 0)
+        val ids = intArrayOf(sceneTex, emptyTex, noiseTex)
+        GLES30.glDeleteTextures(3, ids, 0)
         GLES30.glDeleteFramebuffers(1, intArrayOf(sceneFbo), 0)
         GLES30.glDeleteVertexArrays(1, intArrayOf(vao), 0)
         GLES30.glDeleteProgram(program)

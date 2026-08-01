@@ -6,12 +6,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.io.File
 import kotlin.random.Random
 
 /**
@@ -24,8 +22,8 @@ import kotlin.random.Random
  *     verbatim turns the lock chip into a silent no-op - the exact regression
  *     fixed once before ("Fix randomizer lock keys to match slider labels").
  *     [every_lock_key_matches_a_customize_label] parses the labels straight
- *     out of `CustomizeTabs.kt` so a renamed slider fails the build instead
- *     of quietly unprotecting a parameter.
+ *     out of `CustomizeTabs.kt` ([ParamSurface]) so a renamed slider fails the
+ *     build instead of quietly unprotecting a parameter.
  *
  * It also pins the roll inside each slider's range (a roll the user cannot
  * reproduce or undo by hand is a bug), pins the settings the randomizer must
@@ -263,7 +261,7 @@ class ParamRandomizerFluidTest {
 
     @Test
     fun every_lock_key_matches_a_customize_label() {
-        val labels = lockableLabels()
+        val labels = ParamSurface.allLockableLabels
         assertTrue("parsed too few Customize labels ($labels)", labels.size > 40)
         val missing = ParamRandomizer.KEYS.filter { it !in labels }
         assertEquals("randomizer lock keys with no matching Customize label", emptyList<String>(), missing)
@@ -274,12 +272,12 @@ class ParamRandomizerFluidTest {
      * (Palette, Palette 2, Particle shape, Beat pattern, Path) rendered a
      * plain label with no lock chip, so those five params were rolled on every
      * press with no way to hold them - a user could not keep the palette they
-     * had just chosen. They now render `LockableChipLabel`, which is why the
-     * regex below accepts it as a lockable control.
+     * had just chosen. They now render `LockableChipLabel`, which is why
+     * [ParamSurface.allLockableLabels] counts them as lockable controls.
      */
     @Test
     fun chip_selector_keys_are_lockable_too() {
-        val labels = lockableLabels()
+        val labels = ParamSurface.allLockableLabels
         for (key in listOf("Palette", "Palette 2", "Particle shape", "Beat pattern", "Path")) {
             assertTrue("chip selector \"$key\" renders no lock chip", key in labels)
             assertTrue("\"$key\" is not rolled at all", key in ParamRandomizer.KEYS)
@@ -291,32 +289,5 @@ class ParamRandomizerFluidTest {
         val keys = ParamRandomizer.KEYS.toSet()
         val unknown = allKnobs().map { it.key }.distinct().filter { it !in keys }
         assertEquals("test knobs naming a key the randomizer does not roll", emptyList<String>(), unknown)
-    }
-
-    /** Labels of every Customize control that renders a lock chip. */
-    private fun lockableLabels(): Set<String> {
-        val regex = Regex("(?:LabeledSlider|LabeledIntSlider|CheckRow|LockableChipLabel)\\(\\s*\"([^\"]+)\"")
-        return regex
-            .findAll(customizeTabsSource())
-            .map { it.groupValues[1] }
-            .toSet()
-    }
-
-    private fun customizeTabsSource(): String {
-        val relatives =
-            listOf(
-                "src/main/java/dev/musicviz/ui/CustomizeTabs.kt",
-                "app/src/main/java/dev/musicviz/ui/CustomizeTabs.kt",
-            )
-        var dir: File? = File("").absoluteFile
-        while (dir != null) {
-            for (rel in relatives) {
-                val candidate = File(dir, rel)
-                if (candidate.isFile) return candidate.readText()
-            }
-            dir = dir.parentFile
-        }
-        fail("CustomizeTabs.kt not found from ${File("").absolutePath}")
-        error("unreachable")
     }
 }

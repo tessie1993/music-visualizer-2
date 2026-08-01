@@ -24,7 +24,6 @@ internal class FluidLook(
         private const val BLOOM_BASE_RES = 256
         private const val BLOOM_MAX_LEVELS = 8
         private const val SUNRAYS_RES = 196
-        private const val DITHER_SIZE = 64
     }
 
     var bloomIntensity = 0.8f
@@ -90,39 +89,14 @@ internal class FluidLook(
         ).forEach { uniforms[it] = HashMap() }
         displayPrograms.values.forEach { uniforms[it] = HashMap() }
 
-        // Ordered-noise dither kills banding in the dark bloom gradients. The
-        // MIT blue-noise PNG (LDR_LLL1_0.png) is the upstream asset; a hashed
-        // white-noise texture is generated here instead so no binary asset is
-        // required - visually equivalent at +-1/255 amplitude.
+        // Ordered-noise dither kills banding in the dark bloom gradients. This
+        // used to generate a hashed WHITE-noise tile "visually equivalent at
+        // +-1/255 amplitude" - it is not: the two carry the same variance but
+        // not in the same frequencies, and white noise puts a share of its
+        // error exactly where the eye is most sensitive. The real blue-noise
+        // mask is 4 KB (see BlueNoise.kt) and shared with the composite pass.
         val ids = IntArray(1)
-        GLES30.glGenTextures(1, ids, 0)
-        ditherTex = ids[0]
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, ditherTex)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_REPEAT)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_REPEAT)
-        val noise = ByteArray(DITHER_SIZE * DITHER_SIZE * 3)
-        val rnd = java.util.Random(0x0D17_4E12L)
-        rnd.nextBytes(noise)
-        val buf =
-            java.nio.ByteBuffer
-                .allocateDirect(noise.size)
-                .put(noise)
-                .apply { position(0) }
-        GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT, 1)
-        GLES30.glTexImage2D(
-            GLES30.GL_TEXTURE_2D,
-            0,
-            GLES30.GL_RGB8,
-            DITHER_SIZE,
-            DITHER_SIZE,
-            0,
-            GLES30.GL_RGB,
-            GLES30.GL_UNSIGNED_BYTE,
-            buf,
-        )
-        GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT, 4)
+        ditherTex = dev.musicviz.render.BlueNoise.createTexture(context)
 
         GLES30.glGenVertexArrays(1, ids, 0)
         vao = ids[0]
@@ -289,8 +263,8 @@ internal class FluidLook(
         bindTex(program, "uDither", ditherTex, 3)
         GLES30.glUniform2f(
             loc(program, "uDitherScale"),
-            viewportW.toFloat() / DITHER_SIZE,
-            viewportH.toFloat() / DITHER_SIZE,
+            viewportW.toFloat() / dev.musicviz.render.BlueNoise.SIZE,
+            viewportH.toFloat() / dev.musicviz.render.BlueNoise.SIZE,
         )
         GLES30.glUniform2f(loc(program, "uTexelSize"), 1f / viewportW, 1f / viewportH)
         GLES30.glBindVertexArray(vao)

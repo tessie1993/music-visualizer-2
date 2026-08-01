@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.musicviz.render.VisualizerRenderer
 import dev.musicviz.render.VisualizerView
+import dev.musicviz.render.scene.CustomizeTab
 import dev.musicviz.render.scene.SceneIds
 
 /**
@@ -189,6 +190,18 @@ private fun PresetsTreeTab(
     val byFolder = userPresets.groupBy { viewModel.presetFolderOf(it.name) }
     val context = androidx.compose.ui.platform.LocalContext.current
     var importNote by remember { mutableStateOf<String?>(null) }
+    // The file half of Share. A preset that carries a custom shader - or a
+    // .milk, which every MilkDrop preset now does - is too long to travel as a
+    // link, so it is shared as its .json; without this it arrived as a file
+    // nothing could open.
+    val presetFilePicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) {
+                importNote =
+                    viewModel.importPresetFile(uri)?.let { "Imported \"$it\"." }
+                        ?: "That file is not a MusicViz preset."
+            }
+        }
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         item {
@@ -206,6 +219,9 @@ private fun PresetsTreeTab(
                                     ?: "That clipboard text is not a MusicViz preset link."
                         }
                 }) { Text("Paste a shared preset") }
+                CrystalButton(compact = true, filled = false, onClick = {
+                    presetFilePicker.launch(arrayOf("*/*"))
+                }) { Text("Open a preset file") }
             }
             importNote?.let { note ->
                 Text(
@@ -397,8 +413,9 @@ private fun StylesTab(
             // fluid style nor a shader one. Cymatics is the style whose
             // picture IS the sound (a Chladni plate) rather than a look driven
             // by it; Hyperspace is the only raymarched one - a room of 3D
-            // fractals, each alive on its own clock, walking a five-act story.
-            titles = listOf("Particles", "Shaders", "Fluid", "Cymatics", "Hyperspace", "MilkDrop"),
+            // fractals, each alive on its own clock, walking a five-act story;
+            // Beam is the oscilloscope, whose trace is the waveform itself.
+            titles = listOf("Particles", "Shaders", "Fluid", "Cymatics", "Hyperspace", "Beam", "MilkDrop"),
             selected = sub,
             onSelect = { sub = it },
         )
@@ -408,7 +425,8 @@ private fun StylesTab(
             2 -> SceneList(listOf(SceneIds.FLUID, SceneIds.CURLFLOW, SceneIds.WATER), viz.sceneId, pickScene)
             3 -> SceneList(listOf(SceneIds.CYMATICS), viz.sceneId, pickScene)
             4 -> SceneList(listOf(SceneIds.HYPERSPACE), viz.sceneId, pickScene)
-            5 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
+            5 -> SceneList(listOf(SceneIds.BEAM), viz.sceneId, pickScene)
+            6 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
         }
     }
 }
@@ -447,7 +465,12 @@ private fun MilkDropTab(
     onOpenTextures: () -> Unit,
 ) {
     var refresh by remember { mutableStateOf(0) }
+    val viz by viewModel.vizState.collectAsState()
     val milkFiles = remember(refresh) { viewModel.userMilkPresets() }
+    // Which one is on screen. Collected rather than read once, so the marker
+    // follows the engine even when a preset apply, a take replay or the random
+    // mode changed the .milk from somewhere else entirely.
+    val loaded by viewModel.activeMilkPath.collectAsState()
     val milkPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
@@ -468,15 +491,40 @@ private fun MilkDropTab(
             CrystalButton(onClick = { milkPicker.launch(arrayOf("*/*")) }) { Text("Load .milk file") }
             CrystalButton(filled = false, onClick = onOpenTextures) { Text("Textures…") }
         }
+        // A .milk that fails to parse (or a texture it references that is not
+        // imported) reports through the same channel the GLSL editors use, and
+        // used to land on a screen the user was not on: the engine just kept
+        // showing the previous preset with no clue why the new one never
+        // arrived. It belongs where the file was picked.
+        if (viz.sceneId == SceneIds.MILKDROP) {
+            viz.shaderError?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+            }
+        }
         Text("Your .milk presets", style = MaterialTheme.typography.titleMedium, color = accentTextColor())
         if (milkFiles.isEmpty()) {
             Text("None yet — load a .milk file or save one from the milkdrop scene.", style = MaterialTheme.typography.bodySmall)
         }
         milkFiles.forEach { f ->
-            Text(
-                f.nameWithoutExtension,
-                Modifier.fillMaxWidth().clickable { selectMilk(viewModel, visualizerView, f.absolutePath) }.padding(vertical = 8.dp),
-            )
+            val active = f.absolutePath == loaded
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        selectMilk(viewModel, visualizerView, f.absolutePath)
+                        refresh++
+                    }.padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(6.dp), contentAlignment = Alignment.Center) {
+                    if (active) CrystalGem(MaterialTheme.colorScheme.primary, size = 6.dp)
+                }
+                Text(
+                    f.nameWithoutExtension,
+                    Modifier.padding(start = 10.dp),
+                    color = if (active) accentTextColor() else LocalContentColor.current,
+                )
+            }
         }
     }
 }
@@ -529,6 +577,9 @@ internal fun isEmitterSceneId(sceneId: String): Boolean = sceneId == SceneIds.FL
 
 /** Only WaterScene reads the heightfield surface params. */
 internal fun isWaterSceneId(sceneId: String): Boolean = sceneId == SceneIds.WATER
+
+/** Only BeamScene reads the oscilloscope-trace params. */
+internal fun isBeamSceneId(sceneId: String): Boolean = sceneId == SceneIds.BEAM
 
 /**
  * Only CymaticsScene reads the Chladni-plate params, so the whole Cymatics
@@ -622,19 +673,25 @@ internal fun CustomizePanel(
     val isShader = isShaderLookSceneId(viz.sceneId)
     val isCymatics = isCymaticsSceneId(viz.sceneId)
     val isHyperspace = isHyperspaceSceneId(viz.sceneId)
-    // Tabs are dispatched by their TITLE below, not by index: two of them come
-    // and go with the active style, so positions do not identify a panel.
-    val tabs =
-        buildList {
-            addAll(listOf("Motion", "Shape", "Behavior", "Color", "FX", "Fluid"))
-            if (isCymatics) add("Cymatics")
-            if (isHyperspace) add("Hyperspace")
-            if (isShader) add("GLSL")
-        }
+    // Tabs are dispatched by the CustomizeTab they carry, not by index: two of
+    // them come and go with the active style, so positions do not identify a
+    // panel. The parameter tabs come from the enum itself so the panel and the
+    // randomizer can never disagree about what a tab is called or contains;
+    // GLSL is appended as a null-tab entry because it edits shader source
+    // rather than SceneParams.
+    val tabs: List<CustomizeTab?> =
+        CustomizeTab.entries.filter {
+            when (it) {
+                CustomizeTab.CYMATICS -> isCymatics
+                CustomizeTab.HYPERSPACE -> isHyperspace
+                else -> true
+            }
+        } + if (isShader) listOf(null) else emptyList()
+    val titles = tabs.map { it?.title ?: "GLSL" }
     LaunchedEffect(tabs.size) { if (sub >= tabs.size) sub = 0 }
     Column(Modifier.fillMaxSize()) {
-        CrystalTabs(titles = tabs, selected = sub, onSelect = { sub = it })
-        CustomizeToolbar(viewModel, viz.params)
+        CrystalTabs(titles = titles, selected = sub, onSelect = { sub = it })
+        CustomizeToolbar(viewModel, viz.params, tabs.getOrNull(sub))
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             val locked by viewModel.lockedParams.collectAsState()
             androidx.compose.runtime.CompositionLocalProvider(
@@ -644,8 +701,8 @@ internal fun CustomizePanel(
                 val onChange: (dev.musicviz.render.scene.SceneParams) -> Unit = { viewModel.setSceneParams(it) }
                 val lfos by viewModel.lfos.collectAsState()
                 when (tabs.getOrNull(sub)) {
-                    "Motion" -> MotionTab(p, onChange)
-                    "Shape" ->
+                    CustomizeTab.MOTION -> MotionTab(p, onChange)
+                    CustomizeTab.SHAPE ->
                         ShapeTab(
                             p,
                             onChange,
@@ -653,14 +710,15 @@ internal fun CustomizePanel(
                             isParticleShapeScene = isParticleShapeSceneId(viz.sceneId),
                             isPointSpriteScene = isPointSpriteSceneId(viz.sceneId),
                             particleLayerOff = isFluidSceneId(viz.sceneId) && !p.fluidParticlesEnabled,
+                            isBeamScene = isBeamSceneId(viz.sceneId),
                         )
-                    "Behavior" ->
+                    CustomizeTab.BEHAVIOR ->
                         BehaviorTab(
                             p,
                             onChange,
-                            transitionStyle = viz.transitionStyle,
+                            transitionId = viz.transitionId,
                             transitionDurationSec = viz.transitionDurationSec,
-                            onTransitionStyle = viewModel::setTransitionStyle,
+                            onTransitionId = viewModel::setTransitionId,
                             onTransitionDuration = viewModel::setTransitionDuration,
                             attack = viz.attack,
                             decay = viz.decay,
@@ -668,7 +726,7 @@ internal fun CustomizePanel(
                             intelligenceMode = viz.intelligenceMode,
                             onIntelligenceModeChange = viewModel::setIntelligenceMode,
                         )
-                    "Color" -> {
+                    CustomizeTab.COLOR -> {
                         val artNote by viewModel.artPaletteNote.collectAsState()
                         ColorTab(
                             p,
@@ -678,7 +736,7 @@ internal fun CustomizePanel(
                             artworkNote = artNote,
                         )
                     }
-                    "FX" -> {
+                    CustomizeTab.FX -> {
                         val adsrs by viewModel.adsrs.collectAsState()
                         FxTab(
                             p,
@@ -689,7 +747,7 @@ internal fun CustomizePanel(
                             onAdsrChange = viewModel::setAdsr,
                         )
                     }
-                    "Fluid" ->
+                    CustomizeTab.FLUID ->
                         FluidTab(
                             p,
                             onChange,
@@ -703,9 +761,10 @@ internal fun CustomizePanel(
                                 visualizerView.visualizerRenderer.submitFluidInjectionShaders(force, dye)
                             },
                         )
-                    "Cymatics" -> CymaticsTab(p, onChange)
-                    "Hyperspace" -> HyperspaceTab(p, onChange)
-                    "GLSL" -> GlslHubTab(viewModel, visualizerView)
+                    CustomizeTab.CYMATICS -> CymaticsTab(p, onChange)
+                    CustomizeTab.HYPERSPACE -> HyperspaceTab(p, onChange)
+                    // The GLSL tab: shader source, not scene parameters.
+                    null -> GlslHubTab(viewModel, visualizerView)
                 }
             }
         }
@@ -713,20 +772,27 @@ internal fun CustomizePanel(
 }
 
 /**
- * The tools that act on the whole parameter set, above the controls they act
- * on: roll everything unlocked, and put it all back.
+ * The tools that act on the parameters, above the controls they act on: roll
+ * this tab's unlocked ones, and put everything back.
  *
- * Reset is confirmed rather than immediate. It discards every slider in every
- * tab at once, and the panel it sits in exists for people who spend a long
- * time moving those sliders; a mis-tap next to Randomize would be expensive
- * and there is no undo. The row also reports how far the live look has drifted
- * from the defaults, which is the question "should I reset?" answered before
- * it is asked.
+ * Randomize is scoped to [tab] and says so on the button. It sits inside a
+ * tab, so it acts on that tab: a roll that also moved the other tabs' sliders
+ * threw away work the user had just done elsewhere, with no undo. On the GLSL
+ * tab ([tab] null) there are no parameters to roll, so it is disabled rather
+ * than silently rolling something off-screen.
+ *
+ * Reset is the deliberate whole-panel counterpart, and is confirmed rather
+ * than immediate. It discards every slider in every tab at once, and the panel
+ * it sits in exists for people who spend a long time moving those sliders; a
+ * mis-tap next to Randomize would be expensive and there is no undo. The row
+ * also reports how far the live look has drifted from the defaults, which is
+ * the question "should I reset?" answered before it is asked.
  */
 @Composable
 private fun CustomizeToolbar(
     viewModel: PlayerViewModel,
     params: dev.musicviz.render.scene.SceneParams,
+    tab: CustomizeTab?,
 ) {
     var confirmReset by remember { mutableStateOf(false) }
     val changed = remember(params) { CustomizeSummary.changedCount(params) }
@@ -735,7 +801,11 @@ private fun CustomizeToolbar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        CrystalButton(compact = true, onClick = viewModel::randomizeParams) { Text("⚄ Randomize unlocked") }
+        CrystalButton(
+            compact = true,
+            enabled = tab != null,
+            onClick = { tab?.let(viewModel::randomizeParams) },
+        ) { Text(if (tab == null) "⚄ Randomize" else "⚄ Randomize ${tab.title}") }
         CrystalButton(compact = true, filled = false, enabled = changed > 0, onClick = { confirmReset = true }) {
             Text("Reset")
         }

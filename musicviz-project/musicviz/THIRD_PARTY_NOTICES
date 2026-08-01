@@ -156,3 +156,117 @@ Copyright JetBrains s.r.o. Licensed under the Apache License, Version 2.0.
 Robolectric, JUnit (test-only; not shipped in the APK)
 ------------------------------------------------------
 Robolectric: MIT License. JUnit: Eclipse Public License 1.0/2.0.
+
+gl-transitions
+--------------
+The scene-transition corpus in app/src/main/assets/gl_transitions.json is
+vendored from the published npm package `gl-transitions@1.71.0`:
+
+  https://github.com/gl-transitions/gl-transitions
+
+Vendored by tools/vendor_gl_transitions.py, which audits every entry's licence
+header and applies two mechanical GLSL ES 3.00 fixes (texture2D -> texture, and
+file-scope initialisers that read a uniform hoisted to #define, which ES 3.00
+requires). Of the 125 published transitions, 122 are shipped: `displacement`
+and `luma` are excluded because they need a sampler2D image the engine does not
+supply, and `fade` is excluded because its id collides with the built-in
+crossfade the composite shader already implements.
+
+Licence breakdown of the 122 shipped, taken from each file's own header:
+
+  120 x MIT               - the gl-transitions contributors
+    1 x BSD 3-Clause      - InvertedPageCurl.glsl
+    1 x BSD 2-Clause      - StereoViewer.glsl
+
+MIT License
+
+Copyright (c) 2017-present gl-transitions contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+InvertedPageCurl.glsl - BSD 3-Clause
+Copyright (c) 2010 Hewlett-Packard development company. Adapted by Sergey
+Kosarevsky. Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+redistributions of source code must retain the above copyright notice, this
+list of conditions and the following disclaimer; redistributions in binary form
+must reproduce them in the documentation and/or other materials provided with
+the distribution; and neither the name of Hewlett-Packard nor the names of its
+contributors may be used to endorse or promote products derived from this
+software without specific prior written permission. THIS SOFTWARE IS PROVIDED
+BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED
+WARRANTIES ARE DISCLAIMED.
+
+StereoViewer.glsl - BSD 2-Clause
+Copyright (c) Ted Schundler. Redistribution and use in source and binary forms,
+with or without modification, are permitted provided that the above copyright
+notice and this list of conditions are retained. THIS SOFTWARE IS PROVIDED "AS
+IS" AND ANY EXPRESS OR IMPLIED WARRANTIES ARE DISCLAIMED.
+
+Free blue noise textures
+------------------------
+The dither mask in app/src/main/res/raw/blue_noise_64.bin is the red channel of
+`64_64/LDR_LLL1_0.png` from:
+
+  https://github.com/Calinou/free-blue-noise-textures
+
+CC0 1.0 Universal. "To the extent possible under law, Christoph Peters has
+waived all copyright and related or neighboring rights to the files in this
+directory and its subdirectories. This work is published from: Germany."
+
+CC0 imposes no attribution requirement; this entry records provenance. The
+single channel was extracted at authoring time so the app needs no PNG decode
+at runtime - decoding would risk premultiplication and sRGB conversion, either
+of which destroys the spectral property the mask exists for.
+
+woscope
+-------
+The oscilloscope beam maths in app/src/main/res/raw/beam_vert.glsl and
+beam_frag.glsl - expanding each waveform segment into a quad and integrating a
+Gaussian beam along it analytically, divided by the distance travelled so the
+trace brightens where the beam dwells - is ported from:
+
+  https://github.com/m1el/woscope
+
+MIT License
+
+Copyright (c) 2016 Igor Null <m1el.2027@gmail.com>, Chad von Nau
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+The geometry is derived rather than copied: woscope reads sample pairs from a
+vertex buffer, while this derives both endpoints from gl_VertexID and a
+waveform texture, so a frame uploads one 1D texture instead of rebuilding a
+VBO. The error-function approximation is Abramowitz & Stegun 7.1.26.

@@ -49,6 +49,11 @@ class PresetRoundtripTest {
                 decay = 0.31f,
                 customShader = "// custom\nvoid main() {}",
                 params = mutated,
+                // The .milk source rides in the preset like the GLSL does:
+                // on the MilkDrop style it IS the visual, and dropping it in
+                // the JSON is what made a saved preset reload as the engine's
+                // idle "M" logo.
+                milkPreset = "MILKDROP_PRESET_VERSION=201\n[preset00]\n",
             )
 
         val parsed = PresetStore.fromJson(PresetStore.toJson(preset))
@@ -58,6 +63,7 @@ class PresetRoundtripTest {
         assertEquals(preset.attack, parsed.attack, 1e-4f)
         assertEquals(preset.decay, parsed.decay, 1e-4f)
         assertEquals(preset.customShader, parsed.customShader)
+        assertEquals(preset.milkPreset, parsed.milkPreset)
 
         val failures = mutableListOf<String>()
         for (prop in SceneParams::class.memberProperties) {

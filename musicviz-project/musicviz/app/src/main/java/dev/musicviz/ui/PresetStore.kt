@@ -5,7 +5,20 @@ import dev.musicviz.render.scene.SceneParams
 import org.json.JSONObject
 import java.io.File
 
-/** A saved visual configuration: scene, reactivity and optional custom shader. */
+/**
+ * A saved visual configuration: scene, reactivity, the whole [SceneParams]
+ * bundle, and - for the styles whose look is not expressible as parameters at
+ * all - the source they render.
+ *
+ * [milkPreset] is the .milk source itself, not a path, for the same reason
+ * [customShader] is the GLSL source: a preset has to BE the look. A path is a
+ * pointer into one installation's private storage, so a preset carrying one
+ * survives neither sharing nor a reinstall, and on the MILKDROP style a preset
+ * whose .milk cannot be found renders projectM's idle "M" logo instead of the
+ * visual that was saved. Null on every other style (and on MilkDrop presets
+ * saved before the source was carried - see `PlayerViewModel.milkPresetPathFor`
+ * for how those still resolve).
+ */
 data class Preset(
     val name: String,
     val sceneId: String,
@@ -13,6 +26,7 @@ data class Preset(
     val decay: Float,
     val customShader: String? = null,
     val params: SceneParams = SceneParams.DEFAULT,
+    val milkPreset: String? = null,
 )
 
 /** JSON file persistence for presets in app-private storage. */
@@ -86,8 +100,6 @@ class PresetStore(
     fun delete(name: String) {
         findFile(name)?.delete()
     }
-
-    private fun sanitize(name: String): String = name.replace(Regex("[^A-Za-z0-9-_ ]"), "_")
 
     companion object {
         internal fun toJson(p: Preset): String =
@@ -214,6 +226,10 @@ class PresetStore(
                 .put("waterLiquid", p.params.waterLiquid.toDouble())
                 .put("waterLiquidFlow", p.params.waterLiquidFlow.toDouble())
                 .put("waterLiquidFade", p.params.waterLiquidFade.toDouble())
+                .put("beamXy", p.params.beamXy)
+                .put("beamWidth", p.params.beamWidth.toDouble())
+                .put("beamIntensity", p.params.beamIntensity.toDouble())
+                .put("beamTail", p.params.beamTail.toDouble())
                 .put("cymaticsGeometry", p.params.cymaticsGeometry)
                 .put("cymaticsFundamental", p.params.cymaticsFundamental.toDouble())
                 .put("cymaticsModes", p.params.cymaticsModes)
@@ -255,10 +271,23 @@ class PresetStore(
                 .put("rippleOverlayStrength", p.params.rippleOverlayStrength.toDouble())
                 .put("rippleOverlaySpecular", p.params.rippleOverlaySpecular.toDouble())
                 .apply { if (p.customShader != null) put("customShader", p.customShader) }
+                .apply { if (p.milkPreset != null) put("milkPreset", p.milkPreset) }
                 .toString(2)
 
         /** Preset-envelope keys; everything else in the object is a parameter. */
-        internal val ENVELOPE_KEYS = setOf("name", "sceneId", "attack", "decay", "customShader")
+        internal val ENVELOPE_KEYS = setOf("name", "sceneId", "attack", "decay", "customShader", "milkPreset")
+
+        /**
+         * The .milk file name a MilkDrop preset's source is materialized under,
+         * sanitized exactly like the preset's own .json so the two always sit
+         * side by side under the same base name. A preset called "Live / set 1"
+         * used to write its .json as "Live _ set 1.json" and its .milk as
+         * "Live / set 1.milk" - a path with a directory in it, which silently
+         * failed to copy and left the preset with no visual to restore.
+         */
+        internal fun milkFileName(presetName: String): String = sanitize(presetName.removeSuffix(".milk")) + ".milk"
+
+        private fun sanitize(name: String): String = name.replace(Regex("[^A-Za-z0-9-_ ]"), "_")
 
         /**
          * Scene parameters alone, without the preset envelope.
@@ -293,6 +322,7 @@ class PresetStore(
                 attack = o.getDouble("attack").toFloat(),
                 decay = o.getDouble("decay").toFloat(),
                 customShader = if (o.has("customShader")) o.getString("customShader") else null,
+                milkPreset = if (o.has("milkPreset")) o.getString("milkPreset") else null,
                 params =
                     SceneParams(
                         speed = o.optDouble("speed", 1.0).toFloat(),
@@ -429,6 +459,10 @@ class PresetStore(
                         waterLiquid = o.optDouble("waterLiquid", 0.85).toFloat(),
                         waterLiquidFlow = o.optDouble("waterLiquidFlow", 1.4).toFloat(),
                         waterLiquidFade = o.optDouble("waterLiquidFade", 0.35).toFloat(),
+                        beamXy = o.optBoolean("beamXy", false),
+                        beamWidth = o.optDouble("beamWidth", 1.0).toFloat(),
+                        beamIntensity = o.optDouble("beamIntensity", 1.0).toFloat(),
+                        beamTail = o.optDouble("beamTail", 0.35).toFloat(),
                         cymaticsGeometry = o.optInt("cymaticsGeometry", 0),
                         cymaticsFundamental = o.optDouble("cymaticsFundamental", 110.0).toFloat(),
                         cymaticsModes = o.optInt("cymaticsModes", 5),

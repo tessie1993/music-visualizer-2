@@ -298,6 +298,15 @@ data class SceneParams(
     val hyperSwirl: Float = 26f,
     // how fast the medium comes back to rest, 0..4
     val hyperFlowFade: Float = 0.35f,
+    // Beam (BEAM scene): the oscilloscope trace.
+    // false = time sweep | true = XY phase plot
+    val beamXy: Boolean = false,
+    // beam half-width multiplier, 0.2..4
+    val beamWidth: Float = 1f,
+    // beam brightness, 0..3
+    val beamIntensity: Float = 1f,
+    // how far the trace fades toward its oldest sample, 0..1
+    val beamTail: Float = 0.35f,
     // Ripple overlay (all styles; consumed by follow-up unit F2)
     val rippleOverlayEnabled: Boolean = false,
     val rippleOverlayStrength: Float = 0.4f,
@@ -311,6 +320,23 @@ data class SceneParams(
         const val NO_CUSTOM_PALETTE: String = ""
 
         val DEFAULT: SceneParams = SceneParams()
+
+        /**
+         * The fields no scene renders, and what they are for instead.
+         *
+         * Every other parameter here exists to change a picture, so one that
+         * nothing reads is normally a dead control - `CustomizeSurfaceTest`
+         * fails the build on any field missing from both the scenes and this
+         * list, and on any entry here that a scene has since started reading.
+         * These two are genuinely bookkeeping: they record WHICH saved palette
+         * a slot uses so the panel can show it and re-resolve it after an
+         * edit, while rendering reads the resolved override hues.
+         */
+        val NOT_RENDERED: Map<String, String> =
+            mapOf(
+                "customPaletteId" to "which saved palette slot 1 uses; rendering reads the resolved hues",
+                "customPalette2Id" to "which saved palette slot 2 uses; rendering reads the resolved hues",
+            )
 
         /**
          * Palette definitions: name, base hue, hue span multiplier.

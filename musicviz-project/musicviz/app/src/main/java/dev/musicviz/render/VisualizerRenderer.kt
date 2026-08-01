@@ -8,6 +8,7 @@ import dev.musicviz.R
 import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.export.VideoExporter
 import dev.musicviz.render.fluid.CurlFlowMath
+import dev.musicviz.render.scene.BeamScene
 import dev.musicviz.render.scene.BurstScene
 import dev.musicviz.render.scene.CymaticsScene
 import dev.musicviz.render.scene.FountainScene
@@ -233,6 +234,9 @@ class VisualizerRenderer(
             waterLiquid = f(from.waterLiquid, to.waterLiquid),
             waterLiquidFlow = f(from.waterLiquidFlow, to.waterLiquidFlow),
             waterLiquidFade = f(from.waterLiquidFade, to.waterLiquidFade),
+            beamWidth = f(from.beamWidth, to.beamWidth),
+            beamIntensity = f(from.beamIntensity, to.beamIntensity),
+            beamTail = f(from.beamTail, to.beamTail),
             cymaticsFundamental = f(from.cymaticsFundamental, to.cymaticsFundamental),
             cymaticsRing = f(from.cymaticsRing, to.cymaticsRing),
             cymaticsFocus = f(from.cymaticsFocus, to.cymaticsFocus),
@@ -394,15 +398,91 @@ class VisualizerRenderer(
     private var trailTex = 0
     private var compositeProgram = 0
 
+    /** The unspliced composite, used for the built-in styles and as fallback. */
+    private var baseCompositeProgram = 0
+
     /** Uniform locations cached per program link; ~30 glGetUniformLocation
      *  calls per frame are measurable driver overhead on mobile GPUs. */
-    private val compositeLocs = HashMap<String, Int>()
+    private val compositeLocs = HashMap<Int, HashMap<String, Int>>()
+
+    /**
+     * Selected transition, as a [TransitionCatalog] id. Built-in styles are
+     * handled by the base composite program; anything else names a corpus
+     * transition and gets its own spliced variant.
+     */
+    @Volatile
+    var transitionId: String = TransitionStyle.FADE.name.lowercase()
+
+    /**
+     * Linked composite variants by transition id, most-recently-used last.
+     *
+     * Bounded: each variant is a full copy of a 400-line shader, and a user
+     * browsing the picker would otherwise leave 123 programs resident. Four is
+     * enough that flipping between a couple of favourites never recompiles.
+     */
+    private val transitionPrograms = LinkedHashMap<String, Int>()
+
+    /** Corpus source of the variant currently bound, for its uniform upload. */
+    private var activeTransition: TransitionCatalog.Def? = null
+
+    /** Base composite source, kept so variants can be spliced without a re-read. */
+    private var compositeSource: String = ""
     private val fadeLocs = HashMap<String, Int>()
     private val trailLocs = HashMap<String, Int>()
 
-    private fun cLoc(name: String): Int = compositeLocs.getOrPut(name) { GLES30.glGetUniformLocation(compositeProgram, name) }
+    private fun cLoc(name: String): Int =
+        compositeLocs
+            .getOrPut(compositeProgram) { HashMap() }
+            .getOrPut(name) { GLES30.glGetUniformLocation(compositeProgram, name) }
+
+    /** Max linked transition variants held at once (see [transitionPrograms]). */
+    private val maxTransitionPrograms = 4
+
+    /**
+     * The composite program for [id]: the base one for a built-in style, or a
+     * lazily linked spliced variant for a corpus transition.
+     *
+     * Compiling here means the first frame of a newly picked transition pays a
+     * driver compile. That is deliberate over compiling all 123 at startup, and
+     * it is why the renderer warms the program the moment the user picks one
+     * rather than waiting for a scene switch to need it. A variant that fails
+     * to link falls back to the base program: a transition that will not
+     * compile on some driver must not take the app's scene switching with it.
+     */
+    private fun transitionProgram(id: String): Int {
+        if (TransitionCatalog.builtIn(id) != null) return baseCompositeProgram
+        transitionPrograms[id]?.let {
+            // Refresh recency: LinkedHashMap keeps insertion order, so
+            // re-inserting moves it to the end where eviction never looks.
+            transitionPrograms.remove(id)
+            transitionPrograms[id] = it
+            return it
+        }
+        val def = TransitionCatalog.definition(context, id) ?: return baseCompositeProgram
+        val program =
+            runCatching {
+                GlUtil.buildProgram(loadRaw(R.raw.fade_vert), TransitionCatalog.spliceInto(compositeSource, def))
+            }.getOrElse {
+                android.util.Log.w("Transitions", "\"$id\" failed to link: ${it.message}")
+                return baseCompositeProgram
+            }
+        while (transitionPrograms.size >= maxTransitionPrograms) {
+            val oldest = transitionPrograms.keys.first()
+            transitionPrograms.remove(oldest)?.let { p -> GLES30.glDeleteProgram(p) }
+        }
+        transitionPrograms[id] = program
+        return program
+    }
+
+    /** Links a transition ahead of the switch that will use it. GL thread. */
+    fun warmTransition(id: String) {
+        if (compositeSource.isNotEmpty()) transitionProgram(id)
+    }
 
     private var quadVao = 0
+
+    /** Blue-noise dither mask for the composite's output stage; 0 if unavailable. */
+    private var noiseTex = 0
     private var fboA = TargetFbo()
     private var fboB = TargetFbo()
 
@@ -473,6 +553,7 @@ class VisualizerRenderer(
             add(SceneIds.CURLFLOW)
             add(SceneIds.WATER)
             add(SceneIds.CYMATICS)
+            add(SceneIds.BEAM)
             add(SceneIds.HYPERSPACE)
         }
 
@@ -537,6 +618,10 @@ class VisualizerRenderer(
             dev.musicviz.render.fluid.WaterScene(context).also { water ->
                 water.onShaderError = { onShaderError(it) }
             }
+        scenes[SceneIds.BEAM] =
+            BeamScene(context).also { beam ->
+                beam.onShaderError = { onShaderError(it) }
+            }
         scenes[SceneIds.CYMATICS] =
             CymaticsScene(context).also { plate ->
                 plate.onShaderError = { onShaderError(it) }
@@ -572,6 +657,10 @@ class VisualizerRenderer(
         outgoingParams = null
 
         // FlowField service (F7) + the always-valid zero flow texture.
+        if (noiseTex != 0) {
+            GLES30.glDeleteTextures(1, intArrayOf(noiseTex), 0)
+            noiseTex = 0
+        }
         flowField?.release()
         flowField =
             dev.musicviz.render.fluid
@@ -610,9 +699,15 @@ class VisualizerRenderer(
             zero,
         )
 
+        noiseTex = BlueNoise.createTexture(context)
         fadeProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), loadRaw(R.raw.fade_frag))
         trailWarpProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), loadRaw(R.raw.trail_warp_frag))
-        compositeProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), loadRaw(R.raw.composite_frag))
+        compositeSource = loadRaw(R.raw.composite_frag)
+        baseCompositeProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), compositeSource)
+        compositeProgram = baseCompositeProgram
+        // Variants belong to the lost context; their names are dead now.
+        transitionPrograms.clear()
+        activeTransition = null
         compositeLocs.clear()
         fadeLocs.clear()
         trailLocs.clear()
@@ -676,7 +771,8 @@ class VisualizerRenderer(
         val requested = scenes[requestedSceneId]
         var sceneJustSwitched = false
         if (requested != null && requested !== activeScene) {
-            if (transitionStyle != TransitionStyle.CUT && activeScene != null) {
+            val cuts = TransitionCatalog.builtIn(transitionId) == TransitionStyle.CUT
+            if (!cuts && activeScene != null) {
                 outgoingScene = activeScene
                 outgoingParams = lastFinalParams
                 transitionStartMs = now
@@ -790,9 +886,21 @@ class VisualizerRenderer(
         // Trails ON the whole Trail length slider remapped onto its long
         // streaming band. Every other scene keeps the plain toggle gate.
         val isCurl = scene is dev.musicviz.render.fluid.CurlFlowScene
-        val persists = isCurl || (p.trails && scene is ParticleSceneBase)
+        // The beam is phosphor: a trace with no persistence is a single-frame
+        // wire, and the decay between frames IS the afterglow. Like Curl Flow
+        // it persists regardless of the Trails toggle, which still sets how
+        // long the glow lasts.
+        val isBeam = scene is BeamScene
+        val persists = isCurl || isBeam || (p.trails && scene is ParticleSceneBase)
         if (persists && !sceneJustSwitched) {
-            val keep = if (isCurl) CurlFlowMath.retention(p.trailLength, p.trails) else p.trailLength
+            val keep =
+                when {
+                    isCurl -> CurlFlowMath.retention(p.trailLength, p.trails)
+                    // Phosphor: a floor so the trace always has an afterglow,
+                    // with the Trail length slider setting how long above it.
+                    isBeam -> (0.55f + 0.44f * p.trailLength).coerceIn(0f, 0.99f)
+                    else -> p.trailLength
+                }
             if (p.trailZoom != 0f || p.trailWarp > 0f) {
                 drawTrailWarp(p, keep, timeSeconds, dt)
             } else {
@@ -827,7 +935,13 @@ class VisualizerRenderer(
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
         GLES30.glViewport(0, 0, width, height)
         GLES30.glDisable(GLES30.GL_BLEND)
+        // Pick the composite variant BEFORE any uniform upload: cLoc() resolves
+        // against whichever program is bound, so setting uniforms first would
+        // write them into the previous variant.
+        compositeProgram = transitionProgram(transitionId)
+        activeTransition = TransitionCatalog.definition(context, transitionId)
         GLES30.glUseProgram(compositeProgram)
+        activeTransition?.let { TransitionCatalog.uploadParams(compositeProgram, it) }
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, fboA.tex)
         GLES30.glUniform1i(cLoc("uTexA"), 0)
@@ -882,9 +996,28 @@ class VisualizerRenderer(
         GLES30.glUniform2f(cLoc("uRippleTexel"), rippleTexelW, rippleTexelH)
         GLES30.glUniform1f(cLoc("uRippleStrength"), rippleStrength)
         GLES30.glUniform1f(cLoc("uRippleSpecular"), rippleSpecular)
+        // Dither mask on unit 4, applied at the very end of the composite. The
+        // amount is 0 when the tile could not be loaded, so the pass stays an
+        // exact no-op rather than sampling an unbound texture.
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, noiseTex)
+        GLES30.glUniform1i(cLoc("uNoise"), 4)
+        GLES30.glUniform1f(cLoc("uDither"), if (noiseTex != 0) BlueNoise.DITHER_AMOUNT else 0f)
         GLES30.glUniform1f(cLoc("uProgress"), progress)
-        val style = if (outgoingScene != null) transitionStyle else TransitionStyle.CUT
-        GLES30.glUniform1i(cLoc("uStyle"), style.ordinal)
+        // uStyle tells the shader what to do THIS frame. Outside a transition
+        // it is always CUT (draw the incoming scene), whichever transition is
+        // selected - the spliced variant stays bound between switches rather
+        // than swapping programs every time one ends.
+        val styleValue =
+            when {
+                outgoingScene == null -> TransitionStyle.CUT.ordinal
+                activeTransition != null -> TransitionCatalog.STYLE_LIBRARY
+                else -> transitionStyle.ordinal
+            }
+        GLES30.glUniform1i(cLoc("uStyle"), styleValue)
+        // `ratio` in the gl-transitions contract: the aspect of what is being
+        // composited, not of the window, so a supersampled target is honest.
+        GLES30.glUniform1f(cLoc("uRatio"), renderWidth.toFloat() / renderHeight.toFloat())
         val fx = lastFinalParams
         GLES30.glUniform1f(cLoc("uTime"), timeSeconds)
         GLES30.glUniform1f(cLoc("uBeat"), features.beatImpulse)
@@ -1186,6 +1319,7 @@ class VisualizerRenderer(
                             dev.musicviz.render.fluid
                                 .WaterScene(context)
                         sceneId == SceneIds.CYMATICS -> CymaticsScene(context)
+                        sceneId == SceneIds.BEAM -> BeamScene(context)
                         sceneId == SceneIds.HYPERSPACE -> HyperspaceScene(context)
                         sceneId == SceneIds.MILKDROP && PMBridge.available ->
                             ProjectMScene(
