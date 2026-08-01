@@ -59,7 +59,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.musicviz.analysis.FeatureExtractor
-import dev.musicviz.analysis.SearchMatcher
 import dev.musicviz.render.VisualizerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -724,15 +723,6 @@ fun SettingsScreen(
     }
 }
 
-/** One merged track result row (device index or imported library). */
-private data class SearchTrackRow(
-    val uri: String,
-    val title: String,
-    val subtitle: String,
-    val fields: List<String>,
-    val fromDevice: Boolean,
-)
-
 @Composable
 fun SearchScreen(
     viewModel: PlayerViewModel,
@@ -755,44 +745,19 @@ fun SearchScreen(
     // Back closes the search overlay instead of exiting the app.
     androidx.activity.compose.BackHandler { onClose() }
 
-    val terms = remember(debounced) { SearchMatcher.terms(debounced) }
-    val trackResults =
-        remember(terms, deviceTracks, library.tracks) {
-            val candidates =
-                deviceTracks.map { t ->
-                    SearchTrackRow(
-                        uri = t.uri,
-                        title = t.title,
-                        subtitle = listOf(t.artist, t.album).filter { it.isNotBlank() }.joinToString(" · "),
-                        fields = listOf(t.title, t.artist, t.album, t.folder),
-                        fromDevice = true,
-                    )
-                } +
-                    library.tracks.map { t ->
-                        SearchTrackRow(
-                            uri = t.uri,
-                            title = t.title,
-                            subtitle = listOf(t.artist, t.album).filter { it.isNotBlank() }.joinToString(" · "),
-                            fields = listOf(t.title, t.artist, t.album, t.genre),
-                            fromDevice = false,
-                        )
-                    }
-            SearchMatcher.filterTracks(
-                terms = terms,
-                items = candidates,
-                uriOf = { it.uri },
-                fieldsOf = { it.fields },
-                preferred = { it.fromDevice },
+    val results =
+        remember(debounced, deviceTracks, library.tracks, library.playlists, viz.presets) {
+            SearchModel.search(
+                query = debounced,
+                deviceTracks = deviceTracks,
+                libraryTracks = library.tracks,
+                playlists = library.playlists,
+                presets = viz.presets,
             )
         }
-    val playlistResults =
-        remember(terms, library.playlists) {
-            library.playlists.filter { SearchMatcher.matches(terms, listOf(it.name)) }
-        }
-    val presetResults =
-        remember(terms, viz.presets) {
-            viz.presets.filter { SearchMatcher.matches(terms, listOf(it.name)) }
-        }
+    val trackResults = results.tracks
+    val playlistResults = results.playlists
+    val presetResults = results.presets
 
     // Search floats over a full content screen: it gets its own opaque
     // nebula backdrop so results always read, and the field itself is cut
@@ -818,7 +783,7 @@ fun SearchScreen(
                 IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "Close search") }
             }
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (terms.isEmpty()) {
+                if (debounced.isBlank()) {
                     item {
                         Text(
                             "Type to search your music",
@@ -891,7 +856,7 @@ fun SearchScreen(
                             )
                         }
                     }
-                    if (trackResults.isEmpty() && playlistResults.isEmpty() && presetResults.isEmpty()) {
+                    if (results.isEmpty) {
                         item {
                             Text(
                                 "No results for “$debounced”",
