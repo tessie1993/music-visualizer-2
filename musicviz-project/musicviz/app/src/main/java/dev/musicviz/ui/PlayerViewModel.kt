@@ -1559,7 +1559,11 @@ class PlayerViewModel(
 
     // ---- Music library & playlists ----
 
-    /** Embedded-tag metadata read from a file; fields blank/zero when absent. */
+    /**
+     * Embedded-tag metadata read from a file; fields blank/zero when absent.
+     * [fileName]/[sizeBytes] are not tags but the provider's view of the file
+     * itself, carried here because they are what identifies it in the library.
+     */
     private data class FileMeta(
         val title: String,
         val artist: String = "",
@@ -1567,6 +1571,8 @@ class PlayerViewModel(
         val genre: String = "",
         val year: Int = 0,
         val trackNo: Int = 0,
+        val fileName: String = "",
+        val sizeBytes: Long = 0L,
     )
 
     private val _deviceTracks = MutableStateFlow<List<DeviceTrack>>(emptyList())
@@ -1685,14 +1691,8 @@ class PlayerViewModel(
                 runCatching { r.release() }
             }
         }
-        if (title == null) {
-            title =
-                runCatching {
-                    app.contentResolver
-                        .query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
-                        ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
-                }.getOrNull()?.substringBeforeLast('.')
-        }
+        val openable = openableInfoFor(uri)
+        if (title == null) title = openable.first.ifBlank { null }?.substringBeforeLast('.')
         return FileMeta(
             title = title ?: uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Track",
             artist = artist ?: "",
@@ -1700,8 +1700,34 @@ class PlayerViewModel(
             genre = genre,
             year = year,
             trackNo = trackNo,
+            fileName = openable.first,
+            sizeBytes = openable.second,
         )
     }
+
+    /**
+     * The provider's display name and byte size for [uri], blank/zero when it
+     * reports neither. This is the library's dedup identity (see
+     * [LibraryTrack.fileName]), so it is queried for every file rather than
+     * only as a title fallback: SAF and MediaStore hand out different uris
+     * for the same file but the same DISPLAY_NAME/SIZE. One cursor next to
+     * the retriever above, whose disk I/O dwarfs it.
+     */
+    private fun openableInfoFor(uri: Uri): Pair<String, Long> =
+        runCatching {
+            val cols = arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE)
+            getApplication<Application>()
+                .contentResolver
+                .query(uri, cols, null, null, null)
+                ?.use { c ->
+                    if (!c.moveToFirst()) return@use null
+                    val ni = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    val si = c.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                    val name = if (ni >= 0 && !c.isNull(ni)) c.getString(ni).orEmpty() else ""
+                    val size = if (si >= 0 && !c.isNull(si)) c.getLong(si) else 0L
+                    name to size
+                }
+        }.getOrNull() ?: ("" to 0L)
 
     private fun libraryTrackFor(
         uriStr: String,
@@ -1715,6 +1741,8 @@ class PlayerViewModel(
             genre = m.genre,
             year = m.year,
             trackNo = m.trackNo,
+            fileName = m.fileName,
+            sizeBytes = m.sizeBytes,
         )
 
     private fun titleFor(uri: Uri): String = metadataFor(uri).title
@@ -1736,8 +1764,10 @@ class PlayerViewModel(
                     }
                     libraryTrackFor(uri.toString(), metadataFor(uri))
                 }
-            val merged = trackLibrary.addAll(tracks)
-            _library.update { it.copy(tracks = merged) }
+            // A null result means the store was unreadable and nothing was
+            // written, so leave the on-screen list exactly as it is rather
+            // than publishing a list that does not reflect the disk.
+            trackLibrary.addAll(tracks)?.let { merged -> _library.update { it.copy(tracks = merged) } }
         }
     }
 
@@ -1771,7 +1801,7 @@ class PlayerViewModel(
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             val merged = trackLibrary.updateMetadata(uri, title, artist, album, genre, year, trackNo, comment)
-            withContext(Dispatchers.Main) { _library.update { it.copy(tracks = merged) } }
+            merged?.let { withContext(Dispatchers.Main) { _library.update { s -> s.copy(tracks = it) } } }
         }
     }
 
@@ -1889,12 +1919,12 @@ class PlayerViewModel(
         }
         if (found.isNotEmpty()) {
             val merged = trackLibrary.addAll(found)
-            withContext(Dispatchers.Main) { _library.update { it.copy(tracks = merged) } }
+            merged?.let { withContext(Dispatchers.Main) { _library.update { s -> s.copy(tracks = it) } } }
         }
     }
 
     fun removeFromLibrary(uri: String) {
-        _library.update { it.copy(tracks = trackLibrary.remove(uri)) }
+        trackLibrary.remove(uri)?.let { merged -> _library.update { it.copy(tracks = merged) } }
     }
 
     fun createMusicPlaylist(name: String) {
@@ -2543,7 +2573,7 @@ class PlayerViewModel(
                 runCatching {
                     val (title, artist) = metadataFor(Uri.parse(t.uri))
                     if (title != t.title || artist != t.artist) {
-                        latest = trackLibrary.updateMetadata(t.uri, title, artist)
+                        trackLibrary.updateMetadata(t.uri, title, artist)?.let { latest = it }
                     }
                 }
             }
@@ -2826,8 +2856,9 @@ class PlayerViewModel(
                     analyzeCached(uri) { p ->
                         _vizState.update { it.copy(analysisProgress = p) }
                     }
-                val merged = trackLibrary.updateAnalysis(uri.toString(), titleFor(uri), t.durationMs, t.bpm, t.key)
-                _library.update { it.copy(tracks = merged) }
+                trackLibrary
+                    .updateAnalysis(uri.toString(), titleFor(uri), t.durationMs, t.bpm, t.key)
+                    ?.let { merged -> _library.update { it.copy(tracks = merged) } }
                 withContext(Dispatchers.Main) { applyKeyColor(t.key) }
                 if (currentUri == uri) {
                     timeline = t
