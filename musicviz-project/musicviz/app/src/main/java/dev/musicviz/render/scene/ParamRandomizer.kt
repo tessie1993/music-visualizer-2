@@ -200,6 +200,15 @@ object ParamRandomizer {
 
         // ---- Shape ----
         section(CustomizeTab.SHAPE)
+        // The oscilloscope beam, first here because it is first in the tab:
+        // BEAM renders it as a style-gated section of Shape rather than as a
+        // tab of its own, so its four controls roll with Shape. Rolled
+        // unconditionally like the fluid and cymatics blocks - no other style
+        // reads them, so a roll taken elsewhere just leaves the scope sane.
+        r("XY plot") { it.copy(beamXy = chance(0.3f)) }
+        r("Beam width") { it.copy(beamWidth = f(0.5f, 2f)) }
+        r("Beam brightness") { it.copy(beamIntensity = f(0.6f, 1.8f)) }
+        r("Beam tail") { it.copy(beamTail = f(0.1f, 0.8f)) }
         r("Domain warp") { it.copy(warp = sometimes(0.5f, 0.1f, 0.8f)) }
         r("Ripple") { it.copy(ripple = sometimes(0.4f, 0.1f, 0.8f)) }
         r("Morph") { it.copy(morph = sometimes(0.5f, 0.1f, 0.8f)) }
