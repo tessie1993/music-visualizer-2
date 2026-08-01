@@ -176,15 +176,13 @@ internal fun MotionTab(
  * uPostPixelate, uPostPosterize); [isShaderLookScene] gates the one control
  * that does not - see `VisualsHub.isShaderLookSceneId`.
  *
- * The Particles section is different: nothing in it has a composite mirror, and
- * its two controls do not even share a reader set, so it takes two gates.
- * - [isParticleShapeScene] (`VisualsHub.isParticleShapeSceneId`): the five
- *   `ParticleSceneBase` styles, the only uploaders of `uShape`.
- * - [isPointSpriteScene] (`VisualsHub.isPointSpriteSceneId`): those plus FLUID
- *   and CURLFLOW, which size the FluidParticles sprites from `particleSize`.
- * The header rides the wider gate, so it disappears with the last control
- * instead of leaving an empty "Particles" heading on shader / MilkDrop /
- * Water styles.
+ * The Particles section is different: nothing in it has a composite mirror, so
+ * it takes a gate of its own - [isPointSpriteScene]
+ * (`VisualsHub.isPointSpriteSceneId`), the styles that draw a particle sprite
+ * at all: the `ParticleSceneBase` family plus FLUID and CURLFLOW, whose GPU
+ * layer now shades through the same `particle_shade.glsl`. The header rides
+ * the same gate, so it disappears with its controls instead of leaving an
+ * empty "Particles" heading on shader / MilkDrop / Water styles.
  *
  * [particleLayerOff] is not a gate: it is true only on FLUID with the point
  * layer switched off in the Fluid tab, a state the user can undo, so the
@@ -195,7 +193,6 @@ internal fun ShapeTab(
     p: SceneParams,
     onChange: (SceneParams) -> Unit,
     isShaderLookScene: Boolean,
-    isParticleShapeScene: Boolean,
     isPointSpriteScene: Boolean,
     particleLayerOff: Boolean = false,
     isBeamScene: Boolean = false,
@@ -240,13 +237,11 @@ internal fun ShapeTab(
         LabeledSlider("Posterize", p.posterize, 0f..1f) { onChange(p.copy(posterize = it)) }
         if (isPointSpriteScene) {
             SectionHeader("Particles")
-            if (isParticleShapeScene) {
-                // uShape is a ParticleSceneBase-only uniform (particle_frag's
-                // shapeField). The fluid point layer has no shape at all - its
-                // sprites are always round - so the chips are dead there too.
-                LockableChipLabel("Particle shape")
-                ChipRow(SceneParams.PARTICLE_SHAPES, p.particleShape) { onChange(p.copy(particleShape = it)) }
-            }
+            // uShape reaches both families: ParticleSceneBase.draw uploads it
+            // for the CPU styles, FluidParticles.draw for the fluid layer, and
+            // particle_common.glsl's ptShapeField is the single reader.
+            LockableChipLabel("Particle shape")
+            ChipRow(SceneParams.PARTICLE_SHAPES, p.particleShape) { onChange(p.copy(particleShape = it)) }
             LabeledSlider("Particle size", p.particleSize, 0.3f..2.5f) { onChange(p.copy(particleSize = it)) }
             if (particleLayerOff) {
                 ControlHint(

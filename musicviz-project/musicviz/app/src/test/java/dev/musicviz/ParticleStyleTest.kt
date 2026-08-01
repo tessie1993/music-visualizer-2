@@ -1,5 +1,6 @@
 package dev.musicviz
 
+import dev.musicviz.render.scene.GlUtil
 import dev.musicviz.render.scene.ParticleSceneBase
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -93,12 +94,75 @@ class ParticleStyleTest {
     fun everyParticleScenePublishesAVelocity() {
         // The billboards lean along it, so a scene that never writes the slot
         // renders permanently axis-aligned - visible only on a device.
-        val scenes = listOf("BurstScene", "FountainScene", "NebulaScene", "OrbitScene", "SwarmScene")
+        val scenes =
+            listOf(
+                "BurstScene",
+                "FountainScene",
+                "NebulaScene",
+                "OrbitScene",
+                "SwarmScene",
+                "GalaxyScene",
+                "AttractorScene",
+                "StormScene",
+                "InkflowScene",
+            )
         val missing =
             scenes.filterNot { name ->
                 stripComments(source("render/scene/$name.kt")).contains("VELOCITY_OFFSET")
             }
         assertEquals("particle scenes that never fill their velocity slot", emptyList<String>(), missing)
+    }
+
+    @Test
+    fun bothFamiliesShadeThroughTheOneSharedChunk() {
+        // The CPU styles and the fluid layer are two different pipelines with
+        // one look. If either grows its own copy of the shading, they drift -
+        // and the drift shows up as "the same Particle shape looks different
+        // on Fluid", which nothing else in the suite would catch.
+        val common = stripComments(rawShader("particle_common.glsl"))
+        val shade = stripComments(rawShader("particle_shade.glsl"))
+        listOf("particle_common.glsl" to common, "particle_shade.glsl" to shade).forEach { (name, src) ->
+            assertTrue("$name must not carry its own #version", !src.contains("#version"))
+        }
+        // The common chunk is spliced into VERTEX stages too, where fwidth()
+        // does not exist - a derivative call in it fails to compile on every
+        // device, which is exactly the split the two files encode.
+        assertTrue("particle_common.glsl must declare its own precision", common.contains("precision highp float;"))
+        assertTrue("particle_common.glsl uses a fragment-only derivative", !common.contains("fwidth("))
+        assertTrue("the shading belongs in particle_shade.glsl", shade.contains("fwidth("))
+        listOf("ptShapeField", "ptRadiusFade", "ptBillboard", "ptAces").forEach {
+            assertTrue("particle_common.glsl is missing $it", common.contains("$it("))
+        }
+        assertTrue("particle_shade.glsl is missing ptShade", shade.contains("ptShade("))
+        val consumers =
+            mapOf(
+                "particle_frag.glsl" to fragmentSource,
+                "particle_vert.glsl" to vertexSource,
+                "fluid_particle_frag.glsl" to stripComments(rawShader("fluid_particle_frag.glsl")),
+                "fluid_particle_vert.glsl" to stripComments(rawShader("fluid_particle_vert.glsl")),
+            )
+        consumers.forEach { (name, src) ->
+            // Calls the shared code...
+            assertTrue("$name does not use the shared look", Regex("""\bpt[A-Z]\w*\(""").containsMatchIn(src))
+            // ...and does not redefine any of it.
+            assertTrue(
+                "$name defines its own copy of a shared function",
+                !Regex("""\bfloat\s+pt[A-Z]\w*\s*\(|\bvec[234]\s+pt[A-Z]\w*\s*\(""").containsMatchIn(src),
+            )
+        }
+    }
+
+    @Test
+    fun withChunkSplicesAfterTheVersionLine() {
+        // `#version` must be the first thing in a GLSL ES shader, so a chunk
+        // prepended instead of spliced would fail to compile on every device.
+        val spliced = GlUtil.withChunk("#version 300 es\nvoid main() {}\n", "float helper();")
+        assertTrue("version line moved", spliced.startsWith("#version 300 es\n"))
+        assertTrue("chunk not spliced in", spliced.contains("float helper();"))
+        assertTrue("chunk landed after the body", spliced.indexOf("helper") < spliced.indexOf("void main"))
+        // Sources with no version line (the in-app GLSL editor accepts
+        // anything) come back untouched rather than corrupted by a prepend.
+        assertEquals("void main() {}", GlUtil.withChunk("void main() {}", "float helper();"))
     }
 
     @Test

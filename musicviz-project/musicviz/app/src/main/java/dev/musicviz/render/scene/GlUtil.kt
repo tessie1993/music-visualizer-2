@@ -43,6 +43,31 @@ object GlUtil {
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
     }
 
+    /**
+     * Splices [chunk] into [source] immediately after its `#version` line.
+     *
+     * GLSL ES has no `#include`, and `#version` must be the first thing in a
+     * shader, so a shared library of functions can only be a plain text splice
+     * done here. Everything after the version line - precision qualifiers
+     * included - is ordinary declaration order, which is why the chunk carries
+     * its own `precision highp float;`: its function bodies are compiled
+     * BEFORE the includer's own precision statement is reached.
+     *
+     * A source with no `#version` (never true of this app's shaders, but the
+     * in-app GLSL editor can hand over anything) is returned untouched rather
+     * than being corrupted by a prepend.
+     */
+    fun withChunk(
+        source: String,
+        chunk: String,
+    ): String {
+        val version = source.indexOf("#version")
+        if (version < 0) return source
+        val eol = source.indexOf('\n', version)
+        if (eol < 0) return source
+        return source.substring(0, eol + 1) + chunk + "\n" + source.substring(eol + 1)
+    }
+
     fun buildProgram(
         vertexSrc: String,
         fragmentSrc: String,

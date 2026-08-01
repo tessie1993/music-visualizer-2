@@ -1,8 +1,16 @@
 #version 300 es
-// GL_POINTS render: static VBO of texel coords; state fetched in the vertex
-// stage (vertex texture fetch, core ES3). Rebuilt for the lifecycle layer:
-// age drives a fade-in / fade-out envelope so births and recycles are soft,
-// and the emitter index rides along for per-spawn-point coloring.
+// GL_POINTS render for the fluid styles' lifecycle particle layer: a static
+// VBO of texel coords, state fetched in the vertex stage (vertex texture
+// fetch, core ES3). Age drives a fade-in / fade-out envelope so births and
+// recycles are soft, and the emitter index rides along for per-spawn-point
+// coloring.
+//
+// This layer stays GL_POINTS where the CPU particle styles moved to instanced
+// billboards, deliberately: it draws up to 49k sprites, and a quad big enough
+// to hold the aura would multiply its fill cost by an order of magnitude for
+// tracers only a few pixels across. It shares the LOOK instead - the sprite
+// square IS the particle_shade quad, so the SDF body lands at PT_SHAPE_R of
+// the point radius and the rest is aura, exactly as on the billboard path.
 precision highp float;
 // GLSL ES 3.00 defaults fragment sampler2D to LOWP (range [-2,2), ~8
 // fraction bits). Half-float state values far exceed that; on GPUs
@@ -28,5 +36,12 @@ void main() {
     vEmitter = m.z;
     vSeed = m.w;
     gl_Position = vec4(s.x / uAspect, s.y, 0.0, 1.0);
-    gl_PointSize = clamp(uPointScale * (0.8 + vSpeed * 1.6), 1.0, 8.0);
+    // Cap raised from the old 8 px so Particle size can actually resolve a
+    // shape here; spending it is the user's call and the default scale still
+    // lands around 5 px.
+    float widthPx = clamp(uPointScale * (0.8 + vSpeed * 1.6), 1.0, 12.0);
+    vec2 held = ptRadiusFade(widthPx * 0.5);
+    gl_PointSize = held.x * 2.0;
+    // Sub-pixel dimming folds into the lifecycle envelope.
+    vFade *= held.y;
 }

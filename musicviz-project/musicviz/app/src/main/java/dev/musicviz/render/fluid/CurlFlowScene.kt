@@ -218,6 +218,9 @@ internal class CurlFlowScene(
             // (brightness * intensity) is the composite pass's job - folding
             // intensity in here too made that slider quadratic.
             CurlFlowMath.particleBrightness(beatDrive),
+            shape = params.particleShape.toFloat(),
+            glow = dev.musicviz.render.scene.ParticleLook.glow(params.bloom),
+            timeSeconds = wallTime,
         )
     }
 

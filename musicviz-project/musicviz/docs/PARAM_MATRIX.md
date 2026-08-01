@@ -59,7 +59,7 @@ reach every style through the composite pass, which is its own column.
 | `morph` | Shape | `Morph` | `morph` | · |   |   |   | · |   |   |   |   | · |   |
 | `pixelate` | Shape | `Pixelate` | `pixelate` | · |   |   |   |   |   |   |   |   | · | · |
 | `posterize` | Shape | `Posterize` | `posterize` | · |   |   |   |   |   |   |   |   | · | · |
-| `particleShape` | Shape | `Particle shape` | `particleShape` |   | · |   |   |   |   |   |   |   |   |   |
+| `particleShape` | Shape | `Particle shape` | `particleShape` |   | · |   | · | · |   |   |   |   |   |   |
 | `particleSize` | Shape | `Particle size` | `particleSize` |   | · |   | · | · |   |   |   |   | · |   |
 | `tile` | Shape | `Tile` | `tile` | · |   |   |   |   |   |   |   |   | · | · |
 | `twist` | Shape | `Twist` | `twist` | · |   |   |   |   |   |   |   |   | · | · |
@@ -84,7 +84,7 @@ reach every style through the composite pass, which is its own column.
 | `invert` | Color | `Invert` | `invert` | · |   | · |   |   |   |   |   |   | · | · |
 | `intensity` | Color | `Intensity` | `intensity` | · | · | · |   | · | · |   |   |   | · | · |
 | `duotone` | Color | `Duotone` | `duotone` | · |   |   |   |   |   |   |   |   |   |   |
-| `bloom` | Color | `Bloom` | `bloom` | · | · |   | · |   |   |   |   |   | · | · |
+| `bloom` | Color | `Bloom` | `bloom` | · | · |   | · | · |   |   |   |   | · | · |
 | `temperature` | Color | `Temperature` | `temperature` | · |   |   |   |   |   |   |   |   | · | · |
 | `solarize` | Color | `Solarize` | `solarize` | · |   |   |   |   |   |   |   |   | · | · |
 | `bassGain` | Behavior | `Bass gain` | `bassGain` |   |   |   |   |   |   |   |   |   | · | · |

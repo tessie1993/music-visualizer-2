@@ -336,6 +336,9 @@ internal class FluidScene(
                 brightness =
                     0.55f * p.fluidParticleBrightness.coerceIn(0f, 2f) *
                         (0.3f + p.density.coerceIn(0f, 1.5f)),
+                shape = p.particleShape.toFloat(),
+                glow = dev.musicviz.render.scene.ParticleLook.glow(p.bloom),
+                timeSeconds = timeSeconds,
             )
         }
         if (blendWas) GLES30.glEnable(GLES30.GL_BLEND) else GLES30.glDisable(GLES30.GL_BLEND)

@@ -25,7 +25,24 @@ internal class FlowField(
 ) {
     companion object {
         private const val GRID_RES = 64
-        const val CPU_GRID = 16
+
+        /**
+         * Resolution of the CPU downsample. 16 was a drift field and nothing
+         * more: at that spacing a whole vortex of the 64-grid sim collapses to
+         * one bilinear cell, so a particle rode a smooth ramp rather than a
+         * flow. 32 resolves the eddies the sim actually produces while keeping
+         * the per-frame `glReadPixels` at 16 KB - still a rounding error next
+         * to the pipeline stall the call itself costs.
+         */
+        const val CPU_GRID = 32
+
+        /**
+         * Force convention shared with `FluidEmitters`: it scales its own
+         * splat velocities by 0.22, and a consumer kick of the same magnitude
+         * has to land with the same authority or the two sources of motion
+         * would be on different scales.
+         */
+        private const val KICK_FORCE = 0.22f
     }
 
     /**
@@ -184,6 +201,45 @@ internal class FlowField(
         h: Int,
     ) {
         sim.resize(w, h)
+    }
+
+    /**
+     * Injects a velocity kick from a CONSUMER of the field - the return leg of
+     * two-way coupling, used by the particle styles that push back into the
+     * flow they ride (see `InkflowScene`). Coordinates are clip space
+     * (-1..1); this maps them onto the sim's own aspect-scaled x, applies the
+     * emitters' force convention so a scene kick and an emitter splat of the
+     * same magnitude do the same thing, and drops the dye (the service is
+     * velocity-only, so a colour here would be discarded downstream anyway).
+     *
+     * Queued splats are consumed by the next [step]; kicks that arrive while
+     * the field is unavailable are dropped rather than accumulated.
+     */
+    fun queueKick(
+        clipX: Float,
+        clipY: Float,
+        velX: Float,
+        velY: Float,
+        radius: Float,
+    ) {
+        if (!sim.available) return
+        val a = sim.aspect
+        val x = clipX * a
+        val y = clipY
+        sim.queueSplat(
+            FluidSim.Splat(
+                prevX = x,
+                prevY = y,
+                curX = x,
+                curY = y,
+                radius = radius.coerceIn(0.02f, 0.4f),
+                velX = velX * a * KICK_FORCE,
+                velY = velY * KICK_FORCE,
+                r = 0f,
+                g = 0f,
+                b = 0f,
+            ),
+        )
     }
 
     /**
