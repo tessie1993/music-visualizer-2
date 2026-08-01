@@ -264,3 +264,48 @@ The geometry is derived rather than copied: woscope reads sample pairs from a
 vertex buffer, while this derives both endpoints from gl_VertexID and a
 waveform texture, so a frame uploads one 1D texture instead of rebuilding a
 VBO. The error-function approximation is Abramowitz & Stegun 7.1.26.
+
+psrdnoise
+---------
+app/src/main/res/raw/lib_psrdnoise2.glsl is vendored verbatim, with its licence
+header intact, from:
+
+  https://github.com/stegu/psrdnoise
+
+  "Authors: Stefan Gustavson (stefan.gustavson@gmail.com) and Ian McEwan
+   (ijm567@gmail.com). Version 2021-12-02, published under the MIT license.
+   Copyright (c) 2021 Stefan Gustavson and Ian McEwan."
+
+The full MIT text is in the file itself. It backs the curl-noise velocity field
+(res/raw/curl_field_frag.glsl): psrdnoise returns an ANALYTIC gradient, which is
+what makes that field exactly divergence-free rather than approximately so - the
+field previously took central differences, and the error in a finite difference
+IS the divergence that makes particles pile up. It also cut the field from
+twelve noise evaluations per pixel to three, and its periodic mode is what a
+seamless loop would be built on.
+
+Scientific colour maps (cyclic)
+-------------------------------
+app/src/main/res/raw/cyclic_palettes.bin packs the five CYCLIC scientific
+colour maps - bamO, brocO, corkO, romaO, vikO - at 256 entries each, RGB8,
+3840 bytes for the set. Source distribution:
+
+  https://github.com/callumrollo/cmcrameri  (cmcrameri/cmaps/*.txt)
+
+whose LICENSE.txt states, in full attribution of the data as distinct from the
+packaging:
+
+  MIT License
+  Colormaps in cmcrameri/cm/cmaps: Copyright (c) 2020 Fabio Crameri
+  Python scripts and packaging: Copyright (c) 2020 Callum Rollo
+
+Only the colour-map data is used; none of the Python is. The originals are
+Fabio Crameri's Scientific colour maps (https://www.fabiocrameri.ch/colourmaps/),
+whose citation is requested as a courtesy: Crameri, F. (2018), Scientific
+colour maps, Zenodo, doi:10.5281/zenodo.1243862.
+
+These are the CYCLIC members of the family specifically: their two ends join.
+Measured on the packed atlas, the wrap gap is 0-2/255 against a largest
+ordinary step of 3/255 - the seam is smaller than the distance between
+neighbouring entries, which is what makes them safe for a circular quantity
+where a hue ramp would band on lightness instead.

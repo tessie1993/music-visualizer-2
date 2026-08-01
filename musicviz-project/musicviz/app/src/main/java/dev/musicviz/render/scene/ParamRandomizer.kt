@@ -244,6 +244,16 @@ object ParamRandomizer {
         r("Ripple overlay strength") { it.copy(rippleOverlayStrength = f(0.15f, 0.7f)) }
         r("Ripple glint") { it.copy(rippleOverlaySpecular = f(0.1f, 0.6f)) }
 
+        // A colour map is a different KIND of palette, so it rolls on its own
+        // key: mostly off, because the procedural palettes are the app's own
+        // look and a roll that half the time replaces them would flatten it.
+        r("Colour map") {
+            it.copy(
+                paletteLut =
+                    if (chance(0.25f)) rng.nextInt(SceneParams.CYCLIC_PALETTES.size) else SceneParams.NO_PALETTE_LUT,
+            )
+        }
+
         // ---- Cymatics (the standing-wave field) ----
         // Rolled unconditionally like the fluid block: a style that does not
         // read these is unaffected, so a roll taken elsewhere still leaves the

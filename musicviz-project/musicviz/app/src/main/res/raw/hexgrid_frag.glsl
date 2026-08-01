@@ -103,11 +103,7 @@ vec2 view() {
     return uv;
 }
 
-vec3 pal(float t) {
-    vec3 a = 0.5 + 0.5 * cos(6.2831 * (uPalBase + uColorShift + t * uPalRange * uHueRange + vec3(0.0, 0.33, 0.67)));
-    vec3 b = 0.5 + 0.5 * cos(6.2831 * (uPal2Base + uColorShift + t * uPal2Range * uHueRange + vec3(0.0, 0.33, 0.67)));
-    return mix(a, b, uPaletteMix);
-}
+//#include lib_palette
 
 vec3 grade(vec3 col) {
     if (uBloom > 0.001) col += uBloom * col * col;
