@@ -1,6 +1,7 @@
 package dev.musicviz.render.scene
 
 import android.opengl.GLES30
+import dev.musicviz.R
 
 /** Shader compile/link helpers with error capture for the in-app editor. */
 object GlUtil {
@@ -44,29 +45,63 @@ object GlUtil {
     }
 
     /**
-     * Splices [chunk] into [source] immediately after its `#version` line.
+     * Shader libraries a scene source can pull in with `//#include <name>`.
      *
-     * GLSL ES has no `#include`, and `#version` must be the first thing in a
-     * shader, so a shared library of functions can only be a plain text splice
-     * done here. Everything after the version line - precision qualifiers
-     * included - is ordinary declaration order, which is why the chunk carries
-     * its own `precision highp float;`: its function bodies are compiled
-     * BEFORE the includer's own precision statement is reached.
+     * GLSL has no include of its own, so every one of the 57 shaders here used
+     * to be standalone - which meant shared code was shared by copying it. The
+     * palette function lived in twenty scene shaders byte-for-byte identically,
+     * so a change to how the app colours anything was a twenty-file edit that
+     * nothing checked for drift.
      *
-     * A source with no `#version` (never true of this app's shaders, but the
-     * in-app GLSL editor can hand over anything) is returned untouched rather
-     * than being corrupted by a prepend.
+     * The map is explicit rather than resolved by name through
+     * `Resources.getIdentifier`: a typo in an include then fails to compile
+     * here with a readable message instead of silently resolving to nothing on
+     * a device, and R8 can still see every resource that is actually used.
      */
-    fun withChunk(
-        source: String,
-        chunk: String,
+    private val INCLUDES: Map<String, Int> =
+        mapOf(
+            "lib_palette" to R.raw.lib_palette,
+            "lib_psrdnoise2" to R.raw.lib_psrdnoise2,
+        )
+
+    /** `//#include name` at the start of a line, with optional indentation. */
+    private val INCLUDE_PATTERN = Regex("^[ \\t]*//#include[ \\t]+(\\w+)[ \\t]*$", RegexOption.MULTILINE)
+
+    /**
+     * Reads a shader and resolves its `//#include` directives.
+     *
+     * Deliberately NOT recursive and deliberately not a real preprocessor:
+     * one level, no conditionals, no include guards, no parameters. Shader
+     * libraries here are small leaf files, and a general preprocessor would be
+     * a second language to debug at driver-compile time - where the only error
+     * report is a line number in a file that no longer exists on disk.
+     *
+     * An unknown include is an error rather than a silent empty expansion,
+     * because the failure mode of the latter is a shader that compiles
+     * everywhere except where the missing function was called.
+     */
+    fun loadShader(
+        context: android.content.Context,
+        resId: Int,
     ): String {
-        val version = source.indexOf("#version")
-        if (version < 0) return source
-        val eol = source.indexOf('\n', version)
-        if (eol < 0) return source
-        return source.substring(0, eol + 1) + chunk + "\n" + source.substring(eol + 1)
+        val source = context.resources.openRawResource(resId).bufferedReader().use { it.readText() }
+        return resolveIncludes(context, source)
     }
+
+    /** Substitutes `//#include` directives in [source]. Visible for testing. */
+    fun resolveIncludes(
+        context: android.content.Context,
+        source: String,
+    ): String =
+        INCLUDE_PATTERN.replace(source) { match ->
+            val name = match.groupValues[1]
+            val resId = INCLUDES[name] ?: throw ShaderCompileException("unknown shader include '$name'")
+            // Escaped so a `$` or a backslash inside a library cannot be read
+            // as a replacement reference by the regex engine.
+            Regex.escapeReplacement(
+                context.resources.openRawResource(resId).bufferedReader().use { it.readText() },
+            )
+        }
 
     fun buildProgram(
         vertexSrc: String,

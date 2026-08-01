@@ -34,8 +34,15 @@ import java.io.File
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ShaderLookGatingTest {
-    /** Labels of the controls that must only appear on shader styles. */
-    private val shaderOnlyLabels = setOf("Morph", "Palette blend", "Palette 2", "Duotone")
+    /**
+     * Labels of the controls that must only appear on shader styles.
+     *
+     * "Colour map" joined them when the cyclic scientific palettes landed:
+     * `ShaderScene` is the only uploader of `uPalLut`/`uPalLutMix`, so on any
+     * other style the chips would select a palette nothing samples. Same rule
+     * as the other four - a control shows up exactly where something reads it.
+     */
+    private val shaderOnlyLabels = setOf("Morph", "Colour map", "Palette blend", "Palette 2", "Duotone")
 
     @Test
     fun everyShaderStyleReadsTheShaderOnlyLookParams() {

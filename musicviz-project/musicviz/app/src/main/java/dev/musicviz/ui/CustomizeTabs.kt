@@ -395,6 +395,38 @@ internal fun ColorTab(
         LockableChipLabel("Palette")
         PaletteSlotSelector(p, onChange, palettes)
         if (isShaderLookScene) {
+            // Cyclic scientific colour maps. Offered only where they are read
+            // (ShaderScene uploads uPalLut), and as a separate row rather than
+            // more entries in the palette chips above, because they are not
+            // the same KIND of thing: the built-ins are a hue and a span the
+            // user can move, these are measured ramps that are either on or
+            // off.
+            LockableChipLabel("Colour map")
+            ControlHint(
+                "Perceptually even, and cyclic - the two ends join, so a wrap " +
+                    "has no seam. A hue ramp swings in lightness instead, " +
+                    "which paints bands into smooth fields that the music " +
+                    "never played.",
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                FilterChip(
+                    selected = p.paletteLut < 0,
+                    onClick = { onChange(p.copy(paletteLut = SceneParams.NO_PALETTE_LUT)) },
+                    label = { Text("off", style = MaterialTheme.typography.labelSmall) },
+                )
+                SceneParams.CYCLIC_PALETTES.forEachIndexed { index, name ->
+                    FilterChip(
+                        selected = p.paletteLut == index,
+                        onClick = { onChange(p.copy(paletteLut = index)) },
+                        label = { Text(name, style = MaterialTheme.typography.labelSmall) },
+                    )
+                }
+            }
+        }
+        if (isShaderLookScene) {
             // Slot 2 and the blend are one control, not two: only ShaderScene
             // uploads uPal2Base/uPal2Range and mixes them with uPaletteMix.
             // Showing the blend without the slot would leave a slider with

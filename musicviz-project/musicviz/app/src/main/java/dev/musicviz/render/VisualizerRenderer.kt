@@ -497,6 +497,9 @@ class VisualizerRenderer(
 
     /** Blue-noise dither mask for the composite's output stage; 0 if unavailable. */
     private var noiseTex = 0
+
+    /** Cyclic colour-map atlas shared by every shader scene; 0 if unavailable. */
+    private var paletteLutTex = 0
     private var fboA = TargetFbo()
     private var fboB = TargetFbo()
 
@@ -679,6 +682,10 @@ class VisualizerRenderer(
             GLES30.glDeleteTextures(1, intArrayOf(noiseTex), 0)
             noiseTex = 0
         }
+        if (paletteLutTex != 0) {
+            GLES30.glDeleteTextures(1, intArrayOf(paletteLutTex), 0)
+            paletteLutTex = 0
+        }
         flowField?.release()
         flowField =
             dev.musicviz.render.fluid
@@ -718,6 +725,8 @@ class VisualizerRenderer(
         )
 
         noiseTex = BlueNoise.createTexture(context)
+        paletteLutTex = CyclicPalettes.createTexture(context)
+        scenes.values.filterIsInstance<ShaderScene>().forEach { it.setPaletteLut(paletteLutTex) }
         fadeProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), loadRaw(R.raw.fade_frag))
         trailWarpProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), loadRaw(R.raw.trail_warp_frag))
         compositeSource = loadRaw(R.raw.composite_frag)
@@ -1325,11 +1334,11 @@ class VisualizerRenderer(
         GLES30.glDisable(GLES30.GL_BLEND)
     }
 
-    private fun loadRaw(resId: Int): String =
-        context.resources
-            .openRawResource(resId)
-            .bufferedReader()
-            .use { it.readText() }
+    /**
+     * Reads a shader, resolving its `//#include` directives - so every source
+     * that reaches a driver here has its libraries already spliced in.
+     */
+    private fun loadRaw(resId: Int): String = GlUtil.loadShader(context, resId)
 
     /**
      * Builds fresh scene instances for the export GL context. Never reuses

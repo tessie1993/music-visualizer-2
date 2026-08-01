@@ -66,6 +66,16 @@ data class SceneParams(
     // UI can show which saved palette a preset uses and re-resolve it after an
     // edit; rendering only ever reads the *Override floats above.
     val customPaletteId: String = NO_CUSTOM_PALETTE,
+    /**
+     * Cyclic scientific colour map to paint with, as an index into
+     * [CYCLIC_PALETTES], or [NO_PALETTE_LUT] for the procedural palettes.
+     *
+     * Separate from [palette] rather than appended to PALETTES because these
+     * are not expressible as a (base, span) pair at all - they are measured
+     * ramps - and because PALETTES is append-only for preset compatibility, so
+     * an index there must always mean a hue and a span.
+     */
+    val paletteLut: Int = NO_PALETTE_LUT,
     val customPalette2Id: String = NO_CUSTOM_PALETTE,
     // How far MilkDrop's own colours are steered toward the palette above, 0..1
     // (read by ProjectMScene's post pass as `uPalTint`; every other family
@@ -318,6 +328,16 @@ data class SceneParams(
 
         /** "No saved custom palette" sentinel for customPaletteId/customPalette2Id. */
         const val NO_CUSTOM_PALETTE: String = ""
+
+        /** [paletteLut] value meaning "use the procedural palettes". */
+        const val NO_PALETTE_LUT: Int = -1
+
+        /**
+         * Cyclic scientific colour maps (Fabio Crameri, MIT), in atlas order.
+         * Perceptually uniform and seamless at the wrap, which the procedural
+         * hue ramps are not - see `lib_palette.glsl`.
+         */
+        val CYCLIC_PALETTES: List<String> = dev.musicviz.render.CyclicPalettes.NAMES
 
         val DEFAULT: SceneParams = SceneParams()
 
