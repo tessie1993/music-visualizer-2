@@ -9,6 +9,7 @@ import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.export.VideoExporter
 import dev.musicviz.render.fluid.CurlFlowMath
 import dev.musicviz.render.scene.BurstScene
+import dev.musicviz.render.scene.CymaticsScene
 import dev.musicviz.render.scene.FountainScene
 import dev.musicviz.render.scene.GlUtil
 import dev.musicviz.render.scene.NebulaScene
@@ -231,6 +232,17 @@ class VisualizerRenderer(
             waterLiquid = f(from.waterLiquid, to.waterLiquid),
             waterLiquidFlow = f(from.waterLiquidFlow, to.waterLiquidFlow),
             waterLiquidFade = f(from.waterLiquidFade, to.waterLiquidFade),
+            cymaticsFundamental = f(from.cymaticsFundamental, to.cymaticsFundamental),
+            cymaticsRing = f(from.cymaticsRing, to.cymaticsRing),
+            cymaticsFocus = f(from.cymaticsFocus, to.cymaticsFocus),
+            cymaticsScale = f(from.cymaticsScale, to.cymaticsScale),
+            cymaticsFill = f(from.cymaticsFill, to.cymaticsFill),
+            cymaticsLine = f(from.cymaticsLine, to.cymaticsLine),
+            cymaticsGlow = f(from.cymaticsGlow, to.cymaticsGlow),
+            cymaticsIridescence = f(from.cymaticsIridescence, to.cymaticsIridescence),
+            cymaticsCaustic = f(from.cymaticsCaustic, to.cymaticsCaustic),
+            cymaticsFlow = f(from.cymaticsFlow, to.cymaticsFlow),
+            cymaticsSwirl = f(from.cymaticsSwirl, to.cymaticsSwirl),
             rippleOverlayStrength = f(from.rippleOverlayStrength, to.rippleOverlayStrength),
             rippleOverlaySpecular = f(from.rippleOverlaySpecular, to.rippleOverlaySpecular),
         )
@@ -439,6 +451,7 @@ class VisualizerRenderer(
             add(SceneIds.FLUID)
             add(SceneIds.CURLFLOW)
             add(SceneIds.WATER)
+            add(SceneIds.CYMATICS)
         }
 
     fun submitShader(
@@ -501,6 +514,10 @@ class VisualizerRenderer(
         scenes[SceneIds.WATER] =
             dev.musicviz.render.fluid.WaterScene(context).also { water ->
                 water.onShaderError = { onShaderError(it) }
+            }
+        scenes[SceneIds.CYMATICS] =
+            CymaticsScene(context).also { plate ->
+                plate.onShaderError = { onShaderError(it) }
             }
         if (PMBridge.available) {
             scenes[SceneIds.MILKDROP] =
@@ -971,9 +988,10 @@ class VisualizerRenderer(
     }
 
     /**
-     * Which composite-pass gate a scene falls under. The fluid family (Fluid,
-     * Curl Flow, Water) is the `else` branch: it has no pass of its own, so
-     * the composite owns every group for it.
+     * Which composite-pass gate a scene falls under. The composite-graded
+     * family - Fluid, Curl Flow, Water and Cymatics - is the `else` branch:
+     * none of them has a grading pass of its own, so the composite owns every
+     * group for them.
      */
     private fun compositeFamily(scene: Scene?): CompositeGrade.SceneFamily =
         when (scene) {
@@ -1128,6 +1146,7 @@ class VisualizerRenderer(
                         sceneId == SceneIds.WATER ->
                             dev.musicviz.render.fluid
                                 .WaterScene(context)
+                        sceneId == SceneIds.CYMATICS -> CymaticsScene(context)
                         sceneId == SceneIds.MILKDROP && PMBridge.available ->
                             ProjectMScene(
                                 postVertexSrc = loadRaw(R.raw.fade_vert),

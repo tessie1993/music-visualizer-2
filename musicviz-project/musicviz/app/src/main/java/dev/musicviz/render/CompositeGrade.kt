@@ -41,7 +41,12 @@ internal object CompositeGrade {
         /** `ProjectMScene`: `pm_post_frag` grades and zooms but never pulses. */
         MILKDROP,
 
-        /** Fluid, Curl Flow, Water: no pass of their own, composite owns all. */
+        /**
+         * Fluid, Curl Flow, Water, Cymatics: no grading pass of their own, so
+         * the composite owns every group for them. Named for the family it
+         * started as; membership is "grades nothing itself", which is why the
+         * Chladni plate joined it rather than getting a gate of its own.
+         */
         FLUID,
     }
 

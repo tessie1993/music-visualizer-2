@@ -36,6 +36,44 @@ clean-room from published literature: J. Stam, "Stable Fluids" (1999);
 M. Harris, GPU Gems ch. 38 (2004); Fedkiw et al. (2001). No code from
 GPL-licensed fluid projects is included.
 
+Naadara (technique reference)
+-----------------------------
+The CYMATICS style's nodal rendering in app/src/main/res/raw/cymatics_field_frag.glsl
+- a narrow Gaussian on the absolute field value for the bright filigree plus a
+wide one for its halo, layered additively - follows the approach taken by:
+
+  https://github.com/VCHackett/naadara
+
+MIT License
+
+Copyright (c) 2026 VCHackett
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+No source is copied: the shader, its modal field (Chladni plate terms and
+circular-membrane Bessel modes), the travelling-wave flow, the iridescent
+dispersion and the caustic shading are this project's own, and the resonator
+bank behind them (CymaticsMath.kt) is implemented from published acoustics -
+Kirchhoff plate theory, Chladni's law, McMahon's expansion for the zeros of
+J_m and Hankel's asymptotic expansion for J_m itself. The notice is here
+because the rendering approach was studied from that project.
+
 libprojectM
 -----------
 The MilkDrop-compatible visualization engine bundled as a native library

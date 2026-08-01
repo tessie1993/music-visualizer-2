@@ -36,6 +36,7 @@ import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.render.LfoConfig
 import dev.musicviz.render.LfoTarget
 import dev.musicviz.render.LfoWave
+import dev.musicviz.render.scene.CymaticsMath
 import dev.musicviz.render.scene.SceneParams
 
 /*
@@ -853,6 +854,66 @@ internal fun FluidTab(
                 }) { Text("Reset to built-in") }
             }
         }
+    }
+}
+
+/**
+ * Customize -> Cymatics tab: the standing-wave field of the sound.
+ *
+ * Shown only while that style is active (`VisualsHub.isCymaticsSceneId`),
+ * unlike the Fluid tab: every control here is read by exactly one scene, and a
+ * whole tab of sliders that move nothing is worse than a tab that comes and
+ * goes with the style it belongs to.
+ *
+ * Three groups, and they answer three different questions. WAVE is what the
+ * field hears - which geometry it rings in, what pitch answers the coarsest
+ * figure ("Fundamental"), how many standing waves are superposed, how long
+ * they ring, and whether the field follows raw band energy or the spectral
+ * peaks ("Tonal focus", see [CymaticsMath]). FIELD is how much of it is on
+ * screen and how fast it moves. LOOK is how it is drawn: from bare nodal
+ * filigree on dark cells to a fully filled iridescent surface.
+ */
+@Composable
+internal fun CymaticsTab(
+    p: SceneParams,
+    onChange: (SceneParams) -> Unit,
+) {
+    Column {
+        SectionHeader("Wave")
+        ControlHint(
+            "The standing-wave field of whatever is playing - or of the mic, " +
+                "on live input - drawn fullscreen. A pure tone gives one clean " +
+                "symmetric figure, a chord the superposition of its notes'.",
+        )
+        LockableChipLabel("Geometry")
+        ChipRow(
+            SceneParams.CYMATICS_GEOMETRIES,
+            p.cymaticsGeometry,
+        ) { onChange(p.copy(cymaticsGeometry = it)) }
+        LabeledSlider(
+            "Fundamental (Hz)",
+            p.cymaticsFundamental,
+            CymaticsMath.MIN_FUNDAMENTAL_HZ..CymaticsMath.MAX_FUNDAMENTAL_HZ,
+        ) { onChange(p.copy(cymaticsFundamental = it)) }
+        LabeledIntSlider("Standing waves", p.cymaticsModes, 1..CymaticsMath.MAX_RENDERED_MODES) {
+            onChange(p.copy(cymaticsModes = it))
+        }
+        LabeledSlider("Tonal focus", p.cymaticsFocus, 0f..1f) { onChange(p.copy(cymaticsFocus = it)) }
+        LabeledSlider("Plate ring", p.cymaticsRing, 0f..1f) { onChange(p.copy(cymaticsRing = it)) }
+
+        SectionHeader("Field")
+        ControlHint("How much of the wave field fills the screen, and how it moves through it.")
+        LabeledSlider("Field scale", p.cymaticsScale, 0.5f..8f) { onChange(p.copy(cymaticsScale = it)) }
+        LabeledSlider("Wave flow", p.cymaticsFlow, 0f..1f) { onChange(p.copy(cymaticsFlow = it)) }
+        LabeledSlider("Field swirl", p.cymaticsSwirl, -1f..1f) { onChange(p.copy(cymaticsSwirl = it)) }
+
+        SectionHeader("Look")
+        ControlHint("Fill runs from bare nodal filigree on dark cells to a fully filled iridescent surface.")
+        LabeledSlider("Fill", p.cymaticsFill, 0f..1f) { onChange(p.copy(cymaticsFill = it)) }
+        LabeledSlider("Nodal lines", p.cymaticsLine, 0f..2f) { onChange(p.copy(cymaticsLine = it)) }
+        LabeledSlider("Nodal glow", p.cymaticsGlow, 0f..2f) { onChange(p.copy(cymaticsGlow = it)) }
+        LabeledSlider("Iridescence", p.cymaticsIridescence, 0f..1f) { onChange(p.copy(cymaticsIridescence = it)) }
+        LabeledSlider("Caustic sheen", p.cymaticsCaustic, 0f..1.5f) { onChange(p.copy(cymaticsCaustic = it)) }
     }
 }
 

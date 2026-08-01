@@ -216,6 +216,34 @@ data class SceneParams(
     val waterLiquidFlow: Float = 1.4f,
     // How fast the film clears, 0 (never) .. 2
     val waterLiquidFade: Float = 0.35f,
+    // Cymatics (CYMATICS scene): the sound's standing-wave field, fullscreen.
+    // See CymaticsMath for the pitch -> mode law these parameters tune.
+    // 0 = water dish (circular modes) | 1 = Chladni plate (square modes)
+    val cymaticsGeometry: Int = 0,
+    // Hz that answers with the coarsest mode; 40..440
+    val cymaticsFundamental: Float = 110f,
+    // standing waves superposed at once, 1..CymaticsMath.MAX_RENDERED_MODES
+    val cymaticsModes: Int = 5,
+    // how long a mode keeps ringing, 0..1 (CymaticsMath.ringSeconds)
+    val cymaticsRing: Float = 0.35f,
+    // 0 = raw band energy (bass-led) .. 1 = spectral peaks only (pitch-led)
+    val cymaticsFocus: Float = 0.7f,
+    // how much of the wave field is on screen at once, 0.5..8
+    val cymaticsScale: Float = 3.2f,
+    // 0 = bare filigree on dark cells .. 1 = a fully filled iridescent surface
+    val cymaticsFill: Float = 0.45f,
+    // nodal-line weight, 0..2
+    val cymaticsLine: Float = 1f,
+    // halo around the nodal lines, 0..2
+    val cymaticsGlow: Float = 1f,
+    // rainbow fringing on the slopes, 0..1
+    val cymaticsIridescence: Float = 0.5f,
+    // glassy sheen where the surface is flat, 0..1.5
+    val cymaticsCaustic: Float = 0.8f,
+    // standing waves (0) .. rings marching outward (1)
+    val cymaticsFlow: Float = 0.35f,
+    // whole-field rotation in radians/second, -1..1
+    val cymaticsSwirl: Float = 0.05f,
     // Ripple overlay (all styles; consumed by follow-up unit F2)
     val rippleOverlayEnabled: Boolean = false,
     val rippleOverlayStrength: Float = 0.4f,
@@ -275,6 +303,13 @@ data class SceneParams(
 
         /** Journey path families (index = fluidSpawnPath). */
         val FLUID_PATHS: List<String> = listOf("Orbit", "Lissajous", "Rose", "Bloom", "Drift")
+
+        /**
+         * What the CYMATICS field rings in (index = cymaticsGeometry): a round
+         * dish of water, whose modes are concentric rings crossed by petals,
+         * or a square Chladni plate, whose modes are a nodal lattice.
+         */
+        val CYMATICS_GEOMETRIES: List<String> = listOf("Water dish", "Chladni plate")
     }
 
     /** True when this slot renders a user-made palette rather than a PALETTES entry. */

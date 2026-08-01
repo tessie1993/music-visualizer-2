@@ -244,6 +244,24 @@ object ParamRandomizer {
         r("Ripple overlay strength") { it.copy(rippleOverlayStrength = f(0.15f, 0.7f)) }
         r("Ripple glint") { it.copy(rippleOverlaySpecular = f(0.1f, 0.6f)) }
 
+        // ---- Cymatics (the standing-wave field) ----
+        // Rolled unconditionally like the fluid block: a style that does not
+        // read these is unaffected, so a roll taken elsewhere still leaves the
+        // field in a sane state when the user switches to it.
+        r("Geometry") { it.copy(cymaticsGeometry = rng.nextInt(SceneParams.CYMATICS_GEOMETRIES.size)) }
+        r("Fundamental (Hz)") { it.copy(cymaticsFundamental = f(55f, 260f)) }
+        r("Standing waves") { it.copy(cymaticsModes = n(2, CymaticsMath.MAX_RENDERED_MODES)) }
+        r("Tonal focus") { it.copy(cymaticsFocus = f(0.35f, 1f)) }
+        r("Plate ring") { it.copy(cymaticsRing = f(0.15f, 0.8f)) }
+        r("Field scale") { it.copy(cymaticsScale = f(1.6f, 5.5f)) }
+        r("Wave flow") { it.copy(cymaticsFlow = f(0.05f, 0.8f)) }
+        r("Field swirl") { it.copy(cymaticsSwirl = f(-0.3f, 0.3f)) }
+        r("Fill") { it.copy(cymaticsFill = f(0.05f, 1f)) }
+        r("Nodal lines") { it.copy(cymaticsLine = f(0.4f, 1.7f)) }
+        r("Nodal glow") { it.copy(cymaticsGlow = f(0.3f, 1.7f)) }
+        r("Iridescence") { it.copy(cymaticsIridescence = f(0f, 1f)) }
+        r("Caustic sheen") { it.copy(cymaticsCaustic = f(0.2f, 1.3f)) }
+
         return s
     }
 }

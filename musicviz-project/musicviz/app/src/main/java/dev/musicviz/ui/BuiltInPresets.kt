@@ -462,6 +462,95 @@ object BuiltInPresets {
             ),
         )
 
+    /**
+     * Cymatics starting points: one field, three ways of looking at it.
+     * "CymaScope" is the water dish photographed from above - bright nodal
+     * filigree over dark cells, the laboratory reading; "Psychedelic" fills
+     * that same field in and lets the palette band it into iridescent rings;
+     * "Chladni plate" swaps the round dish for the square plate's lattice.
+     */
+    private val CYMATICS_VARIANTS: List<Preset> =
+        listOf(
+            Preset(
+                name = "cymatics · CymaScope",
+                sceneId = dev.musicviz.render.scene.SceneIds.CYMATICS,
+                attack = 0.35f,
+                decay = 0.4f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        cymaticsGeometry = 0,
+                        cymaticsFundamental = 110f,
+                        cymaticsModes = 5,
+                        cymaticsFocus = 0.7f,
+                        cymaticsRing = 0.35f,
+                        cymaticsScale = 3.4f,
+                        cymaticsFill = 0.12f,
+                        cymaticsLine = 1f,
+                        cymaticsGlow = 1.1f,
+                        cymaticsIridescence = 0.35f,
+                        cymaticsCaustic = 0.8f,
+                        cymaticsFlow = 0.25f,
+                        cymaticsSwirl = 0.04f,
+                        palette = 6,
+                        hueRange = 0.5f,
+                    ),
+            ),
+            Preset(
+                name = "cymatics · Psychedelic",
+                sceneId = dev.musicviz.render.scene.SceneIds.CYMATICS,
+                attack = 0.3f,
+                decay = 0.5f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        cymaticsGeometry = 0,
+                        // Fewer, longer-ringing modes: the iridescent banding
+                        // reads as one flowing figure rather than as noise.
+                        cymaticsFundamental = 90f,
+                        cymaticsModes = 3,
+                        cymaticsFocus = 0.85f,
+                        cymaticsRing = 0.55f,
+                        cymaticsScale = 3.0f,
+                        cymaticsFill = 1f,
+                        cymaticsLine = 1.6f,
+                        cymaticsGlow = 1.2f,
+                        cymaticsIridescence = 1f,
+                        cymaticsCaustic = 1f,
+                        cymaticsFlow = 0.5f,
+                        cymaticsSwirl = 0.06f,
+                        palette = 0,
+                    ),
+            ),
+            Preset(
+                name = "cymatics · Chladni plate",
+                sceneId = dev.musicviz.render.scene.SceneIds.CYMATICS,
+                attack = 0.35f,
+                decay = 0.45f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        cymaticsGeometry = 1,
+                        cymaticsFundamental = 82f,
+                        cymaticsModes = 4,
+                        cymaticsFocus = 0.9f,
+                        cymaticsRing = 0.5f,
+                        // The square plate's own domain is [-1, 1], so a scale
+                        // near 1 frames one plate rather than tiling several.
+                        cymaticsScale = 1.15f,
+                        cymaticsFill = 0.3f,
+                        cymaticsLine = 1.1f,
+                        cymaticsGlow = 0.9f,
+                        cymaticsIridescence = 0.3f,
+                        cymaticsCaustic = 0.7f,
+                        cymaticsFlow = 0.15f,
+                        cymaticsSwirl = 0f,
+                        palette = 4,
+                        hueRange = 0.6f,
+                    ),
+            ),
+        )
+
     val ALL: List<Preset> =
         (VisualizerRenderer.PARTICLE_SCENES + VisualizerRenderer.SHADER_SCENES.keys).flatMap { id ->
             LOOKS.map { look ->
@@ -474,7 +563,7 @@ object BuiltInPresets {
                     params = look.params,
                 )
             }
-        } + FLUID_VARIANTS
+        } + FLUID_VARIANTS + CYMATICS_VARIANTS
 
     fun isBuiltIn(name: String): Boolean = name.contains(" · ")
 }
