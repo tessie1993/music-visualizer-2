@@ -54,6 +54,7 @@ object ParamSurface {
             "Cymatics" to listOf("render/scene/CymaticsScene.kt"),
             "Beam" to listOf("render/scene/BeamScene.kt"),
             "Hyperspace" to listOf("render/scene/HyperspaceScene.kt"),
+            "Beam" to listOf("render/scene/BeamScene.kt"),
             "Composite" to listOf("render/VisualizerRenderer.kt", "render/CompositeGrade.kt"),
             "Export" to listOf("export/FxCompositor.kt", "export/VideoExporter.kt"),
         )
