@@ -6,8 +6,11 @@ package dev.musicviz.analysis
  */
 class BandSmoother(
     private val bandCount: Int,
-    var attack: Float = 0.6f,
-    var decay: Float = 0.12f,
+    /** Volatile: the reactivity sliders write it off-thread, from the main
+     *  thread, while the analysis worker reads it on every hop. */
+    @Volatile var attack: Float = 0.6f,
+    /** See [attack]: same writer, same reader, same reason. */
+    @Volatile var decay: Float = 0.12f,
 ) {
     private val state = FloatArray(bandCount)
 

@@ -302,6 +302,7 @@ class VideoExporter(
         var flowFieldRef: dev.musicviz.render.fluid.FlowField? = null
         var rippleRef: dev.musicviz.render.fluid.RippleSim? = null
         var muxerStarted = false
+        var muxerStopped = false
         try {
             var encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).also { encoderRef = it }
             var fps = requestedFps.coerceIn(24, 60)
@@ -632,6 +633,16 @@ class VideoExporter(
                     onProgress(0.95f + it * 0.05f)
                 }
             }
+            if (muxerStarted && !isCancelled()) {
+                // stop() is where the moov atom is written, so a failure here
+                // (a disk that filled at finalize, a track with no samples)
+                // means a file no player can open. Done on the success path,
+                // where it is allowed to throw: swallowed in the finally, the
+                // export returned normally and published that file to the
+                // gallery as "Saved".
+                muxer.stop()
+                muxerStopped = true
+            }
         } finally {
             // Cleanup failures (e.g. stopping a muxer after a mid-export error)
             // must never mask the original exception. Refs are null for any
@@ -640,7 +651,10 @@ class VideoExporter(
             runCatching { flowFieldRef?.release() }
             runCatching { rippleRef?.release() }
             runCatching { fxRef?.release() }
-            if (muxerStarted) runCatching { muxerRef?.stop() }
+            // Only the abandoned runs - cancelled, or unwinding from an
+            // exception - stop the muxer here, where the failure must stay
+            // swallowed so it cannot mask the reason the export is unwinding.
+            if (muxerStarted && !muxerStopped) runCatching { muxerRef?.stop() }
             runCatching { muxerRef?.release() }
             runCatching { encoderRef?.stop() }
             runCatching { encoderRef?.release() }

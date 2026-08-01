@@ -78,24 +78,26 @@ class StudioExporter(
     ): Result {
         cancelled = false
         val scratch = File(context.cacheDir, "studio-${System.currentTimeMillis()}.mp4")
-        val outcome =
-            withContext(Dispatchers.Main) {
-                runTransformer(source, edit, scratch, sourceDurationMs, onProgress)
-            }
-        if (outcome != null) {
+        // The scratch file is deleted on the way out however this ends,
+        // including the way the user actually cancels: cancelling the export
+        // cancels this coroutine's job, so the withContext calls below throw
+        // CancellationException and unwind past every ordinary delete. A
+        // cancelled 1080p export left ~150 MB in cacheDir, once per attempt.
+        try {
+            val outcome =
+                withContext(Dispatchers.Main) {
+                    runTransformer(source, edit, scratch, sourceDurationMs, onProgress)
+                }
+            if (outcome != null) return outcome
+            if (cancelled) return Result.Cancelled
+            val published =
+                withContext(Dispatchers.IO) { publish(scratch, displayName) }
+            return published
+                ?.let { Result.Saved(it, edit.outputMs(sourceDurationMs)) }
+                ?: Result.Failed("The finished file could not be saved to Movies/MusicViz.")
+        } finally {
             scratch.delete()
-            return outcome
         }
-        if (cancelled) {
-            scratch.delete()
-            return Result.Cancelled
-        }
-        val published =
-            withContext(Dispatchers.IO) { publish(scratch, displayName) }
-        scratch.delete()
-        return published
-            ?.let { Result.Saved(it, edit.outputMs(sourceDurationMs)) }
-            ?: Result.Failed("The finished file could not be saved to Movies/MusicViz.")
     }
 
     /** Returns null on success, or the failure/cancellation that ended it. */

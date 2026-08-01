@@ -46,6 +46,7 @@ abstract class ParticleSceneBase(
         private set
 
     private var program = 0
+    private var programOk = false
     private var instanceVbo = 0
     private var cornerVbo = 0
     private var vao = 0
@@ -60,8 +61,30 @@ abstract class ParticleSceneBase(
         sceneParams = params
     }
 
+    /** Set by the renderer so a rejected shader reaches the user, not a log. */
+    var onShaderError: (String?) -> Unit = {}
+
     override fun init() {
-        program = GlUtil.buildProgram(shaders.vertex, shaders.fragment).also { uniformLocs.clear() }
+        // Handles from a lost EGL context are dead names, never valid again.
+        program = 0
+        vao = 0
+        instanceVbo = 0
+        cornerVbo = 0
+        programOk = false
+        uniformLocs.clear()
+        // A driver-rejected shader must degrade the style to "unavailable",
+        // never crash the GL thread: every scene is built before the user has
+        // picked one, so throwing here would take the other thirty-five down
+        // with it on every single launch. The id is what the style picker
+        // labels the entry with, so naming it here names what the user chose.
+        try {
+            program = GlUtil.buildProgram(shaders.vertex, shaders.fragment)
+            programOk = true
+        } catch (e: GlUtil.ShaderCompileException) {
+            // Silent black is the worst failure mode: say why instead.
+            onShaderError("\"$id\" unavailable on this GPU: ${e.message}")
+            return
+        }
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
         vao = ids[0]
@@ -259,6 +282,10 @@ abstract class ParticleSceneBase(
     }
 
     override fun draw(timeSeconds: Float) {
+        // Nothing was built, so there is no VAO to bind and no instance buffer
+        // to fill; [update] still runs, so the style resumes if the context is
+        // recreated on a driver that does accept the shader.
+        if (!programOk) return
         val p = sceneParams
         GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, viewport, 0)
         val widthPx = viewport[2].coerceAtLeast(1)
@@ -305,5 +332,7 @@ abstract class ParticleSceneBase(
         vao = 0
         instanceVbo = 0
         cornerVbo = 0
+        programOk = false
+        uniformLocs.clear()
     }
 }

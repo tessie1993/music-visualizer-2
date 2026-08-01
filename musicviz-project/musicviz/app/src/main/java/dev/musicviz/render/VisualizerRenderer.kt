@@ -307,7 +307,22 @@ class VisualizerRenderer(
     private val pendingCustomShaders = java.util.concurrent.ConcurrentLinkedQueue<Pair<String, String>>()
 
     /** Retained across EGL context loss so scenes can be restored on recreation. */
+    @Volatile
     private var lastMilkPreset: String? = null
+
+    /**
+     * The live MilkDrop scene, or null while there is none (no libprojectM, or
+     * the GL thread is between contexts). Written on the GL thread as the
+     * registry is rebuilt, read by [loadMilkPreset] and
+     * [reloadCurrentMilkPreset], which are called from the main thread.
+     *
+     * A preset that arrives during the rebuild lands on null and is dropped
+     * here - [onSurfaceCreated] re-queues [lastMilkPreset] onto the fresh
+     * scene afterwards, and both fields are `@Volatile`, so the write that
+     * preceded the dropped queue is guaranteed visible to that re-queue.
+     */
+    @Volatile
+    private var milkdropScene: ProjectMScene? = null
     private val activeCustomShaders = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     /** User fluid force/dye injection sources (extension points), retained
@@ -390,6 +405,13 @@ class VisualizerRenderer(
 
     val milkdropAvailable: Boolean get() = PMBridge.available
 
+    /**
+     * The scene registry, GL THREAD ONLY: [onSurfaceCreated] clears and
+     * repopulates it wholesale on every context recreation, and a plain
+     * HashMap read during that rehash can return null for a key that is there,
+     * spin, or throw. Anything off-thread that needs a scene gets a
+     * `@Volatile` handle on it ([milkdropScene]) instead of a lookup.
+     */
     private val scenes = LinkedHashMap<String, Scene>()
     private var activeScene: Scene? = null
     private var outgoingScene: Scene? = null
@@ -410,14 +432,36 @@ class VisualizerRenderer(
     private var trailWarpProgram = 0
     private var trailFbo = 0
     private var trailTex = 0
-    private var compositeProgram = 0
+    private var compositeProgram = CompositeProgram(0)
 
     /** The unspliced composite, used for the built-in styles and as fallback. */
-    private var baseCompositeProgram = 0
+    private var baseCompositeProgram = CompositeProgram(0)
 
-    /** Uniform locations cached per program link; ~30 glGetUniformLocation
-     *  calls per frame are measurable driver overhead on mobile GPUs. */
-    private val compositeLocs = HashMap<Int, HashMap<String, Int>>()
+    /**
+     * A linked composite program and the uniform locations resolved against
+     * it. Caching them is worth an object: ~30 glGetUniformLocation calls per
+     * frame are measurable driver overhead on mobile GPUs.
+     *
+     * The cache travels WITH the program rather than living in a map keyed by
+     * the GL name, because a name is not an identity: glDeleteProgram frees it
+     * and the next glCreateProgram is free to hand the same number straight
+     * back. Keyed by handle, an evicted variant's locations were inherited by
+     * whatever linked next - and every spliced variant declares its own
+     * uniforms (see [TransitionCatalog.spliceInto]), so those locations point
+     * at other slots, or at -1 where the splice pruned one. The result was a
+     * sampler bound to the wrong unit and a uProgress that never advanced -
+     * a black or frozen transition, with no GL error anywhere to trace it
+     * from, lasting until the next context loss. Tying the two together makes
+     * that class of bug unrepresentable: evicting the program evicts its
+     * locations because they are the same object.
+     */
+    private class CompositeProgram(
+        val handle: Int,
+    ) {
+        private val locs = HashMap<String, Int>()
+
+        fun loc(name: String): Int = locs.getOrPut(name) { GLES30.glGetUniformLocation(handle, name) }
+    }
 
     /**
      * Selected transition, as a [TransitionCatalog] id. Built-in styles are
@@ -434,7 +478,7 @@ class VisualizerRenderer(
      * browsing the picker would otherwise leave 123 programs resident. Four is
      * enough that flipping between a couple of favourites never recompiles.
      */
-    private val transitionPrograms = LinkedHashMap<String, Int>()
+    private val transitionPrograms = LinkedHashMap<String, CompositeProgram>()
 
     /** Corpus source of the variant currently bound, for its uniform upload. */
     private var activeTransition: TransitionCatalog.Def? = null
@@ -444,10 +488,7 @@ class VisualizerRenderer(
     private val fadeLocs = HashMap<String, Int>()
     private val trailLocs = HashMap<String, Int>()
 
-    private fun cLoc(name: String): Int =
-        compositeLocs
-            .getOrPut(compositeProgram) { HashMap() }
-            .getOrPut(name) { GLES30.glGetUniformLocation(compositeProgram, name) }
+    private fun cLoc(name: String): Int = compositeProgram.loc(name)
 
     /** Max linked transition variants held at once (see [transitionPrograms]). */
     private val maxTransitionPrograms = 4
@@ -463,7 +504,7 @@ class VisualizerRenderer(
      * to link falls back to the base program: a transition that will not
      * compile on some driver must not take the app's scene switching with it.
      */
-    private fun transitionProgram(id: String): Int {
+    private fun transitionProgram(id: String): CompositeProgram {
         if (TransitionCatalog.builtIn(id) != null) return baseCompositeProgram
         transitionPrograms[id]?.let {
             // Refresh recency: LinkedHashMap keeps insertion order, so
@@ -475,14 +516,18 @@ class VisualizerRenderer(
         val def = TransitionCatalog.definition(context, id) ?: return baseCompositeProgram
         val program =
             runCatching {
-                GlUtil.buildProgram(loadRaw(R.raw.fade_vert), TransitionCatalog.spliceInto(compositeSource, def))
+                CompositeProgram(
+                    GlUtil.buildProgram(loadRaw(R.raw.fade_vert), TransitionCatalog.spliceInto(compositeSource, def)),
+                )
             }.getOrElse {
                 android.util.Log.w("Transitions", "\"$id\" failed to link: ${it.message}")
                 return baseCompositeProgram
             }
         while (transitionPrograms.size >= maxTransitionPrograms) {
             val oldest = transitionPrograms.keys.first()
-            transitionPrograms.remove(oldest)?.let { p -> GLES30.glDeleteProgram(p) }
+            // Dropping the entry drops the evicted program's uniform locations
+            // with it - the driver is about to reissue that name.
+            transitionPrograms.remove(oldest)?.let { p -> GLES30.glDeleteProgram(p.handle) }
         }
         transitionPrograms[id] = program
         return program
@@ -561,6 +606,16 @@ class VisualizerRenderer(
         }
     }
 
+    /**
+     * Every style this build can offer, in the order the registry holds them.
+     *
+     * This is now the ONE list: [onSurfaceCreated] walks it and builds each
+     * scene through [createScene], so a style named here always exists and a
+     * style not named here can never be reached. It used to be a second,
+     * parallel spelling of the constructor block below, and it drifted -
+     * Curl Flow was listed here for a release while nothing ever constructed
+     * it, so picking it silently did nothing.
+     */
     fun availableSceneIds(): List<String> =
         buildList {
             addAll(PARTICLE_SCENES)
@@ -573,6 +628,67 @@ class VisualizerRenderer(
             add(SceneIds.BEAM)
             add(SceneIds.HYPERSPACE)
         }
+
+    /**
+     * Constructs the scene named by [id], wired to this renderer's error
+     * channel. GL thread only, and only from [onSurfaceCreated]: the returned
+     * scene owns no GL resources until [Scene.init] runs.
+     *
+     * Every branch is reachable from [availableSceneIds] and nothing else asks
+     * for an id, so `error` here is a wiring mistake rather than a device
+     * condition - `RendererWiringTest` compares the two lists and fails the
+     * build on one instead of letting it reach a GL thread.
+     */
+    private fun createScene(
+        id: String,
+        particleShaders: ParticleSceneBase.ShaderSources,
+        quadVert: String,
+    ): Scene {
+        SHADER_SCENES[id]?.let { res -> return ShaderScene(id, quadVert, loadRaw(res)) { onShaderError(it) } }
+        return when (id) {
+            SceneIds.NEBULA -> NebulaScene(particleShaders)
+            SceneIds.BURSTS -> BurstScene(particleShaders)
+            SceneIds.SWARM -> SwarmScene(particleShaders)
+            SceneIds.FOUNTAIN -> FountainScene(particleShaders)
+            SceneIds.ORBITS -> OrbitScene(particleShaders)
+            SceneIds.GALAXY -> GalaxyScene(particleShaders)
+            SceneIds.ATTRACTOR -> AttractorScene(particleShaders)
+            SceneIds.STORM -> StormScene(particleShaders)
+            SceneIds.INKFLOW -> InkflowScene(particleShaders)
+            SceneIds.FLUID ->
+                dev.musicviz.render.fluid.FluidScene(context).also { fluid ->
+                    fluid.onShaderError = { onShaderError(it) }
+                }
+            SceneIds.CURLFLOW ->
+                dev.musicviz.render.fluid
+                    .CurlFlowScene(context)
+            SceneIds.WATER ->
+                dev.musicviz.render.fluid.WaterScene(context).also { water ->
+                    water.onShaderError = { onShaderError(it) }
+                }
+            SceneIds.BEAM ->
+                BeamScene(context).also { beam ->
+                    beam.onShaderError = { onShaderError(it) }
+                }
+            SceneIds.CYMATICS ->
+                CymaticsScene(context).also { plate ->
+                    plate.onShaderError = { onShaderError(it) }
+                }
+            SceneIds.HYPERSPACE ->
+                HyperspaceScene(context).also { hyper ->
+                    hyper.onShaderError = { onShaderError(it) }
+                }
+            SceneIds.MILKDROP ->
+                ProjectMScene(
+                    postVertexSrc = loadRaw(R.raw.fade_vert),
+                    postFragmentSrc = loadRaw(R.raw.pm_post_frag),
+                    sharedTextureDir = File(context.filesDir, "milk/textures").absolutePath,
+                    pcmProvider = { pcmProvider() },
+                    onError = { onShaderError(it) },
+                )
+            else -> error("availableSceneIds offers \"$id\" but createScene cannot build it")
+        }
+    }
 
     fun submitShader(
         sceneId: String,
@@ -587,20 +703,27 @@ class VisualizerRenderer(
     /** The user-edited fragment source for [sceneId], or null if unedited. */
     fun customShaderFor(sceneId: String): String? = activeCustomShaders[sceneId]
 
+    /** Thread-safe: the scene queues the path and loads it on the GL thread. */
     fun loadMilkPreset(path: String) {
+        // Recorded FIRST, so a call that races the registry rebuild is still
+        // picked up by onSurfaceCreated's re-queue rather than lost. Losing it
+        // is what left MilkDrop showing projectM's idle logo after a restart.
         lastMilkPreset = path
-        (scenes[SceneIds.MILKDROP] as? ProjectMScene)?.queuePreset(path)
+        milkdropScene?.queuePreset(path)
     }
 
     /** Re-queues the currently loaded preset so newly added textures apply. */
     fun reloadCurrentMilkPreset() {
-        (scenes[SceneIds.MILKDROP] as? ProjectMScene)?.reloadCurrent()
+        milkdropScene?.reloadCurrent()
     }
 
     override fun onSurfaceCreated(
         gl: GL10?,
         config: EGLConfig?,
     ) {
+        // Nulled before the scenes it names are released, so a main-thread
+        // preset load never reaches a scene whose GL handles are already dead.
+        milkdropScene = null
         scenes.values.forEach { it.release() }
         scenes.clear()
         fboA.release()
@@ -613,54 +736,15 @@ class VisualizerRenderer(
         trailW = 0
         trailH = 0
         val particleShaders = particleShaderSources(context)
-        scenes[SceneIds.NEBULA] = NebulaScene(particleShaders)
-        scenes[SceneIds.BURSTS] = BurstScene(particleShaders)
-        scenes[SceneIds.SWARM] = SwarmScene(particleShaders)
-        scenes[SceneIds.FOUNTAIN] = FountainScene(particleShaders)
-        scenes[SceneIds.ORBITS] = OrbitScene(particleShaders)
-        scenes[SceneIds.GALAXY] = GalaxyScene(particleShaders)
-        scenes[SceneIds.ATTRACTOR] = AttractorScene(particleShaders)
-        scenes[SceneIds.STORM] = StormScene(particleShaders)
-        scenes[SceneIds.INKFLOW] = InkflowScene(particleShaders)
         val quadVert = loadRaw(R.raw.quad_vert)
-        for ((id, res) in SHADER_SCENES) {
-            scenes[id] = ShaderScene(id, quadVert, loadRaw(res)) { onShaderError(it) }
+        for (id in availableSceneIds()) scenes[id] = createScene(id, particleShaders, quadVert)
+        // The particle family shares one base, so it is wired here rather than
+        // nine times over in createScene. Before init(), because init() is
+        // where a driver-rejected shader has something to report.
+        scenes.values.filterIsInstance<ParticleSceneBase>().forEach { particles ->
+            particles.onShaderError = { onShaderError(it) }
         }
-        scenes[SceneIds.FLUID] =
-            dev.musicviz.render.fluid.FluidScene(context).also { fluid ->
-                fluid.onShaderError = { onShaderError(it) }
-            }
-        // Was listed in availableSceneIds but never constructed - selecting
-        // Curl Flow silently did nothing (the "style not working" bug).
-        scenes[SceneIds.CURLFLOW] =
-            dev.musicviz.render.fluid
-                .CurlFlowScene(context)
-        scenes[SceneIds.WATER] =
-            dev.musicviz.render.fluid.WaterScene(context).also { water ->
-                water.onShaderError = { onShaderError(it) }
-            }
-        scenes[SceneIds.BEAM] =
-            BeamScene(context).also { beam ->
-                beam.onShaderError = { onShaderError(it) }
-            }
-        scenes[SceneIds.CYMATICS] =
-            CymaticsScene(context).also { plate ->
-                plate.onShaderError = { onShaderError(it) }
-            }
-        scenes[SceneIds.HYPERSPACE] =
-            HyperspaceScene(context).also { hyper ->
-                hyper.onShaderError = { onShaderError(it) }
-            }
-        if (PMBridge.available) {
-            scenes[SceneIds.MILKDROP] =
-                ProjectMScene(
-                    postVertexSrc = loadRaw(R.raw.fade_vert),
-                    postFragmentSrc = loadRaw(R.raw.pm_post_frag),
-                    sharedTextureDir = File(context.filesDir, "milk/textures").absolutePath,
-                    pcmProvider = { pcmProvider() },
-                    onError = { onShaderError(it) },
-                )
-        }
+        milkdropScene = scenes[SceneIds.MILKDROP] as? ProjectMScene
         scenes.values.forEach { it.init() }
         // Restore state that would otherwise be lost when the EGL context is
         // destroyed while backgrounded: re-apply the current params to every
@@ -670,7 +754,7 @@ class VisualizerRenderer(
         for ((sceneId, src) in activeCustomShaders) {
             (scenes[sceneId] as? ShaderScene)?.setFragmentSource(src)
         }
-        lastMilkPreset?.let { (scenes[SceneIds.MILKDROP] as? ProjectMScene)?.queuePreset(it) }
+        lastMilkPreset?.let { milkdropScene?.queuePreset(it) }
         // Re-apply user fluid injection shaders lost with the old context.
         if (fluidForceSrc != null || fluidDyeSrc != null) fluidInjectionDirty = true
         activeScene = scenes[requestedSceneId] ?: scenes[SceneIds.NEBULA]
@@ -730,12 +814,12 @@ class VisualizerRenderer(
         fadeProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), loadRaw(R.raw.fade_frag))
         trailWarpProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), loadRaw(R.raw.trail_warp_frag))
         compositeSource = loadRaw(R.raw.composite_frag)
-        baseCompositeProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), compositeSource)
+        baseCompositeProgram = CompositeProgram(GlUtil.buildProgram(loadRaw(R.raw.fade_vert), compositeSource))
         compositeProgram = baseCompositeProgram
-        // Variants belong to the lost context; their names are dead now.
+        // Variants belong to the lost context; their names are dead now, and
+        // their cached locations go with them because they are the same object.
         transitionPrograms.clear()
         activeTransition = null
-        compositeLocs.clear()
         fadeLocs.clear()
         trailLocs.clear()
         val ids = IntArray(1)
@@ -984,8 +1068,8 @@ class VisualizerRenderer(
         // write them into the previous variant.
         compositeProgram = transitionProgram(transitionId)
         activeTransition = TransitionCatalog.definition(context, transitionId)
-        GLES30.glUseProgram(compositeProgram)
-        activeTransition?.let { TransitionCatalog.uploadParams(compositeProgram, it) }
+        GLES30.glUseProgram(compositeProgram.handle)
+        activeTransition?.let { TransitionCatalog.uploadParams(compositeProgram.handle, it) }
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, fboA.tex)
         GLES30.glUniform1i(cLoc("uTexA"), 0)

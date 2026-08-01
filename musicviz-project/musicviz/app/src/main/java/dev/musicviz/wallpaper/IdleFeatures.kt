@@ -30,26 +30,38 @@ class IdleFeatures(
      * waveform samples) means the wallpaper's idle frames are shaped exactly
      * like its live ones.
      */
-    bandCount: Int = 64,
-    waveformSize: Int = 128,
+    private val bandCount: Int = 64,
+    private val waveformSize: Int = 128,
 ) {
-    private val bands = FloatArray(bandCount)
-    private val waveform = FloatArray(waveformSize)
     private var phase = 0f
 
     /** Advances by [dt] seconds and returns the breathing "audio". */
     fun tick(dt: Float): AudioFeatures {
         phase += dt
         val t = phase
-        for (i in bands.indices) {
-            // Irrational-ish ratios per band: no common period, so the whole
-            // field never lines up into a pulse the eye can latch onto.
-            val rate = 0.07f + i * 0.0131f
-            bands[i] = 0.10f + 0.06f * sin(t * rate * TAU + i * 0.7f)
-        }
-        for (i in waveform.indices) {
-            waveform[i] = 0.12f * sin(t * 0.9f + i * 0.19f)
-        }
+        // Fresh arrays per tick, the same answer the live path reached with
+        // `bands.copyOf()` in [dev.musicviz.analysis.FeatureExtractor]:
+        // [AudioFeatures] is an immutable snapshot, and the GL thread keeps
+        // reading the bands and waveform of whatever frame it grabbed for as
+        // long as that frame takes to draw - routinely longer than the 16 ms
+        // until the next tick. One shared pair rewritten in place handed it a
+        // spectrum that was half this tick and half the next, on every idle
+        // frame, which is the wallpaper's normal state rather than an edge
+        // case.
+        //
+        // Allocating at 62 Hz is the price: ~800 bytes a tick of immediately
+        // dead garbage, which is a rounding error against the frames the
+        // renderer itself produces. A recycled ring of buffers would avoid it
+        // only by guessing how many frames the renderer might still be
+        // holding, and guessing low is the same tear again.
+        val bands =
+            FloatArray(bandCount) { i ->
+                // Irrational-ish ratios per band: no common period, so the whole
+                // field never lines up into a pulse the eye can latch onto.
+                val rate = 0.07f + i * 0.0131f
+                0.10f + 0.06f * sin(t * rate * TAU + i * 0.7f)
+            }
+        val waveform = FloatArray(waveformSize) { i -> 0.12f * sin(t * 0.9f + i * 0.19f) }
         return AudioFeatures(
             bands = bands,
             waveform = waveform,

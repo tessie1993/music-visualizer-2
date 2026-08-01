@@ -41,6 +41,19 @@ class VisualizerWallpaperService : WallpaperService() {
         private var running = false
 
         /**
+         * The two conditions everything this Engine runs depends on.
+         *
+         * An Engine outlives its surface - a configuration change, the display
+         * cycling off and back on, applying a wallpaper that was being
+         * previewed - and it spends most of its life invisible behind another
+         * app. The two events arrive independently and in either order, so
+         * they are held as state and reconciled in one place ([syncRunState])
+         * rather than each call site starting and stopping things itself.
+         */
+        private var surfaceAvailable = false
+        private var visible = false
+
+        /**
          * A GLSurfaceView that draws into the wallpaper Engine's surface.
          *
          * The whole trick is [getHolder]: GLSurfaceView asks its holder for a
@@ -78,7 +91,9 @@ class VisualizerWallpaperService : WallpaperService() {
                     setRenderer(engine)
                     renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
                 }
-            startFeeding(engine)
+            // Nothing starts here: the surface does not exist yet, and the
+            // Engine is not visible yet. Both arrive as their own callbacks,
+            // and both go through [syncRunState].
         }
 
         /**
@@ -119,8 +134,14 @@ class VisualizerWallpaperService : WallpaperService() {
          * source has to keep ticking at a steady rate whether or not frames
          * are being produced, so that the idle motion stays smooth when the
          * system throttles the wallpaper.
+         *
+         * A no-op while a feeder is already alive: every surface and
+         * visibility change funnels through [syncRunState], and several of
+         * them land on "should be running" in a row, which must not leave two
+         * threads writing `features` and `lastFrameMs` at once.
          */
         private fun startFeeding(engine: VisualizerRenderer) {
+            if (feeder != null) return
             running = true
             lastFrameMs = android.os.SystemClock.elapsedRealtime()
             feeder =
@@ -141,25 +162,71 @@ class VisualizerWallpaperService : WallpaperService() {
                 }
         }
 
+        /**
+         * Stops the feeder and waits for it, so a restart can never overlap
+         * the thread it replaces.
+         *
+         * The loop tests `running` once per [FEED_INTERVAL_MS], so the wait is
+         * that long in practice; the timeout is only there to keep a wedged
+         * thread from holding up the main thread on the way out.
+         */
+        private fun stopFeeding() {
+            running = false
+            runCatching { feeder?.join(FEEDER_JOIN_MS) }
+            feeder = null
+        }
+
+        /**
+         * Brings both halves of the Engine in line with the state it is in.
+         *
+         * Feeding and drawing have exactly the same precondition - a surface
+         * to draw on and a user who can see it - so they start and stop
+         * together. Stopping the feeder is the half that was missing: nothing
+         * reads `features` while the wallpaper is behind an app, and that is
+         * the bulk of its life, so leaving the thread waking 62 times a second
+         * to synthesize a spectrum for nobody was pure drain. Stopping the GL
+         * view is also what releases and rebuilds the EGL context the renderer
+         * expects to lose.
+         */
+        private fun syncRunState() {
+            val engine = renderer ?: return
+            if (surfaceAvailable && visible) {
+                glView?.onResume()
+                startFeeding(engine)
+            } else {
+                glView?.onPause()
+                stopFeeding()
+            }
+        }
+
         override fun onVisibilityChanged(visible: Boolean) {
             super.onVisibilityChanged(visible)
-            // Nothing is drawn while the wallpaper is behind an app. This is
-            // the whole battery story for a continuously-rendering wallpaper,
-            // and GLSurfaceView's pause/resume is also what releases and
-            // rebuilds the EGL context the renderer expects to lose.
-            glView?.let { if (visible) it.onResume() else it.onPause() }
+            this.visible = visible
+            syncRunState()
+        }
+
+        /**
+         * The surface comes BACK, more than once, under a live Engine.
+         *
+         * Without this the Engine survives a surface destroy with its feeder
+         * thread gone for good and its GL thread still paused: every
+         * feature-driven motion frozen on the last idle frame, and nothing but
+         * re-selecting the wallpaper to recover it.
+         */
+        override fun onSurfaceCreated(holder: SurfaceHolder) {
+            super.onSurfaceCreated(holder)
+            surfaceAvailable = true
+            syncRunState()
         }
 
         override fun onSurfaceDestroyed(holder: SurfaceHolder) {
-            running = false
-            glView?.onPause()
+            surfaceAvailable = false
+            syncRunState()
             super.onSurfaceDestroyed(holder)
         }
 
         override fun onDestroy() {
-            running = false
-            runCatching { feeder?.join(200) }
-            feeder = null
+            stopFeeding()
             glView?.destroy()
             glView = null
             renderer = null
@@ -174,5 +241,8 @@ class VisualizerWallpaperService : WallpaperService() {
          * only re-publish values that have not changed.
          */
         const val FEED_INTERVAL_MS = 16L
+
+        /** Cap on how long stopping the feeder waits for it to notice. */
+        const val FEEDER_JOIN_MS = 200L
     }
 }

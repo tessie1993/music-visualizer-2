@@ -27,7 +27,10 @@ enum class CaptureFailure {
     /** The screen-capture consent dialog was dismissed or denied. */
     CONSENT,
 
-    /** The device would not open a capture recorder at any format. */
+    /**
+     * The device would not open a capture recorder at any format, or refused
+     * to start the one it opened.
+     */
     UNAVAILABLE,
 }
 
@@ -75,6 +78,14 @@ class PlaybackCapture(
     @Volatile
     private var running = false
 
+    /**
+     * Bumped on every [start], so a worker that outlived its own [stop] - a
+     * read still blocked when the join timed out - cannot clear [running] out
+     * from under the run that replaced it.
+     */
+    @Volatile
+    private var runGeneration = 0
+
     /** True while the capture is open and feeding the ring buffer. */
     val active: Boolean get() = running
 
@@ -106,8 +117,9 @@ class PlaybackCapture(
     private var lastAudibleAtMs: Long = 0L
 
     /**
-     * Opens the capture and starts feeding [ring]. Returns null on success or
-     * the [CaptureFailure] that stopped it; already-running is a success no-op.
+     * Opens the capture and starts feeding [ring]. Returns null once the
+     * recorder is actually recording, or the [CaptureFailure] that stopped it;
+     * already-running is a success no-op.
      *
      * [onSampleRate] fires on the caller's thread with the rate the device
      * granted, which is not always the one requested.
@@ -119,10 +131,26 @@ class PlaybackCapture(
     ): CaptureFailure? {
         if (running) return null
         val rec = openRecord(projection) ?: return CaptureFailure.UNAVAILABLE
+        // startRecording(), not the builder, is where the system actually
+        // refuses a capture, so it runs here, before the caller is told this
+        // worked. Started on the worker instead, its failure could only be
+        // logged - and the foreground service and its "reading the audio
+        // playing on this device" notification stayed up over a capture that
+        // never began.
+        val recording =
+            runCatching { rec.startRecording() }.isSuccess &&
+                rec.recordingState == AudioRecord.RECORDSTATE_RECORDING
+        if (!recording) {
+            android.util.Log.w("PlaybackCapture", "startRecording refused")
+            runCatching { rec.stop() }
+            runCatching { rec.release() }
+            return CaptureFailure.UNAVAILABLE
+        }
         record = rec
         running = true
         blockedLikely = false
         lastAudibleAtMs = 0L
+        val generation = ++runGeneration
         onSampleRate(sampleRateHz)
         val channels = channelCount
         worker =
@@ -131,11 +159,6 @@ class PlaybackCapture(
                 val shorts = ShortArray(READ_FRAMES * channels)
                 val asFloat = rec.audioFormat == AudioFormat.ENCODING_PCM_FLOAT
                 val startedAt = android.os.SystemClock.elapsedRealtime()
-                runCatching { rec.startRecording() }
-                    .onFailure {
-                        android.util.Log.w("PlaybackCapture", "startRecording refused: ${it.message}")
-                        running = false
-                    }
                 while (running) {
                     val n =
                         if (asFloat) {
@@ -162,6 +185,12 @@ class PlaybackCapture(
                 }
                 runCatching { rec.stop() }
                 runCatching { rec.release() }
+                // Every way out of the loop ends with a released recorder, so
+                // `active` must stop reporting a running capture: after a read
+                // error it stayed true forever, and the card kept claiming to
+                // be listening to a stream nothing was reading. Only the run
+                // that is still current may clear it.
+                if (runGeneration == generation) running = false
             }
         return null
     }

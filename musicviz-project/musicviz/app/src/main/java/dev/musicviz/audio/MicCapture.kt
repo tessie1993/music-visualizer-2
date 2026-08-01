@@ -40,6 +40,14 @@ class MicCapture(
     @Volatile
     private var running = false
 
+    /**
+     * Bumped on every [start], so a worker that outlived its own [stop] - a
+     * read still blocked when the join timed out - cannot clear [running] out
+     * from under the run that replaced it.
+     */
+    @Volatile
+    private var runGeneration = 0
+
     /** True while the microphone is open and feeding the ring buffer. */
     val active: Boolean get() = running
 
@@ -55,8 +63,9 @@ class MicCapture(
         ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
     /**
-     * Opens the microphone and starts feeding [ring]. Returns null on success
-     * or the [Failure] that stopped it; already-running is a success no-op.
+     * Opens the microphone and starts feeding [ring]. Returns null once the
+     * recorder is actually recording, or the [Failure] that stopped it;
+     * already-running is a success no-op.
      *
      * [onSampleRate] fires on the caller's thread with the rate the device
      * granted, which is not always the one requested.
@@ -65,19 +74,30 @@ class MicCapture(
         if (running) return null
         if (!hasPermission()) return Failure.PERMISSION
         val rec = openRecord() ?: return Failure.UNAVAILABLE
+        // startRecording(), not the constructor, is where a microphone held by
+        // a call or by another app is refused - the constructor succeeds
+        // either way - so it runs here, before the caller is told this worked.
+        // Started on the worker instead, its failure could only be logged: the
+        // switch latched on over a recorder that never ran and the visuals sat
+        // flat with nothing to explain it.
+        val recording =
+            runCatching { rec.startRecording() }.isSuccess &&
+                rec.recordingState == AudioRecord.RECORDSTATE_RECORDING
+        if (!recording) {
+            android.util.Log.w("MicCapture", "startRecording refused")
+            runCatching { rec.stop() }
+            runCatching { rec.release() }
+            return Failure.UNAVAILABLE
+        }
         record = rec
         running = true
+        val generation = ++runGeneration
         onSampleRate(sampleRateHz)
         worker =
             thread(name = "musicviz-mic", isDaemon = true) {
                 val floats = FloatArray(READ_FRAMES)
                 val shorts = ShortArray(READ_FRAMES)
                 val asFloat = rec.audioFormat == AudioFormat.ENCODING_PCM_FLOAT
-                runCatching { rec.startRecording() }
-                    .onFailure {
-                        android.util.Log.w("MicCapture", "startRecording refused: ${it.message}")
-                        running = false
-                    }
                 while (running) {
                     val n =
                         if (asFloat) {
@@ -100,6 +120,12 @@ class MicCapture(
                 }
                 runCatching { rec.stop() }
                 runCatching { rec.release() }
+                // Every way out of the loop ends with a released recorder, so
+                // `active` must stop reporting an open microphone: after a
+                // read error it stayed true forever, leaving the switch on and
+                // turning the next start() into a silent no-op. Only the run
+                // that is still current may clear it.
+                if (runGeneration == generation) running = false
             }
         return null
     }
