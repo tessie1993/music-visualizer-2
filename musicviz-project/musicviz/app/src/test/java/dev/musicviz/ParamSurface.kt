@@ -52,6 +52,7 @@ object ParamSurface {
             "Curl Flow" to listOf("render/fluid/CurlFlowScene.kt"),
             "Water" to listOf("render/fluid/WaterScene.kt"),
             "Cymatics" to listOf("render/scene/CymaticsScene.kt"),
+            "Beam" to listOf("render/scene/BeamScene.kt"),
             "Hyperspace" to listOf("render/scene/HyperspaceScene.kt"),
             "Composite" to listOf("render/VisualizerRenderer.kt", "render/CompositeGrade.kt"),
             "Export" to listOf("export/FxCompositor.kt", "export/VideoExporter.kt"),

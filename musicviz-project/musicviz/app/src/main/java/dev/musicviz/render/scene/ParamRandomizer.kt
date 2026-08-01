@@ -213,6 +213,14 @@ object ParamRandomizer {
         r("Posterize") { it.copy(posterize = sometimes(0.15f, 0.2f, 0.6f)) }
         r("Particle shape") { it.copy(particleShape = rng.nextInt(SceneParams.PARTICLE_SHAPES.size)) }
         r("Particle size") { it.copy(particleSize = f(0.5f, 1.8f)) }
+        // Beam (BEAM). Rolled here because that is where its controls are.
+        // The width band stops well short of the slider's ends: a hair-thin
+        // beam disappears against the phosphor decay and a very wide one is a
+        // glowing blob with no trace in it.
+        r("XY plot") { it.copy(beamXy = chance(0.35f)) }
+        r("Beam width") { it.copy(beamWidth = f(0.5f, 2f)) }
+        r("Beam brightness") { it.copy(beamIntensity = f(0.5f, 1.8f)) }
+        r("Beam tail") { it.copy(beamTail = f(0f, 0.8f)) }
 
         // ---- Behavior ----
         section(CustomizeTab.BEHAVIOR)
@@ -236,6 +244,15 @@ object ParamRandomizer {
         // index visible; an override otherwise wins over the PALETTES lookup.
         r("Palette") {
             it.copy(palette = rng.nextInt(SceneParams.PALETTES.size)).withoutCustomPalette()
+        }
+        // A colour map is a different KIND of palette, so it rolls on its own
+        // key: mostly off, because the procedural palettes are the app's own
+        // look and a roll that replaced them half the time would flatten it.
+        r("Colour map") {
+            it.copy(
+                paletteLut =
+                    if (chance(0.25f)) rng.nextInt(SceneParams.CYCLIC_PALETTES.size) else SceneParams.NO_PALETTE_LUT,
+            )
         }
         r("Palette 2") {
             it.copy(palette2 = rng.nextInt(SceneParams.PALETTES.size)).withoutCustomPalette(second = true)
@@ -338,18 +355,26 @@ object ParamRandomizer {
         r("Liquid") { it.copy(waterLiquid = f(0.4f, 1f)) }
         r("Liquid flow") { it.copy(waterLiquidFlow = f(0.6f, 2.6f)) }
         r("Liquid fade") { it.copy(waterLiquidFade = f(0.1f, 1.2f)) }
+        // The melt: Hyperspace's bodies poured into the fluid engine. Rolled
+        // in the FLUID scope because that is the tab whose controls write it -
+        // the melt is where the two engines meet, and its sliders are rendered
+        // beside the fluid ones. Rolling it under Hyperspace made "Randomize
+        // Hyperspace" move seven sliders that are not on that tab.
+        //
+        // "Melt" itself is rolled modestly: it is the one control here that
+        // costs frames (two texture fetches per march step AND a relaxed step,
+        // so a high roll marches further for the same picture), and it is also
+        // the one that can pull a fractal past the point where it still reads
+        // as a fractal.
+        r("Melt") { it.copy(hyperMelt = f(0.15f, 1.1f)) }
+        r("Ink stain") { it.copy(hyperStain = f(0.15f, 1.1f)) }
+        r("Liquid light") { it.copy(hyperLiquid = f(0.1f, 1.1f)) }
+        r("Ridges") { it.copy(hyperRidges = f(0f, 0.9f)) }
+        r("Stir") { it.copy(hyperStir = f(0.4f, 2f)) }
+        r("Vorticity") { it.copy(hyperSwirl = f(8f, 42f)) }
+        r("Flow fade") { it.copy(hyperFlowFade = f(0.1f, 1.2f)) }
         r("Ripple overlay strength") { it.copy(rippleOverlayStrength = f(0.15f, 0.7f)) }
         r("Ripple glint") { it.copy(rippleOverlaySpecular = f(0.1f, 0.6f)) }
-
-        // A colour map is a different KIND of palette, so it rolls on its own
-        // key: mostly off, because the procedural palettes are the app's own
-        // look and a roll that half the time replaces them would flatten it.
-        r("Colour map") {
-            it.copy(
-                paletteLut =
-                    if (chance(0.25f)) rng.nextInt(SceneParams.CYCLIC_PALETTES.size) else SceneParams.NO_PALETTE_LUT,
-            )
-        }
 
         // ---- Cymatics (the standing-wave field) ----
         section(CustomizeTab.CYMATICS)
@@ -389,18 +414,6 @@ object ParamRandomizer {
         r("Haze") { it.copy(hyperHaze = f(0.2f, 1.4f)) }
         r("Mirror folds") { it.copy(hyperMirrorFolds = n(3, 12)) }
         r("Colour banding") { it.copy(hyperTrap = f(0.2f, 1.3f)) }
-        // The melt. "Melt" itself is rolled modestly: it is the one control
-        // here that costs frames (two texture fetches per march step AND a
-        // relaxed step, so a high roll marches further for the same picture),
-        // and it is also the one that can pull a fractal past the point where
-        // it still reads as a fractal.
-        r("Melt") { it.copy(hyperMelt = f(0.15f, 1.1f)) }
-        r("Ink stain") { it.copy(hyperStain = f(0.15f, 1.1f)) }
-        r("Liquid light") { it.copy(hyperLiquid = f(0.1f, 1.1f)) }
-        r("Ridges") { it.copy(hyperRidges = f(0f, 0.9f)) }
-        r("Stir") { it.copy(hyperStir = f(0.4f, 2f)) }
-        r("Vorticity") { it.copy(hyperSwirl = f(8f, 42f)) }
-        r("Flow fade") { it.copy(hyperFlowFade = f(0.1f, 1.2f)) }
 
         return s
     }
