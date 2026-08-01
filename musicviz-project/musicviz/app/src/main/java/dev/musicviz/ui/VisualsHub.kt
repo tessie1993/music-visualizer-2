@@ -658,9 +658,9 @@ internal fun CustomizePanel(
                         BehaviorTab(
                             p,
                             onChange,
-                            transitionStyle = viz.transitionStyle,
+                            transitionId = viz.transitionId,
                             transitionDurationSec = viz.transitionDurationSec,
-                            onTransitionStyle = viewModel::setTransitionStyle,
+                            onTransitionId = viewModel::setTransitionId,
                             onTransitionDuration = viewModel::setTransitionDuration,
                             attack = viz.attack,
                             decay = viz.decay,

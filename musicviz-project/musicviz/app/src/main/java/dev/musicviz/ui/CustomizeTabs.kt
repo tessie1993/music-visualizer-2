@@ -137,6 +137,9 @@ private fun ControlLabelRow(
     }
 }
 
+/** How many library transition chips are laid out at once (see BehaviorTab). */
+private const val TRANSITION_CHIP_LIMIT = 40
+
 @Composable
 internal fun MotionTab(
     p: SceneParams,
@@ -246,21 +249,63 @@ internal fun BehaviorTab(
     onReactivityChange: (Float, Float) -> Unit,
     intelligenceMode: IntelligenceMode,
     onIntelligenceModeChange: (IntelligenceMode) -> Unit,
-    transitionStyle: dev.musicviz.render.TransitionStyle? = null,
+    transitionId: String? = null,
     transitionDurationSec: Float = 0.8f,
-    onTransitionStyle: (dev.musicviz.render.TransitionStyle) -> Unit = {},
+    onTransitionId: (String) -> Unit = {},
     onTransitionDuration: (Float) -> Unit = {},
 ) {
     Column {
-        if (transitionStyle != null) {
+        if (transitionId != null) {
             SectionHeader("Scene transition")
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            // Parsed once and remembered: this is a ~150 KB asset read, and it
+            // must not happen on a recomposition.
+            val library = remember { dev.musicviz.render.TransitionCatalog.library(ctx) }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                dev.musicviz.render.TransitionStyle.entries.forEach { t ->
+                dev.musicviz.render.TransitionCatalog.BUILT_IN_IDS.forEach { id ->
                     FilterChip(
-                        selected = transitionStyle == t,
-                        onClick = { onTransitionStyle(t) },
-                        label = { Text(t.name.lowercase()) },
+                        selected = transitionId == id,
+                        onClick = { onTransitionId(id) },
+                        label = { Text(id) },
                     )
+                }
+            }
+            if (library.isNotEmpty()) {
+                ControlHint(
+                    "${library.size} more from the gl-transitions library. Each one blends the " +
+                        "outgoing and incoming scenes with the full FX chain already applied, " +
+                        "so nothing pops off for the length of a switch.",
+                )
+                var query by remember { mutableStateOf("") }
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Search transitions", style = MaterialTheme.typography.labelSmall) },
+                )
+                val shown =
+                    remember(query, library) {
+                        if (query.isBlank()) library else library.filter { it.name.contains(query, ignoreCase = true) }
+                    }
+                // A plain wrapped row rather than a lazy list: this sits inside
+                // the Customize tab's own vertical scroll, and nesting a
+                // scrollable in a scrollable is what makes a list refuse to
+                // fling. Capped so a blank query does not lay out 123 chips.
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    shown.take(TRANSITION_CHIP_LIMIT).forEach { def ->
+                        FilterChip(
+                            selected = transitionId == def.name,
+                            onClick = { onTransitionId(def.name) },
+                            label = { Text(def.name, style = MaterialTheme.typography.labelSmall) },
+                        )
+                    }
+                }
+                if (shown.size > TRANSITION_CHIP_LIMIT) {
+                    ControlHint("${shown.size - TRANSITION_CHIP_LIMIT} more - narrow the search to reach them.")
                 }
             }
             Text("Duration ${"%.1f".format(transitionDurationSec)}s", style = MaterialTheme.typography.labelMedium)
