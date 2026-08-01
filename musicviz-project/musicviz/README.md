@@ -1,3 +1,93 @@
+## v1.4.0 (code 28) - Hyperspace: a room of 3D fractals, each one alive
+
+- **A new visualizer style, `hyperspace`** (Visuals > Styles > Hyperspace):
+  the first raymarched style in the app. Every visible body is a
+  distance-estimated 3D fractal, and there are up to eight of them at once,
+  each with its OWN rotation, its own orbit, its own colour and its own life.
+  They bud out of nothing on a hit, tumble past each other on unrelated
+  clocks, and dissolve. That is the whole design - the visionary/DMT art it
+  was built from is never one object turning, it is many things living next to
+  each other.
+- **Five fractals, one raymarcher.** GASKET is a sphere packing (the limit set
+  of translations of a cell plus inversion in a sphere - clusters of spheres
+  nested in spheres); TEMPLE is a kaleidoscopic IFS whose rotation between
+  iterations turns a Menger sponge into terraced architecture; JEWEL is the
+  box, whose negative scales fold it inside out into flat faceted panels;
+  CORAL floors the inversion radius so the group stays connected and grows
+  smooth branching tubes instead of a dust; BULB is `z -> z^n + c` taken in
+  spherical coordinates, the round budded one. They share a loop because they
+  share a shape - fold space, then invert or scale it, and keep the running
+  scale factor so the estimate can be pulled back to world units. "Fractal"
+  picks one or leaves the room Mixed.
+- **A five-act story, walked over the track.** Threshold (a nearly empty
+  field), Chrysanthemum (the mirrored symmetric fabric), Magic eye (the flat
+  texture gains depth and the bodies separate out), Waiting room (a place,
+  close and full), Breakthrough (everything at once, wide open). The act sets
+  how many bodies live, how strong the background filigree is, where the
+  camera sits, how fast everything turns and how much of the colour wheel is
+  in play. On "Music" the track's own macro-dynamics decide: loud passages
+  take the journey deeper over ~26s and quiet ones bring it back over ~44s,
+  because coming back should take longer than going in. "Hold" pins one act
+  and "Cycle" walks all five on a timer.
+- **Eight distance-estimated fractals per pixel, on a phone.** Each body
+  carries a bounding sphere; outside it the ray steps by the distance to the
+  sphere and the estimator is never touched, so a ray iterates the one or two
+  bodies it is actually near rather than all eight. The estimator is also
+  intersected WITH that sphere - three of the five describe unbounded sets (a
+  plane, a cylinder, a tiling), and without the clip a body streaked across
+  the whole scene as a stripe. "Detail" moves march steps and iterations
+  together as one frame-rate control.
+- **Lit like the paintings, not like a render.** A fresnel rim for the neon
+  outline every one of these images has, an orbit trap banding each body into
+  nested shells of different hue, a translucency term so thin filigree lights
+  up while thick cores stay dark, and a smooth aura taken from each body's
+  bounding sphere rather than from the fractal inside it - the estimator jumps
+  discontinuously at the sphere, and lighting the haze with it drew a hard
+  ellipse around every body instead of a halo.
+- **The background is the chrysanthemum**: an infinitely detailed filigree
+  evaluated on the ray direction, so it has no edges and turns with the view.
+  Two orbit traps, because the fabric has two scales - closest approach to the
+  origin draws the knots, closest approach to an axis plane draws the threads
+  between them. Summing the orbit instead washed the whole sky to a pastel
+  fog, which is the difference between a filigree and a haze.
+- **The camera stays outside every body.** A raymarcher started inside a
+  folded distance estimator does not draw an interior - the estimate is only
+  valid outside the set - so it draws a screen of stripes. The act asks for a
+  distance and only gets it if it clears the widest body at that density, and
+  a test walks every act at every density to prove it.
+- **Visual safety, by construction.** Nothing here strobes: the fastest thing
+  on screen is a body's own rotation at a fraction of a hertz, energy leans on
+  the exposure by ±12%, and the one discontinuous change - the kaleidoscopic
+  mirror, which cannot be interpolated without smearing the frame into streaks
+  - can only happen when an act changes, no more than once every four seconds.
+- Customize gains a **Hyperspace** tab (visible only on that style, like
+  Cymatics and GLSL), grouped as Journey, Life, Look and Quality - seventeen
+  controls, fifteen of them randomizable and lockable ("Detail" is a
+  performance setting and "Journey" is a mode, so neither is rolled). Three
+  built-in presets ship with it: `hyperspace · Breakthrough`,
+  `hyperspace · Chrysanthemum` (the mirrored act, held) and
+  `hyperspace · Coral garden` (one species, long lives, slow). The style joins
+  the composite-graded family, so Hue shift, Brightness, Contrast, Gamma,
+  Zoom, Rotation and the whole FX chain work on it as they do on the fluid
+  styles.
+- An idle drive walks the whole journey on its own over ~150s and keeps
+  spawning bodies, so a paused app or a live wallpaper shows the whole story
+  rather than parking on the empty opening act.
+- 37 new tests (`HyperspaceMathTest`) pin the act table and its interpolation,
+  all three journey modes and the dwell that stops a track hovering at the
+  pivot from re-targeting the body count several times a second, the
+  world-to-local rotation against the forward orientation it has to undo, the
+  life envelope (including that retiring a body early does not step its fade),
+  the bank's spawn/retire rules, the uniform packing, the camera's framing and
+  orthonormality, and that its path does not close on itself inside ten
+  minutes.
+- Attribution: the five estimators are implemented from the published
+  mathematics of the kaleidoscopic-IFS, Mandelbox, Apollonian/Kleinian and
+  Mandelbulb constructions, and the five acts from published accounts of the
+  DMT visual experience - see THIRD_PARTY_NOTICES. No source is copied. The
+  in-app notices asset had drifted out of sync with the root file and is now
+  a copy of it again.
+
 ## v1.3.0 (code 27) - Cymatics: the sound itself, fullscreen
 
 - **A new visualizer style, `cymatics`** (Visuals > Styles > Cymatics): the

@@ -12,6 +12,7 @@ import dev.musicviz.render.scene.BurstScene
 import dev.musicviz.render.scene.CymaticsScene
 import dev.musicviz.render.scene.FountainScene
 import dev.musicviz.render.scene.GlUtil
+import dev.musicviz.render.scene.HyperspaceScene
 import dev.musicviz.render.scene.NebulaScene
 import dev.musicviz.render.scene.OrbitScene
 import dev.musicviz.render.scene.PMBridge
@@ -243,6 +244,19 @@ class VisualizerRenderer(
             cymaticsCaustic = f(from.cymaticsCaustic, to.cymaticsCaustic),
             cymaticsFlow = f(from.cymaticsFlow, to.cymaticsFlow),
             cymaticsSwirl = f(from.cymaticsSwirl, to.cymaticsSwirl),
+            hyperCycleSeconds = f(from.hyperCycleSeconds, to.hyperCycleSeconds),
+            hyperBodies = f(from.hyperBodies, to.hyperBodies),
+            hyperLifetime = f(from.hyperLifetime, to.hyperLifetime),
+            hyperSpin = f(from.hyperSpin, to.hyperSpin),
+            hyperOrbit = f(from.hyperOrbit, to.hyperOrbit),
+            hyperFold = f(from.hyperFold, to.hyperFold),
+            hyperDetail = f(from.hyperDetail, to.hyperDetail),
+            hyperGlow = f(from.hyperGlow, to.hyperGlow),
+            hyperNeon = f(from.hyperNeon, to.hyperNeon),
+            hyperField = f(from.hyperField, to.hyperField),
+            hyperHaze = f(from.hyperHaze, to.hyperHaze),
+            hyperCamera = f(from.hyperCamera, to.hyperCamera),
+            hyperTrap = f(from.hyperTrap, to.hyperTrap),
             rippleOverlayStrength = f(from.rippleOverlayStrength, to.rippleOverlayStrength),
             rippleOverlaySpecular = f(from.rippleOverlaySpecular, to.rippleOverlaySpecular),
         )
@@ -452,6 +466,7 @@ class VisualizerRenderer(
             add(SceneIds.CURLFLOW)
             add(SceneIds.WATER)
             add(SceneIds.CYMATICS)
+            add(SceneIds.HYPERSPACE)
         }
 
     fun submitShader(
@@ -518,6 +533,10 @@ class VisualizerRenderer(
         scenes[SceneIds.CYMATICS] =
             CymaticsScene(context).also { plate ->
                 plate.onShaderError = { onShaderError(it) }
+            }
+        scenes[SceneIds.HYPERSPACE] =
+            HyperspaceScene(context).also { hyper ->
+                hyper.onShaderError = { onShaderError(it) }
             }
         if (PMBridge.available) {
             scenes[SceneIds.MILKDROP] =
@@ -989,7 +1008,8 @@ class VisualizerRenderer(
 
     /**
      * Which composite-pass gate a scene falls under. The composite-graded
-     * family - Fluid, Curl Flow, Water and Cymatics - is the `else` branch:
+     * family - Fluid, Curl Flow, Water, Cymatics and Hyperspace - is the
+     * `else` branch:
      * none of them has a grading pass of its own, so the composite owns every
      * group for them.
      */
@@ -1147,6 +1167,7 @@ class VisualizerRenderer(
                             dev.musicviz.render.fluid
                                 .WaterScene(context)
                         sceneId == SceneIds.CYMATICS -> CymaticsScene(context)
+                        sceneId == SceneIds.HYPERSPACE -> HyperspaceScene(context)
                         sceneId == SceneIds.MILKDROP && PMBridge.available ->
                             ProjectMScene(
                                 postVertexSrc = loadRaw(R.raw.fade_vert),
