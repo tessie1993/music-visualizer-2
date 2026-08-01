@@ -244,6 +244,22 @@ object VisualSafety {
     ): TransitionStyle = if (config.enabled && requested == TransitionStyle.CUT) TransitionStyle.FADE else requested
 
     /**
+     * The same substitution over transition IDs, which is what the renderer
+     * takes now that the library sits alongside the five built-in styles.
+     * Only a cut is replaced: every gl-transition ramps by construction, so
+     * none of the 123 is a single-frame full-screen change.
+     */
+    fun transitionId(
+        requested: String,
+        config: SafetyConfig,
+    ): String =
+        if (config.enabled && requested == TransitionStyle.CUT.name.lowercase()) {
+            TransitionStyle.FADE.name.lowercase()
+        } else {
+            requested
+        }
+
+    /**
      * Whether oscillating this target quickly reads as the SCREEN FLASHING
      * rather than as something moving.
      *

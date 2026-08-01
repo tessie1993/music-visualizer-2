@@ -6,6 +6,12 @@ out vec4 fragColor;
 
 uniform sampler2D uTexA;
 uniform sampler2D uTexB;
+// Blue-noise dither mask, sampled 1:1 with output pixels. See BlueNoise.kt for
+// why the tile is blue rather than white noise and why it must not animate.
+uniform sampler2D uNoise;
+uniform float uDither;
+/** width / height of the output, the `ratio` a spliced gl-transition reads. */
+uniform float uRatio;
 uniform float uProgress;
 uniform int uStyle;
 uniform float uTime;
@@ -111,7 +117,7 @@ uniform vec2 uRippleTexel;
 uniform float uRippleStrength;
 uniform float uRippleSpecular;
 
-float hash12(vec2 p) {
+float compHash12(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
@@ -236,9 +242,9 @@ vec3 postFx(sampler2D tex, vec2 uv, vec4 gate) {
     }
     if (uGlitch > 0.001) {
         float band = floor(p.y * 24.0);
-        float jump = hash12(vec2(band, floor(uTime * 12.0)));
+        float jump = compHash12(vec2(band, floor(uTime * 12.0)));
         if (jump > 1.0 - uGlitch * 0.35 * (0.4 + uBeat)) {
-            p.x += (hash12(vec2(band, uTime)) - 0.5) * uGlitch * 0.3;
+            p.x += (compHash12(vec2(band, uTime)) - 0.5) * uGlitch * 0.3;
         }
     }
     vec3 col;
@@ -286,7 +292,7 @@ vec3 postFx(sampler2D tex, vec2 uv, vec4 gate) {
         col *= 1.0 - uScanline * 0.35 * (0.5 + 0.5 * sin(p.y * 900.0));
     }
     if (uGrain > 0.001) {
-        col += (hash12(p * 1913.0 + uTime) - 0.5) * uGrain * 0.25;
+        col += (compHash12(p * 1913.0 + uTime) - 0.5) * uGrain * 0.25;
     }
     if (uVignette > 0.001) {
         float d = length(uv - 0.5) * 1.4142;
@@ -316,32 +322,85 @@ vec3 postFx(sampler2D tex, vec2 uv, vec4 gate) {
 // Each texture carries its OWN gate: uTexA is the incoming scene, uTexB the
 // outgoing one, and a cross-family switch (julia -> fluid) must not grade the
 // outgoing frame under the incoming scene's rule.
-void main() {
+// ---------------------------------------------------------------------------
+// gl-transitions splice point. VisualizerRenderer/FxCompositor build a variant
+// of this shader per selected transition: `#define MV_TRANSITION 1` after the
+// #version line, and the transition's own source substituted for the marker
+// below. The base program (built-in styles only) compiles with neither, so
+// nothing here costs anything until a library transition is chosen.
+//
+// The gl-transitions contract is `vec4 transition(vec2 uv)` reading `progress`,
+// `ratio`, `getFromColor()` and `getToColor()`. Those two samplers are wired to
+// postFx rather than to raw texture fetches ON PURPOSE: every transition then
+// blends frames that already carry the FX chain and the per-texture grade
+// gates, exactly as the built-in styles do. Sampling raw would make the whole
+// FX chain pop off for the length of every switch.
+//
+// NOTE the direction. In gl-transitions, `from` is the OUTGOING image and `to`
+// the incoming one; here uTexA is the ACTIVE (incoming) scene and uTexB the
+// outgoing one, so from -> B and to -> A. Getting this backwards plays every
+// transition in reverse, which reads as "the new scene wipes away to reveal
+// the old one".
+#ifdef MV_TRANSITION
+#define progress uProgress
+#define ratio uRatio
+vec4 getFromColor(vec2 uv) { return vec4(postFx(uTexB, clamp(uv, 0.0, 1.0), uGateB), 1.0); }
+vec4 getToColor(vec2 uv) { return vec4(postFx(uTexA, clamp(uv, 0.0, 1.0), uGateA), 1.0); }
+// __GL_TRANSITION_SOURCE__
+#endif
+
+/**
+ * The transition stage: the incoming scene, or a blend of it with the outgoing
+ * one. Split out of main() so every path returns a colour rather than writing
+ * fragColor itself - the dither below has to be the last thing that touches the
+ * output, and an early `return` in main() used to skip it.
+ */
+vec3 blended() {
+#ifdef MV_TRANSITION
+    // uStyle 5 is "a spliced library transition is running". The variant stays
+    // bound outside transitions too - swapping programs per frame would cost
+    // more than the branch - so it must still render a plain CUT at uStyle 0.
+    if (uStyle == 5 && uProgress < 1.0) {
+        return transition(vUv).rgb;
+    }
+#endif
     vec3 a = postFx(uTexA, vUv, uGateA);
     if (uStyle == 0 || uProgress >= 1.0) {
-        fragColor = vec4(a, 1.0);
-        return;
+        return a;
     }
     if (uStyle == 1) {
         vec3 b = postFx(uTexB, vUv, uGateB);
-        fragColor = vec4(mix(b, a, uProgress), 1.0);
+        return mix(b, a, uProgress);
     } else if (uStyle == 3) {
         float sh = smoothstep(0.0, 1.0, uProgress);
         vec3 aSlide = postFx(uTexA, clamp(vUv + vec2(1.0 - sh, 0.0), 0.0, 1.0), uGateA);
         vec3 bSlide = postFx(uTexB, clamp(vUv - vec2(sh, 0.0), 0.0, 1.0), uGateB);
-        fragColor = vec4(vUv.x < sh ? aSlide : bSlide, 1.0);
+        return vUv.x < sh ? aSlide : bSlide;
     } else if (uStyle == 4) {
         float sh = smoothstep(0.0, 1.0, uProgress);
         vec2 zUv = (vUv - 0.5) / (1.0 + sh * 2.5) + 0.5;
         vec3 bZoom = postFx(uTexB, clamp(zUv, 0.0, 1.0), uGateB);
         vec2 aUv = (vUv - 0.5) * (1.0 + (1.0 - sh) * 0.35) + 0.5;
         vec3 aZoom = postFx(uTexA, clamp(aUv, 0.0, 1.0), uGateA);
-        fragColor = vec4(mix(bZoom, aZoom, sh), 1.0);
+        return mix(bZoom, aZoom, sh);
     } else {
         float lumB = dot(texture(uTexB, vUv).rgb, vec3(0.299, 0.587, 0.114));
         vec2 melted = vUv + vec2(0.0, uProgress * (0.25 + lumB * 0.6));
         vec3 bMelt = postFx(uTexB, clamp(melted, 0.0, 1.0), uGateB);
         float reveal = smoothstep(0.0, 1.0, uProgress * 1.4 - lumB * 0.4);
-        fragColor = vec4(mix(bMelt, a, clamp(reveal, 0.0, 1.0)), 1.0);
+        return mix(bMelt, a, clamp(reveal, 0.0, 1.0));
     }
+}
+
+void main() {
+    vec3 col = blended();
+    // Dither LAST, after every grade and effect, sampled one texel per output
+    // pixel: this is fighting the 8-bit quantization of the surface being
+    // written, so it has to be measured in that surface's own steps. Every
+    // smooth ramp in the app - plasma, aurora, solar, glow falloffs, the fluid
+    // pressure field - banded visibly on an OLED panel in a dark room without
+    // it. uDither is 0 when the mask could not be loaded, making this an exact
+    // no-op rather than a failure.
+    col += (texture(uNoise, gl_FragCoord.xy / 64.0).r - 0.5) * uDither;
+    fragColor = vec4(col, 1.0);
 }

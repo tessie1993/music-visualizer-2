@@ -83,6 +83,13 @@ data class VizUiState(
     val vizPlaylistIntervalSec: Int = 30,
     val vizPlaylistIntelligent: Boolean = false,
     val transitionStyle: TransitionStyle = TransitionStyle.FADE,
+    /**
+     * Selected transition as a [dev.musicviz.render.TransitionCatalog] id: one
+     * of the five built-in style names, or a gl-transitions corpus name. The
+     * id is what the renderer takes; [transitionStyle] survives as the enum
+     * the base shader's built-ins are indexed by.
+     */
+    val transitionId: String = TransitionStyle.FADE.name.lowercase(),
     val transitionDurationSec: Float = 1.2f,
     // Random mode: hops to a random style/preset on an interval (or on strong
     // musical moments). Mutually exclusive with the visual playlist.
@@ -1126,7 +1133,21 @@ class PlayerViewModel(
     }
 
     fun setTransitionStyle(style: TransitionStyle) {
-        _vizState.update { it.copy(transitionStyle = style) }
+        _vizState.update { it.copy(transitionStyle = style, transitionId = style.name.lowercase()) }
+    }
+
+    /**
+     * Picks a transition by id - a built-in style name or a gl-transitions
+     * corpus name. Keeps [VizState.transitionStyle] in step for the built-ins
+     * so the two never disagree about which one is selected.
+     */
+    fun setTransitionId(id: String) {
+        _vizState.update {
+            it.copy(
+                transitionId = id,
+                transitionStyle = dev.musicviz.render.TransitionCatalog.builtIn(id) ?: it.transitionStyle,
+            )
+        }
     }
 
     fun setTransitionDuration(seconds: Float) {

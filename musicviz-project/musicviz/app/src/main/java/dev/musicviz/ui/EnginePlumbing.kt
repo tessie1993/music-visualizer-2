@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import dev.musicviz.render.TransitionCatalog
 import dev.musicviz.render.VisualSafety
 import dev.musicviz.render.VisualizerView
 
@@ -53,13 +54,21 @@ fun VisualizerEngineBindings(
         visualizerView.visualizerRenderer.lfoEngine.configs = lfos
         visualizerView.visualizerRenderer.adsrEngine.configs = adsrs
     }
-    LaunchedEffect(viz.transitionStyle, viz.transitionDurationSec, gui.safety) {
+    LaunchedEffect(viz.transitionId, viz.transitionDurationSec, gui.safety) {
         // A hard CUT swaps the whole frame in one frame, so Safe visuals
         // substitutes a crossfade. The user's stored choice is untouched -
         // turning safety back off restores it.
-        visualizerView.visualizerRenderer.transitionStyle =
-            VisualSafety.transitionStyle(viz.transitionStyle, gui.safety)
-        visualizerView.visualizerRenderer.transitionDurationMs = (viz.transitionDurationSec * 1000).toLong()
+        val id = VisualSafety.transitionId(viz.transitionId, gui.safety)
+        val renderer = visualizerView.visualizerRenderer
+        renderer.transitionId = id
+        // Built-in styles still travel as the enum: the base shader implements
+        // them, and nothing above this line has to know which family an id is.
+        TransitionCatalog.builtIn(id)?.let { renderer.transitionStyle = it }
+        renderer.transitionDurationMs = (viz.transitionDurationSec * 1000).toLong()
+        // Link the variant NOW rather than when a switch first needs it: the
+        // user has just picked it, so the compile lands during an idle moment
+        // instead of as a hitch on the first frame of the transition.
+        visualizerView.queueEvent { renderer.warmTransition(id) }
     }
     LaunchedEffect(gui.safety) {
         visualizerView.visualizerRenderer.safety = gui.safety

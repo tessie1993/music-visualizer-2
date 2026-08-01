@@ -397,8 +397,9 @@ private fun StylesTab(
             // fluid style nor a shader one. Cymatics is the style whose
             // picture IS the sound (a Chladni plate) rather than a look driven
             // by it; Hyperspace is the only raymarched one - a room of 3D
-            // fractals, each alive on its own clock, walking a five-act story.
-            titles = listOf("Particles", "Shaders", "Fluid", "Cymatics", "Hyperspace", "MilkDrop"),
+            // fractals, each alive on its own clock, walking a five-act story;
+            // Beam is the oscilloscope, whose trace is the waveform itself.
+            titles = listOf("Particles", "Shaders", "Fluid", "Cymatics", "Hyperspace", "Beam", "MilkDrop"),
             selected = sub,
             onSelect = { sub = it },
         )
@@ -408,7 +409,8 @@ private fun StylesTab(
             2 -> SceneList(listOf(SceneIds.FLUID, SceneIds.CURLFLOW, SceneIds.WATER), viz.sceneId, pickScene)
             3 -> SceneList(listOf(SceneIds.CYMATICS), viz.sceneId, pickScene)
             4 -> SceneList(listOf(SceneIds.HYPERSPACE), viz.sceneId, pickScene)
-            5 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
+            5 -> SceneList(listOf(SceneIds.BEAM), viz.sceneId, pickScene)
+            6 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
         }
     }
 }
@@ -529,6 +531,9 @@ internal fun isEmitterSceneId(sceneId: String): Boolean = sceneId == SceneIds.FL
 
 /** Only WaterScene reads the heightfield surface params. */
 internal fun isWaterSceneId(sceneId: String): Boolean = sceneId == SceneIds.WATER
+
+/** Only BeamScene reads the oscilloscope-trace params. */
+internal fun isBeamSceneId(sceneId: String): Boolean = sceneId == SceneIds.BEAM
 
 /**
  * Only CymaticsScene reads the Chladni-plate params, so the whole Cymatics
@@ -653,14 +658,15 @@ internal fun CustomizePanel(
                             isParticleShapeScene = isParticleShapeSceneId(viz.sceneId),
                             isPointSpriteScene = isPointSpriteSceneId(viz.sceneId),
                             particleLayerOff = isFluidSceneId(viz.sceneId) && !p.fluidParticlesEnabled,
+                            isBeamScene = isBeamSceneId(viz.sceneId),
                         )
                     "Behavior" ->
                         BehaviorTab(
                             p,
                             onChange,
-                            transitionStyle = viz.transitionStyle,
+                            transitionId = viz.transitionId,
                             transitionDurationSec = viz.transitionDurationSec,
-                            onTransitionStyle = viewModel::setTransitionStyle,
+                            onTransitionId = viewModel::setTransitionId,
                             onTransitionDuration = viewModel::setTransitionDuration,
                             attack = viz.attack,
                             decay = viz.decay,

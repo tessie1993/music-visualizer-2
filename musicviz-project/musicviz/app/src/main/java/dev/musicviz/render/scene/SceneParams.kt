@@ -281,6 +281,15 @@ data class SceneParams(
     val hyperMirrorFolds: Int = 6,
     // orbit-trap colour banding within a body, 0..1.5
     val hyperTrap: Float = 0.8f,
+    // Beam (BEAM scene): the oscilloscope trace.
+    // false = time sweep | true = XY phase plot
+    val beamXy: Boolean = false,
+    // beam half-width multiplier, 0.2..4
+    val beamWidth: Float = 1f,
+    // beam brightness, 0..3
+    val beamIntensity: Float = 1f,
+    // how far the trace fades toward its oldest sample, 0..1
+    val beamTail: Float = 0.35f,
     // Ripple overlay (all styles; consumed by follow-up unit F2)
     val rippleOverlayEnabled: Boolean = false,
     val rippleOverlayStrength: Float = 0.4f,
