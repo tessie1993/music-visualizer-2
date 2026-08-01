@@ -876,7 +876,7 @@ class VisualizerRenderer(
         drainTouchStrokes(scene, ripple)
         val rippleOverlayOn =
             (p.rippleOverlayEnabled || smearing) && ripple != null && ripple.available && !waterActive
-        if (rippleOverlayOn && ripple != null) {
+        if (rippleOverlayOn) {
             ripple.waveSpeed = 1.2f * p.waterWaveSpeed.coerceIn(0.2f, 2f)
             ripple.damping = p.waterDamping.coerceIn(0.9f, 0.999f)
             rippleDrops.tick(gainAdjusted(features, p), ripple.aspect) { x, y, radius, amp ->
@@ -1019,7 +1019,7 @@ class VisualizerRenderer(
         var rippleTexelH = 0f
         var rippleStrength = 0f
         var rippleSpecular = 0f
-        if (rippleOverlayOn && ripple != null) {
+        if (rippleOverlayOn) {
             rippleTex = ripple.heightTex
             rippleTexelW = ripple.texelW
             rippleTexelH = ripple.texelH

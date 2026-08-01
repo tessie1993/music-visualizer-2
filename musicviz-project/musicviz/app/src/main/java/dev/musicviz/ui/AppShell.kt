@@ -108,7 +108,7 @@ fun AppRoot(
     // time - a View has one parent.
     val externalDisplay = rememberExternalDisplay()
     val onSecondScreen = gui.secondScreen && externalDisplay != null
-    if (onSecondScreen && externalDisplay != null) {
+    if (onSecondScreen) {
         SecondScreenCanvas(externalDisplay, visualizerView)
     }
 
