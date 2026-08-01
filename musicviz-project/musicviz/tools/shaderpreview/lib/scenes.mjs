@@ -257,10 +257,29 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
     return out;
   }
 
+  /**
+   * Advances only the FREE-RUNNING CLOCKS by [seconds], without stepping any
+   * per-frame simulation.
+   *
+   * A live wallpaper's `time` reaches hours, and everything downstream of it
+   * is a float: `sin(uTime * 0.043)` at t = 3600 has lost most of its
+   * fractional precision in a mediump-capable driver, and `p.rotation * time`
+   * grows without bound. That is what this mode is for. It deliberately does
+   * NOT age the body bank or the fluid - those integrate at a bounded dt in
+   * the app too, and pretending to run them at a 60-second step would produce
+   * a picture the app can never show. Anything about the bodies read from a
+   * jumped run is meaningless.
+   */
+  function jumpClock(seconds) {
+    time += seconds;
+    camera.t += seconds * clamp(p.hyperCamera, 0, 3) * clamp(p.speed, 0.05, 4);
+  }
+
   return {
     id: 'hyperspace',
     supplies,
     step,
+    jumpClock,
     meltConfig: {
       enabled: hasMelt,
       velWidth: velGrid[0], velHeight: velGrid[1],
@@ -315,6 +334,14 @@ export function createShaderSceneDriver({ params, width, height }) {
     'uKaleido', 'uMorph', 'uPixelate', 'uPosterize', 'uSway', 'uPulse', 'uBeatPhase',
     'uDriftX', 'uDriftY', 'uShake', 'uTile', 'uTwist', 'uTemperature', 'uSolarize', 'uFlash',
     'uContrast', 'uGamma', 'uResolution', 'uAudioTex', 'uPalLutMix', 'uPalLutRow',
+    // Conditional in the app: the renderer only binds the FlowField for the
+    // scenes wired to it, and the cyclic-palette atlas only when it loaded.
+    // Both are supplied here as the NEUTRAL state the app itself sends when
+    // they are absent (zero flow at zero strength, atlas mix 0) rather than
+    // left unset, because unset means "sampler reads unit 0" - which on this
+    // family is the audio texture, i.e. a shader would silently read the
+    // spectrum as a colour map.
+    'uFlow', 'uFlowStrength', 'uPalLut',
   ]);
 
   function step(f, dt) {
@@ -388,9 +415,12 @@ export function createShaderSceneDriver({ params, width, height }) {
       // is the same state.
       u('uPalLutMix', 0),
       u('uPalLutRow', 0),
+      u('uFlowStrength', 0),
       {
         uResolution: { t: '2f', v: [width, height] },
         uAudioTex: { t: 'tex', v: 0 },
+        uFlow: { t: 'tex', v: 1 },
+        uPalLut: { t: 'tex', v: 2 },
       },
     );
     return {
@@ -401,5 +431,13 @@ export function createShaderSceneDriver({ params, width, height }) {
     };
   }
 
-  return { id: 'shader', supplies, step, meltConfig: { enabled: false } };
+  /** See the hyperspace driver's jumpClock: free-running clocks only. */
+  function jumpClock(seconds) {
+    shaderTime += p.speed * seconds;
+    rotationAngle += p.rotation * seconds;
+    if (p.endlessZoom) zoomPhase = (zoomPhase + p.endlessZoomSpeed * seconds) % 1;
+    if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * seconds) % 1;
+  }
+
+  return { id: 'shader', supplies, step, jumpClock, meltConfig: { enabled: false } };
 }

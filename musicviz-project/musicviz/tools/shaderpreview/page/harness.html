@@ -1,0 +1,532 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>musicviz shader preview harness</title>
+<style>body{margin:0;background:#111}canvas{display:block}</style>
+<canvas id="c"></canvas>
+<script>
+/*
+ * The GL half of the preview harness.
+ *
+ * It is deliberately DUMB about the app: every uniform value arrives from
+ * Node already computed by the Kotlin-mirroring drivers in lib/scenes.mjs, so
+ * there is exactly one place where "what the app uploads" is decided. What
+ * lives here is the part that must be GL: compiling, uploading, running the
+ * melt's fluid passes (the app's own fragment shaders, unmodified), rendering,
+ * reading back and measuring.
+ */
+'use strict';
+
+const state = {
+  gl: null,
+  canvas: null,
+  program: null,
+  uniformLocs: new Map(),
+  activeUniforms: new Set(),
+  audioTex: null,
+  melt: null,
+  lastMeanLuma: null,
+  frameIndex: 0,
+};
+
+function fail(msg) { return { ok: false, error: msg }; }
+
+// --------------------------------------------------------------------------
+// program plumbing
+// --------------------------------------------------------------------------
+
+function compile(gl, type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(sh);
+    gl.deleteShader(sh);
+    throw new Error(log);
+  }
+  return sh;
+}
+
+function buildProgram(gl, vs, fs) {
+  const v = compile(gl, gl.VERTEX_SHADER, vs);
+  let f;
+  try { f = compile(gl, gl.FRAGMENT_SHADER, fs); }
+  catch (e) { gl.deleteShader(v); throw e; }
+  const p = gl.createProgram();
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.bindAttribLocation(p, 0, 'aPosition');
+  gl.linkProgram(p);
+  gl.deleteShader(v);
+  gl.deleteShader(f);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    const log = gl.getProgramInfoLog(p);
+    gl.deleteProgram(p);
+    throw new Error('Link failed: ' + log);
+  }
+  return p;
+}
+
+// --------------------------------------------------------------------------
+// the melt: FluidSim.step, with the app's real fragment shaders
+// --------------------------------------------------------------------------
+
+class Fbo {
+  constructor(gl, w, h, internal, format, type, linear) {
+    this.gl = gl; this.width = w; this.height = h;
+    this.tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    const filt = linear ? gl.LINEAR : gl.NEAREST;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filt);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filt);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, null);
+    this.fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.tex, 0);
+    this.ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+}
+
+class DoubleFbo {
+  constructor(gl, w, h, internal, format, type, linear) {
+    this.read = new Fbo(gl, w, h, internal, format, type, linear);
+    this.write = new Fbo(gl, w, h, internal, format, type, linear);
+    this.width = w; this.height = h;
+    this.ok = this.read.ok && this.write.ok;
+  }
+  swap() { const t = this.read; this.read = this.write; this.write = t; }
+}
+
+class Melt {
+  constructor(gl, cfg, shaders) {
+    this.gl = gl;
+    this.cfg = cfg;
+    this.programs = {};
+    for (const [name, src] of Object.entries(shaders.frags)) {
+      this.programs[name] = buildProgram(gl, shaders.vert, src);
+    }
+    this.locCache = new Map();
+
+    const vbo = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    this.vao = gl.createVertexArray();
+    gl.bindVertexArray(this.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+
+    const R16F = gl.R16F, RG16F = gl.RG16F, RGBA16F = gl.RGBA16F;
+    const HF = gl.HALF_FLOAT;
+    this.velocity = new DoubleFbo(gl, cfg.velWidth, cfg.velHeight, RG16F, gl.RG, HF, false);
+    this.dye = new DoubleFbo(gl, cfg.dyeWidth, cfg.dyeHeight, RGBA16F, gl.RGBA, HF, true);
+    this.pressure = new DoubleFbo(gl, cfg.velWidth, cfg.velHeight, R16F, gl.RED, HF, false);
+    this.divergence = new Fbo(gl, cfg.velWidth, cfg.velHeight, R16F, gl.RED, HF, false);
+    this.curl = new Fbo(gl, cfg.velWidth, cfg.velHeight, R16F, gl.RED, HF, false);
+    this.ok = this.velocity.ok && this.dye.ok && this.pressure.ok
+      && this.divergence.ok && this.curl.ok;
+
+    this.linearSampler = gl.createSampler();
+    gl.samplerParameteri(this.linearSampler, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.samplerParameteri(this.linearSampler, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.samplerParameteri(this.linearSampler, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.samplerParameteri(this.linearSampler, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    this.cellSize = 2 / cfg.velHeight;
+    this.rdx = 1 / this.cellSize;
+    this.halfRdx = 0.5 / this.cellSize;
+    this.alpha = -this.cellSize * this.cellSize;
+    this.current = null;
+  }
+
+  loc(name, uniform) {
+    const key = name + '|' + uniform;
+    if (!this.locCache.has(key)) {
+      this.locCache.set(key, this.gl.getUniformLocation(this.programs[name], uniform));
+    }
+    return this.locCache.get(key);
+  }
+
+  use(name, w, h) {
+    const gl = this.gl;
+    gl.useProgram(this.programs[name]);
+    this.current = name;
+    gl.viewport(0, 0, w, h);
+    gl.uniform2f(this.loc(name, 'uInvRes'), 1 / w, 1 / h);
+    gl.uniform1f(this.loc(name, 'uAspect'), this.cfg.aspect);
+  }
+
+  bindTex(uniform, tex, unit) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(this.loc(this.current, uniform), unit);
+  }
+
+  set1f(u, v) { this.gl.uniform1f(this.loc(this.current, u), v); }
+  set2f(u, a, b) { this.gl.uniform2f(this.loc(this.current, u), a, b); }
+  set3f(u, a, b, c) { this.gl.uniform3f(this.loc(this.current, u), a, b, c); }
+
+  blit(target) {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+    gl.viewport(0, 0, target.width, target.height);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  /** FluidSim.runInjection: one pass per queued splat. */
+  injection(target, mode, splats) {
+    const gl = this.gl;
+    for (const s of splats) {
+      this.use('splat', target.width, target.height);
+      this.bindTex('uTarget', target.read.tex, 0);
+      this.set2f('uPrev', s.prevX, s.prevY);
+      this.set2f('uCur', s.curX, s.curY);
+      this.set1f('uRadius', s.radius);
+      if (mode === 0) this.set3f('uValue', s.velX, s.velY, 0);
+      else this.set3f('uValue', s.r, s.g, s.b);
+      gl.uniform1i(this.loc('splat', 'uMode'), mode);
+      this.blit(target.write);
+      target.swap();
+    }
+  }
+
+  /** FluidSim.step, pass for pass. */
+  step({ dt, curlStrength, velocityDissipation, densityDissipation, splats }) {
+    const gl = this.gl;
+    gl.disable(gl.BLEND);
+    gl.bindVertexArray(this.vao);
+    const vel = this.velocity, dye = this.dye, press = this.pressure;
+    const velInvW = 1 / vel.width, velInvH = 1 / vel.height;
+
+    // 1. advect velocity
+    this.use('advect', vel.width, vel.height);
+    this.bindTex('uVelocity', vel.read.tex, 0);
+    this.bindTex('uSource', vel.read.tex, 0);
+    this.set2f('uSrcInvRes', velInvW, velInvH);
+    this.set2f('uVelInvRes', velInvW, velInvH);
+    this.set1f('uDt', dt);
+    this.set1f('uRdx', this.rdx);
+    const vd = 1 + velocityDissipation * dt;
+    this.set3f('uDecay', vd, vd, vd);
+    this.blit(vel.write);
+    vel.swap();
+
+    // 2. velocity injection
+    this.injection(vel, 0, splats);
+
+    // 3-4. curl + vorticity
+    this.use('curl', this.curl.width, this.curl.height);
+    this.bindTex('uVelocity', vel.read.tex, 0);
+    this.set1f('uHalfRdx', this.halfRdx);
+    this.blit(this.curl);
+    this.use('vorticity', vel.width, vel.height);
+    this.bindTex('uVelocity', vel.read.tex, 0);
+    this.bindTex('uCurl', this.curl.tex, 1);
+    this.set1f('uCurlStrength', curlStrength);
+    this.set1f('uDx', this.cellSize);
+    this.set1f('uDt', dt);
+    this.blit(vel.write);
+    vel.swap();
+
+    // 5-7. projection
+    this.use('divergence', this.divergence.width, this.divergence.height);
+    this.bindTex('uVelocity', vel.read.tex, 0);
+    this.set1f('uHalfRdx', this.halfRdx);
+    this.set2f('uInvRes', 1 / this.divergence.width, 1 / this.divergence.height);
+    this.blit(this.divergence);
+    this.use('clear', press.width, press.height);
+    this.bindTex('uTexture', press.read.tex, 0);
+    this.set1f('uValue', this.cfg.pressureDamp);
+    this.blit(press.write);
+    press.swap();
+    this.use('pressure', press.width, press.height);
+    this.bindTex('uDivergence', this.divergence.tex, 1);
+    this.set1f('uAlpha', this.alpha);
+    this.set2f('uInvRes', 1 / press.width, 1 / press.height);
+    for (let i = 0; i < this.cfg.pressureIterations; i++) {
+      this.bindTex('uPressure', press.read.tex, 0);
+      this.blit(press.write);
+      press.swap();
+    }
+    this.use('gradient', vel.width, vel.height);
+    this.bindTex('uPressure', press.read.tex, 0);
+    this.bindTex('uVelocity', vel.read.tex, 1);
+    this.set1f('uHalfRdx', this.halfRdx);
+    this.set2f('uInvRes', velInvW, velInvH);
+    this.blit(vel.write);
+    vel.swap();
+
+    // 8-9. dye injection + advection
+    this.injection(dye, 1, splats);
+    this.use('advect', dye.width, dye.height);
+    this.bindTex('uVelocity', vel.read.tex, 0);
+    gl.bindSampler(0, this.linearSampler);
+    this.bindTex('uSource', dye.read.tex, 1);
+    this.set2f('uSrcInvRes', 1 / dye.width, 1 / dye.height);
+    this.set2f('uVelInvRes', velInvW, velInvH);
+    this.set1f('uDt', dt);
+    this.set1f('uRdx', this.rdx);
+    // chromaticAging is 0 for MeltField, so all three channels decay alike.
+    const dd = 1 + densityDissipation * dt;
+    this.set3f('uDecay', dd, dd, dd);
+    this.blit(dye.write);
+    dye.swap();
+    gl.bindSampler(0, null);
+
+    gl.bindVertexArray(null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  /** Channel statistics of a field, read back as float. */
+  stats(target) {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.read ? target.read.fbo : target.fbo);
+    const w = target.width, h = target.height;
+    const px = new Float32Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.FLOAT, px);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    let max = 0, sum = 0, sumMag = 0, over1 = 0, nonFinite = 0;
+    for (let i = 0; i < w * h; i++) {
+      const r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2];
+      if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) { nonFinite++; continue; }
+      const m = Math.max(Math.abs(r), Math.abs(g), Math.abs(b));
+      if (m > max) max = m;
+      sum += (r + g + b) / 3;
+      sumMag += m;
+      if (m > 1) over1++;
+    }
+    const n = w * h;
+    return {
+      max: round4(max),
+      mean: round4(sum / n),
+      meanMagnitude: round4(sumMag / n),
+      fracAbove1: round4(over1 / n),
+      nonFinite,
+    };
+  }
+}
+
+function round4(x) { return Math.round(x * 10000) / 10000; }
+
+// --------------------------------------------------------------------------
+// public API
+// --------------------------------------------------------------------------
+
+window.__init = function init(cfg) {
+  try {
+    const canvas = document.getElementById('c');
+    canvas.width = cfg.width;
+    canvas.height = cfg.height;
+    const gl = canvas.getContext('webgl2', {
+      preserveDrawingBuffer: true,
+      antialias: false,
+      alpha: false,
+      premultipliedAlpha: false,
+    });
+    if (!gl) return fail('no WebGL2 context');
+    state.gl = gl;
+    state.canvas = canvas;
+    state.lastMeanLuma = null;
+    state.frameIndex = 0;
+
+    const colorBufferFloat = !!gl.getExtension('EXT_color_buffer_float');
+    gl.getExtension('OES_texture_float_linear');
+
+    let program;
+    try { program = buildProgram(gl, cfg.vertSrc, cfg.fragSrc); }
+    catch (e) { return fail('shader: ' + e.message); }
+    state.program = program;
+    state.uniformLocs = new Map();
+
+    // What the LINKER kept. A uniform the shader declares but never reads is
+    // dead-stripped, so setting it is a no-op and NOT setting it is harmless;
+    // reporting the distinction stops the audit crying wolf about them.
+    const active = new Set();
+    const count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < count; i++) {
+      const info = gl.getActiveUniform(program, i);
+      active.add(info.name.replace(/\[0\]$/, ''));
+    }
+    state.activeUniforms = active;
+
+    // A dedicated texture unit per sampler the plan can bind.
+    state.audioTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, state.audioTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, 64, 2, 0, gl.RED, gl.FLOAT, null);
+
+    // 1x1 black stand-ins, so a sampler the app binds conditionally still has
+    // a complete texture rather than reading undefined.
+    state.blackTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, state.blackTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+      new Uint8Array([0, 0, 0, 255]));
+
+    state.vao = gl.createVertexArray();
+
+    state.melt = null;
+    let meltReport = { enabled: false };
+    if (cfg.meltConfig && cfg.meltConfig.enabled) {
+      if (!colorBufferFloat) {
+        meltReport = { enabled: false, reason: 'EXT_color_buffer_float missing - this is the uHasMelt=0 path' };
+      } else {
+        try {
+          state.melt = new Melt(gl, cfg.meltConfig, cfg.meltShaders);
+          meltReport = {
+            enabled: state.melt.ok,
+            velGrid: [cfg.meltConfig.velWidth, cfg.meltConfig.velHeight],
+            dyeGrid: [cfg.meltConfig.dyeWidth, cfg.meltConfig.dyeHeight],
+          };
+          if (!state.melt.ok) meltReport.reason = 'a fluid FBO was incomplete';
+        } catch (e) {
+          meltReport = { enabled: false, reason: 'fluid shader: ' + e.message };
+        }
+      }
+    }
+
+    return {
+      ok: true,
+      renderer: gl.getParameter(gl.RENDERER),
+      glsl: gl.getParameter(gl.SHADING_LANGUAGE_VERSION),
+      unmaskedRenderer: (() => {
+        const d = gl.getExtension('WEBGL_debug_renderer_info');
+        return d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : null;
+      })(),
+      colorBufferFloat,
+      activeUniforms: [...active].sort(),
+      melt: meltReport,
+    };
+  } catch (e) {
+    return fail(String(e && e.stack || e));
+  }
+};
+
+function uniformLoc(name) {
+  if (!state.uniformLocs.has(name)) {
+    state.uniformLocs.set(name, state.gl.getUniformLocation(state.program, name));
+  }
+  return state.uniformLocs.get(name);
+}
+
+window.__frame = function frame(job) {
+  try {
+    const gl = state.gl;
+
+    if (state.melt && job.melt) state.melt.step(job.melt);
+
+    // A frame that is not being measured still has to advance every
+    // simulation (the melt above), but the raymarch is a pure function of the
+    // uniforms, so skipping the draw changes nothing except the wall clock -
+    // and on software GL the draw is ~99% of it. This is what makes
+    // `--every 30` and long-clock runs finish.
+    if (job.skipRender) {
+      state.frameIndex++;
+      return { ok: true, metrics: null };
+    }
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, state.canvas.width, state.canvas.height);
+    gl.disable(gl.BLEND);
+    gl.disable(gl.DEPTH_TEST);
+    gl.useProgram(state.program);
+
+    // Stand-ins first: every unit the plan can name gets a COMPLETE texture,
+    // then the real ones overwrite the units they own. Sampling an incomplete
+    // texture is defined to return (0,0,0,1), which is indistinguishable from
+    // a field that legitimately went black - the exact ambiguity this tool
+    // exists to remove.
+    for (const unit of [0, 1, 2]) {
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, state.blackTex);
+    }
+    if (state.melt) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, state.melt.velocity.read.tex);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, state.melt.dye.read.tex);
+    }
+    if (job.audioTex) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, state.audioTex);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 64, 2, gl.RED, gl.FLOAT,
+        new Float32Array(job.audioTex));
+    }
+    gl.activeTexture(gl.TEXTURE0);
+
+    const skipped = [];
+    for (const [name, u] of Object.entries(job.uniforms)) {
+      const loc = uniformLoc(name);
+      if (loc === null) { skipped.push(name); continue; }
+      switch (u.t) {
+        case '1f': gl.uniform1f(loc, u.v); break;
+        case '1i': case 'tex': gl.uniform1i(loc, u.v); break;
+        case '2f': gl.uniform2f(loc, u.v[0], u.v[1]); break;
+        case '3f': gl.uniform3f(loc, u.v[0], u.v[1], u.v[2]); break;
+        case '4fv': gl.uniform4fv(loc, new Float32Array(u.v)); break;
+        case 'm3fv': gl.uniformMatrix3fv(loc, false, new Float32Array(u.v)); break;
+        default: throw new Error('unknown uniform kind ' + u.t + ' for ' + name);
+      }
+    }
+
+    gl.bindVertexArray(state.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindVertexArray(null);
+
+    const err = gl.getError();
+    const w = state.canvas.width, h = state.canvas.height;
+    const px = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+
+    let sum = 0, max = 0, blown = 0, black = 0;
+    const n = w * h;
+    for (let i = 0; i < n; i++) {
+      const r = px[i * 4] / 255, g = px[i * 4 + 1] / 255, b = px[i * 4 + 2] / 255;
+      const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      sum += l;
+      if (l > max) max = l;
+      // "blown out" on the CHANNELS, not on luminance: a saturated red is a
+      // clipped pixel even though its luminance is 0.21.
+      if (r > 0.95 && g > 0.95 && b > 0.95) blown++;
+      if (l < 0.02) black++;
+    }
+    const meanLuma = sum / n;
+    const metrics = {
+      meanLuma: round4(meanLuma),
+      maxLuma: round4(max),
+      fracBlownOut: round4(blown / n),
+      fracBlack: round4(black / n),
+      deltaMeanLuma: state.lastMeanLuma === null ? null : round4(meanLuma - state.lastMeanLuma),
+      glError: err === gl.NO_ERROR ? null : err,
+      skippedUniforms: skipped,
+    };
+    state.lastMeanLuma = meanLuma;
+    state.frameIndex++;
+
+    if (state.melt && job.wantFieldStats) {
+      metrics.dye = state.melt.stats(state.melt.dye);
+      metrics.velocity = state.melt.stats(state.melt.velocity);
+    }
+
+    const out = { ok: true, metrics };
+    if (job.capture) out.png = state.canvas.toDataURL('image/png');
+    return out;
+  } catch (e) {
+    return fail(String(e && e.stack || e));
+  }
+};
+
+window.__harnessReady = true;
+</script>
