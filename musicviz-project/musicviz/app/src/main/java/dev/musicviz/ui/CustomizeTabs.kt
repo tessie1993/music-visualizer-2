@@ -219,7 +219,7 @@ internal fun ShapeTab(
             SectionHeader("Particles")
             if (isParticleShapeScene) {
                 // uShape is a ParticleSceneBase-only uniform (particle_frag's
-                // shapeMask). The fluid point layer has no shape at all - its
+                // shapeField). The fluid point layer has no shape at all - its
                 // sprites are always round - so the chips are dead there too.
                 LockableChipLabel("Particle shape")
                 ChipRow(SceneParams.PARTICLE_SHAPES, p.particleShape) { onChange(p.copy(particleShape = it)) }

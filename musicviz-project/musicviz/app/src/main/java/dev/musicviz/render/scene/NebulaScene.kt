@@ -64,7 +64,8 @@ class NebulaScene(
                 px[i] += px[i] * flow
                 py[i] += py[i] * flow
             }
-            val curl = (0.4f + p.turbulence * 1.6f) * dt * p.speed
+            val curlRate = (0.4f + p.turbulence * 1.6f) * p.speed
+            val curl = curlRate * dt
             val cx = -py[i] * curl
             val cy = px[i] * curl
             px[i] += cx
@@ -76,6 +77,10 @@ class NebulaScene(
             vertexData[o + 2] = 3f + e * 22f + features.bass * p.audioDrive * 10f
             vertexData[o + 3] = 0.55f + (band[i] % bandCount) / bandCount.toFloat() * 0.8f
             vertexData[o + 4] = e.coerceIn(0f, 1f)
+            // Radial drift plus the swirl term, as a rate: the billboards lean
+            // along the curl, which is what makes the drift read as a current.
+            vertexData[o + VELOCITY_OFFSET] = vx[i] * drive - py[i] * curlRate
+            vertexData[o + VELOCITY_OFFSET + 1] = vy[i] * drive + px[i] * curlRate
         }
     }
 }

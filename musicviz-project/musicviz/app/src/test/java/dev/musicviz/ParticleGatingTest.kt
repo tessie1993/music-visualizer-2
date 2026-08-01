@@ -22,10 +22,10 @@ import java.io.File
  * single section needs TWO gates because its controls have different readers:
  *
  *  - `particleShape` is uploaded only by `ParticleSceneBase.draw` (`uShape`,
- *    consumed by `particle_frag.glsl`'s shapeMask), whose five subclasses are
+ *    consumed by `particle_frag.glsl`'s shapeField), whose five subclasses are
  *    exactly [VisualizerRenderer.PARTICLE_SCENES]. The fluid point layer has
  *    no shape uniform, so the chips are dead on FLUID/CURLFLOW as well.
- *  - `particleSize` is read by those five (`ParticleSceneBase.kt:152`) AND by
+ *  - `particleSize` is read by those five (`ParticleSceneBase.kt:229`) AND by
  *    `FluidScene.kt:333` / `CurlFlowScene.kt:212`, which scale the
  *    FluidParticles sprites with it.
  *
