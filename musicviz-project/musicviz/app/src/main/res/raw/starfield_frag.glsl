@@ -72,7 +72,18 @@ vec2 view() {
         ang = abs(mod(ang, seg) - seg * 0.5);
         uv = vec2(cos(ang), sin(ang)) * rad;
     }
-    uv += vec2(uDriftX, uDriftY) * uTime * 0.1;
+    // Drift ping-pongs rather than running away. The composite pass wraps its
+    // own drift with fract() because it samples a BOUNDED image ("Wrap so the
+    // image scrolls instead of smearing at the clamped edge"), but uv here
+    // indexes an unbounded procedural domain, where a hard wrap would teleport
+    // the whole field by a screen width once per cycle. A triangle wave is the
+    // bounded form that stays continuous: its slope is exactly the old one for
+    // the first cycle, so nothing pops on the styles that read as scrolling
+    // (plasma, aurora, voronoi, grid, waves), while a centred subject - the
+    // sun, the ring, the spiral - always comes back instead of leaving frame
+    // for good and stranding the user on a black screen.
+    vec2 driftPhase = fract(vec2(uDriftX, uDriftY) * uTime * 0.025 + 0.25);
+    uv += 1.0 - 2.0 * abs(2.0 * driftPhase - 1.0);
     uv += uShake * uBeat * 0.03 * vec2(sin(uTime * 91.7), cos(uTime * 77.3));
     // Morph: blend the plane toward a polar remap (angle,radius swap), a
     // smooth geometric metamorphosis that works on any scene.
@@ -84,9 +95,20 @@ vec2 view() {
     }
     float a = uRotation + uSway * 0.35 * sin(uTime * 0.7);
     uv = mat2(cos(a), -sin(a), sin(a), cos(a)) * uv;
-    // Beat-locked pulse: peaks exactly on the musical beat (uBeatPhase=0).
-    float pulse = 1.0 + uPulse * 0.22 * pow(0.5 + 0.5 * cos(6.2831853 * uBeatPhase), 2.0);
-    float z = uZoom * pulse * pow(2.0, uZoomPhase) * (1.0 + uBeat * uBeatResponse * 0.15);
+    // Beat-locked pulse: peaks exactly on the musical beat (uBeatPhase=0), and
+    // rides the beat ENVELOPE so it is zero between hits. The phase clock in
+    // ShaderScene free-runs at the last detected tempo, so without the
+    // envelope the frame kept breathing once a beat through silence; every
+    // other family gets this slider as CompositeGrade.pulseAmount (the slider
+    // times the SQUARED envelope), and one slider has to mean one thing.
+    float beatEnv = clamp(uBeat, 0.0, 1.0);
+    float beatBump = pow(0.5 + 0.5 * cos(6.2831853 * uBeatPhase), 2.0);
+    float pulse = 1.0 + uPulse * 0.22 * beatEnv * beatEnv * beatBump;
+    // Triangle-wave exponent: 1x -> 2x -> 1x smoothly, so the endless-zoom
+    // phase wrap never causes a visible scale pop (2^1 snapping to 2^0). The
+    // milkdrop post pass (pm_post_frag) already spells it this way; a sawtooth
+    // exponent halved the magnification once per cycle on every scene shader.
+    float z = uZoom * pulse * pow(2.0, 1.0 - abs(2.0 * uZoomPhase - 1.0)) * (1.0 + uBeat * uBeatResponse * 0.15);
     uv /= max(z, 0.05);
     uv += uTurbulence * 0.06 * vec2(sin(uv.y * 6.0 + uTime), cos(uv.x * 6.0 + uTime * 1.3));
     // Radial twist: rotate by an angle growing with radius.

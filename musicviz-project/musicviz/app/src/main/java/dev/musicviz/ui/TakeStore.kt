@@ -16,6 +16,14 @@ data class TakeInfo(
  * JSON-file persistence for performance takes, alongside [PresetStore]'s
  * presets. One file per take in app-private storage; takes are small (tens of
  * kilobytes) and re-read whole, so there is nothing to gain from a database.
+ *
+ * Both writers go through [AtomicWrite]. A take is a performance that cannot
+ * be repeated - the same reason [save] never overwrites one - and
+ * `File.writeText` truncates its target to zero before writing, so the app
+ * being killed mid-save left a file that [list] silently skips and [load]
+ * silently refuses to replay. [AtomicWrite.TEMP_SUFFIX] keeps the in-progress
+ * copy out of that listing: it lands as `Take 3.json.tmp`, whose extension is
+ * not `json`.
  */
 class TakeStore(
     context: Context,
@@ -59,7 +67,7 @@ class TakeStore(
             candidate = "$name $n"
             n++
         }
-        fileOf(candidate).writeText(json)
+        AtomicWrite.text(fileOf(candidate), json)
         return candidate
     }
 
@@ -84,7 +92,10 @@ class TakeStore(
                     .put("name", to)
                     .toString()
             }.getOrNull() ?: return false
-        dest.writeText(updated)
+        // The source is only dropped once the destination is whole on disk.
+        // A truncated write followed by an unconditional delete is how a
+        // rename loses the take instead of moving it.
+        if (!AtomicWrite.text(dest, updated)) return false
         src.delete()
         return true
     }

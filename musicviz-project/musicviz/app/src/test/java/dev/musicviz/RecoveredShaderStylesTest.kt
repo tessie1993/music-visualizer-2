@@ -53,6 +53,14 @@ class RecoveredShaderStylesTest {
 
     private val shaderSceneSource: String by lazy { source("render/scene/ShaderScene.kt") }
 
+    /** The endless-zoom scale statement, as the reference sibling spells it. */
+    private val zoomLine: String by lazy {
+        stripComments(rawShader(SIBLING))
+            .lines()
+            .map { it.trim() }
+            .single { it.startsWith("float z = uZoom") }
+    }
+
     /** Every uniform name `ShaderScene.draw` actually uploads. */
     private val uploadedUniforms: Set<String> by lazy {
         val byHelper = Regex("""setUniform1f\("(\w+)"""").findAll(shaderSceneSource)
@@ -176,13 +184,26 @@ class RecoveredShaderStylesTest {
             val src = stripComments(rawShader(shader))
             assertTrue("$shader does not transform through view()", src.contains("view()"))
             assertTrue("$shader does not colour through grade()", src.contains("fragColor = vec4(grade("))
-            // Endless zoom's spelling changed; the recovered lava still had
-            // the retired triangle ramp, which zoomed back out again.
+            // Endless zoom's spelling has changed twice, and both times a
+            // recovered shader was the one left behind - so this compares
+            // against the SIBLING's own line rather than restating a formula
+            // that would go stale the same way a third time.
             assertTrue(
-                "$shader uses a stale endless-zoom ramp instead of pow(2.0, uZoomPhase)",
-                src.contains("pow(2.0, uZoomPhase)"),
+                "$shader spells the endless-zoom scale differently from $SIBLING:\n  $zoomLine",
+                src.lines().map { it.trim() }.contains(zoomLine),
             )
         }
+        // ...and the line the pair is held against has to be the right one.
+        // The exponent is a TRIANGLE wave (1x -> 2x -> 1x), the form
+        // pm_post_frag uses: a sawtooth `pow(2.0, uZoomPhase)` reaches 2x and
+        // then snaps back to 1x at every phase wrap, a visible halving of the
+        // whole frame roughly once a second at the top of the Dive speed
+        // range. Asserted here so the two recovered styles cannot agree with
+        // their siblings ON A REGRESSION.
+        assertTrue(
+            "the shared endless-zoom exponent is not the triangle form:\n  $zoomLine",
+            zoomLine.contains("pow(2.0, 1.0 - abs(2.0 * uZoomPhase - 1.0))"),
+        )
     }
 
     @Test

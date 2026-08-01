@@ -41,7 +41,17 @@ vec3 pal(float t) {
     // Hue shift and the colour cycle stay meaningful on a colour map: they
     // rotate the position along the ramp rather than the hue wheel, which for
     // a CYCLIC map is the same gesture and lands back where it started.
-    float u = fract(t * uPalRange * uHueRange + uColorShift);
+    //
+    // uPalRange is deliberately NOT in this expression, unlike in
+    // palProcedural above. It is the built-in palette's hue SPAN - table data
+    // (SceneParams.PALETTES), not a control - and a colour map has no hue span
+    // to narrow: its entries are measured colours, not points on a wheel.
+    // Multiplying by it made the map a hostage of whichever built-in happened
+    // to be selected, so "Mono" (span 0.02) or "Cyan"/"Cherry" (0.08) swept 2%
+    // to 8% of a 256-entry ramp and painted the whole frame one flat tone -
+    // the colour map read as broken while the fault was two chip rows above
+    // it. uHueRange stays: that one IS the user's "Hue range" control.
+    float u = fract(t * uHueRange + uColorShift);
     vec3 mapped = texture(uPalLut, vec2(u, uPalLutRow)).rgb;
     return mix(procedural, mapped, clamp(uPalLutMix, 0.0, 1.0));
 }

@@ -5,14 +5,17 @@ import dev.musicviz.analysis.AudioFeatures
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import kotlin.math.abs
+import kotlin.math.exp
 
 /**
  * Shared plumbing for the particle scenes: one static quad, one instance
  * buffer, one instanced draw call, and uniform handling of the Customize
  * params. Subclasses implement [simulate] and fill [vertexData] with raw
- * values (hue as a 0..1 fraction); palette mapping, color cycling, mirroring,
- * density and beat pulse are applied here so every particle scene behaves
- * consistently.
+ * values (hue as a 0..1 fraction); palette mapping, color cycling, FlowField
+ * advection, density and beat pulse are applied here so every particle scene
+ * behaves consistently. Mirror is NOT one of them - the composite pass owns it
+ * for this family; see [postProcess].
  *
  * Geometry is a velocity-stretched billboard per particle rather than a
  * GL_POINTS sprite - see `particle_vert.glsl` for why - so [simulate] must
@@ -39,6 +42,36 @@ abstract class ParticleSceneBase(
 
         /** Triangle-strip corners of the unit billboard, [-1,1]^2. */
         private val QUAD_CORNERS = floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)
+
+        /**
+         * Where the FlowField may carry a particle to, in clip units. Just
+         * outside the frame, so a tracer can leave and come back.
+         */
+        private const val ADVECTION_RAIL = 1.2f
+
+        /**
+         * Time constant of the pull back onto the style's own trajectory, in
+         * seconds - what makes the flow displacement a bounded EXCURSION
+         * rather than an integral only [ADVECTION_RAIL] ever stops.
+         *
+         * Needed because the offset belongs to a SLOT, not to a particle:
+         * every style here recycles its slots (Fountain re-emits at the
+         * nozzle, Nebula respawns near the centre, Burst re-fires from its
+         * origin), and an offset that outlived the particle that earned it
+         * would teleport its successor - a fountain whose nozzle wanders, a
+         * nebula that spawns off-centre. It also keeps a steady current from
+         * parking the whole population on the rail. 1.5 s is long enough that
+         * the travel reads as travel and short enough that a recycled slot is
+         * clean again well inside one particle lifetime.
+         */
+        private const val ADVECTION_RELAX_SECONDS = 1.5f
+
+        /**
+         * Total displacement per particle, in clip units, below which the
+         * relaxing tail is invisible and may be dropped - which is what lets
+         * `applyFlowField` return early on every frame no field is applied.
+         */
+        private const val ADVECTION_EPSILON = 1e-3f
     }
 
     protected val vertexData: FloatArray = FloatArray(count * FLOATS_PER_PARTICLE)
@@ -189,6 +222,28 @@ abstract class ParticleSceneBase(
 
     private val flowSample = FloatArray(2)
 
+    /**
+     * How far the FlowField has carried each particle away from the position
+     * its own [simulate] published, in clip units.
+     *
+     * This state has to live HERE because the displacement has to SURVIVE the
+     * next frame, and no subclass can be asked to keep it: the advection used
+     * to be written straight into [vertexData], which every style overwrites
+     * from its own arrays on the following frame (Nebula/Burst/Swarm/Fountain
+     * from px/py, Orbit and Galaxy from an angle and a radius they have no
+     * position arrays at all for). The displacement therefore never compounded
+     * - "Particles ride the field" moved nothing, and the +-[ADVECTION_RAIL]
+     * clamp was unreachable by construction - while only the velocity write
+     * survived, so the streaks leaned into a current the sprites were not in.
+     * An offset kept alongside the population is the one form that works for
+     * all nine styles without a single one of them changing.
+     */
+    private val advectX = FloatArray(count)
+    private val advectY = FloatArray(count)
+
+    /** True while [advectX]/[advectY] hold anything worth publishing. */
+    private var advecting = false
+
     final override fun update(
         features: AudioFeatures,
         dt: Float,
@@ -209,27 +264,56 @@ abstract class ParticleSceneBase(
         p: SceneParams,
         dt: Float,
     ) {
-        val grid = flowGrid ?: return
         // A field-defined style advects unconditionally; for everything else
         // this stays the opt-in it has always been.
+        val grid = flowGrid
         val forced = requiresFlowField
-        if (!forced && (!p.flowEnabled || !p.flowAdvectParticles)) return
+        val riding = grid != null && (forced || (p.flowEnabled && p.flowAdvectParticles))
         val strength =
-            p.flowStrength.coerceIn(0f, 1f).let { if (forced) it.coerceAtLeast(0.35f) else it }
+            if (riding) p.flowStrength.coerceIn(0f, 1f).let { if (forced) it.coerceAtLeast(0.35f) else it } else 0f
         val k = strength * dt
-        if (k <= 0f) return
+        // Nothing to add and nothing left over: the common case, and the only
+        // one where the population is published exactly as [simulate] left it.
+        if (k <= 0f && !advecting) return
+        // Switching the coupling off (or down to zero strength) keeps this
+        // running with k = 0, so the displacement RELAXES away over the same
+        // time constant instead of snapping the whole population back in one
+        // frame - the field lets go the way it took hold.
+        val keep = exp(-dt / ADVECTION_RELAX_SECONDS)
+        var carried = 0f
         for (i in 0 until count) {
             val o = i * FLOATS_PER_PARTICLE
-            val x = vertexData[o]
-            val y = vertexData[o + 1]
-            grid.sample(x * 0.5f + 0.5f, y * 0.5f + 0.5f, flowSample)
-            vertexData[o] = (x + flowSample[0] * k).coerceIn(-1.2f, 1.2f)
-            vertexData[o + 1] = (y + flowSample[1] * k).coerceIn(-1.2f, 1.2f)
-            // The field moves the sprite, so it has to move the streak too, or
-            // flow-advected particles would sit still-looking inside a current.
-            vertexData[o + VELOCITY_OFFSET] += flowSample[0] * strength
-            vertexData[o + VELOCITY_OFFSET + 1] += flowSample[1] * strength
+            val baseX = vertexData[o]
+            val baseY = vertexData[o + 1]
+            var ox = advectX[i]
+            var oy = advectY[i]
+            if (k > 0f && grid != null) {
+                // Sampled where the particle actually IS - its own position
+                // plus what the field has already carried it - so a tracer
+                // follows one streamline instead of re-reading the cell its
+                // style would have put it in.
+                grid.sample((baseX + ox) * 0.5f + 0.5f, (baseY + oy) * 0.5f + 0.5f, flowSample)
+                ox += flowSample[0] * k
+                oy += flowSample[1] * k
+                // The field moves the sprite, so it has to move the streak too, or
+                // flow-advected particles would sit still-looking inside a current.
+                vertexData[o + VELOCITY_OFFSET] += flowSample[0] * strength
+                vertexData[o + VELOCITY_OFFSET + 1] += flowSample[1] * strength
+            }
+            ox *= keep
+            oy *= keep
+            val x = (baseX + ox).coerceIn(-ADVECTION_RAIL, ADVECTION_RAIL)
+            val y = (baseY + oy).coerceIn(-ADVECTION_RAIL, ADVECTION_RAIL)
+            // Stored back as the offset the rail actually allowed, so a particle
+            // pinned against the edge stops accumulating instead of building an
+            // invisible debt that would fling it across the frame on release.
+            advectX[i] = x - baseX
+            advectY[i] = y - baseY
+            vertexData[o] = x
+            vertexData[o + 1] = y
+            carried += abs(advectX[i]) + abs(advectY[i])
         }
+        advecting = k > 0f || carried > count * ADVECTION_EPSILON
     }
 
     /**
@@ -259,7 +343,31 @@ abstract class ParticleSceneBase(
         dt: Float,
     )
 
-    /** Palette/cycle/mirror/density applied uniformly after simulation. */
+    /**
+     * Palette/cycle/density applied uniformly after simulation.
+     *
+     * Mirror is deliberately NOT here. It is owned by the composite pass for
+     * this family (`CompositeGrade.gateFor(PARTICLE).mirrorInvert` is true, and
+     * `composite_frag` states the invariant: "A component is 1.0 when the
+     * COMPOSITE owns that group for that texture and 0.0 when the scene already
+     * applied it"). This used to copy every odd particle onto its even
+     * neighbour's reflection as well, which broke that invariant twice over.
+     * The two folds are about DIFFERENT axes - this one reflected in
+     * pre-rotation NDC and `particle_vert` rotates afterwards, while the
+     * composite folds about the screen centreline - so with Rotation up the
+     * pairs no longer landed on the composite's fold and read as unpaired ghost
+     * duplicates, and at Rotation 0 they landed exactly on it, so half the
+     * population was simulated and rasterised into a half-frame the composite
+     * then discarded.
+     *
+     * The composite is the layer that keeps it, rather than this one,
+     * because Mirror and Invert share ONE gate component: a scene-owned
+     * fold would have to split that gate, and a colour inversion is
+     * something no particle pipeline can perform at all. Giving it to the
+     * composite also hands the family back its full independent population
+     * and puts the fold on the same screen centreline every other family
+     * already uses - one slider, one meaning.
+     */
     private fun postProcess(p: SceneParams) {
         drawCount = (count * p.density).toInt().coerceIn(1, count)
         val hueBase = p.paletteBase + p.colorShift + cyclePhase
@@ -267,17 +375,6 @@ abstract class ParticleSceneBase(
         for (i in 0 until drawCount) {
             val o = i * FLOATS_PER_PARTICLE
             vertexData[o + 3] = ((hueBase + vertexData[o + 3] * hueSpan) % 1f + 1f) % 1f
-            if (p.mirror && i % 2 == 1) {
-                val src = o - FLOATS_PER_PARTICLE
-                vertexData[o] = -vertexData[src]
-                vertexData[o + 1] = vertexData[src + 1]
-                vertexData[o + 2] = vertexData[src + 2]
-                vertexData[o + 3] = vertexData[src + 3]
-                vertexData[o + 4] = vertexData[src + 4]
-                // Mirrored across x, so the streak has to lean the other way.
-                vertexData[o + VELOCITY_OFFSET] = -vertexData[src + VELOCITY_OFFSET]
-                vertexData[o + VELOCITY_OFFSET + 1] = vertexData[src + VELOCITY_OFFSET + 1]
-            }
         }
     }
 

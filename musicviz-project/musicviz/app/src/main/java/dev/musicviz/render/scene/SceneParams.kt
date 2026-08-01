@@ -31,7 +31,15 @@ data class SceneParams(
     // Shape
     val warp: Float = 0f,
     val ripple: Float = 0f,
-    val symmetry: Int = 0,
+    // The fold count is a REFINEMENT of [kaleidoscope], not a second switch:
+    // every gate that reads it - `uKaleido > 0.5 && uSymmetry >= 2.0` in each
+    // scene shader, and the same pair in composite_frag - needs both, so a
+    // default below 2 made ticking Kaleidoscope do nothing at all until the
+    // user also found the Folds chips. It defaults to a real fold count for
+    // the same reason `ParamRandomizer` picks one whenever it turns the
+    // toggle on, and nothing reads it while the toggle is off, so the value
+    // is inert until it is asked for.
+    val symmetry: Int = DEFAULT_SYMMETRY_FOLDS,
     val kaleidoscope: Boolean = false,
     val morph: Float = 0f,
     val pixelate: Float = 0f,
@@ -397,6 +405,13 @@ data class SceneParams(
 
         /** Symmetry fold options; 0 = off. */
         val SYMMETRY_FOLDS: List<Int> = listOf(0, 2, 3, 4, 5, 6, 7, 8, 9, 12, 16)
+
+        /**
+         * Fold count the Kaleidoscope toggle runs at until the user picks one.
+         * Six-fold is the snowflake the effect is named after, and it reads as
+         * symmetry at a glance where two folds read as a mirror.
+         */
+        const val DEFAULT_SYMMETRY_FOLDS: Int = 6
 
         /** Fluid beat-splat emitter patterns (index = fluidBeatPattern). */
         val FLUID_PATTERNS: List<String> = listOf("Center", "Ring", "Random", "Spectrum")

@@ -162,12 +162,25 @@ class ShaderScene(
         } else {
             beatPhase = (beatPhase + dt) % 1f
         }
+        // The texture rows carry p.audioDrive too, on the same terms as the
+        // scalars above. It used to be applied only to uBass/uMid/uTreble/
+        // uEnergy, which made "Audio drive" mean nothing at all on a style
+        // whose audio arrives entirely through the texture - Voronoi reads
+        // aband(cellId) and nothing else, so the whole 0.2..2.5 sweep was
+        // dead there - and made the same slider mean different things to two
+        // halves of one shader. Band row: the scalars' clamp, so a spectrum
+        // bin and uBass stay on one scale. Waveform row: scaled about the 0.5
+        // midpoint the row is encoded around, and clamped to the row's own
+        // 0..1 range so a loud passage at high drive flattens instead of
+        // wrapping the texel.
+        val drive = p.audioDrive
         texFloats.clear()
         for (i in 0 until AUDIO_TEX_WIDTH) {
-            texFloats.put(features.bands[i * features.bands.size / AUDIO_TEX_WIDTH])
+            texFloats.put((features.bands[i * features.bands.size / AUDIO_TEX_WIDTH] * drive).coerceIn(0f, 1.5f))
         }
         for (i in 0 until AUDIO_TEX_WIDTH) {
-            texFloats.put(features.waveform[i * features.waveform.size / AUDIO_TEX_WIDTH] * 0.5f + 0.5f)
+            val sample = features.waveform[i * features.waveform.size / AUDIO_TEX_WIDTH]
+            texFloats.put((sample * drive * 0.5f + 0.5f).coerceIn(0f, 1f))
         }
     }
 
@@ -197,6 +210,12 @@ class ShaderScene(
         setUniform1f("uTreble", treble)
         setUniform1f("uEnergy", energy)
         setUniform1f("uBeat", beatPulse)
+        // Part of the uniform contract for user-written GLSL in the editor,
+        // and deliberately unread by every built-in style: uTime above is
+        // already integrated at this speed, so a scene multiplying by uSpeed
+        // as well runs as speed^2 AND reintroduces the teleport the
+        // integration exists to prevent (see [shaderTime]). Julia did exactly
+        // that. SharedShaderPreludeTest holds the built-ins to it.
         setUniform1f("uSpeed", p.speed)
         setUniform1f("uZoom", p.zoom)
         setUniform1f("uRotation", rotationAngle)

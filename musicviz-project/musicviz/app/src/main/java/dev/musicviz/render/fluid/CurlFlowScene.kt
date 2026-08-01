@@ -150,14 +150,14 @@ internal class CurlFlowScene(
             // slider had no reader on this style, so it moved nothing while
             // "Audio drive" (the field kick below) worked.
             beatDrive = CurlFlowMath.beatDrive(beatEnv, params.beatResponse)
-            noiseTime += lastDt * (0.15f + f.mid * 1.4f) * params.speed.coerceIn(0.1f, 2f)
+            noiseTime += lastDt * (0.15f + f.mid * 1.4f) * FluidChoreography.sceneSpeed(params.speed)
 
             // Shared spawn/catch progression: same params as the fluid scene.
             choreography.path = params.fluidSpawnPath.coerceIn(0, FluidChoreography.PATH_LABELS.size - 1)
             choreography.spawnCount = params.fluidSpawnPoints.coerceIn(1, FluidChoreography.MAX_SPAWN)
             choreography.catchCount = params.fluidCatchPoints.coerceIn(0, FluidChoreography.MAX_CATCH)
             choreography.progressionAmount = params.fluidSpawnProgress.coerceIn(0f, 1f)
-            choreography.speed = params.speed.coerceIn(0.1f, 2f)
+            choreography.speed = FluidChoreography.sceneSpeed(params.speed)
             choreography.tick(f, lastDt, aspect)
 
             GLES30.glDisable(GLES30.GL_BLEND)

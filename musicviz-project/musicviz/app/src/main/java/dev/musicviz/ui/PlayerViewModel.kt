@@ -7,8 +7,6 @@ import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.AudioAttributes
-import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -21,14 +19,13 @@ import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.analysis.OfflineAnalyzer
 import dev.musicviz.analysis.PlaybackMath
 import dev.musicviz.analysis.SceneSuggester
-import dev.musicviz.audio.AudioFxController
 import dev.musicviz.audio.AudioFxState
 import dev.musicviz.audio.MicCapture
-import dev.musicviz.audio.PcmRingBuffer
-import dev.musicviz.audio.PcmTapSink
-import dev.musicviz.audio.TapRenderersFactory
 import dev.musicviz.export.ExportAspect
 import dev.musicviz.export.VideoExporter
+import dev.musicviz.playback.PlaybackEngine
+import dev.musicviz.playback.PlaybackService
+import dev.musicviz.playback.QueueOps
 import dev.musicviz.render.TransitionStyle
 import dev.musicviz.render.scene.CustomizeTab
 import dev.musicviz.render.scene.ParamRandomizer
@@ -325,7 +322,19 @@ private const val ART_SAMPLE_SIZE = 128
 class PlayerViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
-    private val ring = PcmRingBuffer()
+    /**
+     * The process's one player, borrowed rather than built.
+     *
+     * A ViewModel dies with its Activity, and music must not stop because the
+     * user swiped away from the app, so the ExoPlayer - and with it the PCM tap
+     * teed off its audio pipeline and the effects chain on its audio session -
+     * belongs to [PlaybackEngine]. Everything below reads exactly as it did
+     * when this class built the player itself; what changed is who outlives
+     * whom. The hold taken here is given back in [onCleared].
+     */
+    private val playback = PlaybackEngine.acquireForUi(application)
+
+    private val ring = playback.ring
     private val engine = AnalysisEngine(ring)
 
     /**
@@ -562,8 +571,13 @@ class PlayerViewModel(
     @Volatile
     private var tapSampleRateHz: Int = 0
 
-    private val sink =
-        PcmTapSink(ring) { rate, _, _ ->
+    /**
+     * Held as a field rather than passed as a lambda so [onCleared] can check
+     * whether the hook still installed on the player is this ViewModel's own
+     * before clearing it - see there for the race that makes the check matter.
+     */
+    private val audioFormatHook: (sampleRateHz: Int, channelCount: Int, encoding: Int) -> Unit =
+        { rate, _, _ ->
             // Live input owns the analyzer's rate while it is running: the
             // player can still reconfigure its pipeline (a queued track being
             // prepared) and would otherwise retune the FFT to a rate no
@@ -571,6 +585,18 @@ class PlayerViewModel(
             tapSampleRateHz = rate
             if (!externalAudioOwnsAnalyzer()) engine.sampleRateHz = rate
         }
+
+    /**
+     * Its own init block, run here rather than from the main one at the bottom
+     * of the class, because the player it hooks into may already be playing:
+     * the engine hands back a live player when a previous screen left one
+     * running, and a reconfigure landing between construction and the main init
+     * would leave the analyzer tuned to a rate no samples arrive at.
+     */
+    init {
+        playback.onAudioFormat = audioFormatHook
+    }
+
     private val offlineAnalyzer = OfflineAnalyzer(application)
     private val presetStore = PresetStore(application)
     private val trackLibrary = TrackLibrary(application)
@@ -580,31 +606,9 @@ class PlayerViewModel(
     private val lfoStore = LfoStore(application)
     private val musicPlaylists = MusicPlaylistStore(application)
     private val exporter = VideoExporter(application)
-    private val audioFxController = AudioFxController(application)
+    private val audioFxController = playback.audioFx
 
-    val player: ExoPlayer =
-        ExoPlayer
-            .Builder(application, TapRenderersFactory(application, sink))
-            // AIFF/AIFC support: Media3 ships no AIFF extractor, so ours is
-            // appended after the defaults (sniff order keeps defaults first).
-            .setMediaSourceFactory(
-                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
-                    application,
-                    androidx.media3.extractor.ExtractorsFactory {
-                        androidx.media3.extractor
-                            .DefaultExtractorsFactory()
-                            .createExtractors() +
-                            dev.musicviz.audio.AiffExtractor()
-                    },
-                ),
-            ).setAudioAttributes(
-                AudioAttributes
-                    .Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                true,
-            ).build()
+    val player: ExoPlayer = playback.player
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState
@@ -1221,6 +1225,17 @@ class PlayerViewModel(
     private val _autoMode = MutableStateFlow(0)
     val autoMode: StateFlow<Int> = _autoMode
 
+    /**
+     * Kept so [onCleared] can unregister it.
+     *
+     * It never needed unregistering while this class released the player it was
+     * attached to - the listener died with it. The player outlives the screen
+     * now, so a listener left on it would keep a dead ViewModel alive for as
+     * long as the music plays, and would go on writing that ViewModel's history
+     * and analysis state alongside the live one's.
+     */
+    private var playerListener: Player.Listener? = null
+
     init {
         engine.start(viewModelScope)
         refreshNumericTitles()
@@ -1231,16 +1246,27 @@ class PlayerViewModel(
         refreshPresets()
         refreshLibrary()
         refreshTextures()
-        // Restore persisted playback options onto the freshly built player.
-        // Auto-resume runs BEFORE the listener registers so the startup
-        // preparation never records a phantom play into history (ExoPlayer
-        // only delivers events to listeners registered when they occurred).
+        // Restore persisted playback options onto the player. Auto-resume runs
+        // BEFORE the listener registers so the startup preparation never
+        // records a phantom play into history (ExoPlayer only delivers events
+        // to listeners registered when they occurred).
         val pp = _playerPrefs.value
         player.shuffleModeEnabled = pp.shuffle
         player.repeatMode = pp.repeatMode
         applyPlaybackPrefs(pp)
-        if (pp.autoResume) prepareLastPlayed()
-        player.addListener(
+        // The player is no longer necessarily new: it survives the screen, so a
+        // second screen can open onto music that is already playing. Loading
+        // the last-played track over that would throw away what the user is
+        // listening to, so this branch adopts the queue that is there instead -
+        // and seeds the fields the transition event would otherwise have set,
+        // since that event happened before this ViewModel existed.
+        val alreadyLoaded = player.currentMediaItem != null
+        if (alreadyLoaded) {
+            currentUri = player.currentMediaItem?.localConfiguration?.uri
+        } else if (pp.autoResume) {
+            prepareLastPlayed()
+        }
+        val listener =
             object : Player.Listener {
                 override fun onEvents(
                     player: Player,
@@ -1300,11 +1326,43 @@ class PlayerViewModel(
                     audioFxController.attach(audioSessionId)
                     refreshAudioFx()
                 }
-            },
-        )
+
+                /**
+                 * Everything that has to be true whenever playback starts, no
+                 * matter who started it.
+                 *
+                 * This used to be safe to do inside [togglePlayPause], because
+                 * that button was the only way to start. It is not any more:
+                 * the notification, the lock screen and a headset button all
+                 * drive the player straight through the MediaSession without
+                 * passing through this class at all. Hanging the rules off the
+                 * player is the same reasoning as the seek reset above - the
+                 * player is where every path meets.
+                 */
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    if (!isPlaying) return
+                    // One ring buffer, one source. A track and the room (or a
+                    // track and Spotify) summed into a single spectrum drive
+                    // the visuals as neither.
+                    if (micCapture.active) setMicEnabled(false)
+                    if (_externalAudio.value.active) stopExternalAudio()
+                    // A faded pause leaves the output at zero and waits for the
+                    // matching fade in. A transport that is not ours knows
+                    // nothing about that, so its play would have been silent.
+                    if (fadeVolume < 1f && fadeJob?.isActive != true) fadeThen(fadeVolume, 1f) {}
+                    // From here on the music must survive this screen.
+                    PlaybackService.ensureRunning(getApplication())
+                }
+            }
+        playerListener = listener
+        player.addListener(listener)
         // The sink may already have a session id (attach ignores UNSET = 0).
         audioFxController.attach(player.audioSessionId)
         refreshAudioFx()
+        // A screen opening onto music that is already playing has missed the
+        // track change that started it, and with it the lyrics, the cached
+        // analysis and the section grid for what it is now showing.
+        if (alreadyLoaded) onTrackChanged()
         // Consent -> foreground service -> projection -> recorder. This is the
         // last hop: the service publishes what the user granted, and the
         // recorder opens against it here, where the ring buffer lives.
@@ -2447,8 +2505,12 @@ class PlayerViewModel(
         } else {
             fadeVolume = 0f
             applyVolume()
-            player.play()
+            // Armed before play(), not after. play() delivers onIsPlayingChanged
+            // synchronously, and the repair there exists to rescue a resume that
+            // came from the notification and left the output at zero - it has to
+            // see a fade already running so it leaves this one alone.
             fadeThen(0f, 1f) {}
+            player.play()
         }
     }
 
@@ -2535,7 +2597,7 @@ class PlayerViewModel(
     }
 
     fun playNext(uri: String) {
-        val at = (player.currentMediaItemIndex + 1).coerceAtMost(player.mediaItemCount)
+        val at = QueueOps.insertNextIndex(player.currentMediaItemIndex, player.mediaItemCount)
         player.addMediaItem(at, mediaItemFor(Uri.parse(uri)))
         refresh()
     }
@@ -3749,8 +3811,28 @@ class PlayerViewModel(
         dev.musicviz.audio.AudioBus
             .clear()
         engine.stop()
-        audioFxController.release()
-        player.release()
+        // Both hooks into the player have to come off it by hand now that the
+        // player outlives this object, or a ViewModel nobody can see goes on
+        // writing history and retuning an analyzer that has stopped.
+        //
+        // The identity check is not paranoia. Android is allowed to build the
+        // next screen's ViewModel before it clears this one - a relaunch runs
+        // the new Activity's onCreate before the old one's onDestroy - so by
+        // the time this line runs, the hook on the player may already belong to
+        // the ViewModel that replaced this one, and clearing it would leave the
+        // live screen's analyzer deaf to every sample-rate change.
+        playerListener?.let { player.removeListener(it) }
+        playerListener = null
+        if (playback.onAudioFormat === audioFormatHook) playback.onAudioFormat = null
+        // This is where the app stops owning playback and starts merely being
+        // one of its two owners. Music that is playing keeps playing: the
+        // service holds the other reference and the notification is now the
+        // only transport, which is the whole point. Music that is NOT playing
+        // has nothing to keep alive, so the service comes down, and its
+        // onDestroy gives back the last reference - which is what actually
+        // releases the player, here as before, just one hop later.
+        if (!playback.playbackWanted) PlaybackService.stop(getApplication())
+        PlaybackEngine.releaseUi()
     }
 
     private companion object {

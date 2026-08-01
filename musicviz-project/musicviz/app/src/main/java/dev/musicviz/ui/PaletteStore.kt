@@ -27,6 +27,14 @@ data class CustomPalette(
  * [PresetStore]. The companion also owns the pure param plumbing (apply /
  * clear / forget-deleted) so the sentinel rules live in exactly one place and
  * can be tested without Compose.
+ *
+ * [save] publishes through [AtomicWrite] rather than `File.writeText`, which
+ * truncates the file to zero before writing it. That matters more here than
+ * the tiny document suggests: re-saving under the same name deliberately
+ * REPLACES the palette, so the truncation window sits on top of the only copy
+ * of it, and [list] skips anything that does not parse - a palette killed
+ * there just disappears, taking the gradient of every preset that referenced
+ * its id with it.
  */
 class PaletteStore(
     context: Context,
@@ -47,7 +55,7 @@ class PaletteStore(
     /** Writes [palette] (clamped and re-keyed) and returns the value actually stored. */
     fun save(palette: CustomPalette): CustomPalette {
         val clean = sanitized(palette)
-        File(dir, clean.id + ".json").writeText(toJson(clean))
+        AtomicWrite.text(File(dir, clean.id + ".json"), toJson(clean))
         return clean
     }
 

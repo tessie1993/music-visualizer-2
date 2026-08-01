@@ -315,13 +315,13 @@ internal class WaterScene(
         choreography.spawnCount = p.fluidSpawnPoints.coerceIn(1, FluidChoreography.MAX_SPAWN)
         choreography.catchCount = p.fluidCatchPoints.coerceIn(0, FluidChoreography.MAX_CATCH)
         choreography.progressionAmount = p.fluidSpawnProgress.coerceIn(0f, 1f)
-        choreography.speed = p.speed.coerceIn(0.1f, 2f)
+        choreography.speed = FluidChoreography.sceneSpeed(p.speed)
 
         // Emitter schedule reused verbatim; splats are converted to drops.
         emitters.beatPattern = p.fluidBeatPattern.coerceIn(0, 3)
         emitters.beatSplats = p.fluidBeatSplats.coerceIn(0, 8)
         emitters.stirrers = p.fluidStirrers.coerceIn(0, 4)
-        emitters.stirrerSpeed = p.fluidStirrerSpeed.coerceIn(0f, 2f) * p.speed.coerceIn(0.1f, 2f)
+        emitters.stirrerSpeed = p.fluidStirrerSpeed.coerceIn(0f, 2f) * FluidChoreography.sceneSpeed(p.speed)
         emitters.bassPump = p.fluidBassPump
         emitters.sparkle = p.fluidSparkle
         emitters.splatRadius = p.fluidSplatRadius.coerceIn(0.02f, 0.4f)

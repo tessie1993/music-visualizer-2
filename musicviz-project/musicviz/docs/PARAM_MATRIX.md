@@ -51,7 +51,7 @@ reach every style through the composite pass, which is its own column.
 | `trailLength` | Behavior | `Trail length` | `trailLength` |   |   |   |   |   |   |   |   |   | · | · |
 | `trailZoom` | Behavior | `Trail zoom (echo in/out)` | `trailZoom` |   |   |   |   |   |   |   |   |   | · | · |
 | `trailWarp` | Behavior | `Trail warp (liquid echo)` | `trailWarp` |   |   |   |   |   |   |   |   |   | · | · |
-| `mirror` | Behavior | `Mirror` | `mirror` | · | · | · |   |   | · |   |   | · | · | · |
+| `mirror` | Behavior | `Mirror` | `mirror` | · |   | · |   |   | · |   |   | · | · | · |
 | `warp` | Shape | `Domain warp` | `warp` | · |   |   |   |   |   |   |   |   | · | · |
 | `ripple` | Shape | `Ripple` | `ripple` | · |   |   |   |   |   |   |   |   | · | · |
 | `symmetry` | Shape | `Kaleidoscope` | `symmetry` | · |   |   |   |   |   |   |   |   | · | · |

@@ -224,7 +224,14 @@ internal fun ShapeTab(
         }
         LabeledSlider("Twist", p.twist, -1f..1f) { onChange(p.copy(twist = it)) }
         SectionHeader("Symmetry & tiling")
-        CheckRow("Kaleidoscope", p.kaleidoscope) { onChange(p.copy(kaleidoscope = it)) }
+        // Turning the toggle on repairs a fold count below 2, which no chip
+        // below can produce and every gate treats as "off": a preset saved
+        // while the two disagreed would otherwise keep the checkbox ticked and
+        // the effect switched off, with nothing on screen to say why.
+        CheckRow("Kaleidoscope", p.kaleidoscope) { on ->
+            val folds = if (on && p.symmetry < 2) SceneParams.DEFAULT_SYMMETRY_FOLDS else p.symmetry
+            onChange(p.copy(kaleidoscope = on, symmetry = folds))
+        }
         if (p.kaleidoscope) {
             Text("Folds", style = MaterialTheme.typography.labelSmall)
             ChipRow(
@@ -336,8 +343,21 @@ internal fun BehaviorTab(
         LabeledSlider("Mid gain", p.midGain, 0f..2f) { onChange(p.copy(midGain = it)) }
         LabeledSlider("Treble gain", p.trebGain, 0f..2f) { onChange(p.copy(trebGain = it)) }
         SectionHeader("Texture & motion")
+        // Neither of these has a composite mirror, and this tab is handed no
+        // scene predicate to gate on - so they say which styles read them, the
+        // way "Trails (particle scenes)" below and ColorTab's "MilkDrop
+        // palette tint" already do. A hint rather than a renamed label on
+        // purpose: lock chips and `ParamRandomizer` keys are both the label
+        // string, so renaming one silently drops every lock a user has saved
+        // under the old name.
         LabeledSlider("Turbulence", p.turbulence, 0f..1.5f) { onChange(p.copy(turbulence = it)) }
+        ControlHint(
+            "A force inside the scene, not a screen effect: the shader styles, " +
+                "the particle styles and Curl Flow read it. MilkDrop, Fluid, " +
+                "Water, Cymatics, Beam and Hyperspace run their own and ignore it.",
+        )
         LabeledSlider("Density", p.density, 0.1f..1f) { onChange(p.copy(density = it)) }
+        ControlHint("Thins the population: the particle styles and Fluid's dye. Nothing else reads it.")
         CheckRow("Mirror", p.mirror) { onChange(p.copy(mirror = it)) }
         CheckRow("Trails (particle scenes)", p.trails) { onChange(p.copy(trails = it)) }
         if (p.trails) {
