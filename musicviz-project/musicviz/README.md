@@ -664,8 +664,13 @@
   lines conclusively split sim-dead vs display-dead vs never-selected.
 
 ## v0.12.2 (code 15) - organic motion round 1: echo-trails + curl-noise scene
-- From the organic-motion research report (docs/ORGANIC_MOTION.md). Joint
-  round with a parallel session - their drop audited and completed here.
+- From an organic-motion research report, since retired: by the time anyone
+  went back to it, it was telling readers that no native GLES/Kotlin fluid
+  port existed, which `render/fluid/` had disproved several rounds earlier.
+  The two sources it drew on are cited where the work landed instead - Bridson
+  2007 in `res/raw/curl_field_frag.glsl`, the MilkDrop feedback warp in
+  `res/raw/trail_warp_frag.glsl`. Joint round with a parallel session - their
+  drop audited and completed here.
 - NEW scene "curlflow": particles ride the curl of a time-morphing FBM
   potential (divergence-free per Bridson 2007 - streams swirl, never
   clump). Tiny 64-res field texture feeds the existing GPU particle layer,
@@ -789,8 +794,10 @@
   prev/next preset, double-tap edges = seek, plus seekBy/quick-preset APIs.
 
 ## v0.11.0 - navigation v2: full app-shell restructure
-The app now follows docs/NAVIGATION.md (v2) - two layers like a proper music
-player:
+The app moved to two layers, like a proper music player - a persistent shell
+with a docked mini-player, and a fullscreen visualizer expanded out of it. The
+navigation doc this was planned from is gone; `ui/AppShell.kt` is the
+structure now:
 - App shell: bottom nav (Home / Library / Visuals / Settings) with a
   persistent mini-player docked above it; tap to expand into the fullscreen
   visualizer (Now Playing), collapse arrow or swipe down to return.
@@ -828,14 +835,19 @@ persisted param locks + randomizer, and beat-triggered ADSR envelopes
   slider has a "lock" toggle to pin values you want kept.
 - ADSR envelope: beat-triggered attack/decay/sustain/release assignable to any
   LFO target (Customize > FX > Envelope), persisted, and reproduced in exports.
-- Planning docs added under docs/: NAVIGATION.md, WIREFRAME.md,
-  FEATURES_TODO.md.
+- Planning docs added under docs/. All three have since been retired: the
+  navigation plan and the feature to-do were overtaken by the code (nearly
+  everything the to-do listed shipped, and a stale to-do reads as work still
+  outstanding), and the wireframe survives in the form anyone actually opens,
+  docs/wireframe.html.
 
 # MusicViz — Android Music Visualizer (MVP)
 
 Native Android app: pick a local audio file, it plays with a real-time
-GL ES 3.0 particle visualization driven by FFT data. See PLAN.md for the
-full roadmap (analysis/intelligence, shader scenes, projectM, export).
+GL ES 3.0 particle visualization driven by FFT data. The roadmap this section
+was written against - offline analysis and scene intelligence, shader scenes,
+projectM, deterministic export - has all since shipped; the changelog above is
+the record, and the plan document it lived in is gone.
 
 ## Build
 - `./gradlew assembleDebug` — build APK
@@ -1031,9 +1043,10 @@ P2 Modulation:
   under mediump default precision. Cross-stage uniforms now use explicit
   highp; swept all fluid shaders - uInvRes was the only cross-stage
   declaration, so this was the whole crash class.
-- F2 emitters: the four-emitter audio system per the v2 spec - BeatSplat
-  (center / ring-vortex / random / spectrumArc patterns), BandStirrer x2
-  orbiting on band energy, TrebleSparkle on treble transients, BassPump
+- F2 emitters: the four-emitter audio system this round was specified from:
+  BeatSplat (center / ring-vortex / random / spectrumArc patterns),
+  BandStirrer x2 orbiting on band energy, TrebleSparkle on treble
+  transients, BassPump
   (gated, off by default) - all as capsule splats with velocity blending;
   self-contained beat/bass envelopes shaped like the app ADSR.
 - Continuous modulation: mids raise curl, quiet passages fade the canvas
@@ -1049,9 +1062,9 @@ P2 Modulation:
   then: beat splats land on beats; quiet/loud fade behavior audible in
   the ink; ring pattern spins up a visible vortex.
 
-## Fluid round 1 (code 10) — FLUID scene: core Stam sim (F0+F1 of FLUID_SIM_2.md)
-- New visual style FLUID: GPU stable-fluids sim (GLES3 port per the v2
-  spec): half-float renderability probe with fallback cascade, sim-space
+## Fluid round 1 (code 10) — FLUID scene: core Stam sim (phases F0+F1)
+- New visual style FLUID: GPU stable-fluids sim (a GLES3 port of Stam's
+  stable fluids): half-float renderability probe with fallback cascade, sim-space
   coordinates (aspect handled once), boundary sampling in every pass
   (Neumann pressure / free-slip velocity), grid-scale-correct Jacobi
   (alpha = -dx^2) so resolution changes quality not look, manual-bilerp
@@ -1514,9 +1527,10 @@ P2 Modulation:
   under mediump default precision. Cross-stage uniforms now use explicit
   highp; swept all fluid shaders - uInvRes was the only cross-stage
   declaration, so this was the whole crash class.
-- F2 emitters: the four-emitter audio system per the v2 spec - BeatSplat
-  (center / ring-vortex / random / spectrumArc patterns), BandStirrer x2
-  orbiting on band energy, TrebleSparkle on treble transients, BassPump
+- F2 emitters: the four-emitter audio system this round was specified from:
+  BeatSplat (center / ring-vortex / random / spectrumArc patterns),
+  BandStirrer x2 orbiting on band energy, TrebleSparkle on treble
+  transients, BassPump
   (gated, off by default) - all as capsule splats with velocity blending;
   self-contained beat/bass envelopes shaped like the app ADSR.
 - Continuous modulation: mids raise curl, quiet passages fade the canvas
@@ -1532,9 +1546,9 @@ P2 Modulation:
   then: beat splats land on beats; quiet/loud fade behavior audible in
   the ink; ring pattern spins up a visible vortex.
 
-## Fluid round 1 (code 10) — FLUID scene: core Stam sim (F0+F1 of FLUID_SIM_2.md)
-- New visual style FLUID: GPU stable-fluids sim (GLES3 port per the v2
-  spec): half-float renderability probe with fallback cascade, sim-space
+## Fluid round 1 (code 10) — FLUID scene: core Stam sim (phases F0+F1)
+- New visual style FLUID: GPU stable-fluids sim (a GLES3 port of Stam's
+  stable fluids): half-float renderability probe with fallback cascade, sim-space
   coordinates (aspect handled once), boundary sampling in every pass
   (Neumann pressure / free-slip velocity), grid-scale-correct Jacobi
   (alpha = -dx^2) so resolution changes quality not look, manual-bilerp

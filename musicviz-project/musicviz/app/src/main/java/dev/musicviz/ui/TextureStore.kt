@@ -17,6 +17,14 @@ data class MilkTexture(
  * textures (the classic Milkdrop texture pack, plus per-preset images); by
  * importing images here, presets that reference them by filename can render
  * correctly instead of falling back to noise or black.
+ *
+ * Both writers publish through [AtomicWrite]. Copying straight into the
+ * destination truncates it to zero first, so re-importing an image over one a
+ * preset is already using, or being killed part-way through a large copy, left
+ * a truncated file that [list] still offers - and projectM answers a texture
+ * it cannot decode with noise or black, which is exactly the failure this
+ * store exists to prevent. The in-progress copy is `<name>.<ext>.tmp`, whose
+ * extension is not in [IMAGE_EXTS], so it never appears as a saved texture.
  */
 class TextureStore(
     context: Context,
@@ -43,7 +51,7 @@ class TextureStore(
                 if (name.substringAfterLast('.', "").lowercase() !in IMAGE_EXTS) return@runCatching
                 val dest = File(dir, sanitize(name))
                 appContext.contentResolver.openInputStream(uri)?.use { input ->
-                    dest.outputStream().use { output -> input.copyTo(output) }
+                    AtomicWrite.stream(dest) { output -> input.copyTo(output) }
                 }
             }
         }
@@ -89,7 +97,8 @@ class TextureStore(
         // sampler declaration, no per-pixel branching, and only intrinsics
         // known to translate cleanly (tex2D, basic math). GetPixel-style
         // feedback via sampler_main keeps motion without extra textures.
-        file.writeText(
+        AtomicWrite.text(
+            file,
             """
             MILKDROP_PRESET_VERSION=201
             PSVERSION=2

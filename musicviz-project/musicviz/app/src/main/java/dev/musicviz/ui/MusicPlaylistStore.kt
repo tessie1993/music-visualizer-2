@@ -14,6 +14,15 @@ data class MusicPlaylist(
 /**
  * JSON-file persistence for user music playlists (one file per playlist).
  * Track order is the list order; reordering rewrites the file.
+ *
+ * Every mutator below is a read-modify-write of one whole file, so two things
+ * have to hold or a playlist quietly loses its tracks. The write goes through
+ * [AtomicWrite] rather than `File.writeText`, which truncates to zero first -
+ * process death inside that window used to leave invalid JSON that [list]
+ * silently skips. And a file that is present but unreadable is NOT treated as
+ * an absent playlist (see [readable]), because the fallback for absent is a
+ * fresh empty [MusicPlaylist] and saving that is what turns a damaged file
+ * into a one-track one.
  */
 class MusicPlaylistStore(
     context: Context,
@@ -28,11 +37,11 @@ class MusicPlaylistStore(
             .orEmpty()
 
     fun save(playlist: MusicPlaylist) {
-        File(dir, sanitize(playlist.name) + ".json").writeText(toJson(playlist))
+        AtomicWrite.text(fileOf(playlist.name), toJson(playlist))
     }
 
     fun delete(name: String) {
-        File(dir, sanitize(name) + ".json").delete()
+        fileOf(name).delete()
     }
 
     /** Appends a track uri if not already present. */
@@ -40,7 +49,7 @@ class MusicPlaylistStore(
         name: String,
         uri: String,
     ): MusicPlaylist {
-        val current = list().firstOrNull { it.name == name } ?: MusicPlaylist(name)
+        val current = current(name) ?: return MusicPlaylist(name)
         val updated =
             if (current.trackUris.contains(uri)) current else current.copy(trackUris = current.trackUris + uri)
         save(updated)
@@ -57,7 +66,10 @@ class MusicPlaylistStore(
     ): Boolean {
         val current = list().firstOrNull { it.name == oldName } ?: return false
         if (newName.isBlank() || list().any { it.name == newName }) return false
-        save(current.copy(name = newName))
+        // The old file is only removed once the new one is whole on disk.
+        // Deleting first, or deleting after a write that failed, is the one
+        // way this method can destroy a playlist rather than move it.
+        if (!AtomicWrite.text(fileOf(newName), toJson(current.copy(name = newName)))) return false
         if (sanitize(oldName) != sanitize(newName)) delete(oldName)
         return true
     }
@@ -68,7 +80,7 @@ class MusicPlaylistStore(
         from: Int,
         to: Int,
     ): MusicPlaylist {
-        val current = list().firstOrNull { it.name == name } ?: return MusicPlaylist(name)
+        val current = current(name) ?: return MusicPlaylist(name)
         val uris = current.trackUris.toMutableList()
         if (from !in uris.indices) return current
         val target = to.coerceIn(0, uris.size - 1)
@@ -83,11 +95,33 @@ class MusicPlaylistStore(
         name: String,
         uri: String,
     ): MusicPlaylist {
-        val current = list().firstOrNull { it.name == name } ?: return MusicPlaylist(name)
+        val current = current(name) ?: return MusicPlaylist(name)
         val updated = current.copy(trackUris = current.trackUris.filterNot { it == uri })
         save(updated)
         return updated
     }
+
+    /**
+     * The playlist a mutator should start from, or null when it must not
+     * write at all.
+     *
+     * An absent playlist is a real case - "add to playlist" on a name that
+     * does not exist yet creates it - so it answers with a fresh empty one.
+     * A file that IS there and did not read back is not that case: [list]
+     * skips it, so the mutator would compute its update from an empty base
+     * and [save] would replace fifty tracks with the one being added. The
+     * caller keeps whatever it is already showing instead, and the bytes stay
+     * on disk where a later read (or the user) can still recover them.
+     */
+    private fun current(name: String): MusicPlaylist? {
+        list().firstOrNull { it.name == name }?.let { return it }
+        return if (readable(fileOf(name))) MusicPlaylist(name) else null
+    }
+
+    /** True when [f] holds nothing, or holds a playlist that parses. */
+    private fun readable(f: File): Boolean = !f.exists() || runCatching { fromJson(f.readText()) }.isSuccess
+
+    private fun fileOf(name: String): File = File(dir, sanitize(name) + ".json")
 
     private fun sanitize(name: String): String = name.replace(Regex("[^A-Za-z0-9-_ ]"), "_")
 

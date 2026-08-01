@@ -7,8 +7,8 @@ import org.json.JSONObject
 /**
  * What the Home screen knows about your listening: which tracks came back,
  * which ones you keep coming back to, and how much time actually went into
- * them. JSON in files dir - a Room database is overkill until analysis data
- * moves in (see FEATURES_TODO).
+ * them. JSON in files dir - one capped file, rewritten whole, is not worth a
+ * Room database.
  *
  * Two things are recorded, and they are deliberately different measurements.
  * [recordPlay] counts a track being STARTED, which is what "most played"
@@ -25,6 +25,15 @@ import org.json.JSONObject
  * per tap while skipping a queue, and that was the app's heaviest main-thread
  * disk activity. [lock] is what makes that safe - the writer serializes the
  * same maps the main thread is mutating.
+ *
+ * That file is the only copy of everything above, and it is replaced whole on
+ * every write, so both halves of losing it are guarded. The write itself goes
+ * through [AtomicWrite] rather than `File.writeText`, which truncates to zero
+ * before it writes anything - process death inside that window used to leave a
+ * zero-length history.json, a file that parses perfectly as "nothing was ever
+ * played". And the read distinguishes a file it could not read from a file
+ * that is not there (see [readLocked]), because starting from an empty history
+ * and writing it back is how a single bad read becomes permanent.
  */
 class HistoryStore(
     context: Context,
@@ -39,6 +48,20 @@ class HistoryStore(
 
     /** epoch day -> milliseconds listened on that day */
     private val daily = LinkedHashMap<Long, Long>()
+
+    /**
+     * False once [readLocked] has found a history file it could not read at
+     * all. It is what stops the store answering an unreadable file by
+     * overwriting it with the empty history it fell back to.
+     *
+     * Declared here, above the `init` block that decides it, because a
+     * property initializer runs in declaration order: written further down it
+     * would be reset to true immediately after [readLocked] cleared it.
+     * Volatile because it is decided on the thread that builds the store and
+     * obeyed on [writer].
+     */
+    @Volatile
+    private var readable = true
 
     data class Entry(
         val uri: String,
@@ -70,11 +93,38 @@ class HistoryStore(
         // preparing the resumed track books a play the user never made. One
         // capped file (200 entries) is the cheapest of the reads that startup
         // makes, and buying it back would cost that ordering.
-        synchronized(lock) {
-            runCatching {
-                if (file.exists()) load(file.readText())
-            }
+        synchronized(lock) { readLocked() }
+    }
+
+    /**
+     * Loads the file into [entries]/[daily], or decides that it must not be
+     * written over. Callers hold [lock].
+     *
+     * The three outcomes are deliberately kept apart. No file at all is a
+     * fresh install and starts empty. Content that reads but does not parse is
+     * moved aside by [AtomicWrite.quarantine]: treating it as "nothing was
+     * ever played" would let the very next [recordPlay] persist that emptiness
+     * over the user's whole listening record, so the bytes are kept where they
+     * can still be recovered while the store starts fresh rather than refusing
+     * to record anything ever again. A file that cannot be READ - a directory
+     * in its place, a permission problem, a failing disk - is the case nothing
+     * can be salvaged from, so this instance simply never writes and leaves
+     * whatever is there intact; the next store built retries the read.
+     */
+    private fun readLocked() {
+        if (!file.exists()) return
+        val text = runCatching { file.readText() }.getOrNull()
+        if (text == null) {
+            readable = false
+            return
         }
+        if (text.isBlank()) return
+        if (runCatching { load(text) }.isSuccess) return
+        // load() fills the maps as it walks the document, so a throw part-way
+        // through leaves half a history behind; it goes with the file.
+        entries.clear()
+        daily.clear()
+        AtomicWrite.quarantine(file)
     }
 
     private fun load(text: String) {
@@ -228,7 +278,17 @@ class HistoryStore(
         }
     }
 
+    /**
+     * Serializes the current state and publishes it. Runs on [writer].
+     *
+     * The serialization stays inside [lock] and the write stays outside it:
+     * the main thread must not be blocked behind a disk write, and that is the
+     * whole reason this method is on a background thread at all. [dirty] is
+     * only cleared when the bytes actually landed, so a write that failed is
+     * retried by the next [flush] instead of being forgotten.
+     */
     private fun writeNow() {
+        if (!readable) return
         runCatching {
             val text =
                 synchronized(lock) {
@@ -252,8 +312,7 @@ class HistoryStore(
                     }
                     JSONObject().put("tracks", arr).put("daily", days).toString()
                 }
-            file.writeText(text)
-            dirty = false
+            if (AtomicWrite.text(file, text)) dirty = false
         }
     }
 
