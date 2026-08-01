@@ -53,6 +53,7 @@ class ProjectMScene(
     private var fboWidth = 0
     private var fboHeight = 0
     private var postProgram = 0
+    private var postProgramOk = false
 
     /** Uniform locations cached per program link: glGetUniformLocation every
      *  frame for every uniform is measurable driver overhead on mobile. */
@@ -94,7 +95,18 @@ class ProjectMScene(
     override fun init() {
         release()
         reportedCreateFailure = false
-        postProgram = GlUtil.buildProgram(postVertexSrc, postFragmentSrc)
+        // A driver-rejected shader must degrade the style to "unavailable",
+        // never crash the GL thread: this runs while every scene is built, so
+        // throwing here would take the whole visualizer down before the user
+        // has even chosen MilkDrop.
+        try {
+            postProgram = GlUtil.buildProgram(postVertexSrc, postFragmentSrc)
+            postProgramOk = true
+        } catch (e: GlUtil.ShaderCompileException) {
+            // Silent black is the worst failure mode: say why instead.
+            onError("MilkDrop unavailable on this GPU: ${e.message}")
+            return
+        }
         postLocs.clear()
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
@@ -217,6 +229,10 @@ class ProjectMScene(
      * exactly once.
      */
     override fun draw(timeSeconds: Float) {
+        // The post pass below is the ONLY path the engine's frame takes to the
+        // screen, so without it there is nothing to show: skip the native
+        // render too rather than pay for a frame that cannot be composited.
+        if (!postProgramOk) return
         ensureCreated()
         ensureFbo()
         if (handle == 0L || pmFbo == 0) return
@@ -313,6 +329,7 @@ class ProjectMScene(
         releaseFbo()
         if (postProgram != 0) GLES30.glDeleteProgram(postProgram)
         postProgram = 0
+        postProgramOk = false
         if (postVao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(postVao), 0)
         postVao = 0
         postLocs.clear()
