@@ -9,16 +9,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
-import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
-import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import dev.musicviz.analysis.AnalysisEngine
 import dev.musicviz.analysis.AudioFeatures
-import dev.musicviz.analysis.AudioQualityInfo
 import dev.musicviz.analysis.FeatureTimeline
 import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.analysis.OfflineAnalyzer
@@ -159,6 +156,17 @@ data class DeviceTrack(
     val album: String,
     val folder: String,
     val durationMs: Long,
+    /** MediaStore DATE_ADDED, in SECONDS since the epoch; 0 when unknown. */
+    val addedSec: Long = 0L,
+)
+
+/** One row on a Home shelf: enough to draw a tile and start playing it. */
+data class HomeTrack(
+    val uri: String,
+    val title: String,
+    val artist: String = "",
+    val playCount: Int = 0,
+    val listenedMs: Long = 0L,
 )
 
 /** Music library + playlists + batch-analysis progress. */
@@ -276,7 +284,7 @@ class PlayerViewModel(
         if (!enabled) {
             micCapture.stop()
             engine.reset()
-            engine.sampleRateHz = tapFormat?.sampleRateHz ?: 44100
+            engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
             _micState.value = MicState(active = false)
             setGuiPrefs(_guiPrefs.value.copy(micReactive = false))
             return null
@@ -298,6 +306,12 @@ class PlayerViewModel(
 
     /** True when the RECORD_AUDIO permission is already granted. */
     fun hasMicPermission(): Boolean = micCapture.hasPermission()
+
+    /**
+     * True while a source other than our own playback is feeding the ring
+     * buffer, and therefore owns the analyzer's sample rate.
+     */
+    private fun externalAudioOwnsAnalyzer(): Boolean = micCapture.active
 
     /**
      * Retunes the analysis chain for what the microphone is pointed at.
@@ -323,88 +337,22 @@ class PlayerViewModel(
         setSceneParams(profile.apply(_vizState.value.params))
     }
 
-    // ---- Audio-quality readout ----
-    // Combines the selected track's source Format (onTracksChanged) with the
-    // decoded output format the read-only tap reports (playback thread), so
-    // the UI can show whether playback is lossless / bit-perfect. Declared
-    // before [sink] on purpose: its callback touches these fields (see the
-    // construction-order note above the init block).
-
-    /** Decoded output format from the tap's flush callback. */
-    private data class TapFormat(
-        val sampleRateHz: Int,
-        val channelCount: Int,
-        val encoding: Int,
-    )
-
+    /**
+     * Sample rate the decoded audio pipeline last reconfigured to, remembered
+     * so live input can hand the analyzer back the playback rate when it
+     * stops. Written from the playback thread.
+     */
     @Volatile
-    private var tapFormat: TapFormat? = null
-
-    @Volatile
-    private var sourceAudioFormat: Format? = null
-
-    private val _audioQuality = MutableStateFlow<AudioQualityInfo?>(null)
-
-    /** Source vs decoded-output quality of the current track; null when idle. */
-    val audioQuality: StateFlow<AudioQualityInfo?> = _audioQuality
-
-    /** Called from the playback thread on every audio-pipeline reconfigure. */
-    private fun onTapFormat(
-        sampleRateHz: Int,
-        channelCount: Int,
-        encoding: Int,
-    ) {
-        tapFormat = TapFormat(sampleRateHz, channelCount, encoding)
-        recomputeAudioQuality()
-    }
-
-    /** Bits per sample for a Media3 PCM encoding constant; 0 = unknown. */
-    private fun bitDepthOf(pcmEncoding: Int): Int =
-        when (pcmEncoding) {
-            C.ENCODING_PCM_8BIT -> 8
-            C.ENCODING_PCM_16BIT, C.ENCODING_PCM_16BIT_BIG_ENDIAN -> 16
-            C.ENCODING_PCM_24BIT, C.ENCODING_PCM_24BIT_BIG_ENDIAN -> 24
-            C.ENCODING_PCM_32BIT, C.ENCODING_PCM_32BIT_BIG_ENDIAN -> 32
-            C.ENCODING_PCM_FLOAT -> 32
-            else -> 0
-        }
-
-    /** Container guess from the uri's file extension ("" for opaque uris). */
-    private fun containerGuess(): String {
-        val name = currentUri?.lastPathSegment?.substringAfterLast('/') ?: return ""
-        val ext = name.substringAfterLast('.', "")
-        return if (ext.length in 1..4) ext.lowercase() else ""
-    }
-
-    private fun recomputeAudioQuality() {
-        val src = sourceAudioFormat
-        if (src == null) {
-            _audioQuality.value = null
-            return
-        }
-        val tap = tapFormat
-        _audioQuality.value =
-            AudioQualityInfo.classify(
-                mime = src.sampleMimeType,
-                container = containerGuess(),
-                sourceSampleRateHz = src.sampleRate.takeIf { it != Format.NO_VALUE } ?: 0,
-                sourceChannels = src.channelCount.takeIf { it != Format.NO_VALUE } ?: 0,
-                bitDepth = bitDepthOf(src.pcmEncoding),
-                bitrateBps = src.bitrate.takeIf { it != Format.NO_VALUE } ?: 0,
-                outputSampleRateHz = tap?.sampleRateHz ?: 0,
-                outputChannels = tap?.channelCount ?: 0,
-                outputFloat = tap?.encoding == C.ENCODING_PCM_FLOAT,
-            )
-    }
+    private var tapSampleRateHz: Int = 0
 
     private val sink =
-        PcmTapSink(ring) { rate, channels, encoding ->
+        PcmTapSink(ring) { rate, _, _ ->
             // Live input owns the analyzer's rate while it is running: the
             // player can still reconfigure its pipeline (a queued track being
             // prepared) and would otherwise retune the FFT to a rate no
             // samples are arriving at.
-            if (!micCapture.active) engine.sampleRateHz = rate
-            onTapFormat(rate, channels, encoding)
+            tapSampleRateHz = rate
+            if (!externalAudioOwnsAnalyzer()) engine.sampleRateHz = rate
         }
     private val offlineAnalyzer = OfflineAnalyzer(application)
     private val presetStore = PresetStore(application)
@@ -910,7 +858,16 @@ class PlayerViewModel(
                                         ?.uri
                                         ?.lastPathSegment
                                         .orEmpty()
-                            historyStore.recordPlay(u.toString(), title)
+                            // The old track's accumulated time belongs to the
+                            // old track: bank it before the uri moves on.
+                            flushListenTime()
+                            historyStore.recordPlay(
+                                u.toString(),
+                                title,
+                                player.mediaMetadata.artist
+                                    ?.toString()
+                                    .orEmpty(),
+                            )
                             _historyTick.update { it + 1 }
                         }
                         onTrackChanged()
@@ -944,24 +901,6 @@ class PlayerViewModel(
                     audioFxController.attach(audioSessionId)
                     refreshAudioFx()
                 }
-
-                override fun onTracksChanged(tracks: Tracks) {
-                    // Selected audio track's source Format (mime, sample rate,
-                    // pcm encoding, bitrate) for the quality readout. Defensive
-                    // scan: take the first selected audio track, else null.
-                    var fmt: Format? = null
-                    outer@ for (group in tracks.groups) {
-                        if (group.type != C.TRACK_TYPE_AUDIO) continue
-                        for (i in 0 until group.length) {
-                            if (group.isTrackSelected(i)) {
-                                fmt = group.getTrackFormat(i)
-                                break@outer
-                            }
-                        }
-                    }
-                    sourceAudioFormat = fmt
-                    recomputeAudioQuality()
-                }
             },
         )
         // The sink may already have a session id (attach ignores UNSET = 0).
@@ -970,6 +909,7 @@ class PlayerViewModel(
         viewModelScope.launch {
             while (true) {
                 refresh()
+                accrueListenTime()
                 applyIntelligence()
                 advanceVizPlaylist()
                 advanceRandomMode()
@@ -1413,6 +1353,7 @@ class PlayerViewModel(
                 MediaStore.Audio.Media.ALBUM,
                 MediaStore.Audio.Media.DURATION,
                 MediaStore.Audio.Media.DATA,
+                MediaStore.Audio.Media.DATE_ADDED,
             )
         runCatching {
             app.contentResolver
@@ -1429,6 +1370,7 @@ class PlayerViewModel(
                     val al = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
                     val du = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                     val da = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+                    val ad = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
                     while (c.moveToNext()) {
                         val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, c.getLong(id))
                         val path = c.getString(da).orEmpty()
@@ -1440,6 +1382,7 @@ class PlayerViewModel(
                                 album = c.getString(al) ?: "Unknown album",
                                 folder = path.substringBeforeLast('/', ""),
                                 durationMs = c.getLong(du),
+                                addedSec = c.getLong(ad),
                             )
                     }
                 }
@@ -1787,6 +1730,108 @@ class PlayerViewModel(
     fun recentlyPlayed() = historyStore.recentlyPlayed()
 
     fun mostPlayed() = historyStore.mostPlayed()
+
+    // ---- Home ----
+
+    /**
+     * History rows with the artist filled in from whatever index knows it.
+     *
+     * History records what the player reported at the moment a track started,
+     * which for a freshly-opened content uri can be a title and nothing else.
+     * The device index and the imported library both know more, so Home asks
+     * them rather than showing a wall of tracks by "".
+     */
+    private fun enrich(entries: List<HistoryStore.Entry>): List<HomeTrack> {
+        val byUri = HashMap<String, Pair<String, String>>()
+        _deviceTracks.value.forEach { byUri[it.uri] = it.title to it.artist }
+        _library.value.tracks.forEach { t -> byUri[t.uri] = t.title to t.artist }
+        return entries.map { e ->
+            val known = byUri[e.uri]
+            HomeTrack(
+                uri = e.uri,
+                title = known?.first?.takeIf { it.isNotBlank() } ?: e.title,
+                artist = e.artist.takeIf { it.isNotBlank() } ?: known?.second.orEmpty(),
+                playCount = e.playCount,
+                listenedMs = e.listenedMs,
+            )
+        }
+    }
+
+    /** "Jump back in": most recent first, one row per track. */
+    fun homeRecent(limit: Int = 12): List<HomeTrack> = enrich(historyStore.recentlyPlayed(limit))
+
+    /** "On repeat": the tracks with the most starts behind them. */
+    fun homeMostPlayed(limit: Int = 12): List<HomeTrack> = enrich(historyStore.mostPlayed(limit))
+
+    /**
+     * "Recently added": newest by MediaStore's DATE_ADDED.
+     *
+     * Tracks whose date is unknown (0) are dropped rather than sorted to the
+     * bottom - a shelf called "recently added" holding files with no date is
+     * just the library in an arbitrary order.
+     */
+    fun homeRecentlyAdded(limit: Int = 12): List<HomeTrack> =
+        _deviceTracks.value
+            .filter { it.addedSec > 0 }
+            .sortedByDescending { it.addedSec }
+            .take(limit)
+            .map { HomeTrack(it.uri, it.title, it.artist) }
+
+    /** Totals behind Home's listening strip. */
+    fun listeningStats(): HistoryStore.Stats = historyStore.stats()
+
+    /** Uri of whatever is loaded in the player, for artwork lookups. */
+    fun currentTrackUri(): String? = currentUri?.toString()
+
+    /**
+     * Wall-clock of the last accrual tick, or 0 when not accruing. Playback
+     * time is measured between ticks rather than from the player position so
+     * a seek does not book the jump as listening.
+     */
+    private var listenTickAtMs: Long = 0L
+    private var listenTickUri: String? = null
+
+    /**
+     * Books the time since the previous tick against the playing track. Called
+     * from the 500 ms poll; the store batches writes itself.
+     */
+    private fun accrueListenTime() {
+        val uri = currentUri?.toString()
+        val now = System.currentTimeMillis()
+        val playing = player.isPlaying && uri != null
+        if (!playing || uri != listenTickUri) {
+            // A pause, a stop or a track change ends the interval; the next
+            // tick starts a fresh one rather than booking the gap.
+            if (listenTickAtMs != 0L) historyStore.flush()
+            listenTickAtMs = if (playing) now else 0L
+            listenTickUri = if (playing) uri else null
+            return
+        }
+        val delta = now - listenTickAtMs
+        listenTickAtMs = now
+        // A delta far larger than the poll interval means the process was
+        // suspended, not that the user listened through it.
+        if (delta in 1..MAX_LISTEN_TICK_MS) historyStore.addListenTime(uri, delta, now)
+    }
+
+    /** Writes any accumulated listening time. Cheap when there is none. */
+    private fun flushListenTime() {
+        accrueListenTime()
+        historyStore.flush()
+    }
+
+    /**
+     * Continues the most recently played track, preparing it if the player is
+     * empty. Home's hero card when nothing is loaded.
+     */
+    fun resumeLastPlayed() {
+        if (player.currentMediaItem != null) {
+            player.play()
+            return
+        }
+        val last = historyStore.recentlyPlayed(1).firstOrNull() ?: return
+        playTrack(last.uri)
+    }
 
     fun togglePresetLock() {
         _presetLocked.update { !it }
@@ -2872,6 +2917,8 @@ class PlayerViewModel(
     }
 
     override fun onCleared() {
+        // Whatever was playing when the process went away still counts.
+        flushListenTime()
         // The microphone goes first: an open AudioRecord outliving the
         // ViewModel would keep the recording indicator up with nothing left
         // to read it.
@@ -2883,5 +2930,14 @@ class PlayerViewModel(
         engine.stop()
         audioFxController.release()
         player.release()
+    }
+
+    private companion object {
+        /**
+         * Longest gap the listening accrual will believe. The poll runs every
+         * 500 ms, so anything past a few seconds is a suspended process rather
+         * than time the user spent listening.
+         */
+        const val MAX_LISTEN_TICK_MS = 5_000L
     }
 }

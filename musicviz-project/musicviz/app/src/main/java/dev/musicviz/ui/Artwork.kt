@@ -1,0 +1,151 @@
+package dev.musicviz.ui
+
+import android.content.Context
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.util.LruCache
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+/**
+ * Album art for the Home screen and the player, decoded small and remembered.
+ *
+ * A list of sleeves is the one place this app reads a lot of files purely to
+ * look at them, so three things are non-negotiable: decode off the main
+ * thread, decode DOWN (a 3000 px sleeve at 96 dp is 99% waste), and never
+ * decode the same track twice while scrolling. A miss is cached as a miss for
+ * the same reason - a track with no embedded picture must not re-open the
+ * retriever every time it scrolls back into view.
+ */
+object ArtworkCache {
+    /** A cached "this track has no artwork", so misses cost nothing twice. */
+    private val NONE = Any()
+
+    // ~40 sleeves at ART_PX square; the LRU is sized in entries rather than
+    // bytes because every entry here is the same bounded size by construction.
+    private val cache = LruCache<String, Any>(40)
+
+    /** Longest edge we decode to. Comfortably over the largest tile on Home. */
+    private const val ART_PX = 384
+
+    suspend fun load(
+        context: Context,
+        uri: String,
+    ): ImageBitmap? {
+        cache.get(uri)?.let { return if (it === NONE) null else it as ImageBitmap }
+        val decoded = withContext(Dispatchers.IO) { decode(context, uri) }
+        cache.put(uri, decoded ?: NONE)
+        return decoded
+    }
+
+    /** Synchronous peek for callers that must not suspend (list pre-fill). */
+    fun peek(uri: String): ImageBitmap? = cache.get(uri)?.takeIf { it !== NONE } as? ImageBitmap
+
+    private fun decode(
+        context: Context,
+        uri: String,
+    ): ImageBitmap? =
+        runCatching {
+            // try/finally rather than use(): MediaMetadataRetriever only became
+            // AutoCloseable in API 29 and this app runs from 26.
+            val retriever = android.media.MediaMetadataRetriever()
+            val bytes =
+                try {
+                    retriever.setDataSource(context, Uri.parse(uri))
+                    retriever.embeddedPicture
+                } finally {
+                    retriever.release()
+                } ?: return null
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            val longest = maxOf(bounds.outWidth, bounds.outHeight)
+            if (longest <= 0) return null
+            var sample = 1
+            while (longest / (sample * 2) >= ART_PX) sample *= 2
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)?.asImageBitmap()
+        }.getOrNull()
+}
+
+/**
+ * A track's sleeve, or - when it has none - a deterministic gradient standing
+ * in for it.
+ *
+ * The stand-in is derived from the uri, so a track without artwork still
+ * looks like ITSELF everywhere it appears: the same tile colour on Home, in
+ * the queue and in the player. That is what makes a wall of art scannable
+ * even when half of it is missing.
+ */
+@Composable
+fun TrackArtwork(
+    uri: String?,
+    modifier: Modifier = Modifier,
+    corner: Dp = 14.dp,
+) {
+    val context = LocalContext.current
+    val inspecting = LocalInspectionMode.current
+    var art by remember(uri) { mutableStateOf(uri?.let(ArtworkCache::peek)) }
+    LaunchedEffect(uri) {
+        if (uri != null && art == null && !inspecting) art = ArtworkCache.load(context, uri)
+    }
+    Box(modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(corner))) {
+        val bitmap = art
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Box(Modifier.fillMaxSize().background(placeholderBrush(uri))) {
+                Icon(
+                    Icons.Filled.MusicNote,
+                    null,
+                    Modifier.align(Alignment.Center),
+                    tint = Color.White.copy(alpha = 0.55f),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The stand-in gradient for [uri]: two hues a sixth of the circle apart,
+ * picked by hash so the same track always draws the same tile.
+ */
+fun placeholderBrush(uri: String?): Brush {
+    val hash = (uri ?: "").hashCode()
+    val hue = ((hash ushr 8) % 360 + 360) % 360
+    return Brush.linearGradient(
+        listOf(
+            Color.hsv(hue.toFloat(), 0.55f, 0.42f),
+            Color.hsv(((hue + 58) % 360).toFloat(), 0.62f, 0.22f),
+        ),
+    )
+}
