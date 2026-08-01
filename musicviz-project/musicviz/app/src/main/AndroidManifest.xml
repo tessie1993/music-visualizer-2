@@ -17,16 +17,30 @@
     <uses-feature
         android:name="android.hardware.microphone"
         android:required="false" />
+    <!-- Two features need to keep running with no screen in front of them, and
+         Android grants that to foreground services only. Being visible as a
+         notification for as long as they last is the deal a foreground service
+         is, so POST_NOTIFICATIONS belongs to both — asked for at the moment
+         "Visualize other apps" is turned on, never at launch, because that is
+         the one where the notification is itself the disclosure. Refused, the
+         media notification simply does not appear; playback and its lock-screen
+         controls are unaffected, since those come from the MediaSession rather
+         than from the notification. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- "Visualize other apps": Android 10's playback-capture API, which the
          platform only allows from a foreground service the user can see. The
          notification is the point, not a formality — it is the standing
-         statement that this app can currently hear the device — so
-         POST_NOTIFICATIONS is requested at the moment the feature is turned
-         on. Nothing captured is written to disk or sent anywhere; the samples
-         go into the same in-memory analysis ring buffer the microphone and
-         the player already share. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+         statement that this app can currently hear the device. Nothing
+         captured is written to disk or sent anywhere; the samples go into the
+         same in-memory analysis ring buffer the microphone and the player
+         already share. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- Music keeps playing when MusicViz is not on screen. Everything the
+         platform then shows for it — the notification transport, the lock
+         screen, a Bluetooth headset's buttons — is driven by the MediaSession
+         in .playback.PlaybackService, and none of it involves the network:
+         titles come from the file's own tags and the local library. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- The live wallpaper is optional; the app is fully usable without a
          launcher that supports one. -->
@@ -87,10 +101,35 @@
         </service>
 
         <!--
+          Music that outlives the screen. Holds the app's one ExoPlayer and the
+          MediaSession that publishes it, so playback survives the Activity and
+          the transport controls reach the audio that is actually playing.
+
+          Exported, unlike every other component here, because the things that
+          drive it are other processes: the notification and the lock screen,
+          Bluetooth and wired headset buttons, watches, Android Auto. The
+          MediaSession is the only surface any of them reach, and it exposes
+          transport and the current track's own tags — nothing else, and
+          nothing off the device, since the app holds no network permission.
+        -->
+        <service
+            android:name=".playback.PlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <!--
           Playback capture: holds the MediaProjection and the ongoing
           notification for as long as another app's audio is being read.
           Not exported — it is started only by this app, with consent the user
-          just gave to the system dialog.
+          just gave to the system dialog. Coexists with the playback service
+          above rather than competing with it: different foreground service
+          types, and the ViewModel pauses our own player before it starts
+          reading someone else's, because there is one analysis ring buffer and
+          two streams summed into it would be recognisable as neither.
         -->
         <service
             android:name=".audio.PlaybackCaptureService"

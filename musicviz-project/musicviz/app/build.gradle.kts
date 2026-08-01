@@ -232,6 +232,10 @@ dependencies {
     implementation(libs.core.splashscreen)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.common)
+    // Background playback: the MediaSession is what the lock screen, the
+    // notification transport, headset and Bluetooth buttons all talk to, and
+    // MediaSessionService is what keeps the player alive with no Activity.
+    implementation(libs.media3.session)
     // Export Studio: trim, effects and re-encode over the same MediaCodec
     // stack the visualizer exporter already uses.
     implementation(libs.media3.transformer)
