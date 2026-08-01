@@ -73,7 +73,9 @@ class AppSmokeTest {
         navTo("Visuals")
         compose.onNode(hasText("Customize") and isSelectable()).performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("⚄ Randomize unlocked").assertExists()
+        // The button names the tab it rolls: it acts on the tab it sits in,
+        // and Motion is the one the panel opens on.
+        compose.onNodeWithText("⚄ Randomize Motion").assertExists()
         compose.onAllNodesWithText("Speed", substring = true).onFirst().assertExists()
     }
 

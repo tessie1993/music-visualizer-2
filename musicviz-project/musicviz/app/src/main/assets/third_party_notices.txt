@@ -36,6 +36,12 @@ clean-room from published literature: J. Stam, "Stable Fluids" (1999);
 M. Harris, GPU Gems ch. 38 (2004); Fedkiw et al. (2001). No code from
 GPL-licensed fluid projects is included.
 
+The HYPERSPACE style's "melt" (app/src/main/java/dev/musicviz/render/fluid/
+MeltField.kt) runs that same simulation as a world-anchored medium behind the
+raymarched fractals; the coupling in both directions - bodies stirring the
+field, and the field displacing the raymarcher's domain - is this project's
+own.
+
 Naadara (technique reference)
 -----------------------------
 The CYMATICS style's nodal rendering in app/src/main/res/raw/cymatics_field_frag.glsl

@@ -809,6 +809,14 @@ class BloomBank(
         shape: FloatArray,
         look: FloatArray,
         rot: FloatArray,
+        /**
+         * World units to add to every bounding radius, for the distance the
+         * melt can displace the geometry (`MeltMath.reach`). The sphere is
+         * what lets a ray skip a body entirely, so a body pulled out of shape
+         * by the medium would otherwise have its own edges cut off by the
+         * bound it was skipped by.
+         */
+        boundInflate: Float = 0f,
     ): Int {
         var n = 0
         for (b in blooms) {
@@ -822,7 +830,7 @@ class BloomBank(
             pos[i4] = b.centre[0]
             pos[i4 + 1] = b.centre[1]
             pos[i4 + 2] = b.centre[2]
-            pos[i4 + 3] = HyperspaceMath.localRadius(b.species) * worldScale
+            pos[i4 + 3] = HyperspaceMath.localRadius(b.species) * worldScale + boundInflate
             shape[i4] = b.species.ordinal.toFloat()
             shape[i4 + 1] = worldScale
             shape[i4 + 2] = HyperspaceMath.foldFor(b.species, fold, b.foldJitter)

@@ -291,6 +291,23 @@ data class SceneParams(
     val hyperMirrorFolds: Int = 6,
     // orbit-trap colour banding within a body, 0..1.5
     val hyperTrap: Float = 0.8f,
+    // The melt: the fluid engine running underneath HYPERSPACE. The bodies
+    // stir it as they drift, the music and the finger stir it, and it stirs
+    // them back. See MeltField / MeltMath.
+    // how far the medium can pull the geometry out of shape, 0..2
+    val hyperMelt: Float = 0.55f,
+    // how much dye the medium has carried lights the surfaces, 0..1.5
+    val hyperStain: Float = 0.5f,
+    // how much the dye glows in the space between the bodies, 0..1.5
+    val hyperLiquid: Float = 0.35f,
+    // flow-aligned combing of the surfaces, 0..1
+    val hyperRidges: Float = 0.5f,
+    // how hard the music stirs the medium, 0..3
+    val hyperStir: Float = 1f,
+    // vorticity of the medium, 0..50
+    val hyperSwirl: Float = 26f,
+    // how fast the medium comes back to rest, 0..4
+    val hyperFlowFade: Float = 0.35f,
     // Beam (BEAM scene): the oscilloscope trace.
     // false = time sweep | true = XY phase plot
     val beamXy: Boolean = false,
@@ -323,6 +340,23 @@ data class SceneParams(
         val CYCLIC_PALETTES: List<String> = dev.musicviz.render.CyclicPalettes.NAMES
 
         val DEFAULT: SceneParams = SceneParams()
+
+        /**
+         * The fields no scene renders, and what they are for instead.
+         *
+         * Every other parameter here exists to change a picture, so one that
+         * nothing reads is normally a dead control - `CustomizeSurfaceTest`
+         * fails the build on any field missing from both the scenes and this
+         * list, and on any entry here that a scene has since started reading.
+         * These two are genuinely bookkeeping: they record WHICH saved palette
+         * a slot uses so the panel can show it and re-resolve it after an
+         * edit, while rendering reads the resolved override hues.
+         */
+        val NOT_RENDERED: Map<String, String> =
+            mapOf(
+                "customPaletteId" to "which saved palette slot 1 uses; rendering reads the resolved hues",
+                "customPalette2Id" to "which saved palette slot 2 uses; rendering reads the resolved hues",
+            )
 
         /**
          * Palette definitions: name, base hue, hue span multiplier.

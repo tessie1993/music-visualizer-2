@@ -1,3 +1,61 @@
+## v1.6.0 (code 30) - The melt: Hyperspace poured into the fluid engine
+
+- **The fluid engine now runs underneath the fractals.** HYPERSPACE gains a
+  world-anchored `MeltField` - the same Stam solver the FLUID family uses, with
+  velocity *and* dye - and the two are coupled in both directions. The
+  raymarcher samples the velocity field at two orthogonal projections of every
+  sample point and displaces it before evaluating any fractal, so the whole
+  scene is stirred as one continuous medium: the geometry stretches, smears and
+  pulls like taffy instead of turning as a rigid object. That is "Melt".
+- **The loop closes: the bodies stir the fluid back.** Every living fractal
+  drops a capsule of its own colour into the medium each frame, from where it
+  was to where it is - so a body drifting across the room leaves a wake, and a
+  body being born or dissolving blooms ink outward (it pushes 1.8x harder at
+  both ends of its life). The music stirs it through the same `FluidEmitters`
+  schedule the FLUID style runs, so a beat lands here exactly as it lands
+  there.
+- **You can mold it with your finger.** A drag on the visualizer is routed
+  into the medium as a capsule of force and dye, so the fractals it crosses are
+  pulled out of shape and stained in the same gesture.
+- **World-anchored, not screen-anchored**, and that one decision is what lets
+  all of the above agree with each other: sim space IS the world's xy plane. A
+  screen-space field would have looked right until the camera moved, at which
+  point the ink a body had shed would slide off it.
+- **Three ways the dye is seen.** "Ink stain" lights the surfaces the medium
+  has run over, lit by the same key light so it reads as wet rather than as a
+  decal. "Liquid light" makes the dye a participating medium in its own right -
+  integrated WITH extinction, so ink in front of a body dims it and the near
+  side of a cloud is brighter than the far side. "Ridges" combs each surface
+  across its local flow direction, hue and all, which is the single most
+  recognisable mark in the reference paintings: every surface in them is
+  combed, and the combing follows the current rather than the geometry.
+- **Two numbers keep the raymarcher honest**, and both are pinned by tests
+  rather than eyeballed. The displacement is hard-clamped to `MeltMath.reach`,
+  which is *exactly* the amount every bounding sphere is inflated by on the CPU
+  - a velocity spike that displaced further would push geometry outside the
+  sphere the ray culled it with, and slice the body along a perfect circle. And
+  the march step is relaxed by `MeltMath.stepRelaxation`, because warping the
+  domain breaks the distance estimate's Lipschitz bound and a ray still taking
+  the full estimate walks straight through thin geometry.
+- Two rendering fixes the preview renders forced. The liquid medium is
+  integrated with extinction rather than summed, because a plain sum has no
+  upper bound and turned a well-inked region into one flat wash; and it is
+  sampled at a per-pixel jittered offset along the ray, because sampling every
+  pixel at the same depths quantized the integral into visible concentric
+  shells that looked like contour lines drawn on the fog.
+- Customize gains a **Melt** group on the Hyperspace tab: Melt, Ink stain,
+  Liquid light, Ridges, Stir, Vorticity and Flow fade, all randomizable and
+  lockable. A fourth built-in preset, `hyperspace · Molten`, turns the medium
+  all the way up - fewer, larger bodies for it to pull on and a slow-clearing
+  field so the ink builds into strata - and trims Detail to pay for it.
+- On a GPU that cannot give the simulation half-float buffers the style still
+  runs, as solid geometry: one uniform gates the whole medium, and "Melt" at 0
+  is an exact no-op that does not even cost the texture reads.
+- 9 new tests (`HyperspaceMeltTest`) pin the identity between the displacement
+  ceiling and the sphere inflation, the monotonicity and bounds of both safety
+  numbers, the world/sim mapping (including that every act's orbit spread lands
+  inside the grid rather than in a handful of texels), and the splat clamps.
+
 ## v1.4.0 (code 28) - Hyperspace: a room of 3D fractals, each one alive
 
 - **A new visualizer style, `hyperspace`** (Visuals > Styles > Hyperspace):
