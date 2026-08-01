@@ -24,7 +24,7 @@ import kotlin.random.Random
  *     verbatim turns the lock chip into a silent no-op - the exact regression
  *     fixed once before ("Fix randomizer lock keys to match slider labels").
  *     [every_lock_key_matches_a_customize_label] parses the labels straight
- *     out of `CustomizeDialog.kt` so a renamed slider fails the build instead
+ *     out of `CustomizeTabs.kt` so a renamed slider fails the build instead
  *     of quietly unprotecting a parameter.
  *
  * It also pins the roll inside each slider's range (a roll the user cannot
@@ -81,6 +81,9 @@ class ParamRandomizerFluidTest {
             Triple("Depth", { p: SceneParams -> p.waterDepth }, 0f..1f),
             Triple("Specular", { p: SceneParams -> p.waterSpecular }, 0f..1f),
             Triple("Flow drift", { p: SceneParams -> p.waterFlow }, 0f..1f),
+            Triple("Liquid", { p: SceneParams -> p.waterLiquid }, 0f..1f),
+            Triple("Liquid flow", { p: SceneParams -> p.waterLiquidFlow }, 0f..4f),
+            Triple("Liquid fade", { p: SceneParams -> p.waterLiquidFade }, 0f..2f),
             Triple("Ripple glint", { p: SceneParams -> p.rippleOverlaySpecular }, 0f..1f),
             Triple("Ripple strength", { p: SceneParams -> p.waterRippleStrength }, 0f..2f),
             Triple("Ripple overlay strength", { p: SceneParams -> p.rippleOverlayStrength }, 0f..1f),
@@ -294,16 +297,16 @@ class ParamRandomizerFluidTest {
     private fun lockableLabels(): Set<String> {
         val regex = Regex("(?:LabeledSlider|LabeledIntSlider|CheckRow|LockableChipLabel)\\(\\s*\"([^\"]+)\"")
         return regex
-            .findAll(customizeDialogSource())
+            .findAll(customizeTabsSource())
             .map { it.groupValues[1] }
             .toSet()
     }
 
-    private fun customizeDialogSource(): String {
+    private fun customizeTabsSource(): String {
         val relatives =
             listOf(
-                "src/main/java/dev/musicviz/ui/CustomizeDialog.kt",
-                "app/src/main/java/dev/musicviz/ui/CustomizeDialog.kt",
+                "src/main/java/dev/musicviz/ui/CustomizeTabs.kt",
+                "app/src/main/java/dev/musicviz/ui/CustomizeTabs.kt",
             )
         var dir: File? = File("").absoluteFile
         while (dir != null) {
@@ -313,7 +316,7 @@ class ParamRandomizerFluidTest {
             }
             dir = dir.parentFile
         }
-        fail("CustomizeDialog.kt not found from ${File("").absolutePath}")
+        fail("CustomizeTabs.kt not found from ${File("").absolutePath}")
         error("unreachable")
     }
 }

@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import dev.musicviz.analysis.AudioQualityInfo
 import dev.musicviz.render.VisualizerView
+import dev.musicviz.render.scene.TouchTransform
 
 /**
  * Now Playing: the fullscreen visualizer canvas with the app shell's design
@@ -62,6 +64,12 @@ import dev.musicviz.render.VisualizerView
 fun VisualizerScreen(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
+    /**
+     * Name of the display the canvas has been sent to, or null when it is
+     * here. Non-null means this screen must NOT host the view - it has one
+     * parent, and that parent is currently the presentation.
+     */
+    externalDisplayName: String? = null,
     onCollapse: () -> Unit,
     onOpenVisuals: () -> Unit,
 ) {
@@ -83,9 +91,68 @@ fun VisualizerScreen(
             .background(Color.Black)
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { controlsVisible = !controlsVisible })
+            }
+            // Canvas gestures. ONE detector for both, because two would fight
+            // over the same pointers: a drag detector and a transform detector
+            // stacked on one element each consume the changes the other is
+            // waiting for, and which one wins depends on modifier order rather
+            // than on what the fingers did. Taps still reach the detector above
+            // either way - a tap moves nothing, so nothing here consumes it.
+            //
+            // Only this screen gets them: the clear-overlay Visuals menu puts
+            // scrolling lists on the same canvas, and a drag there belongs to
+            // the list.
+            .pointerInput(gui.touchSmear, gui.touchSmearStrength, gui.touchTransform) {
+                if (!gui.touchSmear && !gui.touchTransform) return@pointerInput
+                val w = size.width.toFloat().coerceAtLeast(1f)
+                val h = size.height.toFloat().coerceAtLeast(1f)
+                detectTransformGestures { centroid, pan, gestureZoom, gestureRotate ->
+                    if (gui.touchTransform && TouchTransform.isTransform(gestureZoom, gestureRotate)) {
+                        // Two fingers: pinch is Zoom, twist is Rotation.
+                        viewModel.nudgeTransform(gestureZoom, gestureRotate)
+                    } else if (gui.touchSmear) {
+                        // One finger (or two moving together): push the
+                        // surface. Normalized to the view, y still DOWN as the
+                        // UI reports it; the renderer converts to sim space on
+                        // the GL thread.
+                        visualizerView.visualizerRenderer.queueTouchStroke(
+                            nx = centroid.x / w,
+                            ny = centroid.y / h,
+                            ndx = pan.x / w,
+                            ndy = pan.y / h,
+                            dt = FRAME_DT,
+                            strength = gui.touchSmearStrength,
+                        )
+                    }
+                }
             },
     ) {
-        VisualizerCanvasHost(visualizerView, Modifier.fillMaxSize())
+        if (externalDisplayName == null) {
+            VisualizerCanvasHost(visualizerView, Modifier.fillMaxSize())
+        } else {
+            // The canvas is on the other screen; this one is the control
+            // surface. Say where it went rather than showing a black rectangle
+            // that reads as a crash.
+            CrystalBackground(Modifier.fillMaxSize())
+            Column(
+                Modifier.align(Alignment.Center).padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                CrystalOverline("Showing on")
+                Text(
+                    externalDisplayName,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Text(
+                    "The visuals are on the connected display. Everything here still controls them — " +
+                        "turn this off in Settings › Live input & touch to bring them back.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        }
 
         if (controlsVisible) {
             Row(
@@ -236,6 +303,7 @@ fun VisualizerScreen(
                                 when (autoMode) {
                                     1 -> "  Auto: random"
                                     2 -> "  Auto: smart"
+                                    3 -> "  Auto: sections"
                                     else -> "  Auto: off"
                                 },
                             )
@@ -246,6 +314,14 @@ fun VisualizerScreen(
         }
     }
 }
+
+/**
+ * Timestep a drag frame is reported with. Compose delivers drag deltas per
+ * pointer event rather than per unit of time, and the sim only needs a speed
+ * scale, not a clock: a fixed nominal frame keeps a fast flick reading as fast
+ * without threading a second time source through the gesture.
+ */
+private const val FRAME_DT = 1f / 60f
 
 private fun formatTime(ms: Long): String {
     val total = (ms / 1000).coerceAtLeast(0)

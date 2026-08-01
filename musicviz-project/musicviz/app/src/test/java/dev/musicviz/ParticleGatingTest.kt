@@ -34,7 +34,7 @@ import java.io.File
  * bug of its own), and both are still dead on MilkDrop and Water.
  *
  * [exactlyTheParticleControlsAreGated] reads the gating back out of
- * `CustomizeDialog.kt`, so over-gating - sweeping a control that DOES work
+ * `CustomizeTabs.kt`, so over-gating - sweeping a control that DOES work
  * everywhere into either block - fails the build just like un-gating does.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -98,12 +98,12 @@ class ParticleGatingTest {
     @Test
     fun exactlyTheParticleControlsAreGated() {
         assertEquals(
-            "controls wrapped in `if (isParticleShapeScene)` inside CustomizeDialog.kt",
+            "controls wrapped in `if (isParticleShapeScene)` inside CustomizeTabs.kt",
             setOf("Particle shape"),
             gatedLabels("isParticleShapeScene"),
         )
         assertEquals(
-            "controls wrapped in `if (isPointSpriteScene)` inside CustomizeDialog.kt",
+            "controls wrapped in `if (isPointSpriteScene)` inside CustomizeTabs.kt",
             setOf("Particle shape", "Particle size"),
             gatedLabels("isPointSpriteScene"),
         )
@@ -133,7 +133,7 @@ class ParticleGatingTest {
         val gated = mutableSetOf<String>()
         val gateDepths = mutableListOf<Int>()
         var depth = 0
-        for (line in customizeDialogSource().lines()) {
+        for (line in customizeTabsSource().lines()) {
             if (gateDepths.isNotEmpty()) {
                 labelRegex.findAll(line).forEach { gated += it.groupValues[1] }
             }
@@ -154,16 +154,16 @@ class ParticleGatingTest {
                 }
             }
         }
-        assertEquals("unbalanced braces while parsing CustomizeDialog.kt", 0, depth)
-        assertTrue("no `if ($gate)` block found in CustomizeDialog.kt", gated.isNotEmpty())
+        assertEquals("unbalanced braces while parsing CustomizeTabs.kt", 0, depth)
+        assertTrue("no `if ($gate)` block found in CustomizeTabs.kt", gated.isNotEmpty())
         return gated
     }
 
-    private fun customizeDialogSource(): String {
+    private fun customizeTabsSource(): String {
         val relatives =
             listOf(
-                "src/main/java/dev/musicviz/ui/CustomizeDialog.kt",
-                "app/src/main/java/dev/musicviz/ui/CustomizeDialog.kt",
+                "src/main/java/dev/musicviz/ui/CustomizeTabs.kt",
+                "app/src/main/java/dev/musicviz/ui/CustomizeTabs.kt",
             )
         var dir: File? = File("").absoluteFile
         while (dir != null) {
@@ -173,7 +173,7 @@ class ParticleGatingTest {
             }
             dir = dir.parentFile
         }
-        fail("CustomizeDialog.kt not found from ${File("").absolutePath}")
+        fail("CustomizeTabs.kt not found from ${File("").absolutePath}")
         error("unreachable")
     }
 }

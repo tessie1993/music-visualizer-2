@@ -31,7 +31,13 @@ fun VisualizerEngineBindings(
         viewModel.features.collect {
             // Enriched with progress/section context so the fluid spawn/catch
             // choreography can journey through the track.
-            visualizerView.visualizerRenderer.features = viewModel.enrichFeatures(it)
+            val enriched = viewModel.enrichFeatures(it)
+            visualizerView.visualizerRenderer.features = enriched
+            // Same frames to the live wallpaper, if one is running: it shares
+            // this process but no object graph, and a second analyzer would be
+            // a second answer to "was that a beat?".
+            dev.musicviz.audio.AudioBus
+                .publish(enriched)
         }
     }
     LaunchedEffect(viz.sceneId) {

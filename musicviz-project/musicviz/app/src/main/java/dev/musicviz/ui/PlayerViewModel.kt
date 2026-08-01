@@ -26,6 +26,7 @@ import dev.musicviz.analysis.PlaybackMath
 import dev.musicviz.analysis.SceneSuggester
 import dev.musicviz.audio.AudioFxController
 import dev.musicviz.audio.AudioFxState
+import dev.musicviz.audio.MicCapture
 import dev.musicviz.audio.PcmRingBuffer
 import dev.musicviz.audio.PcmTapSink
 import dev.musicviz.audio.TapRenderersFactory
@@ -49,6 +50,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 data class PlayerUiState(
     val isPlaying: Boolean = false,
@@ -91,6 +93,16 @@ data class VizUiState(
     val randomIncludePresets: Boolean = true,
     val randomIncludeMilk: Boolean = false,
     val randomizeColors: Boolean = false,
+    /**
+     * Section staging: the track's own structure drives the look.
+     *
+     * Distinct from the interval and "switch on a strong moment" modes, which
+     * both rotate on a clock the music does not keep. Here each detected
+     * section gets a look and KEEPS it, and the same section index always gets
+     * the same one - so a chorus looks like the chorus every time it comes
+     * round, and the video reads the shape of the song rather than a timer.
+     */
+    val sectionStaging: Boolean = false,
 )
 
 /** One step of the visual preset playlist. */
@@ -115,6 +127,22 @@ data class MilkFile(
     val path: String,
 )
 
+/**
+ * A track a screen can hand straight to the player.
+ *
+ * Carries the title/artist the list ALREADY knows so building a queue never
+ * has to reach for the ContentResolver: [PlayerViewModel.mediaItemFor] falls
+ * back to a per-uri `DISPLAY_NAME` query when it has no metadata, which is
+ * fine for one track and a main-thread stall for a thousand of them. Every
+ * list in the app has these two strings in hand, so the queue-building path
+ * takes them instead.
+ */
+data class QueueTrack(
+    val uri: String,
+    val title: String = "",
+    val artist: String = "",
+)
+
 /** One row of the device music index (MediaStore). */
 data class DeviceTrack(
     val uri: String,
@@ -135,6 +163,38 @@ data class LibraryState(
 
 private val AUDIO_EXTS = setOf("mp3", "wav", "flac", "ogg", "m4a", "aac", "opus", "wma", "aiff")
 
+/**
+ * Performance-take state: what is being recorded, what is being replayed, and
+ * the saved takes list.
+ */
+data class TakeUiState(
+    val takes: List<TakeInfo> = emptyList(),
+    val recording: Boolean = false,
+    val recordedEvents: Int = 0,
+    val recordedMs: Long = 0L,
+    /** Name of the take currently replaying, or null. */
+    val replaying: String? = null,
+    val replayMs: Long = 0L,
+    val replayEndMs: Long = 0L,
+    /**
+     * Take the next video export replays, or null for the live settings.
+     *
+     * PARAMETER AUTOMATION ONLY. The exporter builds one scene up front and
+     * renders every frame through it, so a style SWITCH inside a take cannot
+     * be reproduced offline without teaching the exporter to create, swap and
+     * release scenes mid-render. Everything else a take holds - every slider,
+     * colour, FX and fluid setting, moving exactly as it was performed - does
+     * reach the file. The export dialog says so where the take is chosen.
+     */
+    val exportTake: String? = null,
+)
+
+/** Live-input state for the Settings switch: running, plus why it is not. */
+data class MicState(
+    val active: Boolean = false,
+    val failure: MicCapture.Failure? = null,
+)
+
 data class ExportUiState(
     val running: Boolean = false,
     /** True when the user picked the output location via the file picker. */
@@ -154,6 +214,21 @@ data class ExportUiState(
 private const val STRONG_MOMENT_IMPULSE = 0.6f
 
 /**
+ * Replay tick rate for performance takes. Keyframes land no closer than
+ * [PerformanceTake.MIN_KEYFRAME_GAP_MS] apart, so this is comfortably finer
+ * than the recording it reads - a slower clock would turn a swept slider back
+ * into a staircase.
+ */
+private const val TAKE_REPLAY_HZ = 30L
+
+/**
+ * Longest edge the artwork is decoded to before its hues are counted. A hue
+ * histogram is stable far below this; decoding a full-size sleeve to build one
+ * would cost tens of megabytes for no extra precision.
+ */
+private const val ART_SAMPLE_SIZE = 128
+
+/**
  * Owns playback (queue + audio focus + PCM tap), live analysis, offline
  * analysis/intelligence, presets and export orchestration.
  */
@@ -163,6 +238,82 @@ class PlayerViewModel(
 ) : AndroidViewModel(application) {
     private val ring = PcmRingBuffer()
     private val engine = AnalysisEngine(ring)
+
+    /**
+     * "Live input": the microphone as a second producer for the SAME ring
+     * buffer the playback tap writes into, so every consumer downstream is
+     * unchanged. Nothing is stored or transmitted - see [MicCapture].
+     */
+    private val micCapture = MicCapture(application, ring)
+
+    private val _micState = MutableStateFlow(MicState())
+
+    /** Microphone-driven visuals: on/off plus the last failure to report. */
+    val micState: StateFlow<MicState> = _micState
+
+    /**
+     * Turns live input on or off.
+     *
+     * Turning it ON pauses playback: the ring buffer has ONE analysis window,
+     * so a track and the room would be summed into a single spectrum and
+     * neither would drive the visuals recognisably. That is also what the
+     * feature asks for - visuals reacting to the room, with no music playing.
+     *
+     * Returns the failure that stopped it, or null on success. A refused
+     * permission is reported rather than swallowed so the caller can send the
+     * user to the system prompt instead of leaving a switch that silently
+     * springs back.
+     */
+    fun setMicEnabled(enabled: Boolean): MicCapture.Failure? {
+        if (!enabled) {
+            micCapture.stop()
+            engine.reset()
+            engine.sampleRateHz = tapFormat?.sampleRateHz ?: 44100
+            _micState.value = MicState(active = false)
+            setGuiPrefs(_guiPrefs.value.copy(micReactive = false))
+            return null
+        }
+        if (micCapture.active) return null
+        player.pause()
+        val failure = micCapture.start { rate -> engine.sampleRateHz = rate }
+        if (failure != null) {
+            _micState.value = MicState(active = false, failure = failure)
+            return failure
+        }
+        // The beat grid and energy envelope model one continuous piece of
+        // audio; the room is a different one, exactly like a track change.
+        engine.reset()
+        _micState.value = MicState(active = true)
+        setGuiPrefs(_guiPrefs.value.copy(micReactive = true))
+        return null
+    }
+
+    /** True when the RECORD_AUDIO permission is already granted. */
+    fun hasMicPermission(): Boolean = micCapture.hasPermission()
+
+    /**
+     * Retunes the analysis chain for what the microphone is pointed at.
+     *
+     * Writes across three normally-separate places - beat sensitivity
+     * (GuiPrefs), the reactivity envelope (vizState) and the band balance
+     * (SceneParams) - because they are one decision: a guitar needs a lower
+     * beat threshold AND a faster attack AND more mid, and setting one of the
+     * three without the others just makes the visuals wrong differently.
+     *
+     * Everything it writes stays an ordinary slider afterwards. Nothing
+     * remembers which profile was used, so there is no mode to fall out of
+     * sync with the controls it moved.
+     */
+    fun applyLiveInputProfile(profile: dev.musicviz.analysis.LiveInputProfile) {
+        setGuiPrefs(
+            _guiPrefs.value.copy(
+                beatThresholdSigma = profile.beatSigma,
+                beatMinIntervalMs = profile.beatIntervalMs,
+            ),
+        )
+        setReactivity(profile.attack, profile.decay)
+        setSceneParams(profile.apply(_vizState.value.params))
+    }
 
     // ---- Audio-quality readout ----
     // Combines the selected track's source Format (onTracksChanged) with the
@@ -240,7 +391,11 @@ class PlayerViewModel(
 
     private val sink =
         PcmTapSink(ring) { rate, channels, encoding ->
-            engine.sampleRateHz = rate
+            // Live input owns the analyzer's rate while it is running: the
+            // player can still reconfigure its pipeline (a queued track being
+            // prepared) and would otherwise retune the FFT to a rate no
+            // samples are arriving at.
+            if (!micCapture.active) engine.sampleRateHz = rate
             onTapFormat(rate, channels, encoding)
         }
     private val offlineAnalyzer = OfflineAnalyzer(application)
@@ -693,6 +848,18 @@ class PlayerViewModel(
     private val _historyTick = MutableStateFlow(0)
     val historyTick: StateFlow<Int> = _historyTick
 
+    // Declared here for the same reason as the fields above, not down in the
+    // "Performance takes" section they belong to: the init block below lists
+    // the saved takes, and a property declared after it has not been
+    // initialized when it runs. Kotlin does not catch that - the field is
+    // simply null - so it surfaces as an NPE inside the ViewModel constructor,
+    // i.e. as the app failing to start.
+    private val takeStore = TakeStore(application)
+    private val _takeState = MutableStateFlow(TakeUiState())
+
+    /** Recording/replay state for the Takes tab. */
+    val takeState: StateFlow<TakeUiState> = _takeState
+
     /** Keep the current preset: auto/random switching skips while locked. */
     private val _presetLocked = MutableStateFlow(false)
     val presetLocked: StateFlow<Boolean> = _presetLocked
@@ -704,6 +871,7 @@ class PlayerViewModel(
     init {
         engine.start(viewModelScope)
         refreshNumericTitles()
+        refreshTakes()
         // Restore persisted playback options onto the freshly built player.
         // Auto-resume runs BEFORE the listener registers so the startup
         // preparation never records a phantom play into history (ExoPlayer
@@ -793,6 +961,7 @@ class PlayerViewModel(
                 applyIntelligence()
                 advanceVizPlaylist()
                 advanceRandomMode()
+                advanceSectionStaging()
                 delay(500)
             }
         }
@@ -1037,6 +1206,57 @@ class PlayerViewModel(
 
     private fun refreshMilkCache() {
         milkPresetFilesAsync { cachedMilkFiles = it }
+    }
+
+    /** Section the playhead is inside, from the offline analysis boundaries. */
+    private fun currentSectionIndex(): Int {
+        val sections = _vizState.value.sections
+        if (sections.isEmpty()) return 0
+        val pos = _uiState.value.positionMs
+        var idx = 0
+        for (boundary in sections) {
+            if (boundary <= pos) idx++ else break
+        }
+        return idx
+    }
+
+    /** Section last staged, so a look is applied once per section, not per tick. */
+    private var lastStagedSection = -1
+
+    /**
+     * Applies a look when the playhead crosses into a new section.
+     *
+     * Deterministic by section INDEX rather than "next in the list": the point
+     * is that a chorus looks like the chorus every time, so the third section
+     * of a track must get the same look on every play - and on the export.
+     * Falls back to the current style's presets when no visual playlist has
+     * been built, so the mode works without any setup at all.
+     */
+    private fun advanceSectionStaging() {
+        val s = _vizState.value
+        if (!s.sectionStaging || !_uiState.value.isPlaying) return
+        val index = currentSectionIndex()
+        if (index == lastStagedSection) return
+        lastStagedSection = index
+        if (s.vizPlaylist.isNotEmpty()) {
+            applyVizEntry(s.vizPlaylist[index % s.vizPlaylist.size])
+            return
+        }
+        val pool = s.presets.filter { it.sceneId == s.sceneId }
+        if (pool.isNotEmpty()) applyPreset(pool[index % pool.size])
+    }
+
+    /**
+     * Turns section staging on or off.
+     *
+     * Switching it on kicks off the offline analysis when it has not run:
+     * sections come from that pass, and a mode whose input is missing would
+     * otherwise just sit there doing nothing with no way to tell why.
+     */
+    fun setSectionStaging(enabled: Boolean) {
+        _vizState.update { it.copy(sectionStaging = enabled) }
+        lastStagedSection = -1
+        if (enabled && _vizState.value.sections.isEmpty()) analyzeCurrentTrack()
     }
 
     private fun advanceRandomMode() {
@@ -1528,12 +1748,12 @@ class PlayerViewModel(
                 ?.trackUris
                 .orEmpty()
         if (uris.isEmpty()) return
-        player.setMediaItems(uris.map { mediaItemFor(Uri.parse(it)) })
-        player.prepare()
-        player.seekTo(startIndex.coerceIn(0, uris.size - 1), 0L)
-        player.play()
-        currentUri = Uri.parse(uris[startIndex.coerceIn(0, uris.size - 1)])
-        onTrackChanged()
+        // Through the same funnel as every other list, so a later single-track
+        // play of one of these rejoins the playlist instead of truncating the
+        // queue to it (and so the titles come from the library, not a query).
+        val byUri = _library.value.tracks.associateBy { it.uri }
+        val tracks = uris.map { u -> byUri[u]?.let(PlaybackQueue::queueTrack) ?: QueueTrack(u) }
+        playFrom(tracks, uris[startIndex.coerceIn(0, uris.size - 1)])
     }
 
     // ---- Navigation v2 additions ----
@@ -1546,11 +1766,20 @@ class PlayerViewModel(
         _presetLocked.update { !it }
     }
 
+    /**
+     * Cycles the one auto-visuals control: off, random, smart, sections.
+     *
+     * The four are mutually exclusive by construction rather than by three
+     * independent switches that can contradict each other - "rotate randomly"
+     * and "hold a look for each section" are opposite instructions, and a UI
+     * that lets both be on has to pick a winner somewhere the user cannot see.
+     */
     fun cycleAutoMode() {
-        val next = (_autoMode.value + 1) % 3
+        val next = (_autoMode.value + 1) % 4
         _autoMode.value = next
         setRandomEnabled(next == 1)
         setIntelligenceMode(if (next == 2) IntelligenceMode.AUTO else IntelligenceMode.MANUAL)
+        setSectionStaging(next == 3)
     }
 
     fun playNext(uri: String) {
@@ -1565,18 +1794,9 @@ class PlayerViewModel(
     }
 
     fun shuffleAllHistory() {
-        val uris = historyStore.recentlyPlayed(100).map { it.uri }.shuffled()
-        if (uris.isNotEmpty()) {
-            openStrings(uris)
-        }
-    }
-
-    fun openStringsPublic(uris: List<String>) = openStrings(uris)
-
-    private fun openStrings(uris: List<String>) {
-        player.setMediaItems(uris.map { mediaItemFor(Uri.parse(it)) })
-        player.prepare()
-        player.play()
+        // History rows carry their own title, so this builds the queue without
+        // a per-uri metadata lookup like every other list does.
+        playAll(historyStore.recentlyPlayed(100).map { QueueTrack(it.uri, it.title) }, shuffled = true)
     }
 
     // Preset folder tree
@@ -1629,14 +1849,58 @@ class PlayerViewModel(
         applyPreset(pool[quickPresetIndex])
     }
 
-    /** Plays a single library track immediately. */
-    fun playTrack(uri: String) {
-        player.setMediaItems(listOf(mediaItemFor(Uri.parse(uri))))
+    /**
+     * Plays [uri], with the list it belongs to as the queue.
+     *
+     * A tap on a row used to call `setMediaItems(listOf(one))`, which left the
+     * player holding a ONE-item queue - so Next and Previous had nowhere to go
+     * and did nothing unless a playlist had been started. That is the bug this
+     * funnel fixes: [PlaybackQueue.contextFor] finds the list the track came
+     * from (the screen's own ordering if it handed one over, otherwise the
+     * device index or the imported library), so the transport behaves the way
+     * it does in any other music player.
+     */
+    fun playTrack(uri: String) = playFrom(PlaybackQueue.contextFor(uri, lastBrowseContext, _deviceTracks.value, _library.value.tracks), uri)
+
+    /**
+     * Opens [tracks] as the queue and starts at [startUri]. The one path a
+     * "tap a row" play takes; screens with an explicit ordering (an album, a
+     * folder, search results) call it directly so Next follows what the user
+     * is looking at.
+     */
+    fun playFrom(
+        tracks: List<QueueTrack>,
+        startUri: String,
+    ) {
+        val window = PlaybackQueue.window(tracks, startUri)
+        if (window.tracks.isEmpty()) return
+        // One ring buffer, one source: playing a track ends live input rather
+        // than summing a song and the room into a single spectrum.
+        if (micCapture.active) setMicEnabled(false)
+        lastBrowseContext = tracks
+        player.setMediaItems(window.tracks.map { mediaItemFor(it) })
         player.prepare()
+        player.seekTo(window.startIndex, 0L)
         player.play()
-        currentUri = Uri.parse(uri)
+        currentUri = Uri.parse(window.tracks[window.startIndex].uri)
         onTrackChanged()
     }
+
+    /** Plays a whole list from the top, optionally shuffled ("Play all"). */
+    fun playAll(
+        tracks: List<QueueTrack>,
+        shuffled: Boolean = false,
+    ) {
+        val order = if (shuffled) tracks.shuffled() else tracks
+        order.firstOrNull()?.let { playFrom(order, it.uri) }
+    }
+
+    /**
+     * The last list a screen played from. Kept so a later single-track play of
+     * something in that same list (a history chip, a search hit) rejoins it
+     * instead of collapsing the queue back to one item.
+     */
+    private var lastBrowseContext: List<QueueTrack> = emptyList()
 
     /**
      * Analyzes every track in a playlist in the background, caching BPM +
@@ -1687,6 +1951,26 @@ class PlayerViewModel(
                     .Builder()
                     .setTitle(t)
                     .setArtist(a.ifBlank { null })
+                    .build(),
+            ).build()
+    }
+
+    /**
+     * [mediaItemFor] for a row a screen already has the metadata for. Skips
+     * both the O(n) library scan and the per-uri ContentResolver query, which
+     * is what makes opening a thousand-track queue instant instead of a
+     * thousand main-thread lookups.
+     */
+    private fun mediaItemFor(track: QueueTrack): MediaItem {
+        if (track.title.isBlank()) return mediaItemFor(Uri.parse(track.uri))
+        return MediaItem
+            .Builder()
+            .setUri(Uri.parse(track.uri))
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata
+                    .Builder()
+                    .setTitle(track.title)
+                    .setArtist(track.artist.ifBlank { null })
                     .build(),
             ).build()
     }
@@ -1757,11 +2041,45 @@ class PlayerViewModel(
         }
     }
 
-    fun next() = player.seekToNextMediaItem()
+    /**
+     * Next track, wrapping to the top of the queue at the end.
+     *
+     * `seekToNextMediaItem()` alone is a no-op on the last item (and on a
+     * one-item queue), which is how Next came to look broken outside a
+     * playlist. Wrapping keeps the button meaningful wherever playback
+     * started; the queue itself is built by [playFrom], so "the end" is the
+     * end of the list the user was browsing, not of a single track.
+     */
+    fun next() {
+        if (player.mediaItemCount == 0) return
+        if (player.hasNextMediaItem()) player.seekToNextMediaItem() else player.seekTo(0, 0L)
+    }
 
-    fun previous() = player.seekToPreviousMediaItem()
+    /**
+     * Previous: restarts the current track when more than
+     * [PlaybackQueue.PREV_RESTART_MS] into it, steps back otherwise - the
+     * behaviour every music player's Previous button has. Wraps to the last
+     * item from the top of the queue, mirroring [next].
+     *
+     * Neither direction starts playback: skipping while paused changes the
+     * track and leaves it paused, as it does everywhere else.
+     */
+    fun previous() {
+        if (player.mediaItemCount == 0) return
+        if (player.currentPosition > PlaybackQueue.PREV_RESTART_MS) {
+            player.seekTo(0L)
+            return
+        }
+        if (player.hasPreviousMediaItem()) {
+            player.seekToPreviousMediaItem()
+        } else {
+            player.seekTo(player.mediaItemCount - 1, 0L)
+        }
+    }
 
     fun togglePlayPause() {
+        // Starting playback ends live input: one ring buffer, one source.
+        if (!player.isPlaying && micCapture.active) setMicEnabled(false)
         if (player.isPlaying) player.pause() else player.play()
     }
 
@@ -1776,6 +2094,9 @@ class PlayerViewModel(
         // Before anything else: the live analyzer's beat grid, energy envelope
         // and flux history all describe the track that just ended.
         engine.reset()
+        // A new track has a new structure; section 2 of this one is not
+        // section 2 of the last.
+        lastStagedSection = -1
         timeline = null
         _vizState.update { it.copy(suggestedSceneId = null, bpm = 0f, sections = emptyList()) }
         if (_vizState.value.intelligenceMode != IntelligenceMode.MANUAL) {
@@ -1800,6 +2121,137 @@ class PlayerViewModel(
         }
     }
 
+    /**
+     * Hue shift the user had before the key took it over, so switching the
+     * option off gives their own value back rather than leaving whatever the
+     * last track happened to be in.
+     */
+    private var hueBeforeKeyColor: Float? = null
+
+    /**
+     * Colours the visuals from the track's key, when "Colour from the key" is
+     * on.
+     *
+     * Drives the ordinary Hue shift slider rather than adding a second, hidden
+     * colour source: the value is visible where colour is set, it is saved
+     * into presets and takes with everything else, and dragging the slider is
+     * how you disagree with it. A track with no detected key leaves the hue
+     * alone - "not analysed" is not "in C".
+     */
+    fun applyKeyColor(key: String) {
+        if (!_guiPrefs.value.keyColor) return
+        val hue = dev.musicviz.analysis.KeyPalette.hueFor(key) ?: return
+        val params = _vizState.value.params
+        if (hueBeforeKeyColor == null) hueBeforeKeyColor = params.colorShift
+        if (params.colorShift != hue) setSceneParams(params.copy(colorShift = hue))
+    }
+
+    /**
+     * Turns key colouring on or off. On, it colours the current track at once
+     * if its key is already known; off, it hands the user's own hue back.
+     */
+    fun setKeyColor(enabled: Boolean) {
+        setGuiPrefs(_guiPrefs.value.copy(keyColor = enabled))
+        if (enabled) {
+            currentTrackKey()?.let { applyKeyColor(it) }
+        } else {
+            hueBeforeKeyColor?.let { setSceneParams(_vizState.value.params.copy(colorShift = it)) }
+            hueBeforeKeyColor = null
+        }
+    }
+
+    /** The current track's detected key, from the library cache; "" if none. */
+    fun currentTrackKey(): String? {
+        val uri = currentUri?.toString() ?: return null
+        return _library.value.tracks
+            .firstOrNull { it.uri == uri }
+            ?.key
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Builds a palette from the current track's embedded artwork and applies
+     * it to the first palette slot.
+     *
+     * Off the main thread: this decodes an image. Reported through
+     * [artPaletteNote] rather than silently, because "the sleeve is greyscale"
+     * and "this file has no artwork" are both ordinary outcomes the user is
+     * owed an explanation for - a button that sometimes does nothing with no
+     * message reads as broken.
+     */
+    fun applyArtworkPalette() {
+        val uri =
+            currentUri ?: run {
+                _artPaletteNote.value = "Nothing is playing."
+                return
+            }
+        viewModelScope.launch(Dispatchers.IO) {
+            val pixels = artworkPixels(uri)
+            val extracted = pixels?.let { dev.musicviz.analysis.ArtPalette.extract(it) }
+            withContext(Dispatchers.Main) {
+                when {
+                    pixels == null -> _artPaletteNote.value = "This track has no embedded artwork."
+                    extracted == null ->
+                        _artPaletteNote.value =
+                            "The artwork has no colour to take — it is greyscale or nearly black."
+                    else -> {
+                        setSceneParams(
+                            PaletteStore.applyGradient(
+                                _vizState.value.params,
+                                extracted.baseHue,
+                                extracted.span,
+                            ),
+                        )
+                        _artPaletteNote.value =
+                            "Palette taken from the artwork (${(extracted.confidence * 100).roundToInt()}% of it had colour)."
+                    }
+                }
+            }
+        }
+    }
+
+    private val _artPaletteNote = MutableStateFlow<String?>(null)
+
+    /** Result of the last artwork-palette attempt, for the Colour tab to show. */
+    val artPaletteNote: StateFlow<String?> = _artPaletteNote
+
+    fun clearArtPaletteNote() {
+        _artPaletteNote.value = null
+    }
+
+    /**
+     * Embedded artwork as ARGB pixels, downsampled hard.
+     *
+     * [ART_SAMPLE_SIZE] square is far more than a hue histogram needs - the
+     * answer is stable well below it - and decoding a full 3000px sleeve to
+     * count hues would cost tens of megabytes for no extra precision.
+     */
+    private fun artworkPixels(uri: Uri): IntArray? =
+        runCatching {
+            // try/finally rather than use(): MediaMetadataRetriever only
+            // became AutoCloseable in API 29 and this app runs from 26.
+            val retriever = android.media.MediaMetadataRetriever()
+            val bytes =
+                try {
+                    retriever.setDataSource(getApplication<Application>(), uri)
+                    retriever.embeddedPicture
+                } finally {
+                    retriever.release()
+                } ?: return null
+            val bounds =
+                android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            val sample =
+                generateSequence(1) { it * 2 }
+                    .first { bounds.outWidth / it <= ART_SAMPLE_SIZE && bounds.outHeight / it <= ART_SAMPLE_SIZE }
+            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+            val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) ?: return null
+            val out = IntArray(bmp.width * bmp.height)
+            bmp.getPixels(out, 0, bmp.width, 0, 0, bmp.width, bmp.height)
+            bmp.recycle()
+            out
+        }.getOrNull()
+
     fun setIntelligenceMode(mode: IntelligenceMode) {
         _vizState.update { it.copy(intelligenceMode = mode) }
         if (mode != IntelligenceMode.MANUAL && timeline == null) analyzeCurrentTrack()
@@ -1817,6 +2269,7 @@ class PlayerViewModel(
                     }
                 val merged = trackLibrary.updateAnalysis(uri.toString(), titleFor(uri), t.durationMs, t.bpm, t.key)
                 _library.update { it.copy(tracks = merged) }
+                withContext(Dispatchers.Main) { applyKeyColor(t.key) }
                 if (currentUri == uri) {
                     timeline = t
                     val suggestion = SceneSuggester.suggestForTrack(t)
@@ -1852,6 +2305,158 @@ class PlayerViewModel(
         if (suggestion != s.sceneId) _vizState.value = s.copy(sceneId = suggestion)
     }
 
+    // ---- Performance takes: record the performance, not the render ----
+
+    private var recorder: PerformanceTake.Recorder? = null
+    private var recordStartMs = 0L
+    private var recordJob: Job? = null
+    private var replayJob: Job? = null
+
+    /**
+     * Starts recording the live visual state.
+     *
+     * Driven from [vizState] rather than from each control, so anything that
+     * moves the visuals is captured by construction - sliders, presets,
+     * Randomize, style switches, the auto-switcher - and a control added later
+     * is recorded without being told to.
+     */
+    fun startRecording() {
+        if (_takeState.value.recording) return
+        stopReplay()
+        val s = _vizState.value
+        recorder = PerformanceTake.Recorder(s.sceneId, s.params, activeMilkPath)
+        recordStartMs = android.os.SystemClock.elapsedRealtime()
+        _takeState.update { it.copy(recording = true, recordedEvents = 1, recordedMs = 0L) }
+        recordJob =
+            viewModelScope.launch {
+                // One collector on the state flow, not a polling loop: a
+                // keyframe exists because something changed, and the recorder
+                // throttles the burst a slider drag produces.
+                _vizState.collect { live ->
+                    val rec = recorder ?: return@collect
+                    val at = android.os.SystemClock.elapsedRealtime() - recordStartMs
+                    rec.append(at, live.sceneId, live.params, activeMilkPath)
+                    _takeState.update { it.copy(recordedEvents = rec.size, recordedMs = at) }
+                    if (!rec.hasRoom) stopRecording()
+                }
+            }
+    }
+
+    /**
+     * Stops recording and saves the take. Returns the name it was saved
+     * under, or null when nothing was recorded.
+     *
+     * A take with a single keyframe is discarded: it is a still, and offering
+     * to replay one would be offering to replay nothing.
+     */
+    fun stopRecording(name: String? = null): String? {
+        val rec = recorder ?: return null
+        recordJob?.cancel()
+        recordJob = null
+        recorder = null
+        val durationMs = android.os.SystemClock.elapsedRealtime() - recordStartMs
+        _takeState.update { it.copy(recording = false, recordedEvents = 0, recordedMs = 0L) }
+        if (rec.size <= 1) {
+            refreshTakes()
+            return null
+        }
+        val label = name?.takeIf { it.isNotBlank() } ?: defaultTakeName()
+        val saved = takeStore.save(label, rec.finish(label, currentUri?.toString(), durationMs))
+        refreshTakes()
+        return saved
+    }
+
+    /** "Take 3" — the lowest number not already on disk. */
+    private fun defaultTakeName(): String {
+        val taken = takeStore.list().map { it.name }.toSet()
+        var n = 1
+        while ("Take $n" in taken) n++
+        return "Take $n"
+    }
+
+    /**
+     * Replays a take over the live visuals.
+     *
+     * Ticks at [TAKE_REPLAY_HZ] rather than riding the 500 ms housekeeping
+     * loop: a take's keyframes are 80 ms apart, so a coarser clock would turn
+     * a swept slider into a staircase. The take drives the same
+     * [setSceneParams] / [selectScene] funnels a hand does, which is why the
+     * renderer's settings fade smooths between keyframes for free.
+     */
+    fun playTake(name: String) {
+        val timeline = takeStore.load(name) ?: return
+        if (timeline.isEmpty) return
+        if (_takeState.value.recording) stopRecording()
+        stopReplay()
+        val endMs = maxOf(timeline.lastEventMs(), timeline.durationMs)
+        _takeState.update { it.copy(replaying = name, replayMs = 0L, replayEndMs = endMs) }
+        replayJob =
+            viewModelScope.launch {
+                val startedAt = android.os.SystemClock.elapsedRealtime()
+                while (true) {
+                    val at = android.os.SystemClock.elapsedRealtime() - startedAt
+                    timeline.stateAt(at)?.let { state ->
+                        if (state.sceneId.isNotEmpty() && state.sceneId != _vizState.value.sceneId) {
+                            selectScene(state.sceneId)
+                        }
+                        if (state.params != _vizState.value.params) setSceneParams(state.params)
+                        state.milkPath?.takeIf { it != activeMilkPath }?.let { path ->
+                            _vizApply.tryEmit(VizApply(milkPath = path, sceneId = state.sceneId))
+                        }
+                    }
+                    _takeState.update { it.copy(replayMs = at) }
+                    if (at >= endMs) break
+                    delay(1000L / TAKE_REPLAY_HZ)
+                }
+                _takeState.update { it.copy(replaying = null, replayMs = 0L, replayEndMs = 0L) }
+            }
+    }
+
+    /** Stops a replay, leaving the visuals wherever the take had reached. */
+    fun stopReplay() {
+        replayJob?.cancel()
+        replayJob = null
+        _takeState.update { it.copy(replaying = null, replayMs = 0L, replayEndMs = 0L) }
+    }
+
+    fun deleteTake(name: String) {
+        if (_takeState.value.replaying == name) stopReplay()
+        takeStore.delete(name)
+        refreshTakes()
+    }
+
+    fun renameTake(
+        from: String,
+        to: String,
+    ) {
+        if (takeStore.rename(from, to)) {
+            if (_takeState.value.replaying == from) stopReplay()
+            refreshTakes()
+        }
+    }
+
+    /**
+     * Re-reads the takes list off the main thread.
+     *
+     * Listing means parsing each take's JSON for its header, and a set of long
+     * takes is megabytes of it - cheap in absolute terms, but not something to
+     * do on the main thread at launch, which is one of the callers.
+     */
+    private fun refreshTakes() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val listed = takeStore.list()
+            withContext(Dispatchers.Main) { _takeState.update { it.copy(takes = listed) } }
+        }
+    }
+
+    /**
+     * The take the video export should replay, or null for "render the live
+     * settings". Parameter automation only - see [TakeUiState.exportTake].
+     */
+    fun setExportTake(name: String?) {
+        _takeState.update { it.copy(exportTake = name) }
+    }
+
     // ---- Visual settings ----
 
     fun selectScene(sceneId: String) {
@@ -1872,6 +2477,37 @@ class PlayerViewModel(
     fun setSceneParams(params: SceneParams) {
         _vizState.update { it.copy(params = params) }
         persistVizState()
+    }
+
+    /**
+     * Puts every Customize control back to its default.
+     *
+     * Goes through [setSceneParams] like a slider does, so the renderer's
+     * settings fade glides into it and the live state is persisted - the same
+     * path a preset apply takes. The selected style, saved presets and the
+     * modulation routing (LFOs, envelopes) are untouched: this is "undo my
+     * slider fiddling", not "reset the app".
+     */
+    fun resetSceneParams() = setSceneParams(SceneParams.DEFAULT)
+
+    /**
+     * Pinch and twist on the canvas, as moves on the Zoom and Rotation
+     * sliders. Through [setSceneParams] like every other control, so the
+     * gesture is captured by a running take, saved into a preset and shown on
+     * the sliders themselves - a transform the panel could not see would drift
+     * from it the moment either was touched.
+     */
+    fun nudgeTransform(
+        zoomFactor: Float,
+        rotationDegrees: Float,
+    ) {
+        val p = _vizState.value.params
+        val next =
+            p.copy(
+                zoom = dev.musicviz.render.scene.TouchTransform.zoom(p.zoom, zoomFactor),
+                rotation = dev.musicviz.render.scene.TouchTransform.rotation(p.rotation, rotationDegrees),
+            )
+        if (next != p) setSceneParams(next)
     }
 
     fun reportShaderError(error: String?) {
@@ -1987,6 +2623,44 @@ class PlayerViewModel(
         }
     }
 
+    /**
+     * A shareable link for [name], or null when it is too long to survive a
+     * chat app (a preset carrying a custom shader) - the caller then offers
+     * the file instead.
+     */
+    fun presetShareLink(name: String): String? {
+        val preset = _vizState.value.presets.firstOrNull { it.name == name } ?: return null
+        val link = PresetLink.encode(PresetStore.toJson(preset))
+        return link.takeIf { it.length <= PresetLink.MAX_LINK_LENGTH }
+    }
+
+    /**
+     * Imports a preset from a link (or from text containing one). Returns the
+     * name it was saved under, or null when the text holds no readable preset.
+     *
+     * Imported under its own name with a numeric suffix on collision, like a
+     * take: overwriting a preset the user built because a stranger's happens
+     * to share its name would be destroying work to save a rename.
+     */
+    fun importPresetLink(text: String): String? {
+        val link = PresetLink.findIn(text) ?: return null
+        val json = PresetLink.decode(link) ?: return null
+        val incoming = runCatching { PresetStore.fromJson(json) }.getOrNull() ?: return null
+        val existing = _vizState.value.presets.map { it.name }.toSet()
+        var name = incoming.name.ifBlank { "Shared preset" }
+        var n = 2
+        while (name in existing) {
+            name = "${incoming.name} $n"
+            n++
+        }
+        presetStore.save(incoming.copy(name = name))
+        _vizState.update { it.copy(presets = BuiltInPresets.ALL + presetStore.list()) }
+        return name
+    }
+
+    /** On-disk file for a preset, for sharing one too big to be a link. */
+    fun presetFile(name: String): java.io.File? = presetStore.fileOf(name)
+
     fun deletePreset(name: String) {
         if (BuiltInPresets.isBuiltIn(name)) return
         presetStore.delete(name)
@@ -2000,6 +2674,8 @@ class PlayerViewModel(
         fps: Int,
         sceneFactory: VideoExporter.SceneFactory,
         destination: Uri? = null,
+        /** Trim to whole bars so the clip loops without a stumble. */
+        loopSafe: Boolean = false,
     ) {
         val uri = currentUri ?: return
         if (_exportState.value.running) return
@@ -2046,6 +2722,16 @@ class PlayerViewModel(
                             adsrConfigs = _adsrs.value,
                             safety = gui.safety,
                             requestedFps = fps,
+                            // A chosen take renders the performance instead of
+                            // the live settings. Loaded once, outside the frame
+                            // loop: the Timeline is a stateful cursor, and the
+                            // export coroutine is its only reader.
+                            paramsAt =
+                                _takeState.value.exportTake
+                                    ?.let { takeStore.load(it) }
+                                    ?.takeUnless { it.isEmpty }
+                                    ?.let { take -> { ms: Long -> take.stateAt(ms)?.params ?: _vizState.value.params } },
+                            loopSafe = loopSafe,
                             destination = destination,
                             onProgress = { p ->
                                 _exportState.update { it.copy(progress = 0.2f + p * 0.8f) }
@@ -2086,6 +2772,14 @@ class PlayerViewModel(
     }
 
     override fun onCleared() {
+        // The microphone goes first: an open AudioRecord outliving the
+        // ViewModel would keep the recording indicator up with nothing left
+        // to read it.
+        micCapture.stop()
+        // Stop feeding the wallpaper, so it falls back to its own idle motion
+        // instead of holding the last frame this session produced.
+        dev.musicviz.audio.AudioBus
+            .clear()
         engine.stop()
         audioFxController.release()
         player.release()

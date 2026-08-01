@@ -127,7 +127,10 @@ fun CrystalButton(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
-        CompositionLocalProvider(LocalContentColor provides if (filled) cs.onPrimary else cs.primary) {
+        // Text on the filled gem rides onAccentTextColor(): "White font" must
+        // not paint a label white on a near-white primary (Clear Quartz, Mono).
+        val label = if (filled) onAccentTextColor() else accentTextColor()
+        CompositionLocalProvider(LocalContentColor provides label) {
             ProvideTextStyle(MaterialTheme.typography.labelLarge.copy(letterSpacing = 0.8.sp)) {
                 content()
             }
@@ -294,11 +297,18 @@ fun CrystalNavBar(
             .height(68.dp)
             .selectableGroup(),
     ) {
+        // The icon keeps the accent; the LABEL follows accentTextColor() so
+        // "White font" reaches the nav writing too (the icon is not writing).
+        val selectedLabel = accentTextColor()
         items.forEachIndexed { i, item ->
             val sel = i == selected
             val tint by animateColorAsState(
                 if (sel) cs.primary else cs.onSurfaceVariant.copy(alpha = 0.75f),
                 label = "crystalNavTint",
+            )
+            val labelTint by animateColorAsState(
+                if (sel) selectedLabel else cs.onSurfaceVariant.copy(alpha = 0.75f),
+                label = "crystalNavLabel",
             )
             val gemAlpha by animateFloatAsState(if (sel) 1f else 0f, label = "crystalNavGem")
             Column(
@@ -319,7 +329,7 @@ fun CrystalNavBar(
                     item.label,
                     style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.2.sp),
                     fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
-                    color = tint,
+                    color = labelTint,
                 )
             }
         }
@@ -355,8 +365,10 @@ fun CrystalTabs(
             Tab(
                 selected = sel,
                 onClick = { onSelect(i) },
-                selectedContentColor = cs.primary,
-                unselectedContentColor = cs.onSurfaceVariant,
+                // Selection stays legible under "White font" (where both
+                // colours resolve to white) through the gem and the weight.
+                selectedContentColor = accentTextColor(),
+                unselectedContentColor = cs.onSurfaceVariant.copy(alpha = 0.7f),
                 text = {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(

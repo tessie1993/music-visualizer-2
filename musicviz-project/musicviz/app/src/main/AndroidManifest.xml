@@ -8,6 +8,20 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- "Live input": the visuals react to the room instead of to a track.
+         Requested at the moment the user turns that setting on, never at
+         launch; samples go straight into the analysis ring buffer and are
+         never written to disk or sent anywhere. The feature is optional, so
+         the microphone is not a required device feature. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
+    <!-- The live wallpaper is optional; the app is fully usable without a
+         launcher that supports one. -->
+    <uses-feature
+        android:name="android.software.live_wallpaper"
+        android:required="false" />
 
     <application
         android:name=".MusicVizApp"
@@ -27,6 +41,51 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!--
+              Shared presets. A preset is a self-contained document and the app
+              has no network permission, so a "shared preset" IS the preset,
+              carried inside the link; tapping one in a chat opens the app and
+              imports it. Nothing is fetched.
+            -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="musicviz"
+                    android:host="preset" />
+            </intent-filter>
         </activity>
+
+        <!--
+          The visualizer as a live wallpaper: the same renderer, on the style
+          and parameters the app was last left showing. It reacts to what the
+          app is playing and breathes on its own the rest of the time.
+        -->
+        <service
+            android:name=".wallpaper.VisualizerWallpaperService"
+            android:exported="true"
+            android:label="@string/wallpaper_label"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/wallpaper" />
+        </service>
+
+        <!-- Sharing a preset too long to be a link sends its .json; a raw
+             file:// uri cannot leave the app, so it goes out through here.
+             Scoped to the presets directory alone (preset_paths.xml). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.presets"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/preset_paths" />
+        </provider>
     </application>
 </manifest>

@@ -65,6 +65,18 @@ class VisualizerRenderer(
             )
         val PARTICLE_SCENES: List<String> =
             listOf(SceneIds.NEBULA, SceneIds.BURSTS, SceneIds.SWARM, SceneIds.FOUNTAIN, SceneIds.ORBITS)
+
+        /** Fingertip footprint for the touch smear, in sim units. */
+        private const val TOUCH_RADIUS = 0.11f
+
+        /** Queued drag frames kept while the GL thread catches up. */
+        private const val MAX_TOUCH_BACKLOG = 24
+
+        /** How long the borrowed ripple overlay outlives the last stroke. */
+        private const val TOUCH_LINGER_MS = 2_500L
+
+        /** Refraction floor while a finger is on the glass. */
+        private const val TOUCH_MIN_OVERLAY_STRENGTH = 0.35f
     }
 
     @Volatile
@@ -216,6 +228,9 @@ class VisualizerRenderer(
             waterDepth = f(from.waterDepth, to.waterDepth),
             waterSpecular = f(from.waterSpecular, to.waterSpecular),
             waterFlow = f(from.waterFlow, to.waterFlow),
+            waterLiquid = f(from.waterLiquid, to.waterLiquid),
+            waterLiquidFlow = f(from.waterLiquidFlow, to.waterLiquidFlow),
+            waterLiquidFade = f(from.waterLiquidFade, to.waterLiquidFade),
             rippleOverlayStrength = f(from.rippleOverlayStrength, to.rippleOverlayStrength),
             rippleOverlaySpecular = f(from.rippleOverlaySpecular, to.rippleOverlaySpecular),
         )
@@ -278,6 +293,45 @@ class VisualizerRenderer(
     /** Overlay grid short side: fixed budget tier (WaterScene tier 4-ish);
      *  the overlay rides on top of a full scene, so it stays cheap. */
     private val rippleOverlayRes = 256
+
+    /** One frame of a finger drag, in normalized screen space (y down). */
+    private class TouchStroke(
+        val nx: Float,
+        val ny: Float,
+        val ndx: Float,
+        val ndy: Float,
+        val dt: Float,
+        val strength: Float,
+    )
+
+    private val touchStrokes = java.util.concurrent.ConcurrentLinkedQueue<TouchStroke>()
+
+    @Volatile
+    private var lastTouchMs = 0L
+
+    /**
+     * Queues one frame of a finger drag ("smear the visuals"). Coordinates are
+     * normalized to the surface (0..1, y DOWN as the UI reports them); the GL
+     * thread converts to sim space, where y is up.
+     *
+     * Routing mirrors the FLUID/FlowField and WATER/ripple-overlay exclusivity
+     * the rest of this renderer keeps: on WATER the stroke goes into the
+     * style's own surface, on every other style into the shared ripple
+     * overlay, so the touch is never applied twice. Safe from the UI thread.
+     */
+    fun queueTouchStroke(
+        nx: Float,
+        ny: Float,
+        ndx: Float,
+        ndy: Float,
+        dt: Float,
+        strength: Float,
+    ) {
+        if (strength <= 0f) return
+        if (touchStrokes.size >= MAX_TOUCH_BACKLOG) return
+        lastTouchMs = SystemClock.elapsedRealtime()
+        touchStrokes.add(TouchStroke(nx, ny, ndx, ndy, dt, strength))
+    }
 
     /** Fresh mono PCM for projectM; set by the UI wiring. */
     @Volatile
@@ -643,8 +697,14 @@ class VisualizerRenderer(
         // FLUID/FlowField exclusivity above.
         val ripple = rippleOverlay
         val waterActive = scene is dev.musicviz.render.fluid.WaterScene
+        // Touch smear: a finger drag borrows the overlay even when the user
+        // never switched it on, and keeps it alive for TOUCH_LINGER_MS after
+        // the last stroke so the rings it left decay away instead of popping
+        // out of existence the moment the finger lifts.
+        val smearing = now - lastTouchMs < TOUCH_LINGER_MS
+        drainTouchStrokes(scene, ripple)
         val rippleOverlayOn =
-            p.rippleOverlayEnabled && ripple != null && ripple.available && !waterActive
+            (p.rippleOverlayEnabled || smearing) && ripple != null && ripple.available && !waterActive
         if (rippleOverlayOn && ripple != null) {
             ripple.waveSpeed = 1.2f * p.waterWaveSpeed.coerceIn(0.2f, 2f)
             ripple.damping = p.waterDamping.coerceIn(0.9f, 0.999f)
@@ -762,7 +822,15 @@ class VisualizerRenderer(
             rippleTex = ripple.heightTex
             rippleTexelW = ripple.texelW
             rippleTexelH = ripple.texelH
-            rippleStrength = p.rippleOverlayStrength.coerceIn(0f, 1f)
+            // While smearing, the overlay is floored so the finger is visible
+            // even with the user's own strength at zero - the touch is the
+            // request, and an invisible response reads as a broken feature.
+            rippleStrength =
+                if (smearing) {
+                    maxOf(p.rippleOverlayStrength, TOUCH_MIN_OVERLAY_STRENGTH).coerceIn(0f, 1f)
+                } else {
+                    p.rippleOverlayStrength.coerceIn(0f, 1f)
+                }
             rippleSpecular = p.rippleOverlaySpecular.coerceIn(0f, 1f)
         }
         GLES30.glActiveTexture(GLES30.GL_TEXTURE3)
@@ -859,6 +927,47 @@ class VisualizerRenderer(
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+    }
+
+    /**
+     * Hands queued finger drags to whichever surface owns the touch this
+     * frame, converting normalized screen coordinates (y down) into sim space
+     * (y up, x scaled by aspect).
+     */
+    private fun drainTouchStrokes(
+        scene: Scene,
+        ripple: dev.musicviz.render.fluid.RippleSim?,
+    ) {
+        // WaterScene owns the touch when it is the active style, exactly as it
+        // owns the refraction - the overlay stays off there, so routing a
+        // stroke to both would be two responses to one finger.
+        val water = scene as? dev.musicviz.render.fluid.WaterScene
+        // WaterScene takes normalized coordinates and scales by its own sim
+        // aspect; the shared overlay is scaled here, from its own.
+        val aspect = ripple?.aspect ?: 1f
+        while (true) {
+            val st = touchStrokes.poll() ?: return
+            if (water != null) {
+                water.queueTouchStroke(
+                    st.nx * 2f - 1f,
+                    1f - st.ny * 2f,
+                    st.ndx * 2f,
+                    -st.ndy * 2f,
+                    st.dt,
+                    st.strength,
+                )
+            } else if (ripple != null && ripple.available) {
+                ripple.queueStroke(
+                    (st.nx * 2f - 1f) * aspect,
+                    1f - st.ny * 2f,
+                    st.ndx * 2f * aspect,
+                    -st.ndy * 2f,
+                    st.dt,
+                    TOUCH_RADIUS,
+                    st.strength,
+                )
+            }
+        }
     }
 
     /**
