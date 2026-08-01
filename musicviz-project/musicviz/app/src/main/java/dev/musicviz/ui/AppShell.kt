@@ -27,10 +27,10 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -69,7 +69,8 @@ import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 /**
- * Navigation-v2 app shell: bottom nav (Home / Library / Visuals / Settings)
+ * Navigation-v2 app shell: bottom nav (Home / Library / Visuals / Studio /
+ * Settings)
  * with a persistent mini-player docked above it, and the fullscreen
  * visualizer (Now Playing) as an overlay expanded from the mini-player.
  * The single VisualizerView is owned here so renderer state (custom shaders,
@@ -184,6 +185,7 @@ fun AppRoot(
                                     CrystalNavItem("Home", Icons.Filled.Home),
                                     CrystalNavItem("Library", Icons.Filled.LibraryMusic),
                                     CrystalNavItem("Visuals", Icons.Filled.MusicNote),
+                                    CrystalNavItem("Studio", Icons.Filled.Movie),
                                     CrystalNavItem("Settings", Icons.Filled.Settings),
                                 ),
                             selected = dest,
@@ -195,7 +197,14 @@ fun AppRoot(
             ) { pad ->
                 Box(Modifier.padding(pad)) {
                     when (dest) {
-                        0 -> HomeScreen(viewModel, onOpenSearch = { searching = true }, onExpand = { expanded = true })
+                        0 ->
+                            HomeScreen(
+                                viewModel,
+                                onOpenSearch = { searching = true },
+                                onExpand = { expanded = true },
+                                onOpenLibrary = { dest = 1 },
+                                onOpenVisuals = { dest = 2 },
+                            )
                         1 -> LibraryScreen(viewModel, onPersistUri, onOpenSearch = { searching = true })
                         2 ->
                             VisualsHub(
@@ -207,7 +216,8 @@ fun AppRoot(
                                 // and it has not been sent to a second screen.
                                 liveBackdrop = gui.clearVisualsMenu && !expanded && !onSecondScreen,
                             )
-                        3 -> SettingsScreen(viewModel, visualizerView)
+                        3 -> StudioScreen(viewModel)
+                        4 -> SettingsScreen(viewModel, visualizerView)
                     }
                 }
             }
@@ -312,105 +322,6 @@ private fun MiniPlayer(
             modifier = Modifier.fillMaxWidth().height(2.dp),
             color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-        )
-    }
-}
-
-@Composable
-fun HomeScreen(
-    viewModel: PlayerViewModel,
-    onOpenSearch: () -> Unit,
-    onExpand: () -> Unit,
-) {
-    val state by viewModel.uiState.collectAsState()
-    val tick by viewModel.historyTick.collectAsState()
-    val recent = remember(tick) { viewModel.recentlyPlayed() }
-    val most = remember(tick) { viewModel.mostPlayed() }
-    LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    CrystalOverline("MusicViz")
-                    GlowTitle("Home")
-                }
-                IconButton(onClick = onOpenSearch) { Icon(Icons.Filled.Search, "Search") }
-            }
-        }
-        if (state.hasMedia) {
-            item {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .crystalPanel(
-                            0.4f,
-                            MaterialTheme.colorScheme.surfaceVariant,
-                            MaterialTheme.colorScheme.primary,
-                            corner = 20.dp,
-                        ).clickable(onClick = onExpand)
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Filled.PlayArrow,
-                        null,
-                        Modifier.softGlow(MaterialTheme.colorScheme.primary, 12.dp),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    Column(Modifier.padding(start = 10.dp)) {
-                        CrystalOverline("Resume")
-                        Text(state.title ?: "Current queue", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CrystalButton(onClick = viewModel::shuffleAllHistory) { Text("Shuffle all") }
-            }
-        }
-        if (recent.isNotEmpty()) {
-            item { CrystalOverline("Recently played", Modifier.padding(top = 6.dp)) }
-            item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(recent) { e -> HistoryChip(e.title) { viewModel.playTrack(e.uri) } }
-                }
-            }
-        }
-        if (most.isNotEmpty()) {
-            item { CrystalOverline("Most played", Modifier.padding(top = 6.dp)) }
-            item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(most) { e -> HistoryChip("${e.title} (${e.playCount})") { viewModel.playTrack(e.uri) } }
-                }
-            }
-        }
-        if (recent.isEmpty()) {
-            item { Text("Play something from the Library to see history here.", style = MaterialTheme.typography.bodyMedium) }
-        }
-    }
-}
-
-@Composable
-private fun HistoryChip(
-    label: String,
-    onClick: () -> Unit,
-) {
-    Box(
-        Modifier
-            .crystalPanel(
-                0.3f,
-                MaterialTheme.colorScheme.surfaceVariant,
-                MaterialTheme.colorScheme.primary,
-                corner = 24.dp,
-                glowStrength = 0.6f,
-            ).clickable(onClick = onClick),
-    ) {
-        Text(
-            label,
-            Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.bodyMedium,
         )
     }
 }
@@ -631,6 +542,9 @@ private fun AppSettingsTab(
                     })
                 }
             }
+        }
+        item {
+            SettingsSection("Other apps' audio") { ExternalAudioSettings(viewModel) }
         }
         item {
             SettingsSection("Live input & touch") { LiveInputSettings(viewModel) }

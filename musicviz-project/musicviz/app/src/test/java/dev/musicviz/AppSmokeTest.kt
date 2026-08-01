@@ -18,6 +18,7 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * Launches the real MainActivity on the JVM (Robolectric) and walks the
  * navigation: every bottom-nav destination, every Visuals tab, Settings.
+ * Adding a destination without adding it here is the gap this closes.
  * The nav tabs are matched via isSelectable to disambiguate from screen
  * headlines with the same text.
  */
@@ -44,6 +45,8 @@ class AppSmokeTest {
         compose.onNodeWithText("Allow music access").assertExists()
         navTo("Visuals")
         compose.onAllNodesWithText("Presets").onFirst().assertExists()
+        navTo("Studio")
+        compose.onNodeWithText("Open a video…").assertExists()
         navTo("Settings")
         // First collapsible section header; later ones may sit below the fold
         // of the lazy list on the small Robolectric display. Headers render

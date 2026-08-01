@@ -24,7 +24,24 @@ data class PlayerPrefs(
      * duration persists - a RUNNING timer is never restored across restarts.
      */
     val sleepTimerMinutes: Int = 0,
-)
+    /**
+     * Let the current track finish when the sleep timer runs out, instead of
+     * pausing mid-song.
+     */
+    val sleepFinishTrack: Boolean = false,
+    /**
+     * Volume ramp on pause, resume and manual skip, in milliseconds; 0 = off.
+     *
+     * NOT a crossfade - one player decodes one track - but the half of it that
+     * removes the hard edges, which is the half people actually notice.
+     */
+    val fadeMs: Int = 0,
+) {
+    companion object {
+        /** Longest fade offered. Past a few seconds it reads as a fault. */
+        const val MAX_FADE_MS = 6_000
+    }
+}
 
 /** Persists [PlayerPrefs] in shared preferences (same pattern as ThemeStore). */
 class PlayerPrefsStore(
@@ -43,6 +60,8 @@ class PlayerPrefsStore(
             keepScreenOn = prefs.getBoolean(KEY_SCREEN_ON, false),
             autoResume = prefs.getBoolean(KEY_AUTO_RESUME, false),
             sleepTimerMinutes = prefs.getInt(KEY_SLEEP_MIN, 0).coerceAtLeast(0),
+            sleepFinishTrack = prefs.getBoolean(KEY_SLEEP_FINISH, false),
+            fadeMs = prefs.getInt(KEY_FADE_MS, 0).coerceIn(0, PlayerPrefs.MAX_FADE_MS),
         )
 
     fun save(p: PlayerPrefs) {
@@ -57,10 +76,14 @@ class PlayerPrefsStore(
             .putBoolean(KEY_SCREEN_ON, p.keepScreenOn)
             .putBoolean(KEY_AUTO_RESUME, p.autoResume)
             .putInt(KEY_SLEEP_MIN, p.sleepTimerMinutes)
+            .putBoolean(KEY_SLEEP_FINISH, p.sleepFinishTrack)
+            .putInt(KEY_FADE_MS, p.fadeMs)
             .apply()
     }
 
     private companion object {
+        const val KEY_SLEEP_FINISH = "sleep_finish_track"
+        const val KEY_FADE_MS = "fade_ms"
         const val KEY_SHUFFLE = "shuffle"
         const val KEY_REPEAT = "repeat_mode"
         const val KEY_SPEED = "speed"

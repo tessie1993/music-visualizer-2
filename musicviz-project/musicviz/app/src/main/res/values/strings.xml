@@ -3,4 +3,5 @@
     <string name="app_name">MusicViz</string>
     <string name="wallpaper_label">MusicViz</string>
     <string name="wallpaper_description">Your last MusicViz style, reacting to whatever the app is playing and drifting gently when it is not.</string>
+    <string name="notification_listener_label">MusicViz — now playing in other apps</string>
 </resources>
