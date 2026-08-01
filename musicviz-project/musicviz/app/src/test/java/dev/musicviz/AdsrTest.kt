@@ -32,6 +32,9 @@ class AdsrTest {
         attack: Float = ATTACK,
         sustain: Float = 0.5f,
         retrigger: Boolean = true,
+        band: EnvBand = EnvBand.BASS,
+        gateThreshold: Float = 0.25f,
+        sustainTrack: Boolean = false,
     ): AdsrEngine =
         AdsrEngine().apply {
             configs =
@@ -44,8 +47,9 @@ class AdsrTest {
                         sustain = sustain,
                         release = 0.35f,
                         amount = 1f,
-                        band = EnvBand.BASS,
-                        gateThreshold = 0.25f,
+                        band = band,
+                        gateThreshold = gateThreshold,
+                        sustainTrack = sustainTrack,
                         retrigger = retrigger,
                     ),
                     AdsrConfig(),
@@ -56,7 +60,20 @@ class AdsrTest {
         beat: Boolean = false,
         strength: Float = 0f,
         bass: Float = 0.5f,
-    ): AudioFeatures = AudioFeatures.empty().copy(beat = beat, beatStrength = strength, bass = bass)
+        treble: Float = 0f,
+    ): AudioFeatures = AudioFeatures.empty().copy(beat = beat, beatStrength = strength, bass = bass, treble = treble)
+
+    /** Level the envelope settles at after one full-strength beat. */
+    private fun settled(
+        e: AdsrEngine,
+        f: AudioFeatures,
+        frames: Int = 120,
+    ): Float {
+        e.tick(DT, f.copy(beat = true, beatStrength = 1f))
+        var last = 0f
+        repeat(frames) { last = e.tick(DT, f)[0] }
+        return last
+    }
 
     /** Peak level reached over [frames] after one beat of the given strength. */
     private fun peakAfterBeat(
@@ -157,5 +174,72 @@ class AdsrTest {
         var peak = 0f
         repeat(12) { peak = maxOf(peak, e.tick(DT, features())[0]) }
         assertTrue("a soft hit after re-enabling must stay soft, got $peak", peak < 0.5f)
+    }
+
+    /*
+     * The four gate settings. `AdsrEngine` has read all of them since the
+     * envelopes landed, but until the Customize card grew controls for them
+     * nothing in the app could write anything but their defaults, so these are
+     * the first assertions that each one actually changes what comes out.
+     */
+
+    @Test
+    fun `the band selector decides which energy holds the envelope open`() {
+        // One audio frame, loud bass and silent treble, gated two ways: the
+        // choice of band is the whole difference between an envelope that
+        // holds and one that releases on identical audio.
+        val loudBassSilentTreble = features(bass = 0.8f, treble = 0f)
+        val onBass = settled(engine(band = EnvBand.BASS), loudBassSilentTreble)
+        val onTreble = settled(engine(band = EnvBand.TREBLE), loudBassSilentTreble)
+        assertTrue("bass over the gate must hold the envelope open, got $onBass", onBass > 0.1f)
+        assertEquals("a silent treble band must let the envelope release", 0f, onTreble, 1e-4f)
+    }
+
+    @Test
+    fun `the gate level decides how loud the band has to be to hold`() {
+        // Same band, same level: only the threshold moves. Below it the
+        // envelope sustains; above it the beat becomes a one-shot blip.
+        val moderateBass = features(bass = 0.4f)
+        val open = settled(engine(gateThreshold = 0.2f), moderateBass)
+        val shut = settled(engine(gateThreshold = 0.9f), moderateBass)
+        assertEquals("bass over the gate must hold at the sustain level", 0.5f, open, 1e-3f)
+        assertEquals("a gate the band never reaches must release the envelope", 0f, shut, 1e-4f)
+    }
+
+    @Test
+    fun `a tracking sustain follows the band instead of holding a fixed level`() {
+        // Both energies are inside the gate's hold band, so both envelopes
+        // stay in sustain and the only variable is where they hold.
+        val quiet = features(bass = 0.55f)
+        val loud = features(bass = 1f)
+        val trackedQuiet = settled(engine(gateThreshold = 0.6f, sustainTrack = true), quiet)
+        val trackedLoud = settled(engine(gateThreshold = 0.6f, sustainTrack = true), loud)
+        val fixedQuiet = settled(engine(gateThreshold = 0.6f), quiet)
+        val fixedLoud = settled(engine(gateThreshold = 0.6f), loud)
+        assertTrue(
+            "a tracking sustain must sit lower on quieter music ($trackedQuiet vs $trackedLoud)",
+            trackedQuiet < trackedLoud - 1e-3f,
+        )
+        assertEquals("a fixed sustain must ignore the band level", fixedQuiet, fixedLoud, 1e-4f)
+        assertEquals("a fixed sustain holds at the configured value", 0.5f, fixedLoud, 1e-3f)
+    }
+
+    @Test
+    fun `retrigger off ignores beats while the envelope is still held`() {
+        // A soft hit opens the envelope part-way, then a full-scale beat lands
+        // while it is still decaying or sustaining. Only a retriggering
+        // envelope may re-attack to the louder hit's ceiling.
+        fun peakAfterSoftThenLoud(retrigger: Boolean): Float {
+            val e = engine(retrigger = retrigger)
+            e.tick(DT, features(beat = true, strength = 0.35f))
+            repeat(6) { e.tick(DT, features()) }
+            e.tick(DT, features(beat = true, strength = 1f))
+            var peak = 0f
+            repeat(30) { peak = maxOf(peak, e.tick(DT, features())[0]) }
+            return peak
+        }
+        assertEquals("a retriggering envelope must follow the louder beat", 1f, peakAfterSoftThenLoud(true), 1e-3f)
+        val held = peakAfterSoftThenLoud(false)
+        assertTrue("retrigger off must not let a mid-envelope beat re-attack, got $held", held < 0.5f)
     }
 }
