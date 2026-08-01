@@ -59,6 +59,10 @@ class FountainScene(
             vertexData[o + 2] = if (alive) 3f + life[i] * 6f else 0f
             vertexData[o + 3] = hue[i]
             vertexData[o + 4] = if (alive) (life[i] * 0.7f).coerceIn(0f, 1f) else 0f
+            // Jet velocity: droplets stretch on the way up and round off at
+            // the top of the arc, where the vertical component crosses zero.
+            vertexData[o + VELOCITY_OFFSET] = if (alive) vx[i] * p.speed else 0f
+            vertexData[o + VELOCITY_OFFSET + 1] = if (alive) vy[i] * p.speed else 0f
         }
     }
 }

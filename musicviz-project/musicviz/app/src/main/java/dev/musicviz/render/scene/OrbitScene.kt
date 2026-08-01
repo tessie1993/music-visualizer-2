@@ -38,7 +38,8 @@ class OrbitScene(
                 if (radius[i] > 1.6f) radius[i] = 0.08f
             }
             val e = (bands[band[i] % n] * p.audioDrive).coerceIn(0f, 1.5f)
-            angle[i] += speed[i] * dt * p.speed * (0.4f + e)
+            val angularRate = speed[i] * p.speed * (0.4f + e)
+            angle[i] += angularRate * dt
             val wob = 1f + 0.07f * p.turbulence * sin(angle[i] * 3f + wobble[i])
             val r = radius[i] * swell * (1f + e * 0.08f) * wob
             val o = i * FLOATS_PER_PARTICLE
@@ -47,6 +48,11 @@ class OrbitScene(
             vertexData[o + 2] = 2.5f + e * 16f
             vertexData[o + 3] = radius[i].coerceIn(0f, 1f)
             vertexData[o + 4] = e.coerceIn(0f, 1f)
+            // Tangent of the ellipse the particle is riding: d/dt of the two
+            // lines above. Orbits are the one scene with no stored velocity,
+            // and without this its billboards would never lean into the arc.
+            vertexData[o + VELOCITY_OFFSET] = -sin(angle[i]) * r * angularRate
+            vertexData[o + VELOCITY_OFFSET + 1] = cos(angle[i]) * r * 0.85f * angularRate
         }
     }
 }

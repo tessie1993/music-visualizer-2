@@ -568,7 +568,7 @@ internal fun isShaderLookSceneId(sceneId: String): Boolean = sceneId in Visualiz
 /**
  * Styles that draw the CPU particle system, i.e. the only readers of
  * `particleShape`. `ParticleSceneBase.draw` is the one place `uShape` is
- * uploaded (`particle_frag.glsl`'s shapeMask), and its five subclasses -
+ * uploaded (`particle_frag.glsl`'s shapeField), and its five subclasses -
  * Nebula / Bursts / Swarm / Fountain / Orbits - are exactly
  * [VisualizerRenderer.PARTICLE_SCENES]. The fluid point layer
  * (`FluidParticles`) has no shape uniform at all: its sprites are always
@@ -580,7 +580,7 @@ internal fun isParticleShapeSceneId(sceneId: String): Boolean = sceneId in Visua
 /**
  * Styles that size a point sprite from `particleSize`, a strictly wider set
  * than [isParticleShapeSceneId]: `ParticleSceneBase.kt` uploads it as `uSize`
- * (`:152`), `FluidScene.kt` folds it into `pointScale` (`:333`) and
+ * (`:229`), `FluidScene.kt` folds it into `pointScale` (`:333`) and
  * `CurlFlowScene.kt` into its `particles.draw` point scale (`:212`). The fluid
  * half of that is exactly [isParticleLayerSceneId] - the same FluidParticles
  * layer that reads `fluidParticleDrag` - so this predicate is composed from

@@ -35,7 +35,8 @@ internal object CompositeGrade {
         /** `ShaderScene`: `view()` + `grade()` do everything in-shader. */
         SHADER,
 
-        /** `ParticleSceneBase`: `particle_vert` / `particle_frag`. */
+        /** `ParticleSceneBase`: `particle_vert` / `particle_frag` (instanced
+         *  billboards; grades and tone-maps in its own fragment stage). */
         PARTICLE,
 
         /** `ProjectMScene`: `pm_post_frag` grades and zooms but never pulses. */
@@ -118,7 +119,7 @@ internal object CompositeGrade {
      * Magnification the beat pulse adds at the peak of a beat, per unit of
      * the slider: `1.0 + uPulse * 0.22 * bump` in every shader scene's
      * `view()`. Deliberately the geometric (zoom) magnitude and NOT
-     * `ParticleSceneBase`'s 0.8, which swells a point SIZE - 0.8 of the whole
+     * `ParticleSceneBase`'s 0.8, which swells a sprite SIZE - 0.8 of the whole
      * screen would be a lurch, and the composite pulse is a zoom.
      */
     const val PULSE_GAIN: Float = 0.22f

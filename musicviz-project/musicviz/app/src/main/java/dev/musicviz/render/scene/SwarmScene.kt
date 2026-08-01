@@ -62,6 +62,10 @@ class SwarmScene(
             vertexData[o + 2] = 2.5f + e * 12f
             vertexData[o + 3] = phase[i]
             vertexData[o + 4] = e
+            // Flight velocity: fireflies streak while chasing the attractor
+            // and settle into round dots once they arrive.
+            vertexData[o + VELOCITY_OFFSET] = vx[i]
+            vertexData[o + VELOCITY_OFFSET + 1] = vy[i]
         }
     }
 }
