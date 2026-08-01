@@ -80,6 +80,13 @@ internal class WaterScene(
     private val prevViewport = IntArray(4)
     private val prevBlendFunc = IntArray(4)
 
+    /**
+     * This frame's splat requests, reused across frames: the emitters fill it
+     * and the loop below turns it into drops within the same call, so nothing
+     * is still reading last frame's contents when it is cleared.
+     */
+    private val splats = ArrayList<FluidSim.Splat>()
+
     var onShaderError: (String?) -> Unit = {}
 
     override fun init() {
@@ -336,7 +343,9 @@ internal class WaterScene(
         // Same clamp as the display pass' uHueSpan, via the shared helper -
         // an inline `coerceIn(MIN, 1f)` here left the top third of the Hue
         // range slider dead on the splashes while the pool colours moved.
-        for (s in emitters.tick(f, simDt, sim.aspect, baseHue, FluidHue.range(p.hueRange))) {
+        emitters.tick(f, simDt, sim.aspect, baseHue, FluidHue.range(p.hueRange), splats)
+        for (i in splats.indices) {
+            val s = splats[i]
             val speed = kotlin.math.sqrt(s.velX * s.velX + s.velY * s.velY) / FluidEmitters.BASE_SPEED
             if (WaterMath.isCatchWell(s.r, s.g, s.b)) {
                 // Catch points are drains, not splashes: they dimple the pool
