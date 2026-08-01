@@ -183,8 +183,14 @@ void main() {
     wave += sin(r1 * 24.0 - t * 4.1) * exp(-r1 * 1.8) * (0.5 + uMid * 1.6);
     wave += sin(r2 * 30.0 - t * 5.0) * exp(-r2 * 2.2) * (0.3 + uTreble * 1.4);
     // Beat rings skate outward across the ice, on the BPM-locked phase clock
-    // so they land with the music rather than free-running.
-    float ring = exp(-abs(r0 - fract(uBeatPhase) * 1.7) * 12.0) * uBeat * uBeatResponse;
+    // so they land with the music rather than free-running. The ring fades as
+    // it expands: without that, the phase wrapping 1 -> 0 teleports a lit
+    // annulus from the corners back to the centre once per beat, which at a
+    // fast tempo is a large-area luminance step - the thing VisualSafety's
+    // budget exists to bound, arriving from a path the budget cannot see.
+    float ringPhase = fract(uBeatPhase);
+    float ring =
+        exp(-abs(r0 - ringPhase * 1.7) * 12.0) * (1.0 - ringPhase) * uBeat * uBeatResponse;
     // Cool water body, brightened along wave crests (specular shimmer).
     float crest = pow(clamp(wave * 0.5 + 0.5, 0.0, 1.0), 3.0);
     vec3 col = pal(0.15 + wave * 0.25) * (0.16 + 0.30 * crest + uEnergy * 0.35);

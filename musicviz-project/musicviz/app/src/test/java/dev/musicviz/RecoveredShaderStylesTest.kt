@@ -1,9 +1,12 @@
 package dev.musicviz
 
+import dev.musicviz.render.BlueNoise
+import dev.musicviz.render.CompositeGrade
 import dev.musicviz.render.VisualizerRenderer
 import dev.musicviz.render.scene.SceneIds
 import dev.musicviz.ui.BuiltInPresets
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -156,6 +159,11 @@ class RecoveredShaderStylesTest {
         // of that gate: `postFx` bends the fetch for every style. `winter`
         // used to sample uFlow itself, which meant the field moved the picture
         // twice on the one style that read it.
+        val gate = CompositeGrade.gateFor(CompositeGrade.SceneFamily.SHADER)
+        assertFalse("the shader gate must leave geometry to view()", gate.geo)
+        assertFalse("the shader gate must leave mirror/invert to the scene", gate.mirrorInvert)
+        assertFalse("the shader gate must leave the colour grade to grade()", gate.grade)
+        assertFalse("the shader gate must leave the beat pulse to view()", gate.pulse)
         val composite = rawShader("composite_frag.glsl")
         assertTrue("the composite no longer owns the flow warp", composite.contains("uFlowStrength > 0.001"))
         RECOVERED.values.forEach { shader ->
@@ -174,6 +182,31 @@ class RecoveredShaderStylesTest {
                 "$shader uses a stale endless-zoom ramp instead of pow(2.0, uZoomPhase)",
                 src.contains("pow(2.0, uZoomPhase)"),
             )
+        }
+    }
+
+    @Test
+    fun theyAreDitheredByTheSharedBlueNoiseMaskLikeEveryOtherStyle() {
+        // Long smooth ramps are exactly what these two are made of - a pond
+        // falloff and a metaball field - so 8-bit banding would be visible on
+        // both. Neither needs to do anything for it: the mask is applied once,
+        // last, in the composite pass that every scene renders through. What
+        // WOULD break it is a scene adding its own noise on top, so that is
+        // what is asserted here alongside the shared path still existing.
+        val composite = rawShader("composite_frag.glsl")
+        assertTrue(
+            "the composite pass no longer applies the blue-noise dither",
+            composite.contains("texture(uNoise, gl_FragCoord.xy / 64.0).r - 0.5) * uDither"),
+        )
+        assertTrue(
+            "the renderer no longer uploads the dither amount",
+            source("render/VisualizerRenderer.kt").contains("BlueNoise.DITHER_AMOUNT"),
+        )
+        assertEquals("the mask is 64x64, which is what the /64.0 above assumes", 64, BlueNoise.SIZE)
+        RECOVERED.values.forEach { shader ->
+            val src = stripComments(rawShader(shader))
+            assertTrue("$shader dithers itself, doubling the composite's mask", !src.contains("uDither"))
+            assertTrue("$shader must not sample the mask directly", !src.contains("uNoise"))
         }
     }
 
