@@ -42,7 +42,8 @@ internal object CompositeGrade {
         MILKDROP,
 
         /**
-         * Fluid, Curl Flow, Water, Cymatics: no grading pass of their own, so
+         * Fluid, Curl Flow, Water, Cymatics, Hyperspace: no grading pass of
+         * their own, so
          * the composite owns every group for them. Named for the family it
          * started as; membership is "grades nothing itself", which is why the
          * Chladni plate joined it rather than getting a gate of its own.

@@ -551,6 +551,103 @@ object BuiltInPresets {
             ),
         )
 
+    /**
+     * Hyperspace starting points: the same room of living fractals, entered
+     * three different ways.
+     *
+     * "Breakthrough" is the style with nothing held back - every body, every
+     * species, the widest palette - and it is the one to look at first.
+     * "Chrysanthemum" holds the mirrored act, which is the dense symmetric
+     * fabric rather than a set of objects. "Coral garden" is the slow one: one
+     * species, long-lived bodies, barely any filigree, so the room reads as
+     * something growing instead of something happening.
+     */
+    private val HYPERSPACE_VARIANTS: List<Preset> =
+        listOf(
+            Preset(
+                name = "hyperspace · Breakthrough",
+                sceneId = dev.musicviz.render.scene.SceneIds.HYPERSPACE,
+                attack = 0.5f,
+                decay = 0.35f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        hyperJourney = dev.musicviz.render.scene.HyperspaceMath.JOURNEY_MUSIC,
+                        hyperSpecies = 0,
+                        hyperBodies = 1.2f,
+                        hyperLifetime = 12f,
+                        hyperSpin = 1.1f,
+                        hyperOrbit = 1.1f,
+                        hyperCamera = 1f,
+                        hyperFold = 0.5f,
+                        hyperGlow = 1.1f,
+                        hyperNeon = 1.2f,
+                        hyperField = 1f,
+                        hyperHaze = 0.7f,
+                        hyperTrap = 0.9f,
+                        palette = 0,
+                        hueRange = 1f,
+                    ),
+            ),
+            Preset(
+                name = "hyperspace · Chrysanthemum",
+                sceneId = dev.musicviz.render.scene.SceneIds.HYPERSPACE,
+                attack = 0.4f,
+                decay = 0.45f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        hyperJourney = dev.musicviz.render.scene.HyperspaceMath.JOURNEY_HOLD,
+                        hyperAct = dev.musicviz.render.scene.HyperspaceMath.Act.CHRYSANTHEMUM.ordinal,
+                        hyperSpecies = 0,
+                        hyperBodies = 1f,
+                        hyperLifetime = 18f,
+                        hyperSpin = 0.8f,
+                        hyperOrbit = 0.7f,
+                        hyperCamera = 0.7f,
+                        hyperFold = 0.35f,
+                        hyperGlow = 1f,
+                        hyperNeon = 1.4f,
+                        // The act that IS the fabric: the filigree carries it.
+                        hyperField = 1.5f,
+                        hyperHaze = 0.5f,
+                        hyperMirrorFolds = 6,
+                        hyperTrap = 1f,
+                        palette = 16,
+                        hueRange = 0.9f,
+                    ),
+            ),
+            Preset(
+                name = "hyperspace · Coral garden",
+                sceneId = dev.musicviz.render.scene.SceneIds.HYPERSPACE,
+                attack = 0.3f,
+                decay = 0.1f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        speed = 0.6f,
+                        hyperJourney = dev.musicviz.render.scene.HyperspaceMath.JOURNEY_CYCLE,
+                        hyperCycleSeconds = 55f,
+                        // CORAL is index 4 of HYPERSPACE_SPECIES: "Mixed" plus
+                        // the five species, so a species is its ordinal + 1.
+                        hyperSpecies = dev.musicviz.render.scene.HyperspaceMath.Species.CORAL.ordinal + 1,
+                        hyperBodies = 0.8f,
+                        hyperLifetime = 30f,
+                        hyperSpin = 0.5f,
+                        hyperOrbit = 0.45f,
+                        hyperCamera = 0.5f,
+                        hyperFold = 0.7f,
+                        hyperGlow = 0.9f,
+                        hyperNeon = 1.6f,
+                        hyperField = 0.25f,
+                        hyperHaze = 0.9f,
+                        hyperTrap = 1.2f,
+                        palette = 7,
+                        hueRange = 0.8f,
+                    ),
+            ),
+        )
+
     val ALL: List<Preset> =
         (VisualizerRenderer.PARTICLE_SCENES + VisualizerRenderer.SHADER_SCENES.keys).flatMap { id ->
             LOOKS.map { look ->
@@ -563,7 +660,7 @@ object BuiltInPresets {
                     params = look.params,
                 )
             }
-        } + FLUID_VARIANTS + CYMATICS_VARIANTS
+        } + FLUID_VARIANTS + CYMATICS_VARIANTS + HYPERSPACE_VARIANTS
 
     fun isBuiltIn(name: String): Boolean = name.contains(" · ")
 }
