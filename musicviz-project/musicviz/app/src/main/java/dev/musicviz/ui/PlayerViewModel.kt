@@ -265,6 +265,35 @@ data class ExportUiState(
 )
 
 /**
+ * The dialog state an export outcome produces.
+ *
+ * Lifted out of [PlayerViewModel.startExport] because this mapping is the only
+ * part of the failure path a unit test can reach - the export itself needs a
+ * hardware encoder and an EGL context - and it is the part that was wrong: a
+ * refusal to write used to arrive as a plain null and was published as
+ * running=false, progress=1, no uri, no error, which the dialog reads as
+ * neither a success nor a failure and drops back to the options form. The
+ * three outcomes must stay tellable apart from each other here.
+ */
+internal fun exportUiStateFor(
+    result: VideoExporter.Result,
+    customDestination: Boolean,
+): ExportUiState =
+    when (result) {
+        is VideoExporter.Result.Saved ->
+            ExportUiState(
+                running = false,
+                progress = 1f,
+                resultUri = result.uri,
+                customDestination = customDestination,
+            )
+        is VideoExporter.Result.Failed -> ExportUiState(running = false, error = result.message)
+        // A cancel is the user's own decision: it says nothing and goes back to
+        // the options, which is what an empty state renders as.
+        VideoExporter.Result.Cancelled -> ExportUiState(running = false)
+    }
+
+/**
  * Graded beat impulse a "switch on a musical moment" decision (intelligent
  * visual playlist, Random mode's switch-on-beat) treats as strong enough to
  * act on. Track-relative by construction - [AudioFeatures.beatImpulse] folds
@@ -422,6 +451,17 @@ class PlayerViewModel(
         // The beat grid and energy envelope model one continuous piece of
         // audio; another app's stream is a different one, like a track change.
         engine.reset()
+        if (failure != null) {
+            // The service is what the consent flow started, and it is running
+            // by the time we get here. A recorder that never opened leaves it -
+            // and its "this app can hear you" notification - standing over a
+            // capture that does not exist, with the only way back a switch the
+            // user just watched fail. Hand the analyzer back too, since nothing
+            // is going to feed it.
+            engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
+            dev.musicviz.audio.PlaybackCaptureService
+                .stop(getApplication())
+        }
         _externalAudio.update {
             it.copy(
                 active = failure == null,
@@ -469,6 +509,25 @@ class PlayerViewModel(
                 refusedByApp = refused,
             )
         if (next != state) _externalAudio.value = next
+    }
+
+    /**
+     * Notices a microphone that died under us and puts the switch back.
+     *
+     * [MicCapture.active] goes false on its own when the recorder stops mid-
+     * capture - a call takes the microphone, another app grabs it, the device
+     * refuses a read - but nothing else re-reads it: [_micState] is otherwise
+     * only ever written by [setMicEnabled]. So the switch stayed on, the
+     * "listening" affordance stayed up, and the visuals sat on a spectrum that
+     * had stopped arriving. Hands the analyzer back to playback the same way
+     * an explicit switch-off does.
+     */
+    private fun refreshMicState() {
+        if (!_micState.value.active || micCapture.active) return
+        engine.reset()
+        engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
+        _micState.value = MicState(active = false, failure = MicCapture.Failure.UNAVAILABLE)
+        setGuiPrefs(_guiPrefs.value.copy(micReactive = false))
     }
 
     /**
@@ -563,9 +622,15 @@ class PlayerViewModel(
      * defaults - only explicit presets survived. Reuses the preset JSON
      * serializer so every SceneParams field roundtrips (same coverage the
      * PresetRoundtripTest gate proves).
+     *
+     * Deliberately synchronous: this IS the first frame. One prefs string and
+     * one JSON parse, and deferring it would draw the default style with every
+     * slider at its default and then snap to the user's - the flash the live
+     * state exists to prevent. The saved-preset list, which costs a directory
+     * walk plus a parse per file, is what [refreshPresets] takes off this path.
      */
     private fun restoreVizState(): VizUiState {
-        val base = VizUiState(presets = BuiltInPresets.ALL + presetStore.list())
+        val base = VizUiState(presets = BuiltInPresets.ALL)
         val json = vizPrefs().getString("live_state", null) ?: return base
         return runCatching {
             val p = PresetStore.fromJson(json)
@@ -573,18 +638,111 @@ class PlayerViewModel(
         }.getOrDefault(base)
     }
 
-    /** Persists the live viz state; called from every mutation funnel. */
+    /**
+     * Re-reads the saved presets off the main thread.
+     *
+     * [PresetStore.list] walks the preset directory and parses every file in
+     * it, so a user with a couple of hundred presets was blocking their own
+     * first frame on a couple of hundred reads. The built-ins are in
+     * [restoreVizState]'s initial value, so the browser is populated from the
+     * start and the user's own presets join the list a moment later rather than
+     * replacing something wrong.
+     */
+    private fun refreshPresets() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val listed = presetStore.list()
+            withContext(Dispatchers.Main) {
+                // Fills the initial value only. Saving, deleting or moving a
+                // preset re-lists synchronously on the main thread, and a
+                // listing that began before one of those must not land on top
+                // of it - the untouched built-ins are still the same list
+                // instance restoreVizState started from, which is exactly the
+                // question "has anything published a list yet".
+                _vizState.update {
+                    if (it.presets !== BuiltInPresets.ALL) it else it.copy(presets = BuiltInPresets.ALL + listed)
+                }
+            }
+        }
+    }
+
+    /**
+     * Persists the live viz state; called from every mutation funnel.
+     *
+     * Coalesced onto a background thread rather than written where it is
+     * called. [setSceneParams] is the funnel for every Customize slider, for
+     * [nudgeTransform] (once per pinch/twist touch-move EVENT) and for take
+     * replay at [TAKE_REPLAY_HZ], and one write here is a 171-field
+     * serialization plus a rewrite of the whole prefs file - so a gesture used
+     * to produce tens of both per second on the main thread, with apply()'s
+     * queue then drained synchronously in Activity.onPause, turning the
+     * backlog into a stall on the way out.
+     *
+     * A trailing window, not a restarting debounce: a continuous stream (a
+     * slider held down, a take replaying) would keep resetting a restarting
+     * timer and never write at all. The pending write reads [_vizState] AFTER
+     * its delay instead of closing over the value that scheduled it, so what
+     * lands is always the latest state, and clearing the scheduled flag before
+     * the write means a change arriving mid-write schedules another rather
+     * than being folded into one that already read past it.
+     */
     private fun persistVizState() {
+        vizStateDirty = true
+        if (!vizPersistScheduled.compareAndSet(false, true)) return
+        viewModelScope.launch(Dispatchers.IO) {
+            delay(VIZ_PERSIST_WINDOW_MS)
+            vizPersistScheduled.set(false)
+            writeVizState()
+        }
+    }
+
+    /** Serializes the live viz state into prefs. Off the main thread, or at teardown. */
+    private fun writeVizState() {
+        // Cleared before the state is read, so a change that lands during the
+        // write is still seen as pending by the teardown path.
+        vizStateDirty = false
         val s = _vizState.value
         val json = PresetStore.toJson(Preset("__live__", s.sceneId, s.attack, s.decay, null, s.params))
-        vizPrefs().edit().putString("live_state", json).apply()
+        // commit(), not apply(): this already runs off the main thread, and
+        // apply()'s queued write is what onPause drains synchronously.
+        vizPrefs().edit().putString("live_state", json).commit()
     }
+
+    /** True when a viz-state change has not reached disk yet; read at teardown. */
+    @Volatile
+    private var vizStateDirty = false
+
+    private val vizPersistScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
 
     private val _exportState = MutableStateFlow(ExportUiState())
     val exportState: StateFlow<ExportUiState> = _exportState
 
-    private val _library = MutableStateFlow(LibraryState(trackLibrary.list(), musicPlaylists.list()))
+    /**
+     * Starts empty and is filled by [refreshLibrary]: the library file is one
+     * JSON document covering every imported track and the playlists are a file
+     * each, which is not work to make the first frame wait for. Every screen
+     * that reads this already renders an empty list as "nothing here yet" for
+     * the seconds before a device scan returns.
+     */
+    private val _library = MutableStateFlow(LibraryState())
     val library: StateFlow<LibraryState> = _library
+
+    /**
+     * Reads the imported-track library and the playlists off the main thread,
+     * once, to fill the initial value. Skips if anything has published a list
+     * meanwhile - an import or a playlist edit re-lists synchronously, and this
+     * listing may have begun before it.
+     */
+    private fun refreshLibrary() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val tracks = trackLibrary.list()
+            val playlists = musicPlaylists.list()
+            withContext(Dispatchers.Main) {
+                _library.update {
+                    if (it.tracks.isNotEmpty() || it.playlists.isNotEmpty()) it else it.copy(tracks = tracks, playlists = playlists)
+                }
+            }
+        }
+    }
 
     /**
      * App-side metadata overrides keyed by uri, derived from [library].
@@ -738,8 +896,18 @@ class PlayerViewModel(
         refreshAudioFx()
     }
 
-    private val _textures = MutableStateFlow(textureStore.list())
+    /** Filled by [refreshTextures]; only the milkdrop texture picker reads it. */
+    private val _textures = MutableStateFlow<List<MilkTexture>>(emptyList())
     val textures: StateFlow<List<MilkTexture>> = _textures
+
+    private fun refreshTextures() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val listed = textureStore.list()
+            // Same one-shot rule as the library: an import or a removal
+            // publishes its own list and this one may predate it.
+            withContext(Dispatchers.Main) { if (_textures.value.isEmpty()) _textures.value = listed }
+        }
+    }
 
     private val _lfos = MutableStateFlow(lfoStore.load())
     private val _adsrs = MutableStateFlow(lfoStore.loadAdsrs())
@@ -1057,6 +1225,12 @@ class PlayerViewModel(
         engine.start(viewModelScope)
         refreshNumericTitles()
         refreshTakes()
+        // Everything startup reads off disk that is not needed to draw the
+        // first frame. See each function for what it costs and why waiting for
+        // it shows nothing wrong in the meantime.
+        refreshPresets()
+        refreshLibrary()
+        refreshTextures()
         // Restore persisted playback options onto the freshly built player.
         // Auto-resume runs BEFORE the listener registers so the startup
         // preparation never records a phantom play into history (ExoPlayer
@@ -1155,6 +1329,7 @@ class PlayerViewModel(
                 enforceAbLoop()
                 refreshQueue()
                 refreshExternalAudio()
+                refreshMicState()
                 applyIntelligence()
                 advanceVizPlaylist()
                 advanceRandomMode()
@@ -1528,18 +1703,25 @@ class PlayerViewModel(
         }
         applyVizEntry(pick)
         if (s.randomizeColors) {
-            val cur = _vizState.value
-            val rolled =
-                cur.params.copy(
-                    palette = randomRng.nextInt(SceneParams.PALETTES.size),
-                    palette2 = randomRng.nextInt(SceneParams.PALETTES.size),
-                    paletteMix = if (randomRng.nextBoolean()) randomRng.nextFloat() * 0.6f else 0f,
-                    colorShift = randomRng.nextFloat(),
-                )
-            // A custom-palette override outranks the PALETTES lookup, so the
-            // new indices stay invisible unless both slots are cleared too.
-            _vizState.value =
+            // The roll is drawn out here, once: update re-runs its block on a
+            // losing compare-and-set, and drawing inside it would give the
+            // retry different colours from the ones this step decided on.
+            val palette = randomRng.nextInt(SceneParams.PALETTES.size)
+            val palette2 = randomRng.nextInt(SceneParams.PALETTES.size)
+            val paletteMix = if (randomRng.nextBoolean()) randomRng.nextFloat() * 0.6f else 0f
+            val colorShift = randomRng.nextFloat()
+            _vizState.update { cur ->
+                val rolled =
+                    cur.params.copy(
+                        palette = palette,
+                        palette2 = palette2,
+                        paletteMix = paletteMix,
+                        colorShift = colorShift,
+                    )
+                // A custom-palette override outranks the PALETTES lookup, so the
+                // new indices stay invisible unless both slots are cleared too.
                 cur.copy(params = PaletteStore.clear(PaletteStore.clear(rolled), second = true))
+            }
         }
     }
 
@@ -2863,13 +3045,20 @@ class PlayerViewModel(
                 if (currentUri == uri) {
                     timeline = t
                     val suggestion = SceneSuggester.suggestForTrack(t)
-                    _vizState.value =
-                        _vizState.value.copy(
+                    // update, not a read-then-write: this runs on Default while
+                    // the 500 ms poll writes the same flow from main, and a
+                    // read-then-write here loses whatever the poll published in
+                    // between - or, worse, the poll's own stale snapshot lands
+                    // on top of this one and the track is left spinning at 0 BPM
+                    // with no sections.
+                    _vizState.update {
+                        it.copy(
                             analyzing = false,
                             bpm = t.bpm,
                             sections = t.detectSections(),
                             suggestedSceneId = suggestion,
                         )
+                    }
                     // ExoPlayer may only be accessed from its application thread;
                     // this coroutine runs on Dispatchers.Default.
                     withContext(Dispatchers.Main) { applyIntelligence() }
@@ -2887,12 +3076,18 @@ class PlayerViewModel(
 
     private fun applyIntelligence() {
         if (_presetLocked.value) return
-        val s = _vizState.value
-        if (s.intelligenceMode != IntelligenceMode.AUTO) return
+        if (_vizState.value.intelligenceMode != IntelligenceMode.AUTO) return
         val t = timeline ?: return
         val f = t.featuresAt(player.currentPosition)
         val suggestion = SceneSuggester.suggest(t.bpm, f.rms, f.centroid)
-        if (suggestion != s.sceneId) _vizState.value = s.copy(sceneId = suggestion)
+        // The window between reading the state and writing it back spans
+        // featuresAt and suggest, and analysis finishing on Dispatchers.Default
+        // publishes into the same flow. A read-then-write here would put a
+        // pre-analysis snapshot back over it: spinner still on, BPM 0, sections
+        // empty - so section staging never fires for that track and the fluid
+        // choreography loses its journey context. Only the scene id is this
+        // function's to change.
+        _vizState.update { if (it.sceneId == suggestion) it else it.copy(sceneId = suggestion) }
     }
 
     // ---- Performance takes: record the performance, not the render ----
@@ -2933,14 +3128,20 @@ class PlayerViewModel(
     }
 
     /**
-     * Stops recording and saves the take. Returns the name it was saved
-     * under, or null when nothing was recorded.
+     * Stops recording and saves the take.
      *
      * A take with a single keyframe is discarded: it is a still, and offering
      * to replay one would be offering to replay nothing.
+     *
+     * The naming and the save go to IO and the name is not returned, because
+     * both halves are disk work: [defaultTakeName] reads and fully parses every
+     * saved take to find the lowest free number, and the save writes the whole
+     * take document - a long performance is megabytes of JSON. The Takes list
+     * is where the saved name shows up, and [refreshTakes] republishes it when
+     * the write lands.
      */
-    fun stopRecording(name: String? = null): String? {
-        val rec = recorder ?: return null
+    fun stopRecording(name: String? = null) {
+        val rec = recorder ?: return
         recordJob?.cancel()
         recordJob = null
         recorder = null
@@ -2948,15 +3149,20 @@ class PlayerViewModel(
         _takeState.update { it.copy(recording = false, recordedEvents = 0, recordedMs = 0L) }
         if (rec.size <= 1) {
             refreshTakes()
-            return null
+            return
         }
-        val label = name?.takeIf { it.isNotBlank() } ?: defaultTakeName()
-        val saved = takeStore.save(label, rec.finish(label, currentUri?.toString(), durationMs))
-        refreshTakes()
-        return saved
+        // Off the recorder before the hop: it is the ViewModel's only reference
+        // and startRecording() may replace it before the IO thread gets there.
+        val trackUri = currentUri?.toString()
+        val requested = name?.takeIf { it.isNotBlank() }
+        viewModelScope.launch(Dispatchers.IO) {
+            val label = requested ?: defaultTakeName()
+            takeStore.save(label, rec.finish(label, trackUri, durationMs))
+            refreshTakes()
+        }
     }
 
-    /** "Take 3" — the lowest number not already on disk. */
+    /** "Take 3" — the lowest number not already on disk. Reads every take; IO only. */
     private fun defaultTakeName(): String {
         val taken = takeStore.list().map { it.name }.toSet()
         var n = 1
@@ -2974,14 +3180,17 @@ class PlayerViewModel(
      * renderer's settings fade smooths between keyframes for free.
      */
     fun playTake(name: String) {
-        val timeline = takeStore.load(name) ?: return
-        if (timeline.isEmpty) return
         if (_takeState.value.recording) stopRecording()
         stopReplay()
-        val endMs = maxOf(timeline.lastEventMs(), timeline.durationMs)
-        _takeState.update { it.copy(replaying = name, replayMs = 0L, replayEndMs = endMs) }
         replayJob =
             viewModelScope.launch {
+                // Reading the take back is a whole document parsed - the same
+                // work refreshTakes goes to IO for, times one take rather than
+                // divided across the list.
+                val timeline = withContext(Dispatchers.IO) { takeStore.load(name) } ?: return@launch
+                if (timeline.isEmpty) return@launch
+                val endMs = maxOf(timeline.lastEventMs(), timeline.durationMs)
+                _takeState.update { it.copy(replaying = name, replayMs = 0L, replayEndMs = endMs) }
                 val startedAt = android.os.SystemClock.elapsedRealtime()
                 while (true) {
                     val at = android.os.SystemClock.elapsedRealtime() - startedAt
@@ -3402,13 +3611,7 @@ class PlayerViewModel(
                             },
                             isCancelled = { exportCancelled },
                         )
-                    _exportState.value =
-                        ExportUiState(
-                            running = false,
-                            progress = 1f,
-                            resultUri = result,
-                            customDestination = destination != null,
-                        )
+                    _exportState.value = exportUiStateFor(result, customDestination = destination != null)
                 } catch (t: Throwable) {
                     if (exportCancelled) {
                         // User-initiated cancel (can surface as our own
@@ -3515,8 +3718,25 @@ class PlayerViewModel(
     }
 
     override fun onCleared() {
-        // Whatever was playing when the process went away still counts.
+        // Whatever was playing when the process went away still counts, and it
+        // has to be on disk before this method returns - the queued write has
+        // no later moment to land in.
         flushListenTime()
+        historyStore.awaitWrites()
+        // The debounced live-state write rides viewModelScope, which is
+        // cancelled BEFORE onCleared runs, so the last slider the user touched
+        // is only on disk if it is written here.
+        if (vizStateDirty) writeVizState()
+        // A running export is not stopped by that same cancellation:
+        // VideoExporter's render loop never suspends, so the cancel flag is its
+        // only exit. Left set false, a hardware AVC encoder, an EGL context and
+        // a full GPU loop keep running for minutes with the UI gone and
+        // cancelExport() unreachable - and re-entering builds a ViewModel whose
+        // export state says idle, so a second export starts against a codec the
+        // first still holds. The flag is also what makes the exporter delete
+        // its half-written file, exactly as a user-cancel does.
+        cancelExport()
+        exportJob = null
         // The microphone goes first: an open AudioRecord outliving the
         // ViewModel would keep the recording indicator up with nothing left
         // to read it.
@@ -3549,5 +3769,13 @@ class PlayerViewModel(
 
         /** Volume ramp granularity. 25 ms is inaudible as steps. */
         const val FADE_STEP_MS = 25L
+
+        /**
+         * How long the live viz state is allowed to sit unwritten. Long enough
+         * that a slider drag, a pinch or a second of take replay is one write
+         * instead of tens; short enough that a process killed moments after the
+         * user let go still comes back to what they left.
+         */
+        const val VIZ_PERSIST_WINDOW_MS = 400L
     }
 }

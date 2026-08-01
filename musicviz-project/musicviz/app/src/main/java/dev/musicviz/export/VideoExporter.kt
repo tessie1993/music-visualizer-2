@@ -101,6 +101,28 @@ class VideoExporter(
         fun create(): Scene
     }
 
+    /**
+     * How an export ended, mirroring [dev.musicviz.export.StudioExporter.Result].
+     *
+     * Three outcomes, not a nullable Uri. A null told the caller only that no
+     * file arrived, which conflated a user cancel with the three ways saving
+     * can be refused outright - MediaStore declining the insert, and either
+     * output refusing to open for writing (some cloud/SAF providers do). The
+     * dialog then showed a bar running to 100% and then the options form
+     * again: no file, no message, and nothing to tell the user.
+     */
+    sealed interface Result {
+        data class Saved(
+            val uri: Uri,
+        ) : Result
+
+        data class Failed(
+            val message: String,
+        ) : Result
+
+        data object Cancelled : Result
+    }
+
     suspend fun export(
         audioUri: Uri,
         timeline: FeatureTimeline,
@@ -135,7 +157,7 @@ class VideoExporter(
         destination: Uri? = null,
         onProgress: (Float) -> Unit,
         isCancelled: () -> Boolean,
-    ): Uri? =
+    ): Result =
         withContext(Dispatchers.Default) {
             // If the user picked a destination via the system file picker, write
             // straight into it; otherwise fall back to the app's gallery folder
@@ -170,11 +192,14 @@ class VideoExporter(
                 }
             val outUri =
                 resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
-                    ?: return@withContext null
+                    ?: return@withContext Result.Failed(
+                        "Your Videos library would not accept a new file. Check that storage is not full, " +
+                            "or render to a folder you choose instead.",
+                    )
             val pfd = resolver.openFileDescriptor(outUri, "w")
             if (pfd == null) {
                 runCatching { resolver.delete(outUri, null, null) }
-                return@withContext null
+                return@withContext Result.Failed("The new file in your Videos library could not be opened for writing.")
             }
             try {
                 pfd.use {
@@ -199,13 +224,13 @@ class VideoExporter(
                     // A cancelled export is a truncated file with no audio;
                     // remove it instead of publishing it to the gallery.
                     runCatching { resolver.delete(outUri, null, null) }
-                    null
+                    Result.Cancelled
                 } else {
                     if (android.os.Build.VERSION.SDK_INT >= 29) {
                         val done = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }
                         resolver.update(outUri, done, null, null)
                     }
-                    outUri
+                    Result.Saved(outUri)
                 }
             } catch (e: Exception) {
                 runCatching { resolver.delete(outUri, null, null) }
@@ -228,9 +253,14 @@ class VideoExporter(
         loopSafe: Boolean,
         onProgress: (Float) -> Unit,
         isCancelled: () -> Boolean,
-    ): Uri? {
+    ): Result {
         val resolver = context.contentResolver
-        val pfd = resolver.openFileDescriptor(destination, "w") ?: return null
+        val pfd =
+            resolver.openFileDescriptor(destination, "w")
+                ?: return Result.Failed(
+                    "The folder you chose would not let the file be written. Some cloud providers refuse " +
+                        "this; try your Videos library or a folder on the device.",
+                )
         return try {
             pfd.use {
                 encodeInto(
@@ -252,9 +282,9 @@ class VideoExporter(
             }
             if (isCancelled()) {
                 runCatching { DocumentsContract.deleteDocument(resolver, destination) }
-                null
+                Result.Cancelled
             } else {
-                destination
+                Result.Saved(destination)
             }
         } catch (e: Exception) {
             runCatching { DocumentsContract.deleteDocument(resolver, destination) }

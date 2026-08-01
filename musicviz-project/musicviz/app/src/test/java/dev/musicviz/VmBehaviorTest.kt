@@ -5,10 +5,12 @@ import androidx.test.core.app.ApplicationProvider
 import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.ui.HistoryStore
 import dev.musicviz.ui.PlayerViewModel
+import dev.musicviz.ui.PresetStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -18,6 +20,27 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class VmBehaviorTest {
     private fun vm(): PlayerViewModel = PlayerViewModel(ApplicationProvider.getApplicationContext<Application>())
+
+    /**
+     * Waits for the debounced live-state write to reach the prefs file.
+     *
+     * The deadline is generous on purpose: what is being asserted is that the
+     * value lands at all, not how fast, and a tight bound would only make the
+     * suite flaky on a loaded machine.
+     */
+    private fun awaitPersistedLiveState(matches: (dev.musicviz.ui.Preset) -> Boolean) {
+        val prefs =
+            ApplicationProvider
+                .getApplicationContext<Application>()
+                .getSharedPreferences("musicviz-viz", android.content.Context.MODE_PRIVATE)
+        val deadline = System.currentTimeMillis() + 10_000L
+        while (System.currentTimeMillis() < deadline) {
+            val stored = prefs.getString("live_state", null)
+            if (stored != null && runCatching { matches(PresetStore.fromJson(stored)) }.getOrDefault(false)) return
+            Thread.sleep(20)
+        }
+        fail("The live viz state never reached the prefs file")
+    }
 
     @Test
     fun live_customization_survives_restart() {
@@ -32,6 +55,9 @@ class VmBehaviorTest {
             ),
         )
         first.setReactivity(attack = 0.83f, decay = 0.21f)
+        // The live state is written on a coalescing window off the main thread,
+        // so "has it been persisted yet" is a question with a deadline.
+        awaitPersistedLiveState { it.params.speed > 1.7f }
         // A new ViewModel = a fresh app process: the live state (scene, every
         // Customize slider, reactivity) must be restored, not reset to
         // defaults - the "customization loses all progress" bug.

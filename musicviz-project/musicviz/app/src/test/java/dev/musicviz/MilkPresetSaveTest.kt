@@ -47,10 +47,28 @@ class MilkPresetSaveTest {
         return File(File(app.filesDir, "milk").apply { mkdirs() }, name).apply { writeText(source) }
     }
 
+    /**
+     * The named preset, once the ViewModel's startup listing has published it.
+     *
+     * A fresh ViewModel starts with the built-ins and reads the user's own
+     * presets off the main thread - listing them means a directory walk and a
+     * parse per file, which is not work the first frame should wait for - so
+     * "is it there yet" is a question with a deadline.
+     */
     private fun presetNamed(
         v: PlayerViewModel,
         name: String,
-    ): Preset = v.vizState.value.presets.first { it.name == name }
+    ): Preset {
+        val deadline = System.currentTimeMillis() + 10_000L
+        while (System.currentTimeMillis() < deadline) {
+            v.vizState.value.presets.firstOrNull { it.name == name }?.let { return it }
+            org.robolectric.Shadows
+                .shadowOf(android.os.Looper.getMainLooper())
+                .idle()
+            Thread.sleep(10)
+        }
+        return v.vizState.value.presets.first { it.name == name }
+    }
 
     @Test
     fun saving_on_milkdrop_stores_the_milk_source_in_the_preset() {
