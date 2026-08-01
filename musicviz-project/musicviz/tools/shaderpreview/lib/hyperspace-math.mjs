@@ -392,6 +392,7 @@ export const Look = {
   cameraDistance: (actCamera, spread, maxBodyRadius) => Math.max(actCamera, spread + maxBodyRadius + 0.9),
   bodyTarget: (profileBodies, density) => clamp(Math.round(profileBodies * clamp(density, 0.1, 2)), 1, MAX_BLOOMS),
   farPlane: (camera, spread) => camera + spread + 6,
+  maxMarchStep: (scale) => Math.max(scale, 0.05),
 };
 
 export const MeltMath = {
@@ -401,6 +402,15 @@ export const MeltMath = {
   TOUCH_RADIUS: 0.13,
   BIRTH_BOOST: 1.8,
   MELT_SECONDS: 0.09,
+  // The dye splat is additive against a decay divisor, so a texel settles at
+  // injection/(dissipation*dt) - unbounded as the dissipation falls. The
+  // ceiling is applied at injection, which bounds the whole field: no other
+  // pass can raise its maximum.
+  DYE_CEILING: 0.25,
+  DYE_FADE_RATIO: 0.45,
+  MIN_DYE_DISSIPATION: 0.08,
+  dyeDissipation: (flowFade) =>
+    clamp(clamp(flowFade, 0, 4) * MeltMath.DYE_FADE_RATIO, MeltMath.MIN_DYE_DISSIPATION, 4),
   simFromWorld: (world, scale) => world / Math.max(scale, 0.05),
   insideSim: (x, y, aspect) => Math.abs(x) <= Math.max(aspect, 0.05) + 0.25 && Math.abs(y) <= 1.25,
   splatRadius: (worldRadius, scale) => clamp(worldRadius / Math.max(scale, 0.05), 0.05, 0.5),

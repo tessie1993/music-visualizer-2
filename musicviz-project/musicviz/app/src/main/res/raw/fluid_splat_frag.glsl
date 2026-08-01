@@ -15,6 +15,7 @@ uniform vec2 uCur;        // sim space
 uniform float uRadius;    // sim space
 uniform vec3 uValue;      // mode 0: (targetVel.xy in grid units, 0); mode 1: dye rgb
 uniform int uMode;
+uniform float uCeiling;   // mode 1: the most ink a texel may hold, per channel
 out vec4 fragColor;
 
 float segDist(vec2 a, vec2 b, vec2 p, out float fp) {
@@ -32,9 +33,25 @@ void main() {
     float taper = 1.0 - fp * 0.6;
     float m = exp(-l / max(uRadius, 1e-4)) * taper;
     if (uMode == 0) {
+        // Velocity BLENDS toward its target, which is what makes it bounded by
+        // the loudest splat no matter how many arrive.
         vec2 v = base.xy + (uValue.xy - base.xy) * m;
         fragColor = vec4(v, 0.0, 1.0);
     } else {
-        fragColor = vec4(base.rgb + uValue * m, 1.0);
+        // Dye ACCUMULATES - two splats crossing are brighter than one, which is
+        // the whole point of a dye field - and the decay it is balanced against
+        // is a divisor, so a texel settles at injection/(dissipation*dt). That
+        // has no upper bound as the dissipation falls, which is how a fade
+        // control at its minimum could paint a whole field white.
+        //
+        // So ink goes into the HEADROOM a texel has left. Far below the ceiling
+        // the increment is untouched and splats add exactly as they always did;
+        // as the medium fills, the increment fades out, and the min makes the
+        // ceiling a guarantee rather than an asymptote even for a single splat
+        // larger than the whole headroom. Scaled by the brightest channel and
+        // not per channel, so ink that saturates keeps its hue instead of
+        // sliding toward white.
+        float head = clamp(1.0 - max(base.r, max(base.g, base.b)) / max(uCeiling, 1e-4), 0.0, 1.0);
+        fragColor = vec4(min(base.rgb + uValue * m * head, vec3(uCeiling)), 1.0);
     }
 }

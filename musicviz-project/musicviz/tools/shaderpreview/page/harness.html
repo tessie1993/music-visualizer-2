@@ -180,7 +180,7 @@ class Melt {
   }
 
   /** FluidSim.runInjection: one pass per queued splat. */
-  injection(target, mode, splats) {
+  injection(target, mode, splats, dyeCeiling) {
     const gl = this.gl;
     for (const s of splats) {
       this.use('splat', target.width, target.height);
@@ -191,13 +191,16 @@ class Melt {
       if (mode === 0) this.set3f('uValue', s.velX, s.velY, 0);
       else this.set3f('uValue', s.r, s.g, s.b);
       gl.uniform1i(this.loc('splat', 'uMode'), mode);
+      // FluidSim.dyeCeiling, set unconditionally as the app sets it: the
+      // velocity pass ignores it, and a uniform the driver forgets is zero.
+      this.set1f('uCeiling', dyeCeiling);
       this.blit(target.write);
       target.swap();
     }
   }
 
   /** FluidSim.step, pass for pass. */
-  step({ dt, curlStrength, velocityDissipation, densityDissipation, splats }) {
+  step({ dt, curlStrength, velocityDissipation, densityDissipation, dyeCeiling, splats }) {
     const gl = this.gl;
     gl.disable(gl.BLEND);
     gl.bindVertexArray(this.vao);
@@ -218,7 +221,7 @@ class Melt {
     vel.swap();
 
     // 2. velocity injection
-    this.injection(vel, 0, splats);
+    this.injection(vel, 0, splats, dyeCeiling);
 
     // 3-4. curl + vorticity
     this.use('curl', this.curl.width, this.curl.height);
@@ -263,7 +266,7 @@ class Melt {
     vel.swap();
 
     // 8-9. dye injection + advection
-    this.injection(dye, 1, splats);
+    this.injection(dye, 1, splats, dyeCeiling);
     this.use('advect', dye.width, dye.height);
     this.bindTex('uVelocity', vel.read.tex, 0);
     gl.bindSampler(0, this.linearSampler);

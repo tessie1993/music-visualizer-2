@@ -61,6 +61,14 @@ uniform int uSteps;
 uniform int uIters;
 uniform int uBulbIters;
 uniform float uFar;
+/**
+ * Ceiling on one march step, in world units (HyperspaceLook.maxMarchStep).
+ * The geometry never needs it - a distance estimate is a lower bound, so a
+ * step that size cannot miss anything - but the three integrals taken along
+ * the ray do: they are quadratures, and one sample per room is not a
+ * quadrature of anything.
+ */
+uniform float uMaxStep;
 uniform float uHitEps;
 uniform float uBoundMargin;
 
@@ -195,10 +203,27 @@ vec3 meltAt(vec3 p) {
     return m > uMeltReach ? v * (uMeltReach / max(m, 1e-6)) : v;
 }
 
-/** The dye at a world point. */
+/**
+ * The dye at a world point, and zero where there is no dye.
+ *
+ * The field is a FINITE volume of ink - two sim units square - and the room
+ * is several times larger than it, so most of what a ray passes through is
+ * off the grid entirely. CLAMP_TO_EDGE answers a sample out there with the
+ * boundary texel, extended outward forever, which is how a stray colour on
+ * one edge of the field became a razor-sharp horizon across a whole empty
+ * frame. Unlike the velocity field - whose extrapolation only bends geometry,
+ * and only ever by uMeltReach - this one is read as RADIANCE, so an
+ * extrapolated value is light the scene invents. Outside the grid there is no
+ * ink; the border is a couple of texels wide so the field ends rather than
+ * stops.
+ */
 vec3 dyeAt(vec3 p) {
     if (uHasMelt < 0.5) return vec3(0.0);
-    return texture(uDyeTex, simUv((p / max(uMeltScale, 0.05)).xy)).rgb;
+    vec2 uv = simUv((p / max(uMeltScale, 0.05)).xy);
+    vec2 edge = min(uv, 1.0 - uv);
+    float inside = smoothstep(0.0, 0.02, min(edge.x, edge.y));
+    if (inside <= 0.0) return vec3(0.0);
+    return texture(uDyeTex, uv).rgb * inside;
 }
 
 // ========================================================================
@@ -392,7 +417,15 @@ float speciesDE(vec3 p, int species, float fold) {
  * ray never gets inside.
  */
 float map(vec3 p) {
-    float d = 1e9;
+    // The far plane, not a sentinel. With no body in range - which is every
+    // sample in an empty room, and every sample on the first frame of a scene,
+    // a style switch or a context loss - this is what the march is handed, and
+    // it is a DISTANCE the caller steps by. A 1e9 here made that step 4e8
+    // world units, which sampled the medium a hundred million units off its
+    // own grid and integrated it over the same length; the frame went white.
+    // Nothing beyond uFar is ever drawn, so "no surface within the far plane"
+    // is both true and the largest useful bound there is.
+    float d = uFar;
     gAuraW = 0.0;
     gAuraH = 0.0;
     gSurface = 0.0;
@@ -619,7 +652,16 @@ void main() {
         // straight through thin geometry (holes and shimmer, not anything
         // that reads as an overshoot). MeltMath.stepRelaxation owns the
         // number; it arrives folded into uMeltRelax.
-        float step = d * 0.82 * uMeltRelax;
+        //
+        // Then bounded three ways, because the estimate alone is a bound on
+        // what the ray can HIT and says nothing about what it integrates on
+        // the way: by uMaxStep, the scale the medium is defined on, so a
+        // single step cannot straddle the whole dye field; by what is left of
+        // the ray, so nothing past the far plane is integrated at all; and
+        // from below by the hit epsilon, since a step finer than the surface
+        // threshold cannot resolve anything and a zero step would spend the
+        // rest of the budget standing still.
+        float step = max(min(d * 0.82 * uMeltRelax, min(uMaxStep, uFar - t)), eps);
         glow +=
             palette(gHue + log(max(gTrap, 1e-6)) * 0.14 * uTrapColor, 0.78) *
                 gGlow * gSurface * exp(-d * 12.0) * step;
@@ -637,19 +679,34 @@ void main() {
         // and gives depth for free: the near side of a cloud of dye is
         // brighter than the far side, so the medium has a shape.
         if (uLiquid > 0.001) {
-            // Sampled a jittered fraction of a step along the ray, not at the
-            // step itself. Every pixel otherwise samples the medium at the
-            // same depths, and the integral quantizes into concentric shells -
-            // it looked like contour lines drawn on the fog. Offsetting by a
-            // whole step decorrelates neighbours completely.
+            // Sampled at a jittered point WITHIN this segment rather than at
+            // its near end. Every pixel otherwise samples the medium at the
+            // same depths and the integral quantizes into concentric shells -
+            // it looked like contour lines drawn on the fog. The segment is
+            // now bounded by uMaxStep, so this is a stratified sample of the
+            // stretch being integrated; before, it was an offset of a whole
+            // open-space step, which put the sample tens of world units away
+            // from the piece of ray it was supposed to represent.
             vec3 ink = dyeAt(p + rd * (jitter * step));
             float dens = uLiquid * dot(ink, vec3(0.333));
-            glow += ink * trans * dens * step * 0.35;
             // Absorbs faster than it emits, so the medium stays a set of
             // wisps and streaks. Emitting as fast as it absorbs makes an
             // inked region a solid wall of colour once the ray is a few units
             // into it, which is a wash, not a fluid.
-            trans *= exp(-dens * step * 1.6);
+            //
+            // Integrated in CLOSED FORM over the segment, not as emission
+            // times length. For a medium that is constant along the segment
+            // the transport equation has an exact solution, and the two forms
+            // agree to first order in the step - but the sum form is only
+            // bounded by the emission/extinction ratio in the limit of many
+            // small steps, and this march deliberately takes long ones
+            // wherever there is nothing to hit. The closed form carries that
+            // bound at ANY step size, which is what makes the medium's
+            // brightness a property of the ink rather than of how far the
+            // geometry happened to let the ray jump.
+            float absorbed = 1.0 - exp(-dens * step * 1.6);
+            glow += ink * trans * (0.35 / 1.6) * absorbed;
+            trans *= 1.0 - absorbed;
         }
         t += step;
         if (t > uFar) break;

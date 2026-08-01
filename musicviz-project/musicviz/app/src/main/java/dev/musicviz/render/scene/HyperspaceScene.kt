@@ -350,6 +350,7 @@ internal class HyperspaceScene(
         GLES30.glUniform1i(loc("uIters"), budget.iterations)
         GLES30.glUniform1i(loc("uBulbIters"), budget.bulbIterations)
         GLES30.glUniform1f(loc("uFar"), farPlane)
+        GLES30.glUniform1f(loc("uMaxStep"), HyperspaceLook.maxMarchStep(MeltMath.DEFAULT_SCALE))
         GLES30.glUniform1f(loc("uHitEps"), HyperspaceLook.HIT_EPSILON)
         GLES30.glUniform1f(loc("uBoundMargin"), HyperspaceLook.BOUND_MARGIN)
         GLES30.glUniform1f(loc("uAct"), journey.actPosition)

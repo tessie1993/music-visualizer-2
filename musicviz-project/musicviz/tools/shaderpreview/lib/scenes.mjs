@@ -65,7 +65,7 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
 
   const supplies = new Set([
     'uResolution', 'uTime', 'uBloomCount', 'uBloomPos', 'uBloomShape', 'uBloomLook', 'uBloomRot',
-    'uCamPos', 'uCamBasis', 'uFov', 'uSteps', 'uIters', 'uBulbIters', 'uFar', 'uHitEps',
+    'uCamPos', 'uCamBasis', 'uFov', 'uSteps', 'uIters', 'uBulbIters', 'uFar', 'uMaxStep', 'uHitEps',
     'uBoundMargin', 'uAct', 'uField', 'uMirror', 'uMirrorFolds', 'uGlow', 'uNeon', 'uHaze',
     'uTrapColor', 'uHueSpread', 'uBaseHue', 'uHueSpan', 'uHasMelt', 'uMelt', 'uMeltGain',
     'uMeltReach', 'uMeltScale', 'uMeltAspect', 'uMeltRelax', 'uStain', 'uLiquid', 'uRidges',
@@ -159,6 +159,7 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
       uIters: { t: '1i', v: budget.iterations },
       uBulbIters: { t: '1i', v: budget.bulbIterations },
       uFar: { t: '1f', v: farPlane },
+      uMaxStep: { t: '1f', v: H.Look.maxMarchStep(H.MeltMath.DEFAULT_SCALE) },
       uHitEps: { t: '1f', v: H.Look.HIT_EPSILON },
       uBoundMargin: { t: '1f', v: H.Look.BOUND_MARGIN },
       uAct: { t: '1f', v: journey.actPosition },
@@ -198,7 +199,8 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
         dt: clamp(dt, 0, 1 / 30),
         curlStrength: clamp(p.hyperSwirl, 0, 50) * (1 + 0.5 * f.mid),
         velocityDissipation: clamp(p.hyperFlowFade, 0, 4),
-        densityDissipation: clamp(p.hyperFlowFade * 0.45, 0, 4),
+        densityDissipation: H.MeltMath.dyeDissipation(p.hyperFlowFade),
+        dyeCeiling: H.MeltMath.DYE_CEILING,
       } : null,
       debug: {
         time,

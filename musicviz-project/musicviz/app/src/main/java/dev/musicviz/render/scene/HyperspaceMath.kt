@@ -1131,6 +1131,27 @@ object HyperspaceLook {
     ): Float = camera + spread + 6f
 
     /**
+     * The longest one march step may be, in world units.
+     *
+     * The geometry does not need this. A distance estimate is a lower bound on
+     * the distance to a surface, so stepping the whole of it can never miss
+     * anything, and in an empty room that bound is the far plane - one step
+     * across the entire scene. What does need it is everything the march
+     * INTEGRATES along the way: the emissive haze, the aura and the liquid
+     * light are quadratures in the step length, and a quadrature that takes
+     * one sample per room is not sampling the medium, it is sampling a point
+     * of it and multiplying by the room.
+     *
+     * So the cap is the scale the medium is defined on. The dye grid spans two
+     * sim units, which is `2 * scale` world units, and a step longer than half
+     * of that steps clean over the field it is meant to be integrating.
+     * Wherever geometry is near, the estimate is already far below this and
+     * the cap never binds - it costs nothing in the case that was already
+     * right, and bounds the case that was not.
+     */
+    fun maxMarchStep(scale: Float): Float = max(scale, 0.05f)
+
+    /**
      * Surface hit threshold, relative to the step's own distance from the eye:
      * a constant epsilon either shimmers in the distance or wastes steps up
      * close. Returned as the coefficient of `t` the shader multiplies.
