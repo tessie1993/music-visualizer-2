@@ -47,6 +47,10 @@ import dev.musicviz.render.scene.SceneParams
  * here was orphaned by the navigation refactor and has been deleted rather
  * than left as a second, Fluid-less copy of the same panel.
  *
+ * The tabs themselves are `render.scene.CustomizeTab` - the hub builds its tab
+ * row from that enum and `ParamRandomizer` keys its roll by the same entries,
+ * so "Randomize <tab>" rolls exactly the controls the tab below it renders.
+ *
  * Tabs group controls the way a VJ thinks about them: Motion (how it moves),
  * Shape (geometry and distortion), Behavior (audio reactivity), Color
  * (palettes and grading), FX (screen effects, settings fade, ADSR envelopes

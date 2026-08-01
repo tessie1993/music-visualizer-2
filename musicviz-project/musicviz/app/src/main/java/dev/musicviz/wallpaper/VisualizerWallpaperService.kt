@@ -98,6 +98,13 @@ class VisualizerWallpaperService : WallpaperService() {
                     engine.sceneParams = preset.params
                 }
             }
+            // The .milk the app was last showing, from the same store: on the
+            // milkdrop style the preset file IS the picture, so a wallpaper
+            // that restored only the style and its parameters came up on
+            // projectM's idle "M" logo instead of the visual it was set from.
+            prefs.getString("milk_path", null)?.let { path ->
+                if (java.io.File(path).isFile) engine.loadMilkPreset(path)
+            }
             // The photosensitivity limits follow the user's setting here too.
             // A wallpaper is seen more often and less deliberately than the
             // app, so it is the last place those should quietly not apply.
