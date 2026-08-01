@@ -238,6 +238,12 @@ data class ExternalAudioState(
     val refusingApp: String? get() = if (refusedByApp) nowPlaying?.appLabel else null
 }
 
+/** The player's queue as the Now Playing queue tab reads it. */
+data class QueueUiState(
+    val tracks: List<QueueTrack> = emptyList(),
+    val index: Int = 0,
+)
+
 data class ExportUiState(
     val running: Boolean = false,
     /** True when the user picked the output location via the file picker. */
@@ -931,7 +937,21 @@ class PlayerViewModel(
             null
         }
 
-    private var timeline: FeatureTimeline? = null
+    private var timelineBacking: FeatureTimeline? = null
+
+    /**
+     * Offline analysis for the current track. A property rather than a field
+     * so the waveform is republished from every assignment site - there are
+     * five, on three different paths (cache hit, fresh analysis, take replay),
+     * and a seek bar that only redrew on one of them would be blank half the
+     * time.
+     */
+    private var timeline: FeatureTimeline?
+        get() = timelineBacking
+        set(value) {
+            timelineBacking = value
+            _waveform.value = value?.let(::waveformOf)
+        }
     private var currentUri: Uri? = null
     private var exportJob: Job? = null
     private var beatRedecideJob: Job? = null
@@ -964,6 +984,59 @@ class PlayerViewModel(
     /** Keep the current preset: auto/random switching skips while locked. */
     private val _presetLocked = MutableStateFlow(false)
     val presetLocked: StateFlow<Boolean> = _presetLocked
+
+    // Player state, declared up here for the same construction-order reason as
+    // the fields above rather than in the "Player" section it belongs to: the
+    // init block below starts the 500 ms poll, which touches the A-B loop and
+    // the queue on its FIRST iteration. A property declared after the init
+    // block is still null when that runs, and Kotlin does not catch it - it
+    // surfaces as an NPE inside the ViewModel constructor, i.e. as the app
+    // failing to start.
+    private val favouritesStore = FavouritesStore(application)
+
+    private val _favourites = MutableStateFlow(favouritesStore.all().toSet())
+
+    /** Every marked uri, so a heart anywhere can be drawn from one truth. */
+    val favourites: StateFlow<Set<String>> = _favourites
+
+    private val _waveform = MutableStateFlow<FloatArray?>(null)
+
+    /**
+     * Loudness envelope of the current track, [WAVEFORM_BUCKETS] wide and
+     * normalized to its own peak; null until the track has been analysed.
+     *
+     * Free, in the sense that matters: the offline analyzer already produces a
+     * per-frame RMS curve for the visuals, so a waveform seek bar is a
+     * reduction of numbers the app computed anyway rather than a second pass
+     * over the file.
+     */
+    val waveform: StateFlow<FloatArray?> = _waveform
+
+    private val _lyrics = MutableStateFlow<Lyrics?>(null)
+
+    /** Words for the current track, timed when an .lrc was found. */
+    val lyrics: StateFlow<Lyrics?> = _lyrics
+
+    private val _abLoop = MutableStateFlow<AbLoop?>(null)
+
+    /** The section being looped, or null. */
+    val abLoop: StateFlow<AbLoop?> = _abLoop
+
+    private val _queue = MutableStateFlow(QueueUiState())
+
+    /** The queue as the player holds it, for the Now Playing queue tab. */
+    val queue: StateFlow<QueueUiState> = _queue
+
+    // Volume has two independent owners - the sleep timer's fade-out and the
+    // play/pause/skip fade - and multiplying them is what keeps the two from
+    // overwriting each other's ramp.
+    @Volatile
+    private var sleepVolume: Float = 1f
+
+    @Volatile
+    private var fadeVolume: Float = 1f
+
+    private var fadeJob: Job? = null
 
     /** 0 = off, 1 = random, 2 = intelligent. */
     private val _autoMode = MutableStateFlow(0)
@@ -1068,6 +1141,8 @@ class PlayerViewModel(
             while (true) {
                 refresh()
                 accrueListenTime()
+                enforceAbLoop()
+                refreshQueue()
                 refreshExternalAudio()
                 applyIntelligence()
                 advanceVizPlaylist()
@@ -1162,11 +1237,21 @@ class PlayerViewModel(
                     val remaining = endMs - android.os.SystemClock.elapsedRealtime()
                     if (remaining <= 0L) break
                     _sleepTimerRemainingMs.value = remaining
-                    player.volume = PlaybackMath.sleepFadeVolume(remaining)
+                    sleepVolume = PlaybackMath.sleepFadeVolume(remaining)
+                    applyVolume()
                     delay(if (remaining <= PlaybackMath.SLEEP_FADE_MS) 100 else 500)
                 }
+                // "Finish this track" waits out whatever is playing when the
+                // clock runs down, so a timer set mid-song does not cut it off
+                // thirty seconds from the end.
+                if (_playerPrefs.value.sleepFinishTrack) {
+                    sleepVolume = 1f
+                    applyVolume()
+                    while (player.isPlaying) delay(500)
+                }
                 player.pause()
-                player.volume = 1f
+                sleepVolume = 1f
+                applyVolume()
                 _sleepTimerRemainingMs.value = null
                 sleepTimerJob = null
             }
@@ -1177,7 +1262,8 @@ class PlayerViewModel(
         sleepTimerJob?.cancel()
         sleepTimerJob = null
         _sleepTimerRemainingMs.value = null
-        player.volume = 1f
+        sleepVolume = 1f
+        applyVolume()
     }
 
     // ---- Visual playlist ----
@@ -1942,6 +2028,219 @@ class PlayerViewModel(
     /** Uri of whatever is loaded in the player, for artwork lookups. */
     fun currentTrackUri(): String? = currentUri?.toString()
 
+    // ---- Player: favourites, waveform, lyrics, A-B loop, queue, fades ----
+
+    /** Marks or unmarks the playing track. No-op with nothing loaded. */
+    fun toggleFavourite(uri: String? = currentUri?.toString()) {
+        val target = uri ?: return
+        favouritesStore.toggle(target)
+        _favourites.value = favouritesStore.all().toSet()
+        _historyTick.update { it + 1 }
+    }
+
+    /** The favourites shelf on Home, newest mark first. */
+    fun homeFavourites(limit: Int = 12): List<HomeTrack> {
+        val byUri = HashMap<String, Pair<String, String>>()
+        _deviceTracks.value.forEach { byUri[it.uri] = it.title to it.artist }
+        _library.value.tracks.forEach { t -> byUri[t.uri] = t.title to t.artist }
+        return favouritesStore.all().take(limit).map { uri ->
+            val known = byUri[uri]
+            val fallback = historyStore.entryFor(uri)
+            HomeTrack(
+                uri = uri,
+                title = known?.first ?: fallback?.title ?: "Unknown track",
+                artist = known?.second ?: fallback?.artist.orEmpty(),
+            )
+        }
+    }
+
+    /**
+     * Peak-per-bucket rather than mean.
+     *
+     * A mean of ~60 frames per bucket flattens a track into a low grey ridge -
+     * the quiet parts pull every bucket down. Peak keeps the shape a person
+     * recognises as their song, which is the entire reason to draw it.
+     */
+    private fun waveformOf(timeline: FeatureTimeline): FloatArray? {
+        val frames = timeline.frames
+        if (frames.size < WAVEFORM_BUCKETS) return null
+        val out = FloatArray(WAVEFORM_BUCKETS)
+        var peak = 0f
+        for (b in 0 until WAVEFORM_BUCKETS) {
+            val from = b * frames.size / WAVEFORM_BUCKETS
+            val to = ((b + 1) * frames.size / WAVEFORM_BUCKETS).coerceAtMost(frames.size)
+            var max = 0f
+            for (i in from until to) {
+                val v = frames[i].features.rms
+                if (v > max) max = v
+            }
+            out[b] = max
+            if (max > peak) peak = max
+        }
+        if (peak <= 0f) return null
+        for (i in out.indices) out[i] = out[i] / peak
+        return out
+    }
+
+    private fun loadLyricsFor(uri: Uri?) {
+        _lyrics.value = null
+        if (uri == null) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val found = LyricsLoader.load(getApplication(), uri)
+            // A track change while the file was being read means these words
+            // belong to a track that is no longer playing.
+            withContext(Dispatchers.Main) { if (currentUri == uri) _lyrics.value = found }
+        }
+    }
+
+    /** An A-B loop: [startMs] set, [endMs] null until the second tap. */
+    data class AbLoop(
+        val startMs: Long,
+        val endMs: Long? = null,
+    ) {
+        val armed: Boolean get() = endMs != null
+    }
+
+    /**
+     * One button, three states: tap to drop A, tap again to drop B and start
+     * looping, tap a third time to clear.
+     *
+     * A B that lands before its A is treated as the user re-marking A rather
+     * than as an error - they seeked backwards and tapped, and a loop of
+     * negative length is not what anyone meant.
+     */
+    fun cycleAbLoop() {
+        val at = player.currentPosition.coerceAtLeast(0)
+        val loop = _abLoop.value
+        _abLoop.value =
+            when {
+                loop == null -> AbLoop(at)
+                loop.endMs == null && at > loop.startMs + MIN_LOOP_MS -> loop.copy(endMs = at)
+                loop.endMs == null -> AbLoop(at)
+                else -> null
+            }
+    }
+
+    fun clearAbLoop() {
+        _abLoop.value = null
+    }
+
+    /** Sends playback back to A when it runs past B. Called from the poll. */
+    private fun enforceAbLoop() {
+        val loop = _abLoop.value ?: return
+        val end = loop.endMs ?: return
+        if (player.currentPosition >= end) player.seekTo(loop.startMs)
+    }
+
+    private fun refreshQueue() {
+        val tracks =
+            (0 until player.mediaItemCount).map { i ->
+                val item = player.getMediaItemAt(i)
+                QueueTrack(
+                    uri = item.localConfiguration?.uri?.toString().orEmpty(),
+                    title =
+                        item.mediaMetadata.title?.toString()
+                            ?: item.localConfiguration
+                                ?.uri
+                                ?.lastPathSegment
+                                ?.substringAfterLast('/')
+                                ?.substringBeforeLast('.')
+                            ?: "Track ${i + 1}",
+                    artist =
+                        item.mediaMetadata.artist
+                            ?.toString()
+                            .orEmpty(),
+                )
+            }
+        val next = QueueUiState(tracks, player.currentMediaItemIndex)
+        if (next != _queue.value) _queue.value = next
+    }
+
+    /** Drops one entry. Removing what is playing advances, as ExoPlayer does. */
+    fun removeQueueItem(index: Int) {
+        if (index !in 0 until player.mediaItemCount) return
+        player.removeMediaItem(index)
+        refreshQueue()
+    }
+
+    /** Drag-reorder in the queue tab. */
+    fun moveQueueItem(
+        from: Int,
+        to: Int,
+    ) {
+        val count = player.mediaItemCount
+        if (from !in 0 until count || to !in 0 until count || from == to) return
+        player.moveMediaItem(from, to)
+        refreshQueue()
+    }
+
+    private fun applyVolume() {
+        player.volume = (sleepVolume * fadeVolume).coerceIn(0f, 1f)
+    }
+
+    /**
+     * Ramps the output between [from] and [to] over the user's fade length,
+     * then runs [then].
+     *
+     * Not a crossfade: one player cannot decode two tracks at once, and a
+     * second ExoPlayer to overlap them would double the decode cost and give
+     * the analyzer two streams to sum. This is the other half of what people
+     * mean by crossfade - no hard edge on pause, resume or skip - and it is
+     * honest about being that.
+     */
+    private fun fadeThen(
+        from: Float,
+        to: Float,
+        then: () -> Unit,
+    ) {
+        val durationMs = _playerPrefs.value.fadeMs
+        fadeJob?.cancel()
+        if (durationMs <= 0) {
+            fadeVolume = to
+            applyVolume()
+            then()
+            return
+        }
+        fadeJob =
+            viewModelScope.launch {
+                val steps = (durationMs / FADE_STEP_MS).coerceAtLeast(1)
+                for (i in 0..steps) {
+                    fadeVolume = from + (to - from) * (i.toFloat() / steps)
+                    applyVolume()
+                    delay(FADE_STEP_MS)
+                }
+                fadeVolume = to
+                applyVolume()
+                then()
+                fadeJob = null
+            }
+    }
+
+    /** Pause with a fade out; resume with a fade in. */
+    fun togglePlayPauseFaded() {
+        if (micCapture.active) setMicEnabled(false)
+        if (player.isPlaying) {
+            fadeThen(fadeVolume, 0f) { player.pause() }
+        } else {
+            fadeVolume = 0f
+            applyVolume()
+            player.play()
+            fadeThen(0f, 1f) {}
+        }
+    }
+
+    /** Skips with a fade across the edit, so a manual skip is not a click. */
+    private fun skipFaded(action: () -> Unit) {
+        if (_playerPrefs.value.fadeMs <= 0 || !player.isPlaying) {
+            action()
+            return
+        }
+        fadeThen(fadeVolume, 0f) {
+            action()
+            fadeThen(0f, 1f) {}
+        }
+    }
+
     /**
      * Wall-clock of the last accrual tick, or 0 when not accruing. Playback
      * time is measured between ticks rather than from the player position so
@@ -2282,7 +2581,10 @@ class PlayerViewModel(
      */
     fun next() {
         if (player.mediaItemCount == 0) return
-        if (player.hasNextMediaItem()) player.seekToNextMediaItem() else player.seekTo(0, 0L)
+        skipFaded {
+            clearAbLoop()
+            if (player.hasNextMediaItem()) player.seekToNextMediaItem() else player.seekTo(0, 0L)
+        }
     }
 
     /**
@@ -2300,17 +2602,31 @@ class PlayerViewModel(
             player.seekTo(0L)
             return
         }
-        if (player.hasPreviousMediaItem()) {
-            player.seekToPreviousMediaItem()
-        } else {
-            player.seekTo(player.mediaItemCount - 1, 0L)
+        skipFaded {
+            clearAbLoop()
+            if (player.hasPreviousMediaItem()) {
+                player.seekToPreviousMediaItem()
+            } else {
+                player.seekTo(player.mediaItemCount - 1, 0L)
+            }
         }
     }
 
     fun togglePlayPause() {
         // Starting playback ends live input: one ring buffer, one source.
         if (!player.isPlaying && micCapture.active) setMicEnabled(false)
-        if (player.isPlaying) player.pause() else player.play()
+        if (_playerPrefs.value.fadeMs > 0) {
+            togglePlayPauseFaded()
+        } else if (player.isPlaying) {
+            player.pause()
+        } else {
+            player.play()
+        }
+    }
+
+    /** Seeks to an absolute position; what a tapped lyric line asks for. */
+    fun seekToMs(positionMs: Long) {
+        if (player.duration > 0) player.seekTo(positionMs.coerceIn(0L, player.duration))
     }
 
     fun seekTo(fraction: Float) {
@@ -2328,6 +2644,8 @@ class PlayerViewModel(
         // section 2 of the last.
         lastStagedSection = -1
         timeline = null
+        clearAbLoop()
+        loadLyricsFor(currentUri)
         _vizState.update { it.copy(suggestedSceneId = null, bpm = 0f, sections = emptyList()) }
         if (_vizState.value.intelligenceMode != IntelligenceMode.MANUAL) {
             analyzeCurrentTrack()
@@ -3101,5 +3419,14 @@ class PlayerViewModel(
          * than time the user spent listening.
          */
         const val MAX_LISTEN_TICK_MS = 5_000L
+
+        /** Columns in the waveform seek bar. */
+        const val WAVEFORM_BUCKETS = 240
+
+        /** Shortest A-B loop worth arming; below it a second tap means "re-mark A". */
+        const val MIN_LOOP_MS = 1_000L
+
+        /** Volume ramp granularity. 25 ms is inaudible as steps. */
+        const val FADE_STEP_MS = 25L
     }
 }

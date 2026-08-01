@@ -92,6 +92,7 @@ fun HomeScreen(
     val recent = remember(tick, deviceTracks) { viewModel.homeRecent() }
     val most = remember(tick, deviceTracks) { viewModel.homeMostPlayed() }
     val fresh = remember(deviceTracks) { viewModel.homeRecentlyAdded() }
+    val loved = remember(tick, deviceTracks) { viewModel.homeFavourites() }
     // Listening totals move while a track plays, so they get their own slow
     // clock rather than riding the 500 ms UI tick.
     var statsTick by remember { mutableIntStateOf(0) }
@@ -151,6 +152,7 @@ fun HomeScreen(
         }
 
         trackShelf("Jump back in", recent, viewModel)
+        trackShelf("Favourites", loved, viewModel)
         trackShelf("On repeat", most, viewModel, showCount = true)
         trackShelf("Recently added", fresh, viewModel)
 

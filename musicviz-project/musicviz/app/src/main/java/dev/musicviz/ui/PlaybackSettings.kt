@@ -53,6 +53,32 @@ fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
                 valueRange = -6f..6f,
             )
         }
+        Column {
+            Text(
+                if (prefs.fadeMs <= 0) {
+                    "Fade on pause, resume and skip — off"
+                } else {
+                    "Fade on pause, resume and skip  ${"%.1f".format(prefs.fadeMs / 1000f)}s"
+                },
+                style = MaterialTheme.typography.labelMedium,
+            )
+            CrystalSlider(
+                value = prefs.fadeMs.toFloat(),
+                onValueChange = {
+                    // Snapped to 250 ms so the slider has landing points and
+                    // "off" is reachable rather than a 3 ms fade.
+                    viewModel.setPlayerPrefs(prefs.copy(fadeMs = (PlaybackMath.snap(it, 250f)).toInt()))
+                },
+                valueRange = 0f..PlayerPrefs.MAX_FADE_MS.toFloat(),
+            )
+            Text(
+                "Ramps the volume instead of cutting it. Not a crossfade — one player decodes one " +
+                    "track at a time, and a second one would give the analyser two streams to sum — " +
+                    "but it removes the hard edges, which is the part you hear.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         PlaybackSwitchRow("Skip silence", prefs.skipSilence) {
             viewModel.setPlayerPrefs(prefs.copy(skipSilence = it))
         }
@@ -92,9 +118,16 @@ fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
                     )
                 }
             }
+            PlaybackSwitchRow("Let the track finish", prefs.sleepFinishTrack) {
+                viewModel.setPlayerPrefs(prefs.copy(sleepFinishTrack = it))
+            }
             sleepRemainingMs?.let { remaining ->
                 Text(
-                    "Pausing in ${PlaybackMath.formatCountdown(remaining)}",
+                    if (prefs.sleepFinishTrack) {
+                        "Pausing after the track playing in ${PlaybackMath.formatCountdown(remaining)}"
+                    } else {
+                        "Pausing in ${PlaybackMath.formatCountdown(remaining)}"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = accentTextColor(),
                 )

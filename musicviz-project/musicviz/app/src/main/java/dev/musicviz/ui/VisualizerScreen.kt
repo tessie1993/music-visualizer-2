@@ -2,6 +2,7 @@ package dev.musicviz.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -41,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import dev.musicviz.render.VisualizerView
@@ -70,6 +74,18 @@ fun VisualizerScreen(
     val state by viewModel.uiState.collectAsState()
     val autoMode by viewModel.autoMode.collectAsState()
     val gui by viewModel.guiPrefs.collectAsState()
+    val waveform by viewModel.waveform.collectAsState()
+    val lyrics by viewModel.lyrics.collectAsState()
+    val queue by viewModel.queue.collectAsState()
+    val favourites by viewModel.favourites.collectAsState()
+    val abLoop by viewModel.abLoop.collectAsState()
+    val external by viewModel.externalAudio.collectAsState()
+    val currentUri = remember(state.title, state.artist) { viewModel.currentTrackUri() }
+    val isFavourite = currentUri != null && currentUri in favourites
+    // Which of the three faces of the player is showing. Deliberately not
+    // saved across a collapse: reopening Now Playing should show the
+    // transport, not whatever tab was left open an hour ago.
+    var panel by remember { mutableStateOf(PlayerPanel.TRANSPORT) }
     // Chrome over the live canvas follows the Settings bar-opacity slider,
     // clamped to >= 0.25 so the transport stays readable over bright visuals.
     val chromeAlpha = maxOf(gui.barOpacity, 0.25f)
@@ -164,20 +180,85 @@ fun VisualizerScreen(
                 FilledTonalIconButton(onClick = onCollapse) {
                     Icon(Icons.Filled.KeyboardArrowDown, "Collapse")
                 }
-                Column {
+                Column(Modifier.weight(1f, fill = false)) {
+                    // Another app's audio outranks our own metadata: it is what
+                    // is making the sound on screen.
+                    val foreign = external.active
+                    val foreignTrack = external.nowPlaying?.takeIf { it.title.isNotBlank() }
                     Text(
-                        state.title?.ifBlank { "MusicViz" } ?: "MusicViz",
+                        when {
+                            foreign -> foreignTrack?.title ?: "Other apps"
+                            else -> state.title?.ifBlank { "MusicViz" } ?: "MusicViz"
+                        },
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                    state.artist?.takeIf { it.isNotBlank() }?.let {
+                    val subtitle =
+                        when {
+                            foreign ->
+                                listOfNotNull(
+                                    foreignTrack?.artist?.takeIf { it.isNotBlank() },
+                                    external.nowPlaying?.appLabel,
+                                ).joinToString(" · ").ifBlank { "Captured from another app" }
+                            else -> state.artist?.takeIf { it.isNotBlank() }.orEmpty()
+                        }
+                    if (subtitle.isNotEmpty()) {
                         Text(
-                            it,
+                            subtitle,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
+                    }
+                }
+                if (state.hasMedia && !external.active) {
+                    IconButton(onClick = { viewModel.toggleFavourite() }) {
+                        Icon(
+                            if (isFavourite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                            if (isFavourite) "Remove from favourites" else "Add to favourites",
+                            tint =
+                                if (isFavourite) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                        )
+                    }
+                }
+            }
+
+            // Lyrics and the queue take over the space between the title chip
+            // and the transport, over the live canvas rather than instead of
+            // it - the visuals are the reason to be on this screen.
+            if (panel != PlayerPanel.TRANSPORT) {
+                PlayerPanelSurface(
+                    Modifier
+                        .align(Alignment.Center)
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp)
+                        .padding(top = 88.dp, bottom = 210.dp)
+                        .fillMaxSize(),
+                ) {
+                    when (panel) {
+                        PlayerPanel.LYRICS ->
+                            LyricsPanel(
+                                lyrics = lyrics,
+                                positionMs = state.positionMs,
+                                onSeek = { viewModel.seekToMs(it) },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        else ->
+                            QueuePanel(
+                                queue = queue,
+                                favourites = favourites,
+                                onPlayIndex = viewModel::playQueueIndex,
+                                onMoveUp = { viewModel.moveQueueItem(it, it - 1) },
+                                onRemove = viewModel::removeQueueItem,
+                                modifier = Modifier.fillMaxSize(),
+                            )
                     }
                 }
             }
@@ -215,15 +296,14 @@ fun VisualizerScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(formatTime(state.positionMs), style = MaterialTheme.typography.labelSmall)
-                        CrystalSlider(
-                            value =
-                                if (state.durationMs > 0) {
-                                    (state.positionMs / state.durationMs.toFloat()).coerceIn(0f, 1f)
-                                } else {
-                                    0f
-                                },
-                            onValueChange = viewModel::seekTo,
-                            modifier = Modifier.weight(1f),
+                        WaveformSeekBar(
+                            waveform = waveform,
+                            positionMs = state.positionMs,
+                            durationMs = state.durationMs,
+                            loopStartMs = abLoop?.startMs,
+                            loopEndMs = abLoop?.endMs,
+                            onSeek = viewModel::seekTo,
+                            modifier = Modifier.weight(1f).height(40.dp),
                         )
                         Text(formatTime(state.durationMs), style = MaterialTheme.typography.labelSmall)
                     }
@@ -294,9 +374,78 @@ fun VisualizerScreen(
                             )
                         }
                     }
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        PlayerPanel.entries.forEach { p ->
+                            PanelChip(
+                                label = p.label,
+                                selected = panel == p,
+                                badge = if (p == PlayerPanel.QUEUE && queue.tracks.size > 1) queue.tracks.size else 0,
+                                onClick = { panel = if (panel == p) PlayerPanel.TRANSPORT else p },
+                            )
+                        }
+                        Box(Modifier.weight(1f))
+                        // A-B: one control, three states. The label says which
+                        // one you are in rather than leaving it to a colour.
+                        TextButton(onClick = viewModel::cycleAbLoop, enabled = state.hasMedia) {
+                            Text(
+                                when {
+                                    abLoop == null -> "A–B"
+                                    abLoop?.endMs == null -> "Set B"
+                                    else -> "Looping"
+                                },
+                                style = MaterialTheme.typography.labelMedium,
+                                color =
+                                    if (abLoop != null) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                            )
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+/** The three faces of Now Playing, chosen by the chips under the transport. */
+enum class PlayerPanel(
+    val label: String,
+) {
+    TRANSPORT("Now"),
+    LYRICS("Lyrics"),
+    QUEUE("Queue"),
+}
+
+@Composable
+private fun PanelChip(
+    label: String,
+    selected: Boolean,
+    badge: Int,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .crystalPanel(
+                if (selected) 0.5f else 0.2f,
+                MaterialTheme.colorScheme.surfaceVariant,
+                MaterialTheme.colorScheme.primary,
+                corner = 14.dp,
+                glowStrength = if (selected) 1f else 0.35f,
+                prismatic = selected,
+            ).clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        Text(
+            if (badge > 0) "$label · $badge" else label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) accentTextColor() else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
