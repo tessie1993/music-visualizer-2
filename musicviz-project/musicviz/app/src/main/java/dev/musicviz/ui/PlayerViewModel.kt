@@ -211,6 +211,33 @@ data class MicState(
     val failure: MicCapture.Failure? = null,
 )
 
+/**
+ * "Visualize other apps": whether the capture is running, what it can hear,
+ * and - when it can hear nothing - enough context to say why.
+ */
+data class ExternalAudioState(
+    /** False on Android 9 and older, where the API does not exist. */
+    val supported: Boolean = dev.musicviz.audio.playbackCaptureSupported,
+    /** True while the capture is open and feeding the analyzer. */
+    val active: Boolean = false,
+    /** True while waiting for the user to answer the system consent dialog. */
+    val awaitingConsent: Boolean = false,
+    val failure: dev.musicviz.audio.CaptureFailure? = null,
+    /** What another app's media session says is playing, when readable. */
+    val nowPlaying: dev.musicviz.audio.NowPlayingBridge.External? = null,
+    /** True when the notification-listener switch is on, so [nowPlaying] works. */
+    val hasSessionAccess: Boolean = false,
+    /**
+     * The capture is open, something is playing, and every sample has been an
+     * exact zero for seconds: the playing app forbids capture. Spotify is the
+     * one people hit.
+     */
+    val refusedByApp: Boolean = false,
+) {
+    /** The app to name in a "…won't let us listen" message, if we know it. */
+    val refusingApp: String? get() = if (refusedByApp) nowPlaying?.appLabel else null
+}
+
 data class ExportUiState(
     val running: Boolean = false,
     /** True when the user picked the output location via the file picker. */
@@ -311,7 +338,121 @@ class PlayerViewModel(
      * True while a source other than our own playback is feeding the ring
      * buffer, and therefore owns the analyzer's sample rate.
      */
-    private fun externalAudioOwnsAnalyzer(): Boolean = micCapture.active
+    private fun externalAudioOwnsAnalyzer(): Boolean = micCapture.active || playbackCapture.active
+
+    // ---- Visualize other apps (Spotify, YouTube, anything playing) ----
+
+    /**
+     * Third producer for the one ring buffer, after the playback tap and the
+     * microphone. Held on every API level; only starting it needs Android 10,
+     * and that gate lives in [startPlaybackCapture] where the reason for it
+     * can be turned into something the user reads.
+     */
+    private val playbackCapture = dev.musicviz.audio.PlaybackCapture(ring)
+
+    private val nowPlayingBridge = dev.musicviz.audio.NowPlayingBridge(application)
+
+    private val _externalAudio = MutableStateFlow(ExternalAudioState())
+
+    /** State behind the "Visualize other apps" card. */
+    val externalAudio: StateFlow<ExternalAudioState> = _externalAudio
+
+    /**
+     * Records that the consent dialog is up, so the switch can show that it is
+     * waiting rather than springing back while the system UI is in front.
+     */
+    fun noteExternalAudioConsentPending() {
+        _externalAudio.update { it.copy(awaitingConsent = true, failure = null) }
+    }
+
+    /** The user dismissed the system capture dialog. */
+    fun noteExternalAudioConsentDenied() {
+        _externalAudio.update {
+            it.copy(awaitingConsent = false, failure = dev.musicviz.audio.CaptureFailure.CONSENT)
+        }
+    }
+
+    /**
+     * Starts reading another app's audio with a projection the service has
+     * just published. Called from the [MediaProjectionHolder] collector, not
+     * by the UI: consent, the foreground service and the recorder are three
+     * separate steps and only the last one belongs here.
+     */
+    private fun startPlaybackCapture(projection: android.media.projection.MediaProjection) {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
+            _externalAudio.update {
+                it.copy(
+                    awaitingConsent = false,
+                    failure = dev.musicviz.audio.CaptureFailure.UNSUPPORTED,
+                )
+            }
+            return
+        }
+        if (!micCapture.hasPermission()) {
+            _externalAudio.update {
+                it.copy(
+                    awaitingConsent = false,
+                    failure = dev.musicviz.audio.CaptureFailure.PERMISSION,
+                )
+            }
+            return
+        }
+        // One ring buffer, one source. Our own playback and the microphone
+        // both step aside, exactly as they do for each other.
+        player.pause()
+        if (micCapture.active) setMicEnabled(false)
+        val failure = playbackCapture.start(projection) { rate -> engine.sampleRateHz = rate }
+        // The beat grid and energy envelope model one continuous piece of
+        // audio; another app's stream is a different one, like a track change.
+        engine.reset()
+        _externalAudio.update {
+            it.copy(
+                active = failure == null,
+                awaitingConsent = false,
+                failure = failure,
+                refusedByApp = false,
+            )
+        }
+    }
+
+    /** Stops the capture and takes the foreground service down with it. */
+    fun stopExternalAudio() {
+        playbackCapture.stop()
+        engine.reset()
+        engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
+        dev.musicviz.audio.PlaybackCaptureService
+            .stop(getApplication())
+        _externalAudio.update {
+            it.copy(active = false, awaitingConsent = false, refusedByApp = false)
+        }
+    }
+
+    /** Where to send the user to switch the notification listener on. */
+    fun notificationAccessIntent(): android.content.Intent = nowPlayingBridge.settingsIntent()
+
+    /**
+     * Refreshes what another app is playing, and re-decides whether a silent
+     * capture is being refused.
+     *
+     * The refusal verdict needs BOTH halves: the capture reporting nothing but
+     * exact zeroes, and a session reporting that something is in fact playing.
+     * Either alone is ordinary - a paused phone is silent, and a session can
+     * be playing while the capture is simply not running.
+     */
+    private fun refreshExternalAudio() {
+        val state = _externalAudio.value
+        val access = nowPlayingBridge.hasAccess()
+        val now = if (access) nowPlayingBridge.current() else null
+        val refused = playbackCapture.active && playbackCapture.blockedLikely && (now?.playing ?: false)
+        val next =
+            state.copy(
+                active = playbackCapture.active,
+                nowPlaying = now,
+                hasSessionAccess = access,
+                refusedByApp = refused,
+            )
+        if (next != state) _externalAudio.value = next
+    }
 
     /**
      * Retunes the analysis chain for what the microphone is pointed at.
@@ -906,10 +1047,28 @@ class PlayerViewModel(
         // The sink may already have a session id (attach ignores UNSET = 0).
         audioFxController.attach(player.audioSessionId)
         refreshAudioFx()
+        // Consent -> foreground service -> projection -> recorder. This is the
+        // last hop: the service publishes what the user granted, and the
+        // recorder opens against it here, where the ring buffer lives.
+        viewModelScope.launch {
+            dev.musicviz.audio.MediaProjectionHolder.projection
+                .collect { projection ->
+                    if (projection != null) {
+                        startPlaybackCapture(projection)
+                    } else if (_externalAudio.value.active) {
+                        // Revoked from the system UI, or the service died.
+                        playbackCapture.stop()
+                        engine.reset()
+                        engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
+                        _externalAudio.update { it.copy(active = false, refusedByApp = false) }
+                    }
+                }
+        }
         viewModelScope.launch {
             while (true) {
                 refresh()
                 accrueListenTime()
+                refreshExternalAudio()
                 applyIntelligence()
                 advanceVizPlaylist()
                 advanceRandomMode()
@@ -2923,6 +3082,9 @@ class PlayerViewModel(
         // ViewModel would keep the recording indicator up with nothing left
         // to read it.
         micCapture.stop()
+        // Same for the playback capture, which additionally holds a
+        // foreground service and its "this app can hear you" notification.
+        if (_externalAudio.value.active) stopExternalAudio()
         // Stop feeding the wallpaper, so it falls back to its own idle motion
         // instead of holding the last frame this session produced.
         dev.musicviz.audio.AudioBus

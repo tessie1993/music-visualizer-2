@@ -540,6 +540,9 @@ private fun AppSettingsTab(
             }
         }
         item {
+            SettingsSection("Other apps' audio") { ExternalAudioSettings(viewModel) }
+        }
+        item {
             SettingsSection("Live input & touch") { LiveInputSettings(viewModel) }
         }
         item {

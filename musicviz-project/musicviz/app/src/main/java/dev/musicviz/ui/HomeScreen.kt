@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Mic
@@ -78,6 +79,7 @@ fun HomeScreen(
     val state by viewModel.uiState.collectAsState()
     val viz by viewModel.vizState.collectAsState()
     val mic by viewModel.micState.collectAsState()
+    val external by viewModel.externalAudio.collectAsState()
     val tick by viewModel.historyTick.collectAsState()
     val deviceTracks by viewModel.deviceTracks.collectAsState()
     val sleepRemainingMs by viewModel.sleepTimerRemainingMs.collectAsState()
@@ -126,6 +128,7 @@ fun HomeScreen(
                 state = state,
                 styleLabel = viz.sceneId.replaceFirstChar { it.uppercase() },
                 micActive = mic.active,
+                external = external,
                 onExpand = onExpand,
                 onOpenLibrary = onOpenLibrary,
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -136,6 +139,7 @@ fun HomeScreen(
             QuickActions(
                 viewModel = viewModel,
                 micActive = mic.active,
+                external = external,
                 sleepRunning = sleepRemainingMs != null,
                 canShuffle = recent.isNotEmpty() || fresh.isNotEmpty(),
                 onOpenVisuals = onOpenVisuals,
@@ -221,11 +225,17 @@ private fun NowPlayingHero(
     state: PlayerUiState,
     styleLabel: String,
     micActive: Boolean,
+    external: ExternalAudioState,
     onExpand: () -> Unit,
     onOpenLibrary: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uri = remember(state.title, state.artist) { viewModel.currentTrackUri() }
+    // What the hero is actually about, most specific first: another app's
+    // audio outranks our own paused track, because it is what is making
+    // sound right now.
+    val foreign = external.active
+    val foreignTrack = external.nowPlaying?.takeIf { it.title.isNotBlank() }
     Column(
         modifier
             .fillMaxWidth()
@@ -240,10 +250,11 @@ private fun NowPlayingHero(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TrackArtwork(uri, Modifier.size(76.dp), corner = 16.dp)
+            TrackArtwork(if (foreign || micActive) null else uri, Modifier.size(76.dp), corner = 16.dp)
             Column(Modifier.weight(1f).padding(start = 14.dp)) {
                 CrystalOverline(
                     when {
+                        foreign -> external.nowPlaying?.appLabel ?: "Other apps"
                         micActive -> "Live input"
                         state.isPlaying -> "Now playing"
                         state.hasMedia -> "Paused"
@@ -252,6 +263,7 @@ private fun NowPlayingHero(
                 )
                 Text(
                     when {
+                        foreign -> foreignTrack?.title ?: "Whatever is playing"
                         micActive -> "The room"
                         state.hasMedia -> state.title ?: "Untitled"
                         else -> "Pick something to play"
@@ -262,12 +274,20 @@ private fun NowPlayingHero(
                 )
                 Text(
                     when {
+                        external.refusedByApp ->
+                            "${external.refusingApp ?: "That app"} will not be captured — see Settings"
+                        foreign -> foreignTrack?.artist?.ifBlank { null } ?: "Captured from another app"
                         micActive -> "Whatever the microphone hears"
                         state.hasMedia -> state.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist"
                         else -> "Your library, your history, or the room"
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color =
+                        if (external.refusedByApp) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -276,11 +296,11 @@ private fun NowPlayingHero(
 
         LiveSpectrum(
             viewModel,
-            live = state.isPlaying || micActive,
+            live = state.isPlaying || micActive || foreign,
             modifier = Modifier.fillMaxWidth().height(40.dp),
         )
 
-        if (state.hasMedia) {
+        if (state.hasMedia && !foreign && !micActive) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(formatClock(state.positionMs), style = MaterialTheme.typography.labelSmall)
                 Box(
@@ -308,7 +328,9 @@ private fun NowPlayingHero(
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (state.hasMedia) {
+            if (foreign) {
+                CrystalButton(filled = false, onClick = viewModel::stopExternalAudio) { Text("Stop capture") }
+            } else if (state.hasMedia) {
                 IconButton(onClick = viewModel::previous) { Icon(Icons.Filled.SkipPrevious, "Previous") }
                 CrystalPlayButton(
                     icon = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
@@ -403,14 +425,47 @@ private const val BARS = 24
 private fun QuickActions(
     viewModel: PlayerViewModel,
     micActive: Boolean,
+    external: ExternalAudioState,
     sleepRunning: Boolean,
     canShuffle: Boolean,
     onOpenVisuals: () -> Unit,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val micPermission =
         androidx.activity.compose.rememberLauncherForActivityResult(
             androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
         ) { granted -> if (granted) viewModel.setMicEnabled(true) }
+    // "Visualize whatever is playing" is worth one tap from Home, so the
+    // consent plumbing lives here too rather than only in Settings.
+    val projectionLauncher =
+        androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts
+                .StartActivityForResult(),
+        ) { result ->
+            val data = result.data
+            if (result.resultCode == android.app.Activity.RESULT_OK && data != null) {
+                dev.musicviz.audio.PlaybackCaptureService
+                    .start(context, result.resultCode, data)
+            } else {
+                viewModel.noteExternalAudioConsentDenied()
+            }
+        }
+    val capturePermissions =
+        androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts
+                .RequestMultiplePermissions(),
+        ) { granted ->
+            if (granted[android.Manifest.permission.RECORD_AUDIO] != false) {
+                viewModel.noteExternalAudioConsentPending()
+                projectionLauncher.launch(
+                    context
+                        .getSystemService(android.media.projection.MediaProjectionManager::class.java)
+                        .createScreenCaptureIntent(),
+                )
+            } else {
+                viewModel.noteExternalAudioConsentDenied()
+            }
+        }
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
@@ -428,6 +483,30 @@ private fun QuickActions(
                     viewModel.setMicEnabled(true)
                 } else {
                     micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                }
+            }
+        }
+        if (external.supported) {
+            item {
+                QuickAction(
+                    Icons.Filled.Cast,
+                    if (external.active) "Capturing" else "Other apps",
+                    active = external.active,
+                ) {
+                    if (external.active) {
+                        viewModel.stopExternalAudio()
+                    } else {
+                        capturePermissions.launch(
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                arrayOf(
+                                    android.Manifest.permission.RECORD_AUDIO,
+                                    android.Manifest.permission.POST_NOTIFICATIONS,
+                                )
+                            } else {
+                                arrayOf(android.Manifest.permission.RECORD_AUDIO)
+                            },
+                        )
+                    }
                 }
             }
         }

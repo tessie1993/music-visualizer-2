@@ -17,6 +17,17 @@
     <uses-feature
         android:name="android.hardware.microphone"
         android:required="false" />
+    <!-- "Visualize other apps": Android 10's playback-capture API, which the
+         platform only allows from a foreground service the user can see. The
+         notification is the point, not a formality — it is the standing
+         statement that this app can currently hear the device — so
+         POST_NOTIFICATIONS is requested at the moment the feature is turned
+         on. Nothing captured is written to disk or sent anywhere; the samples
+         go into the same in-memory analysis ring buffer the microphone and
+         the player already share. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- The live wallpaper is optional; the app is fully usable without a
          launcher that supports one. -->
     <uses-feature
@@ -73,6 +84,33 @@
             <meta-data
                 android:name="android.service.wallpaper"
                 android:resource="@xml/wallpaper" />
+        </service>
+
+        <!--
+          Playback capture: holds the MediaProjection and the ongoing
+          notification for as long as another app's audio is being read.
+          Not exported — it is started only by this app, with consent the user
+          just gave to the system dialog.
+        -->
+        <service
+            android:name=".audio.PlaybackCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <!--
+          Does nothing, and must exist: getActiveSessions() is gated on being
+          an enabled notification listener, and that is the only way to become
+          one. It is how the app can name what Spotify or YouTube is playing.
+          Optional — the visuals work on the captured audio alone.
+        -->
+        <service
+            android:name=".audio.MusicVizNotificationListener"
+            android:exported="false"
+            android:label="@string/notification_listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
         </service>
 
         <!-- Sharing a preset too long to be a link sends its .json; a raw
