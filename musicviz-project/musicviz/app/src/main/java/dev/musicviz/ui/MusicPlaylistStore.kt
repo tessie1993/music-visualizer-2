@@ -47,7 +47,10 @@ class MusicPlaylistStore(
         return updated
     }
 
-    /** Moves the track at [from] to [to], clamping to valid bounds. */
+    /**
+     * Renames a playlist, refusing a blank or already-taken name so the file
+     * on disk can never be orphaned or overwritten. Returns whether it ran.
+     */
     fun rename(
         oldName: String,
         newName: String,
@@ -59,6 +62,7 @@ class MusicPlaylistStore(
         return true
     }
 
+    /** Moves the track at [from] to [to], clamping to valid bounds. */
     fun move(
         name: String,
         from: Int,

@@ -122,8 +122,8 @@ internal class CurlFlowScene(
         particles.invalidateSeed()
     }
 
-    override fun setParams(p: SceneParams) {
-        params = p
+    override fun setParams(params: SceneParams) {
+        this.params = params
     }
 
     override fun update(

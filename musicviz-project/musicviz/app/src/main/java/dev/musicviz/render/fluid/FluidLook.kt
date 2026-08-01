@@ -364,9 +364,6 @@ internal class FluidLook(
         GLES30.glUniform1i(loc(program, name), unit)
     }
 
-    private fun loadRaw(resId: Int): String =
-        context.resources
-            .openRawResource(resId)
-            .bufferedReader()
-            .use { it.readText() }
+    /** Reads a raw shader, resolving its `//#include` directives. */
+    private fun loadRaw(resId: Int): String = GlUtil.loadShader(context, resId)
 }

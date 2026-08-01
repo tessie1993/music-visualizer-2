@@ -34,6 +34,12 @@ object ParamSurface {
      * One class per family (plus the two all-styles rows): each scene is the
      * single place its family reads [SceneParams], and it hands the values on
      * to its own helpers under their own names.
+     *
+     * The list is ordered (it is the matrix's column order) and its names are
+     * asserted distinct, because the two readers disagree about duplicates:
+     * [readersByFamily] `associate`s them away silently while the column
+     * header keeps both. A merge added a second `Beam` row here once, and the
+     * generated matrix grew a phantom column that nothing else flagged.
      */
     val FAMILIES: List<Pair<String, List<String>>> =
         listOf(
@@ -54,10 +60,12 @@ object ParamSurface {
             "Cymatics" to listOf("render/scene/CymaticsScene.kt"),
             "Beam" to listOf("render/scene/BeamScene.kt"),
             "Hyperspace" to listOf("render/scene/HyperspaceScene.kt"),
-            "Beam" to listOf("render/scene/BeamScene.kt"),
             "Composite" to listOf("render/VisualizerRenderer.kt", "render/CompositeGrade.kt"),
             "Export" to listOf("export/FxCompositor.kt", "export/VideoExporter.kt"),
-        )
+        ).also { families ->
+            val duplicates = families.groupingBy { it.first }.eachCount().filterValues { it > 1 }.keys
+            require(duplicates.isEmpty()) { "duplicate scene families in the matrix: $duplicates" }
+        }
 
     /**
      * Composables reached only from one tab, whose writes therefore belong to

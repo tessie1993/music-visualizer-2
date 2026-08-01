@@ -486,12 +486,9 @@ internal class FxCompositor(
 
     private fun loc(name: String): Int = uniformLocs.getOrPut(name) { GLES30.glGetUniformLocation(program, name) }
 
+    /** Reads a raw shader, resolving its `//#include` directives. */
     private fun loadRaw(
         context: Context,
         resId: Int,
-    ): String =
-        context.resources
-            .openRawResource(resId)
-            .bufferedReader()
-            .use { it.readText() }
+    ): String = GlUtil.loadShader(context, resId)
 }

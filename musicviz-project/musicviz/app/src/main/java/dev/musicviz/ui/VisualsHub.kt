@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
@@ -186,6 +187,13 @@ private fun PresetsTreeTab(
     var newFolder by remember { mutableStateOf("") }
     var saveName by remember { mutableStateOf("") }
     var saveFolder by rememberSaveable { mutableStateOf("") }
+    // Which folder the rename dialog is editing, and which preset the move
+    // dialog is filing. Both are held here rather than per row because a
+    // LazyColumn row that scrolls off screen is disposed, and a dialog owned by
+    // one would vanish mid-edit.
+    var renamingFolder by remember { mutableStateOf<String?>(null) }
+    var folderRenameText by remember { mutableStateOf("") }
+    var movingPreset by remember { mutableStateOf<String?>(null) }
     val userPresets = viz.presets.filterNot { BuiltInPresets.isBuiltIn(it.name) }.distinctBy { it.name }
     val byFolder = userPresets.groupBy { viewModel.presetFolderOf(it.name) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -252,12 +260,28 @@ private fun PresetsTreeTab(
             val inFolder = byFolder[folder].orEmpty()
             if (folder.isNotEmpty() || inFolder.isNotEmpty()) {
                 item(key = "hdr_$folder") {
-                    Text(
-                        if (folder.isEmpty()) "Presets" else "📁 $folder",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = accentTextColor(),
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            if (folder.isEmpty()) "Presets" else "📁 $folder",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = accentTextColor(),
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        // Root is not a directory on disk - it is the absence of
+                        // one - so only a real folder gets the pencil; on
+                        // "Presets" the dialog would have nothing to rename.
+                        if (folder.isNotEmpty()) {
+                            IconButton(onClick = {
+                                renamingFolder = folder
+                                folderRenameText = folder
+                            }) { Icon(Icons.Filled.Edit, "Rename this folder") }
+                        }
+                    }
                 }
             }
             items(inFolder, key = { "p_${it.name}" }) { p ->
@@ -277,6 +301,9 @@ private fun PresetsTreeTab(
                         },
                     ) {
                         Icon(Icons.Filled.Favorite, "Add to visual playlist")
+                    }
+                    IconButton(onClick = { movingPreset = p.name }) {
+                        Icon(Icons.AutoMirrored.Filled.DriveFileMove, "Move to another folder")
                     }
                     IconButton(onClick = { viewModel.deletePreset(p.name) }) {
                         Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error)
@@ -334,6 +361,78 @@ private fun PresetsTreeTab(
                 }
             }
         }
+    }
+    renamingFolder?.let { old ->
+        val proposed = folderRenameText.trim()
+        // A rename onto a folder that already exists is refused rather than
+        // merged: PresetStore.renameFolder is a directory rename, which the
+        // filesystem fails silently once the destination holds presets, so the
+        // user would be told nothing and see nothing move. Case-insensitive
+        // because the folder is a directory name and this is a phone, where
+        // "Chill" and "chill" are the same folder to everyone but the user.
+        val collides = !proposed.equals(old, ignoreCase = true) && folders.any { it.equals(proposed, ignoreCase = true) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { renamingFolder = null },
+            title = { Text("Rename folder") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = folderRenameText,
+                        onValueChange = { folderRenameText = it },
+                        singleLine = true,
+                    )
+                    if (collides) {
+                        Text(
+                            "There is already a folder called \"$proposed\".",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                CrystalButton(enabled = proposed.isNotBlank() && !collides, onClick = {
+                    viewModel.renamePresetFolder(old, proposed)
+                    // The Save-into chip row picks a folder by name, so a
+                    // rename has to carry the selection over with it or the
+                    // next Save quietly recreates the old folder.
+                    if (saveFolder == old) saveFolder = proposed
+                    renamingFolder = null
+                    folderRefresh++
+                }) { Text("Rename") }
+            },
+            dismissButton = { TextButton(onClick = { renamingFolder = null }) { Text("Cancel") } },
+        )
+    }
+    movingPreset?.let { name ->
+        val current = viewModel.presetFolderOf(name)
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { movingPreset = null },
+            title = { Text("Move \"$name\"") },
+            text = {
+                // The same chip row Save uses to choose a destination, so
+                // filing a preset looks the same whether it happens when it is
+                // saved or afterwards. Root is offered as a destination too:
+                // without it a preset dropped into the wrong folder could never
+                // come back out again.
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    (listOf("") + folders).forEach { f ->
+                        CrystalButton(compact = true, filled = f == current, onClick = {
+                            viewModel.movePresetToFolder(name, f)
+                            movingPreset = null
+                            // The moved preset keeps its name, so vizState comes
+                            // back equal and the StateFlow conflates the update
+                            // away; only this counter re-groups the list.
+                            folderRefresh++
+                        }) { Text(f.ifEmpty { "root" }, style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { movingPreset = null }) { Text("Close") } },
+        )
     }
 }
 
@@ -638,7 +737,7 @@ internal fun isShaderLookSceneId(sceneId: String): Boolean = sceneId in Visualiz
  *
  * Shape used to be a NARROWER gate than size, because the fluid layer had no
  * shape uniform and drew round dots only. Both families now shade through the
- * same `particle_shade.glsl`, so the chip row is live wherever the slider is
+ * same `lib_particle_shade.glsl`, so the chip row is live wherever the slider is
  * and the two gates collapsed into this one.
  *
  * Note FLUID can switch its point layer off (`fluidParticlesEnabled`), which

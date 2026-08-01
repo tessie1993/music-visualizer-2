@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.musicviz.analysis.IntelligenceMode
+import dev.musicviz.render.EnvBand
 import dev.musicviz.render.LfoConfig
 import dev.musicviz.render.LfoTarget
 import dev.musicviz.render.LfoWave
@@ -180,7 +181,7 @@ internal fun MotionTab(
  * it takes a gate of its own - [isPointSpriteScene]
  * (`VisualsHub.isPointSpriteSceneId`), the styles that draw a particle sprite
  * at all: the `ParticleSceneBase` family plus FLUID and CURLFLOW, whose GPU
- * layer now shades through the same `particle_shade.glsl`. The header rides
+ * layer now shades through the same `lib_particle_shade.glsl`. The header rides
  * the same gate, so it disappears with its controls instead of leaving an
  * empty "Particles" heading on shader / MilkDrop / Water styles.
  *
@@ -239,7 +240,7 @@ internal fun ShapeTab(
             SectionHeader("Particles")
             // uShape reaches both families: ParticleSceneBase.draw uploads it
             // for the CPU styles, FluidParticles.draw for the fluid layer, and
-            // particle_common.glsl's ptShapeField is the single reader.
+            // lib_particle_common.glsl's ptShapeField is the single reader.
             LockableChipLabel("Particle shape")
             ChipRow(SceneParams.PARTICLE_SHAPES, p.particleShape) { onChange(p.copy(particleShape = it)) }
             LabeledSlider("Particle size", p.particleSize, 0.3f..2.5f) { onChange(p.copy(particleSize = it)) }
@@ -1169,6 +1170,13 @@ private fun AdsrCard(
                 }
             }
         }
+        // Two groups, because the card asks two different questions. Shape is
+        // the envelope's own curve plus how far its output swings; Sustain
+        // gate is what decides when the envelope is ALLOWED to hold. Eleven
+        // controls in one undivided column is the wall of sliders the tab
+        // headers exist to prevent, so the card borrows the same idea a size
+        // down.
+        CardSubHeader("Shape")
         // "Env attack/decay": these used to be plain "Attack"/"Decay" and
         // collided with the Behavior tab's reactivity envelope, which is a
         // different live control with a different range. Lock keys are label
@@ -1181,5 +1189,48 @@ private fun AdsrCard(
         LabeledSlider("Sustain", config.sustain, 0f..1f) { onChange(config.copy(sustain = it)) }
         LabeledSlider("Release", config.release, 0.02f..2f) { onChange(config.copy(release = it)) }
         LabeledSlider("Amount", config.amount, 0f..1.5f) { onChange(config.copy(amount = it)) }
+        // The other half of the design decision the engine already implements:
+        // the beat triggers the attack, but BAND ENERGY holds the sustain.
+        // AdsrEngine has read all four of these since the envelopes landed and
+        // no control ever wrote them, so every envelope in the app was gated on
+        // bass above 0.25 with a fixed sustain and retrigger on - the one
+        // combination the defaults happen to spell.
+        CardSubHeader("Sustain gate")
+        ControlHint(
+            "The envelope holds while the chosen band stays above the gate and " +
+                "releases when it drops below - so the same beat can open a long " +
+                "swell in a loud chorus and a short blip in a quiet verse.",
+        )
+        LockableChipLabel("Gate band")
+        ChipRow(EnvBand.entries.map { it.label }, EnvBand.entries.indexOf(config.band)) {
+            onChange(config.copy(band = EnvBand.entries[it]))
+        }
+        // 0.05 is the engine's own floor for this value (it divides by the
+        // threshold when the sustain tracks energy and clamps the divisor
+        // there); 1 is a full-scale band, i.e. "only the very loudest moments
+        // hold this envelope open". Bands can read up to 1.5, but a gate a real
+        // signal can never cross is a broken envelope, not a setting.
+        LabeledSlider("Gate level", config.gateThreshold, 0.05f..1f) {
+            onChange(config.copy(gateThreshold = it))
+        }
+        CheckRow("Sustain follows band energy", config.sustainTrack) { onChange(config.copy(sustainTrack = it)) }
+        CheckRow("Retrigger on every beat", config.retrigger) { onChange(config.copy(retrigger = it)) }
     }
+}
+
+/**
+ * Group heading INSIDE a card, one step quieter than [SectionHeader]. The
+ * tab-level header - gem, luminous hairline, tracked caps - would give a group
+ * within a single envelope the same visual weight as "Envelopes (ADSR)" itself
+ * and read as a new section of the tab rather than as part of the card above
+ * it, so cards that outgrow a single list get this instead.
+ */
+@Composable
+private fun CardSubHeader(title: String) {
+    Text(
+        title,
+        modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
+        style = MaterialTheme.typography.labelSmall,
+        color = accentTextColor(),
+    )
 }

@@ -876,7 +876,7 @@ class VisualizerRenderer(
         drainTouchStrokes(scene, ripple)
         val rippleOverlayOn =
             (p.rippleOverlayEnabled || smearing) && ripple != null && ripple.available && !waterActive
-        if (rippleOverlayOn && ripple != null) {
+        if (rippleOverlayOn) {
             ripple.waveSpeed = 1.2f * p.waterWaveSpeed.coerceIn(0.2f, 2f)
             ripple.damping = p.waterDamping.coerceIn(0.9f, 0.999f)
             rippleDrops.tick(gainAdjusted(features, p), ripple.aspect) { x, y, radius, amp ->
@@ -1019,7 +1019,7 @@ class VisualizerRenderer(
         var rippleTexelH = 0f
         var rippleStrength = 0f
         var rippleSpecular = 0f
-        if (rippleOverlayOn && ripple != null) {
+        if (rippleOverlayOn) {
             rippleTex = ripple.heightTex
             rippleTexelW = ripple.texelW
             rippleTexelH = ripple.texelH
@@ -1398,14 +1398,15 @@ class VisualizerRenderer(
 
     private fun particleShaderSources(context: Context): ParticleSceneBase.ShaderSources {
         // The app-wide particle look, shared with the fluid styles' own
-        // particle layer. Both stages take the common chunk (constants, the
-        // SDF shapes, the billboard and sub-pixel math); only the fragment
-        // stage takes the shading, which antialiases with fwidth() and would
-        // not compile in a vertex shader.
-        val common = loadRaw(R.raw.particle_common)
+        // particle layer. Both stages include lib_particle_common (constants,
+        // the SDF shapes, the billboard and sub-pixel math); only the fragment
+        // stage includes lib_particle_shade, which antialiases with fwidth()
+        // and would not compile in a vertex shader. Which libraries a stage
+        // takes is stated in the shader that needs them rather than assembled
+        // here, so the two particle families cannot drift apart.
         return ParticleSceneBase.ShaderSources(
-            GlUtil.withChunk(loadRaw(R.raw.particle_vert), common),
-            GlUtil.withChunk(loadRaw(R.raw.particle_frag), common + "\n" + loadRaw(R.raw.particle_shade)),
+            loadRaw(R.raw.particle_vert),
+            loadRaw(R.raw.particle_frag),
         )
     }
 }

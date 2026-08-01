@@ -122,6 +122,73 @@ class VmBehaviorTest {
     }
 
     @Test
+    fun folder_rename_carries_its_presets_and_leaves_the_others_alone() {
+        // A folder is a directory on disk, so renaming it has to take every
+        // preset filed under it along - the Visuals hub reads a preset's folder
+        // back per name, and one left pointing at the old directory would
+        // vanish from the tree with no way to get it back.
+        val v = vm()
+        v.addPresetFolder("Chill")
+        v.addPresetFolder("Loud")
+        v.savePreset("Dusk", null, folder = "Chill")
+        v.savePreset("Dawn", null, folder = "Chill")
+        v.savePreset("Riot", null, folder = "Loud")
+        v.renamePresetFolder("Chill", "Ambient")
+        assertEquals("Ambient", v.presetFolderOf("Dusk"))
+        assertEquals("Ambient", v.presetFolderOf("Dawn"))
+        assertEquals("Loud", v.presetFolderOf("Riot"))
+        assertTrue("Ambient" in v.presetFolders())
+        assertFalse("Chill" in v.presetFolders())
+    }
+
+    @Test
+    fun folder_rename_to_blank_or_an_existing_name_changes_nothing() {
+        // The dialog refuses both before it calls through; this pins the store
+        // half of the guard, because a rename that half-succeeded would merge
+        // two folders or spill a folder's presets into the root.
+        val v = vm()
+        v.addPresetFolder("Chill")
+        v.addPresetFolder("Loud")
+        v.savePreset("Dusk", null, folder = "Chill")
+        v.savePreset("Riot", null, folder = "Loud")
+        v.renamePresetFolder("Chill", "")
+        assertEquals("Chill", v.presetFolderOf("Dusk"))
+        v.renamePresetFolder("Chill", "Loud")
+        assertEquals("Chill", v.presetFolderOf("Dusk"))
+        assertEquals("Loud", v.presetFolderOf("Riot"))
+        assertTrue(v.presetFolders().containsAll(listOf("Chill", "Loud")))
+    }
+
+    @Test
+    fun move_preset_relocates_one_preset_without_disturbing_its_siblings() {
+        val v = vm()
+        v.addPresetFolder("Chill")
+        v.addPresetFolder("Loud")
+        v.savePreset("Dusk", null, folder = "Chill")
+        v.savePreset("Dawn", null, folder = "Chill")
+        v.movePresetToFolder("Dusk", "Loud")
+        assertEquals("Loud", v.presetFolderOf("Dusk"))
+        assertEquals("Chill", v.presetFolderOf("Dawn"))
+        // The move is a file rename, not a re-save: the preset itself has to
+        // survive it intact, or filing one would quietly destroy it.
+        assertTrue(
+            v.vizState.value.presets
+                .any { it.name == "Dusk" },
+        )
+    }
+
+    @Test
+    fun move_preset_to_root_takes_it_back_out_of_its_folder() {
+        // The way out of a mis-chosen folder. Without a root destination the
+        // only cure for one is to delete the preset and save it again.
+        val v = vm()
+        v.addPresetFolder("Chill")
+        v.savePreset("Dusk", null, folder = "Chill")
+        v.movePresetToFolder("Dusk", "")
+        assertEquals("", v.presetFolderOf("Dusk"))
+    }
+
+    @Test
     fun history_store_orders_recent_and_most() {
         val app = ApplicationProvider.getApplicationContext<Application>()
         val h = HistoryStore(app)

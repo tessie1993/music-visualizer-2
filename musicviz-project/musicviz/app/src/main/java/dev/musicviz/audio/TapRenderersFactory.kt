@@ -25,7 +25,12 @@ class TapRenderersFactory(
         DefaultAudioSink
             .Builder(context)
             .setEnableFloatOutput(enableFloatOutput)
-            .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+            // Media3 renamed this along with the AudioTrack -> AudioOutput
+            // abstraction; the old spelling is a one-line delegate to it, so
+            // the rename is exactly behaviour-preserving. The parameter keeps
+            // the factory's name because the only `buildAudioSink` override
+            // Media3 offers still spells it that way.
+            .setEnableAudioOutputPlaybackParameters(enableAudioTrackPlaybackParams)
             .setAudioProcessors(arrayOf(TeeAudioProcessor(sink)))
             .build()
 }

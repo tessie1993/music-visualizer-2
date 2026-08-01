@@ -1,7 +1,8 @@
 // The particle shading proper, FRAGMENT STAGES ONLY - it antialiases with
-// fwidth(), which does not exist in a vertex shader. Splice
-// particle_common.glsl in first: every helper and constant used here comes
-// from it.
+// fwidth(), which does not exist in a vertex shader. Include
+// lib_particle_common.glsl first: every helper and constant used here comes
+// from it, and the include resolver is one level deep on purpose, so a library
+// cannot pull in its own dependency.
 //
 // The look, and where it comes from:
 //   * shapes are signed distance fields (Inigo Quilez's 2D primitives,

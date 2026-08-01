@@ -517,7 +517,7 @@ class VideoExporter(
                 // Ripple overlay: advance the heightfield before the scene
                 // target is bound (its own FBOs), mirroring the live order.
                 val rippleOn = p.rippleOverlayEnabled && rippleOverlay != null && rippleOverlay.available
-                if (rippleOn && rippleOverlay != null) {
+                if (rippleOn) {
                     rippleOverlay.waveSpeed = 1.2f * p.waterWaveSpeed.coerceIn(0.2f, 2f)
                     rippleOverlay.damping = p.waterDamping.coerceIn(0.9f, 0.999f)
                     rippleDrops.tick(
@@ -556,7 +556,7 @@ class VideoExporter(
                         flowField != null && flowField.available -> flowField.velocityTex
                         else -> 0
                     }
-                val rippleTex = if (rippleOn && rippleOverlay != null) rippleOverlay.heightTex else 0
+                val rippleTex = if (rippleOn) rippleOverlay.heightTex else 0
                 fx.composite(
                     timeSeconds = timeMs / 1000f,
                     // The composite integrates rotation/colour cycle on the
