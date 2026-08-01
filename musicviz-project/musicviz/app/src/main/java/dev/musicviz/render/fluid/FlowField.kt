@@ -314,9 +314,6 @@ internal class FlowField(
 
     private val contextRef = context.applicationContext
 
-    private fun loadRaw(resId: Int): String =
-        contextRef.resources
-            .openRawResource(resId)
-            .bufferedReader()
-            .use { it.readText() }
+    /** Reads a raw shader, resolving its `//#include` directives. */
+    private fun loadRaw(resId: Int): String = GlUtil.loadShader(contextRef, resId)
 }

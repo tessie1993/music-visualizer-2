@@ -83,17 +83,15 @@ internal class FluidParticles(
             val vert = loadRaw(R.raw.fluid_base_vert)
             seedProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_particle_seed_frag))
             updateProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_particle_update_frag))
-            // The app-wide particle look, the same chunks ParticleSceneBase
-            // splices into the CPU styles' shaders: constants and shapes in
-            // both stages, the fwidth-based shading in the fragment stage only.
-            val common = loadRaw(R.raw.particle_common)
+            // The app-wide particle look, the same libraries the CPU styles'
+            // shaders include: constants and shapes in both stages, the
+            // fwidth-based shading in the fragment stage only. Each shader
+            // names its own, so this path and ParticleSceneBase's cannot end
+            // up assembling different looks out of the same files.
             renderProgram =
                 GlUtil.buildProgram(
-                    GlUtil.withChunk(loadRaw(R.raw.fluid_particle_vert), common),
-                    GlUtil.withChunk(
-                        loadRaw(R.raw.fluid_particle_frag),
-                        common + "\n" + loadRaw(R.raw.particle_shade),
-                    ),
+                    loadRaw(R.raw.fluid_particle_vert),
+                    loadRaw(R.raw.fluid_particle_frag),
                 )
         } catch (e: GlUtil.ShaderCompileException) {
             android.util.Log.w("FluidSim", "particle shader rejected by driver: ${e.message}")
@@ -211,7 +209,7 @@ internal class FluidParticles(
      * Draws additively into the currently bound framebuffer/viewport.
      *
      * [shape] is `SceneParams.particleShape` and [glow] the aura weight, both
-     * fed straight to the shared look in `particle_shade.glsl`; [timeSeconds]
+     * fed straight to the shared look in `lib_particle_shade.glsl`; [timeSeconds]
      * drives its twinkle. They are the reason Particle shape is live on the
      * fluid styles rather than a dead chip row.
      */
@@ -293,9 +291,6 @@ internal class FluidParticles(
             .put(data)
             .apply { position(0) }
 
-    private fun loadRaw(resId: Int): String =
-        context.resources
-            .openRawResource(resId)
-            .bufferedReader()
-            .use { it.readText() }
+    /** Reads a raw shader, resolving its `//#include` directives. */
+    private fun loadRaw(resId: Int): String = GlUtil.loadShader(context, resId)
 }

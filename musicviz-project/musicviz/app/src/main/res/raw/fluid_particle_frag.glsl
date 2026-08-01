@@ -4,11 +4,13 @@
 // from different spawn points are distinguishable, and the lifecycle fade
 // envelope multiplies in (soft births/recycles instead of popping).
 //
-// The shading itself is particle_shade.glsl - the same code the CPU particle
-// styles run - so Particle shape, the SDF silhouettes and the tone-mapped glow
-// behave identically on Fluid and Curl Flow. Grading is NOT applied here: the
-// composite pass owns saturation, contrast and gamma for the whole fluid
-// family, so those go in neutral and only brightness rides through.
+// The shading itself is lib_particle_shade.glsl - the same code the CPU
+// particle styles run - so Particle shape, the SDF silhouettes and the
+// tone-mapped glow behave identically on Fluid and Curl Flow. Grading is NOT
+// applied here: the composite pass owns saturation, contrast and gamma for the
+// whole fluid family, so those go in neutral and only brightness rides through.
+//#include lib_particle_common
+//#include lib_particle_shade
 precision highp float;
 in highp float vSpeed;
 in highp float vFade;

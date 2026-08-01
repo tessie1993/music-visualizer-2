@@ -1,13 +1,17 @@
 // Shared particle geometry and colour helpers. NOT a standalone shader: it
-// carries no `#version` and is spliced in right after the includer's version
-// line by GlUtil.withChunk. BOTH stages of BOTH particle families take this
+// carries no `#version` and is pulled in with `//#include lib_particle_common`
+// by the shaders that need it. BOTH stages of BOTH particle families take this
 // chunk - the CPU styles in ParticleSceneBase and the GPU lifecycle layer the
 // fluid styles run - so there is one set of shapes and one set of constants in
 // the app rather than two look-alike copies drifting apart.
 //
+// It carries its own `precision highp float;` because a library's function
+// bodies are compiled where they land, which is above the includer's own
+// precision statement.
+//
 // Everything here is stage-neutral: no derivatives, no gl_FragCoord. The
-// shading itself needs fwidth() and so lives in particle_shade.glsl, which is
-// spliced into fragment stages only.
+// shading itself needs fwidth() and so lives in lib_particle_shade.glsl, which
+// is included by fragment stages only.
 precision highp float;
 
 // Shape radius in quad space (the quad edge is 1.0); the rest of the quad is

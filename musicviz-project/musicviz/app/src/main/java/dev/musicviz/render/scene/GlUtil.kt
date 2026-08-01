@@ -62,6 +62,8 @@ object GlUtil {
         mapOf(
             "lib_palette" to R.raw.lib_palette,
             "lib_psrdnoise2" to R.raw.lib_psrdnoise2,
+            "lib_particle_common" to R.raw.lib_particle_common,
+            "lib_particle_shade" to R.raw.lib_particle_shade,
         )
 
     /** `//#include name` at the start of a line, with optional indentation. */

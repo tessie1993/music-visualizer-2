@@ -1398,14 +1398,15 @@ class VisualizerRenderer(
 
     private fun particleShaderSources(context: Context): ParticleSceneBase.ShaderSources {
         // The app-wide particle look, shared with the fluid styles' own
-        // particle layer. Both stages take the common chunk (constants, the
-        // SDF shapes, the billboard and sub-pixel math); only the fragment
-        // stage takes the shading, which antialiases with fwidth() and would
-        // not compile in a vertex shader.
-        val common = loadRaw(R.raw.particle_common)
+        // particle layer. Both stages include lib_particle_common (constants,
+        // the SDF shapes, the billboard and sub-pixel math); only the fragment
+        // stage includes lib_particle_shade, which antialiases with fwidth()
+        // and would not compile in a vertex shader. Which libraries a stage
+        // takes is stated in the shader that needs them rather than assembled
+        // here, so the two particle families cannot drift apart.
         return ParticleSceneBase.ShaderSources(
-            GlUtil.withChunk(loadRaw(R.raw.particle_vert), common),
-            GlUtil.withChunk(loadRaw(R.raw.particle_frag), common + "\n" + loadRaw(R.raw.particle_shade)),
+            loadRaw(R.raw.particle_vert),
+            loadRaw(R.raw.particle_frag),
         )
     }
 }

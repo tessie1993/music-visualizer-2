@@ -4,7 +4,7 @@ package dev.musicviz.render.scene
  * The constants of the shared particle look, in one place because two
  * unrelated families upload them: the CPU styles through [ParticleSceneBase],
  * and the fluid styles' GPU lifecycle layer through `FluidParticles.draw`.
- * Both feed the same `particle_shade.glsl`, so a value that lived in only one
+ * Both feed the same `lib_particle_shade.glsl`, so a value that lived in only one
  * of them would silently make the same slider mean two different things
  * depending on which style was on screen.
  *

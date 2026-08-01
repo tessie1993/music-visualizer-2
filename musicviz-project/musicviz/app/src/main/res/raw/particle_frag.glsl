@@ -1,7 +1,9 @@
 #version 300 es
 // Emissive shading for the CPU particle styles. The look itself lives in
-// particle_shade.glsl (spliced in above this line) and is shared with the
-// fluid styles' particle layer; this stage only wires the uniforms to it.
+// lib_particle_shade.glsl (included below) and is shared with the fluid
+// styles' particle layer; this stage only wires the uniforms to it.
+//#include lib_particle_common
+//#include lib_particle_shade
 
 in vec2 vShape;
 in float vHue;

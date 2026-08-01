@@ -180,7 +180,7 @@ internal fun MotionTab(
  * it takes a gate of its own - [isPointSpriteScene]
  * (`VisualsHub.isPointSpriteSceneId`), the styles that draw a particle sprite
  * at all: the `ParticleSceneBase` family plus FLUID and CURLFLOW, whose GPU
- * layer now shades through the same `particle_shade.glsl`. The header rides
+ * layer now shades through the same `lib_particle_shade.glsl`. The header rides
  * the same gate, so it disappears with its controls instead of leaving an
  * empty "Particles" heading on shader / MilkDrop / Water styles.
  *
@@ -239,7 +239,7 @@ internal fun ShapeTab(
             SectionHeader("Particles")
             // uShape reaches both families: ParticleSceneBase.draw uploads it
             // for the CPU styles, FluidParticles.draw for the fluid layer, and
-            // particle_common.glsl's ptShapeField is the single reader.
+            // lib_particle_common.glsl's ptShapeField is the single reader.
             LockableChipLabel("Particle shape")
             ChipRow(SceneParams.PARTICLE_SHAPES, p.particleShape) { onChange(p.copy(particleShape = it)) }
             LabeledSlider("Particle size", p.particleSize, 0.3f..2.5f) { onChange(p.copy(particleSize = it)) }

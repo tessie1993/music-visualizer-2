@@ -9,8 +9,9 @@
 // billboards, deliberately: it draws up to 49k sprites, and a quad big enough
 // to hold the aura would multiply its fill cost by an order of magnitude for
 // tracers only a few pixels across. It shares the LOOK instead - the sprite
-// square IS the particle_shade quad, so the SDF body lands at PT_SHAPE_R of
-// the point radius and the rest is aura, exactly as on the billboard path.
+// square IS the lib_particle_shade quad, so the SDF body lands at PT_SHAPE_R
+// of the point radius and the rest is aura, exactly as on the billboard path.
+//#include lib_particle_common
 precision highp float;
 // GLSL ES 3.00 defaults fragment sampler2D to LOWP (range [-2,2), ~8
 // fraction bits). Half-float state values far exceed that; on GPUs

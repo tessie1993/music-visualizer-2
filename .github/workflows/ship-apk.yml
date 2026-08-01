@@ -28,8 +28,16 @@ on:
 permissions:
   contents: write
 
+# Keyed on the COMMIT, not the branch. `cancel-in-progress: false` only
+# protects a run that has already started: GitHub keeps at most one PENDING run
+# per group and cancels the older one, so two pushes to main in quick
+# succession meant the middle commit was never built or verified at all. That
+# is not hypothetical - it is how a commit that does not compile became main
+# (the merge that dropped `GlUtil.withChunk` while its call sites survived),
+# and it stayed undetected until the NEXT push failed for the same reason.
+# One group per commit means every commit on main is verified on its own.
 concurrency:
-  group: musicviz-ship-${{ github.ref }}
+  group: musicviz-ship-${{ github.sha }}
   cancel-in-progress: false
 
 env:

@@ -23,7 +23,7 @@ import java.io.File
  * it is. Both are uploaded by `ParticleSceneBase.draw` for the CPU styles
  * ([VisualizerRenderer.PARTICLE_SCENES]) and by `FluidParticles.draw` for the
  * GPU lifecycle layer FLUID and CURLFLOW run - two families, one
- * `particle_shade.glsl`. Every other style - MilkDrop, Water, the shader
+ * `lib_particle_shade.glsl`. Every other style - MilkDrop, Water, the shader
  * family, and whatever lands next - draws no sprite at all, so both controls
  * stay hidden there.
  *

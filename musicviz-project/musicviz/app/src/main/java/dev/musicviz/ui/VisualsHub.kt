@@ -638,7 +638,7 @@ internal fun isShaderLookSceneId(sceneId: String): Boolean = sceneId in Visualiz
  *
  * Shape used to be a NARROWER gate than size, because the fluid layer had no
  * shape uniform and drew round dots only. Both families now shade through the
- * same `particle_shade.glsl`, so the chip row is live wherever the slider is
+ * same `lib_particle_shade.glsl`, so the chip row is live wherever the slider is
  * and the two gates collapsed into this one.
  *
  * Note FLUID can switch its point layer off (`fluidParticlesEnabled`), which

@@ -2,14 +2,15 @@
 // Instanced, velocity-stretched particle billboards for the CPU particle
 // styles. One static unit quad is drawn once per particle
 // (glDrawArraysInstanced), which buys three things point sprites could not:
-//   * no GL_POINT_SIZE_MAX ceiling, so the aura in particle_shade can be as
+//   * no GL_POINT_SIZE_MAX ceiling, so the aura in lib_particle_shade can be as
 //     wide as it needs instead of being clipped to the sprite square;
 //   * the quad orients along the particle's screen-space velocity and
 //     stretches with its speed, so fast particles read as streaks;
 //   * exact, continuous shape-space coordinates instead of gl_PointCoord,
 //     which is what lets the fragment stage antialias with fwidth().
-// The billboard and sub-pixel math live in particle_shade.glsl, spliced in
-// above this line, and are shared with the fluid styles' particle layer.
+// The billboard and sub-pixel math live in lib_particle_common.glsl, included
+// below, and are shared with the fluid styles' particle layer.
+//#include lib_particle_common
 
 // Static unit quad, [-1,1]^2 (attribute divisor 0).
 layout(location = 0) in vec2 aCorner;
