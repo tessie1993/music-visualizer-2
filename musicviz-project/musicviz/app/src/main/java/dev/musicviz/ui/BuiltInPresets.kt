@@ -560,7 +560,9 @@ object BuiltInPresets {
      * "Chrysanthemum" holds the mirrored act, which is the dense symmetric
      * fabric rather than a set of objects. "Coral garden" is the slow one: one
      * species, long-lived bodies, barely any filigree, so the room reads as
-     * something growing instead of something happening.
+     * something growing instead of something happening. "Molten" turns the
+     * medium all the way up: the fluid pulls the geometry so far out of shape
+     * that the fractals read as something poured rather than something built.
      */
     private val HYPERSPACE_VARIANTS: List<Preset> =
         listOf(
@@ -585,6 +587,11 @@ object BuiltInPresets {
                         hyperField = 1f,
                         hyperHaze = 0.7f,
                         hyperTrap = 0.9f,
+                        hyperMelt = 0.6f,
+                        hyperStain = 0.55f,
+                        hyperLiquid = 0.4f,
+                        hyperRidges = 0.5f,
+                        hyperStir = 1.1f,
                         palette = 0,
                         hueRange = 1f,
                     ),
@@ -613,6 +620,13 @@ object BuiltInPresets {
                         hyperHaze = 0.5f,
                         hyperMirrorFolds = 6,
                         hyperTrap = 1f,
+                        // The mirror already carries the composition, so the
+                        // medium is a sheen on it rather than a force in it.
+                        hyperMelt = 0.3f,
+                        hyperStain = 0.45f,
+                        hyperLiquid = 0.3f,
+                        hyperRidges = 0.7f,
+                        hyperStir = 0.7f,
                         palette = 16,
                         hueRange = 0.9f,
                     ),
@@ -642,8 +656,55 @@ object BuiltInPresets {
                         hyperField = 0.25f,
                         hyperHaze = 0.9f,
                         hyperTrap = 1.2f,
+                        // Slow water: enough flow to keep the growths swaying,
+                        // long-lived ink so the wakes stay readable.
+                        hyperMelt = 0.45f,
+                        hyperStain = 0.7f,
+                        hyperLiquid = 0.5f,
+                        hyperRidges = 0.85f,
+                        hyperStir = 0.6f,
+                        hyperSwirl = 14f,
+                        hyperFlowFade = 0.15f,
                         palette = 7,
                         hueRange = 0.8f,
+                    ),
+            ),
+            Preset(
+                name = "hyperspace · Molten",
+                sceneId = dev.musicviz.render.scene.SceneIds.HYPERSPACE,
+                attack = 0.55f,
+                decay = 0.3f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        hyperJourney = dev.musicviz.render.scene.HyperspaceMath.JOURNEY_MUSIC,
+                        hyperSpecies = 0,
+                        hyperBodies = 0.9f,
+                        hyperLifetime = 10f,
+                        hyperSpin = 0.8f,
+                        hyperOrbit = 1.3f,
+                        hyperFold = 0.55f,
+                        hyperGlow = 1f,
+                        hyperNeon = 1.5f,
+                        hyperField = 0.5f,
+                        hyperHaze = 0.6f,
+                        hyperTrap = 0.7f,
+                        // The medium wins. Fewer, larger bodies so there is
+                        // something substantial for it to pull on, and a
+                        // slow-clearing field so the ink builds into strata.
+                        hyperMelt = 1.35f,
+                        hyperStain = 1f,
+                        hyperLiquid = 0.75f,
+                        hyperRidges = 1f,
+                        hyperStir = 2f,
+                        hyperSwirl = 40f,
+                        hyperFlowFade = 0.12f,
+                        // Melt costs frames: two texture reads per march step
+                        // and a shorter step. Trimmed here so the preset that
+                        // uses the most of it still runs at the same rate.
+                        hyperDetail = 0.8f,
+                        palette = 10,
+                        hueRange = 1.1f,
                     ),
             ),
         )

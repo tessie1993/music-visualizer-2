@@ -281,6 +281,23 @@ data class SceneParams(
     val hyperMirrorFolds: Int = 6,
     // orbit-trap colour banding within a body, 0..1.5
     val hyperTrap: Float = 0.8f,
+    // The melt: the fluid engine running underneath HYPERSPACE. The bodies
+    // stir it as they drift, the music and the finger stir it, and it stirs
+    // them back. See MeltField / MeltMath.
+    // how far the medium can pull the geometry out of shape, 0..2
+    val hyperMelt: Float = 0.55f,
+    // how much dye the medium has carried lights the surfaces, 0..1.5
+    val hyperStain: Float = 0.5f,
+    // how much the dye glows in the space between the bodies, 0..1.5
+    val hyperLiquid: Float = 0.35f,
+    // flow-aligned combing of the surfaces, 0..1
+    val hyperRidges: Float = 0.5f,
+    // how hard the music stirs the medium, 0..3
+    val hyperStir: Float = 1f,
+    // vorticity of the medium, 0..50
+    val hyperSwirl: Float = 26f,
+    // how fast the medium comes back to rest, 0..4
+    val hyperFlowFade: Float = 0.35f,
     // Ripple overlay (all styles; consumed by follow-up unit F2)
     val rippleOverlayEnabled: Boolean = false,
     val rippleOverlayStrength: Float = 0.4f,

@@ -244,6 +244,13 @@ class PresetStore(
                 .put("hyperCamera", p.params.hyperCamera.toDouble())
                 .put("hyperMirrorFolds", p.params.hyperMirrorFolds)
                 .put("hyperTrap", p.params.hyperTrap.toDouble())
+                .put("hyperMelt", p.params.hyperMelt.toDouble())
+                .put("hyperStain", p.params.hyperStain.toDouble())
+                .put("hyperLiquid", p.params.hyperLiquid.toDouble())
+                .put("hyperRidges", p.params.hyperRidges.toDouble())
+                .put("hyperStir", p.params.hyperStir.toDouble())
+                .put("hyperSwirl", p.params.hyperSwirl.toDouble())
+                .put("hyperFlowFade", p.params.hyperFlowFade.toDouble())
                 .put("rippleOverlayEnabled", p.params.rippleOverlayEnabled)
                 .put("rippleOverlayStrength", p.params.rippleOverlayStrength.toDouble())
                 .put("rippleOverlaySpecular", p.params.rippleOverlaySpecular.toDouble())
@@ -452,6 +459,13 @@ class PresetStore(
                         hyperCamera = o.optDouble("hyperCamera", 1.0).toFloat(),
                         hyperMirrorFolds = o.optInt("hyperMirrorFolds", 6),
                         hyperTrap = o.optDouble("hyperTrap", 0.8).toFloat(),
+                        hyperMelt = o.optDouble("hyperMelt", 0.55).toFloat(),
+                        hyperStain = o.optDouble("hyperStain", 0.5).toFloat(),
+                        hyperLiquid = o.optDouble("hyperLiquid", 0.35).toFloat(),
+                        hyperRidges = o.optDouble("hyperRidges", 0.5).toFloat(),
+                        hyperStir = o.optDouble("hyperStir", 1.0).toFloat(),
+                        hyperSwirl = o.optDouble("hyperSwirl", 26.0).toFloat(),
+                        hyperFlowFade = o.optDouble("hyperFlowFade", 0.35).toFloat(),
                         rippleOverlayEnabled = o.optBoolean("rippleOverlayEnabled", false),
                         rippleOverlayStrength = o.optDouble("rippleOverlayStrength", 0.4).toFloat(),
                         rippleOverlaySpecular = o.optDouble("rippleOverlaySpecular", 0.3).toFloat(),
