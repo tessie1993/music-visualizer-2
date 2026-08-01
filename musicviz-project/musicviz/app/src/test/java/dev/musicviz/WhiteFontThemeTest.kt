@@ -44,13 +44,50 @@ class WhiteFontThemeTest {
     }
 
     @Test
-    fun onIsIgnoredOnLightThemesSoTextStaysLegible() {
+    fun onALightThemeTheSurfacesComeDownToMeetTheWhiteText() {
+        // The "white font does nothing" report. This used to be an opt-out:
+        // white text on a near-white surface IS unreadable, so the option
+        // refused to apply on Light and Paper. But `followSystemDark` swaps in
+        // LIGHT whenever the phone is in day mode, so a user on a dark theme
+        // could flip the switch and see NOTHING change, having never chosen a
+        // light theme at all.
+        //
+        // Refusing was the wrong half to give up. White writing needs
+        // something dark to sit on, so the surfaces move instead.
         for (theme in lightThemes) {
             val on = theme.colorScheme(whiteFont = true)
-            assertEquals(theme.name, theme.colorScheme().onSurface, on.onSurface)
-            assertEquals(theme.name, theme.colorScheme().onBackground, on.onBackground)
-            assertTrue("${theme.name} text is not dark enough to read", on.onSurface.luminance() < 0.5f)
-            assertTrue("${theme.name} background is not light", on.background.luminance() > 0.5f)
+            assertEquals(theme.name, Color.White, on.onSurface)
+            assertEquals(theme.name, Color.White, on.onBackground)
+            assertTrue(
+                "${theme.name} still has a light background under white text",
+                on.background.luminance() < 0.2f,
+            )
+            assertTrue(
+                "${theme.name} surface is not dark enough for white text",
+                on.surface.luminance() < 0.3f,
+            )
+            // Off, they are still the light themes they always were.
+            assertTrue("${theme.name} is no longer light with the option off", theme.colorScheme().background.luminance() > 0.5f)
+        }
+    }
+
+    @Test
+    fun aDarkenedLightThemeKeepsItsOwnIdentity() {
+        // Darkening must not collapse Light and Paper onto one shared grey -
+        // they are different themes, and the option is about text colour, not
+        // about throwing away the theme the user picked.
+        val schemes = lightThemes.map { it.colorScheme(whiteFont = true) }
+        for (i in schemes.indices) {
+            for (j in i + 1 until schemes.size) {
+                assertTrue(
+                    "two light themes darkened to the same background",
+                    schemes[i].background != schemes[j].background,
+                )
+            }
+        }
+        for ((theme, scheme) in lightThemes.zip(schemes)) {
+            assertEquals("${theme.name} lost its accent", theme.colorScheme().primary, scheme.primary)
+            assertEquals("${theme.name} lost its secondary", theme.colorScheme().secondary, scheme.secondary)
         }
     }
 

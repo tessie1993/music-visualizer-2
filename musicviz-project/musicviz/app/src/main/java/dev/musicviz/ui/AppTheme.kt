@@ -20,7 +20,32 @@ private data class Anchors(
     val background: Int,
     val surface: Int,
     val light: Boolean = false,
-)
+) {
+    /**
+     * The same theme with dark surfaces, for "White font" on a light theme.
+     *
+     * Already-dark themes are returned untouched (identity, so the common case
+     * costs nothing). A light theme keeps BOTH accents and takes its new
+     * background and surface from its own primary carried most of the way to
+     * black - so Light and Paper stay recognisably themselves rather than
+     * collapsing onto one shared grey, and white text has the contrast it
+     * needs. The ratios match the darkest anchors in the collection above.
+     */
+    fun darkened(): Anchors =
+        if (!light) {
+            this
+        } else {
+            copy(
+                background = ColorDerive.lerpArgb(primary, BLACK, 0.94f),
+                surface = ColorDerive.lerpArgb(primary, BLACK, 0.86f),
+                light = false,
+            )
+        }
+
+    private companion object {
+        const val BLACK = 0xFF000000.toInt()
+    }
+}
 
 /**
  * Selectable app themes. Each maps to a Material 3 [ColorScheme]. The
@@ -65,17 +90,23 @@ enum class AppTheme(
     PAPER("Paper"),
     ;
 
-    /**
-     * True for the two light-surface themes. "White font" is a no-op on them
-     * (white text on a near-white surface would blank the UI), so
-     * [colorScheme] and [whiteFontActive] gate on this one predicate rather
-     * than each testing the enum separately.
-     */
+    /** True for the two light-surface themes (Light, Paper). */
     val isLight: Boolean
         get() = anchors().light
 
-    /** True when [whiteFont] actually takes effect for this theme. */
-    fun whiteFontActive(whiteFont: Boolean): Boolean = whiteFont && !isLight
+    /**
+     * True when [whiteFont] takes effect - which is now every theme.
+     *
+     * It used to return false on the light themes, and that was the whole
+     * "white font does nothing" report: white text on a near-white surface IS
+     * unreadable, so the option opted out rather than solving it. Worse, the
+     * opt-out was reachable without ever choosing a light theme -
+     * `followSystemDark` swaps in [LIGHT] whenever the phone is in light mode,
+     * so a user on a dark theme with their phone in day mode got a switch that
+     * did nothing at all. [colorScheme] now darkens a light theme's surfaces
+     * instead of refusing, so the switch always means something.
+     */
+    fun whiteFontActive(whiteFont: Boolean): Boolean = whiteFont
 
     private fun anchors(): Anchors =
         when (this) {
@@ -115,16 +146,17 @@ enum class AppTheme(
      * saturation of primary/secondary/tertiary; [backgroundDim] (0..0.6)
      * darkens background and surfaces. Both default to identity.
      *
-     * [whiteFont] forces every body/label text role to pure white. It is
-     * deliberately ignored on the light themes (Light, Paper): white text on
-     * a near-white surface would make the whole UI invisible.
+     * [whiteFont] forces every body/label text role to pure white. On a light
+     * theme it also carries the surfaces down to dark ([Anchors.darkened]),
+     * because white writing needs something dark to sit on - the option used
+     * to give up here instead, which is why it read as broken.
      */
     fun colorScheme(
         accentIntensity: Float = 1f,
         backgroundDim: Float = 0f,
         whiteFont: Boolean = false,
     ): ColorScheme {
-        val a = anchors()
+        val a = if (whiteFont) anchors().darkened() else anchors()
         val white = 0xFFFFFFFF.toInt()
         val black = 0xFF000000.toInt()
         val primary = ColorDerive.scaleSaturation(a.primary, accentIntensity)
@@ -164,9 +196,9 @@ enum class AppTheme(
                     outline = Color(ColorDerive.lerpArgb(secondary, surface, 0.45f)),
                 )
             }
-        // Light themes opt out: white body text on a near-white surface would
-        // make the whole UI unreadable.
-        return if (whiteFont && !a.light) base.whiteText() else base
+        // `a` is already dark when whiteFont is on, so there is nothing left
+        // to opt out of.
+        return if (whiteFont) base.whiteText() else base
     }
 }
 
@@ -312,6 +344,13 @@ data class GuiPrefs(
     /** Visuals hub renders as a text-only clear overlay on the live canvas,
      *  so adjustments are visible on the visuals while being adjusted. */
     val clearVisualsMenu: Boolean = false,
+    /** Opacity of the reading plate behind the clear-overlay Visuals menu:
+     *  0 = no plate (text straight on the visuals), 0.92 = nearly solid. Its
+     *  own control rather than a fraction of [barOpacity], because how much
+     *  visual you are willing to lose to read the menu is a different
+     *  judgement from how solid the transport bar should be - and it is the
+     *  one dial that decides whether that screen is legible. */
+    val visualsPlateOpacity: Float = 0.42f,
     /** Forces body/label text to pure white (dark themes only). Off keeps the
      *  theme-derived text colors, so existing users see no change. */
     val whiteFont: Boolean = false,
@@ -334,6 +373,10 @@ data class GuiPrefs(
      *  ago, is not something a user has consented to. [ThemeStore.loadGui]
      *  always reads this back as false; the switch is a per-session decision. */
     val micReactive: Boolean = false,
+    /** "Mic sensitivity": manual multiplier on top of the automatic stage in
+     *  [dev.musicviz.audio.MicGain], 0.25..8. Persisted (unlike [micReactive]
+     *  itself) - it is a calibration for a room, not a decision to listen. */
+    val micSensitivity: Float = dev.musicviz.audio.MicCapture.DEFAULT_SENSITIVITY,
     /** Let a finger drag push the visuals around (Now Playing canvas). */
     val touchSmear: Boolean = false,
     /** How hard a drag displaces the surface, 0.2..2. */
@@ -418,6 +461,7 @@ class ThemeStore(
             compactPlayer = prefs.getBoolean(KEY_COMPACT, false),
             followSystemDark = prefs.getBoolean(KEY_FOLLOW_DARK, false),
             clearVisualsMenu = prefs.getBoolean(KEY_CLEAR_VIZ_MENU, false),
+            visualsPlateOpacity = prefs.getFloat(KEY_VISUALS_PLATE, 0.42f).coerceIn(0f, 0.92f),
             whiteFont = prefs.getBoolean(KEY_WHITE_FONT, false),
             safeVisuals = prefs.getBoolean(KEY_SAFE_VISUALS, false),
             // Coerced on read for the same reason as the beat settings above:
@@ -432,6 +476,10 @@ class ThemeStore(
             reducedMotion = prefs.getBoolean(KEY_REDUCED_MOTION, false),
             // micReactive is intentionally absent: see the field's docs. The
             // microphone is opened only by an explicit switch in this session.
+            micSensitivity =
+                prefs
+                    .getFloat(KEY_MIC_SENSITIVITY, dev.musicviz.audio.MicCapture.DEFAULT_SENSITIVITY)
+                    .coerceIn(0.25f, 8f),
             touchSmear = prefs.getBoolean(KEY_TOUCH_SMEAR, false),
             touchSmearStrength = prefs.getFloat(KEY_TOUCH_SMEAR_STRENGTH, 1f).coerceIn(0.2f, 2f),
             touchTransform = prefs.getBoolean(KEY_TOUCH_TRANSFORM, true),
@@ -460,6 +508,8 @@ class ThemeStore(
             .putFloat(KEY_MAX_FLASH_DEPTH, gui.maxFlashDepth)
             .putBoolean(KEY_ALLOW_INVERSION, gui.allowInversion)
             .putBoolean(KEY_REDUCED_MOTION, gui.reducedMotion)
+            .putFloat(KEY_MIC_SENSITIVITY, gui.micSensitivity)
+            .putFloat(KEY_VISUALS_PLATE, gui.visualsPlateOpacity)
             .putBoolean(KEY_TOUCH_SMEAR, gui.touchSmear)
             .putFloat(KEY_TOUCH_SMEAR_STRENGTH, gui.touchSmearStrength)
             .putBoolean(KEY_TOUCH_TRANSFORM, gui.touchTransform)
@@ -485,6 +535,8 @@ class ThemeStore(
         const val KEY_MAX_FLASH_DEPTH = "gui_max_flash_depth"
         const val KEY_ALLOW_INVERSION = "gui_allow_inversion"
         const val KEY_REDUCED_MOTION = "gui_reduced_motion"
+        const val KEY_MIC_SENSITIVITY = "gui_mic_sensitivity"
+        const val KEY_VISUALS_PLATE = "gui_visuals_plate_opacity"
         const val KEY_TOUCH_SMEAR = "gui_touch_smear"
         const val KEY_TOUCH_SMEAR_STRENGTH = "gui_touch_smear_strength"
         const val KEY_TOUCH_TRANSFORM = "gui_touch_transform"

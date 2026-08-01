@@ -36,6 +36,15 @@ class MicCapture(
 
     private var record: AudioRecord? = null
     private var worker: Thread? = null
+    private val autoGain = MicGain()
+
+    /**
+     * The Settings "Mic sensitivity" multiplier, on top of the automatic
+     * stage. Volatile because the UI moves it while the capture thread reads
+     * it every block.
+     */
+    @Volatile
+    var sensitivity: Float = DEFAULT_SENSITIVITY
 
     @Volatile
     private var running = false
@@ -65,6 +74,9 @@ class MicCapture(
         if (running) return null
         if (!hasPermission()) return Failure.PERMISSION
         val rec = openRecord() ?: return Failure.UNAVAILABLE
+        // A new session is a new room; carrying the last one's level over
+        // would open on a gain fitted to somewhere the phone no longer is.
+        autoGain.reset()
         record = rec
         running = true
         onSampleRate(sampleRateHz)
@@ -90,6 +102,12 @@ class MicCapture(
                             read
                         }
                     if (n > 0) {
+                        // Lift the room to playback level BEFORE the ring
+                        // buffer, so every consumer downstream stays unaware
+                        // there is a second source at all - the same reason
+                        // the samples go into the shared buffer in the first
+                        // place.
+                        autoGain.process(floats, n, sensitivity)
                         ring.writeInterleaved(floats, n, 1)
                     } else if (n < 0) {
                         // A negative result is an error code, not a short read:
@@ -151,7 +169,19 @@ class MicCapture(
         return null
     }
 
-    private companion object {
+    companion object {
+        /**
+         * Default "Mic sensitivity".
+         *
+         * Above 1 on purpose. The automatic stage alone lands the room at
+         * roughly the level a track plays at, which is correct but reads as
+         * timid next to music: a room is mostly quiet between sounds, so the
+         * same RMS carries far less punch. A little over gives the visuals the
+         * bite people expect from a live-input mode, and the slider goes both
+         * ways from here.
+         */
+        const val DEFAULT_SENSITIVITY = 2.5f
+
         const val DEFAULT_RATE = 44_100
 
         /** Frames per read: ~23 ms at 44.1 kHz, well under the analyzer's hop. */

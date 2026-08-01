@@ -63,11 +63,36 @@ class TouchTransformTest {
 
     @Test
     fun aFrameWithNoPinchOrTwistIsNotATransform() {
-        // This is what routes a one-finger drag to the smear instead: the same
-        // detector serves both, and a pan with no pinch is not a transform.
+        // This is what routes a drag to the smear instead: the same detector
+        // serves both, and a pan with no pinch is not a transform.
         assertFalse(TouchTransform.isTransform(1f, 0f))
-        assertTrue(TouchTransform.isTransform(1.02f, 0f))
-        assertTrue(TouchTransform.isTransform(1f, 0.5f))
+        assertTrue(TouchTransform.isTransform(1.2f, 0f))
+        assertTrue(TouchTransform.isTransform(1f, 6f))
+    }
+
+    @Test
+    fun measurementNoiseFromATwoFingerDragIsNotATransform() {
+        // The smear bug. Two fingers dragging together never hold their
+        // separation to the exact pixel, so the frame arrives as a zoom of
+        // 1.0001 and a rotation of a few thousandths of a degree. The old test
+        // was `zoom != 1f`, which called every one of those a pinch - and
+        // since the smear is the `else` branch, a two-finger drag could never
+        // reach it.
+        assertFalse(TouchTransform.isTransform(1.0001f, 0.003f))
+        assertFalse(TouchTransform.isTransform(0.999f, -0.02f))
+        assertFalse(TouchTransform.isTransform(1.015f, 1.2f))
+        // A deliberate pinch or twist still is one.
+        assertTrue(TouchTransform.isTransform(1.05f, 0f))
+        assertTrue(TouchTransform.isTransform(1f, -3f))
+    }
+
+    @Test
+    fun aDegenerateFrameIsNeverATransform() {
+        // NaN passes `!= 1f`, so the old test called it a pinch and swallowed
+        // the drag that frame belonged to.
+        assertFalse(TouchTransform.isTransform(Float.NaN, 0f))
+        assertFalse(TouchTransform.isTransform(1f, Float.NaN))
+        assertFalse(TouchTransform.isTransform(0f, 0f))
     }
 
     @Test

@@ -81,6 +81,9 @@ fun Modifier.readingPlate(
     corner: Dp = 0.dp,
 ): Modifier {
     val a = opacity.coerceIn(0f, 0.92f)
+    // Zero means zero: the gradient below lifts the top and bottom edges above
+    // `a`, so without this an "off" plate still left two visible bands.
+    if (a <= 0f) return this
     val shape: Shape = if (corner > 0.dp) RoundedCornerShape(corner) else RectangleShape
     return this
         .clip(shape)

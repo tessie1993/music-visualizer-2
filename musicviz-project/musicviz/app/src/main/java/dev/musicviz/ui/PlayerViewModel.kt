@@ -275,6 +275,9 @@ class PlayerViewModel(
         }
         if (micCapture.active) return null
         player.pause()
+        // The saved trim applies from the first block, not from the first time
+        // the user happens to touch the slider.
+        micCapture.sensitivity = _guiPrefs.value.micSensitivity
         val failure = micCapture.start { rate -> engine.sampleRateHz = rate }
         if (failure != null) {
             _micState.value = MicState(active = false, failure = failure)
@@ -506,6 +509,9 @@ class PlayerViewModel(
         val previous = _guiPrefs.value
         themeStore.saveGui(prefs)
         _guiPrefs.value = prefs
+        // Live: the capture thread reads this every block, so the slider moves
+        // the visuals while the microphone is open rather than at next start.
+        micCapture.sensitivity = prefs.micSensitivity
         engine.beatThresholdSigma = prefs.beatThresholdSigma
         // Safe visuals floors the gap between beats, because `flash` fires
         // once per beat and no visual slider governs how often that is.

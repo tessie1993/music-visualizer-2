@@ -94,17 +94,23 @@ fun VisualsHub(
             } else {
                 LocalTextStyle.current
             }
-        // Semi-transparent plate under the menu: the visuals read through it,
-        // the text reads on it. Inset so the live canvas frames the panel and
-        // it is obvious the visuals are still running underneath. Its opacity
-        // follows the Settings "Bar opacity" slider like the rest of the
-        // chrome, scaled down because this one has to stay see-through.
+        // Semi-transparent glass plate between the visuals and the writing:
+        // the visuals read through it, the text reads on it. Inset so the live
+        // canvas frames the panel and it is obvious the visuals are still
+        // running underneath.
+        //
+        // Tinted with the theme's own surface colour, so the plate belongs to
+        // the theme rather than being a grey wash over it, and driven by its
+        // own Settings slider ("Menu plate") - it used to be a fixed fraction
+        // of Bar opacity, clamped to 0.18..0.7, which meant the one control
+        // that decides whether this screen is readable could be neither turned
+        // off nor turned up.
         val plate =
             if (liveBackdrop) {
                 Modifier
                     .padding(horizontal = 8.dp, vertical = 6.dp)
                     .readingPlate(
-                        opacity = (gui.barOpacity * 0.62f).coerceIn(0.18f, 0.7f),
+                        opacity = gui.visualsPlateOpacity,
                         tint = MaterialTheme.colorScheme.surface,
                         corner = 20.dp,
                     )

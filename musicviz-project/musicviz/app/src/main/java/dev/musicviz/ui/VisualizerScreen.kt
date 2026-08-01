@@ -3,8 +3,6 @@ package dev.musicviz.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,12 +43,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import dev.musicviz.analysis.AudioQualityInfo
 import dev.musicviz.render.VisualizerView
-import dev.musicviz.render.scene.TouchTransform
 
 /**
  * Now Playing: the fullscreen visualizer canvas with the app shell's design
@@ -89,43 +85,27 @@ fun VisualizerScreen(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = { controlsVisible = !controlsVisible })
-            }
-            // Canvas gestures. ONE detector for both, because two would fight
-            // over the same pointers: a drag detector and a transform detector
-            // stacked on one element each consume the changes the other is
-            // waiting for, and which one wins depends on modifier order rather
-            // than on what the fingers did. Taps still reach the detector above
-            // either way - a tap moves nothing, so nothing here consumes it.
-            //
-            // Only this screen gets them: the clear-overlay Visuals menu puts
-            // scrolling lists on the same canvas, and a drag there belongs to
-            // the list.
-            .pointerInput(gui.touchSmear, gui.touchSmearStrength, gui.touchTransform) {
-                if (!gui.touchSmear && !gui.touchTransform) return@pointerInput
-                val w = size.width.toFloat().coerceAtLeast(1f)
-                val h = size.height.toFloat().coerceAtLeast(1f)
-                detectTransformGestures { centroid, pan, gestureZoom, gestureRotate ->
-                    if (gui.touchTransform && TouchTransform.isTransform(gestureZoom, gestureRotate)) {
-                        // Two fingers: pinch is Zoom, twist is Rotation.
-                        viewModel.nudgeTransform(gestureZoom, gestureRotate)
-                    } else if (gui.touchSmear) {
-                        // One finger (or two moving together): push the
-                        // surface. Normalized to the view, y still DOWN as the
-                        // UI reports it; the renderer converts to sim space on
-                        // the GL thread.
-                        visualizerView.visualizerRenderer.queueTouchStroke(
-                            nx = centroid.x / w,
-                            ny = centroid.y / h,
-                            ndx = pan.x / w,
-                            ndy = pan.y / h,
-                            dt = FRAME_DT,
-                            strength = gui.touchSmearStrength,
-                        )
-                    }
-                }
-            },
+            // Tap, drag-to-smear and pinch/twist all come out of ONE detector.
+            // Stacking two (a tap detector plus a transform detector) is what
+            // broke the smear: see [canvasGestures].
+            .canvasGestures(
+                smear = gui.touchSmear,
+                transform = gui.touchTransform,
+                onTap = { controlsVisible = !controlsVisible },
+                // Two fingers: pinch is Zoom, twist is Rotation.
+                onTransform = { zoom, degrees -> viewModel.nudgeTransform(zoom, degrees) },
+                // One finger (or two moving together): push the surface.
+                onSmear = { nx, ny, ndx, ndy ->
+                    visualizerView.visualizerRenderer.queueTouchStroke(
+                        nx = nx,
+                        ny = ny,
+                        ndx = ndx,
+                        ndy = ndy,
+                        dt = FRAME_DT,
+                        strength = gui.touchSmearStrength,
+                    )
+                },
+            ),
     ) {
         if (externalDisplayName == null) {
             VisualizerCanvasHost(visualizerView, Modifier.fillMaxSize())

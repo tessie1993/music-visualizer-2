@@ -593,7 +593,9 @@ private fun AppSettingsTab(
                         )
                     }
                     Text(
-                        "Forces labels and body text to pure white. No effect on light themes, where it would be unreadable.",
+                        "Forces every label, heading and body line to pure white, on every theme. A light theme " +
+                            "darkens its panels to match — white writing needs something dark to sit on — and keeps " +
+                            "its own accents. Icons, sliders and glows stay themed: this changes writing, not colour.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -618,6 +620,24 @@ private fun AppSettingsTab(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (gui.clearVisualsMenu) {
+                        Text(
+                            "Menu plate  ${(gui.visualsPlateOpacity * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        CrystalSlider(
+                            value = gui.visualsPlateOpacity,
+                            onValueChange = { viewModel.setGuiPrefs(gui.copy(visualsPlateOpacity = it)) },
+                            valueRange = 0f..0.92f,
+                        )
+                        Text(
+                            "How solid the glass panel behind that menu is. It sits between the visuals and the " +
+                                "writing and takes the theme's own surface colour, so turn it up until the text " +
+                                "reads cleanly and down to see more of the visuals. 0% removes it entirely.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 // Boot animation toggle (persisted directly; read by AppRoot at start).
                 val bootCtx = LocalContext.current
@@ -972,6 +992,22 @@ private fun LiveInputSettings(viewModel: PlayerViewModel) {
                     color = MaterialTheme.colorScheme.error,
                 )
         }
+        Text(
+            "Mic sensitivity  ${"%.1f".format(gui.micSensitivity)}×",
+            style = MaterialTheme.typography.labelMedium,
+        )
+        CrystalSlider(
+            value = gui.micSensitivity,
+            onValueChange = { viewModel.setGuiPrefs(gui.copy(micSensitivity = it)) },
+            valueRange = 0.25f..8f,
+        )
+        Text(
+            "How hard the room drives the visuals. MusicViz already tracks the level automatically and " +
+                "lifts it to match a playing track — this is the trim on top, for a quiet room (up) or a " +
+                "loud one (down). It changes only what the visuals see, never what you hear.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
     Column {
         Text("Tune for what the phone is hearing", style = MaterialTheme.typography.labelMedium)

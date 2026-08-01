@@ -58,9 +58,35 @@ object TouchTransform {
         return (current + degrees * ROTATION_PER_DEGREE).coerceIn(ROTATION_MIN, ROTATION_MAX)
     }
 
-    /** True when a gesture frame carries a real pinch or twist. */
+    /**
+     * Smallest pinch that counts as a pinch (2% of the current zoom).
+     *
+     * Two fingers dragging together never hold their separation to the exact
+     * pixel, so the measured zoom arrives as 1.0001-ish rather than 1. An
+     * exact `!= 1f` test called that a pinch and routed the frame to the
+     * transform branch, which is why a two-finger drag could never smear: the
+     * smear branch is the `else`, and floating-point noise took every frame
+     * before it. Same story for the twist below.
+     */
+    const val ZOOM_DEADZONE = 0.02f
+
+    /** Smallest twist that counts as a twist, in degrees. */
+    const val ROTATION_DEADZONE = 1.5f
+
+    /**
+     * True when a gesture frame carries a real pinch or twist - as opposed to
+     * the measurement noise any multi-finger drag produces.
+     *
+     * A frame that fails this test is a DRAG, and belongs to whatever the
+     * caller does with drags (here: the touch smear). Non-finite input is not
+     * a transform: a NaN would otherwise pass `!= 1f` and swallow the drag.
+     */
     fun isTransform(
         zoomFactor: Float,
         degrees: Float,
-    ): Boolean = (zoomFactor != 1f && zoomFactor > 0f) || degrees != 0f
+    ): Boolean {
+        if (!zoomFactor.isFinite() || !degrees.isFinite()) return false
+        val pinched = zoomFactor > 0f && kotlin.math.abs(zoomFactor - 1f) > ZOOM_DEADZONE
+        return pinched || kotlin.math.abs(degrees) > ROTATION_DEADZONE
+    }
 }
