@@ -1083,6 +1083,11 @@ internal fun HyperspaceTab(
             onChange(p.copy(hyperMirrorFolds = it))
         }
 
+        // The melt is HYPERSPACE's medium, and this is the only place it can
+        // be reached: every field below is `hyper*` and HyperspaceScene is the
+        // only reader. The group spent two commits inside FluidTab's emitter
+        // block, which renders on FLUID and WATER - so the sliders showed up on
+        // the two styles that ignore them and never on the one they move.
         SectionHeader("Melt")
         ControlHint(
             "A fluid simulation runs underneath the fractals. The bodies stir it " +
