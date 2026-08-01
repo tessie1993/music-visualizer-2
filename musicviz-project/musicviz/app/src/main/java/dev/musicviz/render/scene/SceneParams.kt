@@ -216,6 +216,30 @@ data class SceneParams(
     val waterLiquidFlow: Float = 1.4f,
     // How fast the film clears, 0 (never) .. 2
     val waterLiquidFade: Float = 0.35f,
+    // Cymatics (CYMATICS scene): the Chladni plate the sound is played into.
+    // See CymaticsMath for the pitch -> mode law these parameters tune.
+    // false = the flat sand figure seen from above (the 2D photograph)
+    val cymatics3d: Boolean = true,
+    // Hz that answers with the coarsest mode; 40..440
+    val cymaticsFundamental: Float = 110f,
+    // standing waves superposed at once, 1..CymaticsMath.MAX_RENDERED_MODES
+    val cymaticsModes: Int = 5,
+    // how long a mode keeps ringing, 0..1 (CymaticsMath.ringSeconds)
+    val cymaticsRing: Float = 0.35f,
+    // 0 = raw band energy (bass-led) .. 1 = spectral peaks only (pitch-led)
+    val cymaticsFocus: Float = 0.7f,
+    // surface height, 0..2
+    val cymaticsRelief: Float = 1f,
+    // camera elevation, 0 straight down .. 1 nearly edge-on (3D only)
+    val cymaticsTilt: Float = 0.5f,
+    // orbit speed in radians/second, -1..1 (3D only)
+    val cymaticsSpin: Float = 0.12f,
+    // nodal-line ("sand") weight, 0..2
+    val cymaticsSand: Float = 1f,
+    // how far the plate visibly oscillates, 0 (frozen relief) .. 1
+    val cymaticsVibration: Float = 0.35f,
+    // vertex-grid detail tier, index into CymaticsScene.GRID_TIERS
+    val cymaticsGrid: Int = 1,
     // Ripple overlay (all styles; consumed by follow-up unit F2)
     val rippleOverlayEnabled: Boolean = false,
     val rippleOverlayStrength: Float = 0.4f,

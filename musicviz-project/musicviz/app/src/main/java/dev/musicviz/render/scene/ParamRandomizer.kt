@@ -244,6 +244,22 @@ object ParamRandomizer {
         r("Ripple overlay strength") { it.copy(rippleOverlayStrength = f(0.15f, 0.7f)) }
         r("Ripple glint") { it.copy(rippleOverlaySpecular = f(0.1f, 0.6f)) }
 
+        // ---- Cymatics (the Chladni plate) ----
+        // Rolled unconditionally like the fluid block: a style that does not
+        // read these is unaffected, so a roll taken elsewhere still leaves the
+        // plate in a sane state when the user switches to it. "Plate detail"
+        // is the tier selector and stays out, exactly as fluid quality does.
+        r("Plate view (3D)") { it.copy(cymatics3d = !chance(0.35f)) }
+        r("Fundamental (Hz)") { it.copy(cymaticsFundamental = f(55f, 260f)) }
+        r("Standing waves") { it.copy(cymaticsModes = n(2, CymaticsMath.MAX_RENDERED_MODES)) }
+        r("Tonal focus") { it.copy(cymaticsFocus = f(0.35f, 1f)) }
+        r("Plate ring") { it.copy(cymaticsRing = f(0.15f, 0.8f)) }
+        r("Relief") { it.copy(cymaticsRelief = f(0.5f, 1.6f)) }
+        r("Vibration") { it.copy(cymaticsVibration = f(0f, 0.7f)) }
+        r("Sand") { it.copy(cymaticsSand = f(0.5f, 1.6f)) }
+        r("Camera tilt") { it.copy(cymaticsTilt = f(0.15f, 0.85f)) }
+        r("Plate spin") { it.copy(cymaticsSpin = f(-0.5f, 0.5f)) }
+
         return s
     }
 }

@@ -462,6 +462,59 @@ object BuiltInPresets {
             ),
         )
 
+    /**
+     * Cymatics starting points: the same plate, heard two different ways.
+     * "Chladni plate" is the physical demonstration - the lit 3D surface,
+     * seen at an angle, turning slowly; "Sand figure" is the photograph of
+     * the experiment, straight down onto sand on dark metal, with the plate
+     * ringing long enough for a figure to settle and stay readable.
+     */
+    private val CYMATICS_VARIANTS: List<Preset> =
+        listOf(
+            Preset(
+                name = "cymatics · Chladni plate",
+                sceneId = dev.musicviz.render.scene.SceneIds.CYMATICS,
+                attack = 0.35f,
+                decay = 0.4f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        cymatics3d = true,
+                        cymaticsFundamental = 110f,
+                        cymaticsModes = 5,
+                        cymaticsFocus = 0.7f,
+                        cymaticsRing = 0.35f,
+                        cymaticsRelief = 1.1f,
+                        cymaticsTilt = 0.55f,
+                        cymaticsSpin = 0.12f,
+                        cymaticsVibration = 0.4f,
+                        palette = 8,
+                    ),
+            ),
+            Preset(
+                name = "cymatics · Sand figure",
+                sceneId = dev.musicviz.render.scene.SceneIds.CYMATICS,
+                attack = 0.3f,
+                decay = 0.55f,
+                customShader = null,
+                params =
+                    SceneParams(
+                        cymatics3d = false,
+                        // Fewer, longer-ringing modes: a sand figure needs to
+                        // hold still long enough to be read as one shape.
+                        cymaticsFundamental = 82f,
+                        cymaticsModes = 3,
+                        cymaticsFocus = 0.9f,
+                        cymaticsRing = 0.6f,
+                        cymaticsSand = 1.2f,
+                        cymaticsVibration = 0f,
+                        cymaticsGrid = 2,
+                        palette = 4,
+                        hueRange = 0.6f,
+                    ),
+            ),
+        )
+
     val ALL: List<Preset> =
         (VisualizerRenderer.PARTICLE_SCENES + VisualizerRenderer.SHADER_SCENES.keys).flatMap { id ->
             LOOKS.map { look ->
@@ -474,7 +527,7 @@ object BuiltInPresets {
                     params = look.params,
                 )
             }
-        } + FLUID_VARIANTS
+        } + FLUID_VARIANTS + CYMATICS_VARIANTS
 
     fun isBuiltIn(name: String): Boolean = name.contains(" · ")
 }

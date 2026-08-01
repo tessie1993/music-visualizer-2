@@ -1,3 +1,65 @@
+## v1.3.0 (code 27) - Cymatics: the sound itself, drawn as the shape it makes
+
+- **A new visualizer style, `cymatics`** (Visuals > Styles > Cymatics), modelled
+  on the Chladni-plate maths in `codenlighten/3D-Cymatics`. Play a tone into a
+  metal plate, scatter sand on it, and the grains collect along the lines that
+  do not move. This style is that plate, driven by whatever is playing - a
+  track, or the microphone on live input - so the picture is a depiction of the
+  sound rather than a look reacting to it: a pure tone draws one clean
+  symmetric figure, a chord draws the superposition of its notes' figures, and
+  silence draws nothing.
+- **Two views off one geometry pass.** "Plate view (3D)" renders the lit
+  surface - the physical demonstration, orbiting slowly, sand still marking the
+  nodal lines - and switching it off renders the flat figure seen from straight
+  above: the photograph of the experiment, sand on dark metal. Both ship as
+  built-in presets (`cymatics · Chladni plate`, `cymatics · Sand figure`).
+- **The pitch -> figure law is the real one.** A stiff plate's modal
+  frequencies rise with the SQUARE of the mode order (Kirchhoff plate theory,
+  and the reason Chladni's own law is quadratic), so `wavenumber =
+  sqrt(hz / fundamental)`: an octave up is 1.41x finer, not 2x, which is what
+  lets a 40 Hz - 16 kHz spectrum land inside the enumerated modes instead of
+  running off the plate within three octaves. `z = cos(n PI x) cos(m PI y) -
+  cos(m PI x) cos(n PI y)` is antisymmetric and flat at n == m, so the mode
+  table enumerates n > m only.
+- **Modes are resonators, not FFT bins.** Each of the ~100 modes has its own
+  attack and a "Plate ring" decay, so a figure holds its shape through a note
+  and dissolves after it rather than flickering with the frame rate. "Tonal
+  focus" chooses what the plate hears: raw band energy (bass-led, big slow
+  shapes) or spectral peaks above the local mean (pitch-led, so a melody or a
+  hi-hat can put a fine figure on the plate at all).
+- The band -> frequency map mirrors `FftProcessor.bandEdges` INCLUDING its bin
+  quantization: at 44.1 kHz a bin is ~21.5 Hz, so the bottom ~20 log-spaced
+  band edges round onto the same bin and get bumped apart. Band 12 covers
+  280-323 Hz, not the 130 Hz the pure logarithm suggests, and a plate that
+  believed the logarithm answered every bass note an order too coarse.
+  `CymaticsMathTest` asserts the two edge tables agree bin for bin.
+- **Visual safety, by construction.** A real plate vibrates at the frequency it
+  is driven at - hundreds of hertz, in the band the photosensitivity work
+  exists to stay out of. The surface motion is that oscillation strobed down to
+  0.12-1.6 Hz, well under the WCAG three-flashes-per-second threshold, and
+  pinned there by a test. The sand is unaffected either way: every mode of a
+  driven plate moves in phase, so the vibration scales the height and leaves
+  the nodal lines - where the height is zero - exactly where they were.
+- **Depth buffers, for the first time in the tree.** This is the only style
+  that draws real 3D geometry, so `Scene.needsDepth` was added and both render
+  targets - the live renderer's FBO pair and the exporter's `FxCompositor` -
+  attach a depth renderbuffer LAZILY for the scenes that ask. Nothing else
+  pays for it, a driver that refuses the attachment falls back to rendering
+  without depth testing rather than losing the style, and exports get the same
+  treatment as the screen. The plate mesh itself has no vertex buffer at all:
+  the vertex shader derives plate coordinates from `gl_VertexID`, so a detail
+  change costs one index-buffer rebuild and nothing per frame.
+- Customize gains a **Cymatics** tab (visible only on that style, like GLSL):
+  Fundamental, Standing waves, Tonal focus, Plate ring, Relief, Vibration,
+  Sand, Camera tilt, Plate spin and Plate detail. All ten are randomizable and
+  lockable; the detail tier stays out of the roll like fluid quality does. The
+  style joins the composite-graded family, so Hue shift, Brightness, Contrast,
+  Gamma, Zoom, Rotation and the whole FX chain work on it exactly as they do
+  on the fluid styles.
+- 17 new tests (`CymaticsMathTest`) pin the plate formula, its analytic
+  gradient against finite differences of the surface it shades, the band map,
+  the resonator envelopes, snapshot normalization and the vibration band.
+
 ## v1.2.0 (code 26) - Visual safety (photosensitivity limits), and the pulse tracker stops carrying one track's beat grid into the next
 
 - **Safe visuals** (Settings > Visual safety), the first photosensitivity

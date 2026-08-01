@@ -9,6 +9,7 @@ import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.export.VideoExporter
 import dev.musicviz.render.fluid.CurlFlowMath
 import dev.musicviz.render.scene.BurstScene
+import dev.musicviz.render.scene.CymaticsScene
 import dev.musicviz.render.scene.FountainScene
 import dev.musicviz.render.scene.GlUtil
 import dev.musicviz.render.scene.NebulaScene
@@ -231,6 +232,14 @@ class VisualizerRenderer(
             waterLiquid = f(from.waterLiquid, to.waterLiquid),
             waterLiquidFlow = f(from.waterLiquidFlow, to.waterLiquidFlow),
             waterLiquidFade = f(from.waterLiquidFade, to.waterLiquidFade),
+            cymaticsFundamental = f(from.cymaticsFundamental, to.cymaticsFundamental),
+            cymaticsRing = f(from.cymaticsRing, to.cymaticsRing),
+            cymaticsFocus = f(from.cymaticsFocus, to.cymaticsFocus),
+            cymaticsRelief = f(from.cymaticsRelief, to.cymaticsRelief),
+            cymaticsTilt = f(from.cymaticsTilt, to.cymaticsTilt),
+            cymaticsSpin = f(from.cymaticsSpin, to.cymaticsSpin),
+            cymaticsSand = f(from.cymaticsSand, to.cymaticsSand),
+            cymaticsVibration = f(from.cymaticsVibration, to.cymaticsVibration),
             rippleOverlayStrength = f(from.rippleOverlayStrength, to.rippleOverlayStrength),
             rippleOverlaySpecular = f(from.rippleOverlaySpecular, to.rippleOverlaySpecular),
         )
@@ -379,6 +388,9 @@ class VisualizerRenderer(
         var w = 0
         var h = 0
 
+        /** Depth renderbuffer, attached lazily - see [ensureDepth]. */
+        var depth = 0
+
         fun ensure(
             width: Int,
             height: Int,
@@ -421,11 +433,53 @@ class VisualizerRenderer(
             h = height
         }
 
+        /**
+         * Attaches a depth renderbuffer, once, for scenes that draw real 3D
+         * geometry ([Scene.needsDepth]).
+         *
+         * Lazy rather than part of [ensure] because it is dead weight for
+         * every other scene in the tree: at the supersampled render size this
+         * is several megabytes per target, and only one style reads it. The
+         * attachment is dropped with the rest of the target on resize, so the
+         * next frame of a 3D scene simply re-attaches at the new size.
+         */
+        fun ensureDepth() {
+            if (fbo == 0 || depth != 0) return
+            val ids = IntArray(1)
+            GLES30.glGenRenderbuffers(1, ids, 0)
+            depth = ids[0]
+            GLES30.glBindRenderbuffer(GLES30.GL_RENDERBUFFER, depth)
+            GLES30.glRenderbufferStorage(GLES30.GL_RENDERBUFFER, GLES30.GL_DEPTH_COMPONENT16, w, h)
+            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fbo)
+            GLES30.glFramebufferRenderbuffer(
+                GLES30.GL_FRAMEBUFFER,
+                GLES30.GL_DEPTH_ATTACHMENT,
+                GLES30.GL_RENDERBUFFER,
+                depth,
+            )
+            if (GLES30.glCheckFramebufferStatus(GLES30.GL_FRAMEBUFFER) != GLES30.GL_FRAMEBUFFER_COMPLETE) {
+                // A driver that refuses the attachment is not a reason to lose
+                // the scene: detach and let it render without depth testing.
+                GLES30.glFramebufferRenderbuffer(
+                    GLES30.GL_FRAMEBUFFER,
+                    GLES30.GL_DEPTH_ATTACHMENT,
+                    GLES30.GL_RENDERBUFFER,
+                    0,
+                )
+                GLES30.glDeleteRenderbuffers(1, intArrayOf(depth), 0)
+                depth = 0
+            }
+            GLES30.glBindRenderbuffer(GLES30.GL_RENDERBUFFER, 0)
+            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
+        }
+
         fun release() {
             if (fbo != 0) GLES30.glDeleteFramebuffers(1, intArrayOf(fbo), 0)
             if (tex != 0) GLES30.glDeleteTextures(1, intArrayOf(tex), 0)
+            if (depth != 0) GLES30.glDeleteRenderbuffers(1, intArrayOf(depth), 0)
             fbo = 0
             tex = 0
+            depth = 0
             w = 0
             h = 0
         }
@@ -439,6 +493,7 @@ class VisualizerRenderer(
             add(SceneIds.FLUID)
             add(SceneIds.CURLFLOW)
             add(SceneIds.WATER)
+            add(SceneIds.CYMATICS)
         }
 
     fun submitShader(
@@ -501,6 +556,10 @@ class VisualizerRenderer(
         scenes[SceneIds.WATER] =
             dev.musicviz.render.fluid.WaterScene(context).also { water ->
                 water.onShaderError = { onShaderError(it) }
+            }
+        scenes[SceneIds.CYMATICS] =
+            CymaticsScene(context).also { plate ->
+                plate.onShaderError = { onShaderError(it) }
             }
         if (PMBridge.available) {
             scenes[SceneIds.MILKDROP] =
@@ -724,6 +783,7 @@ class VisualizerRenderer(
                 outgoingScene = null
                 outgoingParams = null
             } else {
+                if (outgoing.needsDepth) fboB.ensureDepth()
                 GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboB.fbo)
                 GLES30.glViewport(0, 0, renderWidth, renderHeight)
                 GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
@@ -735,6 +795,9 @@ class VisualizerRenderer(
         }
 
         // Active scene renders into FBO A (fade instead of clear for trails).
+        // A 3D scene gets a depth buffer first; it clears and restores depth
+        // state itself, so no other scene is affected by its presence.
+        if (scene.needsDepth) fboA.ensureDepth()
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboA.fbo)
         GLES30.glViewport(0, 0, renderWidth, renderHeight)
         // Curl Flow always persists: it draws bare GL_POINTS, which need canvas
@@ -971,9 +1034,10 @@ class VisualizerRenderer(
     }
 
     /**
-     * Which composite-pass gate a scene falls under. The fluid family (Fluid,
-     * Curl Flow, Water) is the `else` branch: it has no pass of its own, so
-     * the composite owns every group for it.
+     * Which composite-pass gate a scene falls under. The composite-graded
+     * family - Fluid, Curl Flow, Water and Cymatics - is the `else` branch:
+     * none of them has a grading pass of its own, so the composite owns every
+     * group for them.
      */
     private fun compositeFamily(scene: Scene?): CompositeGrade.SceneFamily =
         when (scene) {
@@ -1128,6 +1192,7 @@ class VisualizerRenderer(
                         sceneId == SceneIds.WATER ->
                             dev.musicviz.render.fluid
                                 .WaterScene(context)
+                        sceneId == SceneIds.CYMATICS -> CymaticsScene(context)
                         sceneId == SceneIds.MILKDROP && PMBridge.available ->
                             ProjectMScene(
                                 postVertexSrc = loadRaw(R.raw.fade_vert),

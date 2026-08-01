@@ -36,6 +36,7 @@ import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.render.LfoConfig
 import dev.musicviz.render.LfoTarget
 import dev.musicviz.render.LfoWave
+import dev.musicviz.render.scene.CymaticsMath
 import dev.musicviz.render.scene.SceneParams
 
 /*
@@ -853,6 +854,65 @@ internal fun FluidTab(
                 }) { Text("Reset to built-in") }
             }
         }
+    }
+}
+
+/**
+ * Customize -> Cymatics tab: the Chladni plate the CYMATICS style plays the
+ * sound into.
+ *
+ * Shown only while that style is active (`VisualsHub.isCymaticsSceneId`),
+ * unlike the Fluid tab: every control here is read by exactly one scene, and
+ * a whole tab of sliders that move nothing is worse than a tab that comes and
+ * goes with the style it belongs to.
+ *
+ * The two that decide what the plate HEARS are "Fundamental" and "Tonal
+ * focus": the first is the pitch that answers with the coarsest figure, i.e.
+ * how fine the whole spectrum lands on the plate, and the second chooses
+ * between raw band energy (bass-led, big slow shapes) and spectral peaks
+ * (pitch-led, the figure follows the notes). See [CymaticsMath].
+ */
+@Composable
+internal fun CymaticsTab(
+    p: SceneParams,
+    onChange: (SceneParams) -> Unit,
+) {
+    Column {
+        SectionHeader("Plate")
+        ControlHint(
+            "A Chladni plate driven by what is playing - or by the mic, on " +
+                "live input. Sand collects along the lines that do not move, " +
+                "so the figure on screen is the shape the sound itself makes: " +
+                "a pure tone draws one clean pattern, a chord draws the " +
+                "superposition of its notes'.",
+        )
+        CheckRow("Plate view (3D)", p.cymatics3d) { onChange(p.copy(cymatics3d = it)) }
+        LabeledSlider(
+            "Fundamental (Hz)",
+            p.cymaticsFundamental,
+            CymaticsMath.MIN_FUNDAMENTAL_HZ..CymaticsMath.MAX_FUNDAMENTAL_HZ,
+        ) { onChange(p.copy(cymaticsFundamental = it)) }
+        LabeledIntSlider("Standing waves", p.cymaticsModes, 1..CymaticsMath.MAX_RENDERED_MODES) {
+            onChange(p.copy(cymaticsModes = it))
+        }
+        LabeledSlider("Tonal focus", p.cymaticsFocus, 0f..1f) { onChange(p.copy(cymaticsFocus = it)) }
+        LabeledSlider("Plate ring", p.cymaticsRing, 0f..1f) { onChange(p.copy(cymaticsRing = it)) }
+
+        SectionHeader("Surface")
+        LabeledSlider("Relief", p.cymaticsRelief, 0f..2f) { onChange(p.copy(cymaticsRelief = it)) }
+        LabeledSlider("Vibration", p.cymaticsVibration, 0f..1f) { onChange(p.copy(cymaticsVibration = it)) }
+        LabeledSlider("Sand", p.cymaticsSand, 0f..2f) { onChange(p.copy(cymaticsSand = it)) }
+
+        if (p.cymatics3d) {
+            SectionHeader("Camera")
+            ControlHint("Tilt runs from straight down over the plate to almost edge-on with it.")
+            LabeledSlider("Camera tilt", p.cymaticsTilt, 0f..1f) { onChange(p.copy(cymaticsTilt = it)) }
+            LabeledSlider("Plate spin", p.cymaticsSpin, -1f..1f) { onChange(p.copy(cymaticsSpin = it)) }
+        }
+
+        SectionHeader("Performance")
+        ControlHint("Grid detail of the plate mesh: finer resolves finer figures, and costs more.")
+        LabeledIntSlider("Plate detail", p.cymaticsGrid, 0..2) { onChange(p.copy(cymaticsGrid = it)) }
     }
 }
 

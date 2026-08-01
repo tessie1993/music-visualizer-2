@@ -214,6 +214,17 @@ class PresetStore(
                 .put("waterLiquid", p.params.waterLiquid.toDouble())
                 .put("waterLiquidFlow", p.params.waterLiquidFlow.toDouble())
                 .put("waterLiquidFade", p.params.waterLiquidFade.toDouble())
+                .put("cymatics3d", p.params.cymatics3d)
+                .put("cymaticsFundamental", p.params.cymaticsFundamental.toDouble())
+                .put("cymaticsModes", p.params.cymaticsModes)
+                .put("cymaticsRing", p.params.cymaticsRing.toDouble())
+                .put("cymaticsFocus", p.params.cymaticsFocus.toDouble())
+                .put("cymaticsRelief", p.params.cymaticsRelief.toDouble())
+                .put("cymaticsTilt", p.params.cymaticsTilt.toDouble())
+                .put("cymaticsSpin", p.params.cymaticsSpin.toDouble())
+                .put("cymaticsSand", p.params.cymaticsSand.toDouble())
+                .put("cymaticsVibration", p.params.cymaticsVibration.toDouble())
+                .put("cymaticsGrid", p.params.cymaticsGrid)
                 .put("rippleOverlayEnabled", p.params.rippleOverlayEnabled)
                 .put("rippleOverlayStrength", p.params.rippleOverlayStrength.toDouble())
                 .put("rippleOverlaySpecular", p.params.rippleOverlaySpecular.toDouble())
@@ -392,6 +403,17 @@ class PresetStore(
                         waterLiquid = o.optDouble("waterLiquid", 0.85).toFloat(),
                         waterLiquidFlow = o.optDouble("waterLiquidFlow", 1.4).toFloat(),
                         waterLiquidFade = o.optDouble("waterLiquidFade", 0.35).toFloat(),
+                        cymatics3d = o.optBoolean("cymatics3d", true),
+                        cymaticsFundamental = o.optDouble("cymaticsFundamental", 110.0).toFloat(),
+                        cymaticsModes = o.optInt("cymaticsModes", 5),
+                        cymaticsRing = o.optDouble("cymaticsRing", 0.35).toFloat(),
+                        cymaticsFocus = o.optDouble("cymaticsFocus", 0.7).toFloat(),
+                        cymaticsRelief = o.optDouble("cymaticsRelief", 1.0).toFloat(),
+                        cymaticsTilt = o.optDouble("cymaticsTilt", 0.5).toFloat(),
+                        cymaticsSpin = o.optDouble("cymaticsSpin", 0.12).toFloat(),
+                        cymaticsSand = o.optDouble("cymaticsSand", 1.0).toFloat(),
+                        cymaticsVibration = o.optDouble("cymaticsVibration", 0.35).toFloat(),
+                        cymaticsGrid = o.optInt("cymaticsGrid", 1),
                         rippleOverlayEnabled = o.optBoolean("rippleOverlayEnabled", false),
                         rippleOverlayStrength = o.optDouble("rippleOverlayStrength", 0.4).toFloat(),
                         rippleOverlaySpecular = o.optDouble("rippleOverlaySpecular", 0.3).toFloat(),

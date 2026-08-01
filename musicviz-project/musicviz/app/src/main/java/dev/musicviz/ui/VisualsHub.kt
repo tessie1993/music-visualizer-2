@@ -393,7 +393,11 @@ private fun StylesTab(
     val pickScene: (String) -> Unit = { viewModel.selectScene(it) }
     Column(Modifier.fillMaxSize()) {
         CrystalTabs(
-            titles = listOf("Particles", "Shaders", "Fluid", "MilkDrop"),
+            // Cymatics is its own family, not a fluid style and not a shader
+            // one: it is the only style that draws real 3D geometry, and the
+            // only one whose picture IS the sound (a Chladni plate) rather
+            // than a look driven by it.
+            titles = listOf("Particles", "Shaders", "Fluid", "Cymatics", "MilkDrop"),
             selected = sub,
             onSelect = { sub = it },
         )
@@ -401,7 +405,8 @@ private fun StylesTab(
             0 -> SceneList(VisualizerRenderer.PARTICLE_SCENES, viz.sceneId, pickScene)
             1 -> SceneList(VisualizerRenderer.SHADER_SCENES.keys.toList(), viz.sceneId, pickScene)
             2 -> SceneList(listOf(SceneIds.FLUID, SceneIds.CURLFLOW, SceneIds.WATER), viz.sceneId, pickScene)
-            3 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
+            3 -> SceneList(listOf(SceneIds.CYMATICS), viz.sceneId, pickScene)
+            4 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
         }
     }
 }
@@ -524,6 +529,13 @@ internal fun isEmitterSceneId(sceneId: String): Boolean = sceneId == SceneIds.FL
 internal fun isWaterSceneId(sceneId: String): Boolean = sceneId == SceneIds.WATER
 
 /**
+ * Only CymaticsScene reads the Chladni-plate params, so the whole Cymatics
+ * tab appears and disappears with that style - see `CustomizeTabs.CymaticsTab`
+ * for why this one is gated as a tab rather than as a section.
+ */
+internal fun isCymaticsSceneId(sceneId: String): Boolean = sceneId == SceneIds.CYMATICS
+
+/**
  * Styles that run the shared FluidParticles lifecycle layer, i.e. the ones
  * that read `fluidParticleDrag` and `fluidParticleLife` (set on consecutive
  * lines in both scenes). CURLFLOW *is* that layer (CurlFlowScene's
@@ -600,8 +612,16 @@ internal fun CustomizePanel(
     // shader-only look params gated out of Shape/Color - one predicate, so
     // the two can never drift apart.
     val isShader = isShaderLookSceneId(viz.sceneId)
-    val tabs = listOf("Motion", "Shape", "Behavior", "Color", "FX", "Fluid") + if (isShader) listOf("GLSL") else emptyList()
-    LaunchedEffect(isShader) { if (!isShader && sub >= 6) sub = 0 }
+    val isCymatics = isCymaticsSceneId(viz.sceneId)
+    // Tabs are dispatched by their TITLE below, not by index: two of them come
+    // and go with the active style, so positions do not identify a panel.
+    val tabs =
+        buildList {
+            addAll(listOf("Motion", "Shape", "Behavior", "Color", "FX", "Fluid"))
+            if (isCymatics) add("Cymatics")
+            if (isShader) add("GLSL")
+        }
+    LaunchedEffect(tabs.size) { if (sub >= tabs.size) sub = 0 }
     Column(Modifier.fillMaxSize()) {
         CrystalTabs(titles = tabs, selected = sub, onSelect = { sub = it })
         CustomizeToolbar(viewModel, viz.params)
@@ -613,9 +633,9 @@ internal fun CustomizePanel(
                 val p = viz.params
                 val onChange: (dev.musicviz.render.scene.SceneParams) -> Unit = { viewModel.setSceneParams(it) }
                 val lfos by viewModel.lfos.collectAsState()
-                when (sub) {
-                    0 -> MotionTab(p, onChange)
-                    1 ->
+                when (tabs.getOrNull(sub)) {
+                    "Motion" -> MotionTab(p, onChange)
+                    "Shape" ->
                         ShapeTab(
                             p,
                             onChange,
@@ -624,7 +644,7 @@ internal fun CustomizePanel(
                             isPointSpriteScene = isPointSpriteSceneId(viz.sceneId),
                             particleLayerOff = isFluidSceneId(viz.sceneId) && !p.fluidParticlesEnabled,
                         )
-                    2 ->
+                    "Behavior" ->
                         BehaviorTab(
                             p,
                             onChange,
@@ -638,7 +658,7 @@ internal fun CustomizePanel(
                             intelligenceMode = viz.intelligenceMode,
                             onIntelligenceModeChange = viewModel::setIntelligenceMode,
                         )
-                    3 -> {
+                    "Color" -> {
                         val artNote by viewModel.artPaletteNote.collectAsState()
                         ColorTab(
                             p,
@@ -648,7 +668,7 @@ internal fun CustomizePanel(
                             artworkNote = artNote,
                         )
                     }
-                    4 -> {
+                    "FX" -> {
                         val adsrs by viewModel.adsrs.collectAsState()
                         FxTab(
                             p,
@@ -659,7 +679,7 @@ internal fun CustomizePanel(
                             onAdsrChange = viewModel::setAdsr,
                         )
                     }
-                    5 ->
+                    "Fluid" ->
                         FluidTab(
                             p,
                             onChange,
@@ -673,7 +693,8 @@ internal fun CustomizePanel(
                                 visualizerView.visualizerRenderer.submitFluidInjectionShaders(force, dye)
                             },
                         )
-                    6 -> GlslHubTab(viewModel, visualizerView)
+                    "Cymatics" -> CymaticsTab(p, onChange)
+                    "GLSL" -> GlslHubTab(viewModel, visualizerView)
                 }
             }
         }
