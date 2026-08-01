@@ -213,6 +213,12 @@ object ParamRandomizer {
         r("Posterize") { it.copy(posterize = sometimes(0.15f, 0.2f, 0.6f)) }
         r("Particle shape") { it.copy(particleShape = rng.nextInt(SceneParams.PARTICLE_SHAPES.size)) }
         r("Particle size") { it.copy(particleSize = f(0.5f, 1.8f)) }
+        // BEAM's own four. Their controls live in ShapeTab, so they roll with
+        // Shape - the tab-scope gate requires the two to agree.
+        r("XY plot") { it.copy(beamXy = chance(0.35f)) }
+        r("Beam width") { it.copy(beamWidth = f(0.4f, 2.5f)) }
+        r("Beam brightness") { it.copy(beamIntensity = f(0.5f, 2f)) }
+        r("Beam tail") { it.copy(beamTail = f(0.05f, 0.8f)) }
 
         // ---- Behavior ----
         section(CustomizeTab.BEHAVIOR)
