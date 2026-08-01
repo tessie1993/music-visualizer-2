@@ -68,6 +68,12 @@ fun VisualizerEngineBindings(
         viewModel.morphFade.collect { visualizerView.visualizerRenderer.beginParamMorph(it) }
     }
     LaunchedEffect(Unit) {
+        // Cold start: the style survives a restart (VizUiState is persisted)
+        // but the engine's loaded .milk did not, so relaunching on the
+        // milkdrop style came back to projectM's idle "M" logo. The renderer
+        // re-queues its own last preset after an EGL context loss; this covers
+        // the case where there is no renderer state left at all.
+        viewModel.activeMilkPath.value?.let { visualizerView.visualizerRenderer.loadMilkPreset(it) }
         viewModel.vizApply.collect { apply ->
             apply.milkPath?.let {
                 visualizerView.visualizerRenderer.loadMilkPreset(it)

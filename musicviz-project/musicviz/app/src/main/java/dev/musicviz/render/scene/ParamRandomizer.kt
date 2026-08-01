@@ -3,7 +3,15 @@ package dev.musicviz.render.scene
 import kotlin.random.Random
 
 /**
- * One-tap randomization of the Customize parameters ("Randomize unlocked").
+ * One-tap randomization of the Customize parameters ("Randomize <tab>").
+ *
+ * A roll is scoped to ONE [CustomizeTab] - the tab the user is looking at.
+ * Every key below is declared inside a section that names its tab, and
+ * [randomize] rolls only the sections belonging to the requested one, because
+ * the button sits inside a tab and a button inside a tab acts on that tab:
+ * rolling the whole parameter set from the Color tab silently threw away the
+ * motion and shape a user had just dialled in, with no undo. Rolling with no
+ * tab at all still rolls everything, which is what the tests use.
  *
  * Locks are keyed by the **control label string** shown in the Customize panel
  * (`CustomizeTabs`'s `LabeledSlider` / `LabeledIntSlider` / `CheckRow` /
@@ -19,10 +27,12 @@ import kotlin.random.Random
  * so a roll is always watchable *and* always reproducible by hand: nothing is
  * ever set outside the bounds the user can reach with the slider, and rare or
  * extreme effects (strobe, invert, glitch) appear with low probability and
- * modest amounts. The fluid/water/FlowField blocks roll unconditionally: they
- * are ignored by scenes that do not read them, so a roll taken on a particle
- * scene still leaves FLUID/CURLFLOW/WATER in a sane state when the user
- * switches over.
+ * modest amounts. The fluid/water/FlowField block rolls whole whatever style
+ * is active - the Fluid tab is one tab, not one per style - because those
+ * params are ignored by scenes that do not read them, so a roll taken on a
+ * particle scene still leaves FLUID/CURLFLOW/WATER in a sane state when the
+ * user switches over. Same for Cymatics, whose tab only appears on its own
+ * style anyway.
  *
  * Deliberately never randomized:
  *  - the custom-palette override fields (`paletteBaseOverride` and friends,
@@ -39,29 +49,66 @@ import kotlin.random.Random
  *  - `fluidSpawnProgress`, which expresses how much the song drives the look.
  */
 object ParamRandomizer {
-    /** Randomizes every unlocked parameter within its slider range. */
+    /**
+     * How many times [randomize] re-rolls a scope that came back unchanged.
+     * Eight takes the FX tab's ~1-in-11 no-op down to about one press in a
+     * billion, and bounds the loop when every key in scope is locked.
+     */
+    private const val REROLLS = 8
+
+    /**
+     * Randomizes the unlocked parameters of [tab] within their slider ranges.
+     *
+     * [tab] `null` means every tab, which is what the tests roll with; the app
+     * always passes the tab the Randomize button was pressed on.
+     */
     fun randomize(
         current: SceneParams,
         locked: Set<String>,
         rng: Random = Random.Default,
-    ): SceneParams = roll(current, locked, rng, null)
+        tab: CustomizeTab? = null,
+    ): SceneParams {
+        // A press has to DO something. Most screen-FX and shape params are
+        // "off" by default and roll through `sometimes`, which draws "leave it
+        // alone" most of the time - and once a roll is scoped to one tab, the
+        // whole tab can draw that at once. On FX that is about one press in
+        // eleven landing on the same look, which reads as a dead button. The
+        // answer is another roll rather than fatter odds: the rare-effect
+        // probabilities are what keep a roll watchable in the first place.
+        repeat(REROLLS) {
+            val rolled = roll(current, locked, rng, tab, null)
+            if (rolled != current) return rolled
+        }
+        // Nothing in scope can move (every key locked): rolling harder will
+        // not change that, so the look stays as it is.
+        return current
+    }
+
+    /** Every lock key this randomizer honours, by the tab that owns it. */
+    val KEYS_BY_TAB: Map<CustomizeTab, List<String>> =
+        mutableListOf<Pair<CustomizeTab, String>>()
+            .also { roll(SceneParams.DEFAULT, emptySet(), Random(0), null, it) }
+            .groupBy({ it.first }, { it.second })
 
     /** Every lock key this randomizer honours, in Customize-panel order. */
-    val KEYS: List<String> =
-        mutableListOf<String>()
-            .also { roll(SceneParams.DEFAULT, emptySet(), Random(0), it) }
-            .toList()
+    val KEYS: List<String> = KEYS_BY_TAB.values.flatten()
+
+    /** The lock keys [randomize] rolls for [tab]. */
+    fun keysFor(tab: CustomizeTab): List<String> = KEYS_BY_TAB[tab].orEmpty()
 
     /**
-     * The single implementation behind [randomize] and [KEYS]: [keySink], when
-     * non-null, collects every key touched so the published key list can never
-     * drift away from the keys actually honoured.
+     * The single implementation behind [randomize] and [KEYS_BY_TAB]:
+     * [keySink], when non-null, collects every key touched (with its tab) so
+     * the published key lists can never drift away from the keys actually
+     * honoured. Keys are collected whatever [tab] is asked for, so the
+     * bookkeeping stays complete even on a scoped roll.
      */
     private fun roll(
         current: SceneParams,
         locked: Set<String>,
         rng: Random,
-        keySink: MutableList<String>?,
+        tab: CustomizeTab?,
+        keySink: MutableList<Pair<CustomizeTab, String>>?,
     ): SceneParams {
         fun f(
             lo: Float,
@@ -86,15 +133,29 @@ object ParamRandomizer {
         val folds = SceneParams.SYMMETRY_FOLDS.filter { fold -> fold >= 2 }
         var s = current
 
+        // The tab the keys below belong to, until the next section() call.
+        var owner = CustomizeTab.MOTION
+
+        /**
+         * Opens the block of keys owned by [of]. Everything between one
+         * section and the next belongs to that tab, so a key can never end up
+         * in a different tab from the controls it sits with on screen.
+         */
+        fun section(of: CustomizeTab) {
+            owner = of
+        }
+
         fun r(
             key: String,
             block: (SceneParams) -> SceneParams,
         ) {
-            keySink?.add(key)
+            keySink?.add(owner to key)
+            if (tab != null && tab != owner) return
             if (key !in locked) s = block(s)
         }
 
         // ---- Motion ----
+        section(CustomizeTab.MOTION)
         r("Speed") { it.copy(speed = f(0.2f, 2.5f)) }
         r("Zoom") { it.copy(zoom = f(0.6f, 2f)) }
         r("Rotation") { it.copy(rotation = f(-1.5f, 1.5f)) }
@@ -107,6 +168,7 @@ object ParamRandomizer {
         r("Dive speed") { it.copy(endlessZoomSpeed = f(0.1f, 0.8f)) }
 
         // ---- Shape ----
+        section(CustomizeTab.SHAPE)
         r("Domain warp") { it.copy(warp = sometimes(0.5f, 0.1f, 0.8f)) }
         r("Ripple") { it.copy(ripple = sometimes(0.4f, 0.1f, 0.8f)) }
         r("Morph") { it.copy(morph = sometimes(0.5f, 0.1f, 0.8f)) }
@@ -122,6 +184,7 @@ object ParamRandomizer {
         r("Particle size") { it.copy(particleSize = f(0.5f, 1.8f)) }
 
         // ---- Behavior ----
+        section(CustomizeTab.BEHAVIOR)
         r("Audio drive") { it.copy(audioDrive = f(0.6f, 1.8f)) }
         r("Beat response") { it.copy(beatResponse = f(0.3f, 2f)) }
         r("Beat flash") { it.copy(flash = sometimes(0.5f, 0.1f, 0.6f)) }
@@ -137,6 +200,7 @@ object ParamRandomizer {
         r("Trail warp (liquid echo)") { it.copy(trailWarp = sometimes(0.3f, 0.1f, 0.6f)) }
 
         // ---- Color ----
+        section(CustomizeTab.COLOR)
         // Clearing the slot's custom-palette override is what makes the rolled
         // index visible; an override otherwise wins over the PALETTES lookup.
         r("Palette") {
@@ -165,6 +229,7 @@ object ParamRandomizer {
         r("Invert") { it.copy(invert = chance(0.03f)) }
 
         // ---- Screen FX ----
+        section(CustomizeTab.FX)
         r("Chromatic aberration") { it.copy(chromaAb = sometimes(0.4f, 0.1f, 0.5f)) }
         r("Vignette") { it.copy(vignette = sometimes(0.5f, 0.1f, 0.6f)) }
         r("Scanlines") { it.copy(scanlines = sometimes(0.25f, 0.15f, 0.5f)) }
@@ -174,6 +239,7 @@ object ParamRandomizer {
         r("Strobe") { it.copy(strobe = sometimes(0.08f, 0.15f, 0.4f)) }
 
         // ---- Fluid: solver ----
+        section(CustomizeTab.FLUID)
         r("Solver iterations") { it.copy(fluidIterations = n(12, 28)) }
         r("Pressure") { it.copy(fluidPressure = f(0.5f, 0.95f)) }
 
@@ -245,6 +311,7 @@ object ParamRandomizer {
         r("Ripple glint") { it.copy(rippleOverlaySpecular = f(0.1f, 0.6f)) }
 
         // ---- Cymatics (the standing-wave field) ----
+        section(CustomizeTab.CYMATICS)
         // Rolled unconditionally like the fluid block: a style that does not
         // read these is unaffected, so a roll taken elsewhere still leaves the
         // field in a sane state when the user switches to it.
