@@ -70,6 +70,18 @@ class MicCaptureTest {
         return !capture.active
     }
 
+    /**
+     * Installs [source] for every AudioRecord the test creates.
+     *
+     * `ShadowAudioRecord.setSource` is deprecated in favour of the provider
+     * form, which is handed the AudioRecord being served; none of these tests
+     * builds more than one at a time, so the provider ignores it and answers
+     * with the same source.
+     */
+    private fun installSource(source: ShadowAudioRecord.AudioRecordSource) {
+        ShadowAudioRecord.setSourceProvider { source }
+    }
+
     @After
     fun clearSource() {
         ShadowAudioRecord.clearSource()
@@ -85,7 +97,7 @@ class MicCaptureTest {
     @Test
     fun `a started capture reports active until it is stopped`() {
         grantMic()
-        ShadowAudioRecord.setSource(readsReturning(0))
+        installSource(readsReturning(0))
         val capture = MicCapture(ctx, PcmRingBuffer())
         var rate = 0
         assertNull(capture.start { rate = it })
@@ -100,7 +112,7 @@ class MicCaptureTest {
         grantMic()
         // ERROR_DEAD_OBJECT is what a mid-capture phone call produces: the
         // worker releases the recorder and leaves, so `active` must follow.
-        ShadowAudioRecord.setSource(readsReturning(AudioRecord.ERROR_DEAD_OBJECT))
+        installSource(readsReturning(AudioRecord.ERROR_DEAD_OBJECT))
         val capture = MicCapture(ctx, PcmRingBuffer())
         assertNull(capture.start())
         assertTrue("capture should report the failure, not an open microphone", awaitInactive(capture))
@@ -109,14 +121,14 @@ class MicCaptureTest {
     @Test
     fun `a capture that died of a read error can be started again`() {
         grantMic()
-        ShadowAudioRecord.setSource(readsReturning(AudioRecord.ERROR_DEAD_OBJECT))
+        installSource(readsReturning(AudioRecord.ERROR_DEAD_OBJECT))
         val capture = MicCapture(ctx, PcmRingBuffer())
         assertNull(capture.start())
         assertTrue(awaitInactive(capture))
         // The point of the fix: with `active` still true the ViewModel's
         // `if (micCapture.active) return null` turned this into a no-op and
         // the user had to toggle the switch off and on again.
-        ShadowAudioRecord.setSource(readsReturning(0))
+        installSource(readsReturning(0))
         assertNull(capture.start())
         assertTrue(capture.active)
         capture.stop()
