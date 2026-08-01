@@ -8,6 +8,7 @@ import dev.musicviz.R
 import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.export.VideoExporter
 import dev.musicviz.render.fluid.CurlFlowMath
+import dev.musicviz.render.scene.BeamScene
 import dev.musicviz.render.scene.BurstScene
 import dev.musicviz.render.scene.CymaticsScene
 import dev.musicviz.render.scene.FountainScene
@@ -233,6 +234,9 @@ class VisualizerRenderer(
             waterLiquid = f(from.waterLiquid, to.waterLiquid),
             waterLiquidFlow = f(from.waterLiquidFlow, to.waterLiquidFlow),
             waterLiquidFade = f(from.waterLiquidFade, to.waterLiquidFade),
+            beamWidth = f(from.beamWidth, to.beamWidth),
+            beamIntensity = f(from.beamIntensity, to.beamIntensity),
+            beamTail = f(from.beamTail, to.beamTail),
             cymaticsFundamental = f(from.cymaticsFundamental, to.cymaticsFundamental),
             cymaticsRing = f(from.cymaticsRing, to.cymaticsRing),
             cymaticsFocus = f(from.cymaticsFocus, to.cymaticsFocus),
@@ -542,6 +546,7 @@ class VisualizerRenderer(
             add(SceneIds.CURLFLOW)
             add(SceneIds.WATER)
             add(SceneIds.CYMATICS)
+            add(SceneIds.BEAM)
             add(SceneIds.HYPERSPACE)
         }
 
@@ -605,6 +610,10 @@ class VisualizerRenderer(
         scenes[SceneIds.WATER] =
             dev.musicviz.render.fluid.WaterScene(context).also { water ->
                 water.onShaderError = { onShaderError(it) }
+            }
+        scenes[SceneIds.BEAM] =
+            BeamScene(context).also { beam ->
+                beam.onShaderError = { onShaderError(it) }
             }
         scenes[SceneIds.CYMATICS] =
             CymaticsScene(context).also { plate ->
@@ -870,9 +879,21 @@ class VisualizerRenderer(
         // Trails ON the whole Trail length slider remapped onto its long
         // streaming band. Every other scene keeps the plain toggle gate.
         val isCurl = scene is dev.musicviz.render.fluid.CurlFlowScene
-        val persists = isCurl || (p.trails && scene is ParticleSceneBase)
+        // The beam is phosphor: a trace with no persistence is a single-frame
+        // wire, and the decay between frames IS the afterglow. Like Curl Flow
+        // it persists regardless of the Trails toggle, which still sets how
+        // long the glow lasts.
+        val isBeam = scene is BeamScene
+        val persists = isCurl || isBeam || (p.trails && scene is ParticleSceneBase)
         if (persists && !sceneJustSwitched) {
-            val keep = if (isCurl) CurlFlowMath.retention(p.trailLength, p.trails) else p.trailLength
+            val keep =
+                when {
+                    isCurl -> CurlFlowMath.retention(p.trailLength, p.trails)
+                    // Phosphor: a floor so the trace always has an afterglow,
+                    // with the Trail length slider setting how long above it.
+                    isBeam -> (0.55f + 0.44f * p.trailLength).coerceIn(0f, 0.99f)
+                    else -> p.trailLength
+                }
             if (p.trailZoom != 0f || p.trailWarp > 0f) {
                 drawTrailWarp(p, keep, timeSeconds, dt)
             } else {
@@ -1279,6 +1300,7 @@ class VisualizerRenderer(
                             dev.musicviz.render.fluid
                                 .WaterScene(context)
                         sceneId == SceneIds.CYMATICS -> CymaticsScene(context)
+                        sceneId == SceneIds.BEAM -> BeamScene(context)
                         sceneId == SceneIds.HYPERSPACE -> HyperspaceScene(context)
                         sceneId == SceneIds.MILKDROP && PMBridge.available ->
                             ProjectMScene(

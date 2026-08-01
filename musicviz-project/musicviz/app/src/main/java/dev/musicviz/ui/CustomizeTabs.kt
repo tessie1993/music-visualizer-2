@@ -194,8 +194,22 @@ internal fun ShapeTab(
     isParticleShapeScene: Boolean,
     isPointSpriteScene: Boolean,
     particleLayerOff: Boolean = false,
+    isBeamScene: Boolean = false,
 ) {
     Column {
+        if (isBeamScene) {
+            SectionHeader("Beam")
+            ControlHint(
+                "The trace is drawn as a real beam: brightness comes from how " +
+                    "long the beam dwells, so it glows where the signal turns " +
+                    "and dims through fast sweeps. Trail length sets the " +
+                    "phosphor afterglow.",
+            )
+            CheckRow("XY plot", p.beamXy) { onChange(p.copy(beamXy = it)) }
+            LabeledSlider("Beam width", p.beamWidth, 0.2f..4f) { onChange(p.copy(beamWidth = it)) }
+            LabeledSlider("Beam brightness", p.beamIntensity, 0f..3f) { onChange(p.copy(beamIntensity = it)) }
+            LabeledSlider("Beam tail", p.beamTail, 0f..1f) { onChange(p.copy(beamTail = it)) }
+        }
         SectionHeader("Distortion")
         LabeledSlider("Domain warp", p.warp, 0f..1f) { onChange(p.copy(warp = it)) }
         LabeledSlider("Ripple", p.ripple, 0f..1f) { onChange(p.copy(ripple = it)) }
