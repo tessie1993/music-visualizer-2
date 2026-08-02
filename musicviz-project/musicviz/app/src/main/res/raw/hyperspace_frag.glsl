@@ -479,11 +479,13 @@ float deBulb(vec3 p, float power) {
  *
  * Squaring a quaternion costs no more than squaring a complex number. With
  * z = (a, v), a real and v the imaginary vector, z^2 = (a^2 - |v|^2, 2 a v) -
- * four multiplies and a dot product, and not one transcendental in the loop.
- * The derivative is carried as its SQUARE because the recurrence dz -> 2 z dz
- * only ever needs its magnitude, and |dz'|^2 = 4 |z|^2 |dz|^2 is one more
- * multiply rather than a second quaternion product. Together those are what
- * let this run a deeper budget than the bulb at a fraction of its cost.
+ * four multiplies and a dot product, and not one transcendental in the loop,
+ * where the bulb needs an acos, an atan, two pows and a sin/cos pair. The
+ * derivative is carried as its SQUARE because the recurrence dz -> 2 z dz only
+ * ever needs its magnitude, and |dz'|^2 = 4 |z|^2 |dz|^2 is one more multiply
+ * rather than a second quaternion product. Six live scalars, no branches in
+ * the body: this is the smallest estimator here, which is what buys it the
+ * deeper budget.
  *
  * The estimate is the Douady-Hubbard potential written for the square map,
  * 0.5 * |z| * log|z| / |dz|, which is the standard conservative form: it never
@@ -541,11 +543,27 @@ float deSeed(vec3 p, float slice) {
 /**
  * Dispatch on the body's species ordinal (see HyperspaceMath.Species).
  *
- * An if-chain, and every branch is inlined into this one function, so what the
- * register allocator has to accommodate is the WORST estimator rather than the
- * sum of them - adding a species costs one comparison for the bodies that are
- * not it. That is the only reason a sixth fits: deSeed's live set is a vec4, a
- * derivative and a radius, comfortably under deJewel's and deTemple's.
+ * An if-chain, called once per body per march step, so this is the hottest
+ * function in the shader and a new branch here is paid for by every body, not
+ * only by the one that took it. How much depends entirely on whether the
+ * hardware can skip the branch it did not take, and the answer is not the
+ * same everywhere.
+ *
+ * Measured in tools/shaderpreview (SwiftShader, eight bodies, Detail at the
+ * top, melt off), on a body that is NOT a SEED: five estimators 1008 ms, six
+ * with a trivial sixth body 1051, six with deSeed capped at one iteration
+ * 1139, six as shipped 1183. So the comparison itself is four per cent and the
+ * rest is deSeed's loop RUNNING for bodies that are not SEEDs - a software
+ * rasteriser evaluating both sides of a divergent branch. A phone's GPU
+ * schedules a whole warp of fragments, and adjacent fragments are nearly
+ * always inside the same body and so take the same branch, which is why the
+ * README calls this tool a lower bound on portability rather than a device.
+ * Read the four per cent as the floor and the seventeen as the ceiling.
+ *
+ * What is portable either way is that the branches are exclusive, so the
+ * register allocator accommodates the WORST estimator rather than the sum, and
+ * deSeed is the smallest of the six. Keep it that way: the next one added here
+ * should be measured the same way before it lands.
  */
 float speciesDE(vec3 p, int species, float fold) {
     if (species == 0) return deGasket(p, fold);
