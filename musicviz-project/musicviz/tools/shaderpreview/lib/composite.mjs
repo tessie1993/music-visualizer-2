@@ -22,6 +22,9 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 /** TransitionStyle.CUT.ordinal - what uStyle is outside a transition. */
 const STYLE_CUT = 0;
 
+/** VisualizerRenderer.STYLE_LAYER - the Layers branch. */
+const STYLE_LAYER = 6;
+
 /** CompositeGrade: rotation is a speed, so the pass integrates its own angle. */
 const TAU = 6.2831855;
 
@@ -66,7 +69,16 @@ export function gateFor(family) {
 /**
  * @param family one of CompositeGrade.SceneFamily's names; decides both gates.
  */
-export function createCompositeDriver({ params, family, width, height }) {
+/**
+ * @param layer  when set, forces the uStyle 6 (Layers) branch with the given
+ *   `{ mix, mode }`. The harness binds the SAME scene texture to uTexA and
+ *   uTexB, so this does not preview a real two-scene composite - what it does
+ *   check is the blend algebra, which for b == a has a known answer per mode
+ *   (DIFFERENCE must go black, MULTIPLY must darken, SCREEN must brighten).
+ *   That is worth having: the blend functions are the only new maths in the
+ *   Layers path and nothing else off-device can execute them.
+ */
+export function createCompositeDriver({ params, family, width, height, layer = null }) {
   const p = { ...COMPOSITE_DEFAULTS, ...params };
   const gate = gateFor(family);
   let rotationAngle = 0;
@@ -75,6 +87,11 @@ export function createCompositeDriver({ params, family, width, height }) {
 
   const supplies = new Set([
     'uTexA', 'uTexB', 'uNoise', 'uDither', 'uRatio', 'uProgress', 'uStyle',
+    // Layers. Supplied at their inactive values (see standIns): uStyle is CUT
+    // here, so the shader never reads them - but the app uploads them on EVERY
+    // frame, so omitting them would be exactly the "harness drifted behind the
+    // app" case the audit exists to catch.
+    'uLayerMix', 'uBlendMode',
     'uTime', 'uBeat', 'uChroma', 'uVignette', 'uScanline', 'uGrain', 'uGlitch',
     'uFisheye', 'uStrobe', 'uStrobeHz', 'uGateA', 'uGateB',
     'uPostWarp', 'uPostRipple', 'uPostSymmetry', 'uPostKaleido', 'uPostPixelate',
@@ -95,6 +112,8 @@ export function createCompositeDriver({ params, family, width, height }) {
     'uFlow = 1x1 black, uFlowStrength = 0 (fluidWarp off)',
     'uRipple = 1x1 black, uRippleStrength/Specular = 0 (the F2 overlay off)',
     'uStyle = CUT, uProgress = 0, uTexB = uTexA (no transition is in flight)',
+    'uLayerMix = 0, uBlendMode = 0 (Layers off; the uStyle 6 branch is not modelled - '
+      + 'two live scenes would need two scene drivers, like transitions)',
   ];
 
   function step(f, dt, timeSeconds) {
@@ -115,7 +134,9 @@ export function createCompositeDriver({ params, family, width, height }) {
         uFlow: { t: 'tex', v: 2 },
         uRipple: { t: 'tex', v: 3 },
         uNoise: { t: 'tex', v: 4 },
-        uStyle: { t: '1i', v: STYLE_CUT },
+        uStyle: { t: '1i', v: layer ? STYLE_LAYER : STYLE_CUT },
+        // BlendMode.NORMAL; unread at uStyle = CUT, uploaded regardless.
+        uBlendMode: { t: '1i', v: layer ? layer.mode : 0 },
         uRippleTexel: { t: '2f', v: [0, 0] },
         uGateA: { t: '4fv', v: gate },
         uGateB: { t: '4fv', v: gate },
@@ -123,6 +144,7 @@ export function createCompositeDriver({ params, family, width, height }) {
       u('uDither', 0),
       u('uRatio', width / Math.max(height, 1)),
       u('uProgress', 0),
+      u('uLayerMix', layer ? layer.mix : 0),
       u('uTime', timeSeconds),
       // uBeat is the frame's raw beat impulse in the app, not the envelope.
       u('uBeat', beat),

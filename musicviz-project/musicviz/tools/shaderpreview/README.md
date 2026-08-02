@@ -44,6 +44,10 @@ node preview.mjs --scene hyperspace --no-melt --out out/no-melt
 # five hours of wallpaper uptime, after a 10 s warm-up
 node preview.mjs --scene shader --shader plasma --warmup 600 --frames 6 --clock-jump 3600
 
+# the Layers blend algebra: with both layers identical, DIFFERENCE must go
+# to exactly 0, MULTIPLY must darken and SCREEN must brighten
+node preview.mjs --scene shader --shader plasma --composite --layer 1,4 --frames 1
+
 # through the composite pass, which is where Zoom and Rotation live on a
 # fluid-family style - without this you are looking at a frame the user never
 # sees, and half its controls are applied nowhere in it
@@ -67,6 +71,7 @@ node preview.mjs --scene hyperspace --composite --param zoom=3 --frames 1
 | `--param name=value` | override one `SceneParams` field, repeatable |
 | `--no-melt` | force `uHasMelt = 0` (the no-float-buffer fallback) |
 | `--composite` | run the scene through `composite_frag` afterwards, as the app does |
+| `--layer mix,mode` | force the Layers branch (`uStyle` 6) at that mix and `BlendMode` ordinal. Both layers are the SAME texture, so this checks the blend algebra, not a real two-scene composite |
 | `--field-stats` | read back the fluid dye/velocity grids and report their statistics |
 | `--clock-jump S` | advance the free-running clocks by S seconds per captured frame |
 | `--seed N` | seed for the body RNG |

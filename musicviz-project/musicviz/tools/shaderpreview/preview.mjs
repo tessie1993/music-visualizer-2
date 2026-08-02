@@ -59,6 +59,7 @@ function parseArgs(argv) {
     params: {},
     fieldStats: false,
     composite: false,
+    layer: null,
     list: false,
     json: false,
   };
@@ -85,6 +86,14 @@ function parseArgs(argv) {
       case '--stretch-max': a.stretchMax = Number(next()); break;
       case '--field-stats': a.fieldStats = true; break;
       case '--composite': a.composite = true; break;
+      case '--layer': {
+        // "mix,mode" - forces the Layers branch of composite_frag. See
+        // createCompositeDriver's `layer` parameter for what this can and
+        // cannot tell you.
+        const [mix, mode] = next().split(',');
+        a.layer = { mix: Number(mix), mode: Number(mode || 0) };
+        break;
+      }
       case '--list': a.list = true; break;
       case '--json': a.json = true; break;
       case '--param': {
@@ -218,6 +227,7 @@ async function main() {
   if (args.composite) {
     compositeDriver = createCompositeDriver({
       params: args.params, family, width: args.width, height: args.height,
+      layer: args.layer,
     });
     compositeShaders = {
       vert: loadShader(RAW, 'fade_vert', registry),
