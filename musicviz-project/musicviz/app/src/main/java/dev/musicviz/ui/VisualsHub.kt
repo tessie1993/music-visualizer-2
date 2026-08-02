@@ -58,6 +58,7 @@ import dev.musicviz.render.VisualizerRenderer
 import dev.musicviz.render.VisualizerView
 import dev.musicviz.render.scene.CustomizeTab
 import dev.musicviz.render.scene.SceneIds
+import dev.musicviz.render.scene.VisualStyleCatalog
 
 /**
  * The Visuals nav destination: everything visual in one hub. Style/Customize
@@ -522,8 +523,8 @@ private fun StylesTab(
             0 -> SceneList(VisualizerRenderer.PARTICLE_SCENES, viz.sceneId, pickScene)
             1 -> SceneList(VisualizerRenderer.SHADER_SCENES.keys.toList(), viz.sceneId, pickScene)
             2 -> SceneList(listOf(SceneIds.FLUID, SceneIds.CURLFLOW, SceneIds.WATER), viz.sceneId, pickScene)
-            3 -> SceneList(listOf(SceneIds.CYMATICS), viz.sceneId, pickScene)
-            4 -> SceneList(listOf(SceneIds.HYPERSPACE), viz.sceneId, pickScene)
+            3 -> SceneList(VisualStyleCatalog.cymaticsIds, viz.sceneId, pickScene)
+            4 -> SceneList(VisualStyleCatalog.hyperspaceIds, viz.sceneId, pickScene)
             5 -> SceneList(listOf(SceneIds.BEAM), viz.sceneId, pickScene)
             6 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
         }
@@ -547,7 +548,7 @@ private fun SceneList(
                     if (sel) CrystalGem(MaterialTheme.colorScheme.primary, size = 6.dp)
                 }
                 Text(
-                    id,
+                    VisualStyleCatalog.label(id),
                     Modifier.padding(start = 10.dp),
                     color = if (sel) accentTextColor() else LocalContentColor.current,
                 )
@@ -685,13 +686,13 @@ internal fun isBeamSceneId(sceneId: String): Boolean = sceneId == SceneIds.BEAM
  * tab appears and disappears with that style - see `CustomizeTabs.CymaticsTab`
  * for why this one is gated as a tab rather than as a section.
  */
-internal fun isCymaticsSceneId(sceneId: String): Boolean = sceneId == SceneIds.CYMATICS
+internal fun isCymaticsSceneId(sceneId: String): Boolean = VisualStyleCatalog.isCymatics(sceneId)
 
 /**
  * Only HyperspaceScene reads the fractal-room params, so the whole Hyperspace
  * tab appears and disappears with that style - same rule as the Cymatics tab.
  */
-internal fun isHyperspaceSceneId(sceneId: String): Boolean = sceneId == SceneIds.HYPERSPACE
+internal fun isHyperspaceSceneId(sceneId: String): Boolean = VisualStyleCatalog.isHyperspace(sceneId)
 
 /**
  * Styles that run the shared FluidParticles lifecycle layer, i.e. the ones

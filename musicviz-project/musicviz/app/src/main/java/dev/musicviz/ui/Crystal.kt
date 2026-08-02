@@ -16,9 +16,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
@@ -54,8 +57,7 @@ import kotlin.random.Random
  * Crystal design kit — the shared "luminous crystal glass" language from the
  * MusicViz theme mockups (Lapis, Sugilite, Kyanite, …): editorial serif
  * display type, tracked-caps overlines, panels with gradient glass fills,
- * facet glints, luminous strokes and a soft outer glow, plus a twinkling
- * nebula-and-shards backdrop behind every shell screen.
+ * facet glints, luminous strokes and a soft outer glow, plus a theme-specific procedural mineral backdrop behind every shell screen.
  *
  * Two silhouettes carry the identity everywhere:
  *  - the SHARD: an asymmetrically cut gem profile ([crystalShardShape]) used
@@ -63,6 +65,247 @@ import kotlin.random.Random
  *  - the GEM: a small rotated-square diamond ([CrystalGem]) used as the
  *    selection marker in nav, tabs, lists and slider thumbs.
  */
+
+// ------------------------------------------------------------- mineral identity
+
+/** The actual mineral structure behind a theme, not merely its accent hue. */
+internal enum class CrystalTextureKind {
+    LAPIS,
+    MALACHITE,
+    CLEAR_QUARTZ,
+    ROSE_QUARTZ,
+    SUGILITE,
+    AMETHYST,
+    KYANITE,
+    ONYX,
+    GENERIC,
+}
+
+internal fun AppTheme.crystalTextureKind(): CrystalTextureKind =
+    when (this) {
+        AppTheme.LAPIS -> CrystalTextureKind.LAPIS
+        AppTheme.MALACHITE -> CrystalTextureKind.MALACHITE
+        AppTheme.CLEAR_QUARTZ -> CrystalTextureKind.CLEAR_QUARTZ
+        AppTheme.ROSE_QUARTZ -> CrystalTextureKind.ROSE_QUARTZ
+        AppTheme.SUGILITE -> CrystalTextureKind.SUGILITE
+        AppTheme.AMETHYST -> CrystalTextureKind.AMETHYST
+        AppTheme.KYANITE -> CrystalTextureKind.KYANITE
+        AppTheme.ONYX -> CrystalTextureKind.ONYX
+        else -> CrystalTextureKind.GENERIC
+    }
+
+/** Supplied by AppShell so every panel and backdrop knows the selected stone. */
+internal val LocalCrystalTheme = staticCompositionLocalOf { AppTheme.LAPIS }
+
+/**
+ * MaterialTheme plus the selected stone identity. Keeping these together
+ * prevents panels from silently falling back to Lapis when a screen is moved
+ * or reused elsewhere in the shell.
+ */
+@Composable
+internal fun CrystalMaterialTheme(
+    appTheme: AppTheme,
+    gui: GuiPrefs,
+    content: @Composable () -> Unit,
+) {
+    CompositionLocalProvider(LocalCrystalTheme provides appTheme) {
+        MaterialTheme(
+            colorScheme = appTheme.colorScheme(gui.accentIntensity, gui.backgroundDim, gui.whiteFont),
+            shapes = gui.cornerStyle.shapes(),
+            typography = crystalTypography(),
+            content = content,
+        )
+    }
+}
+
+/**
+ * Theme-specific mineral marks. They are procedural and deterministic, so the
+ * app gets real stone character without shipping photographs or redrawing
+ * random noise every recomposition.
+ */
+private fun DrawScope.drawMineralTexture(
+    theme: AppTheme,
+    primary: Color,
+    secondary: Color,
+    alpha: Float,
+    panel: Boolean,
+) {
+    if (alpha <= 0f) return
+    val w = size.width
+    val h = size.height
+    val d = max(w, h)
+    val density = if (panel) 0.55f else 1f
+    when (theme.crystalTextureKind()) {
+        CrystalTextureKind.LAPIS -> {
+            // White calcite seams crossing an ultramarine body.
+            repeat(if (panel) 2 else 4) { i ->
+                val y = h * (0.18f + i * 0.21f)
+                val path =
+                    Path().apply {
+                        moveTo(-w * 0.05f, y)
+                        cubicTo(w * 0.22f, y - h * 0.12f, w * 0.57f, y + h * 0.10f, w * 1.05f, y - h * 0.04f)
+                    }
+                drawPath(path, Color.White.copy(alpha = alpha * (0.10f + i * 0.012f)), style = Stroke(width = d * 0.004f))
+            }
+            // Irregular pyrite flecks, never a uniform star field.
+            repeat(if (panel) 11 else 34) { i ->
+                val x = fract01(i * 0.7548777f + 0.17f) * w
+                val y = fract01(i * 0.5698403f + 0.41f) * h
+                val r = (0.55f + fract01(i * 0.314159f) * 1.8f) * density
+                drawCircle(secondary.copy(alpha = alpha * 0.32f), r, Offset(x, y))
+            }
+        }
+        CrystalTextureKind.MALACHITE -> {
+            val centre = Offset(w * 0.68f, h * 0.38f)
+            repeat(if (panel) 7 else 15) { i ->
+                val r = d * (0.055f + i * 0.038f)
+                val wobble = 1f + 0.08f * sin(i * 1.73f)
+                drawOval(
+                    color = (if (i % 2 == 0) primary else secondary).copy(alpha = alpha * 0.12f),
+                    topLeft = Offset(centre.x - r * wobble, centre.y - r),
+                    size = Size(r * 2f * wobble, r * 2f),
+                    style = Stroke(width = max(1f, d * 0.006f)),
+                )
+            }
+        }
+        CrystalTextureKind.CLEAR_QUARTZ -> {
+            val hubs = listOf(Offset(w * 0.24f, h * 0.36f), Offset(w * 0.78f, h * 0.68f))
+            hubs.forEachIndexed { hi, hub ->
+                repeat(if (panel) 4 else 8) { i ->
+                    val a = (i * 0.79f + hi * 0.43f)
+                    val len = d * (0.18f + 0.055f * (i % 4))
+                    drawLine(
+                        color = Color.White.copy(alpha = alpha * 0.13f),
+                        start = hub,
+                        end = hub + Offset(cos(a) * len, sin(a) * len),
+                        strokeWidth = max(0.8f, d * 0.0017f),
+                    )
+                }
+            }
+            repeat(if (panel) 2 else 5) { i ->
+                val x = w * (-0.15f + i * 0.31f)
+                val path =
+                    Path().apply {
+                        moveTo(x, h)
+                        lineTo(x + w * 0.26f, 0f)
+                        lineTo(x + w * 0.34f, 0f)
+                        lineTo(x + w * 0.08f, h)
+                        close()
+                    }
+                drawPath(path, (if (i % 2 == 0) primary else secondary).copy(alpha = alpha * 0.045f))
+            }
+        }
+        CrystalTextureKind.ROSE_QUARTZ -> {
+            repeat(if (panel) 5 else 12) { i ->
+                val x = fract01(i * 0.618034f + 0.11f) * w
+                val y = fract01(i * 0.414214f + 0.27f) * h
+                val r = d * (0.08f + fract01(i * 0.2718f) * 0.13f)
+                drawCircle(
+                    Brush.radialGradient(
+                        0f to Color.White.copy(alpha = alpha * 0.065f),
+                        0.65f to primary.copy(alpha = alpha * 0.04f),
+                        1f to Color.Transparent,
+                        center = Offset(x, y),
+                        radius = r,
+                    ),
+                    r,
+                    Offset(x, y),
+                )
+            }
+            repeat(if (panel) 2 else 5) { i ->
+                val y = h * (0.16f + i * 0.18f)
+                val path =
+                    Path().apply {
+                        moveTo(-w * 0.05f, y)
+                        cubicTo(w * 0.28f, y + h * 0.08f, w * 0.58f, y - h * 0.09f, w * 1.05f, y + h * 0.03f)
+                    }
+                drawPath(path, Color.White.copy(alpha = alpha * 0.065f), style = Stroke(width = max(0.7f, d * 0.0015f)))
+            }
+        }
+        CrystalTextureKind.SUGILITE -> {
+            repeat(if (panel) 8 else 21) { i ->
+                val x = fract01(i * 0.73205f + 0.09f) * w
+                val y = fract01(i * 0.54321f + 0.33f) * h
+                val rx = d * (0.016f + fract01(i * 0.19f) * 0.045f)
+                drawOval(
+                    color = (if (i % 3 == 0) Color.Black else secondary).copy(alpha = alpha * 0.09f),
+                    topLeft = Offset(x - rx, y - rx * 0.55f),
+                    size = Size(rx * 2f, rx * 1.1f),
+                )
+            }
+            repeat(if (panel) 2 else 4) { i ->
+                val path =
+                    Path().apply {
+                        moveTo(w * (-0.1f + i * 0.27f), h)
+                        cubicTo(w * (0.08f + i * 0.21f), h * 0.72f, w * (0.12f + i * 0.30f), h * 0.31f, w * (0.42f + i * 0.22f), 0f)
+                    }
+                drawPath(path, primary.copy(alpha = alpha * 0.12f), style = Stroke(width = d * 0.006f))
+            }
+        }
+        CrystalTextureKind.AMETHYST -> {
+            repeat(if (panel) 5 else 12) { i ->
+                val x0 = w * fract01(i * 0.382f)
+                val top = h * fract01(i * 0.217f) * 0.42f
+                val bw = w * (0.09f + fract01(i * 0.143f) * 0.12f)
+                val path =
+                    Path().apply {
+                        moveTo(x0, h)
+                        lineTo(x0 + bw * 0.48f, top)
+                        lineTo(x0 + bw, h)
+                        close()
+                    }
+                drawPath(path, (if (i % 2 == 0) primary else secondary).copy(alpha = alpha * 0.055f))
+                drawLine(
+                    Color.White.copy(alpha = alpha * 0.07f),
+                    Offset(x0 + bw * 0.48f, top),
+                    Offset(x0 + bw * 0.34f, h),
+                    max(
+                        0.8f,
+                        d * 0.0014f,
+                    ),
+                )
+            }
+        }
+        CrystalTextureKind.KYANITE -> {
+            repeat(if (panel) 8 else 20) { i ->
+                val x = w * (-0.12f + i / (if (panel) 7f else 18f))
+                val lean = w * (0.10f + 0.03f * sin(i * 0.9f))
+                val path =
+                    Path().apply {
+                        moveTo(x, h)
+                        lineTo(x + lean, 0f)
+                        lineTo(x + lean + w * 0.025f, 0f)
+                        lineTo(x + w * 0.018f, h)
+                        close()
+                    }
+                drawPath(path, (if (i % 3 == 0) Color.White else primary).copy(alpha = alpha * 0.045f))
+            }
+        }
+        CrystalTextureKind.ONYX -> {
+            repeat(if (panel) 7 else 15) { i ->
+                val y = h * (i + 0.4f) / (if (panel) 7f else 15f)
+                val path =
+                    Path().apply {
+                        moveTo(-w * 0.04f, y)
+                        cubicTo(w * 0.22f, y + h * 0.035f, w * 0.64f, y - h * 0.04f, w * 1.04f, y + h * 0.018f)
+                    }
+                drawPath(
+                    path,
+                    (if (i % 3 == 0) secondary else Color.White).copy(alpha = alpha * (if (i % 3 == 0) 0.055f else 0.028f)),
+                    style = Stroke(width = max(1f, d * 0.004f)),
+                )
+            }
+        }
+        CrystalTextureKind.GENERIC -> {
+            repeat(if (panel) 2 else 4) { i ->
+                val x = w * (0.12f + i * 0.24f)
+                drawLine(primary.copy(alpha = alpha * 0.035f), Offset(x, h), Offset(x + w * 0.22f, 0f), d * 0.003f)
+            }
+        }
+    }
+}
+
+private fun fract01(v: Float): Float = v - kotlin.math.floor(v)
 
 // ------------------------------------------------------------- silhouettes
 
@@ -268,41 +511,51 @@ fun Modifier.crystalPanel(
     facets: Float = 1f,
     prismatic: Boolean = false,
     sheen: Color = glow,
-): Modifier {
-    val alpha = opacity.coerceIn(0f, 1f)
-    val shape = RoundedCornerShape(corner)
-    val borderBrush =
-        if (prismatic) {
-            Brush.sweepGradient(
-                listOf(
-                    glow.copy(alpha = 0.9f),
-                    Color.White.copy(alpha = 0.95f),
-                    sheen.copy(alpha = 0.85f),
-                    glow.copy(alpha = 0.35f),
-                    sheen.copy(alpha = 0.8f),
-                    Color.White.copy(alpha = 0.9f),
-                    glow.copy(alpha = 0.9f),
+): Modifier =
+    composed {
+        val theme = LocalCrystalTheme.current
+        val alpha = opacity.coerceIn(0f, 1f)
+        val shape = RoundedCornerShape(corner)
+        val borderBrush =
+            if (prismatic) {
+                Brush.sweepGradient(
+                    listOf(
+                        glow.copy(alpha = 0.9f),
+                        Color.White.copy(alpha = 0.95f),
+                        sheen.copy(alpha = 0.85f),
+                        glow.copy(alpha = 0.35f),
+                        sheen.copy(alpha = 0.8f),
+                        Color.White.copy(alpha = 0.9f),
+                        glow.copy(alpha = 0.9f),
+                    ),
+                )
+            } else {
+                Brush.verticalGradient(
+                    0f to glow.copy(alpha = min(1f, 0.85f * glowStrength)),
+                    0.55f to glow.copy(alpha = 0.22f * glowStrength),
+                    1f to glow.copy(alpha = 0.45f * glowStrength),
+                )
+            }
+        this
+            .drawBehind { crystalHalo(glow, corner.toPx(), glowStrength) }
+            .clip(shape)
+            .background(
+                Brush.verticalGradient(
+                    0f to lerp(tint, glow, 0.18f).copy(alpha = min(1f, alpha + 0.08f)),
+                    0.4f to tint.copy(alpha = alpha),
+                    1f to lerp(tint, Color.Black, 0.28f).copy(alpha = alpha),
                 ),
-            )
-        } else {
-            Brush.verticalGradient(
-                0f to glow.copy(alpha = min(1f, 0.85f * glowStrength)),
-                0.55f to glow.copy(alpha = 0.22f * glowStrength),
-                1f to glow.copy(alpha = 0.45f * glowStrength),
-            )
-        }
-    return this
-        .drawBehind { crystalHalo(glow, corner.toPx(), glowStrength) }
-        .clip(shape)
-        .background(
-            Brush.verticalGradient(
-                0f to lerp(tint, glow, 0.18f).copy(alpha = min(1f, alpha + 0.08f)),
-                0.4f to tint.copy(alpha = alpha),
-                1f to lerp(tint, Color.Black, 0.28f).copy(alpha = alpha),
-            ),
-        ).drawBehind { crystalFacets(facets) }
-        .border(1.dp, borderBrush, shape)
-}
+            ).drawBehind {
+                drawMineralTexture(
+                    theme = theme,
+                    primary = glow,
+                    secondary = sheen,
+                    alpha = facets.coerceIn(0f, 1.5f),
+                    panel = true,
+                )
+                crystalFacets(facets * 0.72f)
+            }.border(1.dp, borderBrush, shape)
+    }
 
 /** Thin luminous divider line (transparent → glow → transparent). */
 fun Modifier.luminousHairline(glow: Color): Modifier =
@@ -351,20 +604,19 @@ private val BACKDROP_SHARDS =
     )
 
 /**
- * Nebula backdrop for shell screens: the theme background color with big
- * soft aurora blobs in primary/secondary, a handful of slowly rocking
- * crystal-shard outlines, plus a twinkling star field — the "crystal texture
- * / caustic light" mood from the mockups, cheap enough to sit behind every
- * tab.
+ * Procedural mineral backdrop for shell screens. Every named crystal gets
+ * its own inclusions, banding, fractures or blades; only naturally faceted
+ * themes retain the moving shard highlights.
  */
 @Composable
 fun CrystalBackground(modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
-    // Fixed seed: the constellation is stable across recompositions/tabs.
+    val theme = LocalCrystalTheme.current
+    // Fixed seed: the texture field is stable across recompositions and tabs.
     val stars =
         remember {
             val rnd = Random(42)
-            List(90) {
+            List(42) {
                 Star(
                     x = rnd.nextFloat(),
                     y = rnd.nextFloat(),
@@ -379,18 +631,21 @@ fun CrystalBackground(modifier: Modifier = Modifier) {
             initialValue = 0f,
             targetValue = 2f * PI.toFloat(),
             animationSpec = infiniteRepeatable(tween(11000, easing = LinearEasing)),
-            label = "twinkle",
+            label = "mineral-light",
         )
     val lightTheme = cs.background.luminance() > 0.5f
     val sparkle = if (lightTheme) cs.primary else Color.White
     Canvas(modifier) {
         drawRect(cs.background)
         val d = max(size.width, size.height)
-        // Aurora blobs: one primary up top, secondary low, faint primary mid.
+
+        // Broad transmitted light INSIDE the stone. The old background leaned
+        // on three strong aurora blobs in every theme, which made different
+        // minerals collapse into the same AI-nebula look.
         drawCircle(
             brush =
                 Brush.radialGradient(
-                    0f to cs.primary.copy(alpha = if (lightTheme) 0.10f else 0.20f),
+                    0f to cs.primary.copy(alpha = if (lightTheme) 0.07f else 0.12f),
                     1f to Color.Transparent,
                     center = Offset(size.width * 0.18f, size.height * 0.05f),
                     radius = d * 0.65f,
@@ -401,7 +656,7 @@ fun CrystalBackground(modifier: Modifier = Modifier) {
         drawCircle(
             brush =
                 Brush.radialGradient(
-                    0f to cs.secondary.copy(alpha = if (lightTheme) 0.08f else 0.14f),
+                    0f to cs.secondary.copy(alpha = if (lightTheme) 0.055f else 0.09f),
                     1f to Color.Transparent,
                     center = Offset(size.width * 0.92f, size.height * 0.85f),
                     radius = d * 0.6f,
@@ -409,55 +664,72 @@ fun CrystalBackground(modifier: Modifier = Modifier) {
             radius = d * 0.6f,
             center = Offset(size.width * 0.92f, size.height * 0.85f),
         )
-        drawCircle(
-            brush =
-                Brush.radialGradient(
-                    0f to cs.primary.copy(alpha = if (lightTheme) 0.05f else 0.09f),
-                    1f to Color.Transparent,
-                    center = Offset(size.width * 0.7f, size.height * 0.35f),
-                    radius = d * 0.5f,
-                ),
-            radius = d * 0.5f,
-            center = Offset(size.width * 0.7f, size.height * 0.35f),
+        drawMineralTexture(
+            theme = theme,
+            primary = cs.primary,
+            secondary = cs.secondary,
+            alpha = if (lightTheme) 0.72f else 1f,
+            panel = false,
         )
-        // Floating crystal splinters: irregular gem outlines rocking gently
-        // around their own centers, with a faint fill and one lit facet line.
-        val shardBase = if (lightTheme) 0.5f else 1f
-        BACKDROP_SHARDS.forEach { sh ->
-            val tone = if (sh.secondary) cs.secondary else cs.primary
-            val pivot = Offset(sh.cx * size.width, sh.cy * size.height)
-            val r = sh.radius * d
-            rotate(sh.tilt + sh.spin * sin(t + sh.phase), pivot) {
-                val pts =
-                    sh.profile.mapIndexed { i, k ->
-                        val a = (2f * PI.toFloat()) * i / sh.profile.size
-                        Offset(pivot.x + r * k * sin(a), pivot.y - r * k * cos(a))
-                    }
-                val path =
-                    Path().apply {
-                        moveTo(pts[0].x, pts[0].y)
-                        for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y)
-                        close()
-                    }
-                drawPath(path, color = tone.copy(alpha = 0.035f * shardBase))
-                drawPath(path, color = tone.copy(alpha = 0.16f * shardBase), style = Stroke(width = 1.dp.toPx()))
-                // One internal facet: the top vertex lit through the body.
-                drawLine(
-                    color = Color.White.copy(alpha = 0.10f * shardBase),
-                    start = pts[0],
-                    end = pts[2],
-                    strokeWidth = 1.dp.toPx(),
-                )
+
+        // Pointed or bladed minerals get a few moving facets. Banded, cloudy
+        // and granular stones keep their own structures instead of inheriting
+        // the same floating crystals.
+        val showShards =
+            theme.crystalTextureKind() == CrystalTextureKind.CLEAR_QUARTZ ||
+                theme.crystalTextureKind() == CrystalTextureKind.AMETHYST ||
+                theme.crystalTextureKind() == CrystalTextureKind.KYANITE
+        if (showShards) {
+            val shardBase = if (lightTheme) 0.38f else 0.72f
+            BACKDROP_SHARDS.forEach { sh ->
+                val tone = if (sh.secondary) cs.secondary else cs.primary
+                val pivot = Offset(sh.cx * size.width, sh.cy * size.height)
+                val r = sh.radius * d
+                rotate(sh.tilt + sh.spin * sin(t + sh.phase), pivot) {
+                    val pts =
+                        sh.profile.mapIndexed { i, k ->
+                            val a = (2f * PI.toFloat()) * i / sh.profile.size
+                            Offset(pivot.x + r * k * sin(a), pivot.y - r * k * cos(a))
+                        }
+                    val path =
+                        Path().apply {
+                            moveTo(pts[0].x, pts[0].y)
+                            for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y)
+                            close()
+                        }
+                    drawPath(path, color = tone.copy(alpha = 0.022f * shardBase))
+                    drawPath(
+                        path,
+                        color = tone.copy(alpha = 0.10f * shardBase),
+                        style = Stroke(width = 1.dp.toPx()),
+                    )
+                    drawLine(
+                        color = Color.White.copy(alpha = 0.07f * shardBase),
+                        start = pts[0],
+                        end = pts[2],
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                }
             }
         }
-        stars.forEach { s ->
-            val tw = 0.5f + 0.5f * sin(t + s.phase)
-            val alpha = (0.04f + 0.22f * s.bright * tw) * (if (lightTheme) 0.6f else 1f)
-            drawCircle(
-                color = sparkle.copy(alpha = alpha),
-                radius = s.size * 1.dp.toPx() * (0.7f + 0.5f * tw),
-                center = Offset(s.x * size.width, s.y * size.height),
-            )
+
+        // Sparkles are inclusions only for clear/black crystal and generic
+        // non-mineral themes. Lapis already has pyrite; adding stars on top
+        // would turn a mineral cue back into space wallpaper.
+        val showSparkles =
+            theme.crystalTextureKind() == CrystalTextureKind.CLEAR_QUARTZ ||
+                theme.crystalTextureKind() == CrystalTextureKind.ONYX ||
+                theme.crystalTextureKind() == CrystalTextureKind.GENERIC
+        if (showSparkles) {
+            stars.forEach { star ->
+                val twinkle = 0.5f + 0.5f * sin(t + star.phase)
+                val a = (0.02f + 0.12f * star.bright * twinkle) * (if (lightTheme) 0.55f else 1f)
+                drawCircle(
+                    color = sparkle.copy(alpha = a),
+                    radius = star.size * 1.dp.toPx() * (0.7f + 0.5f * twinkle),
+                    center = Offset(star.x * size.width, star.y * size.height),
+                )
+            }
         }
     }
 }

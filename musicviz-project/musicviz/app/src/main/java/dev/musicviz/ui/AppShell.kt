@@ -127,10 +127,9 @@ fun AppRoot(
     // the last-composed enabled handler, unwinding overlays in the right
     // order: visualizer > search > drill-in > tab > exit.
     androidx.activity.compose.BackHandler(enabled = dest != 0) { dest = 0 }
-    MaterialTheme(
-        colorScheme = effectiveTheme.colorScheme(gui.accentIntensity, gui.backgroundDim, gui.whiteFont),
-        shapes = gui.cornerStyle.shapes(),
-        typography = crystalTypography(),
+    CrystalMaterialTheme(
+        appTheme = effectiveTheme,
+        gui = gui,
     ) {
         val miniPlayer: @Composable () -> Unit = {
             MiniPlayer(

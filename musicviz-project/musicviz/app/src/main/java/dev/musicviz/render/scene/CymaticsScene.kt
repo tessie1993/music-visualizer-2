@@ -49,8 +49,10 @@ import kotlin.math.max
  */
 internal class CymaticsScene(
     private val context: Context,
+    private val style: VisualStyleCatalog.CymaticsStyle =
+        requireNotNull(VisualStyleCatalog.cymatics(SceneIds.CYMATICS)),
 ) : Scene {
-    override val id: String = SceneIds.CYMATICS
+    override val id: String = style.id
 
     private companion object {
         /** Excitation gain: analyzer bands sit well under 1 even when loud. */
@@ -186,18 +188,20 @@ internal class CymaticsScene(
         GLES30.glUseProgram(program)
         GLES30.glUniform2f(loc("uResolution"), width.toFloat(), height.toFloat())
         GLES30.glUniform1f(loc("uTime"), time)
+        GLES30.glUniform1i(loc("uStyle"), style.shaderStyle)
         GLES30.glUniform4fv(loc("uModes"), CymaticsMath.MAX_RENDERED_MODES, modes, 0)
         GLES30.glUniform1i(loc("uModeCount"), modeCount)
-        GLES30.glUniform1f(loc("uGeometry"), if (p.cymaticsGeometry == 1) 1f else 0f)
-        GLES30.glUniform1f(loc("uScale"), p.cymaticsScale.coerceIn(0.5f, 8f))
+        val geometry = style.geometryOverride ?: p.cymaticsGeometry
+        GLES30.glUniform1f(loc("uGeometry"), if (geometry == 1) 1f else 0f)
+        GLES30.glUniform1f(loc("uScale"), (p.cymaticsScale * style.scale).coerceIn(0.5f, 8f))
         GLES30.glUniform1f(loc("uHeightNorm"), colorNormalization())
-        GLES30.glUniform1f(loc("uLine"), p.cymaticsLine.coerceIn(0f, 2f))
-        GLES30.glUniform1f(loc("uGlow"), p.cymaticsGlow.coerceIn(0f, 2f))
-        GLES30.glUniform1f(loc("uFill"), p.cymaticsFill.coerceIn(0f, 1f))
-        GLES30.glUniform1f(loc("uIridescence"), p.cymaticsIridescence.coerceIn(0f, 1f))
-        GLES30.glUniform1f(loc("uCaustic"), p.cymaticsCaustic.coerceIn(0f, 1.5f))
-        GLES30.glUniform1f(loc("uSwirl"), p.cymaticsSwirl.coerceIn(-1f, 1f) * p.speed.coerceIn(0.05f, 4f))
-        GLES30.glUniform1f(loc("uTravel"), p.cymaticsFlow.coerceIn(0f, 1f) * p.speed.coerceIn(0.05f, 4f))
+        GLES30.glUniform1f(loc("uLine"), (p.cymaticsLine * style.line).coerceIn(0f, 2f))
+        GLES30.glUniform1f(loc("uGlow"), (p.cymaticsGlow * style.glow).coerceIn(0f, 2f))
+        GLES30.glUniform1f(loc("uFill"), (p.cymaticsFill * style.fill).coerceIn(0f, 1f))
+        GLES30.glUniform1f(loc("uIridescence"), (p.cymaticsIridescence * style.iridescence).coerceIn(0f, 1f))
+        GLES30.glUniform1f(loc("uCaustic"), (p.cymaticsCaustic * style.caustic).coerceIn(0f, 1.5f))
+        GLES30.glUniform1f(loc("uSwirl"), (p.cymaticsSwirl * style.swirl).coerceIn(-1f, 1f) * p.speed.coerceIn(0.05f, 4f))
+        GLES30.glUniform1f(loc("uTravel"), (p.cymaticsFlow * style.flow).coerceIn(0f, 1f) * p.speed.coerceIn(0.05f, 4f))
         GLES30.glUniform1f(loc("uBaseHue"), FluidHue.base(p.paletteBase))
         GLES30.glUniform1f(loc("uHueSpan"), FluidHue.span(p.hueRange, p.paletteRange))
         GLES30.glUniform1f(loc("uEnergy"), f.rms.coerceIn(0f, 1.5f))

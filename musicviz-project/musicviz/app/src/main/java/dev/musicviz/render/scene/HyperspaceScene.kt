@@ -54,8 +54,10 @@ import kotlin.math.max
  */
 internal class HyperspaceScene(
     private val context: Context,
+    private val style: VisualStyleCatalog.HyperspaceStyle =
+        requireNotNull(VisualStyleCatalog.hyperspace(SceneIds.HYPERSPACE)),
 ) : Scene {
-    override val id: String = SceneIds.HYPERSPACE
+    override val id: String = style.id
 
     private companion object {
         /** Level below which the scene considers itself undriven. */
@@ -264,7 +266,7 @@ internal class HyperspaceScene(
         val profile = journey.profile()
 
         // ---- the bodies ----------------------------------------------------
-        val target = HyperspaceLook.bodyTarget(profile.bodies, p.hyperBodies)
+        val target = HyperspaceLook.bodyTarget(profile.bodies, p.hyperBodies * style.bodyScale)
         val spread = HyperspaceLook.spread(target)
         // Impulse gates spawning. In silence the scene fakes one every couple
         // of seconds, so an idle app still fills instead of holding whatever
@@ -281,7 +283,7 @@ internal class HyperspaceScene(
             dt = dt,
             target = target,
             impulse = impulse,
-            species = forcedSpecies(p.hyperSpecies),
+            species = forcedSpecies(style.forcedSpecies ?: p.hyperSpecies),
             lifetime = p.hyperLifetime.coerceIn(2f, 60f),
             spread = spread,
             sizeScale = HyperspaceLook.bodySize(target),
@@ -293,7 +295,7 @@ internal class HyperspaceScene(
         // frame's fluid describe the same instant, and before anything is
         // drawn: the sim binds its own framebuffers, and the renderer already
         // has the scene target bound by the time draw() runs.
-        val meltAmount = if (melt.available) p.hyperMelt.coerceIn(0f, 2f) else 0f
+        val meltAmount = if (melt.available) (p.hyperMelt * style.meltScale).coerceIn(0f, 2f) else 0f
         val hueBase = FluidHue.base(p.paletteBase)
         val hueSpan = FluidHue.span(p.hueRange, p.paletteRange)
         if (melt.available) {
@@ -336,11 +338,11 @@ internal class HyperspaceScene(
                 actCamera = profile.camera,
                 spread = spread,
                 maxBodyRadius = HyperspaceLook.maxBodyRadius(target),
-            )
+            ) * style.cameraScale
         camera.advance(
             dt = dt,
             distance = camDistance,
-            drift = p.hyperCamera.coerceIn(0f, 3f) * pace,
+            drift = (p.hyperCamera * style.cameraScale).coerceIn(0f, 3f) * pace,
         )
         farPlane = HyperspaceLook.farPlane(camDistance, spread)
 
@@ -361,6 +363,7 @@ internal class HyperspaceScene(
         GLES30.glUniform3f(loc("uCamPos"), camera.position[0], camera.position[1], camera.position[2])
         GLES30.glUniformMatrix3fv(loc("uCamBasis"), 1, false, camera.basis, 0)
         GLES30.glUniform1f(loc("uFov"), FOV)
+        GLES30.glUniform1i(loc("uStyle"), style.shaderStyle)
         GLES30.glUniform1i(loc("uSteps"), budget.steps)
         GLES30.glUniform1i(loc("uIters"), budget.iterations)
         GLES30.glUniform1i(loc("uBulbIters"), budget.bulbIterations)
@@ -369,12 +372,12 @@ internal class HyperspaceScene(
         GLES30.glUniform1f(loc("uMaxStep"), HyperspaceLook.maxMarchStep(MeltMath.DEFAULT_SCALE))
         GLES30.glUniform1f(loc("uHitEps"), HyperspaceLook.HIT_EPSILON)
         GLES30.glUniform1f(loc("uBoundMargin"), HyperspaceLook.BOUND_MARGIN)
-        GLES30.glUniform1f(loc("uField"), profile.field * p.hyperField.coerceIn(0f, 2f))
+        GLES30.glUniform1f(loc("uField"), profile.field * (p.hyperField * style.fieldScale).coerceIn(0f, 2f))
         GLES30.glUniform1f(loc("uMirror"), profile.mirror)
         GLES30.glUniform1f(loc("uMirrorFolds"), p.hyperMirrorFolds.coerceIn(2, 16).toFloat())
-        GLES30.glUniform1f(loc("uGlow"), profile.glow * p.hyperGlow.coerceIn(0f, 2f))
-        GLES30.glUniform1f(loc("uNeon"), p.hyperNeon.coerceIn(0f, 2f))
-        GLES30.glUniform1f(loc("uHaze"), p.hyperHaze.coerceIn(0f, 2f))
+        GLES30.glUniform1f(loc("uGlow"), profile.glow * (p.hyperGlow * style.glowScale).coerceIn(0f, 2f))
+        GLES30.glUniform1f(loc("uNeon"), (p.hyperNeon * style.neonScale).coerceIn(0f, 2f))
+        GLES30.glUniform1f(loc("uHaze"), (p.hyperHaze * style.hazeScale).coerceIn(0f, 2f))
         GLES30.glUniform1f(loc("uTrapColor"), p.hyperTrap.coerceIn(0f, 1.5f))
         GLES30.glUniform1f(loc("uHueSpread"), profile.hueSpread)
         GLES30.glUniform1f(loc("uBaseHue"), hueBase)
@@ -397,12 +400,12 @@ internal class HyperspaceScene(
         GLES30.glUniform1f(loc("uMeltScale"), MeltMath.DEFAULT_SCALE)
         GLES30.glUniform1f(loc("uMeltAspect"), melt.aspect)
         GLES30.glUniform1f(loc("uMeltRelax"), MeltMath.stepRelaxation(meltAmount))
-        GLES30.glUniform1f(loc("uStain"), if (melt.available) p.hyperStain.coerceIn(0f, 1.5f) else 0f)
-        GLES30.glUniform1f(loc("uLiquid"), if (melt.available) p.hyperLiquid.coerceIn(0f, 1.5f) else 0f)
+        GLES30.glUniform1f(loc("uStain"), if (melt.available) (p.hyperStain * style.stainScale).coerceIn(0f, 1.5f) else 0f)
+        GLES30.glUniform1f(loc("uLiquid"), if (melt.available) (p.hyperLiquid * style.liquidScale).coerceIn(0f, 1.5f) else 0f)
         // Zeroed with the medium like Ink stain and Liquid light: all three
         // read the fluid, and on a GPU that cannot run it there is no current
         // to comb along.
-        GLES30.glUniform1f(loc("uRidges"), if (melt.available) p.hyperRidges.coerceIn(0f, 1f) else 0f)
+        GLES30.glUniform1f(loc("uRidges"), if (melt.available) (p.hyperRidges * style.ridgeScale).coerceIn(0f, 1f) else 0f)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, melt.velocityTex)
         GLES30.glUniform1i(loc("uFlowTex"), 0)
@@ -436,7 +439,9 @@ internal class HyperspaceScene(
         hueBase: Float,
         hueSpan: Float,
     ) {
-        val strength = p.hyperStain.coerceIn(0f, 1.5f) + p.hyperLiquid.coerceIn(0f, 1.5f)
+        val strength =
+            (p.hyperStain * style.stainScale).coerceIn(0f, 1.5f) +
+                (p.hyperLiquid * style.liquidScale).coerceIn(0f, 1.5f)
         if (strength <= 0.01f) {
             // Nothing is going to look at the dye, so nothing needs to be laid
             // down - but the previous positions must still be tracked, or the

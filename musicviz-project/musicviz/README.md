@@ -1,3 +1,14 @@
+## Composite visual families and mineral UI (working tree)
+
+- Hyperspace and Cymatics now keep their original saved-preset IDs while each
+  exposes ten authored substyles through one shared renderer per family.
+- `Liquid Warp` uses Hyperspace's existing velocity/dye solver; `Resonant
+  Wormhole` folds cymatic nodal portals into the raymarched room.
+- The eight named crystal themes now draw different deterministic mineral
+  structures instead of recolouring one generic glass/nebula texture.
+- Design rationale, open-source references, the complete style catalogue and
+  on-device validation targets are in [`docs/VISUAL_STYLE_RESEARCH.md`](docs/VISUAL_STYLE_RESEARCH.md).
+
 ## v1.7.0 (code 31) - Home rebuilt, other apps' audio, a player with a face, and the Export Studio
 
 - **Home is about your listening now, not a list of titles.** It used to be
