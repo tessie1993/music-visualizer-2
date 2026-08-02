@@ -58,6 +58,55 @@ class FeatureTimeline(
      * synthesised) are returned untouched: re-deciding from all-zero flux
      * would silently erase every beat.
      */
+    /**
+     * Fills in [AudioFeatures.kick] / [snare] / [hat] for every frame by
+     * replaying [DrumChannels] over the stored band spectra.
+     *
+     * Needed because a cache entry reconstructs its frames from stored scalars
+     * and the three channels are not among them - but the BANDS they are
+     * derived from are, so no cache-format change is required and existing v2
+     * entries keep working. The live and offline paths get these from
+     * [FeatureExtractor] directly and never need this.
+     *
+     * [sampleRateHz] defaults to 48 kHz because the cache header does not
+     * carry it. The band ranges are logarithmic, so 44.1 vs 48 kHz moves every
+     * boundary by well under one band; a hi-res 96 kHz source shifts them by a
+     * few bands, which stays inside the same channel and is a far cheaper
+     * error than invalidating every cached track to store one integer. A
+     * caller that knows the true rate should pass it.
+     *
+     * Timelines with no bands are returned untouched.
+     */
+    fun withDrumChannels(sampleRateHz: Int = 48_000): FeatureTimeline {
+        if (frames.isEmpty()) return this
+        val bandCount = frames[0].features.bands.size
+        if (bandCount == 0) return this
+        val drums = DrumChannels(bandCount, hopRateHz, sampleRateHz)
+        val out = ArrayList<TimelineFrame>(frames.size)
+        var anyChanged = false
+        for (fr in frames) {
+            val f = fr.features
+            // A frame whose band array is a different width cannot be stepped
+            // through the same instance; leaving it alone keeps the replay
+            // total rather than throwing on a damaged entry.
+            if (f.bands.size != bandCount) {
+                out += fr
+                continue
+            }
+            drums.step(f.bands)
+            if (drums.kickImpulse == f.kick && drums.snareImpulse == f.snare && drums.hatImpulse == f.hat) {
+                out += fr
+                continue
+            }
+            anyChanged = true
+            out += TimelineFrame(
+                fr.timeMs,
+                f.copy(kick = drums.kickImpulse, snare = drums.snareImpulse, hat = drums.hatImpulse),
+            )
+        }
+        return if (anyChanged) FeatureTimeline(out, hopMs, key, hopRateHz) else this
+    }
+
     fun withBeatSensitivity(
         beatThresholdSigma: Float,
         beatMinIntervalMs: Float,

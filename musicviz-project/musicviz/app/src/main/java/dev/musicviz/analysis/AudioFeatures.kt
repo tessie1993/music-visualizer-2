@@ -55,6 +55,22 @@ data class AudioFeatures(
      *  continuous "arc of the song" signal - verses sit low, choruses high -
      *  where [rms] is the instantaneous level. */
     val macroEnergy: Float = 0f,
+    /**
+     * Graded 0..1 impulse for a low-band (kick-range) onset this frame, 0
+     * otherwise. See [DrumChannels] for what these three do and do not claim:
+     * they are band-activity channels named after what usually dominates them,
+     * not a drum classifier.
+     *
+     * Same one-frame contract as [beatStrength] - consumers build their own
+     * envelope. 0 on synthesised features and on any frame no [DrumChannels]
+     * ran over, which is indistinguishable from "no hit" and is the correct
+     * degradation: a scene reading these gets stillness, never a false trigger.
+     */
+    val kick: Float = 0f,
+    /** Mid-band (snare-range) onset impulse. See [kick]. */
+    val snare: Float = 0f,
+    /** High-band (hat/cymbal-range) onset impulse. See [kick]. */
+    val hat: Float = 0f,
 ) {
     /**
      * What a beat should DO to the visuals this frame: 0 off beats, the
