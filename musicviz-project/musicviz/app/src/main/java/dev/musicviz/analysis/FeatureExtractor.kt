@@ -105,10 +105,17 @@ class FeatureExtractor(
         bpmSmoothed = 0f
     }
 
+    /**
+     * @param stereo the stereo image measured over the caller's FULL analysis
+     *   window (see [StereoField.of] for why not the decimated [waveform]).
+     *   Defaults to [StereoField.MONO], which is what a mono source genuinely
+     *   measures - so a caller with no side channel needs no special case.
+     */
     fun extract(
         bands: FloatArray,
         waveform: FloatArray,
         sampleRateHz: Int,
+        stereo: StereoField.Reading = StereoField.MONO,
     ): AudioFeatures {
         var flux = 0f
         var sum = 0f
@@ -170,6 +177,8 @@ class FeatureExtractor(
             beatPhase = tracker.phase,
             pulseConfidence = tracker.confidence,
             macroEnergy = tracker.energy,
+            stereoWidth = stereo.width,
+            stereoCorrelation = stereo.correlation,
             kick = d.kickImpulse,
             snare = d.snareImpulse,
             hat = d.hatImpulse,

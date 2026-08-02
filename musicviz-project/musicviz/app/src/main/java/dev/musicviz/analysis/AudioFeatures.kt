@@ -71,6 +71,25 @@ data class AudioFeatures(
     val snare: Float = 0f,
     /** High-band (hat/cymbal-range) onset impulse. See [kick]. */
     val hat: Float = 0f,
+    /**
+     * Stereo width in 0..1 over the analysis window: 0 is mono, 0.5 a
+     * hard-panned source, 1 a purely out-of-phase difference signal. See
+     * [StereoField.width].
+     *
+     * 0 when the source is mono, when no side channel was supplied, and on
+     * synthesised features - all of which mean the same thing to a scene
+     * (nothing to widen), so the degradation is silent and correct.
+     */
+    val stereoWidth: Float = 0f,
+    /**
+     * Interchannel correlation in -1..1; +1 mono or hard-panned, 0
+     * decorrelated, negative out of phase. See [StereoField.correlation].
+     *
+     * Defaults to 1, not 0: 1 is what a mono source genuinely measures, and a
+     * default of 0 would tell every scene that unanalysed audio is perfectly
+     * decorrelated.
+     */
+    val stereoCorrelation: Float = 1f,
 ) {
     /**
      * What a beat should DO to the visuals this frame: 0 off beats, the
