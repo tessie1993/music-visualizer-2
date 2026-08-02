@@ -313,6 +313,24 @@ float deGasket(vec3 p, float fold) {
  *
  * Every operation is an isometry or a uniform scale, so the box distance at
  * the end divided by the accumulated scale is still a valid estimate.
+ *
+ * The z fold used to be `if (p.z < -1.0) p.z += 2.0`, which was DEAD CODE:
+ * `abs()` and the three sorting swaps leave p.x >= p.y >= p.z >= 0, and the
+ * scale-and-offset subtracts nothing from z, so p.z is never negative and the
+ * branch never fired. Nothing carved the middle third of z. The reflection in
+ * the plane z = 1 that replaces it is the published construction, it is an
+ * isometry, and it actually fires.
+ *
+ * KNOWN DEFECT, not fixed by that change: this species still renders as
+ * granular speckle rather than as terraces. Measured with every shading term
+ * off (trap colour, melt, stain, liquid, ridges, filigree), so it is the
+ * estimator and not the lighting; unchanged with the inter-iteration rotation
+ * at zero, so it is not the twist; and unchanged between 5 and 10 iterations,
+ * which is the part that rules out the obvious culprit - a scale-3 IFS at 10
+ * iterations has 3^10 times the surface detail of one at 5, so an estimator
+ * whose picture does not move between them is not being limited by iteration
+ * depth. Whatever the rays are terminating on does not depend on how deep the
+ * fold goes. See tools/shaderpreview/out/diag-temple-clean.
  */
 float deTemple(vec3 p, float twist) {
     float s = 1.0;
@@ -327,9 +345,10 @@ float deTemple(vec3 p, float twist) {
         if (p.y < p.z) p.yz = p.zy;
         gT = min(gT, dot(p, p));
         p = p * 3.0 - vec3(2.0, 2.0, 0.0);
-        // The axis the sponge treats differently: without this the fold closes
-        // into a solid block and the terraces disappear.
-        if (p.z < -1.0) p.z += 2.0;
+        // The axis the sponge treats differently: the middle third of z is
+        // what makes it a sponge rather than a solid block, and this is the
+        // mirror that carves it.
+        p.z = 1.0 - abs(p.z - 1.0);
         s *= 3.0;
         p.xz = rot * p.xz;
     }
@@ -573,16 +592,16 @@ float calcAO(vec3 p, vec3 n, float scale) {
  */
 vec3 chrysanthemum(vec3 rd) {
     if (uField <= 0.002) return vec3(0.0);
-    // A high starting scale is what makes this a FABRIC rather than a handful
-    // of blobs: the iteration's structure is at unit scale, so entering it far
-    // from the origin puts many periods of it inside one degree of view.
+    // Where the orbit starts. The iteration's own structure is at unit scale,
+    // so this is what decides how much of the fabric one screen holds.
     //
-    // Compensated for the mirror: the kaleidoscope squeezes the whole screen
-    // into one sector of directions, so the SAME field spread over 1/folds of
-    // the angles it used to cover comes out that many times coarser - which is
-    // how a filigree turned into flat washes the moment the fold came on.
-    float squeeze = uMirror >= 0.5 ? max(uMirrorFolds, 2.0) * 0.5 : 1.0;
-    vec3 p = rd * (4.6 + 0.7 * sin(uTime * 0.05)) * squeeze;
+    // Not compensated for the mirror any more. kaleido() maps (r, angle) to
+    // (r, fold(angle)) and |d fold / d angle| is 1, so it is a piecewise
+    // ISOMETRY of the screen: it repeats a wedge of the field, it does not
+    // magnify it. The scale factor that used to be applied here was correcting
+    // for a squeeze that does not happen.
+    float reach = 4.6 + 0.7 * sin(uTime * 0.05);
+    vec3 p = rd * reach;
     vec3 c =
         vec3(0.84, 0.91, 0.72) +
             0.07 * vec3(sin(uTime * 0.043), cos(uTime * 0.037), sin(uTime * 0.029));
@@ -594,19 +613,51 @@ vec3 chrysanthemum(vec3 rd) {
     // Two traps, because the fabric has two scales: the distance to the origin
     // draws the knots, and the distance to the nearest axis plane draws the
     // threads running between them.
+    //
+    // Both are measured back in the STARTING domain, by dividing through the
+    // orbit's accumulated derivative. Read raw off the orbit they are not
+    // distances to anything: the inversion expands and contracts by orders of
+    // magnitude from one iteration to the next, so a trap at iteration nine is
+    // in different units from the same trap at iteration two, and taking a
+    // minimum over the run mixes them. The thread trap in particular is the
+    // smallest of thirty-six such numbers and its median came out at 0.02,
+    // which through a fixed exp(-x*x*420) is 0.45 - not a filigree, a flat
+    // lilac wash over the whole sky, which is exactly what this drew. Divided
+    // by the derivative both traps become a distance from the ray's own
+    // direction to the limit set, which is a quantity a threshold can mean
+    // something against.
+    float dr = 1.0;
     float knot = 1e9;
     float thread = 1e9;
     float hue = 0.0;
-    for (int i = 0; i < 12; i++) {
-        p = abs(p) / max(dot(p, p), 1e-4) - c;
+    for (int i = 0; i < 14; i++) {
+        float r2 = max(dot(p, p), 1e-4);
+        p = abs(p) / r2 - c;
+        // Inversion in the unit sphere is conformal with factor 1/r2, and the
+        // fold and the translate are isometries, so this is the whole
+        // derivative. Bounded because r2 has a floor: one orbit that grazed
+        // the fixed point could otherwise multiply dr by 1e4 per iteration and
+        // reach infinity, and 1/infinity is a trap of exactly zero - a white
+        // pixel in the middle of the sky.
+        dr = min(dr / r2, 1e12);
         float m = length(p);
-        if (m < knot) {
-            knot = m;
+        float d = m / dr;
+        if (d < knot) {
+            knot = d;
             hue = float(i) * 0.11 + m * 0.6;
         }
-        thread = min(thread, min(min(abs(p.x), abs(p.y)), abs(p.z)));
+        thread = min(thread, min(min(abs(p.x), abs(p.y)), abs(p.z)) / dr);
     }
-    float strands = exp(-knot * knot * 55.0) + 0.55 * exp(-thread * thread * 420.0);
+    // A strand is drawn where the ray passes within a couple of PIXELS of the
+    // limit set. The traps are distances on the sphere the orbit starts from,
+    // so the pixel has to be measured there too: one pixel of screen is
+    // 2*uFov/height of direction, and [reach] world units per unit direction.
+    // Threshold it in world units instead and the fabric is a wash on a phone
+    // and invisible on a tablet; in pixels it is the same filigree on both,
+    // and it is the finest one that can be drawn without aliasing into noise.
+    float width = 2.2 * reach * 2.0 * uFov / max(uResolution.y, 1.0);
+    float w2 = width * width;
+    float strands = exp(-knot * knot / w2) + 0.55 * exp(-thread * thread / w2);
     // Treble picks out the fine strands. Every factor here is well under a
     // brightness that could read as a flash, at any level (see VisualSafety).
     float sharpen = 1.0 + 0.35 * clamp(uTreble, 0.0, 1.2);
