@@ -29,6 +29,7 @@ import dev.musicviz.render.scene.SceneParams
 import dev.musicviz.render.scene.ShaderScene
 import dev.musicviz.render.scene.StormScene
 import dev.musicviz.render.scene.SwarmScene
+import dev.musicviz.render.space.SupersampleAware
 import java.io.File
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
@@ -136,7 +137,27 @@ class VisualizerRenderer(
          * 24 ULP-steps per frame of phase advance - the same precision the
          * app has today two hours in, held there forever instead of decaying.
          */
-        private const val TIME_WRAP_SEC = 7100f
+        internal const val TIME_WRAP_SEC = 7100f
+
+        /**
+         * 1.4x supersample on typical screens, easing to 1.0x on very large
+         * ones. In the companion because it is a property of a window size and
+         * not of a renderer instance: `render/space` derives its internal
+         * render scale from it (see [dev.musicviz.render.space.ResTarget
+         * .scaleFor]), and a scene has no other way to know how much bigger
+         * than the display its own target already is.
+         */
+        internal fun supersampleFactor(
+            width: Int,
+            height: Int,
+        ): Float {
+            val longest = maxOf(width, height)
+            return when {
+                longest >= 2200 -> 1.0f
+                longest >= 1600 -> 1.25f
+                else -> 1.4f
+            }
+        }
     }
 
     @Volatile
@@ -902,24 +923,17 @@ class VisualizerRenderer(
         val ss = supersampleFactor(width, height)
         renderWidth = (width * ss).toInt()
         renderHeight = (height * ss).toInt()
+        // Before resize(), because a scene that renders below renderWidth sizes
+        // its ResTarget there and the scale is derived from this factor - see
+        // SupersampleAware. Sent by interface for the same reason the particle
+        // family's error channel is wired that way above: one line here beats
+        // one line per style in createScene.
+        scenes.values.filterIsInstance<SupersampleAware>().forEach { it.setSupersample(ss) }
         scenes.values.forEach { it.resize(renderWidth, renderHeight) }
         flowField?.resize(renderWidth, renderHeight)
         rippleOverlay?.resize(renderWidth, renderHeight)
         fboA.ensure(renderWidth, renderHeight)
         fboB.ensure(renderWidth, renderHeight)
-    }
-
-    /** 1.4x supersample on typical screens, easing to 1.0x on very large ones. */
-    private fun supersampleFactor(
-        width: Int,
-        height: Int,
-    ): Float {
-        val longest = maxOf(width, height)
-        return when {
-            longest >= 2200 -> 1.0f
-            longest >= 1600 -> 1.25f
-            else -> 1.4f
-        }
     }
 
     override fun onDrawFrame(gl: GL10?) {
