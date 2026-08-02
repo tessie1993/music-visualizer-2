@@ -796,6 +796,36 @@ class VisualizerRenderer(
         }
     }
 
+    /**
+     * The registered scene for [id], building it on first use if it is one of
+     * the family substyles [onSurfaceCreated] deliberately skipped. GL thread
+     * only, for the same reason [createScene] is: this calls `init()`.
+     *
+     * The substyles cannot share one instance per family - a switch is
+     * detected by object identity (`requested !== activeScene`) and a
+     * transition holds the outgoing scene alongside the incoming one, so two
+     * substyles of one family have to be two objects. What they can do is not
+     * exist until asked for, which is what this does: the cost of a substyle
+     * is paid once, by the user who picks it, instead of twenty times over on
+     * every surface creation.
+     *
+     * Returns null for an unknown id, exactly as the map lookup it replaces
+     * did, so a stale preset id still falls back rather than throwing.
+     */
+    private fun sceneFor(id: String): Scene? {
+        scenes[id]?.let { return it }
+        if (id !in VisualStyleCatalog.lazyIds) return null
+        val scene = createScene(id, particleShaderSources(context), loadRaw(R.raw.quad_vert))
+        scene.init()
+        // The state onSurfaceCreated/onSurfaceChanged already handed to every
+        // eagerly built scene. Without the resize this one renders at the 1x1
+        // default until the next surface change.
+        scene.setParams(sceneParams)
+        scene.resize(renderWidth, renderHeight)
+        scenes[id] = scene
+        return scene
+    }
+
     fun submitShader(
         sceneId: String,
         fragmentSrc: String,
@@ -843,7 +873,13 @@ class VisualizerRenderer(
         trailH = 0
         val particleShaders = particleShaderSources(context)
         val quadVert = loadRaw(R.raw.quad_vert)
-        for (id in availableSceneIds()) scenes[id] = createScene(id, particleShaders, quadVert)
+        // Family substyles are skipped here and built by [sceneFor] the first
+        // time one is actually selected - see VisualStyleCatalog.lazyIds for
+        // what building all of them up front cost.
+        for (id in availableSceneIds()) {
+            if (id in VisualStyleCatalog.lazyIds) continue
+            scenes[id] = createScene(id, particleShaders, quadVert)
+        }
         // The particle family shares one base, so it is wired here rather than
         // nine times over in createScene. Before init(), because init() is
         // where a driver-rejected shader has something to report.
@@ -863,7 +899,7 @@ class VisualizerRenderer(
         lastMilkPreset?.let { milkdropScene?.queuePreset(it) }
         // Re-apply user fluid injection shaders lost with the old context.
         if (fluidForceSrc != null || fluidDyeSrc != null) fluidInjectionDirty = true
-        activeScene = scenes[requestedSceneId] ?: scenes[SceneIds.NEBULA]
+        activeScene = sceneFor(requestedSceneId) ?: scenes[SceneIds.NEBULA]
         outgoingScene = null
         outgoingParams = null
 
@@ -985,7 +1021,7 @@ class VisualizerRenderer(
             val (sceneId, src) = pendingCustomShaders.poll() ?: break
             (scenes[sceneId] as? ShaderScene)?.setFragmentSource(src)
         }
-        val requested = scenes[requestedSceneId]
+        val requested = sceneFor(requestedSceneId)
         var sceneJustSwitched = false
         if (requested != null && requested !== activeScene) {
             val cuts = TransitionCatalog.builtIn(transitionId) == TransitionStyle.CUT
@@ -1089,7 +1125,7 @@ class VisualizerRenderer(
             } else {
                 layerSceneId
                     ?.takeIf { it != requestedSceneId }
-                    ?.let { scenes[it] }
+                    ?.let { sceneFor(it) }
                     ?.takeIf { it !== activeScene }
             }
         val layer = layerScene

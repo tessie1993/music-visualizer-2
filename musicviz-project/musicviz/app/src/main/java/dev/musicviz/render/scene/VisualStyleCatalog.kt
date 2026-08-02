@@ -307,6 +307,27 @@ internal object VisualStyleCatalog {
     val hyperspaceIds: List<String> = hyperspace.map { it.id }
     val cymaticsIds: List<String> = cymatics.map { it.id }
 
+    /**
+     * The ids the renderer builds on demand instead of at surface creation.
+     *
+     * A substyle is one uniform plus a few control biases on a program its
+     * family has ALREADY compiled - but the scene registry keys one
+     * constructed, `init()`ed instance per id, and `HyperspaceScene.init()`
+     * compiles the raymarcher and creates a whole `FluidSim` (about a dozen
+     * more programs) for each one. Building all twenty in `onSurfaceCreated`
+     * put roughly a hundred and thirty extra shader compiles on the GL thread
+     * before the first frame of ANY style, which read as the app freezing
+     * whenever a visual was shown.
+     *
+     * Each family's original stays eager, so nothing that was ready at the
+     * first frame before the substyles existed stopped being ready.
+     */
+    val lazyIds: Set<String> =
+        buildSet {
+            addAll(hyperspaceIds.filter { it != SceneIds.HYPERSPACE })
+            addAll(cymaticsIds.filter { it != SceneIds.CYMATICS })
+        }
+
     private val hyperspaceById = hyperspace.associateBy { it.id }
     private val cymaticsById = cymatics.associateBy { it.id }
 
