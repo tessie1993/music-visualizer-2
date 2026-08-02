@@ -43,7 +43,9 @@ import kotlin.math.max
  * - `GlUtil.resetFrameState()` at draw entry (the fluid family's rule).
  * - Palette IDENTITY only ([FluidHue] base + span). Hue shift, the colour
  *   cycle, Brightness, Contrast and Intensity belong to the composite pass for
- *   scenes without a grading pass of their own, this one included.
+ *   scenes without a grading pass of their own, this one included - and so, on
+ *   the same gate and for the same reason, do Zoom and Rotation. This scene
+ *   reads neither; see the camera block in [draw].
  * - A synthetic idle drive when nothing is playing. Here that is a slow swell
  *   that walks the journey through all five acts on its own, so an idle app or
  *   a live wallpaper shows the whole story rather than parking on the empty
@@ -315,9 +317,22 @@ internal class HyperspaceScene(
         // ---- the camera ----------------------------------------------------
         // Kept outside every body: a raymarcher started inside a folded
         // distance estimator draws stripes, not an interior.
+        //
+        // Zoom and Rotation are deliberately NOT read here. This style has no
+        // grading pass of its own, so it is in the composite's FLUID family
+        // and `CompositeGrade.gateFor` hands that family the whole
+        // uPostZoom..uPostHue block - the composite magnifies and turns the
+        // finished frame for every one of them. A scene in that family that
+        // also acts on the two undoes the composite: the camera pushed back
+        // by exactly the factor the composite then magnified by, and the roll
+        // turned the image by -angle against the composite's +angle. Both
+        // cancelled to nothing. One layer owns them, and for this family that
+        // layer is the composite - see the gate's own comment, and
+        // `FxCompositor`, which shares `gateFor` so an exported clip and the
+        // screen make the same decision.
         camDistance =
             HyperspaceLook.cameraDistance(
-                actCamera = profile.camera * p.zoom.coerceIn(0.4f, 3f),
+                actCamera = profile.camera,
                 spread = spread,
                 maxBodyRadius = HyperspaceLook.maxBodyRadius(target),
             )
@@ -325,7 +340,6 @@ internal class HyperspaceScene(
             dt = dt,
             distance = camDistance,
             drift = p.hyperCamera.coerceIn(0f, 3f) * pace,
-            roll = p.rotation * time,
         )
         farPlane = HyperspaceLook.farPlane(camDistance, spread)
 
@@ -353,7 +367,6 @@ internal class HyperspaceScene(
         GLES30.glUniform1f(loc("uMaxStep"), HyperspaceLook.maxMarchStep(MeltMath.DEFAULT_SCALE))
         GLES30.glUniform1f(loc("uHitEps"), HyperspaceLook.HIT_EPSILON)
         GLES30.glUniform1f(loc("uBoundMargin"), HyperspaceLook.BOUND_MARGIN)
-        GLES30.glUniform1f(loc("uAct"), journey.actPosition)
         GLES30.glUniform1f(loc("uField"), profile.field * p.hyperField.coerceIn(0f, 2f))
         GLES30.glUniform1f(loc("uMirror"), profile.mirror)
         GLES30.glUniform1f(loc("uMirrorFolds"), p.hyperMirrorFolds.coerceIn(2, 16).toFloat())
@@ -369,18 +382,25 @@ internal class HyperspaceScene(
         GLES30.glUniform1f(loc("uHasMelt"), if (melt.available) 1f else 0f)
         GLES30.glUniform1f(loc("uMelt"), meltAmount)
         // Grid texel -> sim units/s -> world units/s -> displacement, folded
-        // into one multiply, and the reach the spheres were inflated by.
+        // into one multiply. Free of the Melt amount on purpose: this is the
+        // FIELD's conversion, and the shader scales it by uMelt where it bends
+        // geometry. Ridges reads it unscaled, which is why that control now
+        // marks a surface whether or not the geometry is being pulled.
         GLES30.glUniform1f(
-            loc("uMeltGain"),
-            melt.flowScale * MeltMath.DEFAULT_SCALE * MeltMath.MELT_SECONDS * meltAmount,
+            loc("uFlowGain"),
+            melt.flowScale * MeltMath.DEFAULT_SCALE * MeltMath.MELT_SECONDS,
         )
+        // The reach the spheres were inflated by, and the melt's own ceiling.
         GLES30.glUniform1f(loc("uMeltReach"), MeltMath.reach(meltAmount, MeltMath.DEFAULT_SCALE))
         GLES30.glUniform1f(loc("uMeltScale"), MeltMath.DEFAULT_SCALE)
         GLES30.glUniform1f(loc("uMeltAspect"), melt.aspect)
         GLES30.glUniform1f(loc("uMeltRelax"), MeltMath.stepRelaxation(meltAmount))
         GLES30.glUniform1f(loc("uStain"), if (melt.available) p.hyperStain.coerceIn(0f, 1.5f) else 0f)
         GLES30.glUniform1f(loc("uLiquid"), if (melt.available) p.hyperLiquid.coerceIn(0f, 1.5f) else 0f)
-        GLES30.glUniform1f(loc("uRidges"), p.hyperRidges.coerceIn(0f, 1f))
+        // Zeroed with the medium like Ink stain and Liquid light: all three
+        // read the fluid, and on a GPU that cannot run it there is no current
+        // to comb along.
+        GLES30.glUniform1f(loc("uRidges"), if (melt.available) p.hyperRidges.coerceIn(0f, 1f) else 0f)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, melt.velocityTex)
         GLES30.glUniform1i(loc("uFlowTex"), 0)

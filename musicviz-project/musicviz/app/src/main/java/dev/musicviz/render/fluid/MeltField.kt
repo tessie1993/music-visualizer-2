@@ -85,7 +85,7 @@ internal class MeltField(
 
     /**
      * Grid velocity -> sim units per second for this field. The shader needs
-     * it to turn a raw texel into a world displacement; see `uMeltGain`.
+     * it to turn a raw texel into a world displacement; see `uFlowGain`.
      */
     val flowScale: Float get() = sim.flowScale
 

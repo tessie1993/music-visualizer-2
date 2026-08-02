@@ -856,8 +856,9 @@ class BloomBank(
  * that - held for at least [HyperspaceMath.MIN_ACT_SECONDS] - gives [act], the
  * discrete one the body count follows.
  *
- * `Hold` pins a chosen act. `Cycle` walks the five on a timer, for a set that
- * should tell the same story regardless of what is playing.
+ * `Hold` pins a chosen act. `Cycle` walks the five out and back on a timer,
+ * holding each for one `cycleSeconds`, for a set that should tell the same
+ * story regardless of what is playing.
  */
 class HyperspaceJourney {
     /** How deep the track has taken the journey, 0..1. */
@@ -889,8 +890,10 @@ class HyperspaceJourney {
      * @param energy the track's macro-dynamics envelope, 0..1 (falls back to
      *   RMS when offline analysis has not run).
      * @param mode one of [HyperspaceMath.JOURNEY_MUSIC] / `_HOLD` / `_CYCLE`.
-     * @param holdAct the act `Hold` pins, and where `Cycle` starts.
-     * @param cycleSeconds seconds per act in `Cycle`.
+     * @param holdAct the act `Hold` pins. `Cycle` ignores it and always opens
+     *   on the first act, because a story that starts in the middle is not
+     *   the story this mode exists to tell.
+     * @param cycleSeconds seconds each act is held for in `Cycle`.
      * @param pace multiplier on how fast the journey moves (the Speed control).
      */
     fun advance(
@@ -907,12 +910,31 @@ class HyperspaceJourney {
             when (mode) {
                 HyperspaceMath.JOURNEY_HOLD -> holdAct.coerceIn(0, last).toFloat()
                 HyperspaceMath.JOURNEY_CYCLE -> {
+                    // Cycle is Hold on a timer: the goal is one whole act,
+                    // held for exactly `cycleSeconds`, and the glide below
+                    // carries the profile from each act to the next. The
+                    // control is labelled "Act length", so every act has to
+                    // get that length and no act may get more.
+                    //
+                    // The walk is a ping-pong - 0,1,2,3,4,3,2,1 and round
+                    // again - because the act list is a line, not a ring: a
+                    // wrap from Breakthrough straight back to Threshold has to
+                    // travel through the three acts in between whatever it is
+                    // told to do, and coming back down through them is the
+                    // same motion the Music mode makes when a track goes
+                    // quiet. Every step is to a NEIGHBOUR, so the story never
+                    // rewinds through three acts in one glide, and it never
+                    // sits at breakthrough forever.
+                    //
+                    // It used to be a sawtooth over [0,5) fed to a position
+                    // clamped at 4, which handed the last act one whole extra
+                    // period before that unbudgeted rewind - "seconds per act"
+                    // for four acts out of five.
                     val per = max(cycleSeconds, 2f)
-                    cyclePhase = (cyclePhase + step / per) % HyperspaceMath.ACTS.size.toFloat()
-                    // Walks 0,1,2,3,4,0,... The wrap back to the threshold is
-                    // the story restarting, which is what a set of tracks
-                    // should do rather than sitting at breakthrough forever.
-                    cyclePhase
+                    val slots = max(2 * last, 1)
+                    cyclePhase = (cyclePhase + step / per) % slots.toFloat()
+                    val slot = cyclePhase.toInt().coerceIn(0, slots - 1)
+                    (last - abs(last - slot)).toFloat()
                 }
                 else -> {
                     // Loud -> deeper, quiet -> back, and never at the same
@@ -969,13 +991,15 @@ class HyperspaceCamera {
     /**
      * @param distance how far the eye sits from the origin (the act's camera).
      * @param drift multiplier on the drift rate; 0 parks the camera.
-     * @param roll radians of roll about the view axis.
+     *
+     * There is no roll: HYPERSPACE is graded by the composite pass, which owns
+     * Rotation for its whole family and turns the finished frame. A roll here
+     * as well only ever cancelled it - see [HyperspaceScene]'s camera block.
      */
     fun advance(
         dt: Float,
         distance: Float,
         drift: Float,
-        roll: Float,
     ) {
         t += dt * max(drift, 0f)
         // Three incommensurate rates per angle: the ratios are irrational
@@ -1010,22 +1034,9 @@ class HyperspaceCamera {
         ry *= rl
         rz *= rl
         // up = cross(right, forward)
-        var vx = ry * fz - rz * fy
-        var vy = rz * fx - rx * fz
-        var vz = rx * fy - ry * fx
-        if (roll != 0f) {
-            val c = cos(roll)
-            val s = sin(roll)
-            val nrx = rx * c + vx * s
-            val nry = ry * c + vy * s
-            val nrz = rz * c + vz * s
-            vx = vx * c - rx * s
-            vy = vy * c - ry * s
-            vz = vz * c - rz * s
-            rx = nrx
-            ry = nry
-            rz = nrz
-        }
+        val vx = ry * fz - rz * fy
+        val vy = rz * fx - rx * fz
+        val vz = rx * fy - ry * fx
         // Column-major: column 0 = right, 1 = up, 2 = forward.
         basis[0] = rx
         basis[1] = ry
@@ -1055,18 +1066,57 @@ data class MarchBudget(
     val bulbIterations: Int,
 ) {
     companion object {
-        /** Matches the `MAX_STEPS` / `MAX_ITERS` compile-time bounds in the shader. */
+        /**
+         * The `MAX_STEPS` / `MAX_ITERS` / `MAX_BULB_ITERS` compile-time bounds
+         * in the shader. These bound the LOOPS; what the slider actually asks
+         * for is [forDetail]'s endpoints below.
+         */
         const val MAX_STEPS: Int = 128
         const val MAX_ITERS: Int = 14
+        const val MAX_BULB_ITERS: Int = 10
 
+        /** The Detail slider's own range, as `CustomizeTabs` spells it. */
+        const val MIN_DETAIL: Float = 0.25f
+        const val MAX_DETAIL: Float = 1.5f
+
+        /** The budget at the bottom of the slider: coarse, and cheap enough
+         *  to be the answer on a phone that cannot afford the style. */
+        private const val FLOOR_STEPS: Int = 64
+        private const val FLOOR_ITERS: Int = 5
+        private const val FLOOR_BULB_ITERS: Int = 3
+
+        /**
+         * The budget at the top. Steps and iterations are the shader's own
+         * ceilings, so the last notch of the slider buys everything the
+         * shader can be asked for; the bulb stops short of its because it
+         * costs several times what the other estimators do and would be the
+         * one quantity that decides the frame rate at maximum detail.
+         */
+        private const val TOP_STEPS: Int = MAX_STEPS
+        private const val TOP_ITERS: Int = MAX_ITERS
+        private const val TOP_BULB_ITERS: Int = 8
+
+        /**
+         * Interpolated across the slider's range rather than by a slope with
+         * a clamp on the end. With a slope, all three quantities saturated
+         * early - steps at detail 1.43, the bulb at 1.33 - so the top of the
+         * control bought an identical picture at an identical cost, which is
+         * a slider that lies about the last twelve percent of its travel.
+         */
         fun forDetail(detail: Float): MarchBudget {
-            val d = detail.coerceIn(0.25f, 1.5f)
+            val t = ((detail - MIN_DETAIL) / (MAX_DETAIL - MIN_DETAIL)).coerceIn(0f, 1f)
             return MarchBudget(
-                steps = (48f + 56f * d).toInt().coerceIn(24, MAX_STEPS),
-                iterations = (5f + 5f * d).toInt().coerceIn(3, MAX_ITERS),
-                bulbIterations = (3f + 3f * d).toInt().coerceIn(2, 10),
+                steps = lerpBudget(FLOOR_STEPS, TOP_STEPS, t),
+                iterations = lerpBudget(FLOOR_ITERS, TOP_ITERS, t),
+                bulbIterations = lerpBudget(FLOOR_BULB_ITERS, TOP_BULB_ITERS, t),
             )
         }
+
+        private fun lerpBudget(
+            floor: Int,
+            top: Int,
+            t: Float,
+        ): Int = Math.round(floor + (top - floor) * t)
     }
 }
 

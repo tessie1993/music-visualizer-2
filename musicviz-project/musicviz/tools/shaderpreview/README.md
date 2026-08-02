@@ -39,6 +39,11 @@ node preview.mjs --scene hyperspace --no-melt --out out/no-melt
 
 # five hours of wallpaper uptime, after a 10 s warm-up
 node preview.mjs --scene shader --shader plasma --warmup 600 --frames 6 --clock-jump 3600
+
+# through the composite pass, which is where Zoom and Rotation live on a
+# fluid-family style - without this you are looking at a frame the user never
+# sees, and half its controls are applied nowhere in it
+node preview.mjs --scene hyperspace --composite --param zoom=3 --frames 1
 ```
 
 ### Flags
@@ -55,6 +60,7 @@ node preview.mjs --scene shader --shader plasma --warmup 600 --frames 6 --clock-
 | `--audio silence\|tone\|beat\|arc` | audio model |
 | `--param name=value` | override one `SceneParams` field, repeatable |
 | `--no-melt` | force `uHasMelt = 0` (the no-float-buffer fallback) |
+| `--composite` | run the scene through `composite_frag` afterwards, as the app does |
 | `--field-stats` | read back the fluid dye/velocity grids and report their statistics |
 | `--clock-jump S` | advance the free-running clocks by S seconds per captured frame |
 | `--seed N` | seed for the body RNG |
@@ -115,6 +121,17 @@ wrong about.
 FlowField texture, the cyclic-palette atlas), the harness supplies the neutral
 value the app itself sends when it is absent, and prints it as a stand-in
 rather than pretending it is the real thing.
+
+**The composite pass is the app's, and audited the same way.** With
+`--composite` the scene draws into an RGBA8 target (`VisualizerRenderer`'s
+`TargetFbo`, filter and wrap included) and `composite_frag` draws that to the
+screen, driven by `lib/composite.mjs` mirroring the renderer's `cLoc()` block
+and gated by `CompositeGrade.gateFor` for the scene's family. Its uniforms go
+through the same three-way audit against `VisualizerRenderer.kt`. Only the
+non-transition case is modelled - `uStyle = CUT`, one scene texture, both
+gates from the active family; two live scenes would need two drivers, and the
+gate algebra a transition exercises is pinned by `CompositeGradeTest`
+instead.
 
 ## What it measures
 
@@ -180,11 +197,15 @@ Also, more mundanely but just as capable of misleading you:
    jumped run for precision behaviour only; the geometry in it is whatever
    the warm-up left there.
 
-7. **There is no composite pass.** The app grades most scenes afterwards
-   (`uPostHue`, Brightness, Contrast, Intensity, bloom, the transition
-   compositor). What you see here is the scene's own output before any of
-   that, which is what you want for debugging a scene and is *not* what the
-   user sees.
+7. **The composite pass is off unless you ask for it.** Without
+   `--composite` what you see is the scene's own output before the app grades
+   it - which is what you want for debugging a scene, and is *not* what the
+   user sees. On a fluid-family style that difference is not cosmetic:
+   `CompositeGrade.gateFor(FLUID)` hands the composite the whole
+   zoom/rotation/colour-grade block, so Zoom and Rotation are applied nowhere
+   in the scene-only frame and reading one is a good way to conclude that a
+   working control is dead. Even with `--composite`, transitions and the
+   spliced gl-transition variants are not modelled.
 
 8. **Luminance is measured on the stored 8-bit values**, not on display-linear
    light. It is a good relative measure and a poor absolute one; use it to
@@ -207,6 +228,7 @@ lib/audio.mjs           AudioFeatures models + the 64x2 uAudioTex rows
 lib/hyperspace-math.mjs JS port of HyperspaceMath.kt / MeltMath / FluidHue
 lib/emitters.mjs        JS port of the FluidEmitters paths MeltField enables
 lib/scenes.mjs          per-frame uniform plans, mirroring the Kotlin draw()s
+lib/composite.mjs       the same, for VisualizerRenderer's composite_frag pass
 page/harness.html       WebGL2: compile, upload, run the fluid passes, measure
 ```
 

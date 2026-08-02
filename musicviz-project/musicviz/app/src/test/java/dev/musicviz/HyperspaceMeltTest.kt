@@ -161,6 +161,89 @@ class HyperspaceMeltTest {
         assertTrue(!MeltMath.insideSim(9f, 0f, 0.5f))
     }
 
+    // ---- the dye's magnitude ---------------------------------------------
+
+    /**
+     * The bound the white-out was missing.
+     *
+     * A dye texel is painted additively and decays by a DIVISOR, so its value
+     * follows `d <- (d + a) / (1 + k*dt)` and settles at `a / (k*dt)` - which
+     * is not bounded by anything as the "Flow fade" control approaches its
+     * minimum, and at the shipped default was already 381 times the per-frame
+     * injection. `hyperspace_frag.glsl` reads the result as light.
+     *
+     * [MeltMath.DYE_CEILING] closes it at the source: ink goes into the
+     * headroom a texel has left, so the recurrence becomes
+     * `d <- (d + a*(1 - d/C)) / (1 + k*dt)` and can never pass `C`. That is
+     * the whole field, not just this pass - advection is a bilinear resample
+     * (a convex combination, so never above its own maximum) divided by a
+     * decay of at least one, so injection is the only operator that can raise
+     * the field's largest value.
+     *
+     * Run here for the whole of the "Flow fade" slider, INCLUDING zero, and at
+     * an injection rate an order of magnitude past anything the emitters can
+     * produce, because "a user set a slider to its minimum" must not be a way
+     * to white out the screen.
+     */
+    @Test
+    fun no_flow_fade_setting_can_run_the_dye_away() {
+        val dt = 1f / 60f
+        for (fade in listOf(0f, 0.1f, 0.35f, 1f, 2f, 4f)) {
+            val decay = 1f + MeltMath.dyeDissipation(fade) * dt
+            for (inject in listOf(0.03f, 0.3f, 3f)) {
+                var d = 0f
+                repeat(60 * 600) {
+                    val room = (1f - d / MeltMath.DYE_CEILING).coerceIn(0f, 1f)
+                    d = minOf(d + inject * room, MeltMath.DYE_CEILING) / decay
+                    assertTrue(
+                        "fade $fade, injecting $inject: dye reached $d",
+                        d.isFinite() && d <= MeltMath.DYE_CEILING,
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * And the ceiling on its own is not enough to keep it a fluid.
+     *
+     * A bounded field with no decay still only ever gains: every texel the ink
+     * has crossed ratchets to the ceiling and stays there, which is a stain,
+     * not a current. So the dye always forgets, whatever the control says -
+     * the bottom of the slider means "as slow as the ink is allowed to fade",
+     * not "never". Above the floor the control is untouched.
+     */
+    @Test
+    fun the_ink_always_forgets_however_the_fade_is_set() {
+        assertTrue(MeltMath.dyeDissipation(0f) >= MeltMath.MIN_DYE_DISSIPATION)
+        assertTrue(MeltMath.dyeDissipation(-1f) >= MeltMath.MIN_DYE_DISSIPATION)
+        assertEquals(
+            4f * MeltMath.DYE_FADE_RATIO,
+            MeltMath.dyeDissipation(4f),
+            1e-6f,
+        )
+        assertEquals(MeltMath.dyeDissipation(4f), MeltMath.dyeDissipation(99f), 0f)
+        var prev = -1f
+        var f = 0f
+        while (f <= 4f) {
+            val d = MeltMath.dyeDissipation(f)
+            assertTrue("dissipation is not monotone at $f", d >= prev)
+            prev = d
+            f += 0.05f
+        }
+        // The ink still has to outlive the flow that carried it, or the stain
+        // never has time to be seen ON anything.
+        assertTrue(MeltMath.DYE_FADE_RATIO < 1f)
+
+        // At the floor an untouched field still empties, and in seconds rather
+        // than in a session: this is what stops "Flow fade at 0" from being a
+        // permanent layer of ink over the room.
+        val dt = 1f / 60f
+        var d = MeltMath.DYE_CEILING
+        repeat(60 * 30) { d /= 1f + MeltMath.MIN_DYE_DISSIPATION * dt }
+        assertTrue("the field still holds $d after thirty seconds", d < 0.12f * MeltMath.DYE_CEILING)
+    }
+
     private companion object {
         /**
          * The smallest orbit spread any act uses. The reach must stay well

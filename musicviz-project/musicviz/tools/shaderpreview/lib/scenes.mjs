@@ -66,8 +66,8 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
   const supplies = new Set([
     'uResolution', 'uTime', 'uBloomCount', 'uBloomPos', 'uBloomShape', 'uBloomLook', 'uBloomRot',
     'uCamPos', 'uCamBasis', 'uFov', 'uSteps', 'uIters', 'uBulbIters', 'uFar', 'uMaxStep', 'uHitEps',
-    'uBoundMargin', 'uAct', 'uField', 'uMirror', 'uMirrorFolds', 'uGlow', 'uNeon', 'uHaze',
-    'uTrapColor', 'uHueSpread', 'uBaseHue', 'uHueSpan', 'uHasMelt', 'uMelt', 'uMeltGain',
+    'uBoundMargin', 'uField', 'uMirror', 'uMirrorFolds', 'uGlow', 'uNeon', 'uHaze',
+    'uTrapColor', 'uHueSpread', 'uBaseHue', 'uHueSpan', 'uHasMelt', 'uMelt', 'uFlowGain',
     'uMeltReach', 'uMeltScale', 'uMeltAspect', 'uMeltRelax', 'uStain', 'uLiquid', 'uRidges',
     'uFlowTex', 'uDyeTex', 'uEnergy', 'uBass', 'uTreble', 'uBeat', 'uExposure',
   ]);
@@ -132,14 +132,12 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
       H.MeltMath.reach(meltAmount, H.MeltMath.DEFAULT_SCALE),
     );
 
+    // Zoom and Rotation are the composite pass' for this family, so the scene
+    // reads neither - see HyperspaceScene's camera block.
     const camDistance = H.Look.cameraDistance(
-      profile.camera * clamp(p.zoom, 0.4, 3), spread, H.Look.maxBodyRadius(target),
+      profile.camera, spread, H.Look.maxBodyRadius(target),
     );
-    camera.advance({
-      dt, distance: camDistance,
-      drift: clamp(p.hyperCamera, 0, 3) * pace,
-      roll: p.rotation * time,
-    });
+    camera.advance({ dt, distance: camDistance, drift: clamp(p.hyperCamera, 0, 3) * pace });
     const farPlane = H.Look.farPlane(camDistance, spread);
     beatPulse = clamp(Math.max(impulseRaw * clamp(p.beatResponse, 0, 2), beatPulse - dt * 3), 0, 1.5);
     const budget = H.marchBudget(p.hyperDetail);
@@ -162,7 +160,6 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
       uMaxStep: { t: '1f', v: H.Look.maxMarchStep(H.MeltMath.DEFAULT_SCALE) },
       uHitEps: { t: '1f', v: H.Look.HIT_EPSILON },
       uBoundMargin: { t: '1f', v: H.Look.BOUND_MARGIN },
-      uAct: { t: '1f', v: journey.actPosition },
       uField: { t: '1f', v: profile.field * clamp(p.hyperField, 0, 2) },
       uMirror: { t: '1f', v: profile.mirror },
       uMirrorFolds: { t: '1f', v: clamp(Math.round(p.hyperMirrorFolds), 2, 16) },
@@ -175,14 +172,14 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
       uHueSpan: { t: '1f', v: hueSpan },
       uHasMelt: { t: '1f', v: hasMelt ? 1 : 0 },
       uMelt: { t: '1f', v: meltAmount },
-      uMeltGain: { t: '1f', v: flowScale * H.MeltMath.DEFAULT_SCALE * H.MeltMath.MELT_SECONDS * meltAmount },
+      uFlowGain: { t: '1f', v: flowScale * H.MeltMath.DEFAULT_SCALE * H.MeltMath.MELT_SECONDS },
       uMeltReach: { t: '1f', v: H.MeltMath.reach(meltAmount, H.MeltMath.DEFAULT_SCALE) },
       uMeltScale: { t: '1f', v: H.MeltMath.DEFAULT_SCALE },
       uMeltAspect: { t: '1f', v: meltAspect },
       uMeltRelax: { t: '1f', v: H.MeltMath.stepRelaxation(meltAmount) },
       uStain: { t: '1f', v: hasMelt ? clamp(p.hyperStain, 0, 1.5) : 0 },
       uLiquid: { t: '1f', v: hasMelt ? clamp(p.hyperLiquid, 0, 1.5) : 0 },
-      uRidges: { t: '1f', v: clamp(p.hyperRidges, 0, 1) },
+      uRidges: { t: '1f', v: hasMelt ? clamp(p.hyperRidges, 0, 1) : 0 },
       uFlowTex: { t: 'tex', v: 0 },
       uDyeTex: { t: 'tex', v: 1 },
       uEnergy: { t: '1f', v: clamp(f.rms, 0, 1.5) },

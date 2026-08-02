@@ -15,7 +15,7 @@ uniform vec2 uCur;        // sim space
 uniform float uRadius;    // sim space
 uniform vec3 uValue;      // mode 0: (targetVel.xy in grid units, 0); mode 1: dye rgb
 uniform int uMode;
-uniform float uCeiling;   // mode 1: the most ink a texel may hold, per channel
+uniform float uCeiling;   // mode 1: most ink a texel may hold per channel, <=0 unbounded
 out vec4 fragColor;
 
 float segDist(vec2 a, vec2 b, vec2 p, out float fp) {
@@ -51,7 +51,16 @@ void main() {
         // larger than the whole headroom. Scaled by the brightest channel and
         // not per channel, so ink that saturates keeps its hue instead of
         // sliding toward white.
-        float head = clamp(1.0 - max(base.r, max(base.g, base.b)) / max(uCeiling, 1e-4), 0.0, 1.0);
-        fragColor = vec4(min(base.rgb + uValue * m * head, vec3(uCeiling)), 1.0);
+        //
+        // A ceiling of zero means unbounded, and means it EXACTLY - a caller
+        // that grades its dye through a tone map of its own wants the headroom
+        // and has to be left alone rather than nearly alone. It is also the
+        // right way round for the failure mode: an unset uniform reads zero,
+        // and zero here is the behaviour this pass has always had rather than
+        // a field clamped to black.
+        bool bounded = uCeiling > 0.0;
+        float head = bounded ? clamp(1.0 - max(base.r, max(base.g, base.b)) / uCeiling, 0.0, 1.0) : 1.0;
+        vec3 ink = base.rgb + uValue * m * head;
+        fragColor = vec4(bounded ? min(ink, vec3(uCeiling)) : ink, 1.0);
     }
 }

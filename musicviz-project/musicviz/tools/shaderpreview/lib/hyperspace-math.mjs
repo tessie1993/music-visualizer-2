@@ -311,9 +311,14 @@ export class HyperspaceJourney {
     if (mode === JOURNEY_HOLD) {
       goal = clamp(holdAct, 0, last);
     } else if (mode === JOURNEY_CYCLE) {
+      // Hold on a timer: one whole act per cycleSeconds, ping-ponged
+      // 0,1,2,3,4,3,2,1 so every step is to a neighbouring act and no act
+      // gets more of the clock than the control promises it.
       const per = Math.max(cycleSeconds, 2);
-      this.cyclePhase = (this.cyclePhase + step / per) % (last + 1);
-      goal = this.cyclePhase;
+      const slots = Math.max(2 * last, 1);
+      this.cyclePhase = (this.cyclePhase + step / per) % slots;
+      const slot = clamp(Math.trunc(this.cyclePhase), 0, slots - 1);
+      goal = last - Math.abs(last - slot);
     } else {
       const drive = clamp(energy, 0, 1) - IMMERSION_PIVOT;
       const rate = drive >= 0
@@ -338,7 +343,7 @@ export class HyperspaceJourney {
 export class HyperspaceCamera {
   constructor() { this.position = new Float32Array(3); this.basis = new Float32Array(9); this.t = 0; }
 
-  advance({ dt, distance, drift, roll }) {
+  advance({ dt, distance, drift }) {
     this.t += dt * Math.max(drift, 0);
     const t = this.t;
     const yaw = 0.11 * t + 0.37 * Math.sin(0.073 * t) + 0.13 * Math.sin(0.191 * t);
@@ -358,15 +363,10 @@ export class HyperspaceCamera {
     let rz = fx * uy - fy * ux;
     const rl = 1 / Math.max(Math.hypot(rx, ry, rz), 1e-5);
     rx *= rl; ry *= rl; rz *= rl;
-    let vx = ry * fz - rz * fy;
-    let vy = rz * fx - rx * fz;
-    let vz = rx * fy - ry * fx;
-    if (roll !== 0) {
-      const c = Math.cos(roll), s = Math.sin(roll);
-      const nrx = rx * c + vx * s, nry = ry * c + vy * s, nrz = rz * c + vz * s;
-      vx = vx * c - rx * s; vy = vy * c - ry * s; vz = vz * c - rz * s;
-      rx = nrx; ry = nry; rz = nrz;
-    }
+    // No roll: Rotation belongs to the composite pass for this scene family.
+    const vx = ry * fz - rz * fy;
+    const vy = rz * fx - rx * fz;
+    const vz = rx * fy - ry * fx;
     const b = this.basis;
     b[0] = rx; b[1] = ry; b[2] = rz;
     b[3] = vx; b[4] = vy; b[5] = vz;
@@ -374,12 +374,14 @@ export class HyperspaceCamera {
   }
 }
 
+/** MarchBudget.forDetail: the slider's range mapped onto the shader's bounds. */
 export function marchBudget(detail) {
-  const d = clamp(detail, 0.25, 1.5);
+  const t = clamp((detail - 0.25) / (1.5 - 0.25), 0, 1);
+  const lerp = (floor, top) => Math.round(floor + (top - floor) * t);
   return {
-    steps: clamp(Math.trunc(48 + 56 * d), 24, 128),
-    iterations: clamp(Math.trunc(5 + 5 * d), 3, 14),
-    bulbIterations: clamp(Math.trunc(3 + 3 * d), 2, 10),
+    steps: lerp(64, 128),
+    iterations: lerp(5, 14),
+    bulbIterations: lerp(3, 8),
   };
 }
 
@@ -406,7 +408,7 @@ export const MeltMath = {
   // injection/(dissipation*dt) - unbounded as the dissipation falls. The
   // ceiling is applied at injection, which bounds the whole field: no other
   // pass can raise its maximum.
-  DYE_CEILING: 0.25,
+  DYE_CEILING: 1,
   DYE_FADE_RATIO: 0.45,
   MIN_DYE_DISSIPATION: 0.08,
   dyeDissipation: (flowFade) =>

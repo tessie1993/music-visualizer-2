@@ -24,6 +24,12 @@ const state = {
   activeUniforms: new Set(),
   audioTex: null,
   melt: null,
+  // The composite pass, when the run asked for it: the scene then draws into
+  // sceneFbo and this draws sceneFbo to the screen. Null means the scene goes
+  // straight to the default framebuffer, as it did before the pass existed.
+  composite: null,
+  compositeLocs: new Map(),
+  sceneFbo: null,
   lastMeanLuma: null,
   frameIndex: 0,
 };
@@ -317,6 +323,16 @@ class Melt {
 
 function round4(x) { return Math.round(x * 10000) / 10000; }
 
+/** The uniform names a linked program actually kept, array suffix stripped. */
+function activeUniformsOf(gl, program) {
+  const out = [];
+  const count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < count; i++) {
+    out.push(gl.getActiveUniform(program, i).name.replace(/\[0\]$/, ''));
+  }
+  return out.sort();
+}
+
 // --------------------------------------------------------------------------
 // public API
 // --------------------------------------------------------------------------
@@ -350,12 +366,7 @@ window.__init = function init(cfg) {
     // What the LINKER kept. A uniform the shader declares but never reads is
     // dead-stripped, so setting it is a no-op and NOT setting it is harmless;
     // reporting the distinction stops the audit crying wolf about them.
-    const active = new Set();
-    const count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
-    for (let i = 0; i < count; i++) {
-      const info = gl.getActiveUniform(program, i);
-      active.add(info.name.replace(/\[0\]$/, ''));
-    }
+    const active = new Set(activeUniformsOf(gl, program));
     state.activeUniforms = active;
 
     // A dedicated texture unit per sampler the plan can bind.
@@ -379,6 +390,23 @@ window.__init = function init(cfg) {
       new Uint8Array([0, 0, 0, 255]));
 
     state.vao = gl.createVertexArray();
+
+    // The composite pass. Its scene target is byte-exactly VisualizerRenderer's
+    // TargetFbo - RGBA8, LINEAR, CLAMP_TO_EDGE - because the composite samples
+    // it with a transformed uv and the filter and the wrap are both visible in
+    // the result at any zoom below 1.
+    state.composite = null;
+    state.compositeLocs = new Map();
+    state.sceneFbo = null;
+    if (cfg.compositeShaders) {
+      try {
+        state.composite = buildProgram(gl, cfg.compositeShaders.vert, cfg.compositeShaders.frag);
+      } catch (e) {
+        return fail('composite shader: ' + e.message);
+      }
+      state.sceneFbo = new Fbo(gl, cfg.width, cfg.height, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, true);
+      if (!state.sceneFbo.ok) return fail('the composite scene target was incomplete');
+    }
 
     state.melt = null;
     let meltReport = { enabled: false };
@@ -410,6 +438,7 @@ window.__init = function init(cfg) {
       })(),
       colorBufferFloat,
       activeUniforms: [...active].sort(),
+      compositeActiveUniforms: state.composite ? activeUniformsOf(gl, state.composite) : null,
       melt: meltReport,
     };
   } catch (e) {
@@ -422,6 +451,35 @@ function uniformLoc(name) {
     state.uniformLocs.set(name, state.gl.getUniformLocation(state.program, name));
   }
   return state.uniformLocs.get(name);
+}
+
+function compositeLoc(name) {
+  if (!state.compositeLocs.has(name)) {
+    state.compositeLocs.set(name, state.gl.getUniformLocation(state.composite, name));
+  }
+  return state.compositeLocs.get(name);
+}
+
+/**
+ * Uploads one plan's worth of uniforms, returning the names the linker had
+ * dropped. Every value carries its own setter tag, so nothing here guesses.
+ */
+function uploadUniforms(gl, plan, locOf) {
+  const skipped = [];
+  for (const [name, u] of Object.entries(plan)) {
+    const loc = locOf(name);
+    if (loc === null) { skipped.push(name); continue; }
+    switch (u.t) {
+      case '1f': gl.uniform1f(loc, u.v); break;
+      case '1i': case 'tex': gl.uniform1i(loc, u.v); break;
+      case '2f': gl.uniform2f(loc, u.v[0], u.v[1]); break;
+      case '3f': gl.uniform3f(loc, u.v[0], u.v[1], u.v[2]); break;
+      case '4fv': gl.uniform4fv(loc, new Float32Array(u.v)); break;
+      case 'm3fv': gl.uniformMatrix3fv(loc, false, new Float32Array(u.v)); break;
+      default: throw new Error('unknown uniform kind ' + u.t + ' for ' + name);
+    }
+  }
+  return skipped;
 }
 
 window.__frame = function frame(job) {
@@ -440,7 +498,8 @@ window.__frame = function frame(job) {
       return { ok: true, metrics: null };
     }
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const sceneTarget = state.sceneFbo;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, sceneTarget ? sceneTarget.fbo : null);
     gl.viewport(0, 0, state.canvas.width, state.canvas.height);
     gl.disable(gl.BLEND);
     gl.disable(gl.DEPTH_TEST);
@@ -469,24 +528,34 @@ window.__frame = function frame(job) {
     }
     gl.activeTexture(gl.TEXTURE0);
 
-    const skipped = [];
-    for (const [name, u] of Object.entries(job.uniforms)) {
-      const loc = uniformLoc(name);
-      if (loc === null) { skipped.push(name); continue; }
-      switch (u.t) {
-        case '1f': gl.uniform1f(loc, u.v); break;
-        case '1i': case 'tex': gl.uniform1i(loc, u.v); break;
-        case '2f': gl.uniform2f(loc, u.v[0], u.v[1]); break;
-        case '3f': gl.uniform3f(loc, u.v[0], u.v[1], u.v[2]); break;
-        case '4fv': gl.uniform4fv(loc, new Float32Array(u.v)); break;
-        case 'm3fv': gl.uniformMatrix3fv(loc, false, new Float32Array(u.v)); break;
-        default: throw new Error('unknown uniform kind ' + u.t + ' for ' + name);
-      }
-    }
+    const skipped = uploadUniforms(gl, job.uniforms, uniformLoc);
 
     gl.bindVertexArray(state.vao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
+
+    // The composite, exactly as VisualizerRenderer runs it outside a
+    // transition: the scene texture on unit 0, uTexB carrying the same one
+    // because uStyle is CUT and nothing reads it, and the stand-in black on
+    // every other unit the pass can name.
+    if (state.composite) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, state.canvas.width, state.canvas.height);
+      gl.useProgram(state.composite);
+      for (const unit of [2, 3, 4]) {
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, state.blackTex);
+      }
+      for (const unit of [0, 1]) {
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, sceneTarget.tex);
+      }
+      gl.activeTexture(gl.TEXTURE0);
+      for (const name of uploadUniforms(gl, job.composite, compositeLoc)) skipped.push(name);
+      gl.bindVertexArray(state.vao);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.bindVertexArray(null);
+    }
 
     const err = gl.getError();
     const w = state.canvas.width, h = state.canvas.height;

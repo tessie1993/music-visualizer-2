@@ -1,5 +1,6 @@
 package dev.musicviz
 
+import dev.musicviz.render.fluid.MeltMath
 import dev.musicviz.render.scene.Bloom
 import dev.musicviz.render.scene.BloomBank
 import dev.musicviz.render.scene.HyperspaceCamera
@@ -163,6 +164,70 @@ class HyperspaceMathTest {
             seen.add(j.act)
         }
         assertEquals(HyperspaceMath.ACTS.indices.toSet(), seen)
+    }
+
+    /**
+     * The control is labelled "Act length (s)", so no act may be on screen for
+     * longer than that - breakthrough least of all.
+     *
+     * It used to be. The cycle ran a sawtooth over [0,5) into a position
+     * clamped at 4, which parked the last act for the whole of its own period
+     * plus the half-period before it, and then rewound through three acts in
+     * one glide that no timer had budgeted. Measured on `actPosition`, not on
+     * `act`: the position is what every [HyperspaceMath.ActProfile] field is
+     * read at, and the committed act is held by [HyperspaceMath.MIN_ACT_SECONDS]
+     * on top.
+     */
+    @Test
+    fun cycle_mode_gives_every_act_the_act_length_and_no_more() {
+        val per = 12f
+        val last = HyperspaceMath.ACTS.size - 1
+        // One lap is out and back: 2 * last slots of `per` seconds.
+        val lap = secondsAsFrames(per * 2f * last)
+        val j = HyperspaceJourney()
+        val advance = {
+            j.advance(FRAME, energy = 0f, mode = HyperspaceMath.JOURNEY_CYCLE, holdAct = 0, cycleSeconds = per, pace = 1f)
+        }
+        // One lap unmeasured: the journey starts AT act 0, so its very first
+        // visit has no entry glide and is legitimately longer than the rest.
+        repeat(lap) { advance() }
+        val dwell = IntArray(HyperspaceMath.ACTS.size)
+        val laps = 2
+        repeat(lap * laps) {
+            advance()
+            dwell[Math.round(j.actPosition).coerceIn(0, last)]++
+        }
+        // The two ends are visited once a lap and the acts between them twice,
+        // and every visit is one act length.
+        for (act in dwell.indices) {
+            val visits = if (act == 0 || act == last) laps else 2 * laps
+            val expected = secondsAsFrames(per) * visits
+            assertEquals(
+                "act $act was on screen for ${dwell[act] * FRAME}s, not ${expected * FRAME}s",
+                expected.toFloat(),
+                dwell[act].toFloat(),
+                // A few frames of slack per visit: the glide is a first-order
+                // lag, so a boundary is crossed a fixed fraction of a second
+                // late, and the two ends of a visit do not cancel exactly.
+                4f * visits,
+            )
+        }
+    }
+
+    /**
+     * And it walks: each step of the cycle is to a NEIGHBOURING act, so the
+     * story never rewinds through three of them in one glide.
+     */
+    @Test
+    fun cycle_mode_never_skips_an_act() {
+        val j = HyperspaceJourney()
+        var last = Math.round(j.actPosition)
+        repeat(secondsAsFrames(8f * 4f * (HyperspaceMath.ACTS.size - 1))) {
+            j.advance(FRAME, energy = 0f, mode = HyperspaceMath.JOURNEY_CYCLE, holdAct = 0, cycleSeconds = 8f, pace = 1f)
+            val now = Math.round(j.actPosition)
+            assertTrue("the cycle jumped from act $last to $now", kotlin.math.abs(now - last) <= 1)
+            last = now
+        }
     }
 
     @Test
@@ -545,7 +610,7 @@ class HyperspaceMathTest {
         val cam = HyperspaceCamera()
         var t = 0f
         while (t < 400f) {
-            cam.advance(FRAME, distance = 5.5f, drift = 1f, roll = 0.3f)
+            cam.advance(FRAME, distance = 5.5f, drift = 1f)
             t += FRAME
             assertEquals("eye drifted off its sphere", 5.5f, len(cam.position), 1e-2f)
             // Forward is the third column and must point back at the origin.
@@ -553,7 +618,7 @@ class HyperspaceMathTest {
             assertEquals(1f, len(f), 1e-3f)
             val inv = 1f / len(cam.position)
             for (i in 0 until 3) assertEquals(-cam.position[i] * inv, f[i], 1e-3f)
-            // Basis stays orthonormal, including through the roll.
+            // Basis stays orthonormal.
             val r = floatArrayOf(cam.basis[0], cam.basis[1], cam.basis[2])
             val u = floatArrayOf(cam.basis[3], cam.basis[4], cam.basis[5])
             assertEquals(1f, len(r), 1e-3f)
@@ -565,13 +630,13 @@ class HyperspaceMathTest {
     @Test
     fun the_camera_path_does_not_close_on_itself() {
         val cam = HyperspaceCamera()
-        cam.advance(FRAME, 5f, 1f, 0f)
+        cam.advance(FRAME, 5f, 1f)
         val start = cam.position.copyOf()
         var closest = Float.MAX_VALUE
         // Skip the first few seconds, where it has not yet moved away.
-        repeat(secondsAsFrames(20f)) { cam.advance(FRAME, 5f, 1f, 0f) }
+        repeat(secondsAsFrames(20f)) { cam.advance(FRAME, 5f, 1f) }
         repeat(secondsAsFrames(600f)) {
-            cam.advance(FRAME, 5f, 1f, 0f)
+            cam.advance(FRAME, 5f, 1f)
             closest = minOf(closest, dist(cam.position, start))
         }
         assertTrue("the camera returned to its starting point after ten minutes", closest > 0.05f)
@@ -586,7 +651,7 @@ class HyperspaceMathTest {
             val b = MarchBudget.forDetail(d)
             assertTrue(b.steps in 1..MarchBudget.MAX_STEPS)
             assertTrue(b.iterations in 1..MarchBudget.MAX_ITERS)
-            assertTrue(b.bulbIterations in 1..10)
+            assertTrue(b.bulbIterations in 1..MarchBudget.MAX_BULB_ITERS)
             // The bulb is several times the cost of the others, so it must
             // never be asked for more than they are.
             assertTrue(b.bulbIterations <= b.iterations)
@@ -600,6 +665,43 @@ class HyperspaceMathTest {
         val high = MarchBudget.forDetail(1.5f)
         assertTrue(high.steps > low.steps)
         assertTrue(high.iterations > low.iterations)
+        var previous = MarchBudget.forDetail(MarchBudget.MIN_DETAIL)
+        var d = MarchBudget.MIN_DETAIL
+        while (d <= MarchBudget.MAX_DETAIL) {
+            val b = MarchBudget.forDetail(d)
+            assertTrue("steps fell at detail $d", b.steps >= previous.steps)
+            assertTrue("iterations fell at detail $d", b.iterations >= previous.iterations)
+            assertTrue("bulb iterations fell at detail $d", b.bulbIterations >= previous.bulbIterations)
+            previous = b
+            d += 0.01f
+        }
+    }
+
+    /**
+     * The top of the slider has to buy something.
+     *
+     * It did not: the budget was a slope with a clamp on the end, so steps
+     * saturated at detail 1.43, iterations at 1.40 and the bulb at 1.33 - the
+     * last twelve percent of the control's travel was an identical picture at
+     * an identical cost. The ends are now the endpoints of the interpolation,
+     * so the last notch is the most the shader can be asked for and the notch
+     * below it is less.
+     */
+    @Test
+    fun the_top_of_the_detail_slider_is_not_dead() {
+        val top = MarchBudget.forDetail(MarchBudget.MAX_DETAIL)
+        assertEquals(MarchBudget.MAX_STEPS, top.steps)
+        assertEquals(MarchBudget.MAX_ITERS, top.iterations)
+        // A notch below the top must cost strictly less. 0.07 is the width of
+        // the dead zone this pins shut, i.e. the smallest move that used to
+        // buy nothing at all.
+        val below = MarchBudget.forDetail(MarchBudget.MAX_DETAIL - 0.07f)
+        assertTrue("steps are dead at the top", below.steps < top.steps)
+        assertTrue("iterations are dead at the top", below.iterations < top.iterations)
+        // And the bottom is the floor, not something the clamp invented.
+        val bottom = MarchBudget.forDetail(MarchBudget.MIN_DETAIL)
+        assertEquals(bottom, MarchBudget.forDetail(MarchBudget.MIN_DETAIL - 1f))
+        assertTrue(bottom.steps < top.steps)
     }
 
     @Test
@@ -625,6 +727,86 @@ class HyperspaceMathTest {
             for (density in listOf(0f, 0.01f, 0.5f, 1f, 2f, 99f)) {
                 val n = HyperspaceLook.bodyTarget(profile.bodies, density)
                 assertTrue("target $n out of range", n in 1..HyperspaceMath.MAX_BLOOMS)
+            }
+        }
+    }
+
+    // ---- the empty room --------------------------------------------------
+
+    /**
+     * The state that had no distance in it.
+     *
+     * A freshly reset bank is what `HyperspaceScene.init` leaves behind, and
+     * `init` runs on every scene start, every style switch and every EGL
+     * context loss. Bodies only arrive on a transient, or after
+     * `SILENT_SPAWN_SECONDS` of quiet, so for the first seconds of every one of
+     * those the shader is handed `uBloomCount = 0` - the body loop breaks
+     * immediately and `map()` returns its fallback distance unchanged. That
+     * fallback used to be a 1e9 sentinel, the march stepped by 82% of it, and
+     * the frame went white.
+     *
+     * So the empty room is pinned as the ordinary state it is, and separately
+     * ([the_march_step_is_bounded_with_or_without_a_body]) so is the fact that
+     * the fallback is now a real distance.
+     */
+    @Test
+    fun the_room_is_empty_for_a_while_after_every_reset() {
+        val bank = BloomBank(Random(97))
+        // Silence: no transient to spawn on. Nothing may appear before the
+        // bank's own silent-spawn timeout, and something must appear after it.
+        repeat(secondsAsFrames(2f)) {
+            bank.advance(FRAME, 4, 0f, null, lifetime = 30f, spread = 2f, sizeScale = 0.5f, motion = 1f, orbitScale = 1f)
+        }
+        assertEquals("the room filled before the silence timeout", 0, bank.aliveCount)
+        repeat(secondsAsFrames(2f)) {
+            bank.advance(FRAME, 4, 0f, null, lifetime = 30f, spread = 2f, sizeScale = 0.5f, motion = 1f, orbitScale = 1f)
+        }
+        assertTrue("the room never filled at all", bank.aliveCount > 0)
+
+        // And a reset puts it straight back, however full it had become.
+        bank.reset()
+        assertEquals(0, bank.aliveCount)
+        val pos = FloatArray(HyperspaceMath.MAX_BLOOMS * 4)
+        val shape = FloatArray(HyperspaceMath.MAX_BLOOMS * 4)
+        val look = FloatArray(HyperspaceMath.MAX_BLOOMS * 4)
+        val rot = FloatArray(HyperspaceMath.MAX_BLOOMS * 9)
+        assertEquals(0, bank.snapshot(0.5f, pos, shape, look, rot, boundInflate = 0f))
+    }
+
+    /**
+     * With no body in range there is no distance estimate, so the march falls
+     * back on the far plane - and it may not step the whole of it, because the
+     * emissive haze, the aura and the liquid light are all integrated along the
+     * ray in units of the step. This is the number that stops one step from
+     * being the entire room.
+     */
+    @Test
+    fun the_march_step_is_bounded_with_or_without_a_body() {
+        val step = HyperspaceLook.maxMarchStep(MeltMath.DEFAULT_SCALE)
+        assertTrue("the step ceiling is not a usable distance", step.isFinite() && step > 0f)
+        // A degenerate scale must still leave the ray able to move.
+        assertTrue(HyperspaceLook.maxMarchStep(0f) > 0f)
+
+        // Every act, at every density the user can ask for: the camera
+        // distance is the act's own now that Zoom belongs to the composite
+        // pass, so the density is what moves the far plane.
+        for (profile in HyperspaceMath.ACT_PROFILES) {
+            for (density in listOf(0.1f, 1f, 2f)) {
+                val target = HyperspaceLook.bodyTarget(profile.bodies, density)
+                val spread = HyperspaceLook.spread(target)
+                val camera =
+                    HyperspaceLook.cameraDistance(
+                        actCamera = profile.camera,
+                        spread = spread,
+                        maxBodyRadius = HyperspaceLook.maxBodyRadius(target),
+                    )
+                val far = HyperspaceLook.farPlane(camera, spread)
+                assertTrue("far plane $far is not a distance", far.isFinite() && far > 0f)
+                // The point of the cap: crossing an empty room has to take
+                // several samples of the medium, not one. Below about four the
+                // liquid light stops being a quadrature and starts being a
+                // point sample multiplied by the width of the scene.
+                assertTrue("an empty room crosses in ${far / step} steps", far / step >= 4f)
             }
         }
     }

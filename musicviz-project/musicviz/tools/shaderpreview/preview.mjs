@@ -15,6 +15,7 @@ import { parseIncludeRegistry, loadShader, parseUniforms } from './lib/glsl.mjs'
 import { extractUploadedUniforms, auditUniforms } from './lib/kotlin.mjs';
 import { MODELS } from './lib/audio.mjs';
 import { createHyperspaceDriver, createShaderSceneDriver } from './lib/scenes.mjs';
+import { createCompositeDriver } from './lib/composite.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP = path.resolve(HERE, '../../app/src/main');
@@ -54,6 +55,7 @@ function parseArgs(argv) {
     hasMelt: true,
     params: {},
     fieldStats: false,
+    composite: false,
     list: false,
     json: false,
   };
@@ -76,6 +78,7 @@ function parseArgs(argv) {
       case '--clock-jump': a.clockJump = Number(next()); break;
       case '--no-melt': a.hasMelt = false; break;
       case '--field-stats': a.fieldStats = true; break;
+      case '--composite': a.composite = true; break;
       case '--list': a.list = true; break;
       case '--json': a.json = true; break;
       case '--param': {
@@ -102,6 +105,9 @@ function makeDriver(args) {
       // via loc(); they ARE in the Kotlin, so nothing is ignored here.
       ignoreUploaded: [],
       standIns: [],
+      // CompositeGrade.SceneFamily: HyperspaceScene is none of ShaderScene,
+      // ParticleSceneBase or ProjectMScene, so it lands in the else branch.
+      family: 'FLUID',
     };
   }
   if (args.scene === 'shader') {
@@ -120,6 +126,7 @@ function makeDriver(args) {
         'uFlow = 1x1 black, uFlowStrength = 0 (the app\'s state for a scene not wired to the FlowField)',
         'uPalLut = 1x1 black, uPalLutMix = 0 (the app\'s state when the cyclic-palette atlas is absent)',
       ],
+      family: 'SHADER',
     };
   }
   throw new Error(`unknown --scene '${args.scene}' (hyperspace | shader)`);
@@ -140,7 +147,7 @@ async function main() {
     return;
   }
 
-  const { driver, fragResource, kotlinPath, ignoreUploaded, standIns } = makeDriver(args);
+  const { driver, fragResource, kotlinPath, ignoreUploaded, standIns, family } = makeDriver(args);
 
   const vertSrc = loadShader(RAW, 'quad_vert', registry);
   const fragSrc = loadShader(RAW, fragResource, registry);
@@ -154,8 +161,45 @@ async function main() {
     ignoreUploaded,
   });
 
+  // The composite pass gets the SAME three-way audit as a scene: its shader is
+  // composite_frag, its Kotlin is VisualizerRenderer's cLoc() block, and a
+  // uniform any of the three is missing would be a silent zero in the pass the
+  // user actually looks at.
+  let compositeDriver = null;
+  let compositeShaders = null;
+  let compositeCounts = null;
+  if (args.composite) {
+    compositeDriver = createCompositeDriver({
+      params: args.params, family, width: args.width, height: args.height,
+    });
+    compositeShaders = {
+      vert: loadShader(RAW, 'fade_vert', registry),
+      frag: loadShader(RAW, 'composite_frag', registry),
+    };
+    const compositeDeclared = parseUniforms(compositeShaders.frag);
+    const compositeUploaded = extractUploadedUniforms(path.join(JAVA, 'render/VisualizerRenderer.kt'));
+    const compositeAudit = auditUniforms({
+      sceneId: 'composite',
+      declared: compositeDeclared,
+      uploaded: compositeUploaded,
+      supplied: compositeDriver.supplies,
+      // Uploaded by the renderer, but to ANOTHER program: the crossfade has a
+      // shader of its own and is not the composite.
+      ignoreUploaded: ['uFadeAlpha'],
+    });
+    compositeCounts = {
+      shaderDeclares: compositeDeclared.length,
+      kotlinUploads: compositeUploaded.size - 1,
+      harnessSupplies: compositeDriver.supplies.size,
+    };
+    audit.errors.push(...compositeAudit.errors);
+    audit.notes.push(...compositeAudit.notes);
+    standIns.push(...compositeDriver.standIns);
+  }
+
   const report = {
     scene: args.scene,
+    composite: args.composite ? `composite_frag.glsl, gate ${family}` : null,
     shader: `${fragResource}.glsl`,
     kotlin: path.relative(path.resolve(HERE, '../..'), kotlinPath),
     includesResolved: (fs.readFileSync(path.join(RAW, `${fragResource}.glsl`), 'utf8')
@@ -167,6 +211,7 @@ async function main() {
       errors: audit.errors,
       notes: audit.notes,
       standIns,
+      composite: compositeCounts,
     },
     frames: [],
   };
@@ -212,6 +257,7 @@ async function main() {
       fragSrc,
       meltConfig: driver.meltConfig,
       meltShaders,
+      compositeShaders,
     });
     if (!init.ok) {
       console.error('harness init failed: ' + init.error);
@@ -229,6 +275,12 @@ async function main() {
     // A declared uniform the linker dropped is not a harness bug; surface it
     // as a shader observation instead.
     const inactive = declared.map((d) => d.name).filter((n) => !init.activeUniforms.includes(n));
+    if (compositeShaders) {
+      const kept = init.compositeActiveUniforms || [];
+      inactive.push(
+        ...parseUniforms(compositeShaders.frag).map((d) => d.name).filter((n) => !kept.includes(n)),
+      );
+    }
     if (inactive.length) report.uniformAudit.deadStrippedByLinker = inactive;
 
     const dt = 1 / args.fps;
@@ -246,18 +298,23 @@ async function main() {
       // thing being tested - float precision in uTime - is the thing that
       // actually got an hour older.
       const plan = driver.step(f, dt);
+      // After the scene's step, as in the app: the composite grades the frame
+      // the scene has just drawn, at the same simulated instant.
+      const compositePlan = compositeDriver ? compositeDriver.step(f, dt, simTime + dt) : null;
       simTime += dt;
       // Warm-up runs at real time so the scene is populated before the clock
       // is thrown forward; jumping from a cold start only ever measures an
       // empty scene at a large t.
       if (args.clockJump > 0 && i >= args.warmup && driver.jumpClock) {
         driver.jumpClock(args.clockJump);
+        if (compositeDriver) compositeDriver.jumpClock(args.clockJump);
         simTime += args.clockJump;
       }
       const isWarmup = i < args.warmup;
       const isCapture = !isWarmup && (i - args.warmup) % args.everyFrame === 0;
       const res = await page.call('__frame', {
         uniforms: plan.uniforms,
+        composite: compositePlan,
         melt: plan.melt,
         audioTex: plan.audioTex,
         capture: isCapture && !!outDir,
@@ -272,6 +329,7 @@ async function main() {
         simTime: Math.round(simTime * 1000) / 1000,
         ...res.metrics,
         ...plan.debug,
+        ...(compositeDriver ? compositeDriver.debug() : {}),
       };
       if (outDir && res.png) {
         const file = path.join(outDir, `frame_${String(captureIndex).padStart(3, '0')}.png`);
@@ -300,12 +358,17 @@ async function main() {
 function printReport(r) {
   console.log(`scene      ${r.scene}`);
   console.log(`shader     ${r.shader}${r.includesResolved.length ? `  (${r.includesResolved.join(', ')})` : ''}`);
+  if (r.composite) console.log(`composite  ${r.composite}`);
   console.log(`kotlin     ${r.kotlin}`);
   console.log(`gl         ${r.gl.renderer}`);
   console.log(`           ${r.gl.glsl}, EXT_color_buffer_float=${r.gl.colorBufferFloat}`);
   if (r.gl.melt) console.log(`melt       ${JSON.stringify(r.gl.melt)}`);
   const a = r.uniformAudit;
   console.log(`uniforms   shader declares ${a.shaderDeclares}, kotlin uploads ${a.kotlinUploads}, harness supplies ${a.harnessSupplies} - AUDIT OK`);
+  if (a.composite) {
+    const c = a.composite;
+    console.log(`           composite declares ${c.shaderDeclares}, renderer uploads ${c.kotlinUploads}, harness supplies ${c.harnessSupplies} - AUDIT OK`);
+  }
   for (const s of a.standIns) console.log(`  stand-in: ${s}`);
   for (const n of a.notes) console.log(`  note: ${n}`);
   if (a.deadStrippedByLinker) console.log(`  dead-stripped by linker: ${a.deadStrippedByLinker.join(', ')}`);
@@ -321,7 +384,8 @@ function printReport(r) {
       + String(f.fracBlack).padStart(11)
       + String(f.deltaMeanLuma === null ? '-' : f.deltaMeanLuma).padStart(11)
       + (f.dye ? `   dye max ${f.dye.max} mean ${f.dye.mean}` : '')
-      + (f.actName ? `   ${f.actName} n=${f.bloomCount}` : ''),
+      + (f.actName ? `   ${f.actName} n=${f.bloomCount}` : '')
+      + (f.postRotation === undefined ? '' : `   postRot ${f.postRotation}`),
     );
   }
   if (r.frames.some((f) => f.png)) {

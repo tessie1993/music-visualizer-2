@@ -36,6 +36,27 @@ out vec4 fragColor;
 
 const float PI = 3.14159265359;
 
+// The optics of the liquid light, per world unit at one full texel of ink.
+//
+// The dye field is bounded at 1 by construction (MeltMath.DYE_CEILING), so
+// these are in units of "a saturated texel" and can be reasoned about instead
+// of tuned. Extinction is set so a saturated field is about ONE optical depth
+// thick at the default Liquid light: the field is roughly five world units
+// across, 0.35 * 0.55 * 5 = 0.96, so the medium veils the geometry behind it
+// and does not hide it. Emission is a fraction of that, so the medium still
+// absorbs faster than it emits and a thick region settles at about three
+// quarters of the ink's own colour rather than blowing past it.
+//
+// Both moved when the field was bounded, and in opposite directions. The old
+// pair (1.6 and 0.35) was chosen against an ink that ran to 60: it made the
+// medium opaque many times over across the room while emitting several units
+// of radiance, which is a white fog. Against an ink that stops at 1 the same
+// pair is a grey one - still opaque, now emitting 0.22 of a colour that is
+// itself at most 1, so the medium could only ever subtract light. The units
+// these are measured in changed, so they change with them.
+const float LIQUID_EXTINCTION = 0.55;
+const float LIQUID_EMISSION = 0.40;
+
 uniform vec2 uResolution;
 uniform float uTime;
 
@@ -73,8 +94,6 @@ uniform float uHitEps;
 uniform float uBoundMargin;
 
 // ---- look --------------------------------------------------------------
-/** Continuous act position, 0..4. Only used for the mood, never for geometry. */
-uniform float uAct;
 /** Weight of the background filigree. */
 uniform float uField;
 /** Kaleidoscopic mirror, 0 = off. */
@@ -108,12 +127,18 @@ uniform float uHasMelt;
 /** 0 disables the warp entirely (and skips its texture reads). */
 uniform float uMelt;
 /**
- * Raw texel -> world displacement. The velocity field is in the sim's own
- * grid units, which are nothing like world units, so the conversion (grid ->
- * sim units/second -> world units/second -> displacement) is folded into one
- * number on the CPU rather than being three multiplies per sample.
+ * Raw texel -> world displacement at FULL melt. The velocity field is in the
+ * sim's own grid units, which are nothing like world units, so the conversion
+ * (grid -> sim units/second -> world units/second -> displacement) is folded
+ * into one number on the CPU rather than being three multiplies per sample.
+ *
+ * Deliberately free of uMelt: the medium runs whenever the GPU can give us
+ * the buffers, and the amount of it that bends GEOMETRY is one reader's
+ * business, not the field's. Ridges reads the same field to find which way
+ * the current is going, and used to get a flow of exactly zero whenever Melt
+ * was down - a control that silently did nothing unless another one was up.
  */
-uniform float uMeltGain;
+uniform float uFlowGain;
 /**
  * Hard ceiling on |displacement|, in world units. NOT a taste control: it is
  * the same number the CPU inflated every bounding sphere by
@@ -175,7 +200,9 @@ vec2 simUv(vec2 s) {
 }
 
 /**
- * The medium's velocity at a world point, as a 3D vector.
+ * The medium's velocity at a world point, as a 3D vector, in the world units
+ * a point of it drifts over MeltMath.MELT_SECONDS - which is to say, the
+ * displacement a full-strength melt would apply.
  *
  * The simulation is two-dimensional, so the third dimension is borrowed: the
  * field is sampled twice, once on the world's xy plane and once on its zy
@@ -184,17 +211,28 @@ vec2 simUv(vec2 s) {
  * and on every normal and occlusion tap after it, so the third fetch would
  * cost more than the extra coherence is worth at these amplitudes.
  *
- * Returns zero when the medium is off, which is what makes "Melt" at 0 an
- * exact no-op rather than a warp of zero size that still costs the fetches.
+ * Returns zero only when there IS no medium, so every reader of the current
+ * sees the same field. What each reader does with it is its own control.
  */
-vec3 meltAt(vec3 p) {
-    if (uHasMelt < 0.5 || uMelt <= 0.001) return vec3(0.0);
+vec3 flowAt(vec3 p) {
+    if (uHasMelt < 0.5) return vec3(0.0);
     vec3 s = p / max(uMeltScale, 0.05);
     vec2 a = texture(uFlowTex, simUv(s.xy)).xy;
     vec2 b = texture(uFlowTex, simUv(vec2(s.z, s.y))).xy;
     // a pushes x and y, b pushes z and y; y is the axis both saw, so it is
     // averaged rather than counted twice.
-    vec3 v = vec3(a.x, (a.y + b.y) * 0.5, b.x) * uMeltGain;
+    return vec3(a.x, (a.y + b.y) * 0.5, b.x) * uFlowGain;
+}
+
+/**
+ * How far the medium displaces the geometry at a world point.
+ *
+ * Returns zero when the warp is off, which is what makes "Melt" at 0 an exact
+ * no-op rather than a warp of zero size that still costs the fetches.
+ */
+vec3 meltAt(vec3 p) {
+    if (uMelt <= 0.001) return vec3(0.0);
+    vec3 v = flowAt(p) * uMelt;
     // Clamped to the reach the bounding spheres were inflated by. A beat can
     // put a large spike in one corner of the velocity field, and without this
     // that one frame would displace geometry clean out of the sphere the ray
@@ -689,23 +727,18 @@ void main() {
             // from the piece of ray it was supposed to represent.
             vec3 ink = dyeAt(p + rd * (jitter * step));
             float dens = uLiquid * dot(ink, vec3(0.333));
-            // Absorbs faster than it emits, so the medium stays a set of
-            // wisps and streaks. Emitting as fast as it absorbs makes an
-            // inked region a solid wall of colour once the ray is a few units
-            // into it, which is a wash, not a fluid.
-            //
             // Integrated in CLOSED FORM over the segment, not as emission
             // times length. For a medium that is constant along the segment
             // the transport equation has an exact solution, and the two forms
-            // agree to first order in the step - but the sum form is only
-            // bounded by the emission/extinction ratio in the limit of many
+            // agree to first order in the step - but the sum form only
+            // approaches the emission/extinction ceiling in the limit of many
             // small steps, and this march deliberately takes long ones
             // wherever there is nothing to hit. The closed form carries that
-            // bound at ANY step size, which is what makes the medium's
+            // ceiling at ANY step size, which is what makes the medium's
             // brightness a property of the ink rather than of how far the
             // geometry happened to let the ray jump.
-            float absorbed = 1.0 - exp(-dens * step * 1.6);
-            glow += ink * trans * (0.35 / 1.6) * absorbed;
+            float absorbed = 1.0 - exp(-dens * step * LIQUID_EXTINCTION);
+            glow += ink * trans * (LIQUID_EMISSION / LIQUID_EXTINCTION) * absorbed;
             trans *= 1.0 - absorbed;
         }
         t += step;
@@ -745,9 +778,14 @@ void main() {
         // rather than the geometry. Measured on the flow direction at the
         // surface, so it swims when the medium moves and stands still when it
         // does not.
+        //
+        // Reads flowAt, not meltAt: this control marks the surface, it does
+        // not move it, so it has no business being multiplied by how far the
+        // melt is allowed to push. Through meltAt it was an exact no-op at
+        // Melt 0 - the whole slider did nothing until a different one was up.
         float comb = 0.0;
-        if (uRidges > 0.001 && uHasMelt >= 0.5) {
-            vec3 flow = meltAt(p);
+        if (uRidges > 0.001) {
+            vec3 flow = flowAt(p);
             float speed = length(flow);
             if (speed > 1e-5) {
                 // Across the flow, not along it: a wave measured along its own

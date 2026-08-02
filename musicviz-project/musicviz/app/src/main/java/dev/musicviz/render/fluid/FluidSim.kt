@@ -60,16 +60,14 @@ internal class FluidSim(
      * raise the field's largest value. Bound it and the field is bounded for
      * as long as the sim runs.
      *
-     * The default is orders of magnitude above anything a splat schedule
-     * reaches, i.e. no ceiling: a caller that grades its dye through a tone
-     * map (the FLUID style) wants the headroom, and taking it away would
-     * change a shipped look. [MeltField] sets a real one, because
-     * `hyperspace_frag.glsl` reads the dye as radiance with nothing after it.
-     * Deliberately not `Float.MAX_VALUE`: this is uploaded to a shader, and a
-     * value outside half-float range is a trap for any driver that honours a
-     * `mediump` declaration.
+     * Zero is no ceiling, and is the default, so this is an exact no-op for
+     * every caller that does not ask: the FLUID style grades its dye through a
+     * tone map of its own and wants the headroom, and a large-but-finite
+     * default would have quietly shaved a shipped look. [MeltField] sets a
+     * real one, because `hyperspace_frag.glsl` reads the dye as radiance with
+     * nothing after it.
      */
-    var dyeCeiling = 1e4f
+    var dyeCeiling = 0f
 
     /**
      * Chromatic aging (v2 spec 6.3): spreads the per-channel dye decay so

@@ -34,7 +34,7 @@ reach every style through the composite pass, which is its own column.
 | Parameter | Tab | Rolled by | Preset key | Shader | Particle | MilkDrop | Fluid | Curl Flow | Water | Cymatics | Beam | Hyperspace | Composite | Export |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `speed` | Motion | `Speed` | `speed` | · | · |   | · | · | · | · |   | · | · | · |
-| `zoom` | Motion | `Zoom` | `zoom` | · | · | · |   |   |   |   |   | · | · | · |
+| `zoom` | Motion | `Zoom` | `zoom` | · | · | · |   |   |   |   |   |   | · | · |
 | `rotation` | Motion | `Rotation` | `rotation` | · | · | · |   | · |   |   |   | · | · | · |
 | `endlessZoom` | Motion | `Endless zoom` | `endlessZoom` | · | · | · |   |   |   |   |   |   |   |   |
 | `endlessZoomSpeed` | Motion | `Dive speed` | `endlessZoomSpeed` | · | · | · |   |   |   |   |   |   | · |   |
