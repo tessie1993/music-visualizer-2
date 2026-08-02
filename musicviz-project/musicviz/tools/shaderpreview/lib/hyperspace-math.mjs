@@ -13,7 +13,9 @@
 // specific body is not a valid finding from this tool.
 
 export const MAX_BLOOMS = 8;
-export const SPECIES = ['GASKET', 'TEMPLE', 'JEWEL', 'CORAL', 'BULB'];
+// Ordinal order, and append-only: SceneParams.hyperSpecies is an index into
+// this list (offset by "Mixed") and presets persist the number.
+export const SPECIES = ['GASKET', 'TEMPLE', 'JEWEL', 'CORAL', 'BULB', 'SEED'];
 
 export function makeRng(seed = 0x9e3779b9) {
   let s = seed >>> 0 || 1;
@@ -58,7 +60,9 @@ export function foldFor(species, fold, jitter) {
     case 'TEMPLE': return 0.05 + 1.15 * t;
     case 'JEWEL': return -2.4 + 1.5 * t;
     case 'CORAL': return 0.55 + 0.55 * t;
-    default: return 5 + 6 * t;
+    case 'BULB': return 5 + 6 * t;
+    // SEED: where the 3D section cuts the 4D set, not a shape constant.
+    default: return 0.08 + 0.44 * t;
   }
 }
 
@@ -68,7 +72,9 @@ export function localRadius(species) {
     case 'TEMPLE': return 1.7;
     case 'JEWEL': return 3.2;
     case 'CORAL': return 2.1;
-    default: return 1.35;
+    case 'BULB': return 1.35;
+    // SEED: (1 + sqrt(1 + 4|c|)) / 2 = 1.486 at the shader's |c|, rounded up.
+    default: return 1.5;
   }
 }
 
@@ -382,6 +388,7 @@ export function marchBudget(detail) {
     steps: lerp(64, 128),
     iterations: lerp(5, 14),
     bulbIterations: lerp(3, 8),
+    seedIterations: lerp(5, 12),
   };
 }
 

@@ -65,7 +65,8 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
 
   const supplies = new Set([
     'uResolution', 'uTime', 'uBloomCount', 'uBloomPos', 'uBloomShape', 'uBloomLook', 'uBloomRot',
-    'uCamPos', 'uCamBasis', 'uFov', 'uSteps', 'uIters', 'uBulbIters', 'uFar', 'uMaxStep', 'uHitEps',
+    'uCamPos', 'uCamBasis', 'uFov', 'uSteps', 'uIters', 'uBulbIters', 'uSeedIters',
+    'uFar', 'uMaxStep', 'uHitEps',
     'uBoundMargin', 'uField', 'uMirror', 'uMirrorFolds', 'uGlow', 'uNeon', 'uHaze',
     'uTrapColor', 'uHueSpread', 'uBaseHue', 'uHueSpan', 'uHasMelt', 'uMelt', 'uFlowGain',
     'uMeltReach', 'uMeltScale', 'uMeltAspect', 'uMeltRelax', 'uStain', 'uLiquid', 'uRidges',
@@ -156,6 +157,7 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
       uSteps: { t: '1i', v: budget.steps },
       uIters: { t: '1i', v: budget.iterations },
       uBulbIters: { t: '1i', v: budget.bulbIterations },
+      uSeedIters: { t: '1i', v: budget.seedIterations },
       uFar: { t: '1f', v: farPlane },
       uMaxStep: { t: '1f', v: H.Look.maxMarchStep(H.MeltMath.DEFAULT_SCALE) },
       uHitEps: { t: '1f', v: H.Look.HIT_EPSILON },

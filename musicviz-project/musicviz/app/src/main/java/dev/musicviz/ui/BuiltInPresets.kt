@@ -710,7 +710,9 @@ object BuiltInPresets {
                         hyperJourney = dev.musicviz.render.scene.HyperspaceMath.JOURNEY_CYCLE,
                         hyperCycleSeconds = 55f,
                         // CORAL is index 4 of HYPERSPACE_SPECIES: "Mixed" plus
-                        // the five species, so a species is its ordinal + 1.
+                        // the species in ordinal order, so a species is its
+                        // ordinal + 1. Written as the ordinal rather than as 4
+                        // so appending a species cannot move this preset.
                         hyperSpecies = dev.musicviz.render.scene.HyperspaceMath.Species.CORAL.ordinal + 1,
                         hyperBodies = 0.8f,
                         hyperLifetime = 30f,

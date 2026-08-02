@@ -652,9 +652,14 @@ class HyperspaceMathTest {
             assertTrue(b.steps in 1..MarchBudget.MAX_STEPS)
             assertTrue(b.iterations in 1..MarchBudget.MAX_ITERS)
             assertTrue(b.bulbIterations in 1..MarchBudget.MAX_BULB_ITERS)
+            assertTrue(b.seedIterations in 1..MarchBudget.MAX_SEED_ITERS)
             // The bulb is several times the cost of the others, so it must
-            // never be asked for more than they are.
+            // never be asked for more than they are. The quaternion Julia is
+            // cheaper than they are but converges sooner, so the same
+            // inequality holds for a different reason: past the point where
+            // its picture stops changing, iterations are only cost.
             assertTrue(b.bulbIterations <= b.iterations)
+            assertTrue(b.seedIterations <= b.iterations)
             d += 0.05f
         }
     }
@@ -672,6 +677,7 @@ class HyperspaceMathTest {
             assertTrue("steps fell at detail $d", b.steps >= previous.steps)
             assertTrue("iterations fell at detail $d", b.iterations >= previous.iterations)
             assertTrue("bulb iterations fell at detail $d", b.bulbIterations >= previous.bulbIterations)
+            assertTrue("seed iterations fell at detail $d", b.seedIterations >= previous.seedIterations)
             previous = b
             d += 0.01f
         }
@@ -719,6 +725,20 @@ class HyperspaceMathTest {
         // The bulb's power is the one that must bracket 8, the classic.
         assertTrue(HyperspaceMath.foldFor(HyperspaceMath.Species.BULB, 0f, 0f) < 8f)
         assertTrue(HyperspaceMath.foldFor(HyperspaceMath.Species.BULB, 1f, 0f) > 8f)
+
+        // SEED's band is not a fold constant at all - it is where the 3D
+        // section cuts the 4D set - and it has two ends that mean something
+        // rather than one. It may not reach zero, because the shader breathes
+        // this value MULTIPLICATIVELY and a zero slice is a body that cannot
+        // breathe; and it may not reach the enclosing radius, past which the
+        // section misses the set entirely and the body is invisible.
+        val loSlice = HyperspaceMath.foldFor(HyperspaceMath.Species.SEED, 0f, -1f)
+        val hiSlice = HyperspaceMath.foldFor(HyperspaceMath.Species.SEED, 1f, 1f)
+        assertTrue("the SEED slice can reach zero, where the breath does nothing", loSlice > 0.01f)
+        assertTrue(
+            "the SEED slice can leave the set, where the body vanishes",
+            hiSlice < HyperspaceMath.localRadius(HyperspaceMath.Species.SEED) * 0.5f,
+        )
     }
 
     @Test

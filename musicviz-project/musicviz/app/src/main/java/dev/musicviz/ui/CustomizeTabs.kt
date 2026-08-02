@@ -1074,7 +1074,7 @@ internal fun HyperspaceTab(
         ControlHint(
             "Every body is its own fractal on its own clock - it buds in on a hit, " +
                 "turns on its own axis, drifts on its own orbit, and dissolves. " +
-                "Mixed gives a room of all five at once.",
+                "Mixed gives a room of all six at once.",
         )
         LockableChipLabel("Fractal")
         ChipRow(

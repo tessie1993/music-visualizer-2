@@ -15,9 +15,10 @@ import kotlin.math.max
  * The HYPERSPACE style: a room full of 3D fractals, alive, telling a story.
  *
  * Every visible body is a distance-estimated 3D fractal ([HyperspaceMath.Species]:
- * a sphere packing, a kaleidoscopic IFS, a box, a Kleinian coral, a bulb) and
- * every one of them has its OWN rotation, its own orbit, its own colour and its
- * own life. They are born on transients, they grow out of nothing, they drift
+ * a sphere packing, a kaleidoscopic IFS, a box, a Kleinian coral, a bulb, a
+ * cross-section of a quaternion Julia set) and every one of them has its OWN
+ * rotation, its own orbit, its own colour and its own life. They are born on
+ * transients, they grow out of nothing, they drift
  * past each other on unrelated clocks, and they dissolve. That is the whole
  * design: the reference art this style was built from is never one object
  * turning, it is many things living next to each other.
@@ -363,6 +364,7 @@ internal class HyperspaceScene(
         GLES30.glUniform1i(loc("uSteps"), budget.steps)
         GLES30.glUniform1i(loc("uIters"), budget.iterations)
         GLES30.glUniform1i(loc("uBulbIters"), budget.bulbIterations)
+        GLES30.glUniform1i(loc("uSeedIters"), budget.seedIterations)
         GLES30.glUniform1f(loc("uFar"), farPlane)
         GLES30.glUniform1f(loc("uMaxStep"), HyperspaceLook.maxMarchStep(MeltMath.DEFAULT_SCALE))
         GLES30.glUniform1f(loc("uHitEps"), HyperspaceLook.HIT_EPSILON)

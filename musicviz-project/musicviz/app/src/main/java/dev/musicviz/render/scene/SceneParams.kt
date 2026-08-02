@@ -279,7 +279,7 @@ data class SceneParams(
     val hyperSpin: Float = 1f,
     // multiplier on every body's own orbit rate, 0..3
     val hyperOrbit: Float = 1f,
-    // 0 = a mixed room, 1..5 = every body the same species (HYPERSPACE_SPECIES)
+    // 0 = a mixed room, 1..6 = every body the same species (HYPERSPACE_SPECIES)
     val hyperSpecies: Int = 0,
     // where in each fractal's usable band it is iterated, 0..1
     val hyperFold: Float = 0.5f,
@@ -432,8 +432,12 @@ data class SceneParams(
         /**
          * What the bodies in HYPERSPACE are (index = hyperSpecies). Index 0 is
          * a mixed room - every body rolls its own - and is the default,
-         * because a room of five different fractals is the whole idea; the
-         * rest force one species for anyone who wants a study of it.
+         * because a room of different fractals is the whole idea; the rest
+         * force one species for anyone who wants a study of it.
+         *
+         * A PERSISTED INDEX: presets store the number, not the name, so
+         * [HyperspaceMath.Species] may only ever be appended to. See its own
+         * comment.
          */
         val HYPERSPACE_SPECIES: List<String> =
             listOf("Mixed") + HyperspaceMath.SPECIES.map { it.name.lowercase().replaceFirstChar(Char::uppercase) }

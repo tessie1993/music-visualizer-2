@@ -64,10 +64,18 @@ object HyperspaceMath {
     const val FLOATS_PER_MAT3: Int = 9
 
     /**
-     * The fractal a body is. The four that carry the look are all built from
-     * the same two moves - fold space, then invert or scale it - which is why
-     * they can share one raymarcher; see `hyperspace_frag.glsl` for the
-     * distance estimators themselves.
+     * The fractal a body is. Four of the six are built from the same two moves
+     * - fold space, then invert or scale it - and the other two are
+     * escape-time formulas carrying a derivative, which is the same arithmetic
+     * shape once the estimate is divided out. That is why they can share one
+     * raymarcher; see `hyperspace_frag.glsl` for the estimators themselves.
+     *
+     * ORDER IS PERSISTED. `SceneParams.hyperSpecies` is an index into
+     * `HYPERSPACE_SPECIES` ("Mixed" plus this enum in ordinal order), it is
+     * written to preset files by `PresetStore` and it is rolled by
+     * `ParamRandomizer`. A new species therefore goes on the END: insert one in
+     * the middle and every saved preset that pinned a fractal silently renders
+     * a different one after an upgrade.
      */
     enum class Species {
         /**
@@ -99,9 +107,18 @@ object HyperspaceMath {
         /**
          * The bulb: `z -> z^n + c` in the spherical-coordinate power that gives
          * a genuinely rounded, budded organic body. The most expensive of the
-         * five (transcendentals in the inner loop), so it is iterated less.
+         * six (transcendentals in the inner loop), so it is iterated less.
          */
         BULB,
+
+        /**
+         * The quaternion Julia set: `z -> z^2 + c` in the quaternions, drawn as
+         * a 3D cross-section of the 4D result. Smooth lobed masses joined at
+         * cusps and thin necks, with spiral detail running over the surface -
+         * nothing else here has a sharp edge that is not also a fold line. The
+         * cross-section is what "Fold" moves for this species; `c` is fixed.
+         */
+        SEED,
     }
 
     /** Species in ordinal order - `values()` allocates on every call. */
@@ -466,6 +483,19 @@ object HyperspaceMath {
             Species.CORAL -> 0.55f + 0.55f * t
             // Bulb power. 8 is the classic; the band around it stays organic.
             Species.BULB -> 5f + 6f * t
+            // Where the 3D slice cuts the 4D set, on the axis the sample point
+            // does not span. Not a shape constant at all, which is the point:
+            // the quaternion Julia set is connected or shattered depending on
+            // `c` alone, and a slider that walked `c` across that boundary
+            // would disconnect a body in one frame. This slider only slides the
+            // cut, so the body it exposes is always a section of the same
+            // connected solid.
+            //
+            // The band stops short of zero at the bottom because the breath
+            // modulates this MULTIPLICATIVELY (see `hyperspace_frag.glsl`), so
+            // a slice of zero is a body that cannot breathe; and short of the
+            // set's own radius at the top, past which the section is empty.
+            Species.SEED -> 0.08f + 0.44f * t
         }
     }
 
@@ -492,6 +522,14 @@ object HyperspaceMath {
             Species.JEWEL -> 3.2f
             Species.CORAL -> 2.1f
             Species.BULB -> 1.35f
+            // The one radius here that is proved rather than fitted. The
+            // filled Julia set of `z^2 + c` lies inside the sphere of radius
+            // (1 + sqrt(1 + 4|c|)) / 2 - outside it the orbit escapes
+            // monotonically - and the shader's `c` has |c| = 0.721, which puts
+            // that bound at 1.486. It holds at every iteration count and every
+            // slice, so no march budget and no Fold setting can push the body
+            // out of the sphere the camera is kept outside of.
+            Species.SEED -> 1.5f
         }
 
     /** The largest [localRadius] over every species - the worst-case body. */
@@ -1054,8 +1092,8 @@ class HyperspaceCamera {
  * Raymarcher budget for a given "Detail" setting, resolved on the CPU so the
  * shader's loops can be bounded by uniforms rather than by recompiling.
  *
- * Detail is one control because the three quantities have to move together:
- * more fractal iterations without more march steps just makes a thin surface
+ * Detail is one control because the quantities have to move together: more
+ * fractal iterations without more march steps just makes a thin surface
  * the ray steps over, and more steps without more iterations spends the budget
  * refining a shape that has no detail left to find.
  */
@@ -1064,16 +1102,28 @@ data class MarchBudget(
     val iterations: Int,
     /** Iterations for [HyperspaceMath.Species.BULB], which costs several times more. */
     val bulbIterations: Int,
+    /**
+     * Iterations for [HyperspaceMath.Species.SEED]. Its own budget for the
+     * opposite reason to the bulb's: the quaternion square is the cheapest
+     * inner loop of the six, but it is an escape-time formula and |z| grows by
+     * squaring, so past a dozen iterations the picture stops changing while the
+     * derivative it carries keeps multiplying. The ceiling is where the detail
+     * stops arriving, not where the cost does.
+     */
+    val seedIterations: Int,
 ) {
     companion object {
         /**
-         * The `MAX_STEPS` / `MAX_ITERS` / `MAX_BULB_ITERS` compile-time bounds
-         * in the shader. These bound the LOOPS; what the slider actually asks
-         * for is [forDetail]'s endpoints below.
+         * The `MAX_STEPS` / `MAX_ITERS` / `MAX_BULB_ITERS` / `MAX_SEED_ITERS`
+         * compile-time bounds in the shader. These bound the LOOPS; what the
+         * slider actually asks for is [forDetail]'s endpoints below.
+         * `HyperspaceUniformParityTest` reads the `#define`s and fails if these
+         * drift from them.
          */
         const val MAX_STEPS: Int = 128
         const val MAX_ITERS: Int = 14
         const val MAX_BULB_ITERS: Int = 10
+        const val MAX_SEED_ITERS: Int = 12
 
         /** The Detail slider's own range, as `CustomizeTabs` spells it. */
         const val MIN_DETAIL: Float = 0.25f
@@ -1084,17 +1134,22 @@ data class MarchBudget(
         private const val FLOOR_STEPS: Int = 64
         private const val FLOOR_ITERS: Int = 5
         private const val FLOOR_BULB_ITERS: Int = 3
+        private const val FLOOR_SEED_ITERS: Int = 5
 
         /**
          * The budget at the top. Steps and iterations are the shader's own
          * ceilings, so the last notch of the slider buys everything the
          * shader can be asked for; the bulb stops short of its because it
          * costs several times what the other estimators do and would be the
-         * one quantity that decides the frame rate at maximum detail.
+         * one quantity that decides the frame rate at maximum detail. The
+         * quaternion Julia reaches its own ceiling, which is already the point
+         * at which its silhouette has stopped moving - measured, at a fifth of
+         * a per cent of covered area between five iterations and twenty-four.
          */
         private const val TOP_STEPS: Int = MAX_STEPS
         private const val TOP_ITERS: Int = MAX_ITERS
         private const val TOP_BULB_ITERS: Int = 8
+        private const val TOP_SEED_ITERS: Int = MAX_SEED_ITERS
 
         /**
          * Interpolated across the slider's range rather than by a slope with
@@ -1109,6 +1164,7 @@ data class MarchBudget(
                 steps = lerpBudget(FLOOR_STEPS, TOP_STEPS, t),
                 iterations = lerpBudget(FLOOR_ITERS, TOP_ITERS, t),
                 bulbIterations = lerpBudget(FLOOR_BULB_ITERS, TOP_BULB_ITERS, t),
+                seedIterations = lerpBudget(FLOOR_SEED_ITERS, TOP_SEED_ITERS, t),
             )
         }
 

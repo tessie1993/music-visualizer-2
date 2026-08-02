@@ -13,11 +13,14 @@ precision highp float;
 // gaining one and losing another. HyperspaceMath.kt owns all of that; this
 // shader only draws what it is handed.
 //
-// The five distance estimators below are the published constructions - see
+// The six distance estimators below are the published constructions - see
 // THIRD_PARTY_NOTICES for the technique references - written here from the
-// mathematics rather than ported: fold space, then invert or scale it, and
-// keep the running scale factor so the estimate can be pulled back to world
-// units. That single shape is why five different fractals fit in one loop.
+// mathematics rather than ported. Four of them share one shape: fold space,
+// then invert or scale it, and keep the running scale factor so the estimate
+// can be pulled back to world units. The other two (BULB, SEED) are
+// escape-time formulas that carry a derivative instead of a scale factor, and
+// end on the same division. That is why six different fractals fit in one
+// loop.
 //
 // Cost control, because eight distance-estimated fractals per step would not
 // run on a phone: every body carries a bounding sphere, and outside it the ray
@@ -27,12 +30,15 @@ precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
 
-// Compile-time ceilings. The runtime budget (uSteps/uIters/uBulbIters) is a
-// uniform so "Detail" can move without recompiling; these only bound the loop.
+// Compile-time ceilings. The runtime budget (uSteps/uIters/uBulbIters/
+// uSeedIters) is a uniform so "Detail" can move without recompiling; these
+// only bound the loop. MarchBudget's companion holds the same four numbers and
+// HyperspaceUniformParityTest reads both, so a change here fails there.
 #define MAX_BLOOMS 8
 #define MAX_STEPS 128
 #define MAX_ITERS 14
 #define MAX_BULB_ITERS 10
+#define MAX_SEED_ITERS 12
 
 const float PI = 3.14159265359;
 
@@ -81,6 +87,7 @@ uniform float uFov;
 uniform int uSteps;
 uniform int uIters;
 uniform int uBulbIters;
+uniform int uSeedIters;
 uniform float uFar;
 /**
  * Ceiling on one march step, in world units (HyperspaceLook.maxMarchStep).
@@ -312,25 +319,31 @@ float deGasket(vec3 p, float fold) {
  * other, which is what the reference paintings are full of.
  *
  * Every operation is an isometry or a uniform scale, so the box distance at
- * the end divided by the accumulated scale is still a valid estimate.
+ * the end divided by the accumulated scale is still a valid estimate. That
+ * word "every" is load-bearing, and it is where this used to fail: the z fold
+ * was written `if (p.z < -1.0) p.z += 2.0`, a CONDITIONAL TRANSLATION, and it
+ * was dead as well as wrong. Dead because `abs()` and the three sorting swaps
+ * leave p.x >= p.y >= p.z >= 0 and the offset subtracts nothing from z, so the
+ * branch could never fire and nothing carved the middle third of z. Wrong
+ * because even where such a branch does fire it is discontinuous: two points a
+ * hair apart across the plane it tests come out two units apart, which makes
+ * the estimate an overestimate by an unbounded factor there, and a ray that
+ * steps an overestimate walks through the surface. With the sponge alone the
+ * discontinuity sits inside the hole it carves and nothing is drawn near it;
+ * the moment the rotation carries geometry across that plane, every ray
+ * crossing it terminates on a fragment of some deeper iteration instead of on
+ * a surface, and the body renders as granular dust - which is what this
+ * species did at every Fold and every Detail.
  *
- * The z fold used to be `if (p.z < -1.0) p.z += 2.0`, which was DEAD CODE:
- * `abs()` and the three sorting swaps leave p.x >= p.y >= p.z >= 0, and the
- * scale-and-offset subtracts nothing from z, so p.z is never negative and the
- * branch never fired. Nothing carved the middle third of z. The reflection in
- * the plane z = 1 that replaces it is the published construction, it is an
- * isometry, and it actually fires.
+ * The published construction folds z by REFLECTION in the plane z = 1. That is
+ * an isometry, it is continuous, and it leaves exactly the same sponge (the two
+ * forms differ by a sign that the next iteration's abs() removes).
  *
- * KNOWN DEFECT, not fixed by that change: this species still renders as
- * granular speckle rather than as terraces. Measured with every shading term
- * off (trap colour, melt, stain, liquid, ridges, filigree), so it is the
- * estimator and not the lighting; unchanged with the inter-iteration rotation
- * at zero, so it is not the twist; and unchanged between 5 and 10 iterations,
- * which is the part that rules out the obvious culprit - a scale-3 IFS at 10
- * iterations has 3^10 times the surface detail of one at 5, so an estimator
- * whose picture does not move between them is not being limited by iteration
- * depth. Whatever the rays are terminating on does not depend on how deep the
- * fold goes. See tools/shaderpreview/out/diag-temple-clean.
+ * At the top of the Fold range the surface stays finely textured, and that is
+ * the construction rather than a fault in it: a kaleidoscopic IFS has detail at
+ * every scale, and the sponge's own faces are Sierpinski carpets. What matters
+ * is that it is a SURFACE - solid, with square recesses and a rectangular
+ * silhouette - and at Fold 0 it is a textbook Menger cube.
  */
 float deTemple(vec3 p, float twist) {
     float s = 1.0;
@@ -454,13 +467,93 @@ float deBulb(vec3 p, float power) {
     return max(0.5 * log(max(r, 1.0001)) * r / max(dr, 1e-5), 2e-4);
 }
 
-/** Dispatch on the body's species ordinal (see HyperspaceMath.Species). */
+/**
+ * SEED - the quaternion Julia set, z -> z^2 + c taken in the quaternions.
+ *
+ * The only estimator here whose iteration lives in FOUR dimensions. The sample
+ * point supplies three components of z and [slice] the fourth, so what is
+ * drawn is a 3D cross-section of a 4D body. That is where this species' inner
+ * life comes from: moving the slice is not a deformation of one surface, it is
+ * a different surface cut from the same solid, and it can open a channel or
+ * close a neck in a way no scalar fold constant can.
+ *
+ * Squaring a quaternion costs no more than squaring a complex number. With
+ * z = (a, v), a real and v the imaginary vector, z^2 = (a^2 - |v|^2, 2 a v) -
+ * four multiplies and a dot product, and not one transcendental in the loop.
+ * The derivative is carried as its SQUARE because the recurrence dz -> 2 z dz
+ * only ever needs its magnitude, and |dz'|^2 = 4 |z|^2 |dz|^2 is one more
+ * multiply rather than a second quaternion product. Together those are what
+ * let this run a deeper budget than the bulb at a fraction of its cost.
+ *
+ * The estimate is the Douady-Hubbard potential written for the square map,
+ * 0.5 * |z| * log|z| / |dz|, which is the standard conservative form: it never
+ * exceeds the true distance, so the ray cannot step through the surface. Both
+ * floors are load-bearing. The one under |z|^2 in the derivative keeps the
+ * division finite at the preimages of the origin, where |dz| is genuinely
+ * zero. The one inside the log is what makes a point that has not escaped
+ * return almost zero instead of a NEGATIVE distance - log of a radius below 1
+ * is negative, and a negative estimate marches the ray backwards.
+ *
+ * Nothing overflows, which is worth stating because the preview harness runs
+ * everything at float32 and cannot see a precision limit: the loop leaves the
+ * moment |z|^2 passes 4, so every factor in the derivative product is at most
+ * 16 and |dz|^2 is at most 16^MAX_SEED_ITERS = 2^48. GLSL ES guarantees highp
+ * out to 2^62, which this file declares for every float; it guarantees mediump
+ * only to 2^14, so this loop would NOT survive being demoted.
+ *
+ * c is a CONSTANT and the slice is what moves. That is a safety decision, not
+ * a simplification. The set is connected exactly when the orbit of the origin
+ * stays bounded, and that orbit lives in the plane spanned by 1 and Im c, so
+ * connectedness is the ordinary Mandelbrot test at (Re c, |Im c|) - here
+ * (-0.12, 0.711), which is inside the locus with about 0.06 to spare. Walk c
+ * across that boundary and the body does not deform, it SHATTERS into a dust
+ * in a single frame, which is a large change of projected area in 16 ms - the
+ * one thing this family can do that VisualSafety cannot clamp. The slice has
+ * no such cliff: it slides the cut through a solid that stays connected.
+ *
+ * All three imaginary parts are non-zero on purpose. The set is invariant
+ * under rotations of the imaginary 3-space that fix Im c, so if Im c lay in
+ * the plane this slice keeps, every cross-section would be a solid of
+ * revolution - a lathe-turned vase, and the standard disappointment of
+ * quaternion Julia sets. Cutting across the symmetry axis is what makes these
+ * sections genuinely three-dimensional.
+ */
+float deSeed(vec3 p, float slice) {
+    // |c| <= 0.75 is not a taste: the filled Julia set is contained in the
+    // sphere of radius (1 + sqrt(1 + 4|c|)) / 2, which at this |c| is 1.486,
+    // and that has to fit inside HyperspaceMath.localRadius(SEED) = 1.5. A
+    // bound the camera trusts has to be proved, not measured.
+    const vec4 c = vec4(-0.12, 0.44, 0.39, 0.40);
+    vec4 z = vec4(p, slice);
+    float md2 = 1.0;
+    float mz2 = dot(z, z);
+    for (int i = 0; i < MAX_SEED_ITERS; i++) {
+        if (i >= uSeedIters) break;
+        md2 *= 4.0 * max(mz2, 1e-8);
+        z = vec4(z.x * z.x - dot(z.yzw, z.yzw), 2.0 * z.x * z.yzw) + c;
+        mz2 = dot(z, z);
+        gT = min(gT, mz2);
+        if (mz2 > 4.0) break;
+    }
+    return 0.25 * sqrt(mz2 / md2) * log(max(mz2, 1.0001));
+}
+
+/**
+ * Dispatch on the body's species ordinal (see HyperspaceMath.Species).
+ *
+ * An if-chain, and every branch is inlined into this one function, so what the
+ * register allocator has to accommodate is the WORST estimator rather than the
+ * sum of them - adding a species costs one comparison for the bodies that are
+ * not it. That is the only reason a sixth fits: deSeed's live set is a vec4, a
+ * derivative and a radius, comfortably under deJewel's and deTemple's.
+ */
 float speciesDE(vec3 p, int species, float fold) {
     if (species == 0) return deGasket(p, fold);
     if (species == 1) return deTemple(p, fold);
     if (species == 2) return deJewel(p, fold);
     if (species == 3) return deCoral(p, fold);
-    return deBulb(p, fold);
+    if (species == 4) return deBulb(p, fold);
+    return deSeed(p, fold);
 }
 
 /**
@@ -528,6 +621,14 @@ float map(vec3 p) {
         // The body breathes: a slow wobble of its own fold constant, on its
         // own phase, so a body is never quite the same shape twice - and the
         // bass leans on it, gently and equally for every body.
+        //
+        // These two coefficients are the WHOLE of the structural modulation in
+        // this shader, and uBeat is deliberately not among them. VisualSafety
+        // clamps parameters and LFO rates; it cannot clamp geometry, and the
+        // hazard in this family is not colour but area - a fold constant that
+        // jumped on a transient would change how much of the screen a body
+        // covers between one frame and the next. A continuous few per cent on
+        // the body's own slow phase cannot.
         float fold = S.z * (1.0 + 0.04 * sin(L.z) + 0.02 * uBass);
         gT = 1e9;
         float df = speciesDE(q, int(S.x + 0.5), fold) * max(S.y, 1e-4);
@@ -587,13 +688,31 @@ float calcAO(vec3 p, vec3 n, float scale) {
  * what the opening seconds of the experience this style is named for are
  * always described as.
  *
- * The translation constant drifts, slowly and on three unrelated rates, so the
- * fabric keeps reorganising instead of standing still.
+ * The view turns through it, slowly and on two unrelated rates, so the fabric
+ * keeps reorganising instead of standing still.
  */
 vec3 chrysanthemum(vec3 rd) {
     if (uField <= 0.002) return vec3(0.0);
+    // The VIEW turns; the fractal stands still.
+    //
+    // The translation constant used to drift instead, on three slow rates, for
+    // the same reason - to keep the fabric reorganising. It is not the same
+    // thing. This iteration is chaotic in that constant: a drift of 0.07 walks
+    // it through parameter values where the whole orbit collapses toward the
+    // origin, and then every direction on the screen reads as "on the set" at
+    // once. Measured over a simulated hour, the fraction of the sky the traps
+    // below light ranged from under a thousandth to nine tenths, on a
+    // two-minute cycle. Half of the "washes out" this style was reported for
+    // was that cycle; a fixed constant with the view moving through it holds
+    // every one of those statistics inside a factor of two, which is what lets
+    // the thresholds below be numbers rather than guesses.
+    float turn = uTime * 0.037;
+    float tilt = uTime * 0.021;
+    rd.xz = mat2(cos(turn), -sin(turn), sin(turn), cos(turn)) * rd.xz;
+    rd.yz = mat2(cos(tilt), -sin(tilt), sin(tilt), cos(tilt)) * rd.yz;
     // Where the orbit starts. The iteration's own structure is at unit scale,
-    // so this is what decides how much of the fabric one screen holds.
+    // so this is what decides how much of the fabric one screen holds; it
+    // breathes, which reads as the fabric drawing itself closer and letting go.
     //
     // Not compensated for the mirror any more. kaleido() maps (r, angle) to
     // (r, fold(angle)) and |d fold / d angle| is 1, so it is a piecewise
@@ -602,66 +721,58 @@ vec3 chrysanthemum(vec3 rd) {
     // for a squeeze that does not happen.
     float reach = 4.6 + 0.7 * sin(uTime * 0.05);
     vec3 p = rd * reach;
-    vec3 c =
-        vec3(0.84, 0.91, 0.72) +
-            0.07 * vec3(sin(uTime * 0.043), cos(uTime * 0.037), sin(uTime * 0.029));
+    const vec3 c = vec3(0.84, 0.91, 0.72);
     // The CLOSEST approach of the orbit, not a sum over it. A sum washes the
     // whole sky to a pastel haze; the closest approach is an orbit trap, and
     // its narrow response is what leaves thin bright strands on black - the
     // difference between a filigree and a fog.
     //
-    // Two traps, because the fabric has two scales: the distance to the origin
-    // draws the knots, and the distance to the nearest axis plane draws the
-    // threads running between them.
-    //
-    // Both are measured back in the STARTING domain, by dividing through the
-    // orbit's accumulated derivative. Read raw off the orbit they are not
-    // distances to anything: the inversion expands and contracts by orders of
-    // magnitude from one iteration to the next, so a trap at iteration nine is
-    // in different units from the same trap at iteration two, and taking a
-    // minimum over the run mixes them. The thread trap in particular is the
-    // smallest of thirty-six such numbers and its median came out at 0.02,
-    // which through a fixed exp(-x*x*420) is 0.45 - not a filigree, a flat
-    // lilac wash over the whole sky, which is exactly what this drew. Divided
-    // by the derivative both traps become a distance from the ray's own
-    // direction to the limit set, which is a quantity a threshold can mean
-    // something against.
-    float dr = 1.0;
-    float knot = 1e9;
+    // Two traps, because a fabric is threads and the knots where they cross.
+    // The orbit lies along the coordinate PLANES, so the smallest component is
+    // the distance to the nearest thread, and the two smallest together are
+    // the distance to the nearest coordinate axis - which is where two threads
+    // meet. Neither is the distance to the ORIGIN, which is what the knot trap
+    // used to be and which does not vary: over a screenful of directions its
+    // closest approach spans four per cent, so through any response at all it
+    // is a constant, and a constant added to every pixel is the definition of
+    // a wash. The thread trap was the other half: it is the smallest of
+    // thirty-six numbers whose median is 0.02, and exp(-x*x*420) of that is
+    // 0.45, so nine tenths of the sky came out at four tenths of full
+    // brightness before anything was drawn on it.
     float thread = 1e9;
+    float knot = 1e9;
     float hue = 0.0;
-    for (int i = 0; i < 14; i++) {
-        float r2 = max(dot(p, p), 1e-4);
-        p = abs(p) / r2 - c;
-        // Inversion in the unit sphere is conformal with factor 1/r2, and the
-        // fold and the translate are isometries, so this is the whole
-        // derivative. Bounded because r2 has a floor: one orbit that grazed
-        // the fixed point could otherwise multiply dr by 1e4 per iteration and
-        // reach infinity, and 1/infinity is a trap of exactly zero - a white
-        // pixel in the middle of the sky.
-        dr = min(dr / r2, 1e12);
-        float m = length(p);
-        float d = m / dr;
-        if (d < knot) {
-            knot = d;
-            hue = float(i) * 0.11 + m * 0.6;
+    for (int i = 0; i < 12; i++) {
+        p = abs(p) / max(dot(p, p), 1e-4) - c;
+        vec3 a = abs(p);
+        float lo = min(min(a.x, a.y), a.z);
+        float hi = max(max(a.x, a.y), a.z);
+        float mid = a.x + a.y + a.z - lo - hi;
+        if (lo < thread) {
+            thread = lo;
+            hue = float(i) * 0.11 + length(p) * 0.6;
         }
-        thread = min(thread, min(min(abs(p.x), abs(p.y)), abs(p.z)) / dr);
+        knot = min(knot, length(vec2(lo, mid)));
     }
-    // A strand is drawn where the ray passes within a couple of PIXELS of the
-    // limit set. The traps are distances on the sphere the orbit starts from,
-    // so the pixel has to be measured there too: one pixel of screen is
-    // 2*uFov/height of direction, and [reach] world units per unit direction.
-    // Threshold it in world units instead and the fabric is a wash on a phone
-    // and invisible on a tablet; in pixels it is the same filigree on both,
-    // and it is the finest one that can be drawn without aliasing into noise.
-    float width = 2.2 * reach * 2.0 * uFov / max(uResolution.y, 1.0);
-    float w2 = width * width;
-    float strands = exp(-knot * knot / w2) + 0.55 * exp(-thread * thread / w2);
+    // Each gain is one over the square of its own trap's value at about the
+    // fifth percentile of the distribution that trap actually has, so the
+    // response is down to 1/e there: between a sixteenth and an eighth of the
+    // sky is on a thread or at a knot and the rest is black. With the constant
+    // fixed above those percentiles hold across the whole run, which is what
+    // makes these calibrated numbers rather than a taste that worked once.
+    float strands = exp(-knot * knot * 6.0e3) + 0.55 * exp(-thread * thread * 1.0e6);
+    // A thin thing has to be bright to be seen. The old wash carried the sky's
+    // light over the whole sky; this carries the same light over a tenth of
+    // it, so the per-strand radiance goes up by about that factor and the
+    // FULL-SCREEN mean comes out at or below where it was - which is the term
+    // VisualSafety cares about, and it is also far steadier over time now that
+    // it no longer swings with the constant.
+    const float FILIGREE = 5.0;
     // Treble picks out the fine strands. Every factor here is well under a
     // brightness that could read as a flash, at any level (see VisualSafety).
     float sharpen = 1.0 + 0.35 * clamp(uTreble, 0.0, 1.2);
-    return palette(hue, 0.82) * strands * uField * (0.20 + 0.13 * clamp(uEnergy, 0.0, 1.2)) * sharpen;
+    return palette(hue, 0.82) * strands * FILIGREE * uField
+        * (0.20 + 0.13 * clamp(uEnergy, 0.0, 1.2)) * sharpen;
 }
 
 /**
