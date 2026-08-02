@@ -29,6 +29,7 @@ import dev.musicviz.render.scene.SceneParams
 import dev.musicviz.render.scene.ShaderScene
 import dev.musicviz.render.scene.StormScene
 import dev.musicviz.render.scene.SwarmScene
+import dev.musicviz.render.scene.VisualStyleCatalog
 import java.io.File
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
@@ -727,9 +728,9 @@ class VisualizerRenderer(
             add(SceneIds.FLUID)
             add(SceneIds.CURLFLOW)
             add(SceneIds.WATER)
-            add(SceneIds.CYMATICS)
+            addAll(VisualStyleCatalog.cymaticsIds)
             add(SceneIds.BEAM)
-            add(SceneIds.HYPERSPACE)
+            addAll(VisualStyleCatalog.hyperspaceIds)
         }
 
     /**
@@ -748,6 +749,16 @@ class VisualizerRenderer(
         quadVert: String,
     ): Scene {
         SHADER_SCENES[id]?.let { res -> return ShaderScene(id, quadVert, loadRaw(res)) { onShaderError(it) } }
+        VisualStyleCatalog.cymatics(id)?.let { style ->
+            return CymaticsScene(context, style).also { plate ->
+                plate.onShaderError = { onShaderError(it) }
+            }
+        }
+        VisualStyleCatalog.hyperspace(id)?.let { style ->
+            return HyperspaceScene(context, style).also { hyper ->
+                hyper.onShaderError = { onShaderError(it) }
+            }
+        }
         return when (id) {
             SceneIds.NEBULA -> NebulaScene(particleShaders)
             SceneIds.BURSTS -> BurstScene(particleShaders)
@@ -772,14 +783,6 @@ class VisualizerRenderer(
             SceneIds.BEAM ->
                 BeamScene(context).also { beam ->
                     beam.onShaderError = { onShaderError(it) }
-                }
-            SceneIds.CYMATICS ->
-                CymaticsScene(context).also { plate ->
-                    plate.onShaderError = { onShaderError(it) }
-                }
-            SceneIds.HYPERSPACE ->
-                HyperspaceScene(context).also { hyper ->
-                    hyper.onShaderError = { onShaderError(it) }
                 }
             SceneIds.MILKDROP ->
                 ProjectMScene(
@@ -1576,6 +1579,8 @@ class VisualizerRenderer(
                 val exportParams = sceneParams
                 val particleShaders = particleShaderSources(context)
                 val quadVert = loadRaw(R.raw.quad_vert)
+                val cymaticsStyle = VisualStyleCatalog.cymatics(sceneId)
+                val hyperspaceStyle = VisualStyleCatalog.hyperspace(sceneId)
                 val scene: Scene =
                     when {
                         sceneId == SceneIds.FLUID ->
@@ -1588,9 +1593,9 @@ class VisualizerRenderer(
                         sceneId == SceneIds.WATER ->
                             dev.musicviz.render.fluid
                                 .WaterScene(context)
-                        sceneId == SceneIds.CYMATICS -> CymaticsScene(context)
+                        cymaticsStyle != null -> CymaticsScene(context, cymaticsStyle)
                         sceneId == SceneIds.BEAM -> BeamScene(context)
-                        sceneId == SceneIds.HYPERSPACE -> HyperspaceScene(context)
+                        hyperspaceStyle != null -> HyperspaceScene(context, hyperspaceStyle)
                         sceneId == SceneIds.MILKDROP && PMBridge.available ->
                             ProjectMScene(
                                 postVertexSrc = loadRaw(R.raw.fade_vert),

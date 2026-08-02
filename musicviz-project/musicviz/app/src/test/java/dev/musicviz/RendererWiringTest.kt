@@ -2,6 +2,7 @@ package dev.musicviz
 
 import dev.musicviz.render.VisualizerRenderer
 import dev.musicviz.render.scene.SceneIds
+import dev.musicviz.render.scene.VisualStyleCatalog
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -151,6 +152,8 @@ class RendererWiringTest {
         buildSet {
             if (body.contains("PARTICLE_SCENES")) addAll(VisualizerRenderer.PARTICLE_SCENES)
             if (body.contains("SHADER_SCENES")) addAll(VisualizerRenderer.SHADER_SCENES.keys)
+            if (body.contains("VisualStyleCatalog.cymatics")) addAll(VisualStyleCatalog.cymaticsIds)
+            if (body.contains("VisualStyleCatalog.hyperspace")) addAll(VisualStyleCatalog.hyperspaceIds)
             Regex("""SceneIds\.(\w+)""").findAll(body).forEach { match ->
                 val name = match.groupValues[1]
                 val id = sceneIdValues[name]

@@ -65,6 +65,8 @@ const float LIQUID_EMISSION = 0.40;
 
 uniform vec2 uResolution;
 uniform float uTime;
+/** Family substyle: 0 original, 1..10 authored variants. */
+uniform int uStyle;
 
 // ---- the living bodies -------------------------------------------------
 uniform int uBloomCount;
@@ -195,6 +197,58 @@ vec3 hsv2rgb(vec3 c) {
  */
 vec3 palette(float t, float sat) {
     return hsv2rgb(vec3(fract(uBaseHue + uHueSpan * uHueSpread * t), sat, 1.0));
+}
+
+mat2 rot2(float a) {
+    float s = sin(a);
+    float c = cos(a);
+    return mat2(c, -s, s, c);
+}
+
+float hash31(vec3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+/**
+ * Local, bounded deformations for the family substyles. The body's bounding
+ * sphere still clips every result, so a profile cannot invalidate the CPU's
+ * culling contract or reach outside the raymarch safety envelope.
+ */
+vec3 styleBody(vec3 q, float phase) {
+    if (uStyle == 1) { // Polytope: hard mirrored cells and four-dimensional turns.
+        q = abs(q);
+        q.xy = rot2(0.55 + 0.18 * sin(phase)) * q.xy;
+        q.yz = rot2(0.47) * q.yz;
+    } else if (uStyle == 2) { // Liquid Warp: a thin skin carried by the shared fluid field.
+        q.z += 0.13 * sin(q.x * 3.1 + phase) + 0.10 * sin(q.y * 2.7 - phase * 0.7);
+        q.z *= 0.62;
+    } else if (uStyle == 3) { // Caduceus: double-helical torsion along the body axis.
+        q.xy = rot2(q.z * 1.55 + phase * 0.18) * q.xy;
+        q.x += 0.08 * sin(q.z * 5.0 + phase);
+    } else if (uStyle == 4) { // Cortex: folded organic ridges.
+        q += 0.075 * sin(q.yzx * 4.3 + vec3(phase, phase * 0.7, phase * 1.3));
+    } else if (uStyle == 5) { // Reliquary: cut facets around a protected core.
+        q = abs(q) - vec3(0.035, 0.06, 0.025);
+        q.xz = rot2(0.785 + 0.08 * sin(phase)) * q.xz;
+    } else if (uStyle == 6) { // Moire: two close angular frames interfering.
+        q.xy = rot2(0.22 * sin(phase * 0.27)) * q.xy;
+        q.xz = rot2(0.25 * sin(phase * 0.23 + 1.4)) * q.xz;
+    } else if (uStyle == 7) { // Foam: pressure shells around every body.
+        q *= 1.0 + 0.055 * sin(length(q) * 10.0 - phase * 0.55);
+    } else if (uStyle == 8) { // Dustskin: a fine granular displacement at the surface.
+        q += 0.022 * sin(q.zxy * 18.0 + phase);
+    } else if (uStyle == 9) { // Plume: long, twisting bodies carried by the medium.
+        q.z *= 0.56;
+        q.xy = rot2(q.z * 1.15 + phase * 0.12) * q.xy;
+        q.x += 0.10 * sin(q.z * 4.0 + phase * 0.4);
+    } else if (uStyle == 10) { // Resonant Wormhole: cymatic shells cut through each body.
+        float shell = sin(length(q) * 11.0 - phase * 0.75);
+        q *= 1.0 + 0.055 * shell;
+        q.xy = rot2(0.16 * sin(phase * 0.31)) * q.xy;
+    }
+    return q;
 }
 
 // ========================================================================
@@ -618,6 +672,7 @@ float map(vec3 p) {
         // Into the body's frame: rotate by ITS rotation, scale by ITS scale -
         // from the MOVED point, so the medium reaches inside the fractal.
         vec3 q = (uBloomRot[i] * (pw - P.xyz)) / max(S.y, 1e-4);
+        q = styleBody(q, L.z);
         // The body breathes: a slow wobble of its own fold constant, on its
         // own phase, so a body is never quite the same shape twice - and the
         // bass leans on it, gently and equally for every body.
@@ -775,6 +830,50 @@ vec3 chrysanthemum(vec3 rd) {
         * (0.20 + 0.13 * clamp(uEnergy, 0.0, 1.2)) * sharpen;
 }
 
+/** Additional family atmosphere laid over the shared chrysanthemum. */
+vec3 styleSky(vec3 rd, vec3 base) {
+    float a = atan(rd.y, rd.x);
+    float r = length(rd.xy) / max(abs(rd.z), 0.22);
+    vec3 extra = vec3(0.0);
+    if (uStyle == 1) { // Polytope wire cells.
+        vec3 d = abs(rd);
+        float edge = exp(-abs(max(d.x, max(d.y, d.z)) - 0.72) * 48.0);
+        extra = palette(a / (2.0 * PI) + 0.16, 0.62) * edge * 0.24;
+    } else if (uStyle == 2) { // Liquid Warp interference carried through the tunnel.
+        float wave = exp(-abs(sin(rd.x * 19.0 + uTime * 0.23) + sin(rd.y * 17.0 - uTime * 0.19)) * 3.0);
+        extra = palette(r * 0.12, 0.72) * wave * 0.16;
+    } else if (uStyle == 3) { // Caduceus helix traces.
+        float helix = exp(-abs(sin(a * 2.0 + rd.z * 13.0 - uTime * 0.35)) * 10.0);
+        extra = palette(a / (2.0 * PI) + rd.z * 0.12, 0.78) * helix * 0.22;
+    } else if (uStyle == 4) { // Cortex branching mesh.
+        float folds = abs(sin(rd.x * 24.0 + sin(rd.y * 9.0)) * sin(rd.y * 21.0 + sin(rd.z * 11.0)));
+        extra = palette(folds * 0.18, 0.84) * pow(1.0 - folds, 8.0) * 0.18;
+    } else if (uStyle == 5) { // Reliquary facets.
+        vec3 f = abs(rd);
+        float facet = pow(max(f.x, max(f.y, f.z)), 18.0);
+        extra = palette(0.12 + f.y * 0.18, 0.55) * facet * 0.2;
+    } else if (uStyle == 6) { // Moire interference screens.
+        float m = sin(a * 18.0 + r * 4.0) * sin(a * 19.0 - r * 3.7 + uTime * 0.11);
+        extra = palette(m * 0.08 + r * 0.04, 0.7) * pow(abs(m), 4.0) * 0.2;
+    } else if (uStyle == 7) { // Foam cells.
+        vec2 cell = fract((rd.xy / max(abs(rd.z), 0.3)) * 4.0) - 0.5;
+        float bubble = exp(-abs(length(cell) - 0.31) * 35.0);
+        extra = palette(r * 0.09, 0.52) * bubble * 0.18;
+    } else if (uStyle == 8) { // Dustskin motes.
+        float dust = smoothstep(0.965, 0.995, hash31(floor(rd * 180.0) + floor(uTime * 0.7)));
+        extra = palette(hash31(rd * 31.0), 0.35) * dust * (0.3 + 0.45 * uTreble);
+    } else if (uStyle == 9) { // Plume haze.
+        float plume = pow(0.5 + 0.5 * sin(r * 5.0 - a * 3.0 + uTime * 0.12), 5.0);
+        extra = palette(a / (2.0 * PI) + r * 0.04, 0.68) * plume * 0.13;
+    } else if (uStyle == 10) { // Resonant Wormhole: nodal portals inside the flight axis.
+        float modeA = sin(r * 18.0 - a * 4.0 + uTime * 0.18);
+        float modeB = sin(r * 13.0 + a * 6.0 - uTime * 0.14);
+        float node = exp(-abs(modeA + 0.68 * modeB) * 8.0);
+        extra = palette(r * 0.08 + a / (2.0 * PI), 0.76) * node * 0.19;
+    }
+    return base + extra * uField;
+}
+
 /**
  * N-fold mirror about the centre of the screen: the chrysanthemum's symmetry.
  *
@@ -800,6 +899,9 @@ void main() {
     // holds on any aspect instead of stretching on a phone in landscape.
     vec2 uv = (vUv - 0.5) * vec2(uResolution.x / max(uResolution.y, 1.0), 1.0) * 2.0;
     uv = kaleido(uv, uMirrorFolds, uMirror);
+    if (uStyle == 1 || uStyle == 5) uv = kaleido(uv, 4.0, 1.0);
+    if (uStyle == 3) uv = rot2(0.22 * length(uv) + 0.08 * sin(uTime * 0.17)) * uv;
+    if (uStyle == 6) uv = kaleido(uv, 12.0, 1.0);
 
     vec3 ro = uCamPos;
     vec3 rd = normalize(uCamBasis * vec3(uv * uFov, 1.0));
@@ -907,7 +1009,7 @@ void main() {
         if (t > uFar) break;
     }
 
-    vec3 sky = chrysanthemum(rd);
+    vec3 sky = styleSky(rd, chrysanthemum(rd));
     vec3 col;
 
     if (hitT > 0.0) {
@@ -933,6 +1035,15 @@ void main() {
         float band = log(max(hitTrap, 1e-6)) * 0.16;
         vec3 body = palette(hitHue + band * uTrapColor, 0.88);
         vec3 rim = palette(hitHue + band * uTrapColor + 0.34, 0.72);
+        if (uStyle == 5) { // Reliquary: pale mineral core, warm spectral edge.
+            body = mix(body, vec3(0.92, 0.86, 0.72), 0.28);
+            rim = mix(rim, vec3(1.0, 0.78, 0.34), 0.34);
+        } else if (uStyle == 7) { // Foam: softer, pearlescent shells.
+            body = mix(body, vec3(0.82, 0.9, 1.0), 0.22);
+        } else if (uStyle == 9) { // Plume: colour carried by dye rather than a hard skin.
+            body *= 0.72;
+            rim *= 0.58;
+        }
 
         // Flow-aligned combing. Ridges running ALONG the medium's own flow are
         // the single most recognisable mark in the reference paintings - every
@@ -996,6 +1107,24 @@ void main() {
     // than making it a wash laid over the top of a finished picture.
     col *= trans;
     col += glow * uGlow * 0.30;
+
+    // Final family signatures, intentionally subtle enough that the existing
+    // controls and palette remain recognisable across the whole collection.
+    if (uStyle == 4) { // Cortex: fine neural ridges.
+        float nerve = pow(0.5 + 0.5 * sin((uv.x + uv.y) * 34.0 + sky.r * 9.0), 12.0);
+        col += palette(uv.x * 0.08 + uv.y * 0.05, 0.7) * nerve * 0.08;
+    } else if (uStyle == 6) { // Moire: interference contrast.
+        float rings = 0.72 + 0.28 * sin(length(uv) * 46.0 + atan(uv.y, uv.x) * 9.0);
+        col *= rings;
+    } else if (uStyle == 8) { // Dustskin: granular, treble-lit surface.
+        float grain = hash31(vec3(gl_FragCoord.xy, floor(uTime * 18.0)));
+        col *= 0.86 + 0.24 * grain;
+        col += vec3(1.0) * smoothstep(0.985, 1.0, grain) * 0.12 * clamp(uTreble, 0.0, 1.5);
+    } else if (uStyle == 9) { // Plume: lift the participating medium.
+        col += sky * 0.16 * (0.4 + 0.6 * clamp(uEnergy, 0.0, 1.2));
+    } else if (uStyle == 10) { // Resonant Wormhole: a slow modal breathing pulse.
+        col *= 0.9 + 0.1 * sin(uTime * 0.33 + length(uv) * 7.0);
+    }
 
     // Sum of three additive layers, HDR by construction. Clipping it would
     // flatten every rim and every core into the same white, so it is tone

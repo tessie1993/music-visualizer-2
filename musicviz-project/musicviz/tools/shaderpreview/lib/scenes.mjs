@@ -65,7 +65,7 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
   const flowScale = (2 * (1 / cellSize)) / velGrid[1];
 
   const supplies = new Set([
-    'uResolution', 'uTime', 'uBloomCount', 'uBloomPos', 'uBloomShape', 'uBloomLook', 'uBloomRot',
+    'uResolution', 'uTime', 'uStyle', 'uBloomCount', 'uBloomPos', 'uBloomShape', 'uBloomLook', 'uBloomRot',
     'uCamPos', 'uCamBasis', 'uFov', 'uSteps', 'uIters', 'uBulbIters', 'uSeedIters',
     'uFar', 'uMaxStep', 'uHitEps',
     'uBoundMargin', 'uField', 'uMirror', 'uMirrorFolds', 'uGlow', 'uNeon', 'uHaze',
@@ -147,6 +147,7 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
     const uniforms = {
       uResolution: { t: '2f', v: [width, height] },
       uTime: { t: '1f', v: time },
+      uStyle: { t: '1i', v: 0 },
       uBloomCount: { t: '1i', v: bloomCount },
       uBloomPos: { t: '4fv', v: Array.from(bloomPos) },
       uBloomShape: { t: '4fv', v: Array.from(bloomShape) },
