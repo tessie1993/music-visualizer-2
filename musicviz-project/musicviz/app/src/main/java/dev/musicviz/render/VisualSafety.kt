@@ -244,6 +244,53 @@ object VisualSafety {
     ): TransitionStyle = if (config.enabled && requested == TransitionStyle.CUT) TransitionStyle.FADE else requested
 
     /**
+     * Bounds how much a Layers blend may change the frame.
+     *
+     * Layers reaches the screen without passing any limit in [apply]: the
+     * blend happens in the composite, AFTER every clamped parameter, and its
+     * magnitude is set by the mix and the mode rather than by any of the
+     * params [apply] sees. Two of the eight modes are genuine full-frame
+     * luminance events at high mix, which is the exact hazard the rest of this
+     * file exists to bound:
+     *
+     * - [BlendMode.ADD] can nearly double frame brightness, and does so
+     *   whenever the two layers happen to peak together - which for two
+     *   beat-driven scenes is ON THE BEAT, at the track's own rate.
+     * - [BlendMode.DIFFERENCE] takes the frame to black wherever the layers
+     *   agree, so two scenes drifting in and out of agreement swing the whole
+     *   frame between lit and dark with nothing setting the rate.
+     *
+     * The mix is clamped rather than the mode substituted, because the mix is
+     * already the magnitude control and [apply] bounds full-frame events by
+     * magnitude ([SafetyConfig.maxFlashDepth]) rather than by forbidding them.
+     * A substitution would also change the look for a reason the user could
+     * not see, which [transitionStyle] gets away with only because a cut and a
+     * fast fade read the same.
+     *
+     * DIFFERENCE is additionally a contrast REVERSAL - identical layers
+     * produce black - so it is gated on [SafetyConfig.allowInversion], the
+     * same switch that governs Invert and Solarize.
+     */
+    fun layerMix(
+        requested: Float,
+        mode: BlendMode,
+        config: SafetyConfig,
+    ): Float {
+        val mix = requested.coerceIn(0f, 1f)
+        if (!config.enabled) return mix
+        return when (mode) {
+            BlendMode.DIFFERENCE ->
+                if (config.allowInversion) minOf(mix, config.maxFlashDepth) else 0f
+            BlendMode.ADD -> minOf(mix, config.maxFlashDepth)
+            // SCREEN, MULTIPLY, LIGHTEN, DARKEN, OVERLAY and NORMAL are all
+            // bounded by the two layers themselves - none can produce a value
+            // outside the range its inputs already occupied - so a mix of 1 is
+            // no brighter than the brighter layer already was.
+            else -> mix
+        }
+    }
+
+    /**
      * The same substitution over transition IDs, which is what the renderer
      * takes now that the library sits alongside the five built-in styles.
      * Only a cut is replaced: every gl-transition ramps by construction, so
