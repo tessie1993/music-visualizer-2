@@ -126,7 +126,12 @@ object AnalysisCache {
             runCatching { f.delete() }
             return null
         }
-        return loaded.withBeatSensitivity(beatThresholdSigma, beatMinIntervalMs)
+        // The three per-instrument onset channels are derived from the stored
+        // bands rather than serialised, so a v2 entry written before they
+        // existed comes back with them populated and no format bump was needed.
+        return loaded
+            .withBeatSensitivity(beatThresholdSigma, beatMinIntervalMs)
+            .withDrumChannels()
     }
 
     fun save(

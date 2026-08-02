@@ -84,18 +84,31 @@ class AnalysisEngine(
                 val raw = FloatArray(processor.bandCount)
                 val smoothed = FloatArray(processor.bandCount)
                 val waveform = FloatArray(128)
+                // The side window, snapshotted alongside the mid one. Full
+                // length: the stereo measurements are taken over this, not
+                // over the decimated `waveform` below.
+                val sideBuf = FloatArray(processor.fftSize)
+                val chroma = Chromagram(hopRateHz = 60f)
                 while (true) {
                     if (resetPending) {
                         resetPending = false
                         extractor.reset()
                         smoother.reset()
+                        chroma.reset()
                     }
                     if (ring.snapshotLatest(windowBuf)) {
                         processor.process(windowBuf, sampleRateHz, raw)
+                        processor.updateChroma(chroma, sampleRateHz)
                         smoother.apply(raw, smoothed)
                         val step = processor.fftSize / waveform.size
                         for (i in waveform.indices) waveform[i] = windowBuf[i * step]
-                        _features.value = extractor.extract(smoothed, waveform, sampleRateHz)
+                        val stereo =
+                            if (ring.snapshotLatestSide(sideBuf)) {
+                                StereoField.of(windowBuf, sideBuf)
+                            } else {
+                                StereoField.MONO
+                            }
+                        _features.value = extractor.extract(smoothed, waveform, sampleRateHz, stereo, chroma)
                     }
                     delay(16)
                 }

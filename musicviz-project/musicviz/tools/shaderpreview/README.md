@@ -31,6 +31,10 @@ node preview.mjs --scene hyperspace --frames 8 --audio beat --out out/hs
 # one of the 22 fragment styles
 node preview.mjs --scene shader --shader julia --frames 4 --audio tone
 
+# the render path the nine CPU particle styles share - read the standIns in
+# report.json before drawing a conclusion about any INDIVIDUAL style
+node preview.mjs --scene particles --frames 4 --count 1200 --out out/pt
+
 # a minute of steady music, sampled every 5 s, with fluid-field statistics
 node preview.mjs --scene hyperspace --frames 13 --every 300 --audio tone --field-stats
 
@@ -39,6 +43,10 @@ node preview.mjs --scene hyperspace --no-melt --out out/no-melt
 
 # five hours of wallpaper uptime, after a 10 s warm-up
 node preview.mjs --scene shader --shader plasma --warmup 600 --frames 6 --clock-jump 3600
+
+# the Layers blend algebra: with both layers identical, DIFFERENCE must go
+# to exactly 0, MULTIPLY must darken and SCREEN must brighten
+node preview.mjs --scene shader --shader plasma --composite --layer 1,4 --frames 1
 
 # through the composite pass, which is where Zoom and Rotation live on a
 # fluid-family style - without this you are looking at a frame the user never
@@ -50,8 +58,10 @@ node preview.mjs --scene hyperspace --composite --param zoom=3 --frames 1
 
 | flag | meaning |
 | --- | --- |
-| `--scene hyperspace \| shader` | which driver to use |
+| `--scene hyperspace \| shader \| particles` | which driver to use |
 | `--shader <id>` | style id for `--scene shader` (see `--list`) |
+| `--count N` | particle population for `--scene particles` (default 2048) |
+| `--stretch-scale N` / `--stretch-max N` | `ParticleSceneBase`'s two open vals (defaults 1 and 2) |
 | `--frames N` | frames to **capture** |
 | `--every N` | simulate N frames per captured frame |
 | `--warmup N` | simulate N frames before capturing anything |
@@ -61,6 +71,7 @@ node preview.mjs --scene hyperspace --composite --param zoom=3 --frames 1
 | `--param name=value` | override one `SceneParams` field, repeatable |
 | `--no-melt` | force `uHasMelt = 0` (the no-float-buffer fallback) |
 | `--composite` | run the scene through `composite_frag` afterwards, as the app does |
+| `--layer mix,mode` | force the Layers branch (`uStyle` 6) at that mix and `BlendMode` ordinal. Both layers are the SAME texture, so this checks the blend algebra, not a real two-scene composite |
 | `--field-stats` | read back the fluid dye/velocity grids and report their statistics |
 | `--clock-jump S` | advance the free-running clocks by S seconds per captured frame |
 | `--seed N` | seed for the body RNG |
@@ -211,11 +222,33 @@ Also, more mundanely but just as capable of misleading you:
    light. It is a good relative measure and a poor absolute one; use it to
    compare runs, not to make a claim about perceived brightness.
 
-9. **Only two scene families are wired up**: `HyperspaceScene` and the 22
-   `ShaderScene` styles. The particle scenes, the fluid family's own display
-   passes, WATER, CYMATICS, BEAM and MILKDROP have their own uniform
+9. **Three scene families are wired up**: `HyperspaceScene`, the 22
+   `ShaderScene` styles, and `ParticleSceneBase`. The fluid family's own
+   display passes, WATER, CYMATICS, BEAM and MILKDROP have their own uniform
    contracts and are not covered. Adding one means adding a driver to
    `lib/scenes.mjs` — and the audit will tell you when you have not finished.
+
+10. **`--scene particles` previews the family's RENDER, not any style's
+    simulation.** The nine styles differ only in `simulate()`, which is pure
+    CPU and is already covered on the JVM by `ParticleStyleTest`,
+    `NewParticleStylesTest` and `ParticleGatingTest` through the
+    `particleRecords()` hook. What this driver covers is what those tests
+    cannot see without a GL context: the instanced attribute layout, the
+    billboard and stretch maths in `lib_particle_common`, the shading in
+    `lib_particle_shade`, the palette/density post-process, and the
+    thirteen-uniform contract of `draw()`. The population it feeds them is a
+    **named stand-in** — a deterministic orbit field spanning the full
+    size/speed/hue range, with every 64th particle dead so the `vFade <= 0`
+    discard path runs every frame. Any claim about how a SPECIFIC style looks
+    is not a valid finding from this driver.
+
+11. **The particle path clears the target every frame.** Sprites do not cover
+    the buffer the way a fullscreen quad does, and `preserveDrawingBuffer` is
+    on, so without a clear the additive blend would accumulate the whole run
+    into one image. `VisualizerRenderer` either clears FBO A or fades it for
+    trails; trails are a renderer feature rather than a scene one, so the
+    non-trail case is what a scene-only preview shows. **Trails are therefore
+    not previewable here.**
 
 ## Layout
 

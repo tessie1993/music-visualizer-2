@@ -18,9 +18,19 @@ import kotlin.math.sqrt
 class FftProcessor(
     val fftSize: Int = 2048,
     val bandCount: Int = 64,
-    private val minFreqHz: Float = 40f,
+    private val minFreqHz: Float = MIN_FREQ_HZ,
     private val floorDb: Float = -72f,
 ) {
+    companion object {
+        /**
+         * Bottom of the log band spacing. Named because [DrumChannels] has to
+         * invert that spacing to turn a frequency into a band index, and a
+         * second copy of the literal would put its ranges silently off-by-a-few
+         * bands the day this changed.
+         */
+        const val MIN_FREQ_HZ: Float = 40f
+    }
+
     private val fft = FloatFFT_1D(fftSize.toLong())
     private val window = FloatArray(fftSize) { i -> (0.5 - 0.5 * cos(2.0 * PI * i / (fftSize - 1))).toFloat() }
     private val work = FloatArray(fftSize)
@@ -32,6 +42,19 @@ class FftProcessor(
         sampleRateHz: Int,
     ) {
         detector.accumulate(magnitudes, sampleRateHz, fftSize)
+    }
+
+    /**
+     * Steps a per-frame [Chromagram] with the magnitudes of the LAST [process]
+     * call. Separate from [accumulateChroma] because the two answer different
+     * questions - whole-track key versus what is sounding now - and a caller
+     * may want either, both or neither.
+     */
+    fun updateChroma(
+        chroma: Chromagram,
+        sampleRateHz: Int,
+    ) {
+        chroma.step(magnitudes, sampleRateHz, fftSize)
     }
 
     /** Maps each band to an inclusive range of FFT bin indices; recomputed per sample rate. */

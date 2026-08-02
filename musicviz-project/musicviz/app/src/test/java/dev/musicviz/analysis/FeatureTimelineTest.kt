@@ -261,4 +261,54 @@ class FeatureTimelineTest {
         assertEquals(SceneSuggester.SCENE_TUNNEL, SceneSuggester.suggest(bpm = 100f, energy = 0.3f, centroid = 0.6f))
         assertEquals(SceneSuggester.SCENE_JULIA, SceneSuggester.suggest(bpm = 100f, energy = 0.2f, centroid = 0.3f))
     }
+
+    // ---- drum-channel replay ----------------------------------------------
+
+    /**
+     * A cache entry stores bands but not the three onset channels, so loading
+     * one has to recompute them. This pins that the replay produces the same
+     * values the live path would - if it did not, an analysed track and an
+     * unanalysed one would drive the visuals differently.
+     */
+    @Test
+    fun `withDrumChannels reproduces the live path exactly`() {
+        val bandCount = 64
+        val hop = 60f
+        val rate = 48_000
+
+        fun bandsAt(i: Int): FloatArray =
+            FloatArray(bandCount) { b ->
+                // A kick every 24 frames, a hat every 6, so both channels fire.
+                val kick = if (i % 24 == 0 && b in 2..10) 1.4f else 0f
+                val hat = if (i % 6 == 0 && b in 48..60) 0.9f else 0f
+                kick + hat
+            }
+
+        val live = DrumChannels(bandCount, hop, rate)
+        val expected = ArrayList<Triple<Float, Float, Float>>()
+        val frames = ArrayList<TimelineFrame>()
+        for (i in 0 until 400) {
+            val b = bandsAt(i)
+            live.step(b)
+            expected += Triple(live.kickImpulse, live.snareImpulse, live.hatImpulse)
+            // Stored WITHOUT the channels, exactly as AnalysisCache.load rebuilds it.
+            frames += TimelineFrame((i * 1000L / 60L), AudioFeatures(bands = b, waveform = FloatArray(0)))
+        }
+
+        val replayed = FeatureTimeline(frames, 17L, "k", hop).withDrumChannels(rate)
+        for (i in 0 until 400) {
+            val f = replayed.frames[i].features
+            assertEquals("kick @$i", expected[i].first, f.kick, 0f)
+            assertEquals("snare @$i", expected[i].second, f.snare, 0f)
+            assertEquals("hat @$i", expected[i].third, f.hat, 0f)
+        }
+        assertTrue("the replay produced no hits at all", expected.any { it.first > 0f } && expected.any { it.third > 0f })
+    }
+
+    @Test
+    fun `withDrumChannels leaves a bandless timeline alone`() {
+        val frames = listOf(TimelineFrame(0L, AudioFeatures(bands = FloatArray(0), waveform = FloatArray(0))))
+        val t = FeatureTimeline(frames, 17L, "k", 60f)
+        assertSame(t, t.withDrumChannels())
+    }
 }

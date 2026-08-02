@@ -137,6 +137,13 @@ class VisualizerRenderer(
          * app has today two hours in, held there forever instead of decaying.
          */
         private const val TIME_WRAP_SEC = 7100f
+
+        /**
+         * `uStyle` for Layers. 0..4 are [TransitionStyle]'s ordinals and 5 is
+         * [TransitionCatalog.STYLE_LIBRARY], so this continues that sequence
+         * and is part of `composite_frag.glsl`'s contract.
+         */
+        const val STYLE_LAYER = 6
     }
 
     @Volatile
@@ -348,6 +355,30 @@ class VisualizerRenderer(
         dev.musicviz.render.scene
             .applyBandGains(f, p)
 
+    /**
+     * Layers: the id of a SECOND scene rendered under the active one every
+     * frame, or null for the single-scene behaviour this has always had.
+     *
+     * Renderer state rather than a [SceneParams] field, deliberately, and for
+     * the same reason [transitionStyle] is: a SceneParams entry carries a
+     * contract - a Customize control, a randomizer entry, a preset key and a
+     * reader, all enforced by CustomizeSurfaceTest - because it describes how
+     * ONE scene looks. This describes which scenes are on screen, which is the
+     * renderer's business.
+     *
+     * Ignored when it names the active scene (a style blended with itself is
+     * just that style at a different exposure) or an unknown id.
+     */
+    @Volatile
+    var layerSceneId: String? = null
+
+    /** How much the top layer contributes, 0..1. See `uLayerMix`. */
+    @Volatile
+    var layerMix: Float = 0.5f
+
+    @Volatile
+    var layerBlend: BlendMode = BlendMode.SCREEN
+
     @Volatile
     var transitionStyle: TransitionStyle = TransitionStyle.FADE
 
@@ -469,6 +500,12 @@ class VisualizerRenderer(
     private val scenes = LinkedHashMap<String, Scene>()
     private var activeScene: Scene? = null
     private var outgoingScene: Scene? = null
+
+    /**
+     * The resolved layer scene for THIS frame, or null. Read by the composite
+     * block far below, so it is a field rather than a local.
+     */
+    private var layerScene: Scene? = null
 
     /** Frozen at transition start: the outgoing scene keeps the look it had
      *  when the switch happened. Feeding it the live (morphing) params made
@@ -1029,6 +1066,31 @@ class VisualizerRenderer(
 
         var progress = 1f
         val outgoing = outgoingScene
+        // Layers and transitions both want FBO B, so a transition WINS: it is
+        // brief and it is the thing the user just asked for, while the layer is
+        // a standing setting that can resume a second later. Resolved every
+        // frame because layerSceneId is written from another thread.
+        layerScene =
+            if (outgoing != null) {
+                null
+            } else {
+                layerSceneId
+                    ?.takeIf { it != requestedSceneId }
+                    ?.let { scenes[it] }
+                    ?.takeIf { it !== activeScene }
+            }
+        val layer = layerScene
+        if (layer != null) {
+            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboB.fbo)
+            GLES30.glViewport(0, 0, renderWidth, renderHeight)
+            // Always cleared: the layer has no trail state of its own, and
+            // letting it accumulate would build an ever-brighter plate under
+            // the active scene that no control could clear.
+            GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+            layer.setParams(p)
+            layer.update(gainAdjusted(features, p), dt)
+            layer.draw(timeSeconds)
+        }
         if (outgoing != null) {
             progress = ((now - transitionStartMs).toFloat() / transitionDurationMs).coerceIn(0f, 1f)
             if (progress >= 1f) {
@@ -1188,12 +1250,17 @@ class VisualizerRenderer(
         GLES30.glUniform1i(cLoc("uNoise"), 4)
         GLES30.glUniform1f(cLoc("uDither"), if (noiseTex != 0) BlueNoise.DITHER_AMOUNT else 0f)
         GLES30.glUniform1f(cLoc("uProgress"), progress)
+        GLES30.glUniform1f(cLoc("uLayerMix"), layerMix.coerceIn(0f, 1f))
+        GLES30.glUniform1i(cLoc("uBlendMode"), layerBlend.ordinal)
         // uStyle tells the shader what to do THIS frame. Outside a transition
         // it is always CUT (draw the incoming scene), whichever transition is
         // selected - the spliced variant stays bound between switches rather
         // than swapping programs every time one ends.
         val styleValue =
             when {
+                // A transition owns FBO B while it runs, so layerScene is null
+                // here by construction - the two can never both claim uTexB.
+                layerScene != null -> STYLE_LAYER
                 outgoingScene == null -> TransitionStyle.CUT.ordinal
                 activeTransition != null -> TransitionCatalog.STYLE_LIBRARY
                 else -> transitionStyle.ordinal
@@ -1280,7 +1347,13 @@ class VisualizerRenderer(
         // on the reverse. Outside a transition uTexB is unread (uStyle = CUT),
         // so it simply carries the active gate.
         val gateA = CompositeGrade.gateFor(compositeFamily(activeScene))
-        val gateB = CompositeGrade.gateFor(compositeFamily(outgoingScene ?: activeScene))
+        // uTexB is the outgoing scene during a transition, the bottom layer
+        // while Layers is on, and unread otherwise - and each of those is a
+        // DIFFERENT family whose grade the composite may or may not own. A
+        // fluid layer under a shader scene needs the fluid gate or its zoom and
+        // rotation are applied nowhere.
+        val gateB =
+            CompositeGrade.gateFor(compositeFamily(layerScene ?: outgoingScene ?: activeScene))
         GLES30.glUniform4fv(cLoc("uGateA"), 1, gateA.toVec4(), 0)
         GLES30.glUniform4fv(cLoc("uGateB"), 1, gateB.toVec4(), 0)
         GLES30.glBindVertexArray(quadVao)

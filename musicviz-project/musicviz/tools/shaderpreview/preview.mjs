@@ -14,7 +14,7 @@ import { launch } from './lib/cdp.mjs';
 import { parseIncludeRegistry, loadShader, parseUniforms } from './lib/glsl.mjs';
 import { extractUploadedUniforms, auditUniforms } from './lib/kotlin.mjs';
 import { MODELS } from './lib/audio.mjs';
-import { createHyperspaceDriver, createShaderSceneDriver } from './lib/scenes.mjs';
+import { createHyperspaceDriver, createParticleDriver, createShaderSceneDriver } from './lib/scenes.mjs';
 import { createCompositeDriver } from './lib/composite.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -53,9 +53,13 @@ function parseArgs(argv) {
     everyFrame: 1,
     clockJump: 0,
     hasMelt: true,
+    count: 2048,
+    stretchScale: 1,
+    stretchMax: 2,
     params: {},
     fieldStats: false,
     composite: false,
+    layer: null,
     list: false,
     json: false,
   };
@@ -77,8 +81,19 @@ function parseArgs(argv) {
       case '--every': a.everyFrame = Number(next()); break;
       case '--clock-jump': a.clockJump = Number(next()); break;
       case '--no-melt': a.hasMelt = false; break;
+      case '--count': a.count = Number(next()); break;
+      case '--stretch-scale': a.stretchScale = Number(next()); break;
+      case '--stretch-max': a.stretchMax = Number(next()); break;
       case '--field-stats': a.fieldStats = true; break;
       case '--composite': a.composite = true; break;
+      case '--layer': {
+        // "mix,mode" - forces the Layers branch of composite_frag. See
+        // createCompositeDriver's `layer` parameter for what this can and
+        // cannot tell you.
+        const [mix, mode] = next().split(',');
+        a.layer = { mix: Number(mix), mode: Number(mode || 0) };
+        break;
+      }
       case '--list': a.list = true; break;
       case '--json': a.json = true; break;
       case '--param': {
@@ -129,7 +144,32 @@ function makeDriver(args) {
       family: 'SHADER',
     };
   }
-  throw new Error(`unknown --scene '${args.scene}' (hyperspace | shader)`);
+  if (args.scene === 'particles') {
+    return {
+      driver: createParticleDriver({
+        params: args.params, width: args.width, height: args.height,
+        count: args.count, seed: args.seed,
+        stretchScale: args.stretchScale, stretchMax: args.stretchMax,
+      }),
+      // The only scene here with a vertex shader of its own: the billboard and
+      // the stretch are vertex-stage work, so half the uniform contract lives
+      // there and the audit has to read both stages.
+      vertResource: 'particle_vert',
+      fragResource: 'particle_frag',
+      kotlinPath: path.join(JAVA, 'render/scene/ParticleSceneBase.kt'),
+      ignoreUploaded: [],
+      standIns: [
+        'the particle POPULATION is a stand-in, not any style\'s simulate(): a deterministic ' +
+        'orbit field spanning the full size/speed/hue range (every 64th particle dead, so the ' +
+        'vFade<=0 discard path runs). The nine simulate()s are pure CPU and are covered on the ' +
+        'JVM by ParticleStyleTest/NewParticleStylesTest via particleRecords().',
+        'no FlowField is bound, so applyFlowField takes its early return - the same state as a ' +
+        'style with flowEnabled off',
+      ],
+      family: 'PARTICLE',
+    };
+  }
+  throw new Error(`unknown --scene '${args.scene}' (hyperspace | shader | particles)`);
 }
 
 async function main() {
@@ -141,17 +181,33 @@ async function main() {
     console.log(`includes registered in GlUtil: ${[...registry].join(', ')}`);
     console.log('\nscenes:');
     console.log('  hyperspace                 (HyperspaceScene.kt + hyperspace_frag.glsl)');
+    console.log('  particles                  (ParticleSceneBase.kt + particle_vert/frag.glsl)');
+    console.log('                             the SHARED render path of the nine CPU particle');
+    console.log('                             styles, with a stand-in population - see --json');
+    console.log('                             standIns. Flags: --count --stretch-scale --stretch-max');
     console.log('  shader --shader <id>       (ShaderScene.kt), one of:');
     for (const [id, res] of map) console.log(`    ${id.padEnd(12)} -> ${res}.glsl`);
     console.log(`\naudio models: ${Object.keys(MODELS).join(', ')}`);
     return;
   }
 
-  const { driver, fragResource, kotlinPath, ignoreUploaded, standIns, family } = makeDriver(args);
+  const {
+    driver, fragResource, kotlinPath, ignoreUploaded, standIns, family,
+    vertResource = 'quad_vert',
+  } = makeDriver(args);
 
-  const vertSrc = loadShader(RAW, 'quad_vert', registry);
+  const vertSrc = loadShader(RAW, vertResource, registry);
   const fragSrc = loadShader(RAW, fragResource, registry);
-  const declared = parseUniforms(fragSrc);
+  // Uniforms from BOTH stages. quad_vert declares none, so this is a no-op for
+  // every fullscreen style; particle_vert declares six of the thirteen, and
+  // auditing only the fragment stage would have silently excused all six.
+  const declared = (() => {
+    const byName = new Map();
+    for (const d of [...parseUniforms(vertSrc), ...parseUniforms(fragSrc)]) {
+      if (!byName.has(d.name)) byName.set(d.name, d);
+    }
+    return [...byName.values()];
+  })();
   const uploaded = extractUploadedUniforms(kotlinPath);
   const audit = auditUniforms({
     sceneId: args.scene,
@@ -171,6 +227,7 @@ async function main() {
   if (args.composite) {
     compositeDriver = createCompositeDriver({
       params: args.params, family, width: args.width, height: args.height,
+      layer: args.layer,
     });
     compositeShaders = {
       vert: loadShader(RAW, 'fade_vert', registry),
@@ -258,6 +315,7 @@ async function main() {
       meltConfig: driver.meltConfig,
       meltShaders,
       compositeShaders,
+      particles: driver.particleConfig || null,
     });
     if (!init.ok) {
       console.error('harness init failed: ' + init.error);
@@ -317,6 +375,7 @@ async function main() {
         composite: compositePlan,
         melt: plan.melt,
         audioTex: plan.audioTex,
+        particles: plan.particles || null,
         capture: isCapture && !!outDir,
         wantFieldStats: isCapture && args.fieldStats,
         skipRender: !isCapture,

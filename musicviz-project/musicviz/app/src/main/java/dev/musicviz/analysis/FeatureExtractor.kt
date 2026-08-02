@@ -44,6 +44,16 @@ class FeatureExtractor(
     private val tracker = PulseTracker(hopRateHz, historySeconds)
 
     /**
+     * Per-instrument onset channels. Built lazily on the first [extract]
+     * because the band ranges are derived from the sample rate, which this
+     * class is not told until then, and rebuilt if the rate ever changes -
+     * a device switching between a 48 kHz file and a 16 kHz mic capture would
+     * otherwise keep pointing the hat channel wherever the first rate put it.
+     */
+    private var drums: DrumChannels? = null
+    private var drumsSampleRateHz = 0
+
+    /**
      * Beat sensitivity in sigmas over mean flux; higher = fewer, surer beats.
      * Clamped by callers to [SIGMA_MIN]..[SIGMA_MAX].
      */
@@ -89,15 +99,24 @@ class FeatureExtractor(
      */
     fun reset() {
         tracker.reset()
+        drums?.reset()
         java.util.Arrays.fill(prevBands, 0f)
         trebleSmooth = 0f
         bpmSmoothed = 0f
     }
 
+    /**
+     * @param stereo the stereo image measured over the caller's FULL analysis
+     *   window (see [StereoField.of] for why not the decimated [waveform]).
+     *   Defaults to [StereoField.MONO], which is what a mono source genuinely
+     *   measures - so a caller with no side channel needs no special case.
+     */
     fun extract(
         bands: FloatArray,
         waveform: FloatArray,
         sampleRateHz: Int,
+        stereo: StereoField.Reading = StereoField.MONO,
+        chroma: Chromagram? = null,
     ): AudioFeatures {
         var flux = 0f
         var sum = 0f
@@ -113,6 +132,13 @@ class FeatureExtractor(
         }
         val centroid = if (sum > 1e-6f) weighted / (sum * bandCount) else 0f
         val rms = sqrt(sumSq / bandCount)
+
+        // Three band-limited fluxes over the same spectrum, for scenes that
+        // want to tell a kick from a hat. Independent of the beat decision
+        // below on purpose: these fire on what was played, the beat grid fires
+        // on where the pulse is, and a visual usually wants both.
+        val d = drumsFor(sampleRateHz)
+        d.step(bands)
 
         // The sigma threshold and refractory window (both user-tunable via
         // Settings > Visuals & Analysis) produce beat CANDIDATES; the tracker
@@ -152,7 +178,23 @@ class FeatureExtractor(
             beatPhase = tracker.phase,
             pulseConfidence = tracker.confidence,
             macroEnergy = tracker.energy,
+            chroma = if (chroma == null) AudioFeatures.EMPTY_CHROMA else chroma.bins.copyOf(),
+            chromaConfidence = chroma?.confidence ?: 0f,
+            stereoWidth = stereo.width,
+            stereoCorrelation = stereo.correlation,
+            kick = d.kickImpulse,
+            snare = d.snareImpulse,
+            hat = d.hatImpulse,
         )
+    }
+
+    private fun drumsFor(sampleRateHz: Int): DrumChannels {
+        val existing = drums
+        if (existing != null && drumsSampleRateHz == sampleRateHz) return existing
+        val fresh = DrumChannels(bandCount, hopRateHz, sampleRateHz)
+        drums = fresh
+        drumsSampleRateHz = sampleRateHz
+        return fresh
     }
 
     private fun smoothTreble(raw: Float): Float {

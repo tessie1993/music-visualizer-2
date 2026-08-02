@@ -55,7 +55,62 @@ data class AudioFeatures(
      *  continuous "arc of the song" signal - verses sit low, choruses high -
      *  where [rms] is the instantaneous level. */
     val macroEnergy: Float = 0f,
+    /**
+     * Graded 0..1 impulse for a low-band (kick-range) onset this frame, 0
+     * otherwise. See [DrumChannels] for what these three do and do not claim:
+     * they are band-activity channels named after what usually dominates them,
+     * not a drum classifier.
+     *
+     * Same one-frame contract as [beatStrength] - consumers build their own
+     * envelope. 0 on synthesised features and on any frame no [DrumChannels]
+     * ran over, which is indistinguishable from "no hit" and is the correct
+     * degradation: a scene reading these gets stillness, never a false trigger.
+     */
+    val kick: Float = 0f,
+    /** Mid-band (snare-range) onset impulse. See [kick]. */
+    val snare: Float = 0f,
+    /** High-band (hat/cymbal-range) onset impulse. See [kick]. */
+    val hat: Float = 0f,
+    /**
+     * Stereo width in 0..1 over the analysis window: 0 is mono, 0.5 a
+     * hard-panned source, 1 a purely out-of-phase difference signal. See
+     * [StereoField.width].
+     *
+     * 0 when the source is mono, when no side channel was supplied, and on
+     * synthesised features - all of which mean the same thing to a scene
+     * (nothing to widen), so the degradation is silent and correct.
+     */
+    val stereoWidth: Float = 0f,
+    /**
+     * Interchannel correlation in -1..1; +1 mono or hard-panned, 0
+     * decorrelated, negative out of phase. See [StereoField.correlation].
+     *
+     * Defaults to 1, not 0: 1 is what a mono source genuinely measures, and a
+     * default of 0 would tell every scene that unanalysed audio is perfectly
+     * decorrelated.
+     */
+    val stereoCorrelation: Float = 1f,
+    /**
+     * Per-frame 12-bin chromagram, index 0 = C, largest bin scaled to 1. See
+     * [Chromagram], including what its resolution limit means.
+     *
+     * EMPTY when no chromagram ran - a live fallback, a synthesised feature, a
+     * cache entry. Empty rather than twelve zeros so a consumer can tell "no
+     * pitch information" from "silence", which are different situations: the
+     * first should leave a harmony-driven visual on its last reading, the
+     * second should let it settle.
+     */
+    val chroma: FloatArray = EMPTY_CHROMA,
+    /**
+     * How pitched this frame is, 0..1 - [Chromagram.confidence]. Scenes
+     * should hold their last harmony below about 0.35 rather than follow a
+     * drum fill.
+     */
+    val chromaConfidence: Float = 0f,
 ) {
+    /** True when [chroma] carries a reading rather than "not measured". */
+    val hasChroma: Boolean get() = chroma.size == 12
+
     /**
      * What a beat should DO to the visuals this frame: 0 off beats, the
      * graded [beatStrength] on them - except for beat flags that carry no
@@ -87,6 +142,9 @@ data class AudioFeatures(
         /** Weight of the transient channel inside [motionImpulse]: texture at
          *  up to half the presence of a confirmed beat. */
         const val TRANSIENT_MOTION_WEIGHT = 0.5f
+
+        /** Shared "no chromagram ran" marker; see [AudioFeatures.chroma]. */
+        val EMPTY_CHROMA = FloatArray(0)
 
         fun empty(
             bandCount: Int = 64,

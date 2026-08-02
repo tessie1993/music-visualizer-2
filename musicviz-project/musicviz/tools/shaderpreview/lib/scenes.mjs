@@ -35,6 +35,7 @@ const MELT_PRESSURE_ITERATIONS = 14;
 export function createHyperspaceDriver({ params, width, height, seed = 12345, hasMelt = true }) {
   const p = { ...H.DEFAULT_PARAMS, ...params };
   const rng = H.makeRng(seed);
+  const rnd = () => rng.nextFloat();
   const journey = new H.HyperspaceJourney();
   const camera = new H.HyperspaceCamera();
   const bank = new H.BloomBank(rng);
@@ -441,4 +442,193 @@ export function createShaderSceneDriver({ params, width, height }) {
   }
 
   return { id: 'shader', supplies, step, jumpClock, meltConfig: { enabled: false } };
+}
+
+// ---------------------------------------------------------------------------
+// PARTICLES - render/scene/ParticleSceneBase.kt
+// ---------------------------------------------------------------------------
+//
+// The nine CPU particle styles (nebula, bursts, swarm, fountain, orbits,
+// galaxy, attractor, storm, inkflow) share ONE render path: `update()` fills a
+// packed record per particle, and `draw()` uploads it as instance data behind
+// particle_vert.glsl + particle_frag.glsl. Before this driver that path had no
+// off-device coverage at all.
+//
+// WHAT THIS DRIVER DOES AND DOES NOT COVER - read before trusting a frame.
+//
+// It covers the half that is shared and that no other test can see: the
+// instanced attribute layout, the billboard/stretch maths in
+// lib_particle_common, the shading in lib_particle_shade, the palette and
+// density post-process, the beat-driven size and zoom swell, and the full
+// 13-uniform contract of `draw()` under the same three-way audit as every
+// other scene here.
+//
+// It does NOT cover any individual style's `simulate()`. Those are pure Kotlin
+// with no GL - which is exactly why they are already covered on the JVM by
+// ParticleStyleTest, NewParticleStylesTest and ParticleGatingTest, through the
+// `particleRecords()` hook that exists for them. Re-implementing nine
+// simulations in JS would add a second thing to be wrong about and would drift
+// silently; the one thing this tool could never check without a GL context is
+// the render, so the render is what it checks.
+//
+// The population is therefore a NAMED STAND-IN, in the same sense as the
+// harness's 1x1 black FlowField texture: a deterministic field chosen to
+// exercise the shading corners rather than to imitate any style. It carries
+// the full range of sizes (including dead particles at size 0, so the
+// `vFade <= 0.0` discard path is exercised), speeds from stationary to fully
+// stretched, and the whole hue and energy range.
+
+/** ParticleSceneBase.FLOATS_PER_PARTICLE. */
+const PARTICLE_FLOATS = 7;
+
+/** ParticleLook.STRETCH_SECONDS. */
+const STRETCH_SECONDS = 0.0025;
+
+/** ParticleLook.glow: GLOW_BASE + clamp(bloom) * GLOW_PER_BLOOM. */
+function particleGlow(bloom) {
+  return 0.85 + clamp(bloom, 0, 1) * 1.2;
+}
+
+/** ParticleLook.dpiScale: sizes are authored against a 1080p-tall target. */
+function dpiScale(viewportHeightPx) {
+  return clamp(Math.max(1, viewportHeightPx) / 1080, 0.75, 2.5);
+}
+
+const PARTICLE_DEFAULTS = {
+  rotation: 0, zoom: 1, cycleSpeed: 0.2, colorCycle: false,
+  saturation: 1, brightness: 1, intensity: 1, contrast: 1, gamma: 1,
+  particleShape: 0, particleSize: 6, density: 1, bloom: 0, pulse: 0,
+  beatResponse: 1, colorShift: 0, hueRange: 1, paletteBase: 0, paletteRange: 1,
+};
+
+/**
+ * @param count      population size; the app's styles range from 512 to 4096.
+ * @param stretchScale/stretchMax  ParticleSceneBase's open vals. The defaults
+ *        are the base class's (1 and 2); StormScene is the style that raises
+ *        them, so passing its values is how you preview a rain-like streak.
+ */
+export function createParticleDriver({
+  params, width, height, count = 2048, seed = 12345,
+  stretchScale = 1, stretchMax = 2,
+}) {
+  const p = { ...PARTICLE_DEFAULTS, ...params };
+  const data = new Float32Array(count * PARTICLE_FLOATS);
+  const rng = H.makeRng(seed);
+  const rnd = () => rng.nextFloat();
+
+  // Fixed per-particle draws, taken once so the population is stable across
+  // frames the way a real style's population is - only the motion animates.
+  const seedPhase = new Float32Array(count);
+  const seedSpeed = new Float32Array(count);
+  const seedRadius = new Float32Array(count);
+  const seedSize = new Float32Array(count);
+  const seedHue = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    seedPhase[i] = rnd() * Math.PI * 2;
+    seedSpeed[i] = 0.15 + rnd() * 1.35;
+    seedRadius[i] = 0.1 + rnd() * 0.85;
+    // Every 64th particle is dead, so the size-0 -> vFade 0 -> discard branch
+    // in particle_vert/particle_frag is exercised on every frame.
+    seedSize[i] = i % 64 === 0 ? 0 : 0.35 + rnd() * 1.3;
+    seedHue[i] = rnd();
+  }
+
+  let time = 0;
+  let rotationAngle = 0;
+  let cyclePhase = 0;
+  let beatPulse = 0;
+
+  // ParticleSceneBase.draw()'s loc("uX") calls, all thirteen.
+  const supplies = new Set([
+    'uViewport', 'uZoom', 'uRotation', 'uSat', 'uBright', 'uContrast', 'uGamma',
+    'uShape', 'uStretch', 'uStretchMax', 'uGlow', 'uTime', 'uSize',
+  ]);
+
+  /** The stand-in population: orbiting tracers, published with velocity. */
+  function simulate(f, dt) {
+    const drive = clamp(f.rms * 1.5 + motionImpulse(f) * 0.5, 0, 1.5);
+    for (let i = 0; i < count; i++) {
+      const o = i * PARTICLE_FLOATS;
+      const r = seedRadius[i] * (0.85 + drive * 0.25);
+      const a = seedPhase[i] + time * seedSpeed[i];
+      const x = Math.cos(a) * r;
+      const y = Math.sin(a) * r * 0.85;
+      data[o] = x;
+      data[o + 1] = y;
+      data[o + 2] = seedSize[i] * (1 + drive * 0.4);
+      // Raw hue: postProcess() below maps it through the palette, exactly as
+      // the app does, so this is the 0..1 fraction simulate() is required to
+      // publish and NOT a final colour.
+      data[o + 3] = seedHue[i];
+      data[o + 4] = clamp(0.25 + drive * 0.75, 0, 1);
+      // Velocity in NDC per second - the tangent of the orbit. This is what
+      // drives the billboard stretch, so it has to be the real derivative.
+      data[o + 5] = -Math.sin(a) * r * seedSpeed[i];
+      data[o + 6] = Math.cos(a) * r * 0.85 * seedSpeed[i];
+    }
+  }
+
+  /** ParticleSceneBase.postProcess(), verbatim. */
+  function postProcess() {
+    const drawCount = clamp(Math.trunc(count * p.density), 1, count);
+    const hueBase = p.paletteBase + p.colorShift + cyclePhase;
+    const hueSpan = p.paletteRange * p.hueRange;
+    for (let i = 0; i < drawCount; i++) {
+      const o = i * PARTICLE_FLOATS;
+      data[o + 3] = (((hueBase + data[o + 3] * hueSpan) % 1) + 1) % 1;
+    }
+    return drawCount;
+  }
+
+  function step(f, dt) {
+    // ParticleSceneBase.update(), in order.
+    time += dt;
+    rotationAngle += p.rotation * dt;
+    if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * dt) % 1;
+    beatPulse = Math.max(0, Math.max(motionImpulse(f), beatPulse - dt * 3));
+    simulate(f, dt);
+    // applyFlowField is skipped deliberately: with no FlowField bound the app
+    // takes its `k <= 0 && !advecting` early return on every frame, which is
+    // the state being previewed here.
+    const drawCount = postProcess();
+
+    const u = (name, v) => ({ [name]: { t: '1f', v } });
+    const uniforms = Object.assign(
+      {},
+      u('uZoom', p.zoom * (1 + beatPulse * p.beatResponse * 0.2)),
+      u('uRotation', rotationAngle),
+      u('uSat', p.saturation),
+      u('uBright', p.brightness * p.intensity),
+      u('uContrast', p.contrast),
+      u('uGamma', p.gamma),
+      u('uShape', p.particleShape),
+      u('uStretch', STRETCH_SECONDS * stretchScale),
+      u('uStretchMax', stretchMax),
+      u('uGlow', particleGlow(p.bloom)),
+      // draw(timeSeconds) is handed the RENDERER's clock, not a scene clock.
+      u('uTime', time),
+      u('uSize', p.particleSize * dpiScale(height) * (1 + beatPulse * p.pulse * 0.8)),
+      { uViewport: { t: '2f', v: [width, height] } },
+    );
+    return {
+      uniforms,
+      audioTex: null,
+      melt: null,
+      particles: { data: Array.from(data), drawCount },
+      debug: { time, beatPulse, drawCount },
+    };
+  }
+
+  /** Only the free-running clocks move; see the hyperspace driver's jumpClock. */
+  function jumpClock(seconds) {
+    time += seconds;
+    rotationAngle += p.rotation * seconds;
+    if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * seconds) % 1;
+  }
+
+  return {
+    id: 'particles', supplies, step, jumpClock,
+    meltConfig: { enabled: false },
+    particleConfig: { count, floatsPerParticle: PARTICLE_FLOATS },
+  };
 }

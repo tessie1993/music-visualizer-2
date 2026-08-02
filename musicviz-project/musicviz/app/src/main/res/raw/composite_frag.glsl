@@ -14,6 +14,14 @@ uniform float uDither;
 uniform float uRatio;
 uniform float uProgress;
 uniform int uStyle;
+/**
+ * Layers: how much the TOP layer (uTexA) contributes, 0..1. Photoshop's layer
+ * opacity, not a crossfade position - at 0 you see the bottom layer alone, at
+ * 1 the full blend. Only read when uStyle is 6.
+ */
+uniform float uLayerMix;
+/** Layers: which blend function, matching BlendMode's ordinals. */
+uniform int uBlendMode;
 uniform float uTime;
 uniform float uBeat;
 uniform float uChroma;
@@ -350,6 +358,46 @@ vec4 getToColor(vec2 uv) { return vec4(postFx(uTexA, clamp(uv, 0.0, 1.0), uGateA
 #endif
 
 /**
+ * The separable blend functions for Layers, on two already-graded layers.
+ *
+ * `base` is the bottom layer and `top` the one being laid over it. Both are
+ * opaque, so these are pure per-channel functions of two colours and not
+ * Porter-Duff compositing.
+ *
+ * Every one of them clamps. The scenes upstream are emissive and routinely
+ * exceed 1 before the composite grades them down, so ADD in particular would
+ * otherwise hand values well over 1 to the dither and the strobe below, where
+ * they stop behaving like colours. The switch order is BlendMode's ordinals.
+ */
+vec3 layerBlend(vec3 base, vec3 top, int mode) {
+    vec3 b = max(base, vec3(0.0));
+    vec3 t = max(top, vec3(0.0));
+    vec3 r;
+    if (mode == 1) {
+        r = vec3(1.0) - (vec3(1.0) - b) * (vec3(1.0) - t);
+    } else if (mode == 2) {
+        r = b + t;
+    } else if (mode == 3) {
+        r = b * t;
+    } else if (mode == 4) {
+        r = abs(b - t);
+    } else if (mode == 5) {
+        // Overlay: multiply where the BASE is dark, screen where it is light,
+        // which is what preserves the base's own contrast rather than the top's.
+        vec3 lo = 2.0 * b * t;
+        vec3 hi = vec3(1.0) - 2.0 * (vec3(1.0) - b) * (vec3(1.0) - t);
+        r = mix(lo, hi, step(vec3(0.5), b));
+    } else if (mode == 6) {
+        r = max(b, t);
+    } else if (mode == 7) {
+        r = min(b, t);
+    } else {
+        r = t;
+    }
+    return clamp(r, 0.0, 1.0);
+}
+
+/**
  * The transition stage: the incoming scene, or a blend of it with the outgoing
  * one. Split out of main() so every path returns a colour rather than writing
  * fragColor itself - the dither below has to be the last thing that touches the
@@ -365,6 +413,15 @@ vec3 blended() {
     }
 #endif
     vec3 a = postFx(uTexA, vUv, uGateA);
+    // uStyle 6 is Layers, and it is checked BEFORE the uProgress short-circuit
+    // below: uProgress is a transition's clock and sits at 1.0 whenever no
+    // transition is running, which is precisely when a layer IS running.
+    // Reusing uProgress as the mix would have made the two mutually exclusive
+    // for no reason and coupled a persistent setting to a timer.
+    if (uStyle == 6) {
+        vec3 b = postFx(uTexB, vUv, uGateB);
+        return mix(b, layerBlend(b, a, uBlendMode), clamp(uLayerMix, 0.0, 1.0));
+    }
     if (uStyle == 0 || uProgress >= 1.0) {
         return a;
     }

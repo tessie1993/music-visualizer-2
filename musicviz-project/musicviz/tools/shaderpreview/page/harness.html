@@ -391,6 +391,41 @@ window.__init = function init(cfg) {
 
     state.vao = gl.createVertexArray();
 
+    // The instanced particle geometry, byte-for-byte ParticleSceneBase.init():
+    // one static unit quad at divisor 0 and a per-particle record at divisor 1.
+    // Getting the stride or a divisor wrong here would not error - it would
+    // draw a plausible-looking wrong picture, which is the failure this whole
+    // tool exists to prevent - so the layout is written as the same
+    // `location to components` list the Kotlin uses and the stride is derived.
+    state.particles = null;
+    if (cfg.particles) {
+      const floats = cfg.particles.floatsPerParticle;
+      const stride = floats * 4;
+      const pv = gl.createVertexArray();
+      gl.bindVertexArray(pv);
+
+      const cornerVbo = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, cornerVbo);
+      // ParticleSceneBase.QUAD_CORNERS, drawn as a TRIANGLE_STRIP.
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 8, 0);
+
+      const instanceVbo = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, instanceVbo);
+      gl.bufferData(gl.ARRAY_BUFFER, cfg.particles.count * stride, gl.DYNAMIC_DRAW);
+      // aPos, aSize, aHue, aEnergy, aVel - ParticleSceneBase.init()'s `layout`.
+      let offset = 0;
+      for (const [location, components] of [[1, 2], [2, 1], [3, 1], [4, 1], [5, 2]]) {
+        gl.enableVertexAttribArray(location);
+        gl.vertexAttribPointer(location, components, gl.FLOAT, false, stride, offset);
+        gl.vertexAttribDivisor(location, 1);
+        offset += components * 4;
+      }
+      gl.bindVertexArray(null);
+      state.particles = { vao: pv, instanceVbo, floats, count: cfg.particles.count };
+    }
+
     // The composite pass. Its scene target is byte-exactly VisualizerRenderer's
     // TargetFbo - RGBA8, LINEAR, CLAMP_TO_EDGE - because the composite samples
     // it with a transformed uv and the filter and the wrap are both visible in
@@ -530,9 +565,34 @@ window.__frame = function frame(job) {
 
     const skipped = uploadUniforms(gl, job.uniforms, uniformLoc);
 
-    gl.bindVertexArray(state.vao);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.bindVertexArray(null);
+    if (job.particles) {
+      // The particle family draws SPRITES onto a target, not a fullscreen
+      // quad, so unlike every other scene here it does not cover what was
+      // already in the buffer. VisualizerRenderer either clears FBO A or fades
+      // it for trails; trails are a RENDERER feature, not a scene one, so the
+      // non-trail case is what a scene-only preview should show. Without this
+      // the additive blend would accumulate every frame of the run into one
+      // ever-brightening image and `deltaMeanLuma` would be meaningless.
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      // ParticleSceneBase.draw(): premultiplied-alpha additive.
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      const p = state.particles;
+      const drawCount = Math.min(job.particles.drawCount, p.count);
+      gl.bindVertexArray(p.vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, p.instanceVbo);
+      // Only the records that will be drawn are uploaded, exactly as
+      // glBufferSubData(.., drawCount * FLOATS_PER_PARTICLE * 4, ..) does.
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array(job.particles.data), 0, drawCount * p.floats);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, drawCount);
+      gl.bindVertexArray(null);
+      gl.disable(gl.BLEND);
+    } else {
+      gl.bindVertexArray(state.vao);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.bindVertexArray(null);
+    }
 
     // The composite, exactly as VisualizerRenderer runs it outside a
     // transition: the scene texture on unit 0, uTexB carrying the same one
