@@ -420,6 +420,13 @@ export const MeltMath = {
   MIN_DYE_DISSIPATION: 0.08,
   dyeDissipation: (flowFade) =>
     clamp(clamp(flowFade, 0, 4) * MeltMath.DYE_FADE_RATIO, MeltMath.MIN_DYE_DISSIPATION, 4),
+  // MeltMath.DYE_EQUILIBRIUM / dyeInjectionGain. A texel under continuous
+  // injection settles at injection / (dissipation * dt); scaling injection BY
+  // the decay rate cancels the two, so the field rests at a designed multiple
+  // of one frame's injection instead of 381x it.
+  DYE_EQUILIBRIUM: 3,
+  dyeInjectionGain: (dissipation, dtSeconds) =>
+    clamp(MeltMath.DYE_EQUILIBRIUM * dissipation * dtSeconds, 0, 1),
   simFromWorld: (world, scale) => world / Math.max(scale, 0.05),
   insideSim: (x, y, aspect) => Math.abs(x) <= Math.max(aspect, 0.05) + 0.25 && Math.abs(y) <= 1.25,
   splatRadius: (worldRadius, scale) => clamp(worldRadius / Math.max(scale, 0.05), 0.05, 0.5),

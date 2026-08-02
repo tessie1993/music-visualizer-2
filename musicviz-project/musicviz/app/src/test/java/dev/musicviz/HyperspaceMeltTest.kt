@@ -253,4 +253,58 @@ class HyperspaceMeltTest {
         val HyperspaceLookSpreadFloor: Float =
             HyperspaceMath.ACT_PROFILES.minOf { dev.musicviz.render.scene.HyperspaceLook.spread(it.bodies) }
     }
+
+    // ---- dye equilibrium ---------------------------------------------------
+
+    /**
+     * The property the gain exists for: a texel under continuous injection
+     * settles at `injection / (dissipation * dt)`, and scaling injection BY
+     * the decay rate cancels the two so the settled level is a designed
+     * multiple of one frame's injection rather than 381 times it.
+     *
+     * Simulated directly from the recurrence the advect pass implements
+     * (`v = (v + a) / (1 + d*dt)`), so this tests the balance rather than
+     * restating the formula.
+     */
+    @Test
+    fun `dye settles at the designed multiple whatever the flow fade`() {
+        val dt = 1f / 60f
+        val injection = 0.1f
+        for (flowFade in listOf(0f, 0.35f, 1f, 2.5f, 4f)) {
+            val d = MeltMath.dyeDissipation(flowFade)
+            val gain = MeltMath.dyeInjectionGain(d, dt)
+            var v = 0f
+            // Ten simulated seconds, far past the slowest settling time.
+            repeat(600) { v = (v + injection * gain) / (1f + d * dt) }
+            // The settled level, expressed in units of one frame's UNSCALED
+            // injection - which is the quantity DYE_EQUILIBRIUM names.
+            val multiple = v / injection
+            assertEquals(
+                "flowFade=$flowFade settled at ${multiple}x injection",
+                MeltMath.DYE_EQUILIBRIUM,
+                multiple,
+                0.05f,
+            )
+        }
+    }
+
+    /** Without the gain the same recurrence saturates - the bug, pinned. */
+    @Test
+    fun `unscaled injection would settle far above the ceiling`() {
+        val dt = 1f / 60f
+        val d = MeltMath.dyeDissipation(0.35f)
+        var v = 0f
+        repeat(600) { v = (v + 0.1f) / (1f + d * dt) }
+        assertTrue("expected saturation, settled at $v", v > MeltMath.DYE_CEILING * 5f)
+    }
+
+    @Test
+    fun `the dye gain never amplifies`() {
+        for (flowFade in listOf(0f, 0.35f, 1f, 4f)) {
+            for (dt in listOf(1f / 120f, 1f / 60f, 1f / 30f)) {
+                val g = MeltMath.dyeInjectionGain(MeltMath.dyeDissipation(flowFade), dt)
+                assertTrue("gain $g out of range at flowFade=$flowFade dt=$dt", g in 0f..1f)
+            }
+        }
+    }
 }

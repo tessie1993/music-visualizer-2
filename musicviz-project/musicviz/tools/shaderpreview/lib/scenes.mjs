@@ -127,6 +127,12 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
       emitters.stirrerSpeed = clamp(p.speed, 0.1, 2);
       emitters.beatResponse = p.beatResponse;
       splats = splats.concat(emitters.tick(f, simDt, meltAspect, hueBase, hueSpan, impulseRaw));
+      // MeltField.scaleDye, applied to BOTH injection sites (body ink and
+      // emitters) and to the dye channel only - the velocity is untouched.
+      const dyeGain = H.MeltMath.dyeInjectionGain(
+        H.MeltMath.dyeDissipation(p.hyperFlowFade), simDt,
+      );
+      splats = splats.map((s) => ({ ...s, r: s.r * dyeGain, g: s.g * dyeGain, b: s.b * dyeGain }));
     }
 
     const bloomCount = bank.snapshot(

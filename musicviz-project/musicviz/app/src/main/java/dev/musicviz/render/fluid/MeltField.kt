@@ -76,6 +76,18 @@ internal class MeltField(
      */
     private val splats = ArrayList<FluidSim.Splat>()
 
+    /**
+     * This frame's dye gain, from [MeltMath.dyeInjectionGain]. A field because
+     * the two injection sites are called at different points in the frame -
+     * [queueBodySplat] runs from the scene's body loop BEFORE [step] drains
+     * the emitters - and both have to be scaled by the same number or the
+     * bodies and the medium would settle at different levels.
+     *
+     * Seeded from the shipped default so a body splat arriving before the
+     * first [step] is scaled rather than injected raw.
+     */
+    private var dyeGain = MeltMath.dyeInjectionGain(MeltMath.dyeDissipation(0.35f), 1f / 60f)
+
     private val touchStrokes = java.util.concurrent.ConcurrentLinkedQueue<FloatArray>()
 
     val available: Boolean get() = sim.available
@@ -162,12 +174,37 @@ internal class MeltField(
                 radius = MeltMath.splatRadius(radius, scale),
                 velX = (cx - px) * push,
                 velY = (cy - py) * push,
-                r = r * strength * edge,
-                g = g * strength * edge,
-                b = b * strength * edge,
+                r = r * strength * edge * dyeGain,
+                g = g * strength * edge * dyeGain,
+                b = b * strength * edge * dyeGain,
             ),
         )
     }
+
+    /**
+     * A copy of [s] with its dye scaled and its velocity untouched.
+     *
+     * Velocity deliberately does not scale: the medium should keep moving
+     * exactly as hard as it did: what was wrong was how much it was STAINED,
+     * and [FluidSim.Splat] carries the two on separate channels precisely so
+     * one can be changed without the other.
+     */
+    private fun scaleDye(
+        s: FluidSim.Splat,
+        gain: Float,
+    ): FluidSim.Splat =
+        FluidSim.Splat(
+            prevX = s.prevX,
+            prevY = s.prevY,
+            curX = s.curX,
+            curY = s.curY,
+            radius = s.radius,
+            velX = s.velX,
+            velY = s.velY,
+            r = s.r * gain,
+            g = s.g * gain,
+            b = s.b * gain,
+        )
 
     /**
      * Advances the medium one frame.
@@ -196,8 +233,12 @@ internal class MeltField(
         emitters.forceScale = p.hyperStir.coerceIn(0f, 3f)
         emitters.stirrerSpeed = p.speed.coerceIn(0.1f, 2f)
         emitters.beatResponse = p.beatResponse
+        // Recomputed here because it depends on BOTH the user's "Flow fade"
+        // and this frame's dt, and the dt the sim actually integrates is the
+        // clamped simDt rather than the wall-clock one.
+        dyeGain = MeltMath.dyeInjectionGain(sim.densityDissipation, simDt)
         emitters.tick(features, simDt, sim.aspect, hueBase, hueSpan, splats)
-        for (i in splats.indices) sim.queueSplat(splats[i])
+        for (i in splats.indices) sim.queueSplat(scaleDye(splats[i], dyeGain))
         drainTouchStrokes(hueBase, hueSpan)
         sim.step(simDt)
     }
@@ -314,6 +355,46 @@ internal object MeltMath {
      * "never", which is a promise the medium can actually keep.
      */
     const val MIN_DYE_DISSIPATION: Float = 0.08f
+
+    /**
+     * Equilibrium the medium is allowed to settle at, as a multiple of one
+     * frame's injection.
+     *
+     * A dye texel under continuous injection `a` with a per-frame decay
+     * divisor `D = 1 + d*dt` settles at `a / (d*dt)`, so the field's resting
+     * level is the injection AMPLIFIED by `1 / (d*dt)`. At the shipped "Flow
+     * fade" that factor is 381 - the number [DYE_CEILING]'s own comment
+     * computes - and even at the maximum legal dissipation it is still about
+     * 15. Every one of those is far above 1, so any texel the ink crosses
+     * ratchets to the ceiling and stays: [DYE_CEILING] bounds each texel's
+     * VALUE, and nothing bounded the level the field settles at.
+     *
+     * That is what made HYPERSPACE turn flat a few seconds in. It reads the
+     * field as a stain (`uStain`) and as the density AND emission of a glowing
+     * medium (`uLiquid`); once the field is near-ceiling everywhere there is
+     * no dynamic range left and the raymarched geometry is behind a wash.
+     * Measured: dye mean climbing 0.08 -> 0.68 over fourteen seconds.
+     */
+    const val DYE_EQUILIBRIUM: Float = 3f
+
+    /**
+     * Scales melt dye injection so the field settles at [DYE_EQUILIBRIUM]
+     * times one frame's injection instead of 381 times it.
+     *
+     * Because the gain is PROPORTIONAL to the decay rate, the two cancel: the
+     * settled level is [DYE_EQUILIBRIUM] * injection whatever the dissipation
+     * is. That is the property worth having, and it is why this is a function
+     * of the decay rather than a constant. "Flow fade" then means what its
+     * name says - how long ink persists - instead of also silently setting how
+     * bright the medium is, which is a second meaning no label mentioned and
+     * no setting could escape.
+     *
+     * Clamped at 1 so a fast decay is never AMPLIFIED; this may only reduce.
+     */
+    fun dyeInjectionGain(
+        dissipation: Float,
+        dtSeconds: Float,
+    ): Float = (DYE_EQUILIBRIUM * dissipation * dtSeconds).coerceIn(0f, 1f)
 
     /** The dye's decay rate for a "Flow fade" setting. See [MIN_DYE_DISSIPATION]. */
     fun dyeDissipation(flowFade: Float): Float = (flowFade.coerceIn(0f, 4f) * DYE_FADE_RATIO).coerceIn(MIN_DYE_DISSIPATION, 4f)
