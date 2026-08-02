@@ -22,10 +22,16 @@ import java.io.File
 class RendererWiringTest {
     private companion object {
         /**
-         * The GLSurfaceView.Renderer callbacks - the only code that runs on
-         * the GL thread, and so the only code allowed to read the registry.
+         * The GLSurfaceView.Renderer callbacks, plus the private helpers only
+         * those callbacks call - the only code that runs on the GL thread, and
+         * so the only code allowed to read the registry.
+         *
+         * `sceneFor` is a helper rather than a callback: it is how the two
+         * reading callbacks resolve an id, and it may also BUILD the scene, so
+         * it is as GL-thread-bound as they are. It is listed here rather than
+         * exempted, so a reader added anywhere else still fails this test.
          */
-        val GL_THREAD_CALLBACKS = setOf("onSurfaceCreated", "onSurfaceChanged", "onDrawFrame")
+        val GL_THREAD_CALLBACKS = setOf("onSurfaceCreated", "onSurfaceChanged", "onDrawFrame", "sceneFor")
     }
 
     private val source: String by lazy { repoFile("src/main/java/dev/musicviz/render/VisualizerRenderer.kt") }
@@ -68,6 +74,34 @@ class RendererWiringTest {
             "availableSceneIds and createScene disagree about which styles exist",
             offered,
             buildable,
+        )
+    }
+
+    @Test
+    fun familySubstylesAreBuiltOnDemandRatherThanAtSurfaceCreation() {
+        // A substyle is one uniform plus a few control biases on a program its
+        // family has already compiled - but the registry keys a constructed,
+        // init()ed instance per id, and HyperspaceScene.init() compiles the
+        // raymarcher AND creates a FluidSim (about a dozen more programs).
+        // Building all twenty in onSurfaceCreated put roughly a hundred and
+        // thirty extra shader compiles on the GL thread before the first frame
+        // of ANY style: the screen stayed black and the app stopped answering.
+        assertEquals(
+            "every id beyond each family's original is built on demand",
+            VisualStyleCatalog.hyperspaceIds.size - 1 + VisualStyleCatalog.cymaticsIds.size - 1,
+            VisualStyleCatalog.lazyIds.size,
+        )
+        // The originals stay eager: what was ready at the first frame before
+        // the substyles existed must still be ready.
+        assertFalse(SceneIds.CYMATICS in VisualStyleCatalog.lazyIds)
+        assertFalse(SceneIds.HYPERSPACE in VisualStyleCatalog.lazyIds)
+        assertTrue(
+            "onSurfaceCreated must skip the ids sceneFor() builds on demand",
+            functionBody("onSurfaceCreated").contains("VisualStyleCatalog.lazyIds"),
+        )
+        assertTrue(
+            "sceneFor must init() what it builds, or the scene draws with no program",
+            functionBody("sceneFor").contains(".init()"),
         )
     }
 
