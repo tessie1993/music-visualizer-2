@@ -275,6 +275,7 @@ class FeatureTimelineTest {
         val bandCount = 64
         val hop = 60f
         val rate = 48_000
+
         fun bandsAt(i: Int): FloatArray =
             FloatArray(bandCount) { b ->
                 // A kick every 24 frames, a hat every 6, so both channels fire.

@@ -110,6 +110,7 @@ data class AudioFeatures(
 ) {
     /** True when [chroma] carries a reading rather than "not measured". */
     val hasChroma: Boolean get() = chroma.size == 12
+
     /**
      * What a beat should DO to the visuals this frame: 0 off beats, the
      * graded [beatStrength] on them - except for beat flags that carry no

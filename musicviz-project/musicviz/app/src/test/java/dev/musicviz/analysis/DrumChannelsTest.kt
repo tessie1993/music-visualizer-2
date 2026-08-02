@@ -196,6 +196,7 @@ class DrumChannelsTest {
         // A varied baseline, so the rolling std is wide enough that the low end
         // of the sweep lands inside the graded band instead of above it.
         val baseline = floatArrayOf(0.3f, 1.1f, 0.5f, 1.6f, 0.8f, 2.2f, 0.4f, 1.3f)
+
         fun peak(level: Float): Float {
             val d = DrumChannels(bandCount, hopRateHz, rate)
             val quiet = FloatArray(bandCount)

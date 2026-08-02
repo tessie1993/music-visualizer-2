@@ -80,8 +80,7 @@ class Chromagram(
     private val attack = poleFor(attackSeconds)
     private val release = poleFor(releaseSeconds)
 
-    private fun poleFor(seconds: Float): Float =
-        if (seconds <= 0f) 1f else 1f - exp(-1f / (seconds * hopRateHz).coerceAtLeast(1e-3f))
+    private fun poleFor(seconds: Float): Float = if (seconds <= 0f) 1f else 1f - exp(-1f / (seconds * hopRateHz).coerceAtLeast(1e-3f))
 
     /** Forgets one piece of audio; see [FeatureExtractor.reset]. */
     fun reset() {
