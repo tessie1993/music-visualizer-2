@@ -52,6 +52,24 @@ internal class FluidSim(
     var curlStrength = 30f
 
     /**
+     * The most ink a dye texel may hold, per channel, enforced at INJECTION.
+     *
+     * That is the whole field, not just one pass: advection is a bilinear
+     * resample - a convex combination, never above its own maximum - divided
+     * by a decay of at least one, so injection is the only operator that can
+     * raise the field's largest value. Bound it and the field is bounded for
+     * as long as the sim runs.
+     *
+     * Zero is no ceiling, and is the default, so this is an exact no-op for
+     * every caller that does not ask: the FLUID style grades its dye through a
+     * tone map of its own and wants the headroom, and a large-but-finite
+     * default would have quietly shaved a shipped look. [MeltField] sets a
+     * real one, because `hyperspace_frag.glsl` reads the dye as radiance with
+     * nothing after it.
+     */
+    var dyeCeiling = 0f
+
+    /**
      * Chromatic aging (v2 spec 6.3): spreads the per-channel dye decay so
      * fading ink drifts in hue (G fades fastest -> warm splats cool toward
      * magenta/blue). 0 = identical rates (pure fade, opt-in).
@@ -507,6 +525,7 @@ internal class FluidSim(
                 GLES30.glUniform3f(cLoc("uValue"), s.r, s.g, s.b)
             }
             GLES30.glUniform1i(cLoc("uMode"), mode)
+            GLES30.glUniform1f(cLoc("uCeiling"), dyeCeiling)
             if (custom != null) {
                 // Extension-point context (same set the scene shaders get).
                 GLES30.glUniform1f(cLoc("uDt"), dt)

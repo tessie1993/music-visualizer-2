@@ -85,7 +85,7 @@ internal class MeltField(
 
     /**
      * Grid velocity -> sim units per second for this field. The shader needs
-     * it to turn a raw texel into a world displacement; see `uMeltGain`.
+     * it to turn a raw texel into a world displacement; see `uFlowGain`.
      */
     val flowScale: Float get() = sim.flowScale
 
@@ -96,6 +96,9 @@ internal class MeltField(
         sim.simRes = SIM_RES
         sim.dyeRes = DYE_RES
         sim.pressureIterations = PRESSURE_ITERATIONS
+        // The raymarcher reads this field as light and has nothing downstream
+        // to fold an overshoot back into. See MeltMath.DYE_CEILING.
+        sim.dyeCeiling = MeltMath.DYE_CEILING
         sim.create()
     }
 
@@ -184,10 +187,7 @@ internal class MeltField(
         val simDt = dt.coerceIn(0f, 1f / 30f)
         sim.curlStrength = p.hyperSwirl.coerceIn(0f, 50f) * (1f + 0.5f * features.mid)
         sim.velocityDissipation = p.hyperFlowFade.coerceIn(0f, 4f)
-        // The dye has to outlive the velocity that carried it or the stain
-        // never has time to be seen ON anything: it would appear and clear
-        // within one pass of a body.
-        sim.densityDissipation = (p.hyperFlowFade * 0.45f).coerceIn(0f, 4f)
+        sim.densityDissipation = MeltMath.dyeDissipation(p.hyperFlowFade)
         sim.audioBass = features.bass
         sim.audioMid = features.mid
         sim.audioTreble = features.treble
@@ -267,6 +267,56 @@ internal object MeltMath {
 
     /** Sim-space radius of a finger's capsule. */
     const val TOUCH_RADIUS: Float = 0.13f
+
+    /**
+     * The most ink one texel of the medium can hold, per channel.
+     *
+     * The dye splat is additive and the decay it is balanced against is a
+     * DIVISOR, so a texel that is being painted at `a` per frame settles at
+     * `a / (dissipation * dt)` - which has no upper bound at all as the
+     * dissipation goes to zero, and at the shipped "Flow fade" was already 381
+     * times the per-frame injection. `hyperspace_frag.glsl` then reads that
+     * field as a colour (`uStain` adds it straight to a lit surface, `uLiquid`
+     * treats it as the density AND the emission of a glowing medium) and has
+     * no grading pass to fold an overshoot back into, so a field at 60 is not
+     * a brighter medium, it is a white screen.
+     *
+     * One, because the consumers are all written for a colour: the ink is
+     * mixed by [FluidHue] in 0..1, and every gain downstream - `uStain` at
+     * 0.5, `uLiquid` at 0.35, [HyperspaceScene]'s own `BODY_INK` at 0.22, and
+     * the comment on it about a saturated field being "one flat colour, not a
+     * medium" - was chosen against a field that lives there.
+     *
+     * The ceiling is applied at INJECTION (`fluid_splat_frag.glsl`), which is
+     * what makes it a bound on the whole field rather than on one pass:
+     * advection is a bilinear resample - a convex combination, so never above
+     * its own maximum - divided by a decay of at least one, so no pass except
+     * injection can raise the field's largest value.
+     */
+    const val DYE_CEILING: Float = 1f
+
+    /**
+     * Seconds of dye decay per unit of "Flow fade". The ink has to outlive the
+     * velocity that carried it or the stain never has time to be seen ON
+     * anything: it would appear and clear within one pass of a body.
+     */
+    const val DYE_FADE_RATIO: Float = 0.45f
+
+    /**
+     * Slowest the ink is allowed to forget, whatever "Flow fade" says.
+     *
+     * [DYE_CEILING] is what makes the field safe; this is what keeps it a
+     * fluid. With no decay at all a bounded field still fills: every texel the
+     * ink has crossed ratchets up to the ceiling and stays there, and a
+     * medium that only ever gains is a flat stain, not a current. At this
+     * floor the field halves in about nine seconds, so the bottom of the
+     * slider means "as slow as the ink is allowed to forget" rather than
+     * "never", which is a promise the medium can actually keep.
+     */
+    const val MIN_DYE_DISSIPATION: Float = 0.08f
+
+    /** The dye's decay rate for a "Flow fade" setting. See [MIN_DYE_DISSIPATION]. */
+    fun dyeDissipation(flowFade: Float): Float = (flowFade.coerceIn(0f, 4f) * DYE_FADE_RATIO).coerceIn(MIN_DYE_DISSIPATION, 4f)
 
     /**
      * How much harder a body pushes while being born or while dissolving.

@@ -546,6 +546,67 @@ class CompositeGradeTest {
         }
     }
 
+    /**
+     * Zoom and Rotation have exactly ONE owner per scene, and which one is
+     * decided by the gate above.
+     *
+     * `gateFor(...).grade` is true only for the fluid family, and it switches
+     * on `composite_frag`'s whole `uPostZoom`/`uPostRotation` block for that
+     * texture. A scene in that family that ALSO reads the two sliders does
+     * not double them, it cancels them: `HyperspaceScene` used to push its
+     * camera back by exactly the factor the composite then magnified by, and
+     * roll the camera by exactly the angle the composite then turned the
+     * image back through. The controls looked wired at every layer and did
+     * nothing at all on screen.
+     *
+     * Stated as an implication over every scene source rather than as a list
+     * of the composite-graded ones, so a scene added later is covered by
+     * construction: a scene may read Zoom or Rotation only if it grades
+     * itself, and the three self-grading bases are the ones
+     * `VisualizerRenderer.compositeFamily` names.
+     */
+    @Test
+    fun onlySelfGradingScenesReadZoomAndRotation() {
+        val selfGrading = setOf("ShaderScene.kt", "ParticleSceneBase.kt", "ProjectMScene.kt")
+        // The three bases, plus anything that extends one of them: a subclass
+        // inherits its base's own view()/grade() and is graded there too.
+        val extendsSelfGrading = Regex(""":\s*(?:ShaderScene|ParticleSceneBase|ProjectMScene)\b""")
+        val reads = Regex("""\b(?:p|params)\.(zoom|rotation)\b""")
+        val offenders = mutableListOf<String>()
+        var scanned = 0
+        for (file in sceneSources()) {
+            val text = ParamSurface.source(file)
+            scanned++
+            val hits = reads.findAll(stripComments(text)).map { it.groupValues[1] }.toSortedSet()
+            if (hits.isEmpty()) continue
+            val name = file.substringAfterLast('/')
+            if (name in selfGrading || extendsSelfGrading.containsMatchIn(text)) continue
+            offenders += "$name reads ${hits.joinToString(" and ")}"
+        }
+        assertTrue("no scene sources were scanned - the walk is broken", scanned > 10)
+        assertEquals(
+            "these scenes are graded by the composite pass, which already applies Zoom and " +
+                "Rotation for them; reading the slider as well cancels it out",
+            emptyList<String>(),
+            offenders,
+        )
+    }
+
+    /** Every scene implementation, as paths under `dev/musicviz/`. */
+    private fun sceneSources(): List<String> =
+        listOf("render/scene", "render/fluid")
+            .flatMap { dir ->
+                (java.io.File(ParamSurface.moduleRoot, "app/src/main/java/dev/musicviz/$dir").listFiles() ?: emptyArray())
+                    .filter { it.isFile && it.name.endsWith(".kt") }
+                    .map { "$dir/${it.name}" }
+            }.sorted()
+
+    /** Comments say what a scene does NOT do; only code counts as a read. */
+    private fun stripComments(text: String): String =
+        text
+            .replace(Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL), " ")
+            .replace(Regex("""//[^\n]*"""), "")
+
     /** A fully saturated, full-value colour at hue [h] - HSV(h, 1, 1). */
     private fun rgbOfHue(h: Float): FloatArray {
         val k = floatArrayOf(1f, 2f / 3f, 1f / 3f)

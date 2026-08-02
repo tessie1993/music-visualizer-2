@@ -64,10 +64,18 @@ object HyperspaceMath {
     const val FLOATS_PER_MAT3: Int = 9
 
     /**
-     * The fractal a body is. The four that carry the look are all built from
-     * the same two moves - fold space, then invert or scale it - which is why
-     * they can share one raymarcher; see `hyperspace_frag.glsl` for the
-     * distance estimators themselves.
+     * The fractal a body is. Four of the six are built from the same two moves
+     * - fold space, then invert or scale it - and the other two are
+     * escape-time formulas carrying a derivative, which is the same arithmetic
+     * shape once the estimate is divided out. That is why they can share one
+     * raymarcher; see `hyperspace_frag.glsl` for the estimators themselves.
+     *
+     * ORDER IS PERSISTED. `SceneParams.hyperSpecies` is an index into
+     * `HYPERSPACE_SPECIES` ("Mixed" plus this enum in ordinal order), it is
+     * written to preset files by `PresetStore` and it is rolled by
+     * `ParamRandomizer`. A new species therefore goes on the END: insert one in
+     * the middle and every saved preset that pinned a fractal silently renders
+     * a different one after an upgrade.
      */
     enum class Species {
         /**
@@ -99,9 +107,18 @@ object HyperspaceMath {
         /**
          * The bulb: `z -> z^n + c` in the spherical-coordinate power that gives
          * a genuinely rounded, budded organic body. The most expensive of the
-         * five (transcendentals in the inner loop), so it is iterated less.
+         * six (transcendentals in the inner loop), so it is iterated less.
          */
         BULB,
+
+        /**
+         * The quaternion Julia set: `z -> z^2 + c` in the quaternions, drawn as
+         * a 3D cross-section of the 4D result. Smooth lobed masses joined at
+         * cusps and thin necks, with spiral detail running over the surface -
+         * nothing else here has a sharp edge that is not also a fold line. The
+         * cross-section is what "Fold" moves for this species; `c` is fixed.
+         */
+        SEED,
     }
 
     /** Species in ordinal order - `values()` allocates on every call. */
@@ -466,6 +483,19 @@ object HyperspaceMath {
             Species.CORAL -> 0.55f + 0.55f * t
             // Bulb power. 8 is the classic; the band around it stays organic.
             Species.BULB -> 5f + 6f * t
+            // Where the 3D slice cuts the 4D set, on the axis the sample point
+            // does not span. Not a shape constant at all, which is the point:
+            // the quaternion Julia set is connected or shattered depending on
+            // `c` alone, and a slider that walked `c` across that boundary
+            // would disconnect a body in one frame. This slider only slides the
+            // cut, so the body it exposes is always a section of the same
+            // connected solid.
+            //
+            // The band stops short of zero at the bottom because the breath
+            // modulates this MULTIPLICATIVELY (see `hyperspace_frag.glsl`), so
+            // a slice of zero is a body that cannot breathe; and short of the
+            // set's own radius at the top, past which the section is empty.
+            Species.SEED -> 0.08f + 0.44f * t
         }
     }
 
@@ -492,6 +522,14 @@ object HyperspaceMath {
             Species.JEWEL -> 3.2f
             Species.CORAL -> 2.1f
             Species.BULB -> 1.35f
+            // The one radius here that is proved rather than fitted. The
+            // filled Julia set of `z^2 + c` lies inside the sphere of radius
+            // (1 + sqrt(1 + 4|c|)) / 2 - outside it the orbit escapes
+            // monotonically - and the shader's `c` has |c| = 0.721, which puts
+            // that bound at 1.486. It holds at every iteration count and every
+            // slice, so no march budget and no Fold setting can push the body
+            // out of the sphere the camera is kept outside of.
+            Species.SEED -> 1.5f
         }
 
     /** The largest [localRadius] over every species - the worst-case body. */
@@ -856,8 +894,9 @@ class BloomBank(
  * that - held for at least [HyperspaceMath.MIN_ACT_SECONDS] - gives [act], the
  * discrete one the body count follows.
  *
- * `Hold` pins a chosen act. `Cycle` walks the five on a timer, for a set that
- * should tell the same story regardless of what is playing.
+ * `Hold` pins a chosen act. `Cycle` walks the five out and back on a timer,
+ * holding each for one `cycleSeconds`, for a set that should tell the same
+ * story regardless of what is playing.
  */
 class HyperspaceJourney {
     /** How deep the track has taken the journey, 0..1. */
@@ -889,8 +928,10 @@ class HyperspaceJourney {
      * @param energy the track's macro-dynamics envelope, 0..1 (falls back to
      *   RMS when offline analysis has not run).
      * @param mode one of [HyperspaceMath.JOURNEY_MUSIC] / `_HOLD` / `_CYCLE`.
-     * @param holdAct the act `Hold` pins, and where `Cycle` starts.
-     * @param cycleSeconds seconds per act in `Cycle`.
+     * @param holdAct the act `Hold` pins. `Cycle` ignores it and always opens
+     *   on the first act, because a story that starts in the middle is not
+     *   the story this mode exists to tell.
+     * @param cycleSeconds seconds each act is held for in `Cycle`.
      * @param pace multiplier on how fast the journey moves (the Speed control).
      */
     fun advance(
@@ -907,12 +948,31 @@ class HyperspaceJourney {
             when (mode) {
                 HyperspaceMath.JOURNEY_HOLD -> holdAct.coerceIn(0, last).toFloat()
                 HyperspaceMath.JOURNEY_CYCLE -> {
+                    // Cycle is Hold on a timer: the goal is one whole act,
+                    // held for exactly `cycleSeconds`, and the glide below
+                    // carries the profile from each act to the next. The
+                    // control is labelled "Act length", so every act has to
+                    // get that length and no act may get more.
+                    //
+                    // The walk is a ping-pong - 0,1,2,3,4,3,2,1 and round
+                    // again - because the act list is a line, not a ring: a
+                    // wrap from Breakthrough straight back to Threshold has to
+                    // travel through the three acts in between whatever it is
+                    // told to do, and coming back down through them is the
+                    // same motion the Music mode makes when a track goes
+                    // quiet. Every step is to a NEIGHBOUR, so the story never
+                    // rewinds through three acts in one glide, and it never
+                    // sits at breakthrough forever.
+                    //
+                    // It used to be a sawtooth over [0,5) fed to a position
+                    // clamped at 4, which handed the last act one whole extra
+                    // period before that unbudgeted rewind - "seconds per act"
+                    // for four acts out of five.
                     val per = max(cycleSeconds, 2f)
-                    cyclePhase = (cyclePhase + step / per) % HyperspaceMath.ACTS.size.toFloat()
-                    // Walks 0,1,2,3,4,0,... The wrap back to the threshold is
-                    // the story restarting, which is what a set of tracks
-                    // should do rather than sitting at breakthrough forever.
-                    cyclePhase
+                    val slots = max(2 * last, 1)
+                    cyclePhase = (cyclePhase + step / per) % slots.toFloat()
+                    val slot = cyclePhase.toInt().coerceIn(0, slots - 1)
+                    (last - abs(last - slot)).toFloat()
                 }
                 else -> {
                     // Loud -> deeper, quiet -> back, and never at the same
@@ -969,13 +1029,15 @@ class HyperspaceCamera {
     /**
      * @param distance how far the eye sits from the origin (the act's camera).
      * @param drift multiplier on the drift rate; 0 parks the camera.
-     * @param roll radians of roll about the view axis.
+     *
+     * There is no roll: HYPERSPACE is graded by the composite pass, which owns
+     * Rotation for its whole family and turns the finished frame. A roll here
+     * as well only ever cancelled it - see [HyperspaceScene]'s camera block.
      */
     fun advance(
         dt: Float,
         distance: Float,
         drift: Float,
-        roll: Float,
     ) {
         t += dt * max(drift, 0f)
         // Three incommensurate rates per angle: the ratios are irrational
@@ -1010,22 +1072,9 @@ class HyperspaceCamera {
         ry *= rl
         rz *= rl
         // up = cross(right, forward)
-        var vx = ry * fz - rz * fy
-        var vy = rz * fx - rx * fz
-        var vz = rx * fy - ry * fx
-        if (roll != 0f) {
-            val c = cos(roll)
-            val s = sin(roll)
-            val nrx = rx * c + vx * s
-            val nry = ry * c + vy * s
-            val nrz = rz * c + vz * s
-            vx = vx * c - rx * s
-            vy = vy * c - ry * s
-            vz = vz * c - rz * s
-            rx = nrx
-            ry = nry
-            rz = nrz
-        }
+        val vx = ry * fz - rz * fy
+        val vy = rz * fx - rx * fz
+        val vz = rx * fy - ry * fx
         // Column-major: column 0 = right, 1 = up, 2 = forward.
         basis[0] = rx
         basis[1] = ry
@@ -1043,8 +1092,8 @@ class HyperspaceCamera {
  * Raymarcher budget for a given "Detail" setting, resolved on the CPU so the
  * shader's loops can be bounded by uniforms rather than by recompiling.
  *
- * Detail is one control because the three quantities have to move together:
- * more fractal iterations without more march steps just makes a thin surface
+ * Detail is one control because the quantities have to move together: more
+ * fractal iterations without more march steps just makes a thin surface
  * the ray steps over, and more steps without more iterations spends the budget
  * refining a shape that has no detail left to find.
  */
@@ -1053,20 +1102,77 @@ data class MarchBudget(
     val iterations: Int,
     /** Iterations for [HyperspaceMath.Species.BULB], which costs several times more. */
     val bulbIterations: Int,
+    /**
+     * Iterations for [HyperspaceMath.Species.SEED]. Its own budget for the
+     * opposite reason to the bulb's: the quaternion square is the cheapest
+     * inner loop of the six, but it is an escape-time formula and |z| grows by
+     * squaring, so past a dozen iterations the picture stops changing while the
+     * derivative it carries keeps multiplying. The ceiling is where the detail
+     * stops arriving, not where the cost does.
+     */
+    val seedIterations: Int,
 ) {
     companion object {
-        /** Matches the `MAX_STEPS` / `MAX_ITERS` compile-time bounds in the shader. */
+        /**
+         * The `MAX_STEPS` / `MAX_ITERS` / `MAX_BULB_ITERS` / `MAX_SEED_ITERS`
+         * compile-time bounds in the shader. These bound the LOOPS; what the
+         * slider actually asks for is [forDetail]'s endpoints below.
+         * `HyperspaceUniformParityTest` reads the `#define`s and fails if these
+         * drift from them.
+         */
         const val MAX_STEPS: Int = 128
         const val MAX_ITERS: Int = 14
+        const val MAX_BULB_ITERS: Int = 10
+        const val MAX_SEED_ITERS: Int = 12
 
+        /** The Detail slider's own range, as `CustomizeTabs` spells it. */
+        const val MIN_DETAIL: Float = 0.25f
+        const val MAX_DETAIL: Float = 1.5f
+
+        /** The budget at the bottom of the slider: coarse, and cheap enough
+         *  to be the answer on a phone that cannot afford the style. */
+        private const val FLOOR_STEPS: Int = 64
+        private const val FLOOR_ITERS: Int = 5
+        private const val FLOOR_BULB_ITERS: Int = 3
+        private const val FLOOR_SEED_ITERS: Int = 5
+
+        /**
+         * The budget at the top. Steps and iterations are the shader's own
+         * ceilings, so the last notch of the slider buys everything the
+         * shader can be asked for; the bulb stops short of its because it
+         * costs several times what the other estimators do and would be the
+         * one quantity that decides the frame rate at maximum detail. The
+         * quaternion Julia reaches its own ceiling, which is already the point
+         * at which its silhouette has stopped moving - measured, at a fifth of
+         * a per cent of covered area between five iterations and twenty-four.
+         */
+        private const val TOP_STEPS: Int = MAX_STEPS
+        private const val TOP_ITERS: Int = MAX_ITERS
+        private const val TOP_BULB_ITERS: Int = 8
+        private const val TOP_SEED_ITERS: Int = MAX_SEED_ITERS
+
+        /**
+         * Interpolated across the slider's range rather than by a slope with
+         * a clamp on the end. With a slope, all three quantities saturated
+         * early - steps at detail 1.43, the bulb at 1.33 - so the top of the
+         * control bought an identical picture at an identical cost, which is
+         * a slider that lies about the last twelve percent of its travel.
+         */
         fun forDetail(detail: Float): MarchBudget {
-            val d = detail.coerceIn(0.25f, 1.5f)
+            val t = ((detail - MIN_DETAIL) / (MAX_DETAIL - MIN_DETAIL)).coerceIn(0f, 1f)
             return MarchBudget(
-                steps = (48f + 56f * d).toInt().coerceIn(24, MAX_STEPS),
-                iterations = (5f + 5f * d).toInt().coerceIn(3, MAX_ITERS),
-                bulbIterations = (3f + 3f * d).toInt().coerceIn(2, 10),
+                steps = lerpBudget(FLOOR_STEPS, TOP_STEPS, t),
+                iterations = lerpBudget(FLOOR_ITERS, TOP_ITERS, t),
+                bulbIterations = lerpBudget(FLOOR_BULB_ITERS, TOP_BULB_ITERS, t),
+                seedIterations = lerpBudget(FLOOR_SEED_ITERS, TOP_SEED_ITERS, t),
             )
         }
+
+        private fun lerpBudget(
+            floor: Int,
+            top: Int,
+            t: Float,
+        ): Int = Math.round(floor + (top - floor) * t)
     }
 }
 
@@ -1129,6 +1235,27 @@ object HyperspaceLook {
         camera: Float,
         spread: Float,
     ): Float = camera + spread + 6f
+
+    /**
+     * The longest one march step may be, in world units.
+     *
+     * The geometry does not need this. A distance estimate is a lower bound on
+     * the distance to a surface, so stepping the whole of it can never miss
+     * anything, and in an empty room that bound is the far plane - one step
+     * across the entire scene. What does need it is everything the march
+     * INTEGRATES along the way: the emissive haze, the aura and the liquid
+     * light are quadratures in the step length, and a quadrature that takes
+     * one sample per room is not sampling the medium, it is sampling a point
+     * of it and multiplying by the room.
+     *
+     * So the cap is the scale the medium is defined on. The dye grid spans two
+     * sim units, which is `2 * scale` world units, and a step longer than half
+     * of that steps clean over the field it is meant to be integrating.
+     * Wherever geometry is near, the estimate is already far below this and
+     * the cap never binds - it costs nothing in the case that was already
+     * right, and bounds the case that was not.
+     */
+    fun maxMarchStep(scale: Float): Float = max(scale, 0.05f)
 
     /**
      * Surface hit threshold, relative to the step's own distance from the eye:

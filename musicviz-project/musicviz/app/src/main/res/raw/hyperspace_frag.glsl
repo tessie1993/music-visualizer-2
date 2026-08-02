@@ -13,11 +13,14 @@ precision highp float;
 // gaining one and losing another. HyperspaceMath.kt owns all of that; this
 // shader only draws what it is handed.
 //
-// The five distance estimators below are the published constructions - see
+// The six distance estimators below are the published constructions - see
 // THIRD_PARTY_NOTICES for the technique references - written here from the
-// mathematics rather than ported: fold space, then invert or scale it, and
-// keep the running scale factor so the estimate can be pulled back to world
-// units. That single shape is why five different fractals fit in one loop.
+// mathematics rather than ported. Four of them share one shape: fold space,
+// then invert or scale it, and keep the running scale factor so the estimate
+// can be pulled back to world units. The other two (BULB, SEED) are
+// escape-time formulas that carry a derivative instead of a scale factor, and
+// end on the same division. That is why six different fractals fit in one
+// loop.
 //
 // Cost control, because eight distance-estimated fractals per step would not
 // run on a phone: every body carries a bounding sphere, and outside it the ray
@@ -27,14 +30,38 @@ precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
 
-// Compile-time ceilings. The runtime budget (uSteps/uIters/uBulbIters) is a
-// uniform so "Detail" can move without recompiling; these only bound the loop.
+// Compile-time ceilings. The runtime budget (uSteps/uIters/uBulbIters/
+// uSeedIters) is a uniform so "Detail" can move without recompiling; these
+// only bound the loop. MarchBudget's companion holds the same four numbers and
+// HyperspaceUniformParityTest reads both, so a change here fails there.
 #define MAX_BLOOMS 8
 #define MAX_STEPS 128
 #define MAX_ITERS 14
 #define MAX_BULB_ITERS 10
+#define MAX_SEED_ITERS 12
 
 const float PI = 3.14159265359;
+
+// The optics of the liquid light, per world unit at one full texel of ink.
+//
+// The dye field is bounded at 1 by construction (MeltMath.DYE_CEILING), so
+// these are in units of "a saturated texel" and can be reasoned about instead
+// of tuned. Extinction is set so a saturated field is about ONE optical depth
+// thick at the default Liquid light: the field is roughly five world units
+// across, 0.35 * 0.55 * 5 = 0.96, so the medium veils the geometry behind it
+// and does not hide it. Emission is a fraction of that, so the medium still
+// absorbs faster than it emits and a thick region settles at about three
+// quarters of the ink's own colour rather than blowing past it.
+//
+// Both moved when the field was bounded, and in opposite directions. The old
+// pair (1.6 and 0.35) was chosen against an ink that ran to 60: it made the
+// medium opaque many times over across the room while emitting several units
+// of radiance, which is a white fog. Against an ink that stops at 1 the same
+// pair is a grey one - still opaque, now emitting 0.22 of a colour that is
+// itself at most 1, so the medium could only ever subtract light. The units
+// these are measured in changed, so they change with them.
+const float LIQUID_EXTINCTION = 0.55;
+const float LIQUID_EMISSION = 0.40;
 
 uniform vec2 uResolution;
 uniform float uTime;
@@ -60,13 +87,20 @@ uniform float uFov;
 uniform int uSteps;
 uniform int uIters;
 uniform int uBulbIters;
+uniform int uSeedIters;
 uniform float uFar;
+/**
+ * Ceiling on one march step, in world units (HyperspaceLook.maxMarchStep).
+ * The geometry never needs it - a distance estimate is a lower bound, so a
+ * step that size cannot miss anything - but the three integrals taken along
+ * the ray do: they are quadratures, and one sample per room is not a
+ * quadrature of anything.
+ */
+uniform float uMaxStep;
 uniform float uHitEps;
 uniform float uBoundMargin;
 
 // ---- look --------------------------------------------------------------
-/** Continuous act position, 0..4. Only used for the mood, never for geometry. */
-uniform float uAct;
 /** Weight of the background filigree. */
 uniform float uField;
 /** Kaleidoscopic mirror, 0 = off. */
@@ -100,12 +134,18 @@ uniform float uHasMelt;
 /** 0 disables the warp entirely (and skips its texture reads). */
 uniform float uMelt;
 /**
- * Raw texel -> world displacement. The velocity field is in the sim's own
- * grid units, which are nothing like world units, so the conversion (grid ->
- * sim units/second -> world units/second -> displacement) is folded into one
- * number on the CPU rather than being three multiplies per sample.
+ * Raw texel -> world displacement at FULL melt. The velocity field is in the
+ * sim's own grid units, which are nothing like world units, so the conversion
+ * (grid -> sim units/second -> world units/second -> displacement) is folded
+ * into one number on the CPU rather than being three multiplies per sample.
+ *
+ * Deliberately free of uMelt: the medium runs whenever the GPU can give us
+ * the buffers, and the amount of it that bends GEOMETRY is one reader's
+ * business, not the field's. Ridges reads the same field to find which way
+ * the current is going, and used to get a flow of exactly zero whenever Melt
+ * was down - a control that silently did nothing unless another one was up.
  */
-uniform float uMeltGain;
+uniform float uFlowGain;
 /**
  * Hard ceiling on |displacement|, in world units. NOT a taste control: it is
  * the same number the CPU inflated every bounding sphere by
@@ -167,7 +207,9 @@ vec2 simUv(vec2 s) {
 }
 
 /**
- * The medium's velocity at a world point, as a 3D vector.
+ * The medium's velocity at a world point, as a 3D vector, in the world units
+ * a point of it drifts over MeltMath.MELT_SECONDS - which is to say, the
+ * displacement a full-strength melt would apply.
  *
  * The simulation is two-dimensional, so the third dimension is borrowed: the
  * field is sampled twice, once on the world's xy plane and once on its zy
@@ -176,17 +218,28 @@ vec2 simUv(vec2 s) {
  * and on every normal and occlusion tap after it, so the third fetch would
  * cost more than the extra coherence is worth at these amplitudes.
  *
- * Returns zero when the medium is off, which is what makes "Melt" at 0 an
- * exact no-op rather than a warp of zero size that still costs the fetches.
+ * Returns zero only when there IS no medium, so every reader of the current
+ * sees the same field. What each reader does with it is its own control.
  */
-vec3 meltAt(vec3 p) {
-    if (uHasMelt < 0.5 || uMelt <= 0.001) return vec3(0.0);
+vec3 flowAt(vec3 p) {
+    if (uHasMelt < 0.5) return vec3(0.0);
     vec3 s = p / max(uMeltScale, 0.05);
     vec2 a = texture(uFlowTex, simUv(s.xy)).xy;
     vec2 b = texture(uFlowTex, simUv(vec2(s.z, s.y))).xy;
     // a pushes x and y, b pushes z and y; y is the axis both saw, so it is
     // averaged rather than counted twice.
-    vec3 v = vec3(a.x, (a.y + b.y) * 0.5, b.x) * uMeltGain;
+    return vec3(a.x, (a.y + b.y) * 0.5, b.x) * uFlowGain;
+}
+
+/**
+ * How far the medium displaces the geometry at a world point.
+ *
+ * Returns zero when the warp is off, which is what makes "Melt" at 0 an exact
+ * no-op rather than a warp of zero size that still costs the fetches.
+ */
+vec3 meltAt(vec3 p) {
+    if (uMelt <= 0.001) return vec3(0.0);
+    vec3 v = flowAt(p) * uMelt;
     // Clamped to the reach the bounding spheres were inflated by. A beat can
     // put a large spike in one corner of the velocity field, and without this
     // that one frame would displace geometry clean out of the sphere the ray
@@ -195,10 +248,27 @@ vec3 meltAt(vec3 p) {
     return m > uMeltReach ? v * (uMeltReach / max(m, 1e-6)) : v;
 }
 
-/** The dye at a world point. */
+/**
+ * The dye at a world point, and zero where there is no dye.
+ *
+ * The field is a FINITE volume of ink - two sim units square - and the room
+ * is several times larger than it, so most of what a ray passes through is
+ * off the grid entirely. CLAMP_TO_EDGE answers a sample out there with the
+ * boundary texel, extended outward forever, which is how a stray colour on
+ * one edge of the field became a razor-sharp horizon across a whole empty
+ * frame. Unlike the velocity field - whose extrapolation only bends geometry,
+ * and only ever by uMeltReach - this one is read as RADIANCE, so an
+ * extrapolated value is light the scene invents. Outside the grid there is no
+ * ink; the border is a couple of texels wide so the field ends rather than
+ * stops.
+ */
 vec3 dyeAt(vec3 p) {
     if (uHasMelt < 0.5) return vec3(0.0);
-    return texture(uDyeTex, simUv((p / max(uMeltScale, 0.05)).xy)).rgb;
+    vec2 uv = simUv((p / max(uMeltScale, 0.05)).xy);
+    vec2 edge = min(uv, 1.0 - uv);
+    float inside = smoothstep(0.0, 0.02, min(edge.x, edge.y));
+    if (inside <= 0.0) return vec3(0.0);
+    return texture(uDyeTex, uv).rgb * inside;
 }
 
 // ========================================================================
@@ -249,7 +319,31 @@ float deGasket(vec3 p, float fold) {
  * other, which is what the reference paintings are full of.
  *
  * Every operation is an isometry or a uniform scale, so the box distance at
- * the end divided by the accumulated scale is still a valid estimate.
+ * the end divided by the accumulated scale is still a valid estimate. That
+ * word "every" is load-bearing, and it is where this used to fail: the z fold
+ * was written `if (p.z < -1.0) p.z += 2.0`, a CONDITIONAL TRANSLATION, and it
+ * was dead as well as wrong. Dead because `abs()` and the three sorting swaps
+ * leave p.x >= p.y >= p.z >= 0 and the offset subtracts nothing from z, so the
+ * branch could never fire and nothing carved the middle third of z. Wrong
+ * because even where such a branch does fire it is discontinuous: two points a
+ * hair apart across the plane it tests come out two units apart, which makes
+ * the estimate an overestimate by an unbounded factor there, and a ray that
+ * steps an overestimate walks through the surface. With the sponge alone the
+ * discontinuity sits inside the hole it carves and nothing is drawn near it;
+ * the moment the rotation carries geometry across that plane, every ray
+ * crossing it terminates on a fragment of some deeper iteration instead of on
+ * a surface, and the body renders as granular dust - which is what this
+ * species did at every Fold and every Detail.
+ *
+ * The published construction folds z by REFLECTION in the plane z = 1. That is
+ * an isometry, it is continuous, and it leaves exactly the same sponge (the two
+ * forms differ by a sign that the next iteration's abs() removes).
+ *
+ * At the top of the Fold range the surface stays finely textured, and that is
+ * the construction rather than a fault in it: a kaleidoscopic IFS has detail at
+ * every scale, and the sponge's own faces are Sierpinski carpets. What matters
+ * is that it is a SURFACE - solid, with square recesses and a rectangular
+ * silhouette - and at Fold 0 it is a textbook Menger cube.
  */
 float deTemple(vec3 p, float twist) {
     float s = 1.0;
@@ -264,9 +358,10 @@ float deTemple(vec3 p, float twist) {
         if (p.y < p.z) p.yz = p.zy;
         gT = min(gT, dot(p, p));
         p = p * 3.0 - vec3(2.0, 2.0, 0.0);
-        // The axis the sponge treats differently: without this the fold closes
-        // into a solid block and the terraces disappear.
-        if (p.z < -1.0) p.z += 2.0;
+        // The axis the sponge treats differently: the middle third of z is
+        // what makes it a sponge rather than a solid block, and this is the
+        // mirror that carves it.
+        p.z = 1.0 - abs(p.z - 1.0);
         s *= 3.0;
         p.xz = rot * p.xz;
     }
@@ -372,13 +467,93 @@ float deBulb(vec3 p, float power) {
     return max(0.5 * log(max(r, 1.0001)) * r / max(dr, 1e-5), 2e-4);
 }
 
-/** Dispatch on the body's species ordinal (see HyperspaceMath.Species). */
+/**
+ * SEED - the quaternion Julia set, z -> z^2 + c taken in the quaternions.
+ *
+ * The only estimator here whose iteration lives in FOUR dimensions. The sample
+ * point supplies three components of z and [slice] the fourth, so what is
+ * drawn is a 3D cross-section of a 4D body. That is where this species' inner
+ * life comes from: moving the slice is not a deformation of one surface, it is
+ * a different surface cut from the same solid, and it can open a channel or
+ * close a neck in a way no scalar fold constant can.
+ *
+ * Squaring a quaternion costs no more than squaring a complex number. With
+ * z = (a, v), a real and v the imaginary vector, z^2 = (a^2 - |v|^2, 2 a v) -
+ * four multiplies and a dot product, and not one transcendental in the loop.
+ * The derivative is carried as its SQUARE because the recurrence dz -> 2 z dz
+ * only ever needs its magnitude, and |dz'|^2 = 4 |z|^2 |dz|^2 is one more
+ * multiply rather than a second quaternion product. Together those are what
+ * let this run a deeper budget than the bulb at a fraction of its cost.
+ *
+ * The estimate is the Douady-Hubbard potential written for the square map,
+ * 0.5 * |z| * log|z| / |dz|, which is the standard conservative form: it never
+ * exceeds the true distance, so the ray cannot step through the surface. Both
+ * floors are load-bearing. The one under |z|^2 in the derivative keeps the
+ * division finite at the preimages of the origin, where |dz| is genuinely
+ * zero. The one inside the log is what makes a point that has not escaped
+ * return almost zero instead of a NEGATIVE distance - log of a radius below 1
+ * is negative, and a negative estimate marches the ray backwards.
+ *
+ * Nothing overflows, which is worth stating because the preview harness runs
+ * everything at float32 and cannot see a precision limit: the loop leaves the
+ * moment |z|^2 passes 4, so every factor in the derivative product is at most
+ * 16 and |dz|^2 is at most 16^MAX_SEED_ITERS = 2^48. GLSL ES guarantees highp
+ * out to 2^62, which this file declares for every float; it guarantees mediump
+ * only to 2^14, so this loop would NOT survive being demoted.
+ *
+ * c is a CONSTANT and the slice is what moves. That is a safety decision, not
+ * a simplification. The set is connected exactly when the orbit of the origin
+ * stays bounded, and that orbit lives in the plane spanned by 1 and Im c, so
+ * connectedness is the ordinary Mandelbrot test at (Re c, |Im c|) - here
+ * (-0.12, 0.711), which is inside the locus with about 0.06 to spare. Walk c
+ * across that boundary and the body does not deform, it SHATTERS into a dust
+ * in a single frame, which is a large change of projected area in 16 ms - the
+ * one thing this family can do that VisualSafety cannot clamp. The slice has
+ * no such cliff: it slides the cut through a solid that stays connected.
+ *
+ * All three imaginary parts are non-zero on purpose. The set is invariant
+ * under rotations of the imaginary 3-space that fix Im c, so if Im c lay in
+ * the plane this slice keeps, every cross-section would be a solid of
+ * revolution - a lathe-turned vase, and the standard disappointment of
+ * quaternion Julia sets. Cutting across the symmetry axis is what makes these
+ * sections genuinely three-dimensional.
+ */
+float deSeed(vec3 p, float slice) {
+    // |c| <= 0.75 is not a taste: the filled Julia set is contained in the
+    // sphere of radius (1 + sqrt(1 + 4|c|)) / 2, which at this |c| is 1.486,
+    // and that has to fit inside HyperspaceMath.localRadius(SEED) = 1.5. A
+    // bound the camera trusts has to be proved, not measured.
+    const vec4 c = vec4(-0.12, 0.44, 0.39, 0.40);
+    vec4 z = vec4(p, slice);
+    float md2 = 1.0;
+    float mz2 = dot(z, z);
+    for (int i = 0; i < MAX_SEED_ITERS; i++) {
+        if (i >= uSeedIters) break;
+        md2 *= 4.0 * max(mz2, 1e-8);
+        z = vec4(z.x * z.x - dot(z.yzw, z.yzw), 2.0 * z.x * z.yzw) + c;
+        mz2 = dot(z, z);
+        gT = min(gT, mz2);
+        if (mz2 > 4.0) break;
+    }
+    return 0.25 * sqrt(mz2 / md2) * log(max(mz2, 1.0001));
+}
+
+/**
+ * Dispatch on the body's species ordinal (see HyperspaceMath.Species).
+ *
+ * An if-chain, and every branch is inlined into this one function, so what the
+ * register allocator has to accommodate is the WORST estimator rather than the
+ * sum of them - adding a species costs one comparison for the bodies that are
+ * not it. That is the only reason a sixth fits: deSeed's live set is a vec4, a
+ * derivative and a radius, comfortably under deJewel's and deTemple's.
+ */
 float speciesDE(vec3 p, int species, float fold) {
     if (species == 0) return deGasket(p, fold);
     if (species == 1) return deTemple(p, fold);
     if (species == 2) return deJewel(p, fold);
     if (species == 3) return deCoral(p, fold);
-    return deBulb(p, fold);
+    if (species == 4) return deBulb(p, fold);
+    return deSeed(p, fold);
 }
 
 /**
@@ -392,7 +567,15 @@ float speciesDE(vec3 p, int species, float fold) {
  * ray never gets inside.
  */
 float map(vec3 p) {
-    float d = 1e9;
+    // The far plane, not a sentinel. With no body in range - which is every
+    // sample in an empty room, and every sample on the first frame of a scene,
+    // a style switch or a context loss - this is what the march is handed, and
+    // it is a DISTANCE the caller steps by. A 1e9 here made that step 4e8
+    // world units, which sampled the medium a hundred million units off its
+    // own grid and integrated it over the same length; the frame went white.
+    // Nothing beyond uFar is ever drawn, so "no surface within the far plane"
+    // is both true and the largest useful bound there is.
+    float d = uFar;
     gAuraW = 0.0;
     gAuraH = 0.0;
     gSurface = 0.0;
@@ -438,6 +621,14 @@ float map(vec3 p) {
         // The body breathes: a slow wobble of its own fold constant, on its
         // own phase, so a body is never quite the same shape twice - and the
         // bass leans on it, gently and equally for every body.
+        //
+        // These two coefficients are the WHOLE of the structural modulation in
+        // this shader, and uBeat is deliberately not among them. VisualSafety
+        // clamps parameters and LFO rates; it cannot clamp geometry, and the
+        // hazard in this family is not colour but area - a fold constant that
+        // jumped on a transient would change how much of the screen a body
+        // covers between one frame and the next. A continuous few per cent on
+        // the body's own slow phase cannot.
         float fold = S.z * (1.0 + 0.04 * sin(L.z) + 0.02 * uBass);
         gT = 1e9;
         float df = speciesDE(q, int(S.x + 0.5), fold) * max(S.y, 1e-4);
@@ -497,49 +688,91 @@ float calcAO(vec3 p, vec3 n, float scale) {
  * what the opening seconds of the experience this style is named for are
  * always described as.
  *
- * The translation constant drifts, slowly and on three unrelated rates, so the
- * fabric keeps reorganising instead of standing still.
+ * The view turns through it, slowly and on two unrelated rates, so the fabric
+ * keeps reorganising instead of standing still.
  */
 vec3 chrysanthemum(vec3 rd) {
     if (uField <= 0.002) return vec3(0.0);
-    // A high starting scale is what makes this a FABRIC rather than a handful
-    // of blobs: the iteration's structure is at unit scale, so entering it far
-    // from the origin puts many periods of it inside one degree of view.
+    // The VIEW turns; the fractal stands still.
     //
-    // Compensated for the mirror: the kaleidoscope squeezes the whole screen
-    // into one sector of directions, so the SAME field spread over 1/folds of
-    // the angles it used to cover comes out that many times coarser - which is
-    // how a filigree turned into flat washes the moment the fold came on.
-    float squeeze = uMirror >= 0.5 ? max(uMirrorFolds, 2.0) * 0.5 : 1.0;
-    vec3 p = rd * (4.6 + 0.7 * sin(uTime * 0.05)) * squeeze;
-    vec3 c =
-        vec3(0.84, 0.91, 0.72) +
-            0.07 * vec3(sin(uTime * 0.043), cos(uTime * 0.037), sin(uTime * 0.029));
+    // The translation constant used to drift instead, on three slow rates, for
+    // the same reason - to keep the fabric reorganising. It is not the same
+    // thing. This iteration is chaotic in that constant: a drift of 0.07 walks
+    // it through parameter values where the whole orbit collapses toward the
+    // origin, and then every direction on the screen reads as "on the set" at
+    // once. Measured over a simulated hour, the fraction of the sky the traps
+    // below light ranged from under a thousandth to nine tenths, on a
+    // two-minute cycle. Half of the "washes out" this style was reported for
+    // was that cycle; a fixed constant with the view moving through it holds
+    // every one of those statistics inside a factor of two, which is what lets
+    // the thresholds below be numbers rather than guesses.
+    float turn = uTime * 0.037;
+    float tilt = uTime * 0.021;
+    rd.xz = mat2(cos(turn), -sin(turn), sin(turn), cos(turn)) * rd.xz;
+    rd.yz = mat2(cos(tilt), -sin(tilt), sin(tilt), cos(tilt)) * rd.yz;
+    // Where the orbit starts. The iteration's own structure is at unit scale,
+    // so this is what decides how much of the fabric one screen holds; it
+    // breathes, which reads as the fabric drawing itself closer and letting go.
+    //
+    // Not compensated for the mirror any more. kaleido() maps (r, angle) to
+    // (r, fold(angle)) and |d fold / d angle| is 1, so it is a piecewise
+    // ISOMETRY of the screen: it repeats a wedge of the field, it does not
+    // magnify it. The scale factor that used to be applied here was correcting
+    // for a squeeze that does not happen.
+    float reach = 4.6 + 0.7 * sin(uTime * 0.05);
+    vec3 p = rd * reach;
+    const vec3 c = vec3(0.84, 0.91, 0.72);
     // The CLOSEST approach of the orbit, not a sum over it. A sum washes the
     // whole sky to a pastel haze; the closest approach is an orbit trap, and
     // its narrow response is what leaves thin bright strands on black - the
     // difference between a filigree and a fog.
     //
-    // Two traps, because the fabric has two scales: the distance to the origin
-    // draws the knots, and the distance to the nearest axis plane draws the
-    // threads running between them.
-    float knot = 1e9;
+    // Two traps, because a fabric is threads and the knots where they cross.
+    // The orbit lies along the coordinate PLANES, so the smallest component is
+    // the distance to the nearest thread, and the two smallest together are
+    // the distance to the nearest coordinate axis - which is where two threads
+    // meet. Neither is the distance to the ORIGIN, which is what the knot trap
+    // used to be and which does not vary: over a screenful of directions its
+    // closest approach spans four per cent, so through any response at all it
+    // is a constant, and a constant added to every pixel is the definition of
+    // a wash. The thread trap was the other half: it is the smallest of
+    // thirty-six numbers whose median is 0.02, and exp(-x*x*420) of that is
+    // 0.45, so nine tenths of the sky came out at four tenths of full
+    // brightness before anything was drawn on it.
     float thread = 1e9;
+    float knot = 1e9;
     float hue = 0.0;
     for (int i = 0; i < 12; i++) {
         p = abs(p) / max(dot(p, p), 1e-4) - c;
-        float m = length(p);
-        if (m < knot) {
-            knot = m;
-            hue = float(i) * 0.11 + m * 0.6;
+        vec3 a = abs(p);
+        float lo = min(min(a.x, a.y), a.z);
+        float hi = max(max(a.x, a.y), a.z);
+        float mid = a.x + a.y + a.z - lo - hi;
+        if (lo < thread) {
+            thread = lo;
+            hue = float(i) * 0.11 + length(p) * 0.6;
         }
-        thread = min(thread, min(min(abs(p.x), abs(p.y)), abs(p.z)));
+        knot = min(knot, length(vec2(lo, mid)));
     }
-    float strands = exp(-knot * knot * 55.0) + 0.55 * exp(-thread * thread * 420.0);
+    // Each gain is one over the square of its own trap's value at about the
+    // fifth percentile of the distribution that trap actually has, so the
+    // response is down to 1/e there: between a sixteenth and an eighth of the
+    // sky is on a thread or at a knot and the rest is black. With the constant
+    // fixed above those percentiles hold across the whole run, which is what
+    // makes these calibrated numbers rather than a taste that worked once.
+    float strands = exp(-knot * knot * 6.0e3) + 0.55 * exp(-thread * thread * 1.0e6);
+    // A thin thing has to be bright to be seen. The old wash carried the sky's
+    // light over the whole sky; this carries the same light over a tenth of
+    // it, so the per-strand radiance goes up by about that factor and the
+    // FULL-SCREEN mean comes out at or below where it was - which is the term
+    // VisualSafety cares about, and it is also far steadier over time now that
+    // it no longer swings with the constant.
+    const float FILIGREE = 5.0;
     // Treble picks out the fine strands. Every factor here is well under a
     // brightness that could read as a flash, at any level (see VisualSafety).
     float sharpen = 1.0 + 0.35 * clamp(uTreble, 0.0, 1.2);
-    return palette(hue, 0.82) * strands * uField * (0.20 + 0.13 * clamp(uEnergy, 0.0, 1.2)) * sharpen;
+    return palette(hue, 0.82) * strands * FILIGREE * uField
+        * (0.20 + 0.13 * clamp(uEnergy, 0.0, 1.2)) * sharpen;
 }
 
 /**
@@ -619,7 +852,16 @@ void main() {
         // straight through thin geometry (holes and shimmer, not anything
         // that reads as an overshoot). MeltMath.stepRelaxation owns the
         // number; it arrives folded into uMeltRelax.
-        float step = d * 0.82 * uMeltRelax;
+        //
+        // Then bounded three ways, because the estimate alone is a bound on
+        // what the ray can HIT and says nothing about what it integrates on
+        // the way: by uMaxStep, the scale the medium is defined on, so a
+        // single step cannot straddle the whole dye field; by what is left of
+        // the ray, so nothing past the far plane is integrated at all; and
+        // from below by the hit epsilon, since a step finer than the surface
+        // threshold cannot resolve anything and a zero step would spend the
+        // rest of the budget standing still.
+        float step = max(min(d * 0.82 * uMeltRelax, min(uMaxStep, uFar - t)), eps);
         glow +=
             palette(gHue + log(max(gTrap, 1e-6)) * 0.14 * uTrapColor, 0.78) *
                 gGlow * gSurface * exp(-d * 12.0) * step;
@@ -637,19 +879,29 @@ void main() {
         // and gives depth for free: the near side of a cloud of dye is
         // brighter than the far side, so the medium has a shape.
         if (uLiquid > 0.001) {
-            // Sampled a jittered fraction of a step along the ray, not at the
-            // step itself. Every pixel otherwise samples the medium at the
-            // same depths, and the integral quantizes into concentric shells -
-            // it looked like contour lines drawn on the fog. Offsetting by a
-            // whole step decorrelates neighbours completely.
+            // Sampled at a jittered point WITHIN this segment rather than at
+            // its near end. Every pixel otherwise samples the medium at the
+            // same depths and the integral quantizes into concentric shells -
+            // it looked like contour lines drawn on the fog. The segment is
+            // now bounded by uMaxStep, so this is a stratified sample of the
+            // stretch being integrated; before, it was an offset of a whole
+            // open-space step, which put the sample tens of world units away
+            // from the piece of ray it was supposed to represent.
             vec3 ink = dyeAt(p + rd * (jitter * step));
             float dens = uLiquid * dot(ink, vec3(0.333));
-            glow += ink * trans * dens * step * 0.35;
-            // Absorbs faster than it emits, so the medium stays a set of
-            // wisps and streaks. Emitting as fast as it absorbs makes an
-            // inked region a solid wall of colour once the ray is a few units
-            // into it, which is a wash, not a fluid.
-            trans *= exp(-dens * step * 1.6);
+            // Integrated in CLOSED FORM over the segment, not as emission
+            // times length. For a medium that is constant along the segment
+            // the transport equation has an exact solution, and the two forms
+            // agree to first order in the step - but the sum form only
+            // approaches the emission/extinction ceiling in the limit of many
+            // small steps, and this march deliberately takes long ones
+            // wherever there is nothing to hit. The closed form carries that
+            // ceiling at ANY step size, which is what makes the medium's
+            // brightness a property of the ink rather than of how far the
+            // geometry happened to let the ray jump.
+            float absorbed = 1.0 - exp(-dens * step * LIQUID_EXTINCTION);
+            glow += ink * trans * (LIQUID_EMISSION / LIQUID_EXTINCTION) * absorbed;
+            trans *= 1.0 - absorbed;
         }
         t += step;
         if (t > uFar) break;
@@ -688,9 +940,14 @@ void main() {
         // rather than the geometry. Measured on the flow direction at the
         // surface, so it swims when the medium moves and stands still when it
         // does not.
+        //
+        // Reads flowAt, not meltAt: this control marks the surface, it does
+        // not move it, so it has no business being multiplied by how far the
+        // melt is allowed to push. Through meltAt it was an exact no-op at
+        // Melt 0 - the whole slider did nothing until a different one was up.
         float comb = 0.0;
-        if (uRidges > 0.001 && uHasMelt >= 0.5) {
-            vec3 flow = meltAt(p);
+        if (uRidges > 0.001) {
+            vec3 flow = flowAt(p);
             float speed = length(flow);
             if (speed > 1e-5) {
                 // Across the flow, not along it: a wave measured along its own

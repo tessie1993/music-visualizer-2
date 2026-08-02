@@ -65,9 +65,10 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
 
   const supplies = new Set([
     'uResolution', 'uTime', 'uBloomCount', 'uBloomPos', 'uBloomShape', 'uBloomLook', 'uBloomRot',
-    'uCamPos', 'uCamBasis', 'uFov', 'uSteps', 'uIters', 'uBulbIters', 'uFar', 'uHitEps',
-    'uBoundMargin', 'uAct', 'uField', 'uMirror', 'uMirrorFolds', 'uGlow', 'uNeon', 'uHaze',
-    'uTrapColor', 'uHueSpread', 'uBaseHue', 'uHueSpan', 'uHasMelt', 'uMelt', 'uMeltGain',
+    'uCamPos', 'uCamBasis', 'uFov', 'uSteps', 'uIters', 'uBulbIters', 'uSeedIters',
+    'uFar', 'uMaxStep', 'uHitEps',
+    'uBoundMargin', 'uField', 'uMirror', 'uMirrorFolds', 'uGlow', 'uNeon', 'uHaze',
+    'uTrapColor', 'uHueSpread', 'uBaseHue', 'uHueSpan', 'uHasMelt', 'uMelt', 'uFlowGain',
     'uMeltReach', 'uMeltScale', 'uMeltAspect', 'uMeltRelax', 'uStain', 'uLiquid', 'uRidges',
     'uFlowTex', 'uDyeTex', 'uEnergy', 'uBass', 'uTreble', 'uBeat', 'uExposure',
   ]);
@@ -132,14 +133,12 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
       H.MeltMath.reach(meltAmount, H.MeltMath.DEFAULT_SCALE),
     );
 
+    // Zoom and Rotation are the composite pass' for this family, so the scene
+    // reads neither - see HyperspaceScene's camera block.
     const camDistance = H.Look.cameraDistance(
-      profile.camera * clamp(p.zoom, 0.4, 3), spread, H.Look.maxBodyRadius(target),
+      profile.camera, spread, H.Look.maxBodyRadius(target),
     );
-    camera.advance({
-      dt, distance: camDistance,
-      drift: clamp(p.hyperCamera, 0, 3) * pace,
-      roll: p.rotation * time,
-    });
+    camera.advance({ dt, distance: camDistance, drift: clamp(p.hyperCamera, 0, 3) * pace });
     const farPlane = H.Look.farPlane(camDistance, spread);
     beatPulse = clamp(Math.max(impulseRaw * clamp(p.beatResponse, 0, 2), beatPulse - dt * 3), 0, 1.5);
     const budget = H.marchBudget(p.hyperDetail);
@@ -158,10 +157,11 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
       uSteps: { t: '1i', v: budget.steps },
       uIters: { t: '1i', v: budget.iterations },
       uBulbIters: { t: '1i', v: budget.bulbIterations },
+      uSeedIters: { t: '1i', v: budget.seedIterations },
       uFar: { t: '1f', v: farPlane },
+      uMaxStep: { t: '1f', v: H.Look.maxMarchStep(H.MeltMath.DEFAULT_SCALE) },
       uHitEps: { t: '1f', v: H.Look.HIT_EPSILON },
       uBoundMargin: { t: '1f', v: H.Look.BOUND_MARGIN },
-      uAct: { t: '1f', v: journey.actPosition },
       uField: { t: '1f', v: profile.field * clamp(p.hyperField, 0, 2) },
       uMirror: { t: '1f', v: profile.mirror },
       uMirrorFolds: { t: '1f', v: clamp(Math.round(p.hyperMirrorFolds), 2, 16) },
@@ -174,14 +174,14 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
       uHueSpan: { t: '1f', v: hueSpan },
       uHasMelt: { t: '1f', v: hasMelt ? 1 : 0 },
       uMelt: { t: '1f', v: meltAmount },
-      uMeltGain: { t: '1f', v: flowScale * H.MeltMath.DEFAULT_SCALE * H.MeltMath.MELT_SECONDS * meltAmount },
+      uFlowGain: { t: '1f', v: flowScale * H.MeltMath.DEFAULT_SCALE * H.MeltMath.MELT_SECONDS },
       uMeltReach: { t: '1f', v: H.MeltMath.reach(meltAmount, H.MeltMath.DEFAULT_SCALE) },
       uMeltScale: { t: '1f', v: H.MeltMath.DEFAULT_SCALE },
       uMeltAspect: { t: '1f', v: meltAspect },
       uMeltRelax: { t: '1f', v: H.MeltMath.stepRelaxation(meltAmount) },
       uStain: { t: '1f', v: hasMelt ? clamp(p.hyperStain, 0, 1.5) : 0 },
       uLiquid: { t: '1f', v: hasMelt ? clamp(p.hyperLiquid, 0, 1.5) : 0 },
-      uRidges: { t: '1f', v: clamp(p.hyperRidges, 0, 1) },
+      uRidges: { t: '1f', v: hasMelt ? clamp(p.hyperRidges, 0, 1) : 0 },
       uFlowTex: { t: 'tex', v: 0 },
       uDyeTex: { t: 'tex', v: 1 },
       uEnergy: { t: '1f', v: clamp(f.rms, 0, 1.5) },
@@ -198,7 +198,8 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
         dt: clamp(dt, 0, 1 / 30),
         curlStrength: clamp(p.hyperSwirl, 0, 50) * (1 + 0.5 * f.mid),
         velocityDissipation: clamp(p.hyperFlowFade, 0, 4),
-        densityDissipation: clamp(p.hyperFlowFade * 0.45, 0, 4),
+        densityDissipation: H.MeltMath.dyeDissipation(p.hyperFlowFade),
+        dyeCeiling: H.MeltMath.DYE_CEILING,
       } : null,
       debug: {
         time,
@@ -257,10 +258,29 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
     return out;
   }
 
+  /**
+   * Advances only the FREE-RUNNING CLOCKS by [seconds], without stepping any
+   * per-frame simulation.
+   *
+   * A live wallpaper's `time` reaches hours, and everything downstream of it
+   * is a float: `sin(uTime * 0.043)` at t = 3600 has lost most of its
+   * fractional precision in a mediump-capable driver, and `p.rotation * time`
+   * grows without bound. That is what this mode is for. It deliberately does
+   * NOT age the body bank or the fluid - those integrate at a bounded dt in
+   * the app too, and pretending to run them at a 60-second step would produce
+   * a picture the app can never show. Anything about the bodies read from a
+   * jumped run is meaningless.
+   */
+  function jumpClock(seconds) {
+    time += seconds;
+    camera.t += seconds * clamp(p.hyperCamera, 0, 3) * clamp(p.speed, 0.05, 4);
+  }
+
   return {
     id: 'hyperspace',
     supplies,
     step,
+    jumpClock,
     meltConfig: {
       enabled: hasMelt,
       velWidth: velGrid[0], velHeight: velGrid[1],
@@ -315,6 +335,14 @@ export function createShaderSceneDriver({ params, width, height }) {
     'uKaleido', 'uMorph', 'uPixelate', 'uPosterize', 'uSway', 'uPulse', 'uBeatPhase',
     'uDriftX', 'uDriftY', 'uShake', 'uTile', 'uTwist', 'uTemperature', 'uSolarize', 'uFlash',
     'uContrast', 'uGamma', 'uResolution', 'uAudioTex', 'uPalLutMix', 'uPalLutRow',
+    // Conditional in the app: the renderer only binds the FlowField for the
+    // scenes wired to it, and the cyclic-palette atlas only when it loaded.
+    // Both are supplied here as the NEUTRAL state the app itself sends when
+    // they are absent (zero flow at zero strength, atlas mix 0) rather than
+    // left unset, because unset means "sampler reads unit 0" - which on this
+    // family is the audio texture, i.e. a shader would silently read the
+    // spectrum as a colour map.
+    'uFlow', 'uFlowStrength', 'uPalLut',
   ]);
 
   function step(f, dt) {
@@ -388,9 +416,12 @@ export function createShaderSceneDriver({ params, width, height }) {
       // is the same state.
       u('uPalLutMix', 0),
       u('uPalLutRow', 0),
+      u('uFlowStrength', 0),
       {
         uResolution: { t: '2f', v: [width, height] },
         uAudioTex: { t: 'tex', v: 0 },
+        uFlow: { t: 'tex', v: 1 },
+        uPalLut: { t: 'tex', v: 2 },
       },
     );
     return {
@@ -401,5 +432,13 @@ export function createShaderSceneDriver({ params, width, height }) {
     };
   }
 
-  return { id: 'shader', supplies, step, meltConfig: { enabled: false } };
+  /** See the hyperspace driver's jumpClock: free-running clocks only. */
+  function jumpClock(seconds) {
+    shaderTime += p.speed * seconds;
+    rotationAngle += p.rotation * seconds;
+    if (p.endlessZoom) zoomPhase = (zoomPhase + p.endlessZoomSpeed * seconds) % 1;
+    if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * seconds) % 1;
+  }
+
+  return { id: 'shader', supplies, step, jumpClock, meltConfig: { enabled: false } };
 }
