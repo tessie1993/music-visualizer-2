@@ -1,5 +1,6 @@
 package dev.musicviz
 
+import dev.musicviz.render.BlendMode
 import dev.musicviz.render.LfoTarget
 import dev.musicviz.render.TransitionStyle
 import dev.musicviz.render.VisualSafety
@@ -270,5 +271,77 @@ class VisualSafetyTest {
             assertTrue("brightness rose at $v", out.brightness <= src.brightness + eps)
             assertTrue("contrast rose at $v", out.contrast <= src.contrast + eps)
         }
+    }
+
+    // ---- Layers ------------------------------------------------------------
+
+    /**
+     * Layers reaches the screen after apply() has clamped every parameter, so
+     * the mix is the only place its magnitude can be bounded. These pin that
+     * the two amplifying modes are bounded and the six bounded ones are not
+     * touched - a clamp that hit all eight would quietly ruin Screen and
+     * Multiply for no safety gain.
+     */
+    @Test
+    fun `layer mix is untouched when safety is off`() {
+        val off = VisualSafety.SafetyConfig.OFF
+        for (mode in BlendMode.entries) {
+            assertEquals(mode.name, 1f, VisualSafety.layerMix(1f, mode, off), 0f)
+        }
+    }
+
+    @Test
+    fun `bounded blend modes keep their full mix under safety`() {
+        val on = VisualSafety.SafetyConfig(enabled = true, maxFlashDepth = 0.25f)
+        for (mode in listOf(
+            BlendMode.NORMAL,
+            BlendMode.SCREEN,
+            BlendMode.MULTIPLY,
+            BlendMode.OVERLAY,
+            BlendMode.LIGHTEN,
+            BlendMode.DARKEN,
+        )) {
+            assertEquals(
+                "$mode cannot exceed its inputs, so it needs no clamp",
+                1f,
+                VisualSafety.layerMix(1f, mode, on),
+                0f,
+            )
+        }
+    }
+
+    @Test
+    fun `add is capped to the flash depth under safety`() {
+        val on = VisualSafety.SafetyConfig(enabled = true, maxFlashDepth = 0.25f)
+        assertEquals(0.25f, VisualSafety.layerMix(1f, BlendMode.ADD, on), 1e-6f)
+        // Already below the cap: untouched, not raised.
+        assertEquals(0.1f, VisualSafety.layerMix(0.1f, BlendMode.ADD, on), 1e-6f)
+    }
+
+    /** DIFFERENCE is a contrast reversal, so it rides allowInversion. */
+    @Test
+    fun `difference is off unless inversion is allowed`() {
+        val noInvert = VisualSafety.SafetyConfig(enabled = true, allowInversion = false)
+        assertEquals(0f, VisualSafety.layerMix(1f, BlendMode.DIFFERENCE, noInvert), 0f)
+
+        val invert = VisualSafety.SafetyConfig(enabled = true, allowInversion = true, maxFlashDepth = 0.25f)
+        assertEquals(0.25f, VisualSafety.layerMix(1f, BlendMode.DIFFERENCE, invert), 1e-6f)
+    }
+
+    @Test
+    fun `layer mix is clamped into range whatever the caller passes`() {
+        val off = VisualSafety.SafetyConfig.OFF
+        assertEquals(0f, VisualSafety.layerMix(-3f, BlendMode.SCREEN, off), 0f)
+        assertEquals(1f, VisualSafety.layerMix(9f, BlendMode.SCREEN, off), 0f)
+    }
+
+    /** The ordinals are composite_frag's switch values; only appending is safe. */
+    @Test
+    fun `blend mode ordinals are the shader contract`() {
+        assertEquals(0, BlendMode.NORMAL.ordinal)
+        assertEquals(4, BlendMode.DIFFERENCE.ordinal)
+        assertEquals(8, BlendMode.entries.size)
+        assertEquals(BlendMode.SCREEN, BlendMode.fromOrdinal(99))
+        assertEquals(BlendMode.SCREEN, BlendMode.fromOrdinal(-1))
     }
 }

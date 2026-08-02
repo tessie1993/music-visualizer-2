@@ -280,7 +280,12 @@ class FeatureExtractor(
             val threshold = fluxMean + beatThresholdSigma * fluxStd
             val refractoryFrames = (hopRateHz * beatMinIntervalMs / 1000f).roundToInt().coerceAtLeast(1)
             val isBeat = flux > threshold && flux > FLUX_FLOOR && framesSinceBeat > refractoryFrames
-            framesSinceBeat = if (isBeat) 0 else framesSinceBeat + 1
+            // Clamped for the reason [DrumChannels] clamps its own: an
+            // unbounded counter overflows to negative on a long-running
+            // wallpaper and the gate then never fires again. The ceiling is
+            // far above the 72-frame maximum refractory, so no reachable
+            // behaviour changes.
+            framesSinceBeat = if (isBeat) 0 else minOf(framesSinceBeat + 1, 1_000_000)
             return isBeat
         }
 

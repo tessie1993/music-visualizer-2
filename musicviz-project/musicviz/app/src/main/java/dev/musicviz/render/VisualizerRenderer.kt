@@ -368,6 +368,16 @@ class VisualizerRenderer(
      *
      * Ignored when it names the active scene (a style blended with itself is
      * just that style at a different exposure) or an unknown id.
+     *
+     * **Screen only: layers do not survive a video export.** `FxCompositor`
+     * builds this same `composite_frag` but hardcodes `uStyle = CUT`, and
+     * `VideoExporter` renders exactly one `Scene` - there is no second scene
+     * and no second target in that pipeline, so an export of a layered view
+     * shows the ACTIVE scene alone. Nothing is corrupt; the layer is simply
+     * absent. Worth stating because every other visual control here is
+     * mirrored on the export path deliberately. Closing it means a second
+     * SceneFactory, a second FBO and a second update loop in the exporter -
+     * a feature, not a patch.
      */
     @Volatile
     var layerSceneId: String? = null
@@ -1250,7 +1260,10 @@ class VisualizerRenderer(
         GLES30.glUniform1i(cLoc("uNoise"), 4)
         GLES30.glUniform1f(cLoc("uDither"), if (noiseTex != 0) BlueNoise.DITHER_AMOUNT else 0f)
         GLES30.glUniform1f(cLoc("uProgress"), progress)
-        GLES30.glUniform1f(cLoc("uLayerMix"), layerMix.coerceIn(0f, 1f))
+        // Through VisualSafety, like every other full-frame luminance event.
+        // The blend happens after apply() has clamped the params, so this is
+        // the only place the mix can be bounded.
+        GLES30.glUniform1f(cLoc("uLayerMix"), VisualSafety.layerMix(layerMix, layerBlend, safety))
         GLES30.glUniform1i(cLoc("uBlendMode"), layerBlend.ordinal)
         // uStyle tells the shader what to do THIS frame. Outside a transition
         // it is always CUT (draw the incoming scene), whichever transition is

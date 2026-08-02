@@ -242,4 +242,34 @@ class DrumChannelsTest {
         }
         assertEquals(run(), run())
     }
+
+    /**
+     * The refractory counter must not run away.
+     *
+     * It rests at a large value and increments once per silent frame, so an
+     * unbounded version overflows to negative on a long-running wallpaper -
+     * after which `sinceHit > refractoryFrames` is false forever and the
+     * channel is silently dead with no way back except reset(). Rather than
+     * step a billion frames, this asserts the property that makes the overflow
+     * impossible: a channel that has been idle for a very long time still
+     * fires, and fires identically to one idle for a short time.
+     */
+    @Test
+    fun `a long idle period does not disable a channel`() {
+        val quiet = FloatArray(bandCount)
+        val hit = bands(bandOf(50f), bandOf(110f))
+
+        fun fireAfter(idleFrames: Int): Float {
+            val d = DrumChannels(bandCount, hopRateHz, rate)
+            repeat(idleFrames) { d.step(quiet) }
+            d.step(hit)
+            return d.kickImpulse
+        }
+
+        val short = fireAfter(200)
+        val long = fireAfter(200_000)
+        assertTrue("a channel idle for 200 frames did not fire", short > 0f)
+        assertTrue("a channel idle for 200k frames did not fire", long > 0f)
+        assertEquals("idle length changed the response", short, long, 0f)
+    }
 }

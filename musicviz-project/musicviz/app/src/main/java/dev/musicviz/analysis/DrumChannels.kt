@@ -164,13 +164,13 @@ class DrumChannels(
         private val refractoryFrames = (hopRateHz * refractoryMs / 1000f).roundToInt().coerceAtLeast(1)
         private var index = 0
         private var filled = 0
-        private var sinceHit = Int.MAX_VALUE / 2
+        private var sinceHit = REFRACTORY_IDLE
 
         fun reset() {
             java.util.Arrays.fill(history, 0f)
             index = 0
             filled = 0
-            sinceHit = Int.MAX_VALUE / 2
+            sinceHit = REFRACTORY_IDLE
         }
 
         fun accept(flux: Float): Float {
@@ -193,7 +193,13 @@ class DrumChannels(
             // would happily fire on dither.
             val z = if (std > 1e-6f) (flux - mean) / std else 0f
             val hit = flux > FLUX_FLOOR && z > SIGMA && sinceHit > refractoryFrames
-            sinceHit = if (hit) 0 else sinceHit + 1
+            // Clamped, not just incremented. An unbounded counter on a live
+            // wallpaper eventually overflows to negative, after which
+            // `sinceHit > refractoryFrames` is false forever and the channel
+            // is silently dead until something calls reset(). The ceiling is
+            // far above any reachable refractory (72 frames at the slowest
+            // setting), so nothing below it changes.
+            sinceHit = if (hit) 0 else minOf(sinceHit + 1, REFRACTORY_IDLE)
             if (!hit) return 0f
             val t = ((z - SIGMA) / STRENGTH_SPAN_SIGMA).coerceIn(0f, 1f)
             return STRENGTH_FLOOR + (1f - STRENGTH_FLOOR) * t
@@ -236,6 +242,14 @@ class DrumChannels(
 
         /** Absolute floor under the sigma gate; silence must never fire. */
         const val FLUX_FLOOR = 0.01f
+
+        /**
+         * The value a refractory counter rests at, and the ceiling it is
+         * clamped to. Any number comfortably above the largest reachable
+         * refractory window works; what matters is that the counter cannot
+         * run away and overflow. See [Channel.accept].
+         */
+        private const val REFRACTORY_IDLE = 1_000_000
 
         /**
          * Band index containing [hz], under the log spacing [FftProcessor]
