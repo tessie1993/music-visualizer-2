@@ -378,6 +378,32 @@ internal class FluidSim(
     val velocityTex: Int get() = velocity?.read?.tex ?: 0
     val velocityGridHeight: Int get() = velocity?.height ?: 128
 
+    /**
+     * The pressure field the projection just solved for, as a texture name.
+     *
+     * The solve already happens: [step] runs [pressureIterations] Jacobi
+     * sweeps into this ping-pong every frame, subtracts its gradient from the
+     * velocity, and then the field sits there unread until the next frame's
+     * damped clear uses it as a warm start. So this exposes work that is
+     * already paid for, and the last [FluidBuffers.DoubleFbo.swap] of the
+     * Jacobi loop is what leaves the converged solution in `read` - the same
+     * side `fluid_gradient_frag` is handed on the very next line.
+     *
+     * A getter over the private grid rather than a second field: it reads
+     * state that already exists, allocates nothing, and no operator in [step]
+     * consults it, so adding it cannot move a pixel of FLUID, WATER, CURLFLOW
+     * or the Hyperspace melt. 0 while the grids are unallocated, matching
+     * [dyeTex] and [velocityTex], because a caller binding texture 0 gets
+     * black rather than a GL error.
+     *
+     * Two cautions for whoever reads it. It is a NEUMANN solve, so its DC
+     * component is a free constant that wanders frame to frame; anything
+     * driving geometry from it has to subtract the field's own mean first or
+     * the whole picture will drift with the gauge. And it is [FluidBuffers]'
+     * single-channel format, so only R carries the pressure.
+     */
+    val pressureTex: Int get() = pressure?.read?.tex ?: 0
+
     /** v2 pass order: advect vel -> forces -> curl -> vorticity -> project -> dye. */
     fun step(dtRaw: Float) {
         if (!available) return
