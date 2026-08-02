@@ -116,6 +116,7 @@ class FeatureExtractor(
         waveform: FloatArray,
         sampleRateHz: Int,
         stereo: StereoField.Reading = StereoField.MONO,
+        chroma: Chromagram? = null,
     ): AudioFeatures {
         var flux = 0f
         var sum = 0f
@@ -177,6 +178,8 @@ class FeatureExtractor(
             beatPhase = tracker.phase,
             pulseConfidence = tracker.confidence,
             macroEnergy = tracker.energy,
+            chroma = if (chroma == null) AudioFeatures.EMPTY_CHROMA else chroma.bins.copyOf(),
+            chromaConfidence = chroma?.confidence ?: 0f,
             stereoWidth = stereo.width,
             stereoCorrelation = stereo.correlation,
             kick = d.kickImpulse,

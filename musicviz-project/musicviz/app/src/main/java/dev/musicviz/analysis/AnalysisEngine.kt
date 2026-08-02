@@ -88,14 +88,17 @@ class AnalysisEngine(
                 // length: the stereo measurements are taken over this, not
                 // over the decimated `waveform` below.
                 val sideBuf = FloatArray(processor.fftSize)
+                val chroma = Chromagram(hopRateHz = 60f)
                 while (true) {
                     if (resetPending) {
                         resetPending = false
                         extractor.reset()
                         smoother.reset()
+                        chroma.reset()
                     }
                     if (ring.snapshotLatest(windowBuf)) {
                         processor.process(windowBuf, sampleRateHz, raw)
+                        processor.updateChroma(chroma, sampleRateHz)
                         smoother.apply(raw, smoothed)
                         val step = processor.fftSize / waveform.size
                         for (i in waveform.indices) waveform[i] = windowBuf[i * step]
@@ -105,7 +108,7 @@ class AnalysisEngine(
                             } else {
                                 StereoField.MONO
                             }
-                        _features.value = extractor.extract(smoothed, waveform, sampleRateHz, stereo)
+                        _features.value = extractor.extract(smoothed, waveform, sampleRateHz, stereo, chroma)
                     }
                     delay(16)
                 }

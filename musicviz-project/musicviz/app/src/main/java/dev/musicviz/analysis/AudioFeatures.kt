@@ -90,7 +90,26 @@ data class AudioFeatures(
      * decorrelated.
      */
     val stereoCorrelation: Float = 1f,
+    /**
+     * Per-frame 12-bin chromagram, index 0 = C, largest bin scaled to 1. See
+     * [Chromagram], including what its resolution limit means.
+     *
+     * EMPTY when no chromagram ran - a live fallback, a synthesised feature, a
+     * cache entry. Empty rather than twelve zeros so a consumer can tell "no
+     * pitch information" from "silence", which are different situations: the
+     * first should leave a harmony-driven visual on its last reading, the
+     * second should let it settle.
+     */
+    val chroma: FloatArray = EMPTY_CHROMA,
+    /**
+     * How pitched this frame is, 0..1 - [Chromagram.confidence]. Scenes
+     * should hold their last harmony below about 0.35 rather than follow a
+     * drum fill.
+     */
+    val chromaConfidence: Float = 0f,
 ) {
+    /** True when [chroma] carries a reading rather than "not measured". */
+    val hasChroma: Boolean get() = chroma.size == 12
     /**
      * What a beat should DO to the visuals this frame: 0 off beats, the
      * graded [beatStrength] on them - except for beat flags that carry no
@@ -122,6 +141,9 @@ data class AudioFeatures(
         /** Weight of the transient channel inside [motionImpulse]: texture at
          *  up to half the presence of a confirmed beat. */
         const val TRANSIENT_MOTION_WEIGHT = 0.5f
+
+        /** Shared "no chromagram ran" marker; see [AudioFeatures.chroma]. */
+        val EMPTY_CHROMA = FloatArray(0)
 
         fun empty(
             bandCount: Int = 64,

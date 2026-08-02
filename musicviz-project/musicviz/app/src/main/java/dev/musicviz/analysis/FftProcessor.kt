@@ -44,6 +44,19 @@ class FftProcessor(
         detector.accumulate(magnitudes, sampleRateHz, fftSize)
     }
 
+    /**
+     * Steps a per-frame [Chromagram] with the magnitudes of the LAST [process]
+     * call. Separate from [accumulateChroma] because the two answer different
+     * questions - whole-track key versus what is sounding now - and a caller
+     * may want either, both or neither.
+     */
+    fun updateChroma(
+        chroma: Chromagram,
+        sampleRateHz: Int,
+    ) {
+        chroma.step(magnitudes, sampleRateHz, fftSize)
+    }
+
     /** Maps each band to an inclusive range of FFT bin indices; recomputed per sample rate. */
     internal fun bandEdges(sampleRateHz: Int): IntArray {
         val nyquist = sampleRateHz / 2f
