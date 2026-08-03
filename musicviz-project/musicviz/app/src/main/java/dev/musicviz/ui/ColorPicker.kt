@@ -236,8 +236,7 @@ fun ColorPicker(
                             value = hsv[2]
                         }
                     },
-                    label = { Text("Hex") },
-                    prefix = { Text("#") },
+                    label = { Text("Hex (#RRGGBB)") },
                     singleLine = true,
                     keyboardOptions =
                         KeyboardOptions(
@@ -267,10 +266,11 @@ fun ColorPicker(
 }
 
 /**
- * Sample writing in the candidate colour on the two backdrops that flatter it
- * least and most, plus the measured ratio. Showing it on the real surfaces is
- * the point: a swatch on its own tells you nothing about whether you will be
- * able to read with it.
+ * Sample writing in the candidate colour on the two backdrops it will most
+ * often land on - a plain panel and a filled chip - plus the measured ratio
+ * against the worst of ALL of them. Showing it on the real surfaces is the
+ * point: a swatch on its own tells you nothing about whether you will be able
+ * to read with it.
  */
 @Composable
 private fun ColorPreview(
@@ -336,7 +336,10 @@ private fun Swatch(
                 // swatch on a light theme is still a visible square.
                 if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
                 RoundedCornerShape(8.dp),
-            ).clickable(onClick = onClick),
+                // A bare coloured square says nothing to a screen reader, and
+                // an accessibility feature that is itself inaccessible would
+                // be a poor joke - so the hex code is the label.
+            ).clickable(onClickLabel = "Colour #${TextContrast.toHex(argb)}", onClick = onClick),
     )
 }
 

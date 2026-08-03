@@ -47,11 +47,12 @@ class TextContrastTest {
 
     @Test
     fun knownRatiosMatchAPublishedContrastChecker() {
-        // #767676 on white is the canonical "exactly AA" grey (4.54:1), and
-        // #949494 is the one just under it (3.98:1). If the linearisation
-        // above were wrong, these are the two that would move.
+        // #767676 on white is the canonical "exactly AA" grey (4.54:1) and
+        // #949494 sits almost exactly on the 3:1 floor (3.03:1) - i.e. one
+        // known point per threshold. If the sRGB linearisation were wrong,
+        // these are the two numbers that would move.
         assertEquals(4.54f, TextContrast.ratio(0xFF767676.toInt(), white), 0.02f)
-        assertEquals(3.98f, TextContrast.ratio(0xFF949494.toInt(), white), 0.02f)
+        assertEquals(3.03f, TextContrast.ratio(0xFF949494.toInt(), white), 0.02f)
     }
 
     @Test
@@ -107,9 +108,16 @@ class TextContrastTest {
 
     @Test
     fun nearestLegibleGivesUpWhenNoColourCouldWork() {
-        // A backdrop pair that brackets every possible text colour: nothing
-        // reads on both pure black and pure white at 3:1.
-        assertNull(TextContrast.nearestLegible(0xFF808080.toInt(), intArrayOf(black, white)))
+        // Black next to #9E9E9E brackets every possible text colour: reading
+        // on the black needs a luminance of at least 0.10, reading on the grey
+        // needs at most 0.08 (or an impossible 1.13). The best any colour
+        // manages is 2.78:1.
+        assertNull(TextContrast.nearestLegible(0xFF404040.toInt(), intArrayOf(black, 0xFF9E9E9E.toInt())))
+        // Pinned alongside it because the INTUITIVE impossible case is not
+        // impossible at all: a mid-grey clears 3:1 against both pure black and
+        // pure white, so the caller may assume neither that a fix always
+        // exists nor that a wide spread means it never does.
+        assertNotNull(TextContrast.nearestLegible(0xFF404040.toInt(), intArrayOf(black, white)))
     }
 
     // --- HSV and hex -------------------------------------------------------

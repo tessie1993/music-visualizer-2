@@ -94,9 +94,10 @@ object TextContrast {
      * The nearest colour to [text], on the straight line toward whichever of
      * white/black gains contrast fastest, that clears [MIN_LEGIBLE] on every
      * one of [backdrops]. Returns [text] unchanged when it already does, and
-     * null when even the extreme fails - which happens on a theme that mixes a
-     * near-white and a near-black surface, where no single text colour reads
-     * on both.
+     * null when even the extreme fails - which needs a scheme whose surfaces
+     * are spread so wide that NO text colour reads on all of them (a mid-grey
+     * panel next to a white one does it; black next to white, surprisingly,
+     * does not, since a mid-grey clears 3:1 against both).
      *
      * This is what the picker's "Nudge to legible" button applies. It exists so
      * that the hard floor is an offer rather than a wall: the user keeps the

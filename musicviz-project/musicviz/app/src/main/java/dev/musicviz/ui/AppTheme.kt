@@ -196,8 +196,8 @@ enum class AppTheme(
 }
 
 /**
- * The seven roles the "Text colour" appearance option repaints, in the order
- * [ColorScheme.textBackdrops] reports the surfaces they are written on.
+ * Every surface this scheme writes body/label text on, as plain ARGB Ints -
+ * the backdrops a custom text colour has to be legible against.
  *
  * The three surface roles were not enough: a `Text` painted with an `on*`
  * CONTAINER role - every chip and every filled selection in the shell -
