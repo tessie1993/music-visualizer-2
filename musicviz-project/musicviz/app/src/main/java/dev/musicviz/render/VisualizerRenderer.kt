@@ -517,6 +517,41 @@ class VisualizerRenderer(
      */
     private var layerScene: Scene? = null
 
+    /**
+     * Ids whose [Scene.init] has run against the CURRENT EGL context. Cleared
+     * in [onSurfaceCreated], because handles from a lost context are dead
+     * names and every scene has to be built again.
+     */
+    private val initialisedScenes = HashSet<String>()
+
+    /**
+     * Compiles [scene]'s programs the first time it is actually needed, and
+     * hands it everything [onSurfaceCreated] used to push into every scene up
+     * front.
+     *
+     * That list is the whole reason this is a method rather than a bare
+     * `init()` call: a scene brought up late has missed the resize, the params,
+     * its custom shader, its palette atlas and its milkdrop preset, and every
+     * one of those is silent when missing - a scene at the wrong size, at
+     * default params, or showing projectM's idle logo. Anything added to the
+     * startup path in future has to be added here too.
+     *
+     * GL thread only. Idempotent.
+     */
+    private fun ensureInitialised(scene: Scene) {
+        if (!initialisedScenes.add(scene.id)) return
+        scene.init()
+        // onSurfaceChanged may have run before this scene existed in the
+        // initialised set, so the size it was told about was never applied.
+        if (renderWidth > 0 && renderHeight > 0) scene.resize(renderWidth, renderHeight)
+        scene.setParams(sceneParams)
+        if (scene is ShaderScene) {
+            activeCustomShaders[scene.id]?.let { scene.setFragmentSource(it) }
+            if (paletteLutTex != 0) scene.setPaletteLut(paletteLutTex)
+        }
+        if (scene is ProjectMScene) lastMilkPreset?.let { scene.queuePreset(it) }
+    }
+
     /** Frozen at transition start: the outgoing scene keeps the look it had
      *  when the switch happened. Feeding it the live (morphing) params made
      *  snapped fields - palette choice, toggles - jump on the OLD scene
@@ -848,18 +883,32 @@ class VisualizerRenderer(
             particles.onShaderError = { onShaderError(it) }
         }
         milkdropScene = scenes[SceneIds.MILKDROP] as? ProjectMScene
-        scenes.values.forEach { it.init() }
-        // Restore state that would otherwise be lost when the EGL context is
-        // destroyed while backgrounded: re-apply the current params to every
-        // scene, re-push any edited custom shaders, and re-queue the last
-        // milkdrop preset so the visualizer resumes exactly where it was.
-        scenes.values.forEach { it.setParams(sceneParams) }
-        for ((sceneId, src) in activeCustomShaders) {
-            (scenes[sceneId] as? ShaderScene)?.setFragmentSource(src)
-        }
-        lastMilkPreset?.let { milkdropScene?.queuePreset(it) }
+        // NOT `scenes.values.forEach { it.init() }`. Constructing a scene is
+        // free - it owns no GL resources until init() - but init() is where it
+        // COMPILES AND LINKS its programs, and doing that for all of them here
+        // is what made the visualizer take seconds to appear.
+        //
+        // The count is much larger than the scene count: FluidLook alone
+        // builds eight keyword variants of its display shader plus six more
+        // programs, FluidSim builds one per pass, and FluidSim/FluidLook/
+        // FluidParticles are each instantiated separately by FLUID, WATER,
+        // CURLFLOW and HYPERSPACE's melt. Together with the 22 fragment
+        // styles, the nine particle styles and the raymarcher that is well
+        // over a hundred programs compiled before the first frame, none of
+        // which the user is looking at except one.
+        //
+        // So scenes are brought up on demand instead - see [ensureInitialised],
+        // which also carries the state this block used to push into all of
+        // them. The tradeoff is a compile hitch the first time a style is
+        // SELECTED rather than a long one at startup; that is the better trade
+        // because the cost lands on a style the user asked for, once, and a
+        // transition is already running over it.
+        initialisedScenes.clear()
         // Re-apply user fluid injection shaders lost with the old context.
         if (fluidForceSrc != null || fluidDyeSrc != null) fluidInjectionDirty = true
+        // Left UNinitialised here on purpose: paletteLutTex and the FlowField
+        // are built further down, and a scene brought up before them would
+        // miss both. onDrawFrame brings up whatever it is about to draw.
         activeScene = scenes[requestedSceneId] ?: scenes[SceneIds.NEBULA]
         outgoingScene = null
         outgoingParams = null
@@ -949,7 +998,10 @@ class VisualizerRenderer(
         val ss = supersampleFactor(width, height)
         renderWidth = (width * ss).toInt()
         renderHeight = (height * ss).toInt()
-        scenes.values.forEach { it.resize(renderWidth, renderHeight) }
+        // Initialised scenes only. An uninitialised one has no GL resources to
+        // resize, and ensureInitialised applies the current size when it is
+        // finally brought up.
+        scenes.values.forEach { if (it.id in initialisedScenes) it.resize(renderWidth, renderHeight) }
         flowField?.resize(renderWidth, renderHeight)
         rippleOverlay?.resize(renderWidth, renderHeight)
         fboA.ensure(renderWidth, renderHeight)
@@ -982,7 +1034,7 @@ class VisualizerRenderer(
             val (sceneId, src) = pendingCustomShaders.poll() ?: break
             (scenes[sceneId] as? ShaderScene)?.setFragmentSource(src)
         }
-        val requested = scenes[requestedSceneId]
+        val requested = scenes[requestedSceneId]?.also { ensureInitialised(it) }
         var sceneJustSwitched = false
         if (requested != null && requested !== activeScene) {
             val cuts = TransitionCatalog.builtIn(transitionId) == TransitionStyle.CUT
@@ -994,7 +1046,7 @@ class VisualizerRenderer(
             activeScene = requested
             sceneJustSwitched = true
         }
-        val scene = activeScene ?: return
+        val scene = (activeScene ?: return).also { ensureInitialised(it) }
         // Settings fade: exponentially approach the target params so preset
         // and slider changes glide instead of jumping. Toggles/choices snap.
         // A transient preset morph can lengthen the fade without ever being
@@ -1088,6 +1140,7 @@ class VisualizerRenderer(
                     ?.takeIf { it != requestedSceneId }
                     ?.let { scenes[it] }
                     ?.takeIf { it !== activeScene }
+                    ?.also { ensureInitialised(it) }
             }
         val layer = layerScene
         if (layer != null) {
