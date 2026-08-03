@@ -128,7 +128,7 @@ fun AppRoot(
     // order: visualizer > search > drill-in > tab > exit.
     androidx.activity.compose.BackHandler(enabled = dest != 0) { dest = 0 }
     MaterialTheme(
-        colorScheme = effectiveTheme.colorScheme(gui.accentIntensity, gui.backgroundDim, gui.whiteFont),
+        colorScheme = effectiveTheme.colorScheme(gui.accentIntensity, gui.backgroundDim, gui.textColor),
         shapes = gui.cornerStyle.shapes(),
         typography = crystalTypography(),
     ) {
@@ -495,20 +495,9 @@ private fun AppSettingsTab(
                         onCheckedChange = { viewModel.setGuiPrefs(gui.copy(followSystemDark = it)) },
                     )
                 }
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("White font", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                        Switch(
-                            checked = gui.whiteFont,
-                            onCheckedChange = { viewModel.setGuiPrefs(gui.copy(whiteFont = it)) },
-                        )
-                    }
-                    Text(
-                        "Forces labels and body text to pure white. No effect on light themes, where it would be unreadable.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                // Successor to the "White font" switch that used to sit here;
+                // the switch survives inside it, with a colour picker attached.
+                TextColorSetting(gui) { viewModel.setGuiPrefs(it) }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Compact mini-player", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Switch(

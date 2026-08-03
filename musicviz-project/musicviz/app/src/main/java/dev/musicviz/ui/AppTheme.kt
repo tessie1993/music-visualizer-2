@@ -10,6 +10,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import dev.musicviz.analysis.FeatureExtractor
 
@@ -65,17 +66,41 @@ enum class AppTheme(
     PAPER("Paper"),
     ;
 
-    /**
-     * True for the two light-surface themes. "White font" is a no-op on them
-     * (white text on a near-white surface would blank the UI), so
-     * [colorScheme] and [whiteFontActive] gate on this one predicate rather
-     * than each testing the enum separately.
-     */
+    /** True for the two light-surface themes (Light, Paper). */
     val isLight: Boolean
         get() = anchors().light
 
-    /** True when [whiteFont] actually takes effect for this theme. */
-    fun whiteFontActive(whiteFont: Boolean): Boolean = whiteFont && !isLight
+    /**
+     * The surfaces this theme paints [customTextColor]-coloured writing onto -
+     * every role [withTextColor] repaints an `on*` partner of - as plain ARGB
+     * Ints for [TextContrast].
+     *
+     * Derived by reading the finished scheme back rather than recomputing the
+     * lerps, so the picker measures the exact colours the app will render and
+     * cannot drift from [colorScheme] when a role is added or retuned.
+     */
+    fun textBackdrops(
+        accentIntensity: Float = 1f,
+        backgroundDim: Float = 0f,
+    ): IntArray = colorScheme(accentIntensity, backgroundDim).textBackdrops()
+
+    /**
+     * True when [textColor] actually takes effect for this theme, i.e. it is
+     * set AND it clears [TextContrast.MIN_LEGIBLE] on every surface here.
+     *
+     * This predicate replaces the old `whiteFontActive`, which spelled the
+     * same idea as "not one of the two light themes". That was a proxy for a
+     * contrast test, and now that arbitrary colours are allowed the real test
+     * is both more correct (dark blue writing IS fine on Paper, which the
+     * proxy banned) and strictly compatible: white measures 6.6:1 or better on
+     * every dark theme across the whole accent/dim slider range, and at most
+     * 1.3:1 on Light and Paper, so every existing white-font user lands on the
+     * same side of the line they were on before.
+     */
+    fun textColorActive(textColor: Int?): Boolean {
+        val wanted = textColor ?: return false
+        return TextContrast.isLegible(wanted or TextContrast.OPAQUE_ALPHA, textBackdrops())
+    }
 
     private fun anchors(): Anchors =
         when (this) {
@@ -115,14 +140,16 @@ enum class AppTheme(
      * saturation of primary/secondary/tertiary; [backgroundDim] (0..0.6)
      * darkens background and surfaces. Both default to identity.
      *
-     * [whiteFont] forces every body/label text role to pure white. It is
-     * deliberately ignored on the light themes (Light, Paper): white text on
-     * a near-white surface would make the whole UI invisible.
+     * [textColor] (opaque ARGB, null = leave the theme alone) forces every
+     * body/label text role to that colour. It is ignored when it would not be
+     * readable here - see [withTextColor] and [textColorActive] - which is how
+     * the old "White font" switch's light-theme opt-out survives generalisation
+     * without being a special case any more.
      */
     fun colorScheme(
         accentIntensity: Float = 1f,
         backgroundDim: Float = 0f,
-        whiteFont: Boolean = false,
+        textColor: Int? = null,
     ): ColorScheme {
         val a = anchors()
         val white = 0xFFFFFFFF.toInt()
@@ -164,87 +191,134 @@ enum class AppTheme(
                     outline = Color(ColorDerive.lerpArgb(secondary, surface, 0.45f)),
                 )
             }
-        // Light themes opt out: white body text on a near-white surface would
-        // make the whole UI unreadable.
-        return if (whiteFont && !a.light) base.whiteText() else base
+        return base.withTextColor(textColor)
     }
 }
 
 /**
- * Repaints the text roles pure white for the "White font" appearance option.
- * [AppTheme.colorScheme] applies this to dark schemes only.
+ * The seven roles the "Text colour" appearance option repaints, in the order
+ * [ColorScheme.textBackdrops] reports the surfaces they are written on.
  *
  * The three surface roles were not enough: a `Text` painted with an `on*`
  * CONTAINER role - every chip and every filled selection in the shell -
- * stayed theme-coloured with the switch on, which is the "not all writing
+ * stayed theme-coloured with the old switch on, which is the "not all writing
  * turns white" report. All four container roles are derived toward the dark
  * background in [AppTheme.colorScheme] (`lerpArgb(x, background, 0.65f)`), so
- * white reads on every one of them.
+ * a colour that reads on the surface reads on them too.
  *
  * `onPrimary`/`onSecondary`/`onTertiary` are deliberately NOT in this list.
  * They sit on the SATURATED fill of a primary button, and several themes
  * (Clear Quartz, Rose Quartz, Mono) anchor a near-white primary - white on
- * white. Those surfaces are handled by [LocalWhiteFont]-aware call sites
- * instead, which can pick a readable colour per fill.
+ * white. Those surfaces are handled by [onAccentTextColor] instead, which
+ * picks a readable colour per fill.
+ */
+internal fun ColorScheme.textBackdrops(): IntArray =
+    intArrayOf(
+        background.toArgb(),
+        surface.toArgb(),
+        surfaceVariant.toArgb(),
+        // Not repainted themselves, but plain body text lands on them, and the
+        // "+4%/+8% white" lift makes them the brightest surfaces on a dark
+        // theme - i.e. the ones a light-ish custom colour fails on first.
+        surfaceContainer.toArgb(),
+        surfaceContainerHigh.toArgb(),
+        primaryContainer.toArgb(),
+        secondaryContainer.toArgb(),
+        tertiaryContainer.toArgb(),
+        errorContainer.toArgb(),
+    )
+
+/**
+ * Repaints the text roles [textColor] for the "Text colour" appearance option,
+ * or returns this scheme untouched when [textColor] is null (nobody chose one)
+ * or unreadable here.
+ *
+ * The legibility gate is the whole accessibility argument of the feature: the
+ * picker will happily let someone choose near-black on Midnight, and this is
+ * where that choice stops being rendered. It is all-or-nothing rather than
+ * per-role for a reason - a scheme where the body text took the new colour but
+ * the chips did not would look like a bug, and the user would have to hunt the
+ * app to find out which half they got.
  *
  * Accent and surface roles themselves are untouched, so gems, sliders,
  * borders and glows keep the theme's identity - only writing changes.
  */
-private fun ColorScheme.whiteText(): ColorScheme =
-    copy(
-        onBackground = Color.White,
-        onSurface = Color.White,
-        onSurfaceVariant = Color.White,
-        onPrimaryContainer = Color.White,
-        onSecondaryContainer = Color.White,
-        onTertiaryContainer = Color.White,
-        onErrorContainer = Color.White,
+private fun ColorScheme.withTextColor(textColor: Int?): ColorScheme {
+    val wanted = (textColor ?: return this) or TextContrast.OPAQUE_ALPHA
+    if (!TextContrast.isLegible(wanted, textBackdrops())) return this
+    val c = Color(wanted)
+    return copy(
+        onBackground = c,
+        onSurface = c,
+        onSurfaceVariant = c,
+        onPrimaryContainer = c,
+        onSecondaryContainer = c,
+        onTertiaryContainer = c,
+        onErrorContainer = c,
     )
+}
 
 /**
- * True when [whiteText] produced this scheme, i.e. the Appearance option
- * "White font" is in force.
+ * The colour [withTextColor] painted the writing, or null when the theme's own
+ * text colours are in force.
  *
  * Derived rather than plumbed as a CompositionLocal because the scheme IS the
- * signal: [whiteText] is the only producer of a pure-white `onSurface`, and
- * `WhiteFontThemeTest` pins that no theme resolves one on its own (with the
- * option off, and on the light themes, which opt out entirely). One
- * `MaterialTheme.colorScheme` read is all any call site needs, so no screen
- * has to be handed the GuiPrefs it would otherwise never look at.
+ * signal, exactly as it was when this option could only produce white: no
+ * theme resolves all seven text roles to one colour on its own (Material's
+ * baseline gives `onTertiaryContainer` and `onErrorContainer` their own tints,
+ * and `TextColorThemeTest` pins that across every theme), so agreement among
+ * them can only have come from [withTextColor]. One `MaterialTheme.colorScheme`
+ * read is all any call site needs, so no screen has to be handed the GuiPrefs
+ * it would otherwise never look at.
  */
-val ColorScheme.whiteFontOn: Boolean
-    get() = onSurface == Color.White
+val ColorScheme.customTextColor: Color?
+    get() =
+        onSurface.takeIf {
+            it == onBackground &&
+                it == onSurfaceVariant &&
+                it == onPrimaryContainer &&
+                it == onSecondaryContainer &&
+                it == onTertiaryContainer &&
+                it == onErrorContainer
+        }
 
 /**
  * Colour for accent-tinted WRITING - section headers, selected list rows, the
- * lock chip, tab titles. Pure white under "White font", the theme's primary
- * otherwise.
+ * lock chip, tab titles. The user's text colour when one is in force, the
+ * theme's primary otherwise.
  *
  * A [ColorScheme] can only repaint the roles Material resolves for you. Every
  * heading and selected row in this app names its colour EXPLICITLY
  * (`color = MaterialTheme.colorScheme.primary`), and those calls are invisible
- * to [whiteText] - which is exactly why turning the switch on used to leave
+ * to [withTextColor] - which is exactly why turning the option on used to leave
  * the section titles, tab labels, folder headers and "‹ Back" affordances
- * tinted while the body text went white.
+ * tinted while the body text changed.
  *
  * Deliberately text-only: icons, gems, hairlines, slider tracks and glows keep
- * `colorScheme.primary`, because "white font" is about the legibility of
+ * `colorScheme.primary`, because this option is about the legibility of
  * writing, not about draining the colour out of the whole shell.
  */
 @Composable
-fun accentTextColor(): Color = MaterialTheme.colorScheme.let { if (it.whiteFontOn) Color.White else it.primary }
+fun accentTextColor(): Color = MaterialTheme.colorScheme.let { it.customTextColor ?: it.primary }
 
 /**
  * Colour for writing on a SATURATED accent fill (filled buttons, the play
- * gem). White text is unreadable on the near-white primaries some themes
- * anchor (Clear Quartz, Rose Quartz, Mono), so this picks white or black by
- * the fill's own luminance instead of forcing either - the one place "white
- * font" yields to legibility rather than the other way round.
+ * gem). The chosen text colour is unreadable on the near-white primaries some
+ * themes anchor (Clear Quartz, Rose Quartz, Mono), so it is used only where it
+ * measures up, and otherwise white/black is picked by the fill's own luminance
+ * - the one place this option yields to legibility rather than the other way
+ * round.
+ *
+ * The luminance fallback is the pre-existing rule, kept verbatim: for the
+ * white that migrating users carry over, `ratio(white, fill) >= MIN_LEGIBLE`
+ * implies the fill's luminance is at most 0.30, so the two branches agree and
+ * nobody's buttons change.
  */
 @Composable
 fun onAccentTextColor(): Color {
     val cs = MaterialTheme.colorScheme
-    if (!cs.whiteFontOn) return cs.onPrimary
+    val custom = cs.customTextColor ?: return cs.onPrimary
+    if (TextContrast.ratio(custom.toArgb(), cs.primary.toArgb()) >= TextContrast.MIN_LEGIBLE) return custom
     return if (cs.primary.luminance() > 0.55f) Color.Black else Color.White
 }
 
@@ -312,9 +386,12 @@ data class GuiPrefs(
     /** Visuals hub renders as a text-only clear overlay on the live canvas,
      *  so adjustments are visible on the visuals while being adjusted. */
     val clearVisualsMenu: Boolean = false,
-    /** Forces body/label text to pure white (dark themes only). Off keeps the
-     *  theme-derived text colors, so existing users see no change. */
-    val whiteFont: Boolean = false,
+    /** Forces body/label text to this opaque ARGB colour app-wide. Null keeps
+     *  the theme-derived text colors, so existing users see no change; a
+     *  colour that fails [TextContrast.MIN_LEGIBLE] on the current theme is
+     *  stored but not rendered (see [AppTheme.colorScheme]). Successor to the
+     *  old `whiteFont` boolean, which [TextColorPref] migrates. */
+    val textColor: Int? = null,
     /** "Safe visuals": caps how fast and how deeply the whole frame may flash.
      *  Off by default, like every other optional visual change here, so saved
      *  presets keep looking the way the user left them. */
@@ -376,6 +453,59 @@ data class GuiPrefs(
             )
 }
 
+/**
+ * The stored form of [GuiPrefs.textColor], and the migration off the boolean
+ * that preceded it.
+ *
+ * Pulled out of [ThemeStore] as pure functions on purpose: "the white-font
+ * switch a user set two releases ago still gives them white" is the one thing
+ * about this feature that cannot be checked by looking at it, and a
+ * `SharedPreferences` call is not something the headless JUnit gate can reach.
+ *
+ * `SharedPreferences` has no nullable Int, so [NONE] carries "no colour
+ * chosen". Zero is safe as that sentinel because every colour this app stores
+ * is forced opaque - a fully transparent black can never be a real choice.
+ */
+object TextColorPref {
+    /** Stored when no colour is chosen; distinct from any opaque colour. */
+    const val NONE = 0
+
+    /** What the old boolean meant, and what it migrates to. */
+    val WHITE: Int = TextContrast.OPAQUE_ALPHA or 0xFFFFFF
+
+    /**
+     * [GuiPrefs.textColor] from what is on disk.
+     *
+     * [stored] is null when the new key has never been written, which is the
+     * only case where the legacy boolean is consulted - so a user who once had
+     * "White font" on comes back as white, a user who had it off comes back as
+     * null, and once the new key exists the boolean is dead weight rather than
+     * a second source of truth that could contradict it.
+     */
+    fun decode(
+        stored: Int?,
+        legacyWhiteFont: Boolean,
+    ): Int? =
+        when {
+            stored == null -> if (legacyWhiteFont) WHITE else null
+            stored == NONE -> null
+            // Forced opaque on the way out as well as in: a stored value with
+            // a stale or zero alpha would otherwise render as invisible text.
+            else -> stored or TextContrast.OPAQUE_ALPHA
+        }
+
+    /** The Int to store for [textColor]. */
+    fun encode(textColor: Int?): Int = textColor?.or(TextContrast.OPAQUE_ALPHA) ?: NONE
+
+    /**
+     * What to leave in the legacy boolean so that DOWNGRADING to a build that
+     * only knows "White font" still shows the user something they asked for.
+     * Costs one boolean per save and is the difference between a rollback
+     * looking deliberate and looking like data loss.
+     */
+    fun legacyWhiteFont(textColor: Int?): Boolean = encode(textColor) == WHITE
+}
+
 /** Persists the chosen [AppTheme] in shared preferences. */
 class ThemeStore(
     context: Context,
@@ -418,7 +548,11 @@ class ThemeStore(
             compactPlayer = prefs.getBoolean(KEY_COMPACT, false),
             followSystemDark = prefs.getBoolean(KEY_FOLLOW_DARK, false),
             clearVisualsMenu = prefs.getBoolean(KEY_CLEAR_VIZ_MENU, false),
-            whiteFont = prefs.getBoolean(KEY_WHITE_FONT, false),
+            textColor =
+                TextColorPref.decode(
+                    stored = if (prefs.contains(KEY_TEXT_COLOR)) prefs.getInt(KEY_TEXT_COLOR, TextColorPref.NONE) else null,
+                    legacyWhiteFont = prefs.getBoolean(KEY_WHITE_FONT, false),
+                ),
             safeVisuals = prefs.getBoolean(KEY_SAFE_VISUALS, false),
             // Coerced on read for the same reason as the beat settings above:
             // a stored value outside the slider's range would leave the thumb
@@ -454,7 +588,10 @@ class ThemeStore(
             .putBoolean(KEY_COMPACT, gui.compactPlayer)
             .putBoolean(KEY_FOLLOW_DARK, gui.followSystemDark)
             .putBoolean(KEY_CLEAR_VIZ_MENU, gui.clearVisualsMenu)
-            .putBoolean(KEY_WHITE_FONT, gui.whiteFont)
+            .putInt(KEY_TEXT_COLOR, TextColorPref.encode(gui.textColor))
+            // Written for the benefit of an older build, never read once
+            // KEY_TEXT_COLOR exists; see TextColorPref.legacyWhiteFont.
+            .putBoolean(KEY_WHITE_FONT, TextColorPref.legacyWhiteFont(gui.textColor))
             .putBoolean(KEY_SAFE_VISUALS, gui.safeVisuals)
             .putFloat(KEY_MAX_FLASH_HZ, gui.maxFlashHz)
             .putFloat(KEY_MAX_FLASH_DEPTH, gui.maxFlashDepth)
@@ -478,6 +615,9 @@ class ThemeStore(
         const val KEY_COMPACT = "gui_compact_player"
         const val KEY_FOLLOW_DARK = "gui_follow_system_dark"
         const val KEY_CLEAR_VIZ_MENU = "gui_clear_visuals_menu"
+        const val KEY_TEXT_COLOR = "gui_text_color"
+
+        /** Superseded by [KEY_TEXT_COLOR]; still written for downgrades. */
         const val KEY_WHITE_FONT = "gui_white_font"
         const val KEY_BEAT_INTERVAL = "beat_min_interval_ms"
         const val KEY_SAFE_VISUALS = "gui_safe_visuals"
