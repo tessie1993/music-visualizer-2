@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -14,49 +15,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /*
- * "Glass" chrome helpers: translucent panels whose opacity follows the
- * Settings "Bar opacity" slider (GuiPrefs.barOpacity). This is flat
+ * See-through chrome for surfaces that sit ON the live visualizer, where the
+ * full crystalPanel material would cost too much legibility. Opacity follows
+ * the Settings "Bar opacity" slider (GuiPrefs.barOpacity). This is flat
  * alpha glass by design - no backdrop blur (RenderEffect cannot blur the
- * content BEHIND a composable here), and behind the main shell screens
- * there is no live visualizer anyway, so the glass reveals the theme
- * background color. Only Now Playing hosts the GL canvas in v1.
+ * content BEHIND a composable here). Opaque shell panels use
+ * Modifier.crystalPanel from the crystal design kit instead.
  */
-
-/** Hairline stroke alpha: slightly more opaque than the panel fill. */
-internal fun glassBorderAlpha(opacity: Float): Float = (opacity.coerceIn(0f, 1f) + 0.15f).coerceAtMost(1f)
-
-/**
- * Translucent crystal panel: [color] at [opacity] as a top-lit vertical
- * gradient, plus a luminous [glow]-tinted gradient border so the glass edge
- * reads against whatever sits behind it (brightest along the top, like the
- * mockups' "luminous stroke" material). [corner] > 0 rounds the panel.
- */
-fun Modifier.glassPanel(
-    opacity: Float,
-    color: Color,
-    corner: Dp = 0.dp,
-    glow: Color? = null,
-): Modifier {
-    val alpha = opacity.coerceIn(0f, 1f)
-    val shape: Shape = if (corner > 0.dp) RoundedCornerShape(corner) else RectangleShape
-    val edge = glow ?: color
-    return this
-        .clip(shape)
-        .background(
-            Brush.verticalGradient(
-                0f to lerp(color, edge, 0.15f).copy(alpha = (alpha + 0.06f).coerceAtMost(1f)),
-                1f to lerp(color, Color.Black, 0.2f).copy(alpha = alpha),
-            ),
-        ).border(
-            1.dp,
-            Brush.verticalGradient(
-                0f to edge.copy(alpha = glassBorderAlpha(alpha)),
-                0.6f to edge.copy(alpha = glassBorderAlpha(alpha) * 0.3f),
-                1f to edge.copy(alpha = glassBorderAlpha(alpha) * 0.55f),
-            ),
-            shape,
-        )
-}
 
 /**
  * Semi-transparent reading plate for chrome that sits ON the live visualizer
@@ -74,11 +39,17 @@ fun Modifier.glassPanel(
  * gradient is deliberately stronger at the top and bottom edges, where the
  * header and the scrolling list's ends sit, and thinnest across the middle
  * where the visuals are worth looking at.
+ *
+ * With [glow] the plate picks up the crystal kit's identity at readable
+ * strength: faint facet glints over the wash and a luminous gradient edge,
+ * so the overlay reads as the same stone as the shell panels without
+ * dimming the visuals behind it.
  */
 fun Modifier.readingPlate(
     opacity: Float,
     tint: Color,
     corner: Dp = 0.dp,
+    glow: Color? = null,
 ): Modifier {
     val a = opacity.coerceIn(0f, 0.92f)
     val shape: Shape = if (corner > 0.dp) RoundedCornerShape(corner) else RectangleShape
@@ -91,6 +62,22 @@ fun Modifier.readingPlate(
                 0.86f to tint.copy(alpha = a),
                 1f to lerp(tint, Color.Black, 0.4f).copy(alpha = (a + 0.1f).coerceAtMost(0.94f)),
             ),
+        ).then(
+            if (glow == null) {
+                Modifier
+            } else {
+                Modifier
+                    .drawBehind { crystalFacets(0.4f) }
+                    .border(
+                        1.dp,
+                        Brush.verticalGradient(
+                            0f to glow.copy(alpha = 0.55f),
+                            0.6f to glow.copy(alpha = 0.14f),
+                            1f to glow.copy(alpha = 0.32f),
+                        ),
+                        shape,
+                    )
+            },
         )
 }
 

@@ -285,7 +285,14 @@ private fun MiniPlayer(
     Column(
         Modifier
             .fillMaxWidth()
-            .glassPanel(barOpacity, MaterialTheme.colorScheme.surfaceVariant, glow = MaterialTheme.colorScheme.primary)
+            .crystalPanel(
+                barOpacity,
+                MaterialTheme.colorScheme.surfaceVariant,
+                MaterialTheme.colorScheme.primary,
+                corner = 0.dp,
+                glowStrength = 0.6f,
+                facets = 0.8f,
+            )
             .clickable(onClick = onExpand),
     ) {
         Row(
