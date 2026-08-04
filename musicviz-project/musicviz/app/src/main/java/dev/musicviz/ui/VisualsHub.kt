@@ -8,17 +8,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
@@ -45,6 +48,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -189,13 +193,14 @@ private fun PresetsTreeTab(
     var newFolder by remember { mutableStateOf("") }
     var saveName by remember { mutableStateOf("") }
     var saveFolder by rememberSaveable { mutableStateOf("") }
-    // Which folder the rename dialog is editing, and which preset the move
-    // dialog is filing. Both are held here rather than per row because a
-    // LazyColumn row that scrolls off screen is disposed, and a dialog owned by
-    // one would vanish mid-edit.
+    // Which folder the rename dialog is editing, which preset the move dialog
+    // is filing and which the delete dialog is confirming. All three are held
+    // here rather than per row because a LazyColumn row that scrolls off
+    // screen is disposed, and a dialog owned by one would vanish mid-edit.
     var renamingFolder by remember { mutableStateOf<String?>(null) }
     var folderRenameText by remember { mutableStateOf("") }
     var movingPreset by remember { mutableStateOf<String?>(null) }
+    var deletingPreset by remember { mutableStateOf<String?>(null) }
     val userPresets = viz.presets.filterNot { BuiltInPresets.isBuiltIn(it.name) }.distinctBy { it.name }
     val byFolder = userPresets.groupBy { viewModel.presetFolderOf(it.name) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -307,7 +312,7 @@ private fun PresetsTreeTab(
                     IconButton(onClick = { movingPreset = p.name }) {
                         Icon(Icons.AutoMirrored.Filled.DriveFileMove, "Move to another folder")
                     }
-                    IconButton(onClick = { viewModel.deletePreset(p.name) }) {
+                    IconButton(onClick = { deletingPreset = p.name }) {
                         Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error)
                     }
                 }
@@ -436,6 +441,30 @@ private fun PresetsTreeTab(
             confirmButton = { TextButton(onClick = { movingPreset = null }) { Text("Close") } },
         )
     }
+    deletingPreset?.let { name ->
+        // Delete is the one verb on a preset row with no way back - the .json
+        // is removed from disk and there is no undo store - so it confirms
+        // like Reset does instead of firing on a tap that landed beside Move.
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { deletingPreset = null },
+            title = { Text("Delete \"$name\"?") },
+            text = {
+                Text(
+                    "Removes this preset and its file for good — there is no undo. " +
+                        "Share it first if you might want it back.",
+                )
+            },
+            confirmButton = {
+                CrystalButton(onClick = {
+                    viewModel.deletePreset(name)
+                    deletingPreset = null
+                }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingPreset = null }) { Text("Cancel") }
+            },
+        )
+    }
 }
 
 /** Clipboard text, or null when the clipboard holds nothing readable. */
@@ -532,6 +561,18 @@ private fun StylesTab(
     }
 }
 
+/**
+ * Human label for a scene id on a style tile. Catalogued substyles carry
+ * authored labels ("hyper_liquid_warp" is "Liquid Warp"); ids the catalog does
+ * not know fall back to the id itself, title-cased with underscores opened up,
+ * so a persistence identifier never reads as one on screen.
+ */
+internal fun sceneDisplayLabel(id: String): String {
+    val catalogued = VisualStyleCatalog.label(id)
+    if (catalogued != id) return catalogued
+    return id.split('_').joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
+}
+
 @Composable
 private fun SceneList(
     ids: List<String>,
@@ -549,7 +590,7 @@ private fun SceneList(
                     if (sel) CrystalGem(MaterialTheme.colorScheme.primary, size = 6.dp)
                 }
                 Text(
-                    VisualStyleCatalog.label(id),
+                    sceneDisplayLabel(id),
                     Modifier.padding(start = 10.dp),
                     color = if (sel) accentTextColor() else LocalContentColor.current,
                 )
@@ -901,7 +942,12 @@ private fun CustomizeToolbar(
             compact = true,
             enabled = tab != null,
             onClick = { tab?.let(viewModel::randomizeParams) },
-        ) { Text(if (tab == null) "⚄ Randomize" else "⚄ Randomize ${tab.title}") }
+        ) {
+            // Decorative next to its own label: a description would make TalkBack name the action twice.
+            Icon(Icons.Filled.Casino, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(if (tab == null) "Randomize" else "Randomize ${tab.title}")
+        }
         CrystalButton(compact = true, filled = false, enabled = changed > 0, onClick = { confirmReset = true }) {
             Text("Reset")
         }
@@ -955,6 +1001,9 @@ private fun TakesTab(viewModel: PlayerViewModel) {
     val takes by viewModel.takeState.collectAsState()
     var renaming by remember { mutableStateOf<String?>(null) }
     var renameText by remember { mutableStateOf("") }
+    // Held at tab level, not per row, for the same LazyColumn-disposal reason
+    // as the preset dialogs.
+    var deleting by remember { mutableStateOf<String?>(null) }
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -1039,7 +1088,7 @@ private fun TakesTab(viewModel: PlayerViewModel) {
                     renaming = take.name
                     renameText = take.name
                 }) { Icon(Icons.Filled.Edit, "Rename") }
-                IconButton(onClick = { viewModel.deleteTake(take.name) }) {
+                IconButton(onClick = { deleting = take.name }) {
                     Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
                 }
             }
@@ -1064,6 +1113,27 @@ private fun TakesTab(viewModel: PlayerViewModel) {
                 }) { Text("Rename") }
             },
             dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
+        )
+    }
+    deleting?.let { name ->
+        // A take is a recorded performance: once its file is gone it cannot be
+        // re-made the same way, so - like Reset and preset delete - it asks
+        // first rather than acting on a tap that landed beside Rename.
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Delete take \"$name\"?") },
+            text = {
+                Text("Deletes this recorded performance for good — there is no undo.")
+            },
+            confirmButton = {
+                CrystalButton(onClick = {
+                    viewModel.deleteTake(name)
+                    deleting = null
+                }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleting = null }) { Text("Cancel") }
+            },
         )
     }
 }
@@ -1099,6 +1169,21 @@ private fun TexturesHubTab(
 // ---------------------------------------------------------------- GLSL
 
 /**
+ * Saved instance state rides a Binder transaction capped around 1 MB for the
+ * whole activity, so `rememberSaveable`-ing an arbitrarily large shader draft
+ * risks TransactionTooLargeException on backgrounding. Drafts up to this many
+ * chars are worth the budget; anything bigger [ShaderDraftSaver] drops from
+ * saved state, and the editor re-seeds from the renderer's committed source.
+ */
+private const val MAX_SAVED_SHADER_DRAFT_CHARS = 8 * 1024
+
+private val ShaderDraftSaver =
+    Saver<String, String>(
+        save = { draft -> draft.takeIf { it.length <= MAX_SAVED_SHADER_DRAFT_CHARS } },
+        restore = { it },
+    )
+
+/**
  * Shader-scene GLSL editor, restored after the navigation refactor: seeds
  * from the scene's current custom shader, applies through the ViewModel so
  * the shell-level engine bindings reach the renderer from any screen.
@@ -1109,7 +1194,9 @@ private fun GlslHubTab(
     visualizerView: VisualizerView,
 ) {
     val viz by viewModel.vizState.collectAsState()
-    var source by rememberSaveable(viz.sceneId) {
+    // Saveable so an uncommitted draft survives rotation, but through
+    // [ShaderDraftSaver] so a large source cannot blow the Binder budget.
+    var source by rememberSaveable(viz.sceneId, stateSaver = ShaderDraftSaver) {
         mutableStateOf(visualizerView.visualizerRenderer.customShaderFor(viz.sceneId) ?: "")
     }
     Column {

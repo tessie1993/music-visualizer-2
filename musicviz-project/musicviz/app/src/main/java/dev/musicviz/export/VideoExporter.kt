@@ -95,11 +95,66 @@ class VideoExporter(
 
         /** Ripple overlay grid short side - matches the live renderer's. */
         private const val RIPPLE_OVERLAY_RES = 256
+
+        /**
+         * Whether the export fades the canvas instead of hard-clearing it.
+         * Live twin: VisualizerRenderer's `persists` gate - Curl Flow and the
+         * beam persist regardless of the Trails toggle (their looks are
+         * DEFINED by canvas echo); particle scenes only when it is on.
+         */
+        fun canvasPersists(
+            isCurlFlow: Boolean,
+            isBeam: Boolean,
+            trails: Boolean,
+            isParticle: Boolean,
+        ): Boolean = isCurlFlow || isBeam || (trails && isParticle)
+
+        /**
+         * Live twin: VisualizerRenderer's `isBeam` retention. The beam is
+         * phosphor - the decay between frames IS the afterglow, and a trace
+         * with no persistence is a single-frame wire - so there is a floor
+         * under which the glow never drops, with the Trail length slider
+         * setting how long it lasts above it.
+         */
+        fun beamRetention(trailLength: Float): Float = (0.55f + 0.44f * trailLength).coerceIn(0f, 0.99f)
+
+        /**
+         * Scans the WHOLE render for effect use. FlowField/RippleSim are
+         * allocated once, before the frame loop, but a replayed take can
+         * change the gating params mid-render: deciding from the take's end
+         * state alone dropped an effect the performance toggled on mid-song
+         * and off again before the end from the entire video. Sampling at
+         * the loop's own frame timestamps makes the answer exact - allocate
+         * iff some rendered frame will ask the service to run.
+         */
+        fun scanEffectUse(
+            paramsAt: ((Long) -> SceneParams)?,
+            flat: SceneParams,
+            totalFrames: Int,
+            fps: Int,
+        ): EffectUse {
+            if (paramsAt == null) return EffectUse(flat.flowEnabled, flat.rippleOverlayEnabled)
+            var flow = false
+            var ripple = false
+            for (frame in 0 until totalFrames) {
+                val p = paramsAt(frame * 1000L / fps)
+                flow = flow || p.flowEnabled
+                ripple = ripple || p.rippleOverlayEnabled
+                if (flow && ripple) break
+            }
+            return EffectUse(flow, ripple)
+        }
     }
 
     interface SceneFactory {
         fun create(): Scene
     }
+
+    /** Effects at least one rendered frame will gate on. */
+    data class EffectUse(
+        val flowField: Boolean,
+        val rippleOverlay: Boolean,
+    )
 
     /**
      * How an export ended, mirroring [dev.musicviz.export.StudioExporter.Result].
@@ -372,6 +427,10 @@ class VideoExporter(
             // forces it regardless of the trails toggle); a hard-cleared export
             // reads as strobing dots instead of streams.
             val isCurlFlow = scene is dev.musicviz.render.fluid.CurlFlowScene
+            // The beam's phosphor afterglow is canvas persistence too - hard-
+            // cleared it exports as a thin single-frame wire (live twin:
+            // VisualizerRenderer's isBeam gate).
+            val isBeam = scene is dev.musicviz.render.scene.BeamScene
 
             // Build an offscreen FBO + composite program so the export applies the
             // SAME screen-space FX chain (geometry, chroma, vignette, scanlines,
@@ -379,24 +438,43 @@ class VideoExporter(
             // does. Without this, exports - especially of particle scenes - would
             // omit every FX/shape customization, which are composite-only.
             val fx = FxCompositor(context, aspect.width, aspect.height).also { fxRef = it }
+
+            // Video length is derived from the ACTUAL transcoded audio duration so
+            // the export always matches the music exactly. The analysis timeline is
+            // only used for per-frame features (featuresAt clamps at its end).
+            // Computed before the effect-allocation decisions below, which
+            // need to know every frame timestamp the loop will render.
+            val sourceDurationUs = if (aac.durationUs > 0) aac.durationUs else timeline.durationMs * 1000
+            // Loop-safe: cut on a bar boundary so the last beat runs into the
+            // first. Down to the nearest bar, never up - rounding up would end
+            // the clip in silence, which is worse than the seam it fixes.
+            val exportDurationUs =
+                if (loopSafe) {
+                    dev.musicviz.analysis.BarTrim
+                        .trimToBars(sourceDurationUs, timeline.bpm)
+                } else {
+                    sourceDurationUs
+                }
+            val totalFrames = (exportDurationUs * fps / 1_000_000L).toInt().coerceAtLeast(1)
+            val frameDurationNs = 1_000_000_000L / fps
+
             // FlowField export parity (F7): run the shared field in the export GL
             // context so fluidWarp bends exported frames exactly like the live
             // view. The FLUID scene reuses its own velocity field instead.
             // Both services are allocated ONCE, before the frame loop, from
-            // params that a replayed take can change mid-render. Sampling the
-            // take at its start and end is enough to decide: these are
-            // allocate-or-not questions, and allocating a field the render
-            // never uses costs a few small FBOs, while NOT allocating one the
-            // take switches on halfway would silently drop the effect from the
-            // second half of the video.
-            val takeEnd = paramsAt?.invoke(Long.MAX_VALUE / 2)
+            // params that a replayed take can change mid-render - so the
+            // decision scans every frame the take will render. Allocating a
+            // field the render never uses costs a few small FBOs; NOT
+            // allocating one the take toggles on mid-song (and maybe off
+            // again before the end) silently drops the effect from the video.
+            val effectUse = scanEffectUse(paramsAt, sceneParams, totalFrames, fps)
             // A field-defined particle style needs the service allocated even
             // with Flow off, or its export would be the one place the style
             // renders as a dead screen.
             val styleNeedsFlowField =
                 (scene as? dev.musicviz.render.scene.ParticleSceneBase)?.requiresFlowField == true
-            val usesFlowField = sceneParams.flowEnabled || takeEnd?.flowEnabled == true || styleNeedsFlowField
-            val usesRippleOverlay = sceneParams.rippleOverlayEnabled || takeEnd?.rippleOverlayEnabled == true
+            val usesFlowField = effectUse.flowField || styleNeedsFlowField
+            val usesRippleOverlay = effectUse.rippleOverlay
             val exportFluidScene = scene as? dev.musicviz.render.fluid.FluidScene
             val flowField =
                 if (usesFlowField && exportFluidScene == null) {
@@ -440,22 +518,6 @@ class VideoExporter(
             var videoTrack = -1
             var audioTrack = -1
             val info = MediaCodec.BufferInfo()
-            // Video length is derived from the ACTUAL transcoded audio duration so
-            // the export always matches the music exactly. The analysis timeline is
-            // only used for per-frame features (featuresAt clamps at its end).
-            val sourceDurationUs = if (aac.durationUs > 0) aac.durationUs else timeline.durationMs * 1000
-            // Loop-safe: cut on a bar boundary so the last beat runs into the
-            // first. Down to the nearest bar, never up - rounding up would end
-            // the clip in silence, which is worse than the seam it fixes.
-            val exportDurationUs =
-                if (loopSafe) {
-                    dev.musicviz.analysis.BarTrim
-                        .trimToBars(sourceDurationUs, timeline.bpm)
-                } else {
-                    sourceDurationUs
-                }
-            val totalFrames = (exportDurationUs * fps / 1_000_000L).toInt().coerceAtLeast(1)
-            val frameDurationNs = 1_000_000_000L / fps
             // Section boundaries once (O(n)); per-frame features then carry the
             // progress/section context, so the fluid spawn/catch choreography
             // journeys through the exported video exactly like live playback.
@@ -561,18 +623,20 @@ class VideoExporter(
                 // Draw the scene into the FX FBO, then composite (with the full
                 // FX chain) onto the encoder surface, matching the live path.
                 fx.bindSceneTarget()
-                if ((isCurlFlow || (p.trails && isParticle)) && frame > 0) {
+                if (canvasPersists(isCurlFlow, isBeam, p.trails, isParticle) && frame > 0) {
                     // Mirror the live trails gate (VisualizerRenderer): Curl
                     // Flow ALWAYS persists - its bare GL_POINTS strobe on a
                     // cleared canvas and `trails` defaults to false - but the
                     // toggle still picks the band, a short OFF_RETENTION echo
-                    // versus the remapped Trail length slider. Same remap in
+                    // versus the remapped Trail length slider. The beam
+                    // always persists too (phosphor: the decay IS the
+                    // afterglow), on its own floored remap. Same remap in
                     // the plain-fade and the trail-warp branch.
                     val fadeParams =
-                        if (isCurlFlow) {
-                            p.copy(trailLength = CurlFlowMath.retention(p.trailLength, p.trails))
-                        } else {
-                            p
+                        when {
+                            isCurlFlow -> p.copy(trailLength = CurlFlowMath.retention(p.trailLength, p.trails))
+                            isBeam -> p.copy(trailLength = beamRetention(p.trailLength))
+                            else -> p
                         }
                     fx.fadeSceneTargetWarp(fadeParams, fx.sceneFbo, fx.width, fx.height, timeMs / 1000f, 1f / fps)
                 } else {

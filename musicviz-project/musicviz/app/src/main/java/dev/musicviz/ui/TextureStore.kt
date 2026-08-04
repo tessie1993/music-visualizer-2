@@ -3,6 +3,7 @@ package dev.musicviz.ui
 import android.content.Context
 import android.net.Uri
 import java.io.File
+import java.security.MessageDigest
 
 /** A milkdrop texture image available to presets that reference it by name. */
 data class MilkTexture(
@@ -40,16 +41,17 @@ class TextureStore(
             .orEmpty()
 
     /**
-     * Copies picked images into the texture directory, preserving each file's
-     * original name (presets reference textures by name, so the name matters).
-     * Returns the updated texture list.
+     * Copies picked images into the texture directory under
+     * [safeTextureFileName]: presets reference textures by name, so a name
+     * that is already identifier-safe is preserved exactly. Returns the
+     * updated texture list.
      */
     fun import(uris: List<Uri>): List<MilkTexture> {
         for (uri in uris) {
             runCatching {
                 val name = displayName(uri) ?: "texture_${System.currentTimeMillis()}.png"
                 if (name.substringAfterLast('.', "").lowercase() !in IMAGE_EXTS) return@runCatching
-                val dest = File(dir, sanitize(name))
+                val dest = File(dir, safeTextureFileName(name))
                 appContext.contentResolver.openInputStream(uri)?.use { input ->
                     AtomicWrite.stream(dest) { output -> input.copyTo(output) }
                 }
@@ -69,18 +71,6 @@ class TextureStore(
                 .query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
                 ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
         }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/')
-
-    /**
-     * Texture base names double as shader identifiers (presets reference them
-     * as sampler_<basename>), so the base is restricted to [A-Za-z0-9_] and
-     * must not start with a digit.
-     */
-    private fun sanitize(name: String): String {
-        val base = name.substringBeforeLast('.').replace(Regex("[^A-Za-z0-9]"), "_")
-        val ext = name.substringAfterLast('.', "").lowercase()
-        val safeBase = if (base.firstOrNull()?.isDigit() == true) "t$base" else base.ifEmpty { "tex" }
-        return "$safeBase.$ext"
-    }
 
     /**
      * Generates a .milk preset that displays [textureName] full-screen with
@@ -136,7 +126,39 @@ class TextureStore(
         return file.absolutePath
     }
 
-    private companion object {
+    internal companion object {
         val IMAGE_EXTS = setOf("png", "jpg", "jpeg", "bmp", "tga", "dds", "dib")
+
+        /**
+         * Filesystem-safe, collision-free file name for a picked image.
+         * Texture base names double as shader identifiers (presets reference
+         * them as sampler_<basename>), so the base is restricted to
+         * [A-Za-z0-9_] and must not start with a digit - which is why this
+         * cannot share [PresetStore.safeFileName]: that scheme keeps spaces
+         * and hyphens and joins its digest with '-', all illegal in an
+         * identifier. The collision rule is the same though: a base that is
+         * already identifier-safe keeps its exact old name, and any base this
+         * function has to alter carries a short stable digest of the raw base
+         * - replacement alone collapsed distinct picked names ("夜曲.png" and
+         * "月光.png" both became "__.png"), so importing one silently replaced
+         * the other. No on-disk migration pairs with this: an image carries no
+         * name inside it to recompute a stem from, and the stored file name IS
+         * the name presets already reference, so renaming existing textures
+         * would break every preset using them.
+         */
+        internal fun safeTextureFileName(name: String): String {
+            val rawBase = name.substringBeforeLast('.')
+            val ext = name.substringAfterLast('.', "").lowercase()
+            val base = rawBase.replace(Regex("[^A-Za-z0-9]"), "_")
+            val safeBase = if (base.firstOrNull()?.isDigit() == true) "t$base" else base.ifEmpty { "tex" }
+            if (safeBase == rawBase) return "$safeBase.$ext"
+            val hash =
+                MessageDigest
+                    .getInstance("SHA-256")
+                    .digest(rawBase.toByteArray(Charsets.UTF_8))
+                    .take(4)
+                    .joinToString("") { b -> "%02x".format(b.toInt() and 0xff) }
+            return "${safeBase}_$hash.$ext"
+        }
     }
 }

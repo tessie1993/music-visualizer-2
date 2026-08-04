@@ -37,16 +37,16 @@ reach every style through the composite pass, which is its own column.
 | `zoom` | Motion | `Zoom` | `zoom` | · | · | · |   |   |   |   |   |   | · | · |
 | `rotation` | Motion | `Rotation` | `rotation` | · | · | · |   | · |   |   |   | · | · | · |
 | `endlessZoom` | Motion | `Endless zoom` | `endlessZoom` | · | · | · |   |   |   |   |   |   |   |   |
-| `endlessZoomSpeed` | Motion | `Dive speed` | `endlessZoomSpeed` | · | · | · |   |   |   |   |   |   | · |   |
+| `endlessZoomSpeed` | Motion | `Dive speed` | `endlessZoomSpeed` | · | · | · |   |   |   |   |   |   |   |   |
 | `sway` | Motion | `Sway` | `sway` | · |   |   |   |   |   |   |   |   | · | · |
 | `pulse` | Motion | `Beat pulse` | `pulse` | · | · |   |   | · |   |   |   |   | · | · |
 | `driftX` | Motion | `Drift X` | `driftX` | · |   |   |   |   |   |   |   |   | · | · |
 | `driftY` | Motion | `Drift Y` | `driftY` | · |   |   |   |   |   |   |   |   | · | · |
 | `shake` | Motion | `Beat shake` | `shake` | · |   |   |   |   |   |   |   |   | · | · |
-| `audioDrive` | Behavior | `Audio drive` | `audioDrive` | · | · |   | · | · | · | · | · | · | · |   |
-| `beatResponse` | Behavior | `Beat response` | `beatResponse` | · | · | · | · | · | · | · | · | · | · |   |
-| `turbulence` | Behavior | `Turbulence` | `turbulence` | · | · |   |   | · |   |   |   |   | · |   |
-| `density` | Behavior | `Density` | `density` |   | · |   | · |   |   |   |   |   | · |   |
+| `audioDrive` | Behavior | `Audio drive` | `audioDrive` | · | · |   | · | · | · | · | · | · |   |   |
+| `beatResponse` | Behavior | `Beat response` | `beatResponse` | · | · | · | · | · | · | · | · | · |   |   |
+| `turbulence` | Behavior | `Turbulence` | `turbulence` | · | · |   |   | · |   |   |   |   |   |   |
+| `density` | Behavior | `Density` | `density` |   | · |   | · |   |   |   |   |   |   |   |
 | `trails` | Behavior | `Trails (particle scenes)` | `trails` |   | · |   |   |   | · |   |   |   | · | · |
 | `trailLength` | Behavior | `Trail length` | `trailLength` |   |   |   |   |   |   |   |   |   | · | · |
 | `trailZoom` | Behavior | `Trail zoom (echo in/out)` | `trailZoom` |   |   |   |   |   |   |   |   |   | · | · |
@@ -60,16 +60,16 @@ reach every style through the composite pass, which is its own column.
 | `pixelate` | Shape | `Pixelate` | `pixelate` | · |   |   |   |   |   |   |   |   | · | · |
 | `posterize` | Shape | `Posterize` | `posterize` | · |   |   |   |   |   |   |   |   | · | · |
 | `particleShape` | Shape | `Particle shape` | `particleShape` |   | · |   | · | · |   |   |   |   |   |   |
-| `particleSize` | Shape | `Particle size` | `particleSize` |   | · |   | · | · |   |   |   |   | · |   |
+| `particleSize` | Shape | `Particle size` | `particleSize` |   | · |   | · | · |   |   |   |   |   |   |
 | `tile` | Shape | `Tile` | `tile` | · |   |   |   | · |   |   |   |   | · | · |
 | `twist` | Shape | `Twist` | `twist` | · |   |   |   |   |   |   |   |   | · | · |
 | `palette` | Color | `Palette` | `palette` | · | · | · | · | · | · | · | · | · | · |   |
 | `palette2` | Color | `Palette 2` | `palette2` | · |   |   |   |   |   |   |   |   |   |   |
-| `paletteMix` | Color | `Palette blend` | `paletteMix` | · |   |   |   |   |   |   |   |   | · |   |
-| `paletteBaseOverride` | Color | — | `paletteBaseOverride` | · | · | · | · | · | · | · | · | · |   |   |
+| `paletteMix` | Color | `Palette blend` | `paletteMix` | · |   |   |   |   |   |   |   |   |   |   |
+| `paletteBaseOverride` | Color | — | `paletteBaseOverride` | · | · | · | · | · | · | · | · | · | · |   |
 | `paletteRangeOverride` | Color | — | `paletteRangeOverride` | · | · | · | · | · | · | · |   | · | · |   |
-| `palette2BaseOverride` | Color | — | `palette2BaseOverride` | · |   |   |   |   |   |   |   |   |   |   |
-| `palette2RangeOverride` | Color | — | `palette2RangeOverride` | · |   |   |   |   |   |   |   |   |   |   |
+| `palette2BaseOverride` | Color | — | `palette2BaseOverride` | · |   |   |   |   |   |   |   |   | · |   |
+| `palette2RangeOverride` | Color | — | `palette2RangeOverride` | · |   |   |   |   |   |   |   |   | · |   |
 | `customPaletteId` | Color | — | `customPaletteId` |   |   |   |   |   |   |   |   |   |   |   |
 | `paletteLut` | Color | `Colour map` | `paletteLut` | · |   |   |   |   |   |   |   |   |   |   |
 | `customPalette2Id` | Color | — | `customPalette2Id` |   |   |   |   |   |   |   |   |   |   |   |
@@ -96,48 +96,48 @@ reach every style through the composite pass, which is its own column.
 | `vignette` | FX | `Vignette` | `vignette` |   |   |   |   |   |   |   |   |   | · | · |
 | `scanlines` | FX | `Scanlines` | `scanlines` |   |   |   |   |   |   |   |   |   | · | · |
 | `grain` | FX | `Film grain` | `grain` |   |   |   |   |   |   |   |   |   | · | · |
-| `glitch` | FX | `Glitch` | `glitch` |   |   |   |   |   |   |   |   |   | · | · |
+| `glitch` | FX | `Glitch` | `glitch` |   |   |   |   |   |   |   | · |   | · | · |
 | `fisheye` | FX | `Fisheye` | `fisheye` |   |   |   |   |   |   |   |   |   | · | · |
 | `strobe` | FX | `Strobe` | `strobe` |   |   |   |   | · |   |   |   |   | · | · |
 | `paramFadeSec` | FX | — | `paramFadeSec` |   |   |   |   |   |   |   |   |   | · |   |
 | `fluidQuality` | Fluid | — | `fluidQuality` |   |   |   | · |   | · |   |   |   |   |   |
 | `fluidAutoQuality` | Fluid | — | `fluidAutoQuality` |   |   |   | · |   | · |   |   |   |   |   |
 | `fluidIterations` | Fluid | `Solver iterations` | `fluidIterations` |   |   |   | · |   |   |   |   |   |   |   |
-| `fluidPressure` | Fluid | `Pressure` | `fluidPressure` |   |   |   | · |   |   |   |   |   | · |   |
-| `fluidCurl` | Fluid | `Fluid curl` | `fluidCurl` |   |   |   | · |   |   |   |   |   | · |   |
-| `fluidVelocityDissipation` | Fluid | `Motion fade` | `fluidVelocityDissipation` |   |   |   | · |   |   |   |   |   | · |   |
-| `fluidDensityDissipation` | Fluid | `Fluid fade` | `fluidDensityDissipation` |   |   |   | · |   |   |   |   |   | · |   |
-| `fluidChromaticAging` | Fluid | `Chromatic aging` | `fluidChromaticAging` |   |   |   | · |   |   |   |   |   | · |   |
-| `fluidSplatRadius` | Fluid | `Fluid splat radius` | `fluidSplatRadius` |   |   |   | · |   | · |   |   |   | · |   |
-| `fluidSplatForce` | Fluid | `Fluid splat force` | `fluidSplatForce` |   |   |   | · |   | · |   |   |   | · |   |
+| `fluidPressure` | Fluid | `Pressure` | `fluidPressure` |   |   |   | · |   |   |   |   |   |   |   |
+| `fluidCurl` | Fluid | `Fluid curl` | `fluidCurl` |   |   |   | · |   |   |   |   |   |   |   |
+| `fluidVelocityDissipation` | Fluid | `Motion fade` | `fluidVelocityDissipation` |   |   |   | · |   |   |   |   |   |   |   |
+| `fluidDensityDissipation` | Fluid | `Fluid fade` | `fluidDensityDissipation` |   |   |   | · |   |   |   |   |   |   |   |
+| `fluidChromaticAging` | Fluid | `Chromatic aging` | `fluidChromaticAging` |   |   |   | · |   |   |   |   |   |   |   |
+| `fluidSplatRadius` | Fluid | `Fluid splat radius` | `fluidSplatRadius` |   |   |   | · |   | · |   |   |   |   |   |
+| `fluidSplatForce` | Fluid | `Fluid splat force` | `fluidSplatForce` |   |   |   | · |   | · |   |   |   |   |   |
 | `fluidBeatPattern` | Fluid | `Beat pattern` | `fluidBeatPattern` |   |   |   | · |   | · |   |   |   |   |   |
 | `fluidBeatSplats` | Fluid | `Beat splats` | `fluidBeatSplats` |   |   |   | · |   | · |   |   |   |   |   |
 | `fluidStirrers` | Fluid | `Stirrers` | `fluidStirrers` |   |   |   | · |   | · |   |   |   |   |   |
-| `fluidStirrerSpeed` | Fluid | `Stirrer speed` | `fluidStirrerSpeed` |   |   |   | · |   | · |   |   |   | · |   |
+| `fluidStirrerSpeed` | Fluid | `Stirrer speed` | `fluidStirrerSpeed` |   |   |   | · |   | · |   |   |   |   |   |
 | `fluidBassPump` | Fluid | `Bass pump` | `fluidBassPump` |   |   |   | · |   | · |   |   |   |   |   |
-| `fluidPaletteCycleSpeed` | Fluid | `Palette cycle` | `fluidPaletteCycleSpeed` |   |   |   | · |   |   |   |   |   | · |   |
+| `fluidPaletteCycleSpeed` | Fluid | `Palette cycle` | `fluidPaletteCycleSpeed` |   |   |   | · |   |   |   |   |   |   |   |
 | `fluidSparkle` | Fluid | `Treble sparkle` | `fluidSparkle` |   |   |   | · |   | · |   |   |   |   |   |
 | `fluidSpawnPath` | Fluid | `Path` | `fluidSpawnPath` |   |   |   | · | · | · |   |   |   |   |   |
 | `fluidSpawnPoints` | Fluid | `Spawn points` | `fluidSpawnPoints` |   |   |   | · | · | · |   |   |   |   |   |
-| `fluidSpawnProgress` | Fluid | — | `fluidSpawnProgress` |   |   |   | · | · | · |   |   |   | · |   |
+| `fluidSpawnProgress` | Fluid | — | `fluidSpawnProgress` |   |   |   | · | · | · |   |   |   |   |   |
 | `fluidCatchPoints` | Fluid | `Catch points` | `fluidCatchPoints` |   |   |   | · | · | · |   |   |   |   |   |
-| `fluidCatchPull` | Fluid | `Catch pull` | `fluidCatchPull` |   |   |   | · | · | · |   |   |   | · |   |
-| `fluidCatchRadius` | Fluid | `Catch radius` | `fluidCatchRadius` |   |   |   | · | · | · |   |   |   | · |   |
+| `fluidCatchPull` | Fluid | `Catch pull` | `fluidCatchPull` |   |   |   | · | · | · |   |   |   |   |   |
+| `fluidCatchRadius` | Fluid | `Catch radius` | `fluidCatchRadius` |   |   |   | · | · | · |   |   |   |   |   |
 | `fluidParticlesEnabled` | Fluid | — | `fluidParticlesEnabled` |   |   |   | · |   |   |   |   |   |   |   |
-| `fluidParticleLife` | Fluid | `Particle life (s)` | `fluidParticleLife` |   |   |   | · | · |   |   |   |   | · |   |
-| `fluidParticleDrag` | Fluid | `Particle drag` | `fluidParticleDrag` |   |   |   | · | · |   |   |   |   | · |   |
-| `fluidParticleBrightness` | Fluid | `Particle brightness` | `fluidParticleBrightness` |   |   |   | · |   |   |   |   |   | · |   |
+| `fluidParticleLife` | Fluid | `Particle life (s)` | `fluidParticleLife` |   |   |   | · | · |   |   |   |   |   |   |
+| `fluidParticleDrag` | Fluid | `Particle drag` | `fluidParticleDrag` |   |   |   | · | · |   |   |   |   |   |   |
+| `fluidParticleBrightness` | Fluid | `Particle brightness` | `fluidParticleBrightness` |   |   |   | · |   |   |   |   |   |   |   |
 | `fluidDyeEnabled` | Fluid | — | `fluidDyeEnabled` |   |   |   | · |   |   |   |   |   |   |   |
 | `fluidShading` | Fluid | `Shading (embossed ink)` | `fluidShading` |   |   |   | · |   |   |   |   |   |   |   |
 | `fluidBloom` | Fluid | `Glow (fluid)` | `fluidBloom` |   |   |   | · |   |   |   |   |   |   |   |
-| `fluidBloomIntensity` | Fluid | `Fluid glow` | `fluidBloomIntensity` |   |   |   | · |   |   |   |   |   | · |   |
-| `fluidBloomThreshold` | Fluid | `Glow threshold` | `fluidBloomThreshold` |   |   |   | · |   |   |   |   |   | · |   |
+| `fluidBloomIntensity` | Fluid | `Fluid glow` | `fluidBloomIntensity` |   |   |   | · |   |   |   |   |   |   |   |
+| `fluidBloomThreshold` | Fluid | `Glow threshold` | `fluidBloomThreshold` |   |   |   | · |   |   |   |   |   |   |   |
 | `fluidSunrays` | Fluid | `Sunrays` | `fluidSunrays` |   |   |   | · |   |   |   |   |   |   |   |
-| `fluidSunraysWeight` | Fluid | `Sunrays weight` | `fluidSunraysWeight` |   |   |   | · |   |   |   |   |   | · |   |
-| `fluidCurlAudio` | Fluid | `Curl from mids` | `fluidCurlAudio` |   |   |   | · |   |   |   |   |   | · |   |
-| `fluidBloomAudio` | Fluid | `Glow from loudness` | `fluidBloomAudio` |   |   |   | · |   |   |   |   |   | · |   |
-| `fluidFadeAudio` | Fluid | `Fade when quiet` | `fluidFadeAudio` |   |   |   | · |   |   |   |   |   | · |   |
-| `fluidRadiusPulse` | Fluid | `Radius on beat` | `fluidRadiusPulse` |   |   |   | · |   | · |   |   |   | · |   |
+| `fluidSunraysWeight` | Fluid | `Sunrays weight` | `fluidSunraysWeight` |   |   |   | · |   |   |   |   |   |   |   |
+| `fluidCurlAudio` | Fluid | `Curl from mids` | `fluidCurlAudio` |   |   |   | · |   |   |   |   |   |   |   |
+| `fluidBloomAudio` | Fluid | `Glow from loudness` | `fluidBloomAudio` |   |   |   | · |   |   |   |   |   |   |   |
+| `fluidFadeAudio` | Fluid | `Fade when quiet` | `fluidFadeAudio` |   |   |   | · |   |   |   |   |   |   |   |
+| `fluidRadiusPulse` | Fluid | `Radius on beat` | `fluidRadiusPulse` |   |   |   | · |   | · |   |   |   |   |   |
 | `flowEnabled` | Fluid | — | `flowEnabled` |   | · |   |   |   |   |   |   |   | · | · |
 | `flowStrength` | Fluid | `Flow strength` | `flowStrength` | · | · |   |   |   |   |   |   |   | · | · |
 | `flowForce` | Fluid | `Flow force` | `flowForce` |   |   |   |   |   |   |   |   |   | · |   |
@@ -145,54 +145,54 @@ reach every style through the composite pass, which is its own column.
 | `flowAdvectParticles` | Fluid | `Particles ride the field` | `flowAdvectParticles` |   | · |   |   |   |   |   |   |   | · | · |
 | `waterWaveSpeed` | Fluid | `Wave speed` | `waterWaveSpeed` |   |   |   |   |   | · |   |   |   | · | · |
 | `waterDamping` | Fluid | `Damping` | `waterDamping` |   |   |   |   |   | · |   |   |   | · | · |
-| `waterRippleStrength` | Fluid | `Ripple strength` | `waterRippleStrength` |   |   |   |   |   | · |   |   |   | · |   |
-| `waterDepth` | Fluid | `Depth` | `waterDepth` |   |   |   |   |   | · |   |   |   | · |   |
-| `waterSpecular` | Fluid | `Specular` | `waterSpecular` |   |   |   |   |   | · |   |   |   | · |   |
-| `waterFlow` | Fluid | `Flow drift` | `waterFlow` |   |   |   |   |   | · |   |   |   | · |   |
-| `waterLiquid` | Fluid | `Liquid` | `waterLiquid` |   |   |   |   |   | · |   |   |   | · |   |
-| `waterLiquidFlow` | Fluid | `Liquid flow` | `waterLiquidFlow` |   |   |   |   |   | · |   |   |   | · |   |
-| `waterLiquidFade` | Fluid | `Liquid fade` | `waterLiquidFade` |   |   |   |   |   | · |   |   |   | · |   |
+| `waterRippleStrength` | Fluid | `Ripple strength` | `waterRippleStrength` |   |   |   |   |   | · |   |   |   |   |   |
+| `waterDepth` | Fluid | `Depth` | `waterDepth` |   |   |   |   |   | · |   |   |   |   |   |
+| `waterSpecular` | Fluid | `Specular` | `waterSpecular` |   |   |   |   |   | · |   |   |   |   |   |
+| `waterFlow` | Fluid | `Flow drift` | `waterFlow` |   |   |   |   |   | · |   |   |   |   |   |
+| `waterLiquid` | Fluid | `Liquid` | `waterLiquid` |   |   |   |   |   | · |   |   |   |   |   |
+| `waterLiquidFlow` | Fluid | `Liquid flow` | `waterLiquidFlow` |   |   |   |   |   | · |   |   |   |   |   |
+| `waterLiquidFade` | Fluid | `Liquid fade` | `waterLiquidFade` |   |   |   |   |   | · |   |   |   |   |   |
 | `cymaticsGeometry` | Cymatics | `Geometry` | `cymaticsGeometry` |   |   |   |   |   |   | · | · |   |   |   |
-| `cymaticsFundamental` | Cymatics | `Fundamental (Hz)` | `cymaticsFundamental` |   |   |   |   |   |   | · |   |   | · |   |
+| `cymaticsFundamental` | Cymatics | `Fundamental (Hz)` | `cymaticsFundamental` |   |   |   |   |   |   | · |   |   |   |   |
 | `cymaticsModes` | Cymatics | `Standing waves` | `cymaticsModes` |   |   |   |   |   |   | · |   |   |   |   |
-| `cymaticsRing` | Cymatics | `Plate ring` | `cymaticsRing` |   |   |   |   |   |   | · |   |   | · |   |
-| `cymaticsFocus` | Cymatics | `Tonal focus` | `cymaticsFocus` |   |   |   |   |   |   | · |   |   | · |   |
-| `cymaticsScale` | Cymatics | `Field scale` | `cymaticsScale` |   |   |   |   |   |   | · |   |   | · |   |
-| `cymaticsFill` | Cymatics | `Fill` | `cymaticsFill` |   |   |   |   |   |   | · |   |   | · |   |
-| `cymaticsLine` | Cymatics | `Nodal lines` | `cymaticsLine` |   |   |   |   |   |   | · |   |   | · |   |
-| `cymaticsGlow` | Cymatics | `Nodal glow` | `cymaticsGlow` |   |   |   |   |   |   | · |   |   | · |   |
-| `cymaticsIridescence` | Cymatics | `Iridescence` | `cymaticsIridescence` |   |   |   |   |   |   | · |   |   | · |   |
-| `cymaticsCaustic` | Cymatics | `Caustic sheen` | `cymaticsCaustic` |   |   |   |   |   |   | · |   |   | · |   |
-| `cymaticsFlow` | Cymatics | `Wave flow` | `cymaticsFlow` |   |   |   |   |   |   | · |   |   | · |   |
-| `cymaticsSwirl` | Cymatics | `Field swirl` | `cymaticsSwirl` |   |   |   |   |   |   | · |   |   | · |   |
+| `cymaticsRing` | Cymatics | `Plate ring` | `cymaticsRing` |   |   |   |   |   |   | · |   |   |   |   |
+| `cymaticsFocus` | Cymatics | `Tonal focus` | `cymaticsFocus` |   |   |   |   |   |   | · |   |   |   |   |
+| `cymaticsScale` | Cymatics | `Field scale` | `cymaticsScale` |   |   |   |   |   |   | · |   |   |   |   |
+| `cymaticsFill` | Cymatics | `Fill` | `cymaticsFill` |   |   |   |   |   |   | · |   |   |   |   |
+| `cymaticsLine` | Cymatics | `Nodal lines` | `cymaticsLine` |   |   |   |   |   |   | · |   |   |   |   |
+| `cymaticsGlow` | Cymatics | `Nodal glow` | `cymaticsGlow` |   |   |   |   |   |   | · |   |   |   |   |
+| `cymaticsIridescence` | Cymatics | `Iridescence` | `cymaticsIridescence` |   |   |   |   |   |   | · |   |   |   |   |
+| `cymaticsCaustic` | Cymatics | `Caustic sheen` | `cymaticsCaustic` |   |   |   |   |   |   | · |   |   |   |   |
+| `cymaticsFlow` | Cymatics | `Wave flow` | `cymaticsFlow` |   |   |   |   |   |   | · |   |   |   |   |
+| `cymaticsSwirl` | Cymatics | `Field swirl` | `cymaticsSwirl` |   |   |   |   |   |   | · |   |   |   |   |
 | `hyperJourney` | Hyperspace | — | `hyperJourney` |   |   |   |   |   |   |   |   | · |   |   |
 | `hyperAct` | Hyperspace | `Act` | `hyperAct` |   |   |   |   |   |   |   |   | · |   |   |
-| `hyperCycleSeconds` | Hyperspace | `Act length (s)` | `hyperCycleSeconds` |   |   |   |   |   |   |   |   | · | · |   |
-| `hyperBodies` | Hyperspace | `Bodies` | `hyperBodies` |   |   |   |   |   |   |   |   | · | · |   |
-| `hyperLifetime` | Hyperspace | `Body life (s)` | `hyperLifetime` |   |   |   |   |   |   |   |   | · | · |   |
-| `hyperSpin` | Hyperspace | `Body spin` | `hyperSpin` |   |   |   |   |   |   |   |   | · | · |   |
-| `hyperOrbit` | Hyperspace | `Orbit drift` | `hyperOrbit` |   |   |   |   |   |   |   |   | · | · |   |
+| `hyperCycleSeconds` | Hyperspace | `Act length (s)` | `hyperCycleSeconds` |   |   |   |   |   |   |   |   | · |   |   |
+| `hyperBodies` | Hyperspace | `Bodies` | `hyperBodies` |   |   |   |   |   |   |   |   | · |   |   |
+| `hyperLifetime` | Hyperspace | `Body life (s)` | `hyperLifetime` |   |   |   |   |   |   |   |   | · |   |   |
+| `hyperSpin` | Hyperspace | `Body spin` | `hyperSpin` |   |   |   |   |   |   |   |   | · |   |   |
+| `hyperOrbit` | Hyperspace | `Orbit drift` | `hyperOrbit` |   |   |   |   |   |   |   |   | · |   |   |
 | `hyperSpecies` | Hyperspace | `Fractal` | `hyperSpecies` |   |   |   |   |   |   |   |   | · |   |   |
-| `hyperFold` | Hyperspace | `Fold` | `hyperFold` |   |   |   |   |   |   |   |   | · | · |   |
-| `hyperDetail` | Hyperspace | — | `hyperDetail` |   |   |   |   |   |   |   |   | · | · |   |
-| `hyperGlow` | Hyperspace | `Body glow` | `hyperGlow` |   |   |   |   |   |   |   |   | · | · |   |
-| `hyperNeon` | Hyperspace | `Neon rim` | `hyperNeon` |   |   |   |   |   |   |   |   | · | · |   |
-| `hyperField` | Hyperspace | `Filigree` | `hyperField` |   |   |   |   |   |   |   |   | · | · |   |
-| `hyperHaze` | Hyperspace | `Haze` | `hyperHaze` |   |   |   |   |   |   |   |   | · | · |   |
-| `hyperCamera` | Hyperspace | `Camera drift` | `hyperCamera` |   |   |   |   |   |   |   |   | · | · |   |
+| `hyperFold` | Hyperspace | `Fold` | `hyperFold` |   |   |   |   |   |   |   |   | · |   |   |
+| `hyperDetail` | Hyperspace | — | `hyperDetail` |   |   |   |   |   |   |   |   | · |   |   |
+| `hyperGlow` | Hyperspace | `Body glow` | `hyperGlow` |   |   |   |   |   |   |   |   | · |   |   |
+| `hyperNeon` | Hyperspace | `Neon rim` | `hyperNeon` |   |   |   |   |   |   |   |   | · |   |   |
+| `hyperField` | Hyperspace | `Filigree` | `hyperField` |   |   |   |   |   |   |   |   | · |   |   |
+| `hyperHaze` | Hyperspace | `Haze` | `hyperHaze` |   |   |   |   |   |   |   |   | · |   |   |
+| `hyperCamera` | Hyperspace | `Camera drift` | `hyperCamera` |   |   |   |   |   |   |   |   | · |   |   |
 | `hyperMirrorFolds` | Hyperspace | `Mirror folds` | `hyperMirrorFolds` |   |   |   |   |   |   |   |   | · |   |   |
-| `hyperTrap` | Hyperspace | `Colour banding` | `hyperTrap` |   |   |   |   |   |   |   |   | · | · |   |
-| `hyperMelt` | Hyperspace | `Melt` | `hyperMelt` |   |   |   |   |   |   |   |   | · | · |   |
-| `hyperStain` | Hyperspace | `Ink stain` | `hyperStain` |   |   |   |   |   |   |   |   | · | · |   |
-| `hyperLiquid` | Hyperspace | `Liquid light` | `hyperLiquid` |   |   |   |   |   |   |   |   | · | · |   |
-| `hyperRidges` | Hyperspace | `Ridges` | `hyperRidges` |   |   |   |   |   |   |   |   | · | · |   |
+| `hyperTrap` | Hyperspace | `Colour banding` | `hyperTrap` |   |   |   |   |   |   |   |   | · |   |   |
+| `hyperMelt` | Hyperspace | `Melt` | `hyperMelt` |   |   |   |   |   |   |   |   | · |   |   |
+| `hyperStain` | Hyperspace | `Ink stain` | `hyperStain` |   |   |   |   |   |   |   |   | · |   |   |
+| `hyperLiquid` | Hyperspace | `Liquid light` | `hyperLiquid` |   |   |   |   |   |   |   |   | · |   |   |
+| `hyperRidges` | Hyperspace | `Ridges` | `hyperRidges` |   |   |   |   |   |   |   |   | · |   |   |
 | `hyperStir` | Hyperspace | `Stir` | `hyperStir` |   |   |   |   |   |   |   |   |   | · |   |
 | `hyperSwirl` | Hyperspace | `Vorticity` | `hyperSwirl` |   |   |   |   |   |   |   |   |   | · |   |
 | `hyperFlowFade` | Hyperspace | `Flow fade` | `hyperFlowFade` |   |   |   |   |   |   |   |   |   | · |   |
 | `beamXy` | Shape | `XY plot` | `beamXy` |   |   |   |   |   |   |   | · |   |   |   |
-| `beamWidth` | Shape | `Beam width` | `beamWidth` |   |   |   |   |   |   |   | · |   | · |   |
-| `beamIntensity` | Shape | `Beam brightness` | `beamIntensity` |   |   |   |   |   |   |   | · |   | · |   |
-| `beamTail` | Shape | `Beam tail` | `beamTail` |   |   |   |   |   |   |   | · |   | · |   |
+| `beamWidth` | Shape | `Beam width` | `beamWidth` |   |   |   |   |   |   |   | · |   |   |   |
+| `beamIntensity` | Shape | `Beam brightness` | `beamIntensity` |   |   |   |   |   |   |   | · |   |   |   |
+| `beamTail` | Shape | `Beam tail` | `beamTail` |   |   |   |   |   |   |   | · |   |   |   |
 | `rippleOverlayEnabled` | Fluid | — | `rippleOverlayEnabled` |   |   |   |   |   |   |   |   |   | · | · |
 | `rippleOverlayStrength` | Fluid | `Ripple overlay strength` | `rippleOverlayStrength` |   |   |   |   |   |   |   |   |   | · | · |
 | `rippleOverlaySpecular` | Fluid | `Ripple glint` | `rippleOverlaySpecular` |   |   |   |   |   |   |   |   |   | · | · |

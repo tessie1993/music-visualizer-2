@@ -41,7 +41,13 @@ internal class PerformanceMonitor(
         if (fps < 5f || fps > 180f) return 0
         samples[index] = dtSeconds
         index = (index + 1) % windowSize
-        count++
+        // Clamped, not just incremented, for the reason [DrumChannels] clamps
+        // its refractory counters: a per-frame counter on a live wallpaper
+        // eventually overflows to negative, after which [averageFps] reads
+        // "not warmed up yet" forever and the monitor is silently dead until
+        // reset(). Past windowSize the exact value never matters, so nothing
+        // reachable changes.
+        count = minOf(count + 1, windowSize)
         val avg = averageFps
         if (avg <= 0f) return 0
         if (avg < targetFps) {

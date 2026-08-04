@@ -1,5 +1,9 @@
 #version 300 es
 precision highp float;
+// GLSL ES 3.00 defaults fragment sampler2D to LOWP; the half-float melt
+// velocity/dye reads (uFlowTex/uDyeTex) would clamp and quantize on GPUs
+// honoring sampler precision (Mali) - same guard as every fluid_* pass.
+precision highp sampler2D;
 
 // The HYPERSPACE style: a room full of 3D fractals, each one alive on its own
 // clock, raymarched with distance estimation.

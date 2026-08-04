@@ -29,12 +29,11 @@ import java.io.File
  *
  * The setter family is the scope on purpose. The rest of the public surface is
  * a mixed bag this rule cannot judge: readers the view model calls itself
- * (`queueTitles`, `currentTrackKey`), and the music-playlist CRUD group
- * (`createMusicPlaylist`, `addTrackToPlaylist`, `moveTrackInPlaylist` and
- * their siblings), which is unwired by decision rather than by oversight and
- * is being left for now. Putting those in an allowlist would mean asserting an
- * intent this file cannot know, in a form that fails the day someone acts on
- * it. "A setter nothing calls is a bug" needs no such judgement.
+ * (`queueTitles`, `currentTrackKey`) carry no "a user can get at this" claim.
+ * The music-playlist CRUD group used to sit out here too, unwired by decision
+ * — and someone acted on it: the Playlists tab creates, deletes, renames and
+ * reorders, the queue panel saves, and the track menus add. It graduated into
+ * [playlistCrud] below, pinned the same way as the setters.
  */
 class ViewModelSurfaceTest {
     /**
@@ -67,6 +66,31 @@ class ViewModelSurfaceTest {
             "setVizPlaylistInterval",
             "setVizPlaylistIntelligent",
         )
+
+    /**
+     * The music-playlist CRUD group, wired by the create/save/add/delete
+     * affordances and held wired here: ripping out one of those controls
+     * fails this list instead of quietly re-orphaning the whole feature the
+     * way it shipped the first time.
+     */
+    private val playlistCrud =
+        listOf(
+            "createMusicPlaylist",
+            "renameMusicPlaylist",
+            "deleteMusicPlaylist",
+            "addTrackToPlaylist",
+            "removeTrackFromPlaylist",
+            "moveMusicPlaylistTrack",
+        )
+
+    @Test
+    fun thePlaylistCrudGroupHasControls() {
+        assertEquals(
+            "playlist operations with no control anywhere in ui/",
+            emptyList<String>(),
+            playlistCrud.filterNot { Regex("\\b$it\\b").containsMatchIn(uiSources) },
+        )
+    }
 
     @Test
     fun theRandomAndVisualPlaylistSettingsHaveControls() {

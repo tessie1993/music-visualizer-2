@@ -127,7 +127,7 @@ fun HomeScreen(
             NowPlayingHero(
                 viewModel = viewModel,
                 state = state,
-                styleLabel = viz.sceneId.replaceFirstChar { it.uppercase() },
+                styleLabel = sceneDisplayLabel(viz.sceneId),
                 micActive = mic.active,
                 external = external,
                 onExpand = onExpand,
@@ -775,7 +775,7 @@ private fun PresetTile(
                 )
             }
             Text(
-                sceneId,
+                sceneDisplayLabel(sceneId),
                 Modifier.align(Alignment.BottomStart).padding(8.dp),
                 style = MaterialTheme.typography.labelSmall,
                 color = Color.White.copy(alpha = 0.85f),

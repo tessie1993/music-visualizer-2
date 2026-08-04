@@ -2,6 +2,7 @@ package dev.musicviz.analysis
 
 import dev.musicviz.audio.PcmRingBuffer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.PI
@@ -113,6 +114,57 @@ class StereoFieldTest {
         val zero = FloatArray(0)
         assertEquals(StereoField.MONO.correlation, StereoField.correlation(zero, zero), 0f)
         assertEquals(StereoField.MONO.width, StereoField.width(zero, zero), 0f)
+    }
+
+    /**
+     * A channel that is nearly-but-not-exactly silent makes `sum(L*L)` a
+     * difference of near-equal float sums: catastrophic cancellation can land
+     * it a hair below zero, and an unfloored denominator turns that into
+     * `sqrt(negative)` = NaN - which then poisons everything smoothed from
+     * the reading. The window is FOUND, not assumed: seeds are searched until
+     * the accumulation, replicated term for term, actually goes negative, so
+     * this test fails loudly if the hazard it pins ever stops being
+     * constructible instead of silently pinning nothing.
+     */
+    @Test
+    fun `a nearly-silent channel cannot produce NaN`() {
+        val mid = FloatArray(n)
+        val side = FloatArray(n)
+        var hazardous = false
+        var seed = 0
+        while (seed < 512 && !hazardous) {
+            val rnd = java.util.Random(seed.toLong())
+            for (i in 0 until n) {
+                val v = (rnd.nextFloat() * 2f - 1f) * 0.8f
+                mid[i] = v
+                // L = mid + side: a whisper above exact silence, R carries it all.
+                side[i] = -v + (rnd.nextFloat() * 2f - 1f) * 1e-7f
+            }
+            hazardous = llAsComputed(mid, side) < 0f
+            seed++
+        }
+        assertTrue("no seed cancelled sum(L*L) below zero; the hazard this test pins is gone", hazardous)
+        val c = StereoField.correlation(mid, side)
+        assertFalse("correlation is NaN", c.isNaN())
+        assertTrue("correlation $c out of range", c in -1f..1f)
+    }
+
+    /** `sum(L*L)` accumulated exactly as [StereoField.correlation] computes it. */
+    private fun llAsComputed(
+        mid: FloatArray,
+        side: FloatArray,
+    ): Float {
+        var mm = 0f
+        var ss = 0f
+        var ms = 0f
+        for (i in 0 until n) {
+            val m = mid[i]
+            val s = side[i]
+            mm += m * m
+            ss += s * s
+            ms += m * s
+        }
+        return mm + 2f * ms + ss
     }
 
     @Test

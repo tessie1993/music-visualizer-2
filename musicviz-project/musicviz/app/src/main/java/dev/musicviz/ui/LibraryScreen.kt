@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
@@ -155,6 +157,7 @@ private fun TrackRow(
             ).filter { it.isNotBlank() }.joinToString(" \u00b7 ")
     var menu by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
+    var addingToPlaylist by remember { mutableStateOf(false) }
     Row(
         Modifier
             .fillMaxWidth()
@@ -186,6 +189,10 @@ private fun TrackRow(
                 viewModel.enqueue(t.uri)
                 menu = false
             })
+            DropdownMenuItem(text = { Text("Add to playlist") }, onClick = {
+                addingToPlaylist = true
+                menu = false
+            })
             DropdownMenuItem(text = { Text("Add to library list") }, onClick = {
                 viewModel.importTracks(listOf(Uri.parse(t.uri)))
                 menu = false
@@ -199,6 +206,69 @@ private fun TrackRow(
     if (editing) {
         TrackInfoEditor(uri = t.uri, viewModel = viewModel, onDismiss = { editing = false })
     }
+    if (addingToPlaylist) {
+        AddToPlaylistDialog(uri = t.uri, viewModel = viewModel, onDismiss = { addingToPlaylist = false })
+    }
+}
+
+/**
+ * Where a track row's "Add to playlist" lands: the existing playlists by
+ * name, plus a "New playlist…" branch into the shared naming dialog. Picking
+ * an existing playlist appends through [MusicPlaylistStore.addTrack], which
+ * skips a uri already present - adding a track twice is a no-op, not a
+ * duplicate entry.
+ */
+@Composable
+private fun AddToPlaylistDialog(
+    uri: String,
+    viewModel: PlayerViewModel,
+    onDismiss: () -> Unit,
+) {
+    val library by viewModel.library.collectAsState()
+    var naming by remember { mutableStateOf(false) }
+    if (naming) {
+        PlaylistNameDialog(
+            title = "New playlist",
+            confirmLabel = "Create",
+            taken = library.playlists.map { it.name }.toSet(),
+            onName = { name ->
+                viewModel.createMusicPlaylist(name)
+                viewModel.addTrackToPlaylist(name, uri)
+            },
+            onDismiss = onDismiss,
+        )
+        return
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add to playlist") },
+        text = {
+            // Scrolls on its own: the dialog caps its height well before a
+            // long-standing user's playlist collection runs out.
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                library.playlists.forEach { pl ->
+                    Text(
+                        pl.name,
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                viewModel.addTrackToPlaylist(pl.name, uri)
+                                onDismiss()
+                            }.padding(vertical = 10.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    "New playlist…",
+                    Modifier.fillMaxWidth().clickable { naming = true }.padding(vertical = 10.dp),
+                    color = accentTextColor(),
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /**
@@ -292,36 +362,77 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
     var expanded by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf<String?>(null) }
     var renameText by remember { mutableStateOf("") }
-    LazyColumn(Modifier.fillMaxSize()) {
-        items(library.playlists) { pl ->
-            Column(Modifier.fillMaxWidth()) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { expanded = if (expanded == pl.name) null else pl.name }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(pl.name)
-                        Text("${pl.trackUris.size} tracks", style = MaterialTheme.typography.bodySmall)
+    var creating by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<String?>(null) }
+    Column {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
+            CrystalButton(compact = true, filled = false, onClick = { creating = true }) { Text("New playlist") }
+        }
+        LazyColumn(Modifier.fillMaxSize()) {
+            items(library.playlists, key = { it.name }) { pl ->
+                Column(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { expanded = if (expanded == pl.name) null else pl.name }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(pl.name)
+                            Text("${pl.trackUris.size} tracks", style = MaterialTheme.typography.bodySmall)
+                        }
+                        IconButton(onClick = {
+                            renaming = pl.name
+                            renameText = pl.name
+                        }) { Icon(Icons.Filled.Edit, "Rename") }
+                        IconButton(onClick = { viewModel.playPlaylist(pl.name) }) {
+                            Icon(Icons.Filled.PlayArrow, "Play")
+                        }
+                        // Behind a confirm: this row's other taps are all
+                        // recoverable, deleting a playlist is not.
+                        IconButton(onClick = { deleting = pl.name }) {
+                            Icon(Icons.Filled.Close, "Delete playlist")
+                        }
                     }
-                    IconButton(onClick = {
-                        renaming = pl.name
-                        renameText = pl.name
-                    }) { Icon(Icons.Filled.Edit, "Rename") }
-                    IconButton(onClick = { viewModel.playPlaylist(pl.name) }) {
-                        Icon(Icons.Filled.PlayArrow, "Play")
+                    if (expanded == pl.name) {
+                        PlaylistTracks(pl, library.tracks, viewModel)
                     }
                 }
-                if (expanded == pl.name) {
-                    PlaylistTracks(pl, library.tracks, viewModel)
+            }
+            if (library.playlists.isEmpty()) {
+                item {
+                    Text(
+                        "No playlists yet. Start one with \"New playlist\" above, save the current queue from " +
+                            "the queue panel in Now Playing, or use \"Add to playlist\" in any track's ⋮ menu.",
+                        Modifier.padding(16.dp),
+                    )
                 }
             }
         }
-        if (library.playlists.isEmpty()) {
-            item { Text("No playlists yet — build a queue in Now Playing and save it.", Modifier.padding(16.dp)) }
-        }
+    }
+    if (creating) {
+        PlaylistNameDialog(
+            title = "New playlist",
+            confirmLabel = "Create",
+            taken = library.playlists.map { it.name }.toSet(),
+            onName = viewModel::createMusicPlaylist,
+            onDismiss = { creating = false },
+        )
+    }
+    deleting?.let { doomed ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Delete playlist") },
+            text = { Text("\"$doomed\" is removed. Its tracks stay in the library.") },
+            confirmButton = {
+                CrystalButton(onClick = {
+                    viewModel.deleteMusicPlaylist(doomed)
+                    deleting = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+        )
     }
     renaming?.let { old ->
         AlertDialog(
@@ -479,6 +590,9 @@ private fun PlaylistTracks(
                 onClick = { viewModel.moveMusicPlaylistTrack(playlist.name, i, i + 1) },
                 enabled = i < count - 1,
             ) { Icon(Icons.Filled.KeyboardArrowDown, "Down") }
+            IconButton(onClick = { viewModel.removeTrackFromPlaylist(playlist.name, uri) }) {
+                Icon(Icons.Filled.Close, "Remove from playlist", Modifier.size(18.dp))
+            }
         }
     }
 }

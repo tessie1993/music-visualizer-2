@@ -78,6 +78,59 @@ class RendererWiringTest {
     }
 
     @Test
+    fun everyOfferedStyleExportsThroughTheSameSwitchThatBuildsTheRegistry() {
+        // exportSceneFactory was a SECOND hand-maintained scene switch, with a
+        // silent `else -> Nebula`: an id it had drifted away from exported a
+        // nebula clip without a word said. Delegated to createScene, the walk
+        // below is the registry's own walk - every offered id is exportable
+        // because offered == buildable (the test above), and an unknown id
+        // errors on the export GL thread instead of impersonating Nebula.
+        val body = functionBody("exportSceneFactory")
+        assertTrue("exportSceneFactory must build through createScene", body.contains("createScene("))
+        assertFalse(
+            "a second hand-maintained scene switch is growing back in exportSceneFactory",
+            body.contains("when (") || body.contains("when {"),
+        )
+        assertFalse(
+            "the silent Nebula fallback is back: an unknown export id must error like createScene's else",
+            body.contains("NebulaScene("),
+        )
+        val offered = idsIn(functionBody("availableSceneIds"))
+        val exportable = idsIn(functionBody("exportSceneFactory") + functionBody("createScene"))
+        assertEquals("a style is offered that the export factory cannot build", offered, exportable)
+    }
+
+    @Test
+    fun theLayerSceneRidesTheFlowFieldExactlyAsTheActiveSceneDoes() {
+        // The layer path did setParams/update/draw with no flow plumbing while
+        // every flow decision looked only at the ACTIVE scene: Inkflow as a
+        // layer - a style DEFINED by the field - rode a field that was never
+        // stepped for it, never read back into its grid and never took its
+        // kicks, so the layer sat on its faint fallback curl instead of
+        // flowing. One shared wiring function for both targets is what keeps
+        // the two paths from drifting apart again.
+        val draw = functionBody("onDrawFrame")
+        assertTrue(
+            "the FlowField step must consider the layer scene, not just the active one",
+            draw.contains("sceneNeedsFlow || layerNeedsFlow"),
+        )
+        assertTrue(
+            "the layer must be resolved before the field steps, or a field-defined layer rides a frozen field",
+            draw.indexOf("layerScene =") in 0 until draw.indexOf("ff.step("),
+        )
+        assertEquals(
+            "the active scene and the layer scene must share one flow-consumer wiring",
+            2,
+            Regex("""wireFlowConsumers\(""").findAll(draw).count(),
+        )
+        assertEquals(
+            "the active scene and the layer scene must both push their kicks back into the field",
+            2,
+            Regex("""drainFlowKicks\(""").findAll(draw).count(),
+        )
+    }
+
+    @Test
     fun familySubstylesAreBuiltOnDemandRatherThanAtSurfaceCreation() {
         // A substyle is one uniform plus a few control biases on a program its
         // family has already compiled - but the registry keys a constructed,

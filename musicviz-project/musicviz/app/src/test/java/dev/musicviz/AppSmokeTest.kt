@@ -77,8 +77,9 @@ class AppSmokeTest {
         compose.onNode(hasText("Customize") and isSelectable()).performClick()
         compose.waitForIdle()
         // The button names the tab it rolls: it acts on the tab it sits in,
-        // and Motion is the one the panel opens on.
-        compose.onNodeWithText("⚄ Randomize Motion").assertExists()
+        // and Motion is the one the panel opens on. The die is a vector Icon
+        // now, so the node's text is the words alone.
+        compose.onNodeWithText("Randomize Motion").assertExists()
         compose.onAllNodesWithText("Speed", substring = true).onFirst().assertExists()
     }
 

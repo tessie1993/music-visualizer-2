@@ -4,6 +4,7 @@ import android.content.Context
 import dev.musicviz.render.scene.SceneParams
 import org.json.JSONObject
 import java.io.File
+import java.security.MessageDigest
 
 /**
  * A saved visual configuration: scene, reactivity, the whole [SceneParams]
@@ -34,6 +35,42 @@ class PresetStore(
     context: Context,
 ) {
     private val dir = File(context.filesDir, "presets").apply { mkdirs() }
+
+    /** Where a MilkDrop preset's paired .milk lives (see [milkFileName]). */
+    private val milkDir = File(context.filesDir, "milk")
+
+    init {
+        migrateLegacyFileNames()
+    }
+
+    /**
+     * One-time rename of files saved under the pre-hash sanitizer, which
+     * collapsed every disallowed character to '_' ("夜曲" and "月光" both
+     * landed on "__.json"): [findFile] resolves names through [safeFileName]
+     * now, so a file left under its old stem would be unloadable and
+     * undeletable. Idempotent - a file already under its hashed stem is left
+     * alone - and never clobbering: a taken target keeps the old file in
+     * place, unrenamed rather than destroyed.
+     */
+    private fun migrateLegacyFileNames() {
+        dir
+            .walkTopDown()
+            .filter { it.isFile && it.extension == "json" }
+            .toList()
+            .forEach { f ->
+                val name = runCatching { fromJson(f.readText()).name }.getOrNull() ?: return@forEach
+                val stem = safeFileName(name)
+                if (f.nameWithoutExtension == stem) return@forEach
+                val target = File(f.parentFile, "$stem.json")
+                if (target.exists() || !f.renameTo(target)) return@forEach
+                // The paired .milk moves too: a preset saved before sources
+                // were carried resolves its visual through the file that
+                // shares its .json's stem (see milkFileName).
+                val milk = File(milkDir, f.nameWithoutExtension + ".milk")
+                val milkTarget = File(milkDir, "$stem.milk")
+                if (milk.isFile && !milkTarget.exists()) milk.renameTo(milkTarget)
+            }
+    }
 
     /** Relative folder ("" = root) for each preset name, for the tree UI. */
     fun folderOf(name: String): String {
@@ -77,7 +114,7 @@ class PresetStore(
     fun fileOf(name: String): File? = findFile(name)
 
     private fun findFile(name: String): File? =
-        dir.walkTopDown().firstOrNull { it.isFile && it.extension == "json" && it.nameWithoutExtension == sanitize(name) }
+        dir.walkTopDown().firstOrNull { it.isFile && it.extension == "json" && it.nameWithoutExtension == safeFileName(name) }
 
     fun list(): List<Preset> =
         dir
@@ -92,9 +129,12 @@ class PresetStore(
         folder: String = "",
     ) {
         val destDir = if (folder.isEmpty()) dir else File(dir, sanitize(folder)).apply { mkdirs() }
-        val dest = File(destDir, sanitize(preset.name) + ".json")
-        findFile(preset.name)?.takeIf { it != dest }?.delete()
-        dest.writeText(toJson(preset))
+        val dest = File(destDir, safeFileName(preset.name) + ".json")
+        val previous = findFile(preset.name)?.takeIf { it != dest }
+        // AtomicWrite, not writeText: a truncating write's kill window sits
+        // on the only copy of the preset. The old location (a folder move) is
+        // only removed once the new file is whole on disk.
+        if (AtomicWrite.text(dest, toJson(preset))) previous?.delete()
     }
 
     fun delete(name: String) {
@@ -286,9 +326,34 @@ class PresetStore(
          * "Live / set 1.milk" - a path with a directory in it, which silently
          * failed to copy and left the preset with no visual to restore.
          */
-        internal fun milkFileName(presetName: String): String = sanitize(presetName.removeSuffix(".milk")) + ".milk"
+        internal fun milkFileName(presetName: String): String = safeFileName(presetName.removeSuffix(".milk")) + ".milk"
 
-        private fun sanitize(name: String): String = name.replace(Regex("[^A-Za-z0-9-_ ]"), "_")
+        private val UNSAFE_CHARS = Regex("[^A-Za-z0-9-_ ]")
+
+        /** Folder paths only; item files resolve through [safeFileName]. */
+        private fun sanitize(name: String): String = name.replace(UNSAFE_CHARS, "_")
+
+        /**
+         * Filesystem-safe, collision-free file stem for a user-chosen item
+         * name. A name made only of safe characters keeps its exact old stem,
+         * so nothing saved by earlier builds moves. Any other name also
+         * carries a short stable digest of the raw name: replacement alone
+         * collapsed distinct names onto one file ("夜曲" and "月光" both
+         * became "__"), so saving one silently destroyed the other. Shared by
+         * presets (and their paired .milk), music playlists and palettes so
+         * every store migrates the same way.
+         */
+        internal fun safeFileName(name: String): String {
+            val stem = name.replace(UNSAFE_CHARS, "_")
+            if (stem == name) return name
+            val hash =
+                MessageDigest
+                    .getInstance("SHA-256")
+                    .digest(name.toByteArray(Charsets.UTF_8))
+                    .take(4)
+                    .joinToString("") { b -> "%02x".format(b.toInt() and 0xff) }
+            return "$stem-$hash"
+        }
 
         /**
          * Scene parameters alone, without the preset envelope.

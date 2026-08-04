@@ -77,6 +77,16 @@ class PlaybackCaptureService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        // A second start intent - consent granted again while a capture is
+        // already up - must not leak the projection it replaces: unstopped,
+        // the old one keeps the capture privilege alive with nothing owning
+        // it. Unregistered first, because Callback.onStop fires on a
+        // programmatic stop() too, and left registered it would
+        // publish(null)/stopSelf() over the projection replacing it.
+        projection?.let {
+            runCatching { it.unregisterCallback(projectionCallback) }
+            runCatching { it.stop() }
+        }
         // registerCallback is mandatory since Android 14; the handler must be
         // one with a live looper, and the main one always is.
         mp.registerCallback(projectionCallback, Handler(Looper.getMainLooper()))

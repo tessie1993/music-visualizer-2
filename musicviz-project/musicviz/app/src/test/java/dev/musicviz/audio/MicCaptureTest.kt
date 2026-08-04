@@ -14,6 +14,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowAudioRecord
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The live-input state machine: what [MicCapture.start] reports, and whether
@@ -133,5 +137,77 @@ class MicCaptureTest {
         assertTrue(capture.active)
         capture.stop()
         assertFalse(capture.active)
+    }
+
+    /**
+     * The stop-then-start race: stop() joins the worker for at most half a
+     * second, so a read still blocked past that leaves the old worker alive
+     * when the next start() spins up a new one. The generation fence must
+     * make the survivor discard its late samples and leave, instead of
+     * double-feeding the ring alongside the new worker - which is exactly
+     * what `while (running)` alone did once the new run flipped the shared
+     * flag back on.
+     */
+    @Test
+    fun `a worker that outlives its stop cannot feed the next run's ring`() {
+        grantMic()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        var zombie: Thread? = null
+        // First recorder: the read blocks until the test releases it, then
+        // hands back a full buffer of non-zero samples - the shape of a
+        // device read that straddled the stop.
+        val blockedRead =
+            object : ShadowAudioRecord.AudioRecordSource {
+                override fun readInFloatArray(
+                    audioData: FloatArray,
+                    offsetInFloats: Int,
+                    sizeInFloats: Int,
+                    isBlocking: Boolean,
+                ): Int {
+                    zombie = Thread.currentThread()
+                    entered.countDown()
+                    release.await()
+                    audioData.fill(0.5f)
+                    return sizeInFloats
+                }
+
+                override fun readInShortArray(
+                    audioData: ShortArray,
+                    offsetInShorts: Int,
+                    sizeInShorts: Int,
+                    isBlocking: Boolean,
+                ): Int {
+                    zombie = Thread.currentThread()
+                    entered.countDown()
+                    release.await()
+                    audioData.fill(16_000)
+                    return sizeInShorts
+                }
+            }
+        // Second recorder reads nothing, so any sample in the ring at the end
+        // can only have come from the zombie. Keyed per AudioRecord because
+        // the provider is consulted on reads, not once per recorder.
+        val perRecord = ConcurrentHashMap<AudioRecord, ShadowAudioRecord.AudioRecordSource>()
+        val order = AtomicInteger()
+        ShadowAudioRecord.setSourceProvider { rec ->
+            perRecord.computeIfAbsent(rec) {
+                if (order.getAndIncrement() == 0) blockedRead else readsReturning(0)
+            }
+        }
+        val ring = PcmRingBuffer()
+        val capture = MicCapture(ctx, ring)
+        assertNull(capture.start())
+        assertTrue("worker never reached its read", entered.await(2, TimeUnit.SECONDS))
+        // The join inside stop() times out: the read is still blocked, so the
+        // worker survives as a zombie.
+        capture.stop()
+        assertNull(capture.start())
+        assertTrue(capture.active)
+        // Wake the zombie only now, with the new run already up.
+        release.countDown()
+        zombie?.join(2_000)
+        assertEquals("stale worker fed the ring after its stop", 0L, ring.currentWriteIndex())
+        capture.stop()
     }
 }
