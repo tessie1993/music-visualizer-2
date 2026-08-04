@@ -92,17 +92,33 @@ internal object VisualStyleCatalog {
         listOf(
             // Backwards-compatible original. It remains selectable beside the
             // ten substyles and keeps every saved v1.4-v1.7 preset valid.
-            HyperspaceStyle(SceneIds.HYPERSPACE, "Original · Living Fractals", 0),
+            // tintAmount 0 and signatureFloor 0: no accent, no substyle sky.
+            HyperspaceStyle(SceneIds.HYPERSPACE, "Original · Living Fractals", 0, signatureFloor = 0f),
+            // KIFS breathing cathedral: a three-deep kaleidoscopic IFS
+            // pre-fold over the box species, its fold rotation leaning on the
+            // slewed bass so the architecture visibly breathes on kicks.
+            // lipschitz = 1.24^3 (three uniform scales); bodyScale up from
+            // 0.82 because the pre-fold contracts the visible body by the
+            // same factor.
             HyperspaceStyle(
                 "hyper_polytope",
                 "Polytope",
                 1,
-                bodyScale = 0.82f,
+                bodyScale = 1.05f,
                 cameraScale = 1.08f,
+                driftScale = 0.9f,
                 fieldScale = 0.72f,
                 neonScale = 1.28f,
                 forcedSpecies = 3,
+                lipschitz = 1.95f,
+                kaleidoFolds = 4,
+                tintHue = 0.62f,
+                tintSat = 0.55f,
+                tintAmount = 0.3f,
+                phaseRate = 0.04f,
             ),
+            // Thin fluid skin: the deform is a travelling wave plus a flatten,
+            // bounded by 1 + 0.13*3.1 before the compression.
             HyperspaceStyle(
                 "hyper_liquid_warp",
                 "Liquid Warp",
@@ -113,18 +129,33 @@ internal object VisualStyleCatalog {
                 meltScale = 1.35f,
                 liquidScale = 1.35f,
                 ridgeScale = 0.55f,
+                lipschitz = 1.45f,
+                tintHue = 0.45f,
+                tintSat = 0.6f,
+                tintAmount = 0.25f,
+                phaseRate = 0.06f,
             ),
+            // Double helix: pure axial torsion over the BULB (whose power also
+            // breathes on the slewed bass - the mandelbulb breathing lives at
+            // species level in the shader). lipschitz = 1 + twist * localRadius
+            // = 1 + 0.9 * 1.35, with headroom.
             HyperspaceStyle(
                 "hyper_caduceus",
                 "Caduceus",
                 3,
                 bodyScale = 0.72f,
                 cameraScale = 1.12f,
+                driftScale = 0.85f,
                 fieldScale = 0.58f,
                 neonScale = 1.38f,
                 meltScale = 0.85f,
-                forcedSpecies = 4,
+                forcedSpecies = 5,
+                lipschitz = 2.3f,
+                tintHue = 0.1f,
+                tintSat = 0.75f,
+                tintAmount = 0.3f,
             ),
+            // Folded organic ridges (1 + 0.075 * 4.3), synaptic sky.
             HyperspaceStyle(
                 "hyper_cortex",
                 "Cortex",
@@ -136,19 +167,32 @@ internal object VisualStyleCatalog {
                 ridgeScale = 1.45f,
                 stainScale = 1.2f,
                 forcedSpecies = 4,
+                lipschitz = 1.35f,
+                tintHue = 0.88f,
+                tintAmount = 0.25f,
             ),
+            // Cut facets: abs() and a rotation are isometries, lipschitz 1.
             HyperspaceStyle(
                 "hyper_reliquary",
                 "Reliquary",
                 5,
                 bodyScale = 0.68f,
                 cameraScale = 1.18f,
+                driftScale = 0.8f,
                 fieldScale = 0.45f,
                 glowScale = 0.82f,
                 neonScale = 1.5f,
                 hazeScale = 0.72f,
                 forcedSpecies = 2,
+                kaleidoFolds = 4,
+                tintHue = 0.08f,
+                tintSat = 0.5f,
+                tintAmount = 0.4f,
             ),
+            // Hex-grid tunnel: identity moved off the body (the old twin
+            // micro-rotations were invisible) and into the spectral hex sky,
+            // which flies on the bass. High signature floor: the tunnel IS
+            // the style.
             HyperspaceStyle(
                 "hyper_moire",
                 "Moiré",
@@ -159,7 +203,18 @@ internal object VisualStyleCatalog {
                 neonScale = 0.72f,
                 meltScale = 0.45f,
                 liquidScale = 0.42f,
+                kaleidoFolds = 12,
+                signatureFloor = 0.35f,
+                tintHue = 0.5f,
+                tintSat = 0.8f,
+                tintAmount = 0.3f,
+                phaseRate = 0.25f,
+                phaseBassRate = 0.45f,
             ),
+            // Apollonian jewels: broad pressure shells over the sphere
+            // packing, swelling on the slewed bass (the fold wobble lives in
+            // the shader's map()). lipschitz = 1 + eps + eps*k*R =
+            // 1 + 0.05 + 0.05*3*1.85.
             HyperspaceStyle(
                 "hyper_foam",
                 "Foam",
@@ -172,7 +227,15 @@ internal object VisualStyleCatalog {
                 hazeScale = 1.15f,
                 stainScale = 1.3f,
                 forcedSpecies = 1,
+                lipschitz = 1.4f,
+                tintHue = 0.55f,
+                tintSat = 0.25f,
+                tintAmount = 0.35f,
             ),
+            // Kaliset star nest: the old 0.022-unit skin displacement sat
+            // below the hit epsilon and was never visible, so the body is
+            // clean (lipschitz 1) and the identity is the nebula sky driven
+            // by slewed bass/mid, plus the treble-lit grain signature.
             HyperspaceStyle(
                 "hyper_dustskin",
                 "Dustskin",
@@ -184,13 +247,22 @@ internal object VisualStyleCatalog {
                 hazeScale = 1.3f,
                 liquidScale = 0.75f,
                 ridgeScale = 0.65f,
+                signatureFloor = 0.4f,
+                tintHue = 0.04f,
+                tintSat = 0.8f,
+                tintAmount = 0.25f,
+                phaseRate = 0.02f,
             ),
+            // Phyllotaxis chrysanthemum: stretched drifting corals under a
+            // golden-angle seed spiral whose seeds are lit by their own
+            // spectrum buckets. lipschitz = (1 + 0.3*2.1) * (1 + 0.07*2.2).
             HyperspaceStyle(
                 "hyper_plume",
                 "Plume",
                 9,
                 bodyScale = 0.62f,
                 cameraScale = 1.2f,
+                driftScale = 0.9f,
                 fieldScale = 0.5f,
                 glowScale = 1.35f,
                 neonScale = 0.48f,
@@ -199,7 +271,18 @@ internal object VisualStyleCatalog {
                 stainScale = 1.2f,
                 liquidScale = 1.75f,
                 ridgeScale = 0.3f,
+                forcedSpecies = 4,
+                lipschitz = 1.9f,
+                signatureFloor = 0.35f,
+                tintHue = 0.93f,
+                tintSat = 0.55f,
+                tintAmount = 0.3f,
+                phaseRate = 0.03f,
+                phaseBassRate = 0.05f,
             ),
+            // Log-polar Droste descent: the endless approach lives in the sky
+            // and the full-frame pulse, so the bodies stay clean (lipschitz
+            // 1) and the zoom lurches on the bass via the phase rate.
             HyperspaceStyle(
                 "hyper_resonant_wormhole",
                 "Resonant Wormhole",
@@ -213,6 +296,11 @@ internal object VisualStyleCatalog {
                 meltScale = 1.15f,
                 stainScale = 1.25f,
                 liquidScale = 1.15f,
+                signatureFloor = 0.35f,
+                tintHue = 0.68f,
+                tintAmount = 0.3f,
+                phaseRate = 0.2f,
+                phaseBassRate = 0.35f,
             ),
         )
 
