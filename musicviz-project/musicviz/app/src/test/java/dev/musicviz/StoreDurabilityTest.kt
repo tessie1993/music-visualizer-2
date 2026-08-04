@@ -96,7 +96,7 @@ class StoreDurabilityTest {
             recordPlay("b", "B")
             awaitWrites()
         }
-        assertEquals(2, HistoryStore(ctx).stats().trackCount)
+        assertEquals(2, HistoryStore(ctx).recentlyPlayed().size)
     }
 
     @Test
@@ -135,7 +135,7 @@ class StoreDurabilityTest {
         store.recordPlay("b", "B")
         store.awaitWrites()
 
-        assertEquals(1, store.stats().trackCount)
+        assertEquals(1, store.recentlyPlayed().size)
         assertTrue(filesFile("history.json").isDirectory)
         assertFalse(filesFile("history.json" + AtomicWrite.CORRUPT_SUFFIX).exists())
 
@@ -412,11 +412,20 @@ class StoreDurabilityTest {
         stream: InputStream,
     ) = Shadows.shadowOf(ctx.contentResolver).registerInputStream(uri, stream)
 
+    /** A real (decodable) PNG: import validates content now, not just extension. */
+    private fun pngBytes(argb: Int): ByteArray {
+        val bmp = android.graphics.Bitmap.createBitmap(4, 4, android.graphics.Bitmap.Config.ARGB_8888)
+        bmp.eraseColor(argb)
+        val out = java.io.ByteArrayOutputStream()
+        bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+        return out.toByteArray()
+    }
+
     @Test
     fun `an import that dies part-way leaves the previous texture usable`() {
         val store = TextureStore(ctx)
         val uri = Uri.parse("content://test/logo.png")
-        val good = ByteArray(4096) { (it % 251).toByte() }
+        val good = pngBytes(0xFF3366CC.toInt())
         registerImage(uri, ByteArrayInputStream(good))
         assertEquals(listOf("logo.png"), store.import(listOf(uri)).map { it.name })
 

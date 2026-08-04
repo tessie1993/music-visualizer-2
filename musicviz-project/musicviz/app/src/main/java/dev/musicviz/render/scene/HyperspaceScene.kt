@@ -96,6 +96,18 @@ internal class HyperspaceScene(
          * and a saturated dye field is one flat colour, not a medium.
          */
         const val BODY_INK = 0.22f
+
+        /**
+         * Rates for the slew-limited bass/mid envelopes (uSlewBass/uSlewMid),
+         * in units per second. These are the ONLY audio values allowed to
+         * steer geometry in the shader (fold rotations, shell swell, bulb
+         * power): bounded 0..1 with a bounded rate of change, so no transient
+         * can jump a body's projected area between frames - the hazard
+         * VisualSafety cannot clamp. Rise faster than fall, so a drop lands
+         * inside a couple of frames and releases over about a second.
+         */
+        const val SLEW_RISE_PER_SEC = 2.2f
+        const val SLEW_FALL_PER_SEC = 1.1f
     }
 
     private val journey = HyperspaceJourney()
@@ -159,6 +171,22 @@ internal class HyperspaceScene(
     private var idlePhase = 0f
     private var idleImpulseAge = 0f
 
+    /** Slew-limited audio envelopes for the shader's geometry couplings. */
+    private var slewBass = 0f
+    private var slewMid = 0f
+
+    /**
+     * The substyle's own phase (uStylePhase), integrated here because its
+     * rate rides the slewed bass (the hex tunnel flies and the wormhole
+     * lurches on the low end) - a shader `uTime * k` cannot express a
+     * varying rate. Wraps at 1; every shader consumer multiplies it by a
+     * whole number, so the wrap never shows.
+     */
+    private var stylePhase = 0f
+
+    /** The 16-bucket spectrum summary the substyle signatures read. */
+    private val spectral = SpectralSummary()
+
     /** The far plane and camera distance the last frame resolved to. */
     private var camDistance = 6f
     private var farPlane = 12f
@@ -182,6 +210,10 @@ internal class HyperspaceScene(
         camera.reset()
         bloomCount = 0
         hasPrevBody.fill(false)
+        slewBass = 0f
+        slewMid = 0f
+        stylePhase = 0f
+        spectral.reset()
         melt.onShaderError = { onShaderError(it) }
         melt.create()
         try {
@@ -227,7 +259,12 @@ internal class HyperspaceScene(
         features: AudioFeatures,
         dt: Float,
     ) {
-        time += dt
+        // Wrapped: a live wallpaper runs for days, and an unwrapped float
+        // clock decays sin(uTime * k) into a stutter once its ULP passes the
+        // frame advance. The period is 1000 turns of 2*pi, which every
+        // multiplier in hyperspace_frag.glsl crosses on a whole turn - see
+        // HyperspaceMath.TIME_WRAP_SECONDS and HyperspaceReworkTest.
+        time = (time + dt) % HyperspaceMath.TIME_WRAP_SECONDS
         lastDt = dt
         pendingFeatures = features
     }
@@ -247,7 +284,9 @@ internal class HyperspaceScene(
         val silent = f.rms < IDLE_RMS
         val fadeStep = if (IDLE_FADE_SECONDS > 0f) dt / IDLE_FADE_SECONDS else 1f
         idleBlend = (idleBlend + if (silent) fadeStep else -fadeStep * 3f).coerceIn(0f, 1f)
-        idlePhase += dt / IDLE_CYCLE_SECONDS
+        // Wrapped like every other clock here: consumed as cos(phase * 2pi),
+        // so the wrap at 1 is exactly one period and invisible.
+        idlePhase = (idlePhase + dt / IDLE_CYCLE_SECONDS) % 1f
         // macroEnergy is the track's own dynamics envelope, which is what the
         // journey is meant to follow; rms is the fallback for features that
         // predate it (synthesised frames, cache entries without analysis).
@@ -262,8 +301,22 @@ internal class HyperspaceScene(
             holdAct = p.hyperAct,
             cycleSeconds = p.hyperCycleSeconds,
             pace = pace,
+            // Track position floors the immersion, so a quiet track still
+            // leaves THRESHOLD by its back half; 0 (unknown) floors nothing.
+            progress = f.progress,
         )
         val profile = journey.profile()
+
+        // ---- the audio envelopes the shader steers geometry with ------------
+        // Slew-limited, which is the licence: bounded value, bounded rate.
+        slewBass = HyperspaceMath.slewLimit(slewBass, f.bass, dt, SLEW_RISE_PER_SEC, SLEW_FALL_PER_SEC)
+        slewMid = HyperspaceMath.slewLimit(slewMid, f.mid, dt, SLEW_RISE_PER_SEC, SLEW_FALL_PER_SEC)
+        spectral.advance(f.bands, dt)
+        stylePhase = (stylePhase + dt * pace * (style.phaseRate + style.phaseBassRate * slewBass)) % 1f
+        // Beat choreography (spawns, the neon flash) is gated by the beat
+        // tracker's own confidence, per its KDoc: a low-confidence grid gets
+        // a reduced - never zero - weight instead of strobing false beats.
+        val beatWeight = HyperspaceMath.beatGate(f.pulseConfidence)
 
         // ---- the bodies ----------------------------------------------------
         val target = HyperspaceLook.bodyTarget(profile.bodies, p.hyperBodies * style.bodyScale)
@@ -272,7 +325,7 @@ internal class HyperspaceScene(
         // of seconds, so an idle app still fills instead of holding whatever
         // was alive when the music stopped.
         idleImpulseAge += dt
-        var impulse = (f.motionImpulse * p.beatResponse.coerceIn(0f, 2f)).coerceIn(0f, 1.5f)
+        var impulse = (f.motionImpulse * beatWeight * p.beatResponse.coerceIn(0f, 2f)).coerceIn(0f, 1.5f)
         if (idleBlend > 0.5f && idleImpulseAge >= IDLE_IMPULSE_SECONDS) {
             impulse = max(impulse, IDLE_IMPULSE)
             idleImpulseAge = 0f
@@ -287,8 +340,12 @@ internal class HyperspaceScene(
             lifetime = p.hyperLifetime.coerceIn(2f, 60f),
             spread = spread,
             sizeScale = HyperspaceLook.bodySize(target),
-            motion = profile.motion * pace * p.hyperSpin.coerceIn(0f, 3f),
+            // Three independent channels, not one product: Body spin at 0
+            // used to freeze the orbits AND the breath with it, because the
+            // spin multiplier was folded into the shared motion term.
+            motion = profile.motion * pace,
             orbitScale = p.hyperOrbit.coerceIn(0f, 3f),
+            spinScale = p.hyperSpin.coerceIn(0f, 3f),
         )
         // ---- the medium ----------------------------------------------------
         // Stepped BEFORE the snapshot so this frame's uniforms and this
@@ -342,11 +399,16 @@ internal class HyperspaceScene(
         camera.advance(
             dt = dt,
             distance = camDistance,
-            drift = (p.hyperCamera * style.cameraScale).coerceIn(0f, 3f) * pace,
+            // driftScale, not cameraScale: the catalog used to apply one
+            // number to the eye DISTANCE and the drift RATE at once, so a
+            // style asking for a wider shot also got a faster orbit.
+            drift = (p.hyperCamera * style.driftScale).coerceIn(0f, 3f) * pace,
         )
         farPlane = HyperspaceLook.farPlane(camDistance, spread)
 
-        beatPulse = maxOf(f.motionImpulse * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f).coerceIn(0f, 1.5f)
+        beatPulse =
+            maxOf(f.motionImpulse * beatWeight * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f)
+                .coerceIn(0f, 1.5f)
         val budget = MarchBudget.forDetail(p.hyperDetail)
 
         // ---- upload --------------------------------------------------------
@@ -364,6 +426,16 @@ internal class HyperspaceScene(
         GLES30.glUniformMatrix3fv(loc("uCamBasis"), 1, false, camera.basis, 0)
         GLES30.glUniform1f(loc("uFov"), FOV)
         GLES30.glUniform1i(loc("uStyle"), style.shaderStyle)
+        // The substyle identity block, all catalog-driven: the shader holds
+        // no per-style constants of its own beyond the branch bodies.
+        GLES30.glUniform1f(loc("uLipschitz"), style.lipschitz.coerceAtLeast(1f))
+        GLES30.glUniform1f(loc("uStyleFloor"), style.signatureFloor.coerceIn(0f, 1f))
+        GLES30.glUniform1f(loc("uStyleKaleido"), styleKaleidoFolds(profile, p))
+        GLES30.glUniform3f(loc("uStyleTint"), style.tintHue, style.tintSat, style.tintAmount)
+        GLES30.glUniform1f(loc("uSlewBass"), slewBass)
+        GLES30.glUniform1f(loc("uSlewMid"), slewMid)
+        GLES30.glUniform1f(loc("uStylePhase"), stylePhase)
+        GLES30.glUniform1fv(loc("uBands"), SpectralSummary.SIZE, spectral.levels, 0)
         GLES30.glUniform1i(loc("uSteps"), budget.steps)
         GLES30.glUniform1i(loc("uIters"), budget.iterations)
         GLES30.glUniform1i(loc("uBulbIters"), budget.bulbIterations)
@@ -504,6 +576,26 @@ internal class HyperspaceScene(
      */
     private fun forcedSpecies(choice: Int): HyperspaceMath.Species? =
         if (choice <= 0) null else HyperspaceMath.SPECIES.getOrNull(choice - 1)
+
+    /**
+     * The substyle screen pre-fold the shader applies this frame, as a fold
+     * count (0 = off).
+     *
+     * Two things gate it, fixing the old unconditional `kaleido4`/`kaleido12`:
+     * the ACT - `styleMirror` releases every fold at BREAKTHROUGH, the act
+     * the profile table deliberately un-mirrors, so the substyles open with
+     * it - and the USER, whose Mirror-folds control rescales the catalog
+     * count around its default of 6 (Moire at the default 6 keeps its 12;
+     * push the control to 12 and it doubles, capped at 16 like the control).
+     */
+    private fun styleKaleidoFolds(
+        profile: HyperspaceMath.ActProfile,
+        p: SceneParams,
+    ): Float {
+        if (style.kaleidoFolds <= 0 || profile.styleMirror < 0.5f) return 0f
+        val folds = Math.round(style.kaleidoFolds * p.hyperMirrorFolds.coerceIn(2, 16) / 6f)
+        return folds.coerceIn(2, 16).toFloat()
+    }
 
     private fun loc(name: String): Int = uniforms.getOrPut(name) { GLES30.glGetUniformLocation(program, name) }
 

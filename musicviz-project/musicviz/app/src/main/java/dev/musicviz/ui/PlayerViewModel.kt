@@ -157,15 +157,6 @@ data class DeviceTrack(
     val addedSec: Long = 0L,
 )
 
-/** One row on a Home shelf: enough to draw a tile and start playing it. */
-data class HomeTrack(
-    val uri: String,
-    val title: String,
-    val artist: String = "",
-    val playCount: Int = 0,
-    val listenedMs: Long = 0L,
-)
-
 /** Music library + playlists + batch-analysis progress. */
 data class LibraryState(
     val tracks: List<LibraryTrack> = emptyList(),
@@ -602,6 +593,13 @@ class PlayerViewModel(
     private val trackLibrary = TrackLibrary(application)
     private val themeStore = ThemeStore(application)
     private val playerPrefsStore = PlayerPrefsStore(application)
+
+    /**
+     * Auto-visuals knobs (Random + visual playlist settings). Declared before
+     * [_vizState]: fields initialize in declaration order and [restoreVizState]
+     * reads this store.
+     */
+    private val autoVisualsPrefsStore = AutoVisualsPrefsStore(application)
     private val textureStore = TextureStore(application)
     private val lfoStore = LfoStore(application)
     private val musicPlaylists = MusicPlaylistStore(application)
@@ -634,7 +632,10 @@ class PlayerViewModel(
      * walk plus a parse per file, is what [refreshPresets] takes off this path.
      */
     private fun restoreVizState(): VizUiState {
-        val base = VizUiState(presets = BuiltInPresets.ALL)
+        // The auto-visuals knobs persist separately from the live scene state:
+        // they are standing behaviour rather than part of any preset, so they
+        // load even when no live_state has ever been written.
+        val base = autoVisualsPrefsStore.applyTo(VizUiState(presets = BuiltInPresets.ALL))
         val json = vizPrefs().getString("live_state", null) ?: return base
         return runCatching {
             val p = PresetStore.fromJson(json)
@@ -1544,14 +1545,17 @@ class PlayerViewModel(
                 randomEnabled = if (enabled) false else _vizState.value.randomEnabled,
             )
         lastVizSwitchMs = android.os.SystemClock.elapsedRealtime()
+        persistAutoVisuals()
     }
 
     fun setVizPlaylistIntelligent(enabled: Boolean) {
         _vizState.update { it.copy(vizPlaylistIntelligent = enabled) }
+        persistAutoVisuals()
     }
 
     fun setVizPlaylistInterval(seconds: Int) {
-        _vizState.update { it.copy(vizPlaylistIntervalSec = seconds.coerceIn(5, 300)) }
+        _vizState.update { it.copy(vizPlaylistIntervalSec = seconds.coerceIn(AutoVisualsPrefsStore.INTERVAL_SEC)) }
+        persistAutoVisuals()
     }
 
     /**
@@ -1632,31 +1636,49 @@ class PlayerViewModel(
         lastRandomSwitchMs = android.os.SystemClock.elapsedRealtime()
         if (enabled && _vizState.value.randomIncludeMilk) refreshMilkCache()
         if (enabled) randomStepNow()
+        // randomEnabled itself is session-only, but turning Random on clears
+        // the PERSISTED vizPlaylistEnabled, and that clear must stick.
+        persistAutoVisuals()
     }
 
     fun setRandomInterval(seconds: Int) {
-        _vizState.update { it.copy(randomIntervalSec = seconds.coerceIn(5, 300)) }
+        _vizState.update { it.copy(randomIntervalSec = seconds.coerceIn(AutoVisualsPrefsStore.INTERVAL_SEC)) }
+        persistAutoVisuals()
     }
 
     fun setRandomOnBeat(enabled: Boolean) {
         _vizState.update { it.copy(randomOnBeat = enabled) }
+        persistAutoVisuals()
     }
 
     fun setRandomIncludeStyles(enabled: Boolean) {
         _vizState.update { it.copy(randomIncludeStyles = enabled) }
+        persistAutoVisuals()
     }
 
     fun setRandomIncludePresets(enabled: Boolean) {
         _vizState.update { it.copy(randomIncludePresets = enabled) }
+        persistAutoVisuals()
     }
 
     fun setRandomIncludeMilk(enabled: Boolean) {
         _vizState.update { it.copy(randomIncludeMilk = enabled) }
         if (enabled) refreshMilkCache()
+        persistAutoVisuals()
     }
 
     fun setRandomizeColors(enabled: Boolean) {
         _vizState.update { it.copy(randomizeColors = enabled) }
+        persistAutoVisuals()
+    }
+
+    /**
+     * Saves the auto-visuals knobs after every setter above - the same
+     * write-on-set pattern [setGuiPrefs]/[setPlayerPrefs] use, small enough
+     * (nine primitives) not to need the live state's coalescing window.
+     */
+    private fun persistAutoVisuals() {
+        autoVisualsPrefsStore.save(_vizState.value)
     }
 
     private fun refreshMilkCache() {
@@ -2248,55 +2270,6 @@ class PlayerViewModel(
 
     fun mostPlayed() = historyStore.mostPlayed()
 
-    // ---- Home ----
-
-    /**
-     * History rows with the artist filled in from whatever index knows it.
-     *
-     * History records what the player reported at the moment a track started,
-     * which for a freshly-opened content uri can be a title and nothing else.
-     * The device index and the imported library both know more, so Home asks
-     * them rather than showing a wall of tracks by "".
-     */
-    private fun enrich(entries: List<HistoryStore.Entry>): List<HomeTrack> {
-        val byUri = HashMap<String, Pair<String, String>>()
-        _deviceTracks.value.forEach { byUri[it.uri] = it.title to it.artist }
-        _library.value.tracks.forEach { t -> byUri[t.uri] = t.title to t.artist }
-        return entries.map { e ->
-            val known = byUri[e.uri]
-            HomeTrack(
-                uri = e.uri,
-                title = known?.first?.takeIf { it.isNotBlank() } ?: e.title,
-                artist = e.artist.takeIf { it.isNotBlank() } ?: known?.second.orEmpty(),
-                playCount = e.playCount,
-                listenedMs = e.listenedMs,
-            )
-        }
-    }
-
-    /** "Jump back in": most recent first, one row per track. */
-    fun homeRecent(limit: Int = 12): List<HomeTrack> = enrich(historyStore.recentlyPlayed(limit))
-
-    /** "On repeat": the tracks with the most starts behind them. */
-    fun homeMostPlayed(limit: Int = 12): List<HomeTrack> = enrich(historyStore.mostPlayed(limit))
-
-    /**
-     * "Recently added": newest by MediaStore's DATE_ADDED.
-     *
-     * Tracks whose date is unknown (0) are dropped rather than sorted to the
-     * bottom - a shelf called "recently added" holding files with no date is
-     * just the library in an arbitrary order.
-     */
-    fun homeRecentlyAdded(limit: Int = 12): List<HomeTrack> =
-        _deviceTracks.value
-            .filter { it.addedSec > 0 }
-            .sortedByDescending { it.addedSec }
-            .take(limit)
-            .map { HomeTrack(it.uri, it.title, it.artist) }
-
-    /** Totals behind Home's listening strip. */
-    fun listeningStats(): HistoryStore.Stats = historyStore.stats()
-
     /** Uri of whatever is loaded in the player, for artwork lookups. */
     fun currentTrackUri(): String? = currentUri?.toString()
 
@@ -2308,22 +2281,6 @@ class PlayerViewModel(
         favouritesStore.toggle(target)
         _favourites.value = favouritesStore.all().toSet()
         _historyTick.update { it + 1 }
-    }
-
-    /** The favourites shelf on Home, newest mark first. */
-    fun homeFavourites(limit: Int = 12): List<HomeTrack> {
-        val byUri = HashMap<String, Pair<String, String>>()
-        _deviceTracks.value.forEach { byUri[it.uri] = it.title to it.artist }
-        _library.value.tracks.forEach { t -> byUri[t.uri] = t.title to t.artist }
-        return favouritesStore.all().take(limit).map { uri ->
-            val known = byUri[uri]
-            val fallback = historyStore.entryFor(uri)
-            HomeTrack(
-                uri = uri,
-                title = known?.first ?: fallback?.title ?: "Unknown track",
-                artist = known?.second ?: fallback?.artist.orEmpty(),
-            )
-        }
     }
 
     /**
@@ -2545,7 +2502,7 @@ class PlayerViewModel(
         listenTickAtMs = now
         // A delta far larger than the poll interval means the process was
         // suspended, not that the user listened through it.
-        if (delta in 1..MAX_LISTEN_TICK_MS) historyStore.addListenTime(uri, delta, now)
+        if (delta in 1..MAX_LISTEN_TICK_MS) historyStore.addListenTime(uri, delta)
     }
 
     /** Writes any accumulated listening time. Cheap when there is none. */
@@ -2556,7 +2513,7 @@ class PlayerViewModel(
 
     /**
      * Continues the most recently played track, preparing it if the player is
-     * empty. Home's hero card when nothing is loaded.
+     * empty. The Player's empty state when nothing is loaded.
      */
     fun resumeLastPlayed() {
         if (player.currentMediaItem != null) {

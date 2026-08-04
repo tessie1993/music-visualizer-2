@@ -32,6 +32,10 @@ import dev.musicviz.export.ExportRatio
  * share/upload (system share sheet, which includes Google Drive when
  * installed) for the finished file. All other settings live in the Settings
  * destination (AppShell.SettingsScreen).
+ *
+ * The choices start from the persisted [ExportDefaults] (edited in
+ * Settings › Export) and every change is written back as the new default, so
+ * the dialog always opens the way the last render was set up.
  */
 @Composable
 fun SettingsDialog(
@@ -47,11 +51,20 @@ fun SettingsDialog(
     onCancel: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var quality by remember { mutableStateOf(ExportQuality.FHD1080) }
-    var ratio by remember { mutableStateOf(ExportRatio.R16_9) }
-    var fps by remember { mutableStateOf(60) }
-    var loopSafe by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val exportPrefs = remember { ExportPrefsStore(context) }
+    val defaults = remember { exportPrefs.load() }
+    var quality by remember { mutableStateOf(defaults.quality) }
+    var ratio by remember { mutableStateOf(defaults.ratio) }
+    var fps by remember { mutableStateOf(defaults.fps) }
+    // A stored loop-safe default only holds when this track has a tempo -
+    // the same gate the chip below applies to a tap.
+    var loopSafe by remember {
+        mutableStateOf(defaults.loopSafe && dev.musicviz.analysis.BarTrim.barDurationUs(bpm) != null)
+    }
+    // Written back after every change below, so the next export - and the
+    // Settings › Export tab - start from what was chosen here.
+    fun persistDefaults() = exportPrefs.save(ExportDefaults(quality, fps, ratio, loopSafe))
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Export") },
@@ -96,14 +109,23 @@ fun SettingsDialog(
                             modifier = Modifier.horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            QualityChip("720p", quality == ExportQuality.HD720) { quality = ExportQuality.HD720 }
-                            QualityChip("1080p", quality == ExportQuality.FHD1080) { quality = ExportQuality.FHD1080 }
-                            QualityChip("4K", quality == ExportQuality.UHD4K) { quality = ExportQuality.UHD4K }
+                            ExportQuality.entries.forEach { q ->
+                                QualityChip(exportQualityLabel(q), quality == q) {
+                                    quality = q
+                                    persistDefaults()
+                                }
+                            }
                         }
                         Text("Frame rate", style = MaterialTheme.typography.labelMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            QualityChip("30 fps", fps == 30) { fps = 30 }
-                            QualityChip("60 fps", fps == 60) { fps = 60 }
+                            QualityChip("30 fps", fps == 30) {
+                                fps = 30
+                                persistDefaults()
+                            }
+                            QualityChip("60 fps", fps == 60) {
+                                fps = 60
+                                persistDefaults()
+                            }
                         }
                         Text("Aspect ratio", style = MaterialTheme.typography.labelMedium)
                         Row(
@@ -111,14 +133,23 @@ fun SettingsDialog(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             ExportRatio.entries.forEach { r ->
-                                QualityChip(r.label, ratio == r) { ratio = r }
+                                QualityChip(r.label, ratio == r) {
+                                    ratio = r
+                                    persistDefaults()
+                                }
                             }
                         }
                         val barUs = dev.musicviz.analysis.BarTrim.barDurationUs(bpm)
                         Text("Looping", style = MaterialTheme.typography.labelMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            QualityChip("Full length", !loopSafe) { loopSafe = false }
-                            QualityChip("Loop-safe", loopSafe) { loopSafe = barUs != null }
+                            QualityChip("Full length", !loopSafe) {
+                                loopSafe = false
+                                persistDefaults()
+                            }
+                            QualityChip("Loop-safe", loopSafe) {
+                                loopSafe = barUs != null
+                                persistDefaults()
+                            }
                         }
                         Text(
                             if (barUs != null) {

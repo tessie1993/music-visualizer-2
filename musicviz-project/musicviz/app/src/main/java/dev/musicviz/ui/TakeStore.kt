@@ -120,9 +120,14 @@ class TakeStore(
         from: String,
         to: String,
     ): Boolean {
+        // Trimmed HERE, not just in whatever dialog fronts this: the store is
+        // the contract. A blank name can never become a take's name, and
+        // " Encore " and "Encore" are the same take rather than two files
+        // whose names differ only in whitespace the list renders identically.
+        val target = to.trim()
         val src = fileOf(from)
-        if (!src.isFile || to.isBlank()) return false
-        val dest = fileOf(to)
+        if (!src.isFile || target.isEmpty()) return false
+        val dest = fileOf(target)
         if (dest.exists()) return false
         // The name lives in the document as well as in the filename; the list
         // reads the document, so renaming only the file would show the old one.
@@ -130,7 +135,7 @@ class TakeStore(
             runCatching {
                 org.json
                     .JSONObject(src.readText())
-                    .put("name", to)
+                    .put("name", target)
                     .toString()
             }.getOrNull() ?: return false
         // The source is only dropped once the destination is whole on disk.

@@ -68,9 +68,58 @@ const float LIQUID_EXTINCTION = 0.55;
 const float LIQUID_EMISSION = 0.40;
 
 uniform vec2 uResolution;
+/**
+ * Wrapped at HyperspaceMath.TIME_WRAP_SECONDS = 1000 turns of 2*pi. Every
+ * sin/cos multiplier of uTime in this file must therefore be a multiple of
+ * 0.001 (three decimals or fewer), so the wrap lands on a whole number of
+ * turns; floor()-seeded noise (the dust, the grain) reseeds at the wrap,
+ * which it already does several times a second by design.
+ * HyperspaceReworkTest enforces the rule.
+ */
 uniform float uTime;
 /** Family substyle: 0 original, 1..10 authored variants. */
 uniform int uStyle;
+
+// ---- substyle identity ---------------------------------------------------
+/**
+ * Worst-case Jacobian norm of styleBody()'s deform for this substyle
+ * (HyperspaceStyle.lipschitz, always >= 1). The deform runs BEFORE the
+ * estimator, so speciesDE bounds the distance in the DEFORMED frame; a twist
+ * or shell modulation can overestimate marched-space distance by up to this
+ * factor, and a ray stepping the raw estimate walks through thin geometry.
+ * map() divides every estimate by it.
+ */
+uniform float uLipschitz;
+/**
+ * Floor on the substyle signature weight in styleSky(): identity survives
+ * Filigree at 0 instead of eleven styles blanking into one void.
+ */
+uniform float uStyleFloor;
+/**
+ * The substyle's own screen pre-fold count, 0 = off. Already gated on the
+ * CPU by the act's styleMirror intent (BREAKTHROUGH releases every fold) and
+ * rescaled by the user's Mirror-folds control.
+ */
+uniform float uStyleKaleido;
+/** Accent colour: x hue OFFSET from uBaseHue in turns, y saturation,
+ *  z blend amount (0 = palette untouched). */
+uniform vec3 uStyleTint;
+/**
+ * Slew-limited bass/mid envelopes (HyperspaceMath.slewLimit): bounded 0..1
+ * with a bounded rate of change, which is what licenses them to steer
+ * GEOMETRY (fold rotations, shell swell, bulb power) where the raw uBass -
+ * and above all uBeat - must stay out of it; see the fold note in map().
+ */
+uniform float uSlewBass;
+uniform float uSlewMid;
+/**
+ * CPU-integrated substyle phase, wraps at 1 (HyperspaceScene). Consumers
+ * multiply it by WHOLE numbers only, so fract()/sin(2*pi*...) of it land
+ * exactly where they started when it wraps.
+ */
+uniform float uStylePhase;
+/** 16-bucket smoothed spectrum summary (SpectralSummary). */
+uniform float uBands[16];
 
 // ---- the living bodies -------------------------------------------------
 uniform int uBloomCount;
@@ -219,39 +268,65 @@ float hash31(vec3 p) {
  * Local, bounded deformations for the family substyles. The body's bounding
  * sphere still clips every result, so a profile cannot invalidate the CPU's
  * culling contract or reach outside the raymarch safety envelope.
+ *
+ * EVERY branch here has a Jacobian bound recorded in the style catalog
+ * (HyperspaceStyle.lipschitz) and uploaded as uLipschitz; map() divides the
+ * estimate by it, so a new deform is only correct together with a new bound.
+ * Rotations and abs() are isometries (bound 1); an additive sine of
+ * amplitude A and frequency f adds A*f; a twist of rate k adds k*R over a
+ * body of local radius R; a uniform scale multiplies by itself.
  */
 vec3 styleBody(vec3 q, float phase) {
-    if (uStyle == 1) { // Polytope: hard mirrored cells and four-dimensional turns.
-        q = abs(q);
-        q.xy = rot2(0.55 + 0.18 * sin(phase)) * q.xy;
-        q.yz = rot2(0.47) * q.yz;
+    if (uStyle == 1) {
+        // Polytope: a kaleidoscopic-IFS cathedral. Three fold-rotate-scale
+        // rounds carve the box species into stacked, terraced cells, and the
+        // FOLD ROTATION leans on the slew-limited bass, so the architecture
+        // visibly reorganises - breathes - on kicks without a single
+        // discontinuous frame (rotation is an isometry; the only Lipschitz
+        // cost is the scale, 1.24^3, carried in the catalog).
+        float ang = 0.42 + 0.30 * uSlewBass + 0.10 * sin(phase);
+        mat2 fold = rot2(ang);
+        mat2 tilt = rot2(0.31);
+        for (int k = 0; k < 3; k++) {
+            q = abs(q);
+            q.xy = fold * q.xy;
+            q.yz = tilt * q.yz;
+            q = q * 1.24 - vec3(0.42, 0.30, 0.36) * 0.24;
+        }
     } else if (uStyle == 2) { // Liquid Warp: a thin skin carried by the shared fluid field.
         q.z += 0.13 * sin(q.x * 3.1 + phase) + 0.10 * sin(q.y * 2.7 - phase * 0.7);
         q.z *= 0.62;
-    } else if (uStyle == 3) { // Caduceus: double-helical torsion along the body axis.
-        q.xy = rot2(q.z * 1.55 + phase * 0.18) * q.xy;
-        q.x += 0.08 * sin(q.z * 5.0 + phase);
+    } else if (uStyle == 3) {
+        // Caduceus: pure axial torsion - two lobes of the bulb wind around
+        // each other like the staff's serpents. No additive sine: the twist
+        // alone is the identity, and it keeps the Lipschitz bound at
+        // 1 + 0.9 * localRadius(BULB) instead of compounding it.
+        q.xy = rot2(q.z * 0.9 + phase * 0.18) * q.xy;
     } else if (uStyle == 4) { // Cortex: folded organic ridges.
         q += 0.075 * sin(q.yzx * 4.3 + vec3(phase, phase * 0.7, phase * 1.3));
     } else if (uStyle == 5) { // Reliquary: cut facets around a protected core.
         q = abs(q) - vec3(0.035, 0.06, 0.025);
         q.xz = rot2(0.785 + 0.08 * sin(phase)) * q.xz;
-    } else if (uStyle == 6) { // Moire: two close angular frames interfering.
-        q.xy = rot2(0.22 * sin(phase * 0.27)) * q.xy;
-        q.xz = rot2(0.25 * sin(phase * 0.23 + 1.4)) * q.xz;
-    } else if (uStyle == 7) { // Foam: pressure shells around every body.
-        q *= 1.0 + 0.055 * sin(length(q) * 10.0 - phase * 0.55);
-    } else if (uStyle == 8) { // Dustskin: a fine granular displacement at the surface.
-        q += 0.022 * sin(q.zxy * 18.0 + phase);
-    } else if (uStyle == 9) { // Plume: long, twisting bodies carried by the medium.
-        q.z *= 0.56;
-        q.xy = rot2(q.z * 1.15 + phase * 0.12) * q.xy;
-        q.x += 0.10 * sin(q.z * 4.0 + phase * 0.4);
-    } else if (uStyle == 10) { // Resonant Wormhole: cymatic shells cut through each body.
-        float shell = sin(length(q) * 11.0 - phase * 0.75);
-        q *= 1.0 + 0.055 * shell;
-        q.xy = rot2(0.16 * sin(phase * 0.31)) * q.xy;
+    } else if (uStyle == 7) {
+        // Foam: broad pressure shells over the sphere packing. Fewer, wider
+        // shells than the first draft (freq 3, not 10): the radial term of
+        // the Jacobian is eps*k*R, so the old frequency cost a factor-2 bound
+        // for a modulation nobody could tell from this one. The packing's
+        // own fold constant also swells on the bass - see map().
+        q *= 1.0 + 0.05 * sin(length(q) * 3.0 - phase * 0.55);
+    } else if (uStyle == 9) {
+        // Plume: stretched, slowly twisting drift - a rising column rather
+        // than Caduceus' tight double serpent (a third of the twist rate,
+        // plus a sway the serpents deliberately lack).
+        q.z *= 0.78;
+        q.xy = rot2(q.z * 0.3 + phase * 0.12) * q.xy;
+        q.x += 0.07 * sin(q.z * 2.2 + phase * 0.4);
     }
+    // Styles 6 (Moire), 8 (Dustskin) and 10 (Wormhole) leave the body clean:
+    // their old deforms were invisible (micro-rotations, a displacement below
+    // the hit epsilon, a duplicate of Foam's shells) and their identities now
+    // live in styleSky() and the full-frame signatures, where they cost one
+    // evaluation per pixel instead of one per march step.
     return q;
 }
 
@@ -360,7 +435,12 @@ float deGasket(vec3 p, float fold) {
         // sits at the origin and the raw reciprocal returns inf there.
         float k = fold / max(r2, 1e-4);
         p *= k;
-        s *= k;
+        // Capped: k can reach ~1.3e4 at the r2 floor, and fourteen of those
+        // pass float32 max - s went inf, the estimate went 0/inf = 0, and the
+        // ray reported a surface that is not there. 1e30 keeps two orders of
+        // headroom under FLT_MAX while making the estimate merely tiny (an
+        // underestimate is safe; the march creeps and the eps floor catches it).
+        s = min(s * k, 1e30);
     }
     // The limit set accumulates on the plane the cell fold leaves invariant.
     return 0.25 * abs(p.y) / s;
@@ -486,7 +566,10 @@ float deCoral(vec3 p, float cell) {
         gT = min(gT, r2);
         float k = max(1.0 / r2, 1.0);
         p *= k;
-        s *= k;
+        // Same overflow cap as deGasket's: an inf here turned the terminal
+        // expression into inf/inf = NaN, and a NaN distance poisons the
+        // whole march (every min() after it is NaN too).
+        s = min(s * k, 1e30);
     }
     float rxy = length(p.xy);
     return 0.7 * max(rxy - 0.92, rxy * p.z / max(length(p), 1e-5)) / s;
@@ -514,7 +597,10 @@ float deBulb(vec3 p, float power) {
         if (r > 2.0) break;
         gT = min(gT, r * r);
         float theta = acos(clamp(z.z / max(r, 1e-5), -1.0, 1.0)) * power;
-        float phi = atan(z.y, z.x) * power;
+        // atan(0, 0) is undefined in GLSL (some drivers return NaN, and a
+        // NaN here reaches every later iterate). On the polar axis the
+        // azimuth is genuinely arbitrary, so 0 is as correct as anything.
+        float phi = (abs(z.x) + abs(z.y) > 1e-8) ? atan(z.y, z.x) * power : 0.0;
         dr = pow(r, power - 1.0) * power * dr + 1.0;
         float zr = pow(r, power);
         float st = sin(theta);
@@ -681,16 +767,27 @@ float map(vec3 p) {
         // own phase, so a body is never quite the same shape twice - and the
         // bass leans on it, gently and equally for every body.
         //
-        // These two coefficients are the WHOLE of the structural modulation in
-        // this shader, and uBeat is deliberately not among them. VisualSafety
-        // clamps parameters and LFO rates; it cannot clamp geometry, and the
-        // hazard in this family is not colour but area - a fold constant that
-        // jumped on a transient would change how much of the screen a body
-        // covers between one frame and the next. A continuous few per cent on
-        // the body's own slow phase cannot.
-        float fold = S.z * (1.0 + 0.04 * sin(L.z) + 0.02 * uBass);
+        // uBeat is deliberately NOT among the structural modulators, here or
+        // anywhere. VisualSafety clamps parameters and LFO rates; it cannot
+        // clamp geometry, and the hazard in this family is not colour but
+        // area - a fold constant that jumped on a transient would change how
+        // much of the screen a body covers between one frame and the next.
+        // What IS allowed in, beyond the body's own slow phase, is uSlewBass:
+        // bounded 0..1 with a bounded rate of change (HyperspaceMath
+        // .slewLimit), so every coupling through it is continuous by
+        // construction. Foam's packing swells a few per cent on it, and the
+        // bulb's power rides it (the mandelbulb breathing), clamped inside
+        // the band foldFor(BULB) already draws from.
+        int spec = int(S.x + 0.5);
+        float fold = S.z * (1.0 + 0.04 * sin(L.z) + 0.02 * uBass
+            + ((uStyle == 7) ? 0.035 * uSlewBass : 0.0));
+        if (spec == 4) fold = clamp(fold + 1.6 * uSlewBass, 5.0, 11.0);
         gT = 1e9;
-        float df = speciesDE(q, int(S.x + 0.5), fold) * max(S.y, 1e-4);
+        // Divided by uLipschitz: styleBody() deforms the domain BEFORE the
+        // estimator, so the estimate bounds distance in the deformed frame
+        // and can overestimate marched space by the deform's Jacobian norm.
+        // The catalog carries the per-style bound; 1 when nothing deforms.
+        float df = speciesDE(q, spec, fold) * max(S.y, 1e-4) / max(uLipschitz, 1.0);
         // Clip the body to its own bounding sphere. Three of the estimators
         // describe UNBOUNDED sets - the gasket's plane, the coral's cylinder,
         // the temple's tiling - so without the intersection a body streaks off
@@ -834,7 +931,44 @@ vec3 chrysanthemum(vec3 rd) {
         * (0.20 + 0.13 * clamp(uEnergy, 0.0, 1.2)) * sharpen;
 }
 
-/** Additional family atmosphere laid over the shared chrysanthemum. */
+/** Angle wrapped to [-PI, PI). */
+float wrapAngle(float x) {
+    return x - 2.0 * PI * floor(x / (2.0 * PI) + 0.5);
+}
+
+/**
+ * Hex lattice: offset from the nearest cell centre; the centre itself lands
+ * in [id] so a cell can keep one identity (one spectrum bucket) for life.
+ */
+vec2 hexCell(vec2 p, out vec2 id) {
+    const vec2 s = vec2(1.0, 1.7320508);
+    vec2 a2 = mod(p, s) - 0.5 * s;
+    vec2 b2 = mod(p - 0.5 * s, s) - 0.5 * s;
+    if (dot(a2, a2) < dot(b2, b2)) {
+        id = p - a2;
+        return a2;
+    }
+    id = p - b2;
+    return b2;
+}
+
+/** Smoothed spectrum bucket at x in 0..1 (uBands, SpectralSummary). */
+float bandAt(float x) {
+    return uBands[int(clamp(x, 0.0, 0.999) * 16.0)];
+}
+
+/**
+ * Additional family atmosphere laid over the shared chrysanthemum.
+ *
+ * Weighted by max(uField, uStyleFloor), NOT uField alone: the filigree
+ * slider owns the shared fabric, but a substyle's signature is its identity
+ * and used to blank with it - Filigree at 0 turned eleven styles into one.
+ *
+ * This is also where the family reads the SPECTRUM (uBands): the hex tunnel
+ * lights one bucket per cell, the phyllotaxis one per seed ring, the
+ * wormhole one per ring of the descent, the cortex one per angular sector.
+ * All 2D, once per pixel - never inside the march loop.
+ */
 vec3 styleSky(vec3 rd, vec3 base) {
     float a = atan(rd.y, rd.x);
     float r = length(rd.xy) / max(abs(rd.z), 0.22);
@@ -846,36 +980,128 @@ vec3 styleSky(vec3 rd, vec3 base) {
     } else if (uStyle == 2) { // Liquid Warp interference carried through the tunnel.
         float wave = exp(-abs(sin(rd.x * 19.0 + uTime * 0.23) + sin(rd.y * 17.0 - uTime * 0.19)) * 3.0);
         extra = palette(r * 0.12, 0.72) * wave * 0.16;
-    } else if (uStyle == 3) { // Caduceus helix traces.
-        float helix = exp(-abs(sin(a * 2.0 + rd.z * 13.0 - uTime * 0.35)) * 10.0);
-        extra = palette(a / (2.0 * PI) + rd.z * 0.12, 0.78) * helix * 0.22;
-    } else if (uStyle == 4) { // Cortex branching mesh.
+    } else if (uStyle == 3) {
+        // Caduceus: TWO helical rails winding in opposite senses - the
+        // serpents - with rungs where they cross, like the staff drawn on
+        // the sky. The old single trace was one anonymous stripe.
+        float s1 = sin(a * 2.0 + rd.z * 9.0 - uTime * 0.35);
+        float s2 = sin(a * 2.0 - rd.z * 9.0 + uTime * 0.35);
+        float rails = exp(-abs(s1) * 9.0) + exp(-abs(s2) * 9.0);
+        float rungs = exp(-abs(sin(rd.z * 22.0 + uTime * 0.14)) * 24.0) * exp(-abs(s1 * s2) * 5.0);
+        extra = palette(a / (2.0 * PI) + rd.z * 0.12, 0.78) * rails * 0.16
+            + palette(0.5, 0.55) * rungs * 0.30;
+    } else if (uStyle == 4) {
+        // Cortex: the branching mesh, plus synapses - the mesh's knots fire
+        // with their own spectrum bucket, one per angular sector.
         float folds = abs(sin(rd.x * 24.0 + sin(rd.y * 9.0)) * sin(rd.y * 21.0 + sin(rd.z * 11.0)));
-        extra = palette(folds * 0.18, 0.84) * pow(1.0 - folds, 8.0) * 0.18;
-    } else if (uStyle == 5) { // Reliquary facets.
+        float knots = pow(1.0 - folds, 14.0);
+        float lvl = bandAt(fract(a / (2.0 * PI) + 0.5));
+        extra = palette(folds * 0.18, 0.84) * pow(1.0 - folds, 8.0) * 0.18
+            + palette(0.55 + 0.1 * lvl, 0.7) * knots * lvl * 0.3;
+    } else if (uStyle == 5) { // Reliquary facets, and a faint devotional halo.
         vec3 f = abs(rd);
         float facet = pow(max(f.x, max(f.y, f.z)), 18.0);
-        extra = palette(0.12 + f.y * 0.18, 0.55) * facet * 0.2;
-    } else if (uStyle == 6) { // Moire interference screens.
-        float m = sin(a * 18.0 + r * 4.0) * sin(a * 19.0 - r * 3.7 + uTime * 0.11);
-        extra = palette(m * 0.08 + r * 0.04, 0.7) * pow(abs(m), 4.0) * 0.2;
+        float halo = exp(-abs(r - 1.35) * 9.0);
+        extra = palette(0.12 + f.y * 0.18, 0.55) * facet * 0.2
+            + palette(0.06, 0.35) * halo * 0.13;
+    } else if (uStyle == 6) {
+        // Moire: the hex-grid tunnel. Tunnel coordinates (1/r flies inward,
+        // the angle wraps) tiled with hexagonal cells; each cell keeps one
+        // spectrum bucket for its whole flight, the fly speed rides the
+        // slewed bass through uStylePhase (integrated on the CPU), and a
+        // beat sends a light pulse down the near end of the tunnel. The
+        // angular span is 6 lattice periods and the phase advances 8 cells
+        // per wrap - whole numbers, so neither seam is visible.
+        float depth = 1.0 / max(r, 0.10);
+        vec2 st = vec2(depth * 1.8 + uStylePhase * 8.0, (a / (2.0 * PI)) * 10.392305);
+        vec2 id;
+        vec2 gv = hexCell(st, id);
+        float wall = smoothstep(0.48, 0.30, length(gv));
+        float pick = hash31(vec3(id, 3.7));
+        float lvl = bandAt(pick);
+        float fade = exp(-depth * 0.5) * smoothstep(0.06, 0.35, r);
+        float pulse = 1.0 + 0.8 * clamp(uBeat, 0.0, 1.0) * exp(-depth * 1.4);
+        extra = palette(pick * 0.25 + depth * 0.05, 0.75)
+            * wall * (0.12 + 0.85 * lvl) * fade * pulse;
     } else if (uStyle == 7) { // Foam cells.
         vec2 cell = fract((rd.xy / max(abs(rd.z), 0.3)) * 4.0) - 0.5;
         float bubble = exp(-abs(length(cell) - 0.31) * 35.0);
         extra = palette(r * 0.09, 0.52) * bubble * 0.18;
-    } else if (uStyle == 8) { // Dustskin motes.
-        float dust = smoothstep(0.965, 0.995, hash31(floor(rd * 180.0) + floor(uTime * 0.7)));
-        extra = palette(hash31(rd * 31.0), 0.35) * dust * (0.3 + 0.45 * uTreble);
-    } else if (uStyle == 9) { // Plume haze.
-        float plume = pow(0.5 + 0.5 * sin(r * 5.0 - a * 3.0 + uTime * 0.12), 5.0);
-        extra = palette(a / (2.0 * PI) + r * 0.04, 0.68) * plume * 0.13;
-    } else if (uStyle == 10) { // Resonant Wormhole: nodal portals inside the flight axis.
-        float modeA = sin(r * 18.0 - a * 4.0 + uTime * 0.18);
-        float modeB = sin(r * 13.0 + a * 6.0 - uTime * 0.14);
-        float node = exp(-abs(modeA + 0.68 * modeB) * 8.0);
-        extra = palette(r * 0.08 + a / (2.0 * PI), 0.76) * node * 0.19;
+    } else if (uStyle == 8) {
+        // Dustskin: the kaliset star nest. abs/invert/subtract, accumulating
+        // the orbit's travel - the classic volumetric nebula - with the
+        // constant steered by the slewed bass and mid, so the nebula's whole
+        // architecture leans with the low end of the track. Stars on top,
+        // lit by the top of the spectrum.
+        vec3 p3 = rd * (1.9 + 0.5 * sin(uTime * 0.021));
+        float cx = 0.83 + 0.12 * uSlewBass;
+        float cy = 0.58 + 0.14 * uSlewMid;
+        float acc = 0.0;
+        float pl = length(p3);
+        for (int i = 0; i < 8; i++) {
+            p3 = abs(p3) / max(dot(p3, p3), 1e-4) - vec3(cx, cy, cx * 0.62);
+            float l = length(p3);
+            acc += abs(l - pl);
+            pl = l;
+        }
+        float neb = clamp(acc * 0.05, 0.0, 1.4);
+        float star = smoothstep(0.965, 0.995, hash31(floor(rd * 180.0) + floor(uTime * 0.7)));
+        extra = palette(0.05 + neb * 0.22, 0.85) * neb * neb * 0.16
+            + palette(hash31(rd * 31.0), 0.35) * star * (0.25 + 0.5 * bandAt(0.9));
+    } else if (uStyle == 9) {
+        // Plume: the phyllotaxis chrysanthemum. Seeds on the golden-angle
+        // spiral (r = c*sqrt(n), theta = n*gamma), each lit by the spectrum
+        // bucket of its own radius, the whole head turning slowly on
+        // uStylePhase. The candidate search walks Fibonacci offsets of the
+        // ring index - the spiral's own nearest-neighbour structure - in
+        // lattice coordinates, so there is no trig inside the loop. The
+        // golden angle is detuned a fraction of a degree by the slewed mids,
+        // which sends moire waves rippling across the whole head.
+        const float SEED_C = 0.32;
+        float rr = r / SEED_C;
+        float n0 = rr * rr;
+        float ga = 2.3999632 + 0.006 * uSlewMid;
+        float spin = uStylePhase * 2.0 * PI;
+        float kc = floor(n0 + 0.5);
+        float best = 1e9;
+        float bestK = 0.0;
+        const float FIB[11] = float[11](-21.0, -13.0, -8.0, -5.0, -2.0, 0.0, 2.0, 5.0, 8.0, 13.0, 21.0);
+        for (int j = 0; j < 11; j++) {
+            float k = kc + FIB[j];
+            if (k < 0.0) continue;
+            float dth = wrapAngle(k * ga + spin - a);
+            float dr = 0.5 * SEED_C * (k - n0) / max(sqrt(k + 1.0), 1.0);
+            float ds = min(r, 2.0) * dth;
+            float d2 = dr * dr + ds * ds;
+            if (d2 < best) {
+                best = d2;
+                bestK = k;
+            }
+        }
+        float sr = sqrt(bestK) * SEED_C;
+        float lvl = bandAt(clamp(sr * 0.24, 0.0, 1.0));
+        float seed = exp(-best * 260.0);
+        float bloom = exp(-best * 40.0);
+        extra = palette(sr * 0.06 + bestK * 0.002, 0.7)
+            * (seed * (0.28 + 1.1 * lvl) + bloom * 0.05);
+    } else if (uStyle == 10) {
+        // Resonant Wormhole: log-polar Droste descent. Tiling log(r) and
+        // adding the CPU-integrated phase to that axis is an endless
+        // approach - the throat never arrives - whose zoom rate lurches on
+        // the bass (phaseBassRate) and whose spokes shear by the slewed
+        // mids. Each ring of the descent is an equaliser band, and beats
+        // light the near rings. The phase advances 2 whole tiles per wrap.
+        float lr = log(max(r, 1e-3));
+        float tile = fract(lr * 0.72 - uStylePhase * 2.0);
+        float spokes = pow(0.5 + 0.5 * sin((a + lr * 0.9 * uSlewMid) * 7.0), 3.0);
+        float lvl = bandAt(tile);
+        float ring = exp(-abs(tile - 0.5) * 7.0);
+        float throat = exp(-r * 1.4);
+        float pulse = 1.0 + 0.9 * clamp(uBeat, 0.0, 1.0) * exp(-abs(r - 0.6) * 3.0);
+        extra = (palette(tile * 0.3 + lr * 0.05, 0.8) * ring * (0.10 + 0.7 * lvl) * (0.4 + 0.6 * spokes)
+            + palette(0.02, 0.9) * throat * 0.35) * pulse;
     }
-    return base + extra * uField;
+    return base + extra * max(uField, uStyleFloor);
 }
 
 /**
@@ -903,9 +1129,13 @@ void main() {
     // holds on any aspect instead of stretching on a phone in landscape.
     vec2 uv = (vUv - 0.5) * vec2(uResolution.x / max(uResolution.y, 1.0), 1.0) * 2.0;
     uv = kaleido(uv, uMirrorFolds, uMirror);
-    if (uStyle == 1 || uStyle == 5) uv = kaleido(uv, 4.0, 1.0);
+    // The substyle pre-fold. No hardcoded folds and no unconditional apply:
+    // uStyleKaleido arrives from the catalog ALREADY gated by the act's
+    // styleMirror intent (BREAKTHROUGH releases every fold - the act that
+    // opens must open for the substyles too) and rescaled by the user's
+    // Mirror-folds control. 0 = off, and kaleido() ignores folds < 2.
+    uv = kaleido(uv, uStyleKaleido, 1.0);
     if (uStyle == 3) uv = rot2(0.22 * length(uv) + 0.08 * sin(uTime * 0.17)) * uv;
-    if (uStyle == 6) uv = kaleido(uv, 12.0, 1.0);
 
     vec3 ro = uCamPos;
     vec3 rd = normalize(uCamBasis * vec3(uv * uFov, 1.0));
@@ -1039,15 +1269,16 @@ void main() {
         float band = log(max(hitTrap, 1e-6)) * 0.16;
         vec3 body = palette(hitHue + band * uTrapColor, 0.88);
         vec3 rim = palette(hitHue + band * uTrapColor + 0.34, 0.72);
-        if (uStyle == 5) { // Reliquary: pale mineral core, warm spectral edge.
-            body = mix(body, vec3(0.92, 0.86, 0.72), 0.28);
-            rim = mix(rim, vec3(1.0, 0.78, 0.34), 0.34);
-        } else if (uStyle == 7) { // Foam: softer, pearlescent shells.
-            body = mix(body, vec3(0.82, 0.9, 1.0), 0.22);
-        } else if (uStyle == 9) { // Plume: colour carried by dye rather than a hard skin.
-            body *= 0.72;
-            rim *= 0.58;
-        }
+        // Per-substyle colour identity, for all eleven rather than the three
+        // that used to hardcode RGB constants here. The accent is an OFFSET
+        // from the user's base hue (uStyleTint.x, in turns), so Reliquary is
+        // always a warmer metal than the palette and Foam always a paler
+        // pearl of it, whatever palette the user chose - identity without
+        // overriding their colour controls. Amount 0 (the Original) leaves
+        // the palette untouched.
+        vec3 accent = hsv2rgb(vec3(fract(uBaseHue + uStyleTint.x), uStyleTint.y, 1.0));
+        body = mix(body, accent, uStyleTint.z * 0.45);
+        rim = mix(rim, accent, uStyleTint.z * 0.6);
 
         // Flow-aligned combing. Ridges running ALONG the medium's own flow are
         // the single most recognisable mark in the reference paintings - every

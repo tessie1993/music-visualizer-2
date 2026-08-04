@@ -35,7 +35,7 @@ reach every style through the composite pass, which is its own column.
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `speed` | Motion | `Speed` | `speed` | · | · |   | · | · | · | · |   | · | · | · |
 | `zoom` | Motion | `Zoom` | `zoom` | · | · | · |   |   |   |   |   |   | · | · |
-| `rotation` | Motion | `Rotation` | `rotation` | · | · | · |   | · |   |   |   | · | · | · |
+| `rotation` | Motion | `Rotation` | `rotation` | · | · | · |   | · |   | · |   | · | · | · |
 | `endlessZoom` | Motion | `Endless zoom` | `endlessZoom` | · | · | · |   |   |   |   |   |   |   |   |
 | `endlessZoomSpeed` | Motion | `Dive speed` | `endlessZoomSpeed` | · | · | · |   |   |   |   |   |   |   |   |
 | `sway` | Motion | `Sway` | `sway` | · |   |   |   |   |   |   |   |   | · | · |
@@ -53,7 +53,7 @@ reach every style through the composite pass, which is its own column.
 | `trailWarp` | Behavior | `Trail warp (liquid echo)` | `trailWarp` |   |   |   |   |   |   |   |   |   | · | · |
 | `mirror` | Behavior | `Mirror` | `mirror` | · |   | · |   |   | · |   |   | · | · | · |
 | `warp` | Shape | `Domain warp` | `warp` | · |   |   |   |   |   |   |   |   | · | · |
-| `ripple` | Shape | `Ripple` | `ripple` | · |   |   |   |   |   |   |   |   | · | · |
+| `ripple` | Shape | `Ripple` | `ripple` | · |   |   |   |   |   | · |   |   | · | · |
 | `symmetry` | Shape | `Kaleidoscope` | `symmetry` | · |   |   |   |   |   |   |   |   | · | · |
 | `kaleidoscope` | Shape | `Kaleidoscope` | `kaleidoscope` | · |   |   |   |   |   |   |   |   | · | · |
 | `morph` | Shape | `Morph` | `morph` | · |   |   |   | · |   |   |   |   | · |   |
@@ -91,7 +91,7 @@ reach every style through the composite pass, which is its own column.
 | `bassGain` | Behavior | `Bass gain` | `bassGain` |   |   |   |   |   |   |   |   |   | · | · |
 | `midGain` | Behavior | `Mid gain` | `midGain` |   |   |   |   |   |   |   |   |   | · | · |
 | `trebGain` | Behavior | `Treble gain` | `trebGain` |   |   |   |   |   |   |   |   |   | · | · |
-| `flash` | Behavior | `Beat flash` | `flash` | · |   |   | · |   |   |   |   |   | · | · |
+| `flash` | Behavior | `Beat flash` | `flash` | · |   |   | · |   |   |   |   | · | · | · |
 | `chromaAb` | FX | `Chromatic aberration` | `chromaAb` |   |   |   |   |   |   |   |   |   | · | · |
 | `vignette` | FX | `Vignette` | `vignette` |   |   |   |   |   |   |   |   |   | · | · |
 | `scanlines` | FX | `Scanlines` | `scanlines` |   |   |   |   |   |   |   |   |   | · | · |

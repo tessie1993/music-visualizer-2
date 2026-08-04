@@ -124,6 +124,16 @@ object ParamRandomizer {
     /** Every lock key this randomizer honours, in Customize-panel order. */
     val KEYS: List<String> = KEYS_BY_TAB.values.flatten()
 
+    /**
+     * [KEYS] as a set: the labels a lock actually guards. Locks exist for
+     * "Randomize unlocked" alone, so a control whose label is not in here has
+     * nothing a lock could hold - `CustomizeTabs`'s `LockChip` consults this
+     * to render no chip on such controls (settings-fade, reactivity, ADSR/LFO
+     * card sliders), instead of persisting keys no roll ever honours. Derived
+     * from the keys the roll actually uses, never hand-maintained.
+     */
+    val LOCKABLE_LABELS: Set<String> = KEYS.toSet()
+
     /** The lock keys [randomize] rolls for [tab]. */
     fun keysFor(tab: CustomizeTab): List<String> = KEYS_BY_TAB[tab].orEmpty()
 

@@ -1,12 +1,16 @@
 package dev.musicviz
 
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import dev.musicviz.ui.MainActivity
 import org.junit.Rule
 import org.junit.Test
@@ -35,8 +39,19 @@ class AppSmokeTest {
     }
 
     @Test
-    fun launches_and_shows_home() {
-        compose.onAllNodesWithText("Home").onFirst().assertExists()
+    fun launches_and_shows_player() {
+        compose.onAllNodesWithText("Player").onFirst().assertExists()
+        // Dest 0 IS the player: the transport is there from launch, even with
+        // nothing loaded (disabled, not absent). Its card sits below the hero,
+        // past the fold of the small Robolectric display, so scroll the
+        // player's column (the only scrollable composed at launch) to it.
+        compose
+            .onAllNodes(hasScrollAction())
+            .onFirst()
+            .performScrollToNode(hasContentDescription("Play"))
+        compose.onNodeWithContentDescription("Play").assertExists()
+        compose.onNodeWithContentDescription("Shuffle").assertExists()
+        compose.onNodeWithContentDescription("Repeat").assertExists()
     }
 
     @Test
@@ -48,11 +63,13 @@ class AppSmokeTest {
         navTo("Studio")
         compose.onNodeWithText("Open a video…").assertExists()
         navTo("Settings")
-        // First collapsible section header; later ones may sit below the fold
-        // of the lazy list on the small Robolectric display. Headers render
-        // tracked-caps in the crystal design, hence ignoreCase.
-        compose.onNodeWithText("Appearance", ignoreCase = true).assertExists()
-        navTo("Home")
+        // The redesigned Settings is tab-per-category; walk every tab so each
+        // body composes. The tab titles are selectable, like the nav items.
+        listOf("Look", "Audio", "Export", "Folders", "Behavior", "About").forEach { tab ->
+            compose.onNode(hasText(tab) and isSelectable()).performClick()
+            compose.waitForIdle()
+        }
+        navTo("Player")
     }
 
     @Test
@@ -85,9 +102,9 @@ class AppSmokeTest {
 
     @Test
     fun search_opens_and_closes() {
-        compose.onAllNodesWithText("Home").onFirst().assertExists()
-        // Home's search icon is the only Search content-description-free icon;
-        // open via the Library screen instead (has the same top-bar search).
+        compose.onAllNodesWithText("Player").onFirst().assertExists()
+        // The Player's search icon is the only Search content-description-free
+        // icon; open via the Library screen instead (same top-bar search).
         navTo("Library")
     }
 }

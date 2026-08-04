@@ -6,7 +6,7 @@
 // page needs (the melt's splat queue).
 //
 // Uniform values are tagged with their setter so the page can upload them
-// without guessing: '1f' '1i' '2f' '3f' '4fv' 'm3fv' 'tex'.
+// without guessing: '1f' '1i' '2f' '3f' '1fv' '4fv' 'm3fv' 'tex'.
 
 import * as H from './hyperspace-math.mjs';
 import { MeltEmitters } from './emitters.mjs';
@@ -72,13 +72,54 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
     'uTrapColor', 'uHueSpread', 'uBaseHue', 'uHueSpan', 'uHasMelt', 'uMelt', 'uFlowGain',
     'uMeltReach', 'uMeltScale', 'uMeltAspect', 'uMeltRelax', 'uStain', 'uLiquid', 'uRidges',
     'uFlowTex', 'uDyeTex', 'uEnergy', 'uBass', 'uTreble', 'uBeat', 'uExposure',
+    // The substyle identity block (catalog-driven in the app; the harness
+    // previews shader style 0, so these carry the Original's neutral values
+    // except the live envelopes, which are mirrored from HyperspaceScene).
+    'uLipschitz', 'uStyleFloor', 'uStyleKaleido', 'uStyleTint',
+    'uSlewBass', 'uSlewMid', 'uStylePhase', 'uBands',
   ]);
 
+  // HyperspaceScene's slew-limited envelopes, phase and spectrum summary.
+  const TIME_WRAP_SECONDS = 6283.1853;
+  const SLEW_RISE_PER_SEC = 2.2;
+  const SLEW_FALL_PER_SEC = 1.1;
+  let slewBass = 0;
+  let slewMid = 0;
+  let stylePhase = 0;
+  const bands16 = new Float32Array(16);
+
+  function slewLimit(current, target, dt, rise, fall) {
+    const t = clamp(target, 0, 1);
+    return clamp(current + clamp(t - current, -fall * dt, rise * dt), 0, 1);
+  }
+
+  function advanceBands(bands, dt) {
+    const src = bands && bands.length ? bands : null;
+    for (let i = 0; i < 16; i++) {
+      let goal = 0;
+      if (src) {
+        const lo = Math.floor((i * src.length) / 16);
+        const hi = Math.min(Math.max(Math.floor(((i + 1) * src.length) / 16), lo + 1), src.length);
+        let sum = 0;
+        for (let j = lo; j < hi; j++) sum += clamp(src[j], 0, 1.5);
+        goal = sum / (hi - lo);
+      }
+      const seconds = goal > bands16[i] ? 0.06 : 0.32;
+      const k = 1 - Math.exp(-dt / Math.max(seconds, 1e-6));
+      const next = bands16[i] + (goal - bands16[i]) * k;
+      bands16[i] = Number.isFinite(next) ? clamp(next, 0, 1.5) : 0;
+    }
+  }
+
   function step(features, dt) {
-    time += dt;
+    time = (time + dt) % TIME_WRAP_SECONDS;
     const f = features;
     const impulseRaw = motionImpulse(f);
     const pace = clamp(p.speed, 0.05, 4);
+    slewBass = slewLimit(slewBass, f.bass, dt, SLEW_RISE_PER_SEC, SLEW_FALL_PER_SEC);
+    slewMid = slewLimit(slewMid, f.mid, dt, SLEW_RISE_PER_SEC, SLEW_FALL_PER_SEC);
+    advanceBands(f.bands, dt);
+    stylePhase = (stylePhase + dt * pace * 0.05) % 1;
 
     const silent = f.rms < IDLE_RMS;
     const fadeStep = IDLE_FADE_SECONDS > 0 ? dt / IDLE_FADE_SECONDS : 1;
@@ -110,8 +151,10 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
       lifetime: clamp(p.hyperLifetime, 2, 60),
       spread,
       sizeScale: H.Look.bodySize(target),
-      motion: profile.motion * pace * clamp(p.hyperSpin, 0, 3),
+      // Decoupled like the app: spin no longer freezes orbits and breath.
+      motion: profile.motion * pace,
       orbitScale: clamp(p.hyperOrbit, 0, 3),
+      spinScale: clamp(p.hyperSpin, 0, 3),
     });
 
     const meltAmount = hasMelt ? clamp(p.hyperMelt, 0, 2) : 0;
@@ -191,6 +234,15 @@ export function createHyperspaceDriver({ params, width, height, seed = 12345, ha
       uTreble: { t: '1f', v: clamp(f.treble, 0, 1.5) },
       uBeat: { t: '1f', v: beatPulse },
       uExposure: { t: '1f', v: EXPOSURE },
+      // Substyle identity block: neutral (Original) constants, live envelopes.
+      uLipschitz: { t: '1f', v: 1 },
+      uStyleFloor: { t: '1f', v: 0 },
+      uStyleKaleido: { t: '1f', v: 0 },
+      uStyleTint: { t: '3f', v: [0, 0.7, 0] },
+      uSlewBass: { t: '1f', v: slewBass },
+      uSlewMid: { t: '1f', v: slewMid },
+      uStylePhase: { t: '1f', v: stylePhase },
+      uBands: { t: '1fv', v: Array.from(bands16) },
     };
 
     return {

@@ -1,6 +1,7 @@
 package dev.musicviz.ui
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import java.io.File
 import java.security.MessageDigest
@@ -9,6 +10,44 @@ import java.security.MessageDigest
 data class MilkTexture(
     val name: String,
     val path: String,
+)
+
+/**
+ * What happened to one picked file in [TextureStore.importDetailed]: either
+ * it landed under [storedName] (the name presets reference), or [skipReason]
+ * says - in words fit for an import note - why it did not.
+ */
+data class TextureImportResult(
+    /** The picked file's display name, as the user knows it. */
+    val name: String,
+    /** The file name it was saved under (may be hashed), null when skipped. */
+    val storedName: String?,
+    /** Null when imported; otherwise why the file was skipped. */
+    val skipReason: String?,
+) {
+    val imported: Boolean get() = storedName != null
+}
+
+/** Everything [TextureStore.importDetailed] has to say: per-file outcomes plus the updated listing. */
+data class TextureImportOutcome(
+    val results: List<TextureImportResult>,
+    /** The texture list after the import, exactly as [TextureStore.list] would return it. */
+    val textures: List<MilkTexture>,
+)
+
+/**
+ * The result of [TextureStore.removeDetailed]. [removedGeneratedPresetPath]
+ * is the absolute path of the `show_<base>.milk` display preset that was
+ * deleted along with the texture (null when there was none): the caller may
+ * be RENDERING that preset right now, so it needs the path to know whether
+ * its current .milk selection just went away.
+ */
+data class TextureRemoveOutcome(
+    /** Whether the texture file itself was deleted. */
+    val removed: Boolean,
+    val removedGeneratedPresetPath: String?,
+    /** The texture list after the removal, exactly as [TextureStore.list] would return it. */
+    val textures: List<MilkTexture>,
 )
 
 /**
@@ -41,28 +80,107 @@ class TextureStore(
             .orEmpty()
 
     /**
+     * [importDetailed] for callers that only need the updated listing.
+     * Per-file failures are dropped here, not surfaced - new UI should call
+     * [importDetailed] and show the skip reasons.
+     */
+    fun import(uris: List<Uri>): List<MilkTexture> = importDetailed(uris).textures
+
+    /**
      * Copies picked images into the texture directory under
      * [safeTextureFileName]: presets reference textures by name, so a name
-     * that is already identifier-safe is preserved exactly. Returns the
-     * updated texture list.
+     * that is already identifier-safe is preserved exactly.
+     *
+     * Every file gets a [TextureImportResult] instead of being silently
+     * swallowed, and content is VALIDATED before anything touches the disk:
+     * projectM answers a texture it cannot decode with noise or black, so a
+     * copied-in non-image is a broken import the user only discovers later,
+     * mid-show. Bitmap-decodable types go through
+     * [BitmapFactory.Options.inJustDecodeBounds]; dds/tga - which
+     * [BitmapFactory] cannot read - are header-sniffed. Because validation
+     * happens on the buffered bytes before the [AtomicWrite] begins, a
+     * skipped file leaves no temp artifact and never clobbers a texture
+     * already saved under the same name.
      */
-    fun import(uris: List<Uri>): List<MilkTexture> {
-        for (uri in uris) {
-            runCatching {
-                val name = displayName(uri) ?: "texture_${System.currentTimeMillis()}.png"
-                if (name.substringAfterLast('.', "").lowercase() !in IMAGE_EXTS) return@runCatching
-                val dest = File(dir, safeTextureFileName(name))
-                appContext.contentResolver.openInputStream(uri)?.use { input ->
-                    AtomicWrite.stream(dest) { output -> input.copyTo(output) }
-                }
-            }
+    fun importDetailed(uris: List<Uri>): TextureImportOutcome = TextureImportOutcome(uris.map(::importOne), list())
+
+    private fun importOne(uri: Uri): TextureImportResult {
+        val name = displayName(uri) ?: "texture_${System.currentTimeMillis()}.png"
+        val skipped = { reason: String -> TextureImportResult(name, null, reason) }
+        val ext = name.substringAfterLast('.', "").lowercase()
+        if (ext !in IMAGE_EXTS) {
+            return skipped("not a supported image type (" + IMAGE_EXTS.sorted().joinToString(", ") + ")")
         }
-        return list()
+        val bytes =
+            runCatching { appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+                ?: return skipped("could not be read")
+        if (bytes.isEmpty()) return skipped("file is empty")
+        validateImage(bytes, ext)?.let { return skipped(it) }
+        val storedName = safeTextureFileName(name)
+        val ok = runCatching { AtomicWrite.stream(File(dir, storedName)) { out -> out.write(bytes) } }.getOrDefault(false)
+        return if (ok) TextureImportResult(name, storedName, null) else skipped("could not be written")
     }
 
-    fun remove(name: String): List<MilkTexture> {
-        runCatching { File(dir, name).delete() }
-        return list()
+    /** Null when [bytes] look like a decodable [ext] image, else the skip reason. */
+    private fun validateImage(
+        bytes: ByteArray,
+        ext: String,
+    ): String? =
+        when (ext) {
+            "dds" ->
+                if (bytes.size >= 4 && bytes[0] == 'D'.code.toByte() && bytes[1] == 'D'.code.toByte() &&
+                    bytes[2] == 'S'.code.toByte() && bytes[3] == ' '.code.toByte()
+                ) {
+                    null
+                } else {
+                    "not a DDS texture (missing DDS header)"
+                }
+            "tga" -> if (isTgaHeader(bytes)) null else "not a TGA image (unrecognized header)"
+            else -> {
+                val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) }
+                if (opts.outWidth > 0 && opts.outHeight > 0) null else "not a decodable image"
+            }
+        }
+
+    /**
+     * TGA has no leading magic (only an optional v2 footer), so this checks
+     * the three header fields with small legal domains: color-map type (0/1),
+     * image type (1-3 or their RLE forms 9-11; 0 means "no image data"), and
+     * pixel depth.
+     */
+    private fun isTgaHeader(b: ByteArray): Boolean {
+        if (b.size < 18) return false
+        val colorMapType = b[1].toInt() and 0xff
+        val imageType = b[2].toInt() and 0xff
+        val pixelDepth = b[16].toInt() and 0xff
+        return colorMapType <= 1 && imageType in TGA_IMAGE_TYPES && pixelDepth in TGA_PIXEL_DEPTHS
+    }
+
+    /** [removeDetailed] for callers that only need the updated listing. */
+    fun remove(name: String): List<MilkTexture> = removeDetailed(name).textures
+
+    /**
+     * Deletes the texture AND the `milk/generated/show_<base>.milk` display
+     * preset [generateDisplayPreset] wrote for it, which references the
+     * texture by name and renders noise or black once the image is gone -
+     * an orphan there silently outlives every removal otherwise. The base is
+     * derived exactly as [generateDisplayPreset] derives it from this stored
+     * name (the extension dropped; the name is already [safeTextureFileName]
+     * output, so they can never disagree). The outcome carries the deleted
+     * preset's path so a caller whose CURRENT .milk selection was that
+     * preset can react.
+     */
+    fun removeDetailed(name: String): TextureRemoveOutcome {
+        val removed = runCatching { File(dir, name).delete() }.getOrDefault(false)
+        val base = name.substringBeforeLast('.')
+        val generated = File(File(appContext.filesDir, "milk/generated"), "show_$base.milk")
+        val generatedRemoved = runCatching { generated.isFile && generated.delete() }.getOrDefault(false)
+        return TextureRemoveOutcome(
+            removed = removed,
+            removedGeneratedPresetPath = if (generatedRemoved) generated.absolutePath else null,
+            textures = list(),
+        )
     }
 
     private fun displayName(uri: Uri): String? =
@@ -128,6 +246,12 @@ class TextureStore(
 
     internal companion object {
         val IMAGE_EXTS = setOf("png", "jpg", "jpeg", "bmp", "tga", "dds", "dib")
+
+        /** Legal TGA image-type codes: colormapped/truecolor/mono, raw (1-3) and RLE (9-11). */
+        private val TGA_IMAGE_TYPES = setOf(1, 2, 3, 9, 10, 11)
+
+        /** Legal TGA pixel depths in bits. */
+        private val TGA_PIXEL_DEPTHS = setOf(8, 15, 16, 24, 32)
 
         /**
          * Filesystem-safe, collision-free file name for a picked image.

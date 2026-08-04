@@ -20,12 +20,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -60,10 +60,11 @@ import kotlinx.coroutines.withContext
 private const val CRASH_REPORT_MAX_BYTES = 64 * 1024
 
 /**
- * Navigation-v2 app shell: bottom nav (Home / Library / Visuals / Studio /
+ * Navigation-v2 app shell: bottom nav (Player / Library / Visuals / Studio /
  * Settings)
- * with a persistent mini-player docked above it, and the fullscreen
- * visualizer (Now Playing) as an overlay expanded from the mini-player.
+ * with a mini-player docked above it on every tab except the Player tab
+ * (which IS the player), and the fullscreen visualizer (Now Playing) as an
+ * overlay expanded from the mini-player.
  * The single VisualizerView is owned here so renderer state (custom shaders,
  * milk preset, params) survives collapse/expand; on re-expand the EGL restore
  * path rebuilds GL state.
@@ -128,11 +129,11 @@ fun AppRoot(
             }
     }
     VisualizerEngineBindings(viewModel, visualizerView)
-    // System back: non-Home tabs return Home before the app exits. Composed
-    // FIRST so handlers composed later (library drill-in, search overlay,
-    // expanded visualizer) take priority - Compose gives the back event to
-    // the last-composed enabled handler, unwinding overlays in the right
-    // order: visualizer > search > drill-in > tab > exit.
+    // System back: other tabs return to the Player tab (dest 0) before the
+    // app exits. Composed FIRST so handlers composed later (library drill-in,
+    // search overlay, expanded visualizer) take priority - Compose gives the
+    // back event to the last-composed enabled handler, unwinding overlays in
+    // the right order: visualizer > search > drill-in > tab > exit.
     androidx.activity.compose.BackHandler(enabled = dest != 0) { dest = 0 }
     CrystalMaterialTheme(
         appTheme = effectiveTheme,
@@ -170,13 +171,15 @@ fun AppRoot(
                 topBar = {
                     // hasMedia guard: an empty statusBarsPadding box would
                     // still reserve inset height with nothing playing.
-                    if (gui.playerPosition == PlayerPosition.TOP && state.hasMedia) {
+                    // dest 0 guard: the Player tab IS the player, so the
+                    // mini-player only docks on the other tabs.
+                    if (gui.playerPosition == PlayerPosition.TOP && state.hasMedia && dest != 0) {
                         Box(Modifier.statusBarsPadding()) { miniPlayer() }
                     }
                 },
                 bottomBar = {
                     Column {
-                        if (gui.playerPosition == PlayerPosition.BOTTOM) miniPlayer()
+                        if (gui.playerPosition == PlayerPosition.BOTTOM && dest != 0) miniPlayer()
                         // Luminous accent hairline along the top edge of the
                         // nav glass, per the mockups' "stroked" bottom nav.
                         Box(
@@ -188,7 +191,7 @@ fun AppRoot(
                         CrystalNavBar(
                             items =
                                 listOf(
-                                    CrystalNavItem("Home", Icons.Filled.Home),
+                                    CrystalNavItem("Player", Icons.Filled.PlayCircle),
                                     CrystalNavItem("Library", Icons.Filled.LibraryMusic),
                                     CrystalNavItem("Visuals", Icons.Filled.MusicNote),
                                     CrystalNavItem("Studio", Icons.Filled.Movie),
@@ -204,12 +207,11 @@ fun AppRoot(
                 Box(Modifier.padding(pad)) {
                     when (dest) {
                         0 ->
-                            HomeScreen(
+                            PlayerScreen(
                                 viewModel,
                                 onOpenSearch = { searching = true },
                                 onExpand = { expanded = true },
                                 onOpenLibrary = { dest = 1 },
-                                onOpenVisuals = { dest = 2 },
                             )
                         1 -> LibraryScreen(viewModel, onPersistUri, onOpenSearch = { searching = true })
                         2 ->
@@ -340,34 +342,28 @@ private fun MiniPlayer(
 }
 
 /**
- * Settings as a nav destination, in two tabs.
+ * Settings as a nav destination: the header, then [AppSettingsTab]'s
+ * category tabs (Look / Audio / Export / Folders / Behavior / About).
  *
- * "Settings" holds the app-level preferences (appearance, playback, live
- * input, safety, analysis); "Customize" mounts the very same [CustomizePanel]
- * the Visuals hub shows. One panel, two doors - the same relationship Visuals
- * and Now Playing already have - so the controls a user reaches for while
- * they are in Settings are where they expect them, without a second copy that
- * could drift.
+ * The old second "Customize" tab is gone: scene parameters belong to the
+ * Visuals hub, which already mounts the same [CustomizePanel] as its own
+ * tab - one panel, one door, no copy that can drift.
  *
- * Export lives in the export dialog.
+ * Export renders through the export dialog ([ExportHost]), opened from the
+ * Export tab; its standing defaults live there too.
  */
 @Composable
 fun SettingsScreen(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
 ) {
-    var tab by rememberSaveable { mutableStateOf(0) }
     var showExport by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
             CrystalOverline("MusicViz")
             GlowTitle("Settings")
         }
-        CrystalTabs(titles = listOf("Settings", "Customize"), selected = tab, onSelect = { tab = it })
-        when (tab) {
-            0 -> AppSettingsTab(viewModel) { showExport = true }
-            else -> CustomizePanel(viewModel, visualizerView)
-        }
+        AppSettingsTab(viewModel, exportOpen = showExport, onOpenExport = { showExport = true })
     }
     if (showExport) {
         ExportHost(viewModel, visualizerView) { showExport = false }

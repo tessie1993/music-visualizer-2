@@ -30,6 +30,14 @@ import kotlinx.coroutines.withContext
 /** Where the privacy policy is published; also linked from the Play listing. */
 const val PRIVACY_POLICY_URL = "https://tessie1993.github.io/music-visualizer-2/privacy-policy.html"
 
+/** ABOUT: the Settings tab around [AboutSection] - version, licenses, privacy. */
+@Composable
+internal fun AboutSettingsTab() {
+    SettingsTabColumn {
+        item { SettingsGroup("About") { AboutSection() } }
+    }
+}
+
 /**
  * "About" block for the Settings screen: version, open-source notices and the
  * privacy policy link.

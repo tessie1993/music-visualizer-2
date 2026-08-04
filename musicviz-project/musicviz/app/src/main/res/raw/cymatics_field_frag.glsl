@@ -11,11 +11,32 @@ precision highp float;
 //                - concentric rings crossed by petals, the CymaScope look;
 //   uGeometry 1  a Chladni plate: the square-plate formula, a nodal lattice.
 //
+// Eleven substyles (uStyle) recompose that one resonator into different
+// APPARATUS: sand on a plate, a struck drumhead, a pendulum trace, a Faraday
+// pool, a nacre shell, sunlight through ripples, an acoustic levitator, a
+// room of standing modes, a ferrofluid, a Kundt tube. Each owns a domain
+// warp, a height recomposition and a material signature - topology first,
+// sheen second - while the audio, phase and palette plumbing stay shared.
+//
 // The nodal rendering - a narrow Gaussian on |h| for the bright filigree plus
 // a wide one for its halo - follows the approach taken by Naadara, the MIT
 // licensed open cymatics laboratory (see THIRD_PARTY_NOTICES). The modal
 // field, the travelling-wave flow, the iridescent dispersion and the caustic
 // shading are this app's own.
+//
+// SAFETY: a degenerate FLAT field (nothing ringing - Audio drive zeroed by a
+// hostile preset, or every mode decayed out) must render near BLACK, never a
+// bright wash. Two gates enforce it: uFieldLive arrives from the scene as the
+// summed mode amplitude, and lineLive additionally requires a real gradient
+// under the pixel before the nodal/halo Gaussians (whose widths divide by
+// fwidth(h), and blow up on a constant field) are allowed to emit light.
+//
+// CLOCKS: this shader never sees a raw rate x wall-clock product. uTime is a
+// scene clock wrapped at 200*pi seconds and only ever read as sin/cos of
+// uTime times a TWO-DECIMAL constant, which is a whole number of turns per
+// wrap; swirl, travel and the plate scroll arrive as integrated, wrapped
+// phases so a Speed or Swirl change bends the motion instead of teleporting
+// the field. CymaticsClockSafetyTest pins all of it.
 
 in vec2 vUv;
 out vec4 fragColor;
@@ -39,8 +60,19 @@ uniform float uIridescence;
 uniform float uCaustic;
 /** 0 = bare filigree on dark cells .. 1 = the whole surface filled in. */
 uniform float uFill;
-uniform float uSwirl;
-uniform float uTravel;
+/** Integrated whole-field rotation, radians, wrapped to one turn. */
+uniform float uSwirlPhase;
+/** Integrated travelling-wave phase, radians, wrapped to one turn. The dish
+ *  multiplies it by an INTEGER per-mode harmonic, so the wrap is seamless. */
+uniform float uTravelPhase;
+/** Integrated plate scroll, in plate units, wrapped at 2.0 - an exact period
+ *  of every cos(n*PI*x) term in the plate formula. */
+uniform float uDriftShift;
+/** Faraday droplets: xy centre in field units, z phase, w amplitude (0 = free
+ *  slot). Spawned by CymaticsDrops on beats; amplitude decays to zero. */
+uniform vec4 uDrops[6];
+/** Summed rendered-mode amplitude, 0 silent .. 1 driven: the flat-field gate. */
+uniform float uFieldLive;
 uniform float uBaseHue;
 uniform float uHueSpan;
 uniform float uEnergy;
@@ -62,33 +94,51 @@ float hash21(vec2 p) {
 }
 
 /**
+ * Three plane waves at 120 degrees: the interference lattice a ferrofluid's
+ * spikes relax into. 1.0 exactly at the spike sites, smooth everywhere - no
+ * sign() or pow-of-abs kinks, so nodal shading over it stays seam-free.
+ * Mirrored by CymaticsMath.hexLattice.
+ */
+float hexLattice(vec2 p) {
+    return (cos(dot(p, vec2(1.0, 0.0)))
+        + cos(dot(p, vec2(-0.5, 0.8660254)))
+        + cos(dot(p, vec2(-0.5, -0.8660254)))) / 3.0;
+}
+
+/**
  * The shared resonator remains the source of every variant. This transform is
  * the family-composition layer: it bends the same modal field into membranes,
  * shells, chambers and tubes without forking the audio or phase logic.
  */
 vec2 styleCoordinates(vec2 p, vec2 uv) {
-    if (uStyle == 2) { // Drumhead: a breathing, tensioned membrane.
-        p *= 0.94 + 0.055 * sin(uTime * 0.7);
+    if (uStyle == 2) { // Drumhead: the skin breathes, and dips when struck.
+        p *= 0.96 + 0.05 * sin(uTime * 0.7) - 0.06 * clamp(uBeat, 0.0, 1.0);
     } else if (uStyle == 3) { // Harmonograph: two slowly precessing pendulums.
         p += 0.24 * vec2(sin(p.y * 0.72 + uTime * 0.31), cos(p.x * 0.66 - uTime * 0.27));
     } else if (uStyle == 4) { // Faraday: subharmonic surface buckling.
         p += 0.11 * vec2(sin(p.y * 2.1 - uTime * 0.8), sin(p.x * 1.8 + uTime * 0.72));
-    } else if (uStyle == 5) { // Shell: unwrap polar coordinates into a living spiral.
+    } else if (uStyle == 5) { // Shell: DOUBLE-POLAR fold. abs() of the angle
+        // mirrors the spiral about the x axis, so the atan branch cut on the
+        // negative-x axis lands where both halves agree - the radial seam the
+        // raw angle painted there is gone, and the fold is the shell's look.
         float r = length(p);
-        float a = atan(p.y, p.x);
+        float a = abs(atan(p.y, p.x));
         p = vec2(a * 0.92 + r * 0.62, r * 2.0 - 1.9 + 0.12 * sin(a * 5.0 + uTime * 0.2));
-    } else if (uStyle == 6) { // Caustic sheet: refraction through a second wave layer.
+    } else if (uStyle == 6) { // Caustic sheet: refraction through a second layer.
         p += 0.16 * sin(p.yx * 1.65 + vec2(0.0, 1.7) + uTime * 0.26);
-    } else if (uStyle == 7) { // Levitator: mirrored pressure nodes above a central plane.
-        p.y = sign(p.y) * (abs(p.y) * 0.72 + 0.42);
-        p.x += 0.12 * sin(p.y * 2.8 + uTime * 0.25);
-    } else if (uStyle == 8) { // Chamber: perspective compression toward a deep back wall.
-        float z = 1.0 / max(0.62, 1.25 + uv.y * 0.52);
+    } else if (uStyle == 7) { // Levitator: a tall pressure column, gently
+        // swaying. Continuous everywhere - the old sign(p.y) mirror put a
+        // fwidth blow-up (a permanent bright band) along y = 0.
+        p = vec2(p.x + 0.05 * sin(p.y * 2.4 + uTime * 0.25), p.y * 1.15);
+    } else if (uStyle == 8) { // Chamber: perspective toward a deep back wall.
+        // 1.25 + uv.y * 0.52 spans 0.73..1.77 for uv.y in -1..1, so no guard
+        // is needed (the old max(0.62, ...) could never bind).
+        float z = 1.0 / (1.25 + uv.y * 0.52);
         p = vec2(p.x * z, p.y * 0.72 + 0.22 / z);
-    } else if (uStyle == 9) { // Rosensweig: magnetic cells pull toward a hex-like lattice.
+    } else if (uStyle == 9) { // Rosensweig: cells pull toward a hex-like lattice.
         p += 0.07 * vec2(sin(p.y * 3.4), sin(p.x * 3.4 + 2.094));
-    } else if (uStyle == 10) { // Kundt tube: long axis with a curved glass wall.
-        p = vec2(p.x * 0.58, sin(p.y * 0.58) * 1.65);
+    } else if (uStyle == 10) { // Kundt tube: a long horizontal bore.
+        p = vec2(p.x * 0.46, p.y * 1.35);
     }
     return p;
 }
@@ -136,11 +186,14 @@ float field(vec2 p) {
             float beta = PI * (rad + 0.5 * ang - 0.25);
             // "Flow" turns the standing wave into a travelling one: the rings
             // march outward the way a driven dish sheds them, faster for the
-            // finer modes. Applied as a PHASE, not as a shift of the radius -
-            // shifting the radius pushed the argument negative near the centre
-            // and the amplitude term returned NaN, which showed up as a black
-            // hole punched through the middle of the dish.
-            float travel = uTravel * uTime * (0.7 + 0.09 * beta);
+            // finer modes. The rate ladder is quantized to INTEGER multiples
+            // of the accumulated phase so its 2*pi wrap is a whole number of
+            // cycles for every mode - a fractional ladder would pop the rings
+            // once per wrap. Applied as a PHASE, not as a shift of the radius
+            // - shifting the radius pushed the argument negative near the
+            // centre and the amplitude term returned NaN, which showed up as
+            // a black hole punched through the middle of the dish.
+            float travel = uTravelPhase * max(1.0, floor(0.7 + 0.09 * beta + 0.5));
             h += M.z * besselApprox(ang, beta * r, travel) * cos(ang * a + M.w);
         }
     } else {
@@ -150,8 +203,9 @@ float field(vec2 p) {
             float n = M.x;
             float m = M.y;
             // The plate's own flow is a slow drift of the lattice, so the
-            // figure breathes instead of standing frozen.
-            vec2 q = p + vec2(0.0, uTravel * uTime * 0.05);
+            // figure breathes instead of standing frozen. uDriftShift wraps
+            // at 2.0, an exact period of both cosines below.
+            vec2 q = p + vec2(0.0, uDriftShift);
             float z = cos(n * PI * q.x) * cos(m * PI * q.y) - cos(m * PI * q.x) * cos(n * PI * q.y);
             h += M.z * z * cos(M.w);
         }
@@ -164,42 +218,109 @@ void main() {
     // screen: there is no rim to frame, so nothing is ever letterboxed.
     vec2 uv = vUv * 2.0 - 1.0;
     uv.x *= uResolution.x / max(uResolution.y, 1.0);
-    float s = sin(uSwirl * uTime);
-    float c = cos(uSwirl * uTime);
-    vec2 p = mat2(c, -s, s, c) * uv * uScale;
+    // Whole-field rotation from an INTEGRATED phase: scrubbing Swirl or Speed
+    // (a preset fade, an LFO) changes how fast the field turns from here on,
+    // never where it currently points.
+    float sw = sin(uSwirlPhase);
+    float cw = cos(uSwirlPhase);
+    vec2 p = mat2(cw, -sw, sw, cw) * uv * uScale;
     p = styleCoordinates(p, uv);
 
     // Normalized displacement: -1..1 whatever is playing, so every threshold
-    // below means the same thing at any loudness. A few variants combine a
-    // second sample of THE SAME resonator: this is a compositional merge, not
-    // another audio engine running out of phase with it.
+    // below means the same thing at any loudness. Variants recompose samples
+    // of THE SAME resonator - a compositional merge, never a second audio
+    // engine running out of phase with the first.
     float h = field(p) * uHeightNorm;
-    if (uStyle == 3) {
+    float hexCell = 0.0; // Rosensweig's spike lattice, reused by its material.
+    float caustLap = 0.0; // Caustic sheet's curvature probe.
+    if (uStyle == 2) {
+        // Drumhead: the membrane is CLAMPED at its rim - displacement pinned
+        // to zero outside the head, the way a real skin is.
+        h *= smoothstep(1.04, 0.88, length(uv));
+    } else if (uStyle == 3) {
+        // Harmonograph: a second, slowly precessing sample of the same field,
+        // superposed - two pendulums drawing over each other.
         float a2 = 0.74 + 0.18 * sin(uTime * 0.09);
         mat2 r2 = mat2(cos(a2), -sin(a2), sin(a2), cos(a2));
         h = h * 0.58 + field(r2 * p * 0.82 + vec2(0.35, -0.18)) * uHeightNorm * 0.42;
     } else if (uStyle == 4) {
+        // Faraday: subharmonic folding, then a high-frequency capillary
+        // lattice riding the treble, then beat-spawned droplet rings.
         float sub = field(p * 1.62 + vec2(0.16, -0.11)) * uHeightNorm;
         h = sin(h * 2.45 + sub * 1.15) * 0.72;
+        h += sin(p.x * 21.0 + uTravelPhase * 3.0) * sin(p.y * 21.0 - uTravelPhase * 3.0)
+            * 0.16 * clamp(uTreble, 0.0, 1.5);
+        for (int i = 0; i < 6; i++) {
+            float amp = uDrops[i].w;
+            if (amp < 0.003) continue;
+            float d = length(p - uDrops[i].xy);
+            h += amp * sin(9.0 * d - uDrops[i].z) * exp(-2.2 * d);
+        }
+        h *= 0.85;
     } else if (uStyle == 5) {
+        // Shell: the mirrored second polar reading of the same modes.
         h = h * 0.72 + field(p.yx * vec2(-0.68, 0.68)) * uHeightNorm * 0.28;
+    } else if (uStyle == 6) {
+        // Caustic sheet: probe the surface's CURVATURE (a five-point
+        // Laplacian over pixel-scale offsets). Light through a rippled
+        // surface piles up where curvature focuses the rays - that
+        // convergence, not the height itself, is what draws the web.
+        vec2 ex = dFdx(p) * 1.5;
+        vec2 ey = dFdy(p) * 1.5;
+        caustLap = (field(p + ex) + field(p - ex) + field(p + ey) + field(p - ey)) * uHeightNorm - 4.0 * h;
+    } else if (uStyle == 8) {
+        // Standing chamber: room modes - PRODUCT cosines, cos(n pi x) *
+        // cos(m pi y), whose figure is a grid of rectangular pressure cells,
+        // not the plate's diagonal filigree (that is the difference formula).
+        // uDriftShift slides the cell pattern along the room; its 2.0 wrap is
+        // an exact period of every term.
+        float room = 0.0;
+        for (int i = 0; i < 4; i++) {
+            if (i >= uModeCount) break;
+            vec4 M = uModes[i];
+            room += M.z * cos(M.x * PI * (p.x + uDriftShift)) * cos(M.y * PI * p.y) * cos(M.w);
+        }
+        h = room * uHeightNorm * 1.6;
     } else if (uStyle == 9) {
-        h = sign(h) * pow(max(abs(h), 1e-4), 0.48);
+        // Rosensweig: the field's SMOOTHED square (h*h saturating - no kink
+        // at h = 0, unlike the old signed pow(|h|, 0.48), whose infinite
+        // derivative lit every nodal line as a seam) budgets a lattice of
+        // hex-packed spikes, the instability's own geometry.
+        float pool = h * h;
+        pool = pool / (pool + 0.22);
+        hexCell = hexLattice(p * 5.2);
+        h = pool * (0.25 + 1.15 * pow(max(hexCell, 0.0), 2.0)) - 0.12;
     } else if (uStyle == 10) {
-        h = h * 0.72 + field(vec2(p.x * 1.8, p.y * 0.42)) * uHeightNorm * 0.28;
+        // Kundt tube: the same resonance squeezed into a long bore - a 10:1
+        // anisotropic resample makes the nodal geometry near-one-dimensional,
+        // so striations stand at half-wavelength spacing along the axis.
+        h = h * 0.3 + field(vec2(p.x * 2.1, p.y * 0.22)) * uHeightNorm * 0.7;
     }
     float az = abs(h);
 
     vec2 g = vec2(dFdx(h), dFdy(h));
-    float w = max(fwidth(h), 1e-5);
+    float wRaw = fwidth(h);
+    float w = max(wRaw, 1e-5);
+
+    // FLAT-FIELD SAFETY GATE. The nodal/halo Gaussians divide by w: on a
+    // degenerate flat field (h identically 0 - Audio drive zeroed by a raw
+    // preset value, every mode decayed out) az and wRaw are both 0 and the
+    // 1e-5 floor made nodal = halo = 1 across the WHOLE screen - a ~74%
+    // bright wash after tone mapping, exactly the photosensitivity failure
+    // VisualSafety exists to prevent, arriving from below it. The gate
+    // demands a real gradient under the pixel (wRaw) AND a ringing resonator
+    // (uFieldLive, from the scene) before any line light is emitted; the
+    // fill/spec/material layers are gated by uFieldLive alone, so a flat
+    // field renders near black rather than washing out.
+    float lineLive = uFieldLive * smoothstep(2.0e-5, 1.2e-4, wRaw);
 
     // Nodal filigree and its halo: the sand of a plate, the standing ridges
     // of a dish. Both widths are measured in local slope, so a line keeps the
     // same weight on screen whether the figure is coarse or dense.
     float narrow = w * (0.6 + 1.3 * uLine);
     float wide = narrow * 4.0;
-    float nodal = exp(-(az * az) / (narrow * narrow));
-    float halo = exp(-(az * az) / (wide * wide));
+    float nodal = exp(-(az * az) / (narrow * narrow)) * lineLive;
+    float halo = exp(-(az * az) / (wide * wide)) * lineLive;
 
     // Caustic sheen: light through a wavy surface piles up where the surface
     // is flat, which is what gives water cymatics its glassy plateaus.
@@ -213,7 +334,9 @@ void main() {
     // Hue tracks displacement WITHOUT being squeezed into one turn of the
     // wheel: a wide palette span therefore bands the field into repeating
     // colour rings (hue is cyclic, so the wrap is seamless) instead of
-    // painting the whole figure one tint with a slight gradient.
+    // painting the whole figure one tint with a slight gradient. uBaseHue
+    // already carries the substyle's own offset and the chroma nudge, so
+    // every variant sits at its own point on the user's palette.
     float hue = uBaseHue + uHueSpan * h;
     vec3 body =
         vec3(
@@ -232,58 +355,108 @@ void main() {
 
     // The surface itself. "Fill" runs from bare filigree over dark cells (the
     // sand-on-a-plate reading) to a fully filled iridescent surface (the
-    // liquid reading); level keeps both honest to how loud the track is.
+    // liquid reading); level keeps both honest to how loud the track is, and
+    // uFieldLive keeps a silent field from wearing the filled surface at all.
     float level = 0.35 + 0.75 * clamp(uEnergy, 0.0, 1.5);
-    vec3 color = body * (0.04 + 0.20 * az * az + uFill * (0.10 + 0.80 * diffuse)) * level;
+    vec3 color = body * (0.04 + 0.20 * az * az + uFill * (0.10 + 0.80 * diffuse) * uFieldLive) * level;
 
     // Halo (broad, palette-coloured), then the filigree on top (near white,
     // treble glinting on it and beats flaring it), then the caustic sheen.
     color += body * halo * uGlow * 0.45 * level;
     vec3 ridge = mix(vec3(1.0), body, 0.4);
     color += ridge * nodal * (0.7 + 0.45 * clamp(uTreble, 0.0, 1.5) + 0.35 * clamp(uBeat, 0.0, 1.0));
-    color += ridge * (caustic + spec * uCaustic * 0.8) * (0.2 + 0.3 * clamp(uEnergy, 0.0, 1.5));
+    color += ridge * (caustic + spec * uCaustic * 0.8) * (0.2 + 0.3 * clamp(uEnergy, 0.0, 1.5)) * uFieldLive;
 
-    // Material signatures. They deliberately reuse h, its derivatives and the
-    // family palette, so changing a Cymatics control still means the same
-    // thing in every substyle.
-    if (uStyle == 1) { // Chladni Sand
-        float grains = smoothstep(0.42, 0.94, hash21(floor(gl_FragCoord.xy * 0.72) + floor(p * 7.0)));
-        color *= 0.46;
-        color += mix(body, vec3(1.0), 0.58) * nodal * (0.34 + 1.15 * grains);
-    } else if (uStyle == 2) { // Drumhead
-        float rim = 1.0 - smoothstep(0.0, 0.16, abs(length(uv) - (0.78 + 0.025 * sin(uTime * 0.7))));
-        color += ridge * rim * (0.35 + 0.4 * clamp(uEnergy, 0.0, 1.5));
-        color *= 1.0 - smoothstep(0.78, 1.12, length(uv));
-    } else if (uStyle == 3) { // Harmonograph
+    // Material signatures: each substyle's own apparatus, painted out of the
+    // same h, derivatives and palette so the family controls keep one meaning
+    // everywhere. Every additive layer here is gated by lineLive/uFieldLive
+    // (or an az-window that is closed on a flat field), so no substyle can
+    // reopen the flat-field wash.
+    if (uStyle == 1) { // Chladni Sand: grains GATHER on the nodal lines.
+        // exp(-|h|) concentrates the grains where the plate is still; the
+        // music shakes them - jitter grows with local |h| and with level -
+        // so loud passages scatter the figure and quiet ones let it settle.
+        float shake = az * (2.0 + 9.0 * clamp(uEnergy, 0.0, 1.5));
+        vec2 gp = gl_FragCoord.xy * 0.61
+            + shake * vec2(sin(uTime * 2.3 + p.y * 21.0), cos(uTime * 1.9 + p.x * 19.0));
+        float grain = smoothstep(0.55, 0.97, hash21(floor(gp)));
+        float gather = exp(-az * 6.5);
+        vec3 gold = mix(body, vec3(1.0, 0.84, 0.5), 0.72); // gold filigree
+        color *= 0.34; // bare dark plate under the sand
+        color += gold * grain * gather * lineLive * (0.5 + 0.8 * halo + 1.2 * nodal);
+    } else if (uStyle == 2) { // Drumhead: matte struck skin inside a hard rim.
+        float rr = length(uv);
+        float rim = 1.0 - smoothstep(0.0, 0.05, abs(rr - 0.93));
+        float lum = dot(color, vec3(0.299, 0.587, 0.114));
+        color = mix(color, lum * vec3(1.05, 0.97, 0.85), 0.4); // vellum, not lacquer
+        color *= 1.0 - smoothstep(0.86, 1.0, rr); // nothing past the shell
+        color += ridge * rim * (0.4 + 0.7 * clamp(uBeat, 0.0, 1.0)) * uFieldLive;
+    } else if (uStyle == 3) { // Harmonograph: pendulum ink etched on dim paper.
         float etched = exp(-abs(sin(h * 15.0 + p.x * 1.2 - p.y * 0.7)) * 8.0);
-        color += body * etched * (0.18 + 0.38 * uGlow);
-    } else if (uStyle == 4) { // Faraday
-        float cells = pow(clamp(1.0 - abs(h), 0.0, 1.0), 5.0);
-        color += body * cells * (0.18 + 0.45 * uCaustic) * (0.5 + 0.5 * sin(uTime * 0.5 + h * 8.0));
-    } else if (uStyle == 5) { // Harmonic Shell
+        color *= 0.6;
+        color += body * etched * uFieldLive * (0.28 + 0.5 * uGlow);
+    } else if (uStyle == 4) { // Faraday: subharmonic cells + capillary glint.
+        float cells = pow(clamp(1.0 - az, 0.0, 1.0), 5.0);
+        color += body * cells * uFieldLive * (0.18 + 0.45 * uCaustic) * (0.5 + 0.5 * sin(uTime * 0.5 + h * 8.0));
+        color += ridge * nodal * clamp(uTreble, 0.0, 1.5) * 0.35;
+    } else if (uStyle == 5) { // Harmonic Shell: nacre fan with growth bands.
         float shellRim = pow(clamp(1.0 - dot(uv * 0.72, uv * 0.72), 0.0, 1.0), 0.36);
         float pearl = pow(clamp(dot(nrm, normalize(vec3(-0.25, 0.45, 0.86))), 0.0, 1.0), 9.0);
-        color = color * (0.45 + 0.75 * shellRim) + ridge * pearl * 0.55;
-    } else if (uStyle == 6) { // Caustic Sheet
-        float focus = pow(clamp(1.0 - length(g) / (w * 1.7), 0.0, 1.0), 7.0);
-        color += mix(body, vec3(1.0), 0.72) * focus * (0.25 + 0.75 * uCaustic);
-    } else if (uStyle == 7) { // Levitator
-        float beads = smoothstep(0.72, 0.96, sin(p.x * 8.0 + h * 4.0) * sin(p.y * 7.0 - uTime * 0.3) * 0.5 + 0.5);
-        float antinode = smoothstep(0.42, 0.82, az);
-        color += ridge * beads * antinode * (0.35 + 0.35 * clamp(uTreble, 0.0, 1.5));
-    } else if (uStyle == 8) { // Standing Chamber
-        float rails = exp(-abs(fract((p.x + h * 0.18) * 0.45) - 0.5) * 18.0);
+        float growth = exp(-abs(sin(p.y * 6.0 + h * 2.0)) * 5.0);
+        color = color * (0.45 + 0.75 * shellRim)
+            + ridge * pearl * 0.55 * uFieldLive
+            + body * growth * 0.16 * uFieldLive;
+    } else if (uStyle == 6) { // Caustic Sheet: sunlight folded through ripples.
+        // Convergence: rays pile up where 1 + k * curvature collapses toward
+        // zero - the fold lines of the refracted light, i.e. real caustics.
+        float bend = caustLap / max(w, 1e-5);
+        float web = clamp(1.0 / max(abs(1.0 + 2.6 * bend), 0.28) - 0.85, 0.0, 2.4);
+        vec3 sunlit = mix(mix(body, vec3(0.6, 0.92, 1.0), 0.7), vec3(1.0), 0.45); // cyan-white
+        color *= 0.5; // deep water
+        color += sunlit * web * uFieldLive * (0.4 + 0.9 * uCaustic);
+    } else if (uStyle == 7) { // Levitator: droplets pinned at the antinode shelves.
+        // A jittered lattice of beads, each held inside its own cell (jitter
+        // + wobble + radius < half a cell, so nothing pops at cell borders),
+        // lit only near antinodes (az high) - the levitation picture: matter
+        // held where the pressure swing is strongest. Beads ride h, so bass
+        // makes the whole stack bounce.
+        vec2 bp = vec2(p.x * 3.4, (p.y + h * 0.22) * 4.6);
+        vec2 cellId = floor(bp);
+        float hc = hash21(cellId);
+        vec2 centre = vec2(0.5) + (vec2(hc, fract(hc * 7.31)) - 0.5) * 0.16
+            + 0.06 * clamp(uBeat, 0.0, 1.0) * vec2(sin(uTime * 1.4 + hc * 44.0), cos(uTime * 1.1 + hc * 61.0));
+        float bead = smoothstep(0.30, 0.14, length(fract(bp) - centre));
+        float antinode = smoothstep(0.3, 0.75, az);
+        color *= 0.4; // dark chamber
+        color += ridge * bead * antinode * uFieldLive * (0.8 + 0.5 * clamp(uTreble, 0.0, 1.5));
+        color += body * halo * 0.3;
+    } else if (uStyle == 8) { // Standing Chamber: pressure cells in a wire room.
+        // The room itself is FIXED architecture (a static grid); the music
+        // lives in which cells glow. Depth fade keeps the perspective floor.
+        float gx = abs(fract(p.x * 0.7 + 0.5) - 0.5);
+        float gy = abs(fract(p.y * 0.7 + 0.5) - 0.5);
+        float frame = exp(-min(gx, gy) * 26.0);
         float depthFade = 1.0 - smoothstep(-0.85, 1.35, uv.y);
-        color = color * (0.42 + 0.58 * depthFade) + body * rails * halo * 0.42;
-    } else if (uStyle == 9) { // Rosensweig Spikes
-        float peaks = pow(smoothstep(0.18, 0.92, az), 3.5);
-        color += mix(body, vec3(1.0), 0.5) * peaks * (0.34 + 0.45 * diffuse + 0.25 * uBeat);
-        color *= 0.78 + 0.36 * peaks;
-    } else if (uStyle == 10) { // Kundt Tube
-        float wall = 1.0 - smoothstep(0.0, 0.11, abs(abs(uv.y) - 0.76));
-        float dust = smoothstep(0.54, 0.9, hash21(floor(gl_FragCoord.xy * vec2(0.42, 0.8)))) * nodal;
-        color *= 1.0 - smoothstep(0.68, 0.92, abs(uv.y));
-        color += ridge * wall * 0.42 + body * dust * 0.45;
+        color *= 0.42 + 0.58 * depthFade;
+        color += body * frame * uFieldLive * (0.3 + 0.6 * clamp(uEnergy, 0.0, 1.5));
+        color += ridge * nodal * 0.3;
+    } else if (uStyle == 9) { // Rosensweig: black gloss, spike tips catching light.
+        float tips = pow(max(hexCell, 0.0), 6.0) * smoothstep(0.1, 0.55, az);
+        vec3 steel = mix(body, vec3(0.85, 0.9, 1.0), 0.6);
+        color *= 0.3; // the fluid body is near-black
+        color += steel * (spec * spec * 2.2 + tips * (0.9 + 0.8 * clamp(uBeat, 0.0, 1.0))) * uFieldLive;
+        color += body * halo * 0.18;
+    } else if (uStyle == 10) { // Kundt Tube: dust bands inside a glass bore.
+        // Dust piles where the air is still (|h| small) - half-wavelength
+        // striations that RE-SPACE themselves as the dominant mode slides.
+        float piles = exp(-az * az * 30.0);
+        float striae = smoothstep(0.35, 0.9, hash21(floor(gl_FragCoord.xy * vec2(0.16, 1.1))));
+        float bore = 1.0 - smoothstep(0.55, 0.8, abs(uv.y));
+        float wallGlint = 1.0 - smoothstep(0.0, 0.07, abs(abs(uv.y) - 0.62));
+        vec3 dust = mix(body, vec3(1.0, 0.94, 0.8), 0.55); // cork dust
+        color *= bore; // dark outside the tube
+        color += dust * piles * (0.35 + 0.65 * striae) * uFieldLive * bore * (0.6 + 0.5 * clamp(uEnergy, 0.0, 1.5));
+        color += ridge * wallGlint * 0.35 * uFieldLive;
     }
 
     // Filmic-ish roll-off: the sum above is HDR by construction (three
