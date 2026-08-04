@@ -120,19 +120,27 @@ class ViewModelSurfaceTest {
     fun theIntervalSlidersAgreeWithTheClampsBehindThem() {
         // A slider whose range outruns its setter's coerceIn is a control that
         // stops responding partway along with nothing on screen to say why.
-        // Both auto-visuals intervals clamp to 5..300, so both sliders ask for
-        // exactly that - and this fails from either end if one of them moves.
+        // This used to pin three LITERAL copies of 5..300 to each other; the
+        // range now has one home - AutoVisualsPrefsStore.INTERVAL_SEC, which
+        // persistence also coerces to on load - so what is pinned is that the
+        // setters clamp THROUGH it and the sliders derive their range FROM it.
         val vm = source("ui/PlayerViewModel.kt")
         listOf("setRandomInterval", "setVizPlaylistInterval").forEach { setter ->
             assertTrue(
-                "$setter no longer clamps to 5..300, which its slider still assumes",
-                Regex("fun $setter\\([^)]*\\)\\s*\\{[^}]*coerceIn\\(5, 300\\)").containsMatchIn(vm),
+                "$setter must clamp to AutoVisualsPrefsStore.INTERVAL_SEC, the range's one home",
+                Regex("fun $setter\\([^)]*\\)\\s*\\{[^}]*coerceIn\\(AutoVisualsPrefsStore\\.INTERVAL_SEC\\)")
+                    .containsMatchIn(vm),
             )
         }
         assertEquals(
-            "sliders in ui/ spanning the auto-visuals interval range",
+            "sliders in ui/ spanning the shared auto-visuals interval range",
             2,
-            Regex("valueRange = 5f\\.\\.300f").findAll(uiSources).count(),
+            Regex("valueRange = INTERVAL_RANGE").findAll(uiSources).count(),
+        )
+        assertTrue(
+            "INTERVAL_RANGE must be derived from AutoVisualsPrefsStore.INTERVAL_SEC",
+            "AutoVisualsPrefsStore.INTERVAL_SEC.first.toFloat()..AutoVisualsPrefsStore.INTERVAL_SEC.last.toFloat()" in
+                source("ui/AutoVisualsSettings.kt"),
         )
     }
 

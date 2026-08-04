@@ -86,6 +86,15 @@ internal object VisualStyleCatalog {
         val caustic: Float = 1f,
         val flow: Float = 1f,
         val swirl: Float = 1f,
+        /** Palette identity: added to the family hue ramp's base, in turns.
+         *  Unique per substyle, so each sits at its own point on the user's
+         *  palette instead of all eleven wearing the same tint. */
+        val hueOffset: Float = 0f,
+        /** Palette identity: scales the ramp's span (colour-band density). */
+        val hueSpan: Float = 1f,
+        /** Cap on superposed modes: a struck drum rings one clean figure, a
+         *  resonant field stacks eight - catalog data, not a parallel list. */
+        val modeCap: Int = CymaticsMath.MAX_RENDERED_MODES,
     )
 
     val hyperspace: List<HyperspaceStyle> =

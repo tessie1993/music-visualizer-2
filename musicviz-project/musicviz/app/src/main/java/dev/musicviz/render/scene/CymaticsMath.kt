@@ -394,6 +394,226 @@ object CymaticsMath {
      * capped well under the WCAG three flashes per second.
      */
     fun vibrationHz(wavenumber: Float): Float = (VIBRATION_HZ_PER_ORDER * wavenumber).coerceIn(MIN_VIBRATION_HZ, MAX_VIBRATION_HZ)
+
+    /** "Audio drive" slider ceiling; the floor is 0 (a plate cannot un-ring). */
+    const val MAX_DRIVE: Float = 4f
+
+    /**
+     * Summed rendered amplitude at which the shader's additive layers reach
+     * full strength (`uFieldLive` = 1). Below it the picture fades toward
+     * black instead of degenerating into the flat-field wash.
+     */
+    const val LIVE_AMPLITUDE: Float = 0.02f
+
+    /** Modes the Standing Chamber's room-mode recomposition superposes. */
+    const val ROOM_MODES: Int = 4
+
+    /**
+     * The "Audio drive" value the plate is actually driven with.
+     *
+     * SceneParams carries raw doubles from presets and preset links, so the
+     * slider can arrive negative, absurd or NaN - and NaN slips straight
+     * through `coerceIn` (both comparisons are false), then poisons every
+     * mode amplitude it multiplies. A non-finite drive means "no credible
+     * drive", i.e. zero; everything else is clamped to the slider's range.
+     */
+    fun safeDrive(raw: Float): Float = if (raw.isFinite()) raw.coerceIn(0f, MAX_DRIVE) else 0f
+
+    /**
+     * `uFieldLive`: how alive the field is, 0 silent .. 1 driven, from the
+     * summed amplitude of the modes actually rendered. The shader multiplies
+     * every additive layer that is not already closed on a flat field by
+     * this, so "nothing ringing" renders near black - the flat-field wash
+     * fix's scene half (the shader's own half is the fwidth gate).
+     */
+    fun fieldLiveness(totalAmplitude: Float): Float =
+        if (totalAmplitude.isFinite()) (totalAmplitude / LIVE_AMPLITUDE).coerceIn(0f, 1f) else 0f
+
+    /**
+     * Floored modulo into [0, period): the wrap every phase accumulator in
+     * [CymaticsScene] goes through. Handles negative rates (Swirl runs both
+     * ways), and a non-finite input resets to 0 rather than sticking NaN
+     * into a uniform forever.
+     */
+    fun wrapPhase(
+        value: Float,
+        period: Float,
+    ): Float {
+        if (!value.isFinite() || period <= 0f) return 0f
+        val r = value % period
+        return if (r < 0f) r + period else r
+    }
+
+    /**
+     * One smoothing step of a CIRCULAR hue (0..1 wraps) toward [target]: the
+     * pitch-class -> hue coupling has to go the short way round the wheel,
+     * or a B -> C change would sweep the palette through eleven semitones.
+     */
+    fun approachHue(
+        current: Float,
+        target: Float,
+        alpha: Float,
+    ): Float {
+        var d = (target - current) % 1f
+        if (d > 0.5f) d -= 1f
+        if (d < -0.5f) d += 1f
+        val next = current + d * alpha.coerceIn(0f, 1f)
+        return next - kotlin.math.floor(next)
+    }
+
+    /**
+     * Three plane waves at 120 degrees - the interference lattice a
+     * ferrofluid's spike array relaxes into. 1.0 exactly at the spike sites,
+     * smooth everywhere. Twin of the shader's `hexLattice`.
+     */
+    fun hexLattice(
+        x: Float,
+        y: Float,
+    ): Float {
+        val s3 = 0.8660254f
+        return (cos(x) + cos(-0.5f * x + s3 * y) + cos(-0.5f * x - s3 * y)) / 3f
+    }
+
+    /**
+     * The Standing Chamber's recomposition: PRODUCT room modes,
+     * `cos(n pi x) cos(m pi y)` summed over the first [ROOM_MODES] rendered
+     * modes - rectangular pressure cells, not the plate's difference-formula
+     * filigree. Twin of the shader's `uStyle == 8` loop; [drift] is the
+     * scrolled x offset, 2-periodic exactly as every cosine term is.
+     */
+    fun roomModeHeight(
+        modes: FloatArray,
+        count: Int,
+        x: Float,
+        y: Float,
+        drift: Float = 0f,
+    ): Float {
+        val pi = PI.toFloat()
+        var h = 0f
+        for (i in 0 until minOf(count, ROOM_MODES)) {
+            val base = i * 4
+            h += modes[base + 2] *
+                cos(modes[base] * pi * (x + drift)) *
+                cos(modes[base + 1] * pi * y) *
+                cos(modes[base + 3])
+        }
+        return h
+    }
+
+    /**
+     * The gradient half of the shader's flat-field gate: how much nodal/halo
+     * light a pixel with this `fwidth(h)` may emit. Twin of `lineLive`'s
+     * smoothstep - a field with no slope under the pixel gets no line light,
+     * which is what keeps the degenerate flat field black instead of letting
+     * the 1e-5 width floor turn it into a full-screen wash.
+     */
+    fun nodalGate(fwidthH: Float): Float = smoothstepf(2.0e-5f, 1.2e-4f, fwidthH)
+
+    private fun smoothstepf(
+        edge0: Float,
+        edge1: Float,
+        x: Float,
+    ): Float {
+        val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
+        return t * t * (3f - 2f * t)
+    }
+}
+
+/**
+ * The Faraday substyle's droplet bank: up to [SLOTS] beat-spawned impact
+ * rings, `A * sin(k*d - phase) * exp(-decay*d)`, fed to the shader as
+ * `uDrops[]` quads of (x, y, phase, amplitude).
+ *
+ * Pure Kotlin and allocation-free per frame, like [CymaticsPlate]: spawning
+ * picks slots round-robin (a seventh drop replaces the oldest), each drop's
+ * phase advances at [OMEGA] and wraps at 2*pi (the shader reads it inside a
+ * sine, so the wrap is exact), and its amplitude decays to zero - every
+ * accumulator here is bounded by construction.
+ */
+class CymaticsDrops {
+    companion object {
+        /** Drop slots; must match the shader's `uDrops[6]`. */
+        const val SLOTS = 6
+
+        /** Ring oscillation rate, rad/s - well under the flashing band. */
+        const val OMEGA = 2.4f
+
+        /** Amplitude decay time constant, seconds. */
+        const val DECAY_SECONDS = 1.4f
+
+        /** Beat impulse below this spawns nothing (transients stay texture). */
+        const val SPAWN_THRESHOLD = 0.3f
+
+        /** Refractory period, so a drum roll reads as drops, not as foam. */
+        const val COOLDOWN_SECONDS = 0.12f
+
+        /** Amplitude floor below which a slot is reclaimed as silent. */
+        const val SILENCE = 0.004f
+
+        /** Field-unit half-range the drops land inside. */
+        const val SPREAD = 1.1f
+
+        private const val TWO_PI = 2f * PI.toFloat()
+    }
+
+    /** (x, y, phase, amplitude) per slot - the shader's `uDrops[]` layout. */
+    val packed = FloatArray(SLOTS * 4)
+
+    private var next = 0
+    private var cooldown = 0f
+    private var seed = 0
+
+    /** Ticks every ringing drop and spawns one on a strong enough beat. */
+    fun update(
+        dt: Float,
+        beatImpulse: Float,
+    ) {
+        if (dt <= 0f) return
+        cooldown = (cooldown - dt).coerceAtLeast(0f)
+        val fade = exp(-dt / DECAY_SECONDS)
+        for (i in 0 until SLOTS) {
+            val base = i * 4
+            if (packed[base + 3] <= 0f) continue
+            packed[base + 2] = CymaticsMath.wrapPhase(packed[base + 2] + OMEGA * dt, TWO_PI)
+            packed[base + 3] *= fade
+            if (packed[base + 3] < SILENCE) packed[base + 3] = 0f
+        }
+        if (beatImpulse > SPAWN_THRESHOLD && cooldown <= 0f) {
+            spawn(beatImpulse)
+            cooldown = COOLDOWN_SECONDS
+        }
+    }
+
+    /** True while any slot still rings (for tests and idle bookkeeping). */
+    val ringing: Boolean
+        get() {
+            for (i in 0 until SLOTS) {
+                if (packed[i * 4 + 3] > 0f) return true
+            }
+            return false
+        }
+
+    /** Forgets every drop - a track change or a lost GL context. */
+    fun reset() {
+        packed.fill(0f)
+        cooldown = 0f
+    }
+
+    private fun spawn(strength: Float) {
+        val base = next * 4
+        next = (next + 1) % SLOTS
+        seed++
+        packed[base] = (hash(seed) - 0.5f) * 2f * SPREAD
+        packed[base + 1] = (hash(seed * 7 + 3) - 0.5f) * 2f * SPREAD
+        packed[base + 2] = 0f
+        packed[base + 3] = 0.22f + 0.33f * strength.coerceIn(0f, 1.5f)
+    }
+
+    /** Deterministic scatter; the classic fract(sin) hash, seeded by count. */
+    private fun hash(n: Int): Float {
+        val x = sin(n * 12.9898f) * 43758.547f
+        return x - kotlin.math.floor(x)
+    }
 }
 
 /**

@@ -9,6 +9,7 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.max
+import kotlin.math.sin
 
 /**
  * The CYMATICS style: the standing-wave field of the sound, fullscreen.
@@ -36,13 +37,26 @@ import kotlin.math.max
  * standing waves into travelling ones, so the figure flows rather than
  * standing frozen while the music changes underneath it.
  *
+ * ### Clocks and phases
+ *
+ * The repo convention (see `VisualizerRenderer.postRotationAngle`): rotation
+ * is a SPEED, integrated here, never a `rate * uptime` product evaluated in
+ * the shader - that product teleports the whole field whenever the rate
+ * moves (a preset fade lerping Swirl, an LFO on Speed), and drifts into
+ * float mush as uptime grows. So swirl, travel and the plate scroll are
+ * accumulated per frame and uploaded as wrapped phases, and the scene clock
+ * itself wraps at [TIME_WRAP_SECONDS], a whole number of turns for every
+ * `sin(uTime * k)` the shader contains (k is always a two-decimal constant;
+ * `CymaticsClockSafetyTest` holds both sides to that contract).
+ *
  * ### Conventions
  *
  * - `GlUtil.resetFrameState()` at draw entry (the fluid family's rule).
- * - Palette IDENTITY only ([FluidHue] base + span). Hue shift, the colour
- *   cycle, Brightness, Contrast and Intensity belong to the composite pass
- *   for scenes without a grading pass of their own, this one included -
- *   applying them here as well would move each slider twice.
+ * - Palette IDENTITY only ([FluidHue] base + span, plus this substyle's own
+ *   hue offset and a chroma nudge). Hue shift, the colour cycle, Brightness,
+ *   Contrast and Intensity belong to the composite pass for scenes without a
+ *   grading pass of their own, this one included - applying them here as
+ *   well would move each slider twice.
  * - A synthetic idle drive when nothing is playing, so a silent app is not a
  *   black screen. Here that is a slow tone sweep: the field walks up through
  *   its own modes exactly as a bench cymatics rig does.
@@ -81,9 +95,53 @@ internal class CymaticsScene(
          * control: Brightness and Intensity are the composite pass' job.
          */
         const val EXPOSURE = 1.6f
+
+        /**
+         * Scene clock wrap: 200 * pi seconds (~10.5 min). The live wallpaper
+         * renders for days without a context loss, so an unwrapped `+= dt`
+         * clock decays into float32 mush (the renderer wraps its own clock at
+         * `TIME_WRAP_SEC` for the same reason). 200 * pi specifically: the
+         * shader only reads uTime as `sin/cos(uTime * k)` with k a TWO-DECIMAL
+         * constant, and k * 200pi is k * 100 whole turns, so every such term
+         * lands back on its own phase at the wrap (within ~1e-4 rad of float
+         * rounding - invisible).
+         */
+        const val TIME_WRAP_SECONDS = 628.31853f
+
+        const val TWO_PI = (2.0 * PI).toFloat()
+
+        /** Plate-scroll wrap: the Chladni formula is 2-periodic, exactly. */
+        const val DRIFT_WRAP = 2f
+
+        /** Dish travelling-phase rate at Flow = 1, rad/s (base harmonic). */
+        const val TRAVEL_OMEGA = 1.1f
+
+        /** Plate scroll rate at Flow = 1, plate units per second. */
+        const val DRIFT_RATE = 0.05f
+
+        /** The shader branch that consumes the droplet bank. */
+        const val STYLE_FARADAY = 4
+
+        /** Chroma confidence below which the last harmony is held. */
+        const val CHROMA_CONFIDENCE = 0.35f
+
+        /** Time constant of the pitch-class -> hue drift, seconds. */
+        const val CHROMA_TAU_SECONDS = 2.5f
+
+        /**
+         * Peak hue nudge, in turns, that the dominant pitch class applies on
+         * top of the substyle's own offset. Sinusoidal in the pitch class so
+         * neighbouring classes across the B/C wrap stay neighbours on the
+         * wheel - subtle enough that uBaseHue still clearly belongs to the
+         * user's palette choice.
+         */
+        const val CHROMA_HUE_SPAN = 0.05f
     }
 
     private val plate = CymaticsPlate()
+
+    /** Faraday's beat-spawned droplet rings; zeros for every other substyle. */
+    private val drops = CymaticsDrops()
 
     /** (n, m, amplitude, phase) per mode - the shader's `uModes[]` layout. */
     private val modes = FloatArray(CymaticsMath.MAX_RENDERED_MODES * 4)
@@ -103,6 +161,18 @@ internal class CymaticsScene(
 
     /** Decaying beat envelope, so a hit flares the filigree instead of popping. */
     private var beatPulse = 0f
+
+    /** Integrated field rotation, radians, wrapped to one turn. */
+    private var swirlPhase = 0f
+
+    /** Integrated dish travelling-wave phase, radians, wrapped to one turn. */
+    private var travelPhase = 0f
+
+    /** Integrated plate scroll, plate units, wrapped at [DRIFT_WRAP]. */
+    private var driftShift = 0f
+
+    /** Smoothed dominant pitch class, 0..1 around the circle of semitones. */
+    private var chromaHue = 0f
 
     /** How far the idle sweep has taken over, 0 (driven) .. 1 (silent). */
     private var idleBlend = 0f
@@ -125,6 +195,7 @@ internal class CymaticsScene(
         uniforms.clear()
         programOk = false
         plate.reset()
+        drops.reset()
         try {
             program = GlUtil.buildProgram(loadRaw(R.raw.quad_vert), loadRaw(R.raw.cymatics_field_frag))
             programOk = true
@@ -154,7 +225,9 @@ internal class CymaticsScene(
         features: AudioFeatures,
         dt: Float,
     ) {
-        time += dt
+        // Wrapped, not merely accumulated: the wallpaper renders for days,
+        // and every shader consumer of uTime is periodic in TIME_WRAP_SECONDS.
+        time = (time + dt) % TIME_WRAP_SECONDS
         lastDt = dt
         pendingFeatures = features
     }
@@ -169,19 +242,55 @@ internal class CymaticsScene(
 
         // Drive the field. "Audio drive" is applied HERE, once: the renderer's
         // band-gain stage only touches the bass/mid/treble scalars, and the
-        // spectrum is what this style listens to.
+        // spectrum is what this style listens to. safeDrive is the read-in
+        // clamp: presets and preset links carry raw doubles, and a negative
+        // (or NaN) drive must mean "silent", never a poisoned resonator bank.
         plate.excite(
             bands = driveSpectrum(f, dt),
             dt = dt,
             fundamentalHz = p.cymaticsFundamental,
-            drive = DRIVE_GAIN * p.audioDrive.coerceIn(0f, 4f),
+            drive = DRIVE_GAIN * CymaticsMath.safeDrive(p.audioDrive),
             ringSeconds = CymaticsMath.ringSeconds(p.cymaticsRing),
             focus = p.cymaticsFocus,
         )
         plate.advancePhases(dt, p.speed)
-        modeCount = plate.snapshot(p.cymaticsModes, modes)
+        modeCount = plate.snapshot(minOf(p.cymaticsModes, style.modeCap), modes)
+
+        // `1 / peak displacement`, so the shader works in normalized height -
+        // every threshold in it (line width, cell brightness, hue banding)
+        // then means the same thing at any loudness. The same sum feeds
+        // uFieldLive, the flat-field safety gate: when nothing rings, the
+        // shader's additive layers all fade to black with it.
+        var totalAmplitude = 0f
+        for (i in 0 until modeCount) totalAmplitude += modes[i * 4 + 2]
+
         // Graded, decaying: a hard hit flares the ridges, a soft one nudges.
         beatPulse = maxOf(f.motionImpulse * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f).coerceIn(0f, 1.5f)
+
+        // Swirl and travel are SPEEDS, integrated here into wrapped phases
+        // (the repo's rotation convention). Uploading rate * uptime instead
+        // made every Swirl/Speed change - a preset fade, an LFO - teleport
+        // the field by (new - old) * uptime radians, worse the longer the
+        // wallpaper had been up.
+        val speed = p.speed.coerceIn(0.05f, 4f)
+        val swirlRate = (p.cymaticsSwirl * style.swirl).coerceIn(-1f, 1f) * speed
+        swirlPhase = CymaticsMath.wrapPhase(swirlPhase + swirlRate * dt, TWO_PI)
+        val flowRate = (p.cymaticsFlow * style.flow).coerceIn(0f, 1f) * speed
+        travelPhase = CymaticsMath.wrapPhase(travelPhase + flowRate * TRAVEL_OMEGA * dt, TWO_PI)
+        driftShift = CymaticsMath.wrapPhase(driftShift + flowRate * DRIFT_RATE * dt, DRIFT_WRAP)
+
+        // Faraday's droplet rings ride discrete beats (beatImpulse, not the
+        // motion envelope - a ripple ring is an event, not a texture).
+        if (style.shaderStyle == STYLE_FARADAY) drops.update(dt, f.beatImpulse)
+
+        // Pitch class -> hue: the dominant chroma bin nudges the palette a
+        // few degrees, smoothed and held through unpitched passages.
+        if (f.hasChroma && f.chromaConfidence >= CHROMA_CONFIDENCE) {
+            var best = 0
+            for (i in 1 until 12) if (f.chroma[i] > f.chroma[best]) best = i
+            chromaHue = CymaticsMath.approachHue(chromaHue, best / 12f, CymaticsMath.smoothing(dt, CHROMA_TAU_SECONDS))
+        }
+        val chromaNudge = sin(chromaHue * TWO_PI) * CHROMA_HUE_SPAN
 
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
@@ -194,16 +303,19 @@ internal class CymaticsScene(
         val geometry = style.geometryOverride ?: p.cymaticsGeometry
         GLES30.glUniform1f(loc("uGeometry"), if (geometry == 1) 1f else 0f)
         GLES30.glUniform1f(loc("uScale"), (p.cymaticsScale * style.scale).coerceIn(0.5f, 8f))
-        GLES30.glUniform1f(loc("uHeightNorm"), colorNormalization())
+        GLES30.glUniform1f(loc("uHeightNorm"), 1f / max(totalAmplitude, MIN_COLOR_AMPLITUDE))
+        GLES30.glUniform1f(loc("uFieldLive"), CymaticsMath.fieldLiveness(totalAmplitude))
         GLES30.glUniform1f(loc("uLine"), (p.cymaticsLine * style.line).coerceIn(0f, 2f))
         GLES30.glUniform1f(loc("uGlow"), (p.cymaticsGlow * style.glow).coerceIn(0f, 2f))
         GLES30.glUniform1f(loc("uFill"), (p.cymaticsFill * style.fill).coerceIn(0f, 1f))
         GLES30.glUniform1f(loc("uIridescence"), (p.cymaticsIridescence * style.iridescence).coerceIn(0f, 1f))
         GLES30.glUniform1f(loc("uCaustic"), (p.cymaticsCaustic * style.caustic).coerceIn(0f, 1.5f))
-        GLES30.glUniform1f(loc("uSwirl"), (p.cymaticsSwirl * style.swirl).coerceIn(-1f, 1f) * p.speed.coerceIn(0.05f, 4f))
-        GLES30.glUniform1f(loc("uTravel"), (p.cymaticsFlow * style.flow).coerceIn(0f, 1f) * p.speed.coerceIn(0.05f, 4f))
-        GLES30.glUniform1f(loc("uBaseHue"), FluidHue.base(p.paletteBase))
-        GLES30.glUniform1f(loc("uHueSpan"), FluidHue.span(p.hueRange, p.paletteRange))
+        GLES30.glUniform1f(loc("uSwirlPhase"), swirlPhase)
+        GLES30.glUniform1f(loc("uTravelPhase"), travelPhase)
+        GLES30.glUniform1f(loc("uDriftShift"), driftShift)
+        GLES30.glUniform4fv(loc("uDrops"), CymaticsDrops.SLOTS, drops.packed, 0)
+        GLES30.glUniform1f(loc("uBaseHue"), FluidHue.base(p.paletteBase) + style.hueOffset + chromaNudge)
+        GLES30.glUniform1f(loc("uHueSpan"), FluidHue.span(p.hueRange, p.paletteRange) * style.hueSpan)
         GLES30.glUniform1f(loc("uEnergy"), f.rms.coerceIn(0f, 1.5f))
         GLES30.glUniform1f(loc("uTreble"), f.treble.coerceIn(0f, 1.5f))
         GLES30.glUniform1f(loc("uBeat"), beatPulse)
@@ -235,7 +347,7 @@ internal class CymaticsScene(
             idleBands = FloatArray(count)
             driveBands = FloatArray(count)
         }
-        idlePhase += dt * IDLE_SWEEP_HZ
+        idlePhase = (idlePhase + dt * IDLE_SWEEP_HZ) % 1f
         // A single travelling peak in log-frequency, i.e. one tone sweeping.
         val center = (0.5f - 0.42f * cos(idlePhase * 2f * PI.toFloat())) * count
         for (i in idleBands.indices) {
@@ -247,19 +359,6 @@ internal class CymaticsScene(
             driveBands[i] = f.bands[i] * (1f - idleBlend) + idleBands[i] * idleBlend
         }
         return driveBands
-    }
-
-    /**
-     * `1 / peak displacement`, so the shader can work in normalized height -
-     * every threshold in it (line width, cell brightness, hue banding) then
-     * means the same thing at any loudness. Taken from the amplitudes actually
-     * being rendered rather than from the worst case, which would leave every
-     * quiet passage sitting in one flat colour.
-     */
-    private fun colorNormalization(): Float {
-        var total = 0f
-        for (i in 0 until modeCount) total += modes[i * 4 + 2]
-        return 1f / max(total, MIN_COLOR_AMPLITUDE)
     }
 
     private fun loc(name: String): Int = uniforms.getOrPut(name) { GLES30.glGetUniformLocation(program, name) }
