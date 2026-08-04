@@ -180,7 +180,7 @@ class FeatureExtractorTest {
 
     @Test
     fun `engine clamp and settings slider share one range`() {
-        // AppShell's sliders use these same constants as their valueRange, so
+        // AppSettingsTab's sliders use these same constants as their valueRange, so
         // proving the engine clamps to them proves the slider cannot saturate
         // against a tighter clamp.
         val engine = AnalysisEngine(PcmRingBuffer())

@@ -141,7 +141,7 @@ fun VisualizerScreen(
             // The canvas is on the other screen; this one is the control
             // surface. Say where it went rather than showing a black rectangle
             // that reads as a crash.
-            CrystalBackground(Modifier.fillMaxSize())
+            CrystalBackground(Modifier.fillMaxSize(), reducedMotion = gui.reducedMotion)
             Column(
                 Modifier.align(Alignment.Center).padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,

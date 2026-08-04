@@ -30,9 +30,35 @@ class TakeStore(
 ) {
     private val dir = File(context.filesDir, "takes").apply { mkdirs() }
 
-    private fun sanitize(name: String): String = name.replace(Regex("[^A-Za-z0-9-_ ]"), "_")
+    init {
+        migrateLegacyFileNames()
+    }
 
-    private fun fileOf(name: String): File = File(dir, sanitize(name) + ".json")
+    /**
+     * One-time rename of takes saved under the pre-hash sanitizer, which
+     * collapsed every disallowed character to '_' ("夜曲" and "月光" both
+     * landed on "__.json"), so [load] and [delete] resolved BOTH names to the
+     * first file: [fileOf] goes through [PresetStore.safeFileName] now, and a
+     * file left under its old stem would be unloadable and undeletable. The
+     * take's real name lives in the document ([list] reads it from there), so
+     * the target stem is recomputed from it. Idempotent - a file already under
+     * its hashed stem is left alone - and never clobbering: a taken target
+     * keeps the old file in place, unrenamed rather than destroyed.
+     */
+    private fun migrateLegacyFileNames() {
+        dir
+            .listFiles { f -> f.isFile && f.extension == "json" }
+            .orEmpty()
+            .forEach { f ->
+                val name = runCatching { PerformanceTake.Timeline(f.readText()).name }.getOrNull() ?: return@forEach
+                val stem = PresetStore.safeFileName(name)
+                if (f.nameWithoutExtension == stem) return@forEach
+                val target = File(dir, "$stem.json")
+                if (!target.exists()) f.renameTo(target)
+            }
+    }
+
+    private fun fileOf(name: String): File = File(dir, PresetStore.safeFileName(name) + ".json")
 
     /** Saved takes, newest first. Unreadable files are skipped, not fatal. */
     fun list(): List<TakeInfo> =
@@ -67,7 +93,22 @@ class TakeStore(
             candidate = "$name $n"
             n++
         }
-        AtomicWrite.text(fileOf(candidate), json)
+        // The name in the document is what [list] shows and what [load] and
+        // [delete] resolve through, so a suffixed candidate must be carried
+        // inside the file too - otherwise the take lists under a name whose
+        // file is a different take's.
+        val body =
+            if (candidate == name) {
+                json
+            } else {
+                runCatching {
+                    org.json
+                        .JSONObject(json)
+                        .put("name", candidate)
+                        .toString()
+                }.getOrDefault(json)
+            }
+        AtomicWrite.text(fileOf(candidate), body)
         return candidate
     }
 

@@ -2212,15 +2212,6 @@ class PlayerViewModel(
         _library.update { it.copy(playlists = musicPlaylists.list()) }
     }
 
-    fun moveTrackInPlaylist(
-        playlist: String,
-        from: Int,
-        to: Int,
-    ) {
-        musicPlaylists.move(playlist, from, to)
-        _library.update { it.copy(playlists = musicPlaylists.list()) }
-    }
-
     /** Resolves a playlist's track uris to library entries, preserving order. */
     fun playlistTracks(playlist: String): List<LibraryTrack> {
         val byUri = _library.value.tracks.associateBy { it.uri }

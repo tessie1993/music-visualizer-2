@@ -33,10 +33,7 @@ import java.io.File
  * The music-playlist CRUD group used to sit out here too, unwired by decision
  * — and someone acted on it: the Playlists tab creates, deletes, renames and
  * reorders, the queue panel saves, and the track menus add. It graduated into
- * [playlistCrud] below, pinned the same way as the setters. The one leftover
- * is `moveTrackInPlaylist`, still uncalled because it duplicates the wired
- * `moveMusicPlaylistTrack`; it stays out of the pin so retiring the duplicate
- * needs no edit here.
+ * [playlistCrud] below, pinned the same way as the setters.
  */
 class ViewModelSurfaceTest {
     /**
