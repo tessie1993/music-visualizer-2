@@ -342,34 +342,28 @@ private fun MiniPlayer(
 }
 
 /**
- * Settings as a nav destination, in two tabs.
+ * Settings as a nav destination: the header, then [AppSettingsTab]'s
+ * category tabs (Look / Audio / Export / Folders / Behavior / About).
  *
- * "Settings" holds the app-level preferences (appearance, playback, live
- * input, safety, analysis); "Customize" mounts the very same [CustomizePanel]
- * the Visuals hub shows. One panel, two doors - the same relationship Visuals
- * and Now Playing already have - so the controls a user reaches for while
- * they are in Settings are where they expect them, without a second copy that
- * could drift.
+ * The old second "Customize" tab is gone: scene parameters belong to the
+ * Visuals hub, which already mounts the same [CustomizePanel] as its own
+ * tab - one panel, one door, no copy that can drift.
  *
- * Export lives in the export dialog.
+ * Export renders through the export dialog ([ExportHost]), opened from the
+ * Export tab; its standing defaults live there too.
  */
 @Composable
 fun SettingsScreen(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
 ) {
-    var tab by rememberSaveable { mutableStateOf(0) }
     var showExport by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
             CrystalOverline("MusicViz")
             GlowTitle("Settings")
         }
-        CrystalTabs(titles = listOf("Settings", "Customize"), selected = tab, onSelect = { tab = it })
-        when (tab) {
-            0 -> AppSettingsTab(viewModel) { showExport = true }
-            else -> CustomizePanel(viewModel, visualizerView)
-        }
+        AppSettingsTab(viewModel, exportOpen = showExport, onOpenExport = { showExport = true })
     }
     if (showExport) {
         ExportHost(viewModel, visualizerView) { showExport = false }

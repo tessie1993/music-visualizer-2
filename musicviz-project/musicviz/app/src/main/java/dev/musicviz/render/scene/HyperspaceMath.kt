@@ -170,6 +170,19 @@ object HyperspaceMath {
         val field: Float,
         /** Kaleidoscopic mirror applied to the whole view, 0 = off. */
         val mirror: Float,
+        /**
+         * Whether a SUBSTYLE's own screen pre-fold (the catalog's
+         * `kaleidoFolds`) is welcome in this act, 0..1. Separate from [mirror]
+         * on purpose: the act mirror is the chrysanthemum's own symmetry and
+         * most acts leave it off, but a substyle fold is that style's identity
+         * and should survive every act EXCEPT the one that is deliberately
+         * unfolded - BREAKTHROUGH opens, and a pre-fold that ran there anyway
+         * hid the eight separated bodies behind one wedge, defeating the
+         * reason the table sets `mirror = 0` for it. The shader gates at 0.5,
+         * so the interpolated value snaps at most once per act change, which
+         * is the same law the act mirror follows.
+         */
+        val styleMirror: Float,
         /** Camera distance from the origin, in world units. */
         val camera: Float,
         /** Multiplier on every body's spin and orbit rate. */
@@ -189,19 +202,20 @@ object HyperspaceMath {
     val ACT_PROFILES: List<ActProfile> =
         listOf(
             // THRESHOLD
-            ActProfile(bodies = 2, field = 0.22f, mirror = 0f, camera = 6.5f, motion = 0.45f, glow = 0.7f, hueSpread = 0.18f),
+            ActProfile(bodies = 2, field = 0.22f, mirror = 0f, styleMirror = 1f, camera = 6.5f, motion = 0.45f, glow = 0.7f, hueSpread = 0.18f),
             // CHRYSANTHEMUM
-            ActProfile(bodies = 3, field = 1.35f, mirror = 1f, camera = 9f, motion = 0.8f, glow = 1.1f, hueSpread = 0.55f),
+            ActProfile(bodies = 3, field = 1.35f, mirror = 1f, styleMirror = 1f, camera = 9f, motion = 0.8f, glow = 1.1f, hueSpread = 0.55f),
             // MAGIC_EYE
-            ActProfile(bodies = 5, field = 0.5f, mirror = 0f, camera = 5.4f, motion = 1f, glow = 1f, hueSpread = 0.7f),
+            ActProfile(bodies = 5, field = 0.5f, mirror = 0f, styleMirror = 1f, camera = 5.4f, motion = 1f, glow = 1f, hueSpread = 0.7f),
             // WAITING_ROOM
-            ActProfile(bodies = 7, field = 0.35f, mirror = 0f, camera = 4.2f, motion = 1.15f, glow = 1.2f, hueSpread = 0.85f),
-            // BREAKTHROUGH - deliberately NOT mirrored. The mirror folds every
-            // ray into one wedge of directions, which is what makes the
+            ActProfile(bodies = 7, field = 0.35f, mirror = 0f, styleMirror = 1f, camera = 4.2f, motion = 1.15f, glow = 1.2f, hueSpread = 0.85f),
+            // BREAKTHROUGH - deliberately NOT mirrored, and the substyle
+            // pre-fold releases with it (styleMirror = 0). The mirror folds
+            // every ray into one wedge of directions, which is what makes the
             // chrysanthemum a flat symmetric fabric; applying it here hid all
             // eight bodies behind a wedge that happened to contain none of
             // them. The breakthrough is the act that opens, so it opens.
-            ActProfile(bodies = MAX_BLOOMS, field = 0.65f, mirror = 0f, camera = 5.2f, motion = 1.5f, glow = 1.45f, hueSpread = 1f),
+            ActProfile(bodies = MAX_BLOOMS, field = 0.65f, mirror = 0f, styleMirror = 0f, camera = 5.2f, motion = 1.5f, glow = 1.45f, hueSpread = 1f),
         )
 
     /**
@@ -224,6 +238,7 @@ object HyperspaceMath {
             bodies = Math.round(f(a.bodies.toFloat(), b.bodies.toFloat())),
             field = f(a.field, b.field),
             mirror = f(a.mirror, b.mirror),
+            styleMirror = f(a.styleMirror, b.styleMirror),
             camera = f(a.camera, b.camera),
             motion = f(a.motion, b.motion),
             glow = f(a.glow, b.glow),
@@ -259,6 +274,27 @@ object HyperspaceMath {
     const val ACT_GLIDE_SECONDS: Float = 2.5f
 
     /**
+     * Wrap period for this family's free-running clocks: [HyperspaceScene]'s
+     * `time` (uploaded as `uTime`) and [HyperspaceCamera]'s drift parameter.
+     *
+     * A live wallpaper runs for days, and both clocks are float32: unwrapped,
+     * `sin(uTime * k)` decays into a stutter as the ULP overtakes the frame
+     * advance, and the camera's yaw term stops advancing entirely after about
+     * a week. The renderer's own clock wraps at 7100 s (its shaders multiply
+     * time by one-decimal constants, so 1130 turns land whole); THIS shader's
+     * multipliers have up to three decimals - 0.037, 0.021, 0.191 - so 7100 s
+     * would wrap the chrysanthemum mid-turn and the whole background would
+     * pop. 1000 turns of 2*pi is the period that keeps every consumer here
+     * continuous: every `uTime` and camera-rate multiplier in this family is
+     * a multiple of 0.001, so `k * TIME_WRAP_SECONDS` is a whole number of
+     * turns for all of them (to float precision), and the only non-sine
+     * consumers of `uTime` are `floor()`-seeded noise reseeds (the dust and
+     * the grain) that already reseed several times a second by design.
+     * `HyperspaceClockWrapTest` audits the shader against this rule.
+     */
+    const val TIME_WRAP_SECONDS: Float = 6283.1853f
+
+    /**
      * Per-frame smoothing coefficient for a first-order lag with time constant
      * [seconds], frame-rate independent. Returns 1 (snap) for a zero or
      * negative constant.
@@ -270,6 +306,61 @@ object HyperspaceMath {
         if (seconds <= 0f) return 1f
         return 1f - kotlin.math.exp(-dt / seconds)
     }
+
+    /**
+     * Rate-limited follower: [current] moves toward [target] by at most
+     * [riseRate] (going up) or [fallRate] (going down) units per second.
+     *
+     * This is the ONLY shape of audio envelope allowed to steer geometry in
+     * this family (the shader's `uSlewBass`/`uSlewMid`). VisualSafety clamps
+     * parameters and LFO rates but cannot clamp geometry, and the hazard here
+     * is projected AREA: a fold constant or fold rotation that jumped on a
+     * transient would change how much of the screen a body covers between one
+     * frame and the next. A bounded value whose rate of change is itself
+     * bounded cannot. [target] is clamped to 0..1 first, so the output is
+     * always in 0..1 whatever the analyzer hands over.
+     */
+    fun slewLimit(
+        current: Float,
+        target: Float,
+        dt: Float,
+        riseRate: Float,
+        fallRate: Float,
+    ): Float {
+        val t = target.coerceIn(0f, 1f)
+        val step = (t - current).coerceIn(-abs(fallRate) * dt, abs(riseRate) * dt)
+        return (current + step).coerceIn(0f, 1f)
+    }
+
+    /**
+     * Weight for beat-driven choreography (body spawns, the neon beat flash)
+     * as a function of `AudioFeatures.pulseConfidence`.
+     *
+     * The KDoc on that field says tempo-synced choreography should fall back
+     * below ~0.5, and this is the fall-back: never to zero - features that
+     * predate the tracker report 0 and their beats must still land - but down
+     * to [BEAT_GATE_FLOOR], which keeps a full-strength legacy impulse above
+     * the bank's spawn threshold while stopping a low-confidence flurry of
+     * false beats from strobing the room.
+     */
+    fun beatGate(pulseConfidence: Float): Float = BEAT_GATE_FLOOR + (1f - BEAT_GATE_FLOOR) * smoothstep(0.2f, 0.65f, pulseConfidence)
+
+    const val BEAT_GATE_FLOOR: Float = 0.35f
+
+    /**
+     * A floor on the journey's immersion that rises with TRACK progress, so a
+     * quiet track does not sit in THRESHOLD forever: by three quarters of the
+     * way through, the journey has at least reached the chrysanthemum.
+     *
+     * Deliberately conservative - the ceiling is [PROGRESS_FLOOR_MAX], about
+     * act 1.2 of 4, so the music's own dynamics still decide everything above
+     * the first act, and a track with no progress information (progress = 0,
+     * the documented "unknown" value) gets a floor of exactly zero and the
+     * old behaviour.
+     */
+    fun progressImmersionFloor(progress: Float): Float = PROGRESS_FLOOR_MAX * smoothstep(0.2f, 0.75f, progress.coerceIn(0f, 1f))
+
+    const val PROGRESS_FLOOR_MAX: Float = 0.30f
 
     /**
      * Composes two axis-angle rotations into ONE world -> local matrix, written
@@ -659,13 +750,20 @@ class Bloom {
 
     /**
      * Ages the body by [dt] and re-evaluates its orbit, spin and envelope.
-     * [motion] scales every rate (the act's tempo), [orbitScale] the orbit
-     * rate alone (the user's "Orbit drift").
+     *
+     * [motion] is the act's tempo (profile motion times the Speed control)
+     * and scales every rate; [orbitScale] scales the orbit rate alone (the
+     * user's "Orbit drift") and [spinScale] the two spin rates alone (the
+     * user's "Body spin"). The three are SEPARATE on purpose: spin at zero
+     * used to be folded into [motion], which froze the orbits and the breath
+     * with it - parking "Body spin" turned three unrelated controls off.
+     * The breath rides [motion] only, so a still body still breathes.
      */
     fun advance(
         dt: Float,
         motion: Float,
         orbitScale: Float,
+        spinScale: Float = 1f,
     ) {
         if (!alive) return
         age += dt
@@ -675,9 +773,10 @@ class Bloom {
             return
         }
         val m = max(motion, 0f)
+        val spin = m * max(spinScale, 0f)
         orbitPhase += dt * orbitRate * m * max(orbitScale, 0f) * 2f * PI.toFloat()
-        spinAngleA += dt * spinRateA * m * 2f * PI.toFloat()
-        spinAngleB += dt * spinRateB * m * 2f * PI.toFloat()
+        spinAngleA += dt * spinRateA * spin * 2f * PI.toFloat()
+        spinAngleB += dt * spinRateB * spin * 2f * PI.toFloat()
         breath += dt * breathRate * m
         val c = cos(orbitPhase)
         val s = sin(orbitPhase)
@@ -774,8 +873,9 @@ class BloomBank(
      * @param lifetime base seconds a new body lives.
      * @param spread world radius the orbits are spread over.
      * @param sizeScale base local size of a new body.
-     * @param motion the act's motion multiplier.
+     * @param motion the act's motion multiplier (tempo; spin excluded).
      * @param orbitScale the user's orbit-rate multiplier.
+     * @param spinScale the user's spin-rate multiplier.
      */
     fun advance(
         dt: Float,
@@ -787,23 +887,34 @@ class BloomBank(
         sizeScale: Float,
         motion: Float,
         orbitScale: Float,
+        spinScale: Float = 1f,
     ) {
-        for (b in blooms) b.advance(dt, motion, orbitScale)
+        for (b in blooms) b.advance(dt, motion, orbitScale, spinScale)
         sinceSpawn += dt
         sinceImpulse = if (impulse >= SPAWN_IMPULSE) 0f else sinceImpulse + dt
 
         val want = target.coerceIn(0, HyperspaceMath.MAX_BLOOMS)
         var living = aliveCount
-        // Too many: the oldest bodies are told to dissolve. Oldest first is
-        // what makes the room feel like it is being emptied from the back
-        // rather than randomly losing members.
+        // Too many: the oldest bodies are told to dissolve, all of the excess
+        // in the SAME frame. Oldest first is what makes the room feel like it
+        // is being emptied from the back rather than randomly losing members;
+        // bodies already inside their retire window are skipped rather than
+        // re-picked, because the old loop re-selected the same oldest body
+        // (retire() leaves it oldest) and bailed - dropping eight bodies to
+        // two took one natural death at a time, about ten seconds, while the
+        // act had asked for a thinning NOW. No allocation: this runs every
+        // frame, and the old `filter { }` built a list per excess body.
         if (living > want) {
             var excess = living - want
             while (excess > 0) {
-                val victim = blooms.filter { it.alive }.maxByOrNull { it.age } ?: break
-                // Already retiring: nothing left to shorten, so stop rather
-                // than spin looking for a victim that will not change.
-                if (victim.lifetime - victim.age <= RETIRE_SECONDS) break
+                var victim: Bloom? = null
+                for (b in blooms) {
+                    if (!b.alive) continue
+                    // Already dissolving: retire() has nothing to shorten.
+                    if (b.lifetime - b.age <= RETIRE_SECONDS) continue
+                    if (victim == null || b.age > victim.age) victim = b
+                }
+                if (victim == null) break
                 victim.retire(RETIRE_SECONDS)
                 excess--
             }
@@ -933,6 +1044,11 @@ class HyperspaceJourney {
      *   the story this mode exists to tell.
      * @param cycleSeconds seconds each act is held for in `Cycle`.
      * @param pace multiplier on how fast the journey moves (the Speed control).
+     * @param progress playback position as a fraction of the track, 0 when
+     *   unknown. `Music` mode floors its immersion at
+     *   [HyperspaceMath.progressImmersionFloor] of this, so a track that never
+     *   crosses the pivot still leaves THRESHOLD by its back half. 0 - the
+     *   documented "unknown" value - floors at 0 and changes nothing.
      */
     fun advance(
         dt: Float,
@@ -941,6 +1057,7 @@ class HyperspaceJourney {
         holdAct: Int,
         cycleSeconds: Float,
         pace: Float,
+        progress: Float = 0f,
     ) {
         val last = HyperspaceMath.ACTS.size - 1
         val step = dt * max(pace, 0f)
@@ -986,13 +1103,19 @@ class HyperspaceJourney {
                             drive / HyperspaceMath.IMMERSION_PIVOT / HyperspaceMath.FALL_SECONDS
                         }
                     immersion = (immersion + rate * step).coerceIn(0f, 1f)
+                    // The story has to go SOMEWHERE over a track: a floor that
+                    // rises with playback position, capped low enough that the
+                    // dynamics still own everything past the first act.
+                    immersion = max(immersion, HyperspaceMath.progressImmersionFloor(progress))
                     immersion * last
                 }
             }
         // Glide toward the goal so every ActProfile field changes continuously.
         actPosition += (goal - actPosition) * HyperspaceMath.smoothing(step, HyperspaceMath.ACT_GLIDE_SECONDS)
         actPosition = actPosition.coerceIn(0f, last.toFloat())
-        heldSeconds += dt
+        // Bounded: only ever compared against MIN_ACT_SECONDS, and a float
+        // that accumulated dt for days would stall at its own ULP.
+        heldSeconds = min(heldSeconds + dt, 3600f)
         val rounded = Math.round(actPosition).coerceIn(0, last)
         if (rounded != act && heldSeconds >= HyperspaceMath.MIN_ACT_SECONDS) {
             act = rounded
@@ -1039,7 +1162,13 @@ class HyperspaceCamera {
         distance: Float,
         drift: Float,
     ) {
-        t += dt * max(drift, 0f)
+        // Wrapped: unwrapped, `0.11f * t` stops advancing once t's own ULP
+        // passes the per-frame step - about a week of wallpaper time - and
+        // the camera freezes. The wrap is invisible because every rate below
+        // is a multiple of 0.001, so rate * TIME_WRAP_SECONDS (1000 turns of
+        // 2*pi) is a whole number of turns for all five terms; see the
+        // constant's own doc.
+        t = (t + dt * max(drift, 0f)) % HyperspaceMath.TIME_WRAP_SECONDS
         // Three incommensurate rates per angle: the ratios are irrational
         // enough that the path does not close, so the view never arrives back
         // where it started even over a long set.
@@ -1275,4 +1404,78 @@ object HyperspaceLook {
      * ever entering the body.
      */
     const val BOUND_MARGIN: Float = 0.12f
+}
+
+/**
+ * The spectrum the substyle signatures read: `AudioFeatures.bands` folded
+ * down to [SIZE] buckets and smoothed, uploaded once per frame as `uBands`.
+ *
+ * This closes the family's spectral gap - HYPERSPACE consumed only the three
+ * broad bands and the transient stream before this - without widening the
+ * uniform interface beyond one small array: the hex cells, the phyllotaxis
+ * seeds and the wormhole's ring equaliser all index into the same sixteen
+ * numbers. Smoothing is asymmetric (fast attack, slower release) so a hit
+ * lights its bucket on the frame it lands and then decays as light rather
+ * than flickering with the raw FFT; every level is clamped, so the array can
+ * never carry a spike or a NaN into the shader.
+ */
+class SpectralSummary {
+    /** The smoothed levels, each 0..[LEVEL_CEILING]. Uploaded as `uBands`. */
+    val levels: FloatArray = FloatArray(SIZE)
+
+    private val target = FloatArray(SIZE)
+
+    fun reset() {
+        levels.fill(0f)
+    }
+
+    fun advance(
+        bands: FloatArray,
+        dt: Float,
+    ) {
+        summarize(bands, target)
+        for (i in 0 until SIZE) {
+            val goal = target[i]
+            val k =
+                HyperspaceMath.smoothing(
+                    dt,
+                    if (goal > levels[i]) ATTACK_SECONDS else RELEASE_SECONDS,
+                )
+            val next = levels[i] + (goal - levels[i]) * k
+            levels[i] = if (next.isFinite()) next.coerceIn(0f, LEVEL_CEILING) else 0f
+        }
+    }
+
+    companion object {
+        /** Bucket count; `hyperspace_frag.glsl` declares `uBands[16]` to match. */
+        const val SIZE: Int = 16
+
+        const val ATTACK_SECONDS: Float = 0.06f
+        const val RELEASE_SECONDS: Float = 0.32f
+        const val LEVEL_CEILING: Float = 1.5f
+
+        /**
+         * Averages [bands] into `out.size` contiguous buckets. An empty input
+         * (synthesised features) zeroes the output rather than leaving stale
+         * levels; a short one (fewer bands than buckets) repeats bands, so
+         * the mapping is total either way.
+         */
+        fun summarize(
+            bands: FloatArray,
+            out: FloatArray,
+        ) {
+            val n = out.size
+            if (bands.isEmpty()) {
+                out.fill(0f)
+                return
+            }
+            for (i in 0 until n) {
+                val lo = i * bands.size / n
+                val hi = (((i + 1) * bands.size / n).coerceAtLeast(lo + 1)).coerceAtMost(bands.size)
+                var sum = 0f
+                for (j in lo until hi) sum += bands[j].coerceIn(0f, LEVEL_CEILING)
+                out[i] = sum / (hi - lo)
+            }
+        }
+    }
 }

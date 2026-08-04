@@ -593,6 +593,13 @@ class PlayerViewModel(
     private val trackLibrary = TrackLibrary(application)
     private val themeStore = ThemeStore(application)
     private val playerPrefsStore = PlayerPrefsStore(application)
+
+    /**
+     * Auto-visuals knobs (Random + visual playlist settings). Declared before
+     * [_vizState]: fields initialize in declaration order and [restoreVizState]
+     * reads this store.
+     */
+    private val autoVisualsPrefsStore = AutoVisualsPrefsStore(application)
     private val textureStore = TextureStore(application)
     private val lfoStore = LfoStore(application)
     private val musicPlaylists = MusicPlaylistStore(application)
@@ -625,7 +632,10 @@ class PlayerViewModel(
      * walk plus a parse per file, is what [refreshPresets] takes off this path.
      */
     private fun restoreVizState(): VizUiState {
-        val base = VizUiState(presets = BuiltInPresets.ALL)
+        // The auto-visuals knobs persist separately from the live scene state:
+        // they are standing behaviour rather than part of any preset, so they
+        // load even when no live_state has ever been written.
+        val base = autoVisualsPrefsStore.applyTo(VizUiState(presets = BuiltInPresets.ALL))
         val json = vizPrefs().getString("live_state", null) ?: return base
         return runCatching {
             val p = PresetStore.fromJson(json)
@@ -1535,14 +1545,17 @@ class PlayerViewModel(
                 randomEnabled = if (enabled) false else _vizState.value.randomEnabled,
             )
         lastVizSwitchMs = android.os.SystemClock.elapsedRealtime()
+        persistAutoVisuals()
     }
 
     fun setVizPlaylistIntelligent(enabled: Boolean) {
         _vizState.update { it.copy(vizPlaylistIntelligent = enabled) }
+        persistAutoVisuals()
     }
 
     fun setVizPlaylistInterval(seconds: Int) {
-        _vizState.update { it.copy(vizPlaylistIntervalSec = seconds.coerceIn(5, 300)) }
+        _vizState.update { it.copy(vizPlaylistIntervalSec = seconds.coerceIn(AutoVisualsPrefsStore.INTERVAL_SEC)) }
+        persistAutoVisuals()
     }
 
     /**
@@ -1623,31 +1636,49 @@ class PlayerViewModel(
         lastRandomSwitchMs = android.os.SystemClock.elapsedRealtime()
         if (enabled && _vizState.value.randomIncludeMilk) refreshMilkCache()
         if (enabled) randomStepNow()
+        // randomEnabled itself is session-only, but turning Random on clears
+        // the PERSISTED vizPlaylistEnabled, and that clear must stick.
+        persistAutoVisuals()
     }
 
     fun setRandomInterval(seconds: Int) {
-        _vizState.update { it.copy(randomIntervalSec = seconds.coerceIn(5, 300)) }
+        _vizState.update { it.copy(randomIntervalSec = seconds.coerceIn(AutoVisualsPrefsStore.INTERVAL_SEC)) }
+        persistAutoVisuals()
     }
 
     fun setRandomOnBeat(enabled: Boolean) {
         _vizState.update { it.copy(randomOnBeat = enabled) }
+        persistAutoVisuals()
     }
 
     fun setRandomIncludeStyles(enabled: Boolean) {
         _vizState.update { it.copy(randomIncludeStyles = enabled) }
+        persistAutoVisuals()
     }
 
     fun setRandomIncludePresets(enabled: Boolean) {
         _vizState.update { it.copy(randomIncludePresets = enabled) }
+        persistAutoVisuals()
     }
 
     fun setRandomIncludeMilk(enabled: Boolean) {
         _vizState.update { it.copy(randomIncludeMilk = enabled) }
         if (enabled) refreshMilkCache()
+        persistAutoVisuals()
     }
 
     fun setRandomizeColors(enabled: Boolean) {
         _vizState.update { it.copy(randomizeColors = enabled) }
+        persistAutoVisuals()
+    }
+
+    /**
+     * Saves the auto-visuals knobs after every setter above - the same
+     * write-on-set pattern [setGuiPrefs]/[setPlayerPrefs] use, small enough
+     * (nine primitives) not to need the live state's coalescing window.
+     */
+    private fun persistAutoVisuals() {
+        autoVisualsPrefsStore.save(_vizState.value)
     }
 
     private fun refreshMilkCache() {

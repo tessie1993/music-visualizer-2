@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
@@ -50,10 +51,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import dev.musicviz.R
 import dev.musicviz.render.VisualizerView
 import kotlin.math.PI
+import kotlin.math.asin
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 /*
@@ -236,46 +240,8 @@ private fun DrawScope.drawMineralTexture(
                 }
             }
         }
-        CrystalTextureKind.MALACHITE -> {
-            val centre = Offset(w * 0.68f, h * 0.38f)
-            repeat(if (panel) 7 else 15) { i ->
-                val r = d * (0.055f + i * 0.038f)
-                val wobble = 1f + 0.08f * sin(i * 1.73f)
-                drawOval(
-                    color = (if (i % 2 == 0) primary else secondary).copy(alpha = alpha * 0.12f),
-                    topLeft = Offset(centre.x - r * wobble, centre.y - r),
-                    size = Size(r * 2f * wobble, r * 2f),
-                    style = Stroke(width = max(1f, d * 0.006f)),
-                )
-            }
-        }
-        CrystalTextureKind.CLEAR_QUARTZ -> {
-            val hubs = listOf(Offset(w * 0.24f, h * 0.36f), Offset(w * 0.78f, h * 0.68f))
-            hubs.forEachIndexed { hi, hub ->
-                repeat(if (panel) 4 else 8) { i ->
-                    val a = (i * 0.79f + hi * 0.43f)
-                    val len = d * (0.18f + 0.055f * (i % 4))
-                    drawLine(
-                        color = Color.White.copy(alpha = alpha * 0.13f),
-                        start = hub,
-                        end = hub + Offset(cos(a) * len, sin(a) * len),
-                        strokeWidth = max(0.8f, d * 0.0017f),
-                    )
-                }
-            }
-            repeat(if (panel) 2 else 5) { i ->
-                val x = w * (-0.15f + i * 0.31f)
-                val path =
-                    Path().apply {
-                        moveTo(x, h)
-                        lineTo(x + w * 0.26f, 0f)
-                        lineTo(x + w * 0.34f, 0f)
-                        lineTo(x + w * 0.08f, h)
-                        close()
-                    }
-                drawPath(path, (if (i % 2 == 0) primary else secondary).copy(alpha = alpha * 0.045f))
-            }
-        }
+        CrystalTextureKind.MALACHITE -> drawMalachiteTexture(alpha, panel)
+        CrystalTextureKind.CLEAR_QUARTZ -> drawClearQuartzTexture(alpha, panel)
         CrystalTextureKind.ROSE_QUARTZ -> {
             // Light blush marble per the reference: soft white cloudy veils,
             // a fine network of high-curvature cracks in white and deep
@@ -492,46 +458,876 @@ private fun DrawScope.drawMineralTexture(
                 )
             }
         }
-        CrystalTextureKind.KYANITE -> {
-            repeat(if (panel) 8 else 20) { i ->
-                val x = w * (-0.12f + i / (if (panel) 7f else 18f))
-                val lean = w * (0.10f + 0.03f * sin(i * 0.9f))
-                val path =
-                    Path().apply {
-                        moveTo(x, h)
-                        lineTo(x + lean, 0f)
-                        lineTo(x + lean + w * 0.025f, 0f)
-                        lineTo(x + w * 0.018f, h)
-                        close()
-                    }
-                drawPath(path, (if (i % 3 == 0) Color.White else primary).copy(alpha = alpha * 0.045f))
-            }
-        }
-        CrystalTextureKind.ONYX -> {
-            repeat(if (panel) 7 else 15) { i ->
-                val y = h * (i + 0.4f) / (if (panel) 7f else 15f)
-                val path =
-                    Path().apply {
-                        moveTo(-w * 0.04f, y)
-                        cubicTo(w * 0.22f, y + h * 0.035f, w * 0.64f, y - h * 0.04f, w * 1.04f, y + h * 0.018f)
-                    }
-                drawPath(
-                    path,
-                    (if (i % 3 == 0) secondary else Color.White).copy(alpha = alpha * (if (i % 3 == 0) 0.055f else 0.028f)),
-                    style = Stroke(width = max(1f, d * 0.004f)),
-                )
-            }
-        }
-        CrystalTextureKind.GENERIC -> {
-            repeat(if (panel) 2 else 4) { i ->
-                val x = w * (0.12f + i * 0.24f)
-                drawLine(primary.copy(alpha = alpha * 0.035f), Offset(x, h), Offset(x + w * 0.22f, 0f), d * 0.003f)
-            }
-        }
+        CrystalTextureKind.KYANITE -> drawKyaniteTexture(alpha, panel)
+        CrystalTextureKind.ONYX -> drawOnyxTexture(alpha, panel)
+        CrystalTextureKind.GENERIC -> drawGenericCrystalline(theme, primary, alpha, panel)
     }
 }
 
 private fun fract01(v: Float): Float = v - kotlin.math.floor(v)
+
+// ------------------------------------------------- mineral texture helpers
+//
+// Sizing follows the texture brief: marks scale from the SHORT canvas edge
+// (minDim), and a "hairline" is max(1dp, 0.15% of minDim). Everything is
+// seeded through [fract01] so layouts are deterministic and static.
+
+private val DEG = (PI / 180.0).toFloat()
+
+/**
+ * Ring radii for one malachite eye: 6-9 concentric bands (capped at
+ * [maxRings] so panels stay light) whose radius grows geometrically x1.3-1.6
+ * from an innermost 1.5-3% of [minDim] — the band spacing visibly tightens
+ * toward the eye centre like real botryoidal banding. Pure so it can be
+ * unit-tested.
+ */
+internal fun malachiteRingRadii(
+    seed: Float,
+    minDim: Float,
+    maxRings: Int = 9,
+): List<Float> {
+    val count = min(maxRings, 6 + (fract01(seed * 0.618034f) * 3.99f).toInt())
+    var r = minDim * (0.015f + 0.015f * fract01(seed * 0.754877f + 0.11f))
+    return List(count) { i ->
+        val cur = r
+        r *= 1.3f + 0.3f * fract01(seed * 0.414214f + i * 0.618034f)
+        cur
+    }
+}
+
+internal enum class OnyxBandKind { BROAD, HAIRLINE, MEDIUM, WARM }
+
+internal data class OnyxBand(
+    /** Band centreline, as radial distance from the group's starting edge. */
+    val offset: Float,
+    val width: Float,
+    val kind: OnyxBandKind,
+    val alpha: Float,
+)
+
+/**
+ * Quasi-periodic onyx band rhythm: broad band -> short gap -> trio of tight
+ * hairlines -> long gap -> medium band, repeated [units] times with the gaps
+ * jittered +/-30%, plus an occasional warm honey band, clipped to [span].
+ * Offsets are strictly outward so consumers can lay the bands on concentric
+ * arcs. Pure so it can be unit-tested.
+ */
+internal fun onyxBandRhythm(
+    seed: Float,
+    span: Float,
+    minDim: Float,
+    units: Int,
+): List<OnyxBand> {
+    val bands = mutableListOf<OnyxBand>()
+    var cursor = 0f
+
+    fun gap(
+        base: Float,
+        spread: Float,
+        k: Float,
+    ) {
+        cursor += minDim * (base + spread * fract01(seed * 0.5417f + k * 0.754877f)) *
+            (0.7f + 0.6f * fract01(seed * 0.318309f + k * 0.618034f))
+    }
+
+    fun push(
+        width: Float,
+        kind: OnyxBandKind,
+        alpha: Float,
+    ): Boolean {
+        if (cursor + width > span) return false
+        bands += OnyxBand(cursor + width / 2f, width, kind, alpha)
+        cursor += width
+        return true
+    }
+
+    for (u in 0 until units) {
+        val broad = minDim * (0.04f + 0.03f * fract01(seed * 0.414214f + u * 0.271828f))
+        if (!push(broad, OnyxBandKind.BROAD, 0.85f)) return bands
+        gap(0.02f, 0f, u * 4f + 1f)
+        for (hi in 0 until 3) {
+            val hw = minDim * (0.002f + 0.004f * fract01(seed * 0.867532f + (u * 3 + hi) * 0.569840f))
+            if (!push(hw, OnyxBandKind.HAIRLINE, 0.5f + 0.3f * fract01(seed + (u * 3 + hi) * 0.31f))) return bands
+            cursor += minDim * (0.008f + 0.007f * fract01(seed * 0.13f + (u * 3 + hi) * 0.77f))
+        }
+        gap(0.06f, 0.06f, u * 4f + 2f)
+        if (!push(minDim * (0.015f + 0.015f * fract01(seed * 0.618034f + u * 0.414214f)), OnyxBandKind.MEDIUM, 0.7f)) return bands
+        if (u == units - 1 && fract01(seed * 0.271828f + 0.4f) > 0.5f) {
+            gap(0.03f, 0f, u * 4f + 3f)
+            push(minDim * 0.02f, OnyxBandKind.WARM, 0.6f)
+        }
+        gap(0.05f, 0.05f, u * 4f + 4f)
+    }
+    return bands
+}
+
+private class MalachiteEye(
+    val center: Offset,
+    val rings: List<Float>,
+    val ecc: Float,
+    val rotDeg: Float,
+)
+
+/**
+ * Malachite: the concentric contour-eye system of a slice through botryoidal
+ * growth. Banded eyes drift off-centre as they grow, wide contour ribbons
+ * flow between neighbouring eyes, the thin chalky light bands sit on top and
+ * a couple of tiny specular arcs catch the polish. Dark green must dominate.
+ */
+private fun DrawScope.drawMalachiteTexture(
+    alpha: Float,
+    panel: Boolean,
+) {
+    val w = size.width
+    val h = size.height
+    val minDim = min(w, h)
+    val hairline = max(1.dp.toPx(), minDim * 0.0015f)
+    val dark = Color(0xFF0E4D33)
+    val midGreen = Color(0xFF17805A)
+    val lightGreen = Color(0xFF35B37F)
+    val chalk = Color(0xFF7FDCAF)
+
+    // Base: deepen the field downwards and darken the corners so the eyes
+    // float in broad velvety dark green.
+    drawRect(
+        Brush.verticalGradient(
+            0f to Color.Transparent,
+            1f to Color(0xFF0B3D2E).copy(alpha = alpha * 0.55f),
+        ),
+    )
+    drawRect(
+        Brush.radialGradient(
+            0f to Color.Transparent,
+            0.62f to Color.Transparent,
+            1f to Color(0xFF041710).copy(alpha = alpha * 0.5f),
+            center = Offset(w * 0.5f, h * 0.5f),
+            radius = max(w, h) * 0.78f,
+        ),
+    )
+
+    // Eyes on well-spread anchors (>= 0.25*minDim apart; the last one runs
+    // part off-canvas), each jittered by the hash with its own eccentricity
+    // and rotation.
+    val anchors =
+        if (panel) {
+            listOf(Offset(0.70f, 0.32f), Offset(0.18f, 0.78f))
+        } else {
+            listOf(Offset(0.70f, 0.30f), Offset(0.22f, 0.58f), Offset(0.52f, 0.94f), Offset(1.04f, 0.70f))
+        }
+    val eyes =
+        anchors.mapIndexed { i, a ->
+            MalachiteEye(
+                center =
+                    Offset(
+                        w * (a.x + (fract01(i * 0.754877f + 0.19f) - 0.5f) * 0.06f),
+                        h * (a.y + (fract01(i * 0.569840f + 0.47f) - 0.5f) * 0.06f),
+                    ),
+                rings = malachiteRingRadii(seed = i * 3.7f + 1.3f, minDim = minDim, maxRings = if (panel) 5 else 9),
+                ecc = 1f + 0.25f * fract01(i * 0.318309f + 0.05f),
+                rotDeg = fract01(i * 0.271828f) * 180f - 90f,
+            )
+        }
+
+    // Connecting ribbons UNDER the rings: wide soft bands running tangent
+    // between two eyes' outer rings like shared topographic contours, each
+    // topped by one thin light echo line.
+    repeat(if (panel) 1 else 3) { k ->
+        val a = eyes[k]
+        val b = eyes[k + 1]
+        val dx = b.center.x - a.center.x
+        val dy = b.center.y - a.center.y
+        val len = max(1f, sqrt(dx * dx + dy * dy))
+        val ux = dx / len
+        val uy = dy / len
+        val start = Offset(a.center.x + ux * a.rings.last() * 0.9f, a.center.y + uy * a.rings.last() * 0.9f)
+        val end = Offset(b.center.x - ux * b.rings.last() * 0.9f, b.center.y - uy * b.rings.last() * 0.9f)
+        val swing = minDim * (0.08f + 0.08f * fract01(k * 0.618034f + 0.33f)) * (if (k % 2 == 0) 1f else -1f)
+        val ribbon =
+            Path().apply {
+                moveTo(start.x, start.y)
+                cubicTo(
+                    start.x + (end.x - start.x) * 0.33f - uy * swing,
+                    start.y + (end.y - start.y) * 0.33f + ux * swing,
+                    start.x + (end.x - start.x) * 0.66f + uy * swing * 0.6f,
+                    start.y + (end.y - start.y) * 0.66f - ux * swing * 0.6f,
+                    end.x,
+                    end.y,
+                )
+            }
+        drawPath(
+            ribbon,
+            midGreen.copy(alpha = alpha * (0.30f + 0.15f * fract01(k * 0.5417f))),
+            style = Stroke(width = minDim * (0.03f + 0.03f * fract01(k * 0.318309f))),
+        )
+        translate(-uy * minDim * 0.018f, ux * minDim * 0.018f) {
+            drawPath(ribbon, lightGreen.copy(alpha = alpha * 0.6f), style = Stroke(width = hairline))
+        }
+    }
+
+    // Rings: alternating dark / mid / THIN light bands whose shared centre
+    // drifts cumulatively outward, so the eyes read grown rather than drawn.
+    eyes.forEachIndexed { ei, eye ->
+        rotate(eye.rotDeg, eye.center) {
+            var cx = eye.center.x
+            var cy = eye.center.y
+            val driftAng = fract01(ei * 0.867532f + 0.23f) * (2f * PI.toFloat())
+            eye.rings.forEachIndexed { ri, r ->
+                if (ri > 0) {
+                    val drift = minDim * (0.01f + 0.02f * fract01((ei * 11 + ri) * 0.618034f))
+                    cx += cos(driftAng) * drift
+                    cy += sin(driftAng) * drift
+                }
+                val rx = r * eye.ecc
+                val tone: Color
+                val strokeW: Float
+                val a: Float
+                when (ri % 3) {
+                    0 -> {
+                        tone = dark
+                        strokeW = minDim * (0.008f + 0.017f * fract01((ei * 7 + ri) * 0.754877f))
+                        a = 0.85f + 0.15f * fract01((ei + ri) * 0.31f)
+                    }
+                    1 -> {
+                        tone = midGreen
+                        strokeW = minDim * (0.010f + 0.010f * fract01((ei * 7 + ri) * 0.569840f))
+                        a = 0.70f + 0.20f * fract01((ei + ri) * 0.53f)
+                    }
+                    else -> {
+                        tone = lightGreen
+                        strokeW = minDim * (0.002f + 0.003f * fract01((ei * 7 + ri) * 0.414214f))
+                        a = 0.9f
+                    }
+                }
+                drawOval(
+                    color = tone.copy(alpha = alpha * a),
+                    topLeft = Offset(cx - rx, cy - r),
+                    size = Size(rx * 2f, r * 2f),
+                    style = Stroke(width = max(hairline * 0.8f, strokeW)),
+                )
+                // Roughly one light band in four carries a chalky hairline
+                // echo just outside it.
+                if (ri % 3 == 2 && fract01((ei * 5 + ri) * 0.271828f) < 0.25f) {
+                    val er = r + minDim * 0.003f
+                    drawOval(
+                        color = chalk.copy(alpha = alpha * 0.5f),
+                        topLeft = Offset(cx - er * eye.ecc, cy - er),
+                        size = Size(er * eye.ecc * 2f, er * 2f),
+                        style = Stroke(width = hairline),
+                    )
+                }
+            }
+        }
+    }
+
+    // Tiny specular arcs on the lit (upper-left) side of the largest eyes.
+    val lit = eyes.sortedByDescending { it.rings.last() }.take(2)
+    repeat(if (panel) 1 else 3) { k ->
+        val eye = lit[k % lit.size]
+        val r = eye.rings.last() * (0.55f + 0.25f * fract01(k * 0.618034f + 0.4f))
+        drawArc(
+            color = Color.White.copy(alpha = alpha * (0.06f + 0.06f * fract01(k * 0.414214f))),
+            startAngle = -150f + 25f * fract01(k * 0.754877f),
+            sweepAngle = 30f + 30f * fract01(k * 0.271828f),
+            useCenter = false,
+            topLeft = Offset(eye.center.x - r, eye.center.y - r),
+            size = Size(r * 2f, r * 2f),
+            style = Stroke(width = max(hairline, minDim * 0.004f)),
+        )
+    }
+}
+
+/**
+ * Clear quartz: water-clear stone whose only marks are honest inclusions —
+ * milky clouds low in the stone, long straight prism edges in two 60-degree
+ * families, wispy "veil" fans of partially healed fractures, one or two tiny
+ * rainbow flashes confined to a fracture plane, and pin-point glints.
+ */
+private fun DrawScope.drawClearQuartzTexture(
+    alpha: Float,
+    panel: Boolean,
+) {
+    val w = size.width
+    val h = size.height
+    val d = max(w, h)
+    val minDim = min(w, h)
+    val hairline = max(1.dp.toPx(), minDim * 0.0015f)
+    val prismTone = Color(0xFFBFD9E8)
+    val veilTone = Color(0xFFDCEFF7)
+    val milk = Color(0xFFF2F8FB)
+
+    // Base: cool diagonal deepening; milky clouds sit UNDER everything else.
+    drawRect(
+        Brush.linearGradient(
+            0f to Color.Transparent,
+            1f to Color(0xFF0D1420).copy(alpha = alpha * 0.6f),
+            start = Offset.Zero,
+            end = Offset(w, h),
+        ),
+    )
+    repeat(2) { i ->
+        val c =
+            Offset(
+                w * (0.22f + 0.55f * fract01(i * 0.618034f + 0.07f)),
+                h * (0.68f + 0.24f * fract01(i * 0.414214f + 0.51f)),
+            )
+        val r = minDim * (0.25f + 0.15f * fract01(i * 0.754877f + 0.29f))
+        drawCircle(
+            Brush.radialGradient(
+                0f to milk.copy(alpha = alpha * 0.06f),
+                1f to Color.Transparent,
+                center = c,
+                radius = r,
+            ),
+            r,
+            c,
+        )
+    }
+
+    // Prism hints: long straight edges at one dominant angle plus a smaller
+    // family at -60 degrees (hexagonal prism geometry), and a few short
+    // striation ticks running across the dominant edges.
+    val theta = 1.05f + 0.35f * fract01(0.734f)
+    val ux = cos(theta)
+    val uy = -sin(theta)
+    val nx = -uy
+    val ny = ux
+    val cx = w * 0.5f
+    val cy = h * 0.5f
+    val mains = if (panel) 3 else 6
+    repeat(mains) { k ->
+        val off = ((k + 0.5f) / mains - 0.5f) * d * 1.15f + (fract01(k * 0.618034f + 0.13f) - 0.5f) * minDim * 0.08f
+        val px = cx + nx * off
+        val py = cy + ny * off
+        drawLine(
+            prismTone.copy(alpha = alpha * (0.05f + 0.07f * fract01(k * 0.754877f + 0.31f))),
+            Offset(px - ux * d, py - uy * d),
+            Offset(px + ux * d, py + uy * d),
+            hairline + minDim * 0.0015f * fract01(k * 0.414214f),
+        )
+    }
+    val theta2 = theta - PI.toFloat() / 3f
+    val u2x = cos(theta2)
+    val u2y = -sin(theta2)
+    repeat(if (panel) 1 else 3) { k ->
+        val off = ((k + 0.5f) / 3f - 0.5f) * d * 0.9f + (fract01(k * 0.271828f + 0.61f) - 0.5f) * minDim * 0.1f
+        val px = cx - u2y * off
+        val py = cy + u2x * off
+        drawLine(
+            prismTone.copy(alpha = alpha * (0.05f + 0.05f * fract01(k * 0.569840f + 0.17f))),
+            Offset(px - u2x * d, py - u2y * d),
+            Offset(px + u2x * d, py + u2y * d),
+            hairline,
+        )
+    }
+    repeat(if (panel) 1 else 3) { k ->
+        val along = (fract01(k * 0.867532f + 0.43f) - 0.5f) * d * 0.8f
+        val off = (fract01(k * 0.5417f + 0.09f) - 0.5f) * d * 0.7f
+        val px = cx + ux * along + nx * off
+        val py = cy + uy * along + ny * off
+        val t = minDim * 0.02f
+        drawLine(
+            prismTone.copy(alpha = alpha * 0.06f),
+            Offset(px - nx * t, py - ny * t),
+            Offset(px + nx * t, py + ny * t),
+            hairline,
+        )
+    }
+
+    // Veils: fans of nested quadratics sharing endpoints — the wispy curved
+    // sheets of partially healed fracture planes. One cluster spans half the
+    // short edge; the rest stay smaller.
+    var chordAx = w * 0.3f
+    var chordAy = h * 0.4f
+    var chordBx = w * 0.6f
+    var chordBy = h * 0.6f
+    val clusters = if (panel) 2 else 4
+    repeat(clusters) { ci ->
+        val span = minDim * (if (ci == 0) 0.5f else 0.26f + 0.16f * fract01(ci * 0.318309f + 0.21f))
+        val ax = w * (0.08f + 0.7f * fract01(ci * 0.754877f + 0.11f))
+        val ay = h * (0.12f + 0.75f * fract01(ci * 0.569840f + 0.41f))
+        val ang = fract01(ci * 0.867532f + 0.05f) * (2f * PI.toFloat())
+        val bx = ax + cos(ang) * span
+        val by = ay + sin(ang) * span
+        if (ci == clusters - 1) {
+            chordAx = ax
+            chordAy = ay
+            chordBx = bx
+            chordBy = by
+        }
+        val fan = minDim * (0.02f + 0.03f * fract01(ci * 0.271828f + 0.53f))
+        val sheets = if (panel) 4 else 5 + (fract01(ci * 0.5417f + 0.37f) * 3.99f).toInt()
+        repeat(sheets) { si ->
+            val k = (si.toFloat() / max(1, sheets - 1) - 0.5f) * 2f
+            val veil =
+                Path().apply {
+                    moveTo(ax, ay)
+                    quadraticTo(
+                        (ax + bx) / 2f - sin(ang) * fan * k * 2.2f,
+                        (ay + by) / 2f + cos(ang) * fan * k * 2.2f,
+                        bx,
+                        by,
+                    )
+                }
+            drawPath(
+                veil,
+                veilTone.copy(alpha = alpha * (0.04f + 0.06f * fract01((ci * 9 + si) * 0.618034f))),
+                style = Stroke(width = hairline),
+            )
+        }
+    }
+
+    // Rainbow flashes: small and rare — thin-film interference clipped to a
+    // slim parallelogram along the last veil's chord, never free-floating.
+    val chordDx = chordBx - chordAx
+    val chordDy = chordBy - chordAy
+    val chordLen = max(1f, sqrt(chordDx * chordDx + chordDy * chordDy))
+    val cux = chordDx / chordLen
+    val cuy = chordDy / chordLen
+    repeat(if (panel) 1 else 2) { fi ->
+        val t = 0.2f + 0.5f * fract01(fi * 0.754877f + 0.61f)
+        val fcx = chordAx + cux * chordLen * t
+        val fcy = chordAy + cuy * chordLen * t
+        val len = minDim * (0.08f + 0.07f * fract01(fi * 0.414214f + 0.27f))
+        val wid = minDim * (0.015f + 0.015f * fract01(fi * 0.271828f + 0.73f))
+        val skew = len * 0.18f
+        val fa = alpha * (0.15f + 0.13f * fract01(fi * 0.618034f + 0.47f))
+        val flash =
+            Path().apply {
+                moveTo(fcx - cux * len / 2f + cuy * wid / 2f, fcy - cuy * len / 2f - cux * wid / 2f)
+                lineTo(fcx + cux * len / 2f + cuy * wid / 2f, fcy + cuy * len / 2f - cux * wid / 2f)
+                lineTo(fcx + cux * (len / 2f + skew) - cuy * wid / 2f, fcy + cuy * (len / 2f + skew) + cux * wid / 2f)
+                lineTo(fcx - cux * (len / 2f - skew) - cuy * wid / 2f, fcy - cuy * (len / 2f - skew) + cux * wid / 2f)
+                close()
+            }
+        drawPath(
+            flash,
+            Brush.linearGradient(
+                0f to Color(0xFFFF9AA2).copy(alpha = fa),
+                0.25f to Color(0xFFFFE29A).copy(alpha = fa),
+                0.5f to Color(0xFF9AF0C8).copy(alpha = fa),
+                0.75f to Color(0xFF9AC8FF).copy(alpha = fa),
+                1f to Color(0xFFD9A9FF).copy(alpha = fa),
+                start = Offset(fcx - cux * len / 2f, fcy - cuy * len / 2f),
+                end = Offset(fcx + cux * len / 2f, fcy + cuy * len / 2f),
+            ),
+        )
+    }
+
+    // Point glints: crossed hairlines with a soft dot.
+    repeat(if (panel) 1 else 2) { gi ->
+        val gp =
+            Offset(
+                w * (0.15f + 0.7f * fract01(gi * 0.618034f + 0.77f)),
+                h * (0.3f + 0.55f * fract01(gi * 0.754877f + 0.23f)),
+            )
+        val ga = alpha * 0.25f
+        val arm = minDim * 0.015f
+        drawLine(Color.White.copy(alpha = ga), Offset(gp.x - arm, gp.y), Offset(gp.x + arm, gp.y), hairline)
+        drawLine(Color.White.copy(alpha = ga), Offset(gp.x, gp.y - arm), Offset(gp.x, gp.y + arm), hairline)
+        val dot = minDim * 0.005f
+        drawCircle(
+            Brush.radialGradient(0f to Color.White.copy(alpha = ga), 1f to Color.Transparent, center = gp, radius = dot),
+            dot,
+            gp,
+        )
+    }
+}
+
+private class KyaniteBlade(
+    val path: Path,
+    val axisStart: Offset,
+    val axisEnd: Offset,
+    val normal: Offset,
+    val center: Offset,
+    val length: Float,
+    val width: Float,
+    val front: Boolean,
+    val seed: Int,
+)
+
+/**
+ * Kyanite: the zoned parallel-blade system. Long flat laths (8-12:1) within
+ * ~15 degrees of a shared direction, splintery angled ends, colour zoning
+ * ACROSS each blade (pale edges, deep sapphire spine slightly off-centre),
+ * lengthwise striations, a pearly sheen band on some blades and a silver
+ * edge streak on the front one.
+ */
+private fun DrawScope.drawKyaniteTexture(
+    alpha: Float,
+    panel: Boolean,
+) {
+    val w = size.width
+    val h = size.height
+    val minDim = min(w, h)
+    val hairline = max(1.dp.toPx(), minDim * 0.0015f)
+    val deep = Color(0xFF1B3C7A)
+    val deepFront = Color(0xFF142E63)
+    val edgeA = Color(0xFF7FA8D9)
+    val edgeB = Color(0xFF9FC3E8)
+    val pearl = Color(0xFFE8F1FA)
+
+    drawRect(Brush.verticalGradient(0f to Color.Transparent, 1f to Color(0xFF0D1B33).copy(alpha = alpha * 0.6f)))
+
+    val count = if (panel) 4 else 8
+    val thetaBase = (35f + 20f * fract01(0.437f)) * DEG
+    val blades =
+        List(count) { i ->
+            val front = i >= count - 2
+            val len = minDim * (0.5f + 0.4f * fract01(i * 0.414214f + 0.09f))
+            val wid = len / (8f + 4f * fract01(i * 0.569840f + 0.45f))
+            val bladeTheta = thetaBase + (fract01(i * 0.271828f + 0.31f) - 0.5f) * 30f * DEG
+            val ux = cos(bladeTheta)
+            val uy = -sin(bladeTheta)
+            val nxx = -uy
+            val nyy = ux
+            val ccx = w * (0.06f + 0.88f * fract01(i * 0.618034f + 0.19f))
+            val ccy = h * (0.12f + 0.76f * fract01(i * 0.754877f + 0.53f))
+            // Angled, splintery parallelogram ends (60-75 degrees, no points)
+            // and a slight taper toward the far end.
+            val sk1 = wid * (0.13f + 0.16f * fract01(i * 0.318309f + 0.71f))
+            val sk2 = wid * (0.13f + 0.16f * fract01(i * 0.867532f + 0.27f))
+            val wFar = wid * 0.78f
+            val e1x = ccx - ux * len / 2f
+            val e1y = ccy - uy * len / 2f
+            val e2x = ccx + ux * len / 2f
+            val e2y = ccy + uy * len / 2f
+            val path =
+                Path().apply {
+                    moveTo(e1x + nxx * wid / 2f - ux * sk1, e1y + nyy * wid / 2f - uy * sk1)
+                    lineTo(e2x + nxx * wFar / 2f + ux * sk2, e2y + nyy * wFar / 2f + uy * sk2)
+                    lineTo(e2x - nxx * wFar / 2f - ux * sk2, e2y - nyy * wFar / 2f - uy * sk2)
+                    lineTo(e1x - nxx * wid / 2f + ux * sk1, e1y - nyy * wid / 2f + uy * sk1)
+                    close()
+                }
+            KyaniteBlade(path, Offset(e1x, e1y), Offset(e2x, e2y), Offset(nxx, nyy), Offset(ccx, ccy), len, wid, front, i)
+        }
+
+    // Back-to-front: back blades 20% darker and more translucent.
+    blades.forEach { blade ->
+        val zc = 0.45f + 0.10f * fract01(blade.seed * 0.5417f + 0.13f)
+        val core = if (blade.front && fract01(blade.seed * 0.31f) > 0.5f) deepFront else deep
+        val shade = if (blade.front) 0f else 0.2f
+        val bladeAlpha =
+            if (blade.front) {
+                0.85f + 0.15f * fract01(blade.seed * 0.77f)
+            } else {
+                0.5f + 0.2f * fract01(blade.seed * 0.77f)
+            }
+        val half = blade.width / 2f
+        drawPath(
+            blade.path,
+            Brush.linearGradient(
+                0f to lerp(edgeA, Color.Black, shade).copy(alpha = alpha * bladeAlpha),
+                zc to lerp(core, Color.Black, shade).copy(alpha = alpha * bladeAlpha),
+                1f to lerp(edgeB, Color.Black, shade).copy(alpha = alpha * bladeAlpha),
+                start = Offset(blade.center.x - blade.normal.x * half, blade.center.y - blade.normal.y * half),
+                end = Offset(blade.center.x + blade.normal.x * half, blade.center.y + blade.normal.y * half),
+            ),
+        )
+    }
+
+    // Striations along the length, then a pearly sheen band on every third
+    // blade (confined to the blade by reusing its own path as the fill).
+    blades.forEachIndexed { i, blade ->
+        val ux = (blade.axisEnd.x - blade.axisStart.x) / blade.length
+        val uy = (blade.axisEnd.y - blade.axisStart.y) / blade.length
+        val strias = if (panel) 3 else 3 + (fract01(i * 0.414214f + 0.61f) * 3.99f).toInt()
+        repeat(strias) { s ->
+            val tAcross = (fract01((i * 7 + s) * 0.618034f + 0.29f) - 0.5f) * 0.8f * blade.width
+            val fracLen = 0.6f + 0.35f * fract01((i * 7 + s) * 0.754877f + 0.11f)
+            val shift = (fract01((i * 7 + s) * 0.271828f + 0.43f) - 0.5f) * (1f - fracLen) * blade.length
+            val cxs = blade.center.x + blade.normal.x * tAcross + ux * shift
+            val cys = blade.center.y + blade.normal.y * tAcross + uy * shift
+            val halfLen = blade.length * fracLen / 2f
+            drawLine(
+                lerp(edgeA, pearl, fract01((i * 7 + s) * 0.569840f))
+                    .copy(alpha = alpha * (0.10f + 0.15f * fract01((i * 7 + s) * 0.867532f))),
+                Offset(cxs - ux * halfLen, cys - uy * halfLen),
+                Offset(cxs + ux * halfLen, cys + uy * halfLen),
+                hairline,
+            )
+        }
+        if (i % 3 == 1) {
+            val tm = 0.3f + 0.4f * fract01(i * 0.318309f + 0.57f)
+            val bw = 0.08f + 0.05f * fract01(i * 0.5417f + 0.83f)
+            drawPath(
+                blade.path,
+                Brush.linearGradient(
+                    0f to Color.Transparent,
+                    tm - bw to Color.Transparent,
+                    tm to pearl.copy(alpha = alpha * 0.14f),
+                    tm + bw to Color.Transparent,
+                    1f to Color.Transparent,
+                    start = blade.axisStart,
+                    end = blade.axisEnd,
+                ),
+            )
+        }
+    }
+
+    // Silver streak on one long edge of the front blade, plus a tip glint.
+    val frontBlade = blades.last()
+    val fux = (frontBlade.axisEnd.x - frontBlade.axisStart.x) / frontBlade.length
+    val fuy = (frontBlade.axisEnd.y - frontBlade.axisStart.y) / frontBlade.length
+    val edgeX = frontBlade.center.x + frontBlade.normal.x * frontBlade.width * 0.48f
+    val edgeY = frontBlade.center.y + frontBlade.normal.y * frontBlade.width * 0.48f
+    val streak = frontBlade.length * (0.3f + 0.2f * fract01(0.9134f))
+    drawLine(
+        pearl.copy(alpha = alpha * 0.4f),
+        Offset(edgeX - fux * streak / 2f, edgeY - fuy * streak / 2f),
+        Offset(edgeX + fux * streak / 2f, edgeY + fuy * streak / 2f),
+        hairline,
+    )
+    if (!panel) {
+        val tip = frontBlade.axisEnd
+        val arm = minDim * 0.012f
+        drawLine(Color.White.copy(alpha = alpha * 0.2f), Offset(tip.x - arm, tip.y), Offset(tip.x + arm, tip.y), hairline)
+        drawLine(Color.White.copy(alpha = alpha * 0.2f), Offset(tip.x, tip.y - arm), Offset(tip.x, tip.y + arm), hairline)
+    }
+}
+
+/**
+ * Onyx: the parallel-arc band system — never agate's loops. All bands are
+ * arcs of concentric circles around one far-off-canvas centre, so they run
+ * gently curved and strictly parallel. The [onyxBandRhythm] group covers
+ * under half the canvas, leaving a wide mirror-black field; broad bands keep
+ * one crisp and one softly graded edge, hairlines fade out along their arc,
+ * and a single diagonal gloss sweep crosses the band direction.
+ */
+private fun DrawScope.drawOnyxTexture(
+    alpha: Float,
+    panel: Boolean,
+) {
+    val w = size.width
+    val h = size.height
+    val d = max(w, h)
+    val minDim = min(w, h)
+    val hairline = max(1.dp.toPx(), minDim * 0.0015f)
+    val broadTone = Color(0xFFB9B2A6)
+    val hairTone = Color(0xFFEDEAE3)
+    val midTone = Color(0xFF6E6A63)
+    val warmTone = Color(0xFFA98253)
+
+    // Base: barely-there vertical lift off pure black.
+    drawRect(Brush.verticalGradient(0f to Color.Transparent, 1f to Color(0xFF0C0E11).copy(alpha = alpha * 0.8f)))
+
+    val phi = (68f + 44f * fract01(0.941f)) * DEG
+    val dist = minDim * (2.5f + 1.2f * fract01(0.377f))
+    val c0x = w * 0.5f + cos(phi) * dist
+    val c0y = h * 0.5f - sin(phi) * dist
+    val span = h * (0.35f + 0.2f * fract01(0.613f))
+    val r0 = dist - h * 0.5f + h * 0.38f
+    val bands = onyxBandRhythm(seed = 3.1f, span = span, minDim = minDim, units = if (panel) 2 else 3)
+    val thetaC = atan2(h * 0.5f - c0y, w * 0.5f - c0x) * (180f / PI.toFloat())
+    bands.forEach { band ->
+        val r = r0 + band.offset
+        when (band.kind) {
+            OnyxBandKind.BROAD -> {
+                // Crisp full-alpha outer edge; the inner quarter of the width
+                // fades down to 60%.
+                val outer = r + band.width / 2f
+                val inner = r - band.width / 2f
+                drawCircle(
+                    brush =
+                        Brush.radialGradient(
+                            inner / outer to broadTone.copy(alpha = alpha * band.alpha * 0.6f),
+                            (inner + band.width * 0.25f) / outer to broadTone.copy(alpha = alpha * band.alpha),
+                            1f to broadTone.copy(alpha = alpha * band.alpha),
+                            center = Offset(c0x, c0y),
+                            radius = outer,
+                        ),
+                    radius = r,
+                    center = Offset(c0x, c0y),
+                    style = Stroke(width = band.width),
+                )
+            }
+            OnyxBandKind.MEDIUM ->
+                drawCircle(
+                    midTone.copy(alpha = alpha * band.alpha),
+                    r,
+                    Offset(c0x, c0y),
+                    style = Stroke(width = band.width),
+                )
+            OnyxBandKind.WARM ->
+                drawCircle(
+                    warmTone.copy(alpha = alpha * band.alpha),
+                    r,
+                    Offset(c0x, c0y),
+                    style = Stroke(width = band.width),
+                )
+            OnyxBandKind.HAIRLINE -> {
+                // Drawn as an explicit arc so one end can fade along its length.
+                val halfSpan = asin((0.75f * d / r).coerceIn(0f, 0.95f)) * (180f / PI.toFloat())
+                val fadeAtStart = fract01(band.offset * 0.754877f) < 0.5f
+                val sweep = 2f * halfSpan
+                val fade = sweep * 0.13f
+                drawArc(
+                    color = hairTone.copy(alpha = alpha * band.alpha),
+                    startAngle = if (fadeAtStart) thetaC - halfSpan + fade else thetaC - halfSpan,
+                    sweepAngle = sweep - fade,
+                    useCenter = false,
+                    topLeft = Offset(c0x - r, c0y - r),
+                    size = Size(r * 2f, r * 2f),
+                    style = Stroke(width = max(hairline * 0.8f, band.width)),
+                )
+                drawArc(
+                    color = hairTone.copy(alpha = alpha * band.alpha * 0.25f),
+                    startAngle = if (fadeAtStart) thetaC - halfSpan else thetaC + halfSpan - fade,
+                    sweepAngle = fade,
+                    useCenter = false,
+                    topLeft = Offset(c0x - r, c0y - r),
+                    size = Size(r * 2f, r * 2f),
+                    style = Stroke(width = max(hairline * 0.8f, band.width)),
+                )
+            }
+        }
+    }
+
+    // One diagonal specular sweep crossing the band direction, with a single
+    // hairline glint inside it. No shadows anywhere — onyx is mirror-gloss.
+    val glossDir = phi + 90f * DEG + (25f + 15f * fract01(0.271f)) * DEG
+    val gx = cos(glossDir)
+    val gy = -sin(glossDir)
+    val gpx = w * 0.58f
+    val gpy = h * 0.52f
+    val halfBand = minDim * 0.15f
+    drawRect(
+        Brush.linearGradient(
+            0f to Color.Transparent,
+            0.5f to Color.White.copy(alpha = alpha * 0.07f),
+            1f to Color.Transparent,
+            start = Offset(gpx + gy * halfBand, gpy - gx * halfBand),
+            end = Offset(gpx - gy * halfBand, gpy + gx * halfBand),
+        ),
+    )
+    val glintLen = minDim * 0.12f
+    drawLine(
+        Color.White.copy(alpha = alpha * 0.15f),
+        Offset(gpx - gx * glintLen, gpy - gy * glintLen),
+        Offset(gpx + gx * glintLen, gpy + gy * glintLen),
+        hairline,
+    )
+}
+
+/**
+ * The shared crystalline language for the legacy accent themes: 2-3 huge
+ * whisper-alpha facet planes (the alpha step IS the edge), a few kinked
+ * hairline fractures with one micro-branch, and a single glint (rarely two)
+ * kept out of the top content safe-area. Counts and alphas are constant
+ * across themes; only angles, positions and the glint vary with the theme's
+ * seed, so the family reads related rather than randomized. Light-surface
+ * themes flip the ink to black and pull all alphas down.
+ */
+private fun DrawScope.drawGenericCrystalline(
+    theme: AppTheme,
+    primary: Color,
+    alpha: Float,
+    panel: Boolean,
+) {
+    val w = size.width
+    val h = size.height
+    val minDim = min(w, h)
+    val hairline = max(1.dp.toPx(), minDim * 0.0015f)
+    val light = theme.isLight
+    val a = alpha * (if (light) 0.7f else 1f)
+    val ink = if (light) Color.Black else Color.White
+    val facetTint = lerp(primary, ink, 0.7f)
+    val s = theme.ordinal.toFloat()
+
+    // Facet planes: alphas fixed so any two overlapping planes stay <= 0.08
+    // combined (the cap over text regions).
+    val quadAlpha = floatArrayOf(0.045f, 0.03f, 0.02f)
+    val baseAng = fract01(s * 0.618034f + 0.07f) * (2f * PI.toFloat())
+    repeat(if (panel) 2 else 3) { q ->
+        val ang = baseAng + (fract01(s * 0.754877f + q * 0.414214f) - 0.5f) * 24f * DEG
+        val ux = cos(ang)
+        val uy = sin(ang)
+        val qcx = w * (0.16f + 0.34f * q + 0.2f * (fract01(s * 0.271828f + q * 0.569840f) - 0.5f))
+        val qcy = h * (0.25f + 0.5f * fract01(s * 0.318309f + q * 0.867532f))
+        val lenq = minDim * (0.6f + 0.6f * fract01(s * 0.5417f + q * 0.31f))
+        val widq = lenq * (0.35f + 0.3f * fract01(s * 0.13f + q * 0.77f))
+        val quad =
+            Path().apply {
+                moveTo(qcx - ux * lenq / 2f + uy * widq / 2f, qcy - uy * lenq / 2f - ux * widq / 2f)
+                lineTo(qcx + ux * lenq / 2f + uy * widq / 2f, qcy + uy * lenq / 2f - ux * widq / 2f)
+                lineTo(qcx + ux * lenq / 2f - uy * widq / 2f, qcy + uy * lenq / 2f + ux * widq / 2f)
+                lineTo(qcx - ux * lenq / 2f - uy * widq / 2f, qcy - uy * lenq / 2f + ux * widq / 2f)
+                close()
+            }
+        drawPath(quad, facetTint.copy(alpha = a * quadAlpha[q]))
+    }
+
+    // Hairline fractures: three segments with one clear 15-35 degree kink;
+    // the first fracture grows a micro-branch at its kink.
+    var glintAnchorX = w * 0.5f
+    var glintAnchorY = h * 0.6f
+    repeat(if (panel) 2 else 3) { f ->
+        var px = w * (0.1f + 0.8f * fract01(s * 0.754877f + f * 0.618034f + 0.37f))
+        var py = h * (0.18f + 0.7f * fract01(s * 0.569840f + f * 0.271828f + 0.11f))
+        val total = minDim * (0.4f + 0.5f * fract01(s * 0.414214f + f * 0.867532f))
+        var ang = fract01(s * 0.318309f + f * 0.5417f) * (2f * PI.toFloat())
+        var kinkX = px
+        var kinkY = py
+        var kinkAng = ang
+        val crack = Path().apply { moveTo(px, py) }
+        for (seg in 0 until 3) {
+            px += cos(ang) * total / 3f
+            py += sin(ang) * total / 3f
+            crack.lineTo(px, py)
+            if (seg == 0) {
+                kinkX = px
+                kinkY = py
+                ang += (15f + 20f * fract01(s * 0.13f + f * 0.7f)) * DEG *
+                    (if (fract01(f * 0.9f + s * 0.77f) < 0.5f) 1f else -1f)
+                kinkAng = ang
+            } else {
+                ang += (fract01(s * 0.41f + f * 0.3f + seg * 0.7f) - 0.5f) * 10f * DEG
+            }
+        }
+        drawPath(
+            crack,
+            ink.copy(alpha = a * (0.06f + 0.06f * fract01(s * 0.5f + f * 0.61f))),
+            style = Stroke(width = hairline),
+        )
+        if (f == 0) {
+            val bAng = kinkAng + 1.2f
+            drawLine(
+                ink.copy(alpha = a * 0.05f),
+                Offset(kinkX, kinkY),
+                Offset(kinkX + cos(bAng) * minDim * 0.05f, kinkY + sin(bAng) * minDim * 0.05f),
+                hairline,
+            )
+            glintAnchorX = kinkX
+            glintAnchorY = kinkY
+        }
+    }
+
+    // Glint(s): sitting ON the first fracture's kink, clamped out of the top
+    // ~20% content safe-area and the side gutters.
+    val glints = if (!panel && fract01(s * 0.867532f + 0.29f) > 0.7f) 2 else 1
+    repeat(glints) { g ->
+        val rawX = if (g == 0) glintAnchorX else w * fract01(s * 0.31f + 0.83f)
+        val rawY = if (g == 0) glintAnchorY else h * fract01(s * 0.77f + 0.53f)
+        val gpx = rawX.coerceIn(w * 0.08f, w * 0.92f)
+        val gpy = rawY.coerceIn(h * 0.25f, h * 0.9f)
+        val ga = a * (0.15f + 0.10f * fract01(s * 0.41f + g * 0.5f))
+        val armL = minDim * 0.02f
+        val armS = minDim * 0.01f
+        drawLine(ink.copy(alpha = ga), Offset(gpx - armL, gpy), Offset(gpx + armL, gpy), hairline)
+        drawLine(ink.copy(alpha = ga), Offset(gpx, gpy - armS), Offset(gpx, gpy + armS), hairline)
+        val dot = minDim * 0.004f
+        drawCircle(
+            Brush.radialGradient(
+                0f to ink.copy(alpha = ga),
+                1f to Color.Transparent,
+                center = Offset(gpx, gpy),
+                radius = dot,
+            ),
+            dot,
+            Offset(gpx, gpy),
+        )
+    }
+}
 
 // ------------------------------------------------------------- silhouettes
 

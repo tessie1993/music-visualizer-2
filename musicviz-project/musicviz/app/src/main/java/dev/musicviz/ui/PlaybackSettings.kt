@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -23,17 +22,16 @@ import dev.musicviz.analysis.PlaybackMath
 private val SLEEP_TIMER_CHOICES = listOf(0, 15, 30, 45, 60)
 
 /**
- * Playback section for the Settings screen: speed/pitch sliders, skip
+ * Playback group for the Settings › Audio tab: speed/pitch sliders, skip
  * silence, pause-on-unplug, keep-screen-on, auto-resume and the sleep timer.
- * Mounted by SettingsScreen as a single item after the Player controls.
+ * Mounted inside a [SettingsGroup] card, which carries the "Playback" header,
+ * so this is content only.
  */
 @Composable
 fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
     val prefs by viewModel.playerPrefs.collectAsState()
     val sleepRemainingMs by viewModel.sleepTimerRemainingMs.collectAsState()
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        HorizontalDivider()
-        Text("Playback", style = MaterialTheme.typography.titleMedium, color = accentTextColor())
         Column {
             Text("Speed  ${"%.2f".format(prefs.speed)}x", style = MaterialTheme.typography.labelMedium)
             CrystalSlider(

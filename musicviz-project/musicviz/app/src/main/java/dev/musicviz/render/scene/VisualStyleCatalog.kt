@@ -15,7 +15,14 @@ internal object VisualStyleCatalog {
         val label: String,
         val shaderStyle: Int,
         val bodyScale: Float = 1f,
+        /** Eye distance multiplier. Distance ONLY - the drift rate has its
+         *  own field below, because one number applied to both used to move
+         *  the camera further out AND faster around, coupling two unrelated
+         *  aesthetics. */
         val cameraScale: Float = 1f,
+        /** Camera drift-rate multiplier (the half [cameraScale] used to
+         *  double as). */
+        val driftScale: Float = 1f,
         val fieldScale: Float = 1f,
         val glowScale: Float = 1f,
         val neonScale: Float = 1f,
@@ -25,6 +32,44 @@ internal object VisualStyleCatalog {
         val liquidScale: Float = 1f,
         val ridgeScale: Float = 1f,
         val forcedSpecies: Int? = null,
+        /**
+         * Worst-case Jacobian norm of this substyle's `styleBody()` deform,
+         * uploaded as `uLipschitz` and divided into every distance estimate.
+         * The deform runs BEFORE the estimator, so the estimate bounds
+         * distance in the deformed frame; a twist or a shell modulation can
+         * overestimate the marched-space distance by this factor, and a ray
+         * stepping the raw estimate walks through thin geometry (holes and
+         * shimmer, not a visible overshoot). Always >= 1; exactly 1 for
+         * styles that do not deform. `HyperspaceReworkTest` audits the table.
+         */
+        val lipschitz: Float = 1f,
+        /**
+         * The substyle's own screen pre-fold, 0 = none. Applied only while
+         * the act's `styleMirror` intent allows it (BREAKTHROUGH releases
+         * every fold - see `HyperspaceMath.ACT_PROFILES`), and rescaled by
+         * the user's Mirror-folds control around its default of 6.
+         */
+        val kaleidoFolds: Int = 0,
+        /**
+         * Floor on the substyle signature weight in `styleSky()`. The shared
+         * filigree is gated by Filigree/act field, and at 0 the substyles
+         * used to blank into eleven identical voids; the signature now mixes
+         * by `max(uField, floor)` so identity survives the slider.
+         */
+        val signatureFloor: Float = 0.25f,
+        /** Accent hue as an OFFSET from the user's base hue, in turns - the
+         *  per-substyle colour identity, expressed relative to the palette
+         *  so it respects the user's hue controls. */
+        val tintHue: Float = 0f,
+        val tintSat: Float = 0.7f,
+        /** 0 leaves the palette untouched (the Original's setting). */
+        val tintAmount: Float = 0f,
+        /** Base rate of the substyle's CPU-integrated phase (`uStylePhase`,
+         *  wraps at 1), in turns per second before Speed. */
+        val phaseRate: Float = 0.05f,
+        /** Extra phase rate at full slew-limited bass: the hex tunnel flies
+         *  and the wormhole lurches on the low end. */
+        val phaseBassRate: Float = 0f,
     )
 
     data class CymaticsStyle(
