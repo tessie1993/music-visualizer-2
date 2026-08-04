@@ -331,6 +331,31 @@ From the open-source research; treat as P0-adjacent since the app charges money:
 
 ---
 
+## Priority order (revised 2026-08-04, per owner direction)
+
+1. **The visualizer is priority #1.** Before any player work: make the cymatics and
+   hyperspace substyles genuinely unique (research-driven — real cymatics phenomena per
+   cymatics style, DMT/psychedelic form-constant geometry per hyperspace style), and land
+   the richer per-theme crystal textures in the UI. The twenty-style 3D rebuild (Workstream C)
+   remains the v2.0 horizon; substyle uniqueness is the near-term deliverable on the shipped
+   profile architecture.
+2. **Then the music player** — planned first, not built first: a Poweramp feature inventory
+   with a reasoned have/need/skip verdict per feature. **No online/streaming/cloud music
+   functions** (owner constraint): streaming, cloud sync, internet radio, and network sources
+   are out of scope regardless of competitor parity.
+3. Everything else keeps its Workstream ordering below.
+
+## Execution retrospective (waves 1-3)
+
+What worked, kept as rules: disjoint file ownership derived from grep evidence before
+launching parallel agents (25 agents, zero conflicts); agents forced to read neighbours and
+imitate style (three waves, zero first-compile failures); adversarial verification before any
+fix was written; one pinning test per fix. What failed, and the correction now in force:
+run ktlintFormat as its own step before any check; file ownership must include the tests that
+pin the owned files (a visible-string change broke an unowned smoke test); agents whose
+changes regenerate an artifact must own that artifact (PARAM_MATRIX.md cost an extra cycle);
+never draft research-dependent conclusions before the research lands.
+
 ## Release sequencing
 
 | Release | Contents | Gate |
