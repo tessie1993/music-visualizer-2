@@ -5,6 +5,7 @@ import android.opengl.GLES30
 import dev.musicviz.R
 import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.render.CompositeGrade
+import dev.musicviz.render.fluid.CurlFlowMath
 import dev.musicviz.render.scene.GlUtil
 import dev.musicviz.render.scene.SceneParams
 import kotlin.math.pow
@@ -266,9 +267,12 @@ internal class FxCompositor(
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, trailTex)
         GLES30.glUniform1i(GLES30.glGetUniformLocation(trailWarpProgram, "uPrev"), 0)
+        // Same shared decay as the live renderer's drawTrailWarp: the caller
+        // (VideoExporter) hands in trailLength already remapped for styles
+        // with their own persistence band, exactly like the live [retention].
         GLES30.glUniform1f(
             GLES30.glGetUniformLocation(trailWarpProgram, "uDecay"),
-            (params.trailLength * 0.97f + 0.02f).coerceIn(0f, 0.99f).pow(dtSeconds * 60f),
+            CurlFlowMath.warpDecay(params.trailLength, dtSeconds),
         )
         GLES30.glUniform1f(GLES30.glGetUniformLocation(trailWarpProgram, "uZoom"), params.trailZoom)
         GLES30.glUniform1f(GLES30.glGetUniformLocation(trailWarpProgram, "uWarp"), params.trailWarp)

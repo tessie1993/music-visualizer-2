@@ -79,7 +79,13 @@ object StereoField {
         }
         val ll = mm + 2f * ms + ss
         val rr = mm - 2f * ms + ss
-        val denom = sqrt(ll * rr)
+        // Each is a sum of squares on paper, but computed as a difference of
+        // near-equal float sums: a channel that is nearly-but-not-exactly
+        // silent can cancel one a hair below zero, which would put NaN
+        // through the sqrt. Floored at zero, that case lands in the silence
+        // branch below, which already answers it - a channel that quiet has
+        // no phase relationship to report.
+        val denom = sqrt(ll.coerceAtLeast(0f) * rr.coerceAtLeast(0f))
         if (denom <= SILENCE) return 1f
         return ((mm - ss) / denom).coerceIn(-1f, 1f)
     }

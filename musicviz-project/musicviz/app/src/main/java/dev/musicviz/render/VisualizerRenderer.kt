@@ -145,6 +145,61 @@ class VisualizerRenderer(
          * and is part of `composite_frag.glsl`'s contract.
          */
         const val STYLE_LAYER = 6
+
+        /**
+         * The [SceneParams] Floats a param fade must SNAP rather than glide,
+         * each with the reason it is excluded. Every OTHER Float is lerped by
+         * [lerpParams] via [LERPED_FLOATS], so a Float slider fades from the
+         * day it is added - the hand-written 114-entry copy() this replaces
+         * needed every author to remember it, and three were forgotten (Trail
+         * zoom, Trail warp, MilkDrop palette tint: they snapped mid-morph
+         * while every neighbouring slider glided). `ParamFadeCoverageTest`
+         * walks the class and fails on a Float neither faded nor named here.
+         */
+        val NOT_FADED: Map<String, String> =
+            mapOf(
+                "paramFadeSec" to "the fade's own time constant: gliding it would make every fade chase a moving target",
+                "paletteBaseOverride" to "UNSET_OVERRIDE (-1) is a sentinel: a glide through it flickers between set and unset",
+                "paletteRangeOverride" to "UNSET_OVERRIDE sentinel, as paletteBaseOverride",
+                "palette2BaseOverride" to "UNSET_OVERRIDE sentinel, as paletteBaseOverride",
+                "palette2RangeOverride" to "UNSET_OVERRIDE sentinel, as paletteBaseOverride",
+            )
+
+        /**
+         * Every SceneParams constructor Float outside [NOT_FADED], reflected
+         * ONCE at class load. [lerpParams] runs per frame in [onDrawFrame],
+         * so the reflection cost (and its allocations) must not: iterating a
+         * cached Field array with getFloat/setFloat boxes nothing and
+         * allocates nothing beyond the one copy() the hand-written form
+         * already made.
+         */
+        private val LERPED_FLOATS: Array<java.lang.reflect.Field> =
+            SceneParams::class.java
+                .declaredFields
+                .filter { it.type == Float::class.javaPrimitiveType && !java.lang.reflect.Modifier.isStatic(it.modifiers) }
+                .filterNot { it.name in NOT_FADED }
+                .onEach { it.isAccessible = true }
+                .toTypedArray()
+
+        /**
+         * Exponential lerp between param sets; toggles and choices snap to
+         * target (the copy() carries them), as do the declared [NOT_FADED]
+         * Floats. The copy is written through [LERPED_FLOATS] before it
+         * escapes, so callers still receive a snapshot - `from` and `to`
+         * themselves are never touched (`to` IS the live [sceneParams]).
+         */
+        internal fun lerpParams(
+            from: SceneParams,
+            to: SceneParams,
+            k: Float,
+        ): SceneParams {
+            val out = to.copy()
+            for (field in LERPED_FLOATS) {
+                val a = field.getFloat(from)
+                field.setFloat(out, a + (field.getFloat(to) - a) * k)
+            }
+            return out
+        }
     }
 
     @Volatile
@@ -220,134 +275,6 @@ class VisualizerRenderer(
      *  would be a single-frame pop; this is the same decaying envelope
      *  ShaderScene/ParticleSceneBase keep. */
     private var postBeatPulse = 0f
-
-    /** Exponential lerp between param sets; toggles and choices snap to target. */
-    private fun lerpParams(
-        from: SceneParams,
-        to: SceneParams,
-        k: Float,
-    ): SceneParams {
-        fun f(
-            a: Float,
-            b: Float,
-        ) = a + (b - a) * k
-        return to.copy(
-            speed = f(from.speed, to.speed),
-            zoom = f(from.zoom, to.zoom),
-            rotation = f(from.rotation, to.rotation),
-            endlessZoomSpeed = f(from.endlessZoomSpeed, to.endlessZoomSpeed),
-            sway = f(from.sway, to.sway),
-            pulse = f(from.pulse, to.pulse),
-            driftX = f(from.driftX, to.driftX),
-            driftY = f(from.driftY, to.driftY),
-            shake = f(from.shake, to.shake),
-            audioDrive = f(from.audioDrive, to.audioDrive),
-            beatResponse = f(from.beatResponse, to.beatResponse),
-            turbulence = f(from.turbulence, to.turbulence),
-            density = f(from.density, to.density),
-            trailLength = f(from.trailLength, to.trailLength),
-            warp = f(from.warp, to.warp),
-            ripple = f(from.ripple, to.ripple),
-            morph = f(from.morph, to.morph),
-            pixelate = f(from.pixelate, to.pixelate),
-            posterize = f(from.posterize, to.posterize),
-            particleSize = f(from.particleSize, to.particleSize),
-            tile = f(from.tile, to.tile),
-            twist = f(from.twist, to.twist),
-            paletteMix = f(from.paletteMix, to.paletteMix),
-            colorShift = f(from.colorShift, to.colorShift),
-            hueRange = f(from.hueRange, to.hueRange),
-            saturation = f(from.saturation, to.saturation),
-            brightness = f(from.brightness, to.brightness),
-            contrast = f(from.contrast, to.contrast),
-            gamma = f(from.gamma, to.gamma),
-            cycleSpeed = f(from.cycleSpeed, to.cycleSpeed),
-            intensity = f(from.intensity, to.intensity),
-            bloom = f(from.bloom, to.bloom),
-            temperature = f(from.temperature, to.temperature),
-            bassGain = f(from.bassGain, to.bassGain),
-            midGain = f(from.midGain, to.midGain),
-            trebGain = f(from.trebGain, to.trebGain),
-            flash = f(from.flash, to.flash),
-            chromaAb = f(from.chromaAb, to.chromaAb),
-            vignette = f(from.vignette, to.vignette),
-            scanlines = f(from.scanlines, to.scanlines),
-            grain = f(from.grain, to.grain),
-            glitch = f(from.glitch, to.glitch),
-            fisheye = f(from.fisheye, to.fisheye),
-            strobe = f(from.strobe, to.strobe),
-            fluidPressure = f(from.fluidPressure, to.fluidPressure),
-            fluidCurl = f(from.fluidCurl, to.fluidCurl),
-            fluidVelocityDissipation = f(from.fluidVelocityDissipation, to.fluidVelocityDissipation),
-            fluidDensityDissipation = f(from.fluidDensityDissipation, to.fluidDensityDissipation),
-            fluidChromaticAging = f(from.fluidChromaticAging, to.fluidChromaticAging),
-            fluidSplatRadius = f(from.fluidSplatRadius, to.fluidSplatRadius),
-            fluidSplatForce = f(from.fluidSplatForce, to.fluidSplatForce),
-            fluidStirrerSpeed = f(from.fluidStirrerSpeed, to.fluidStirrerSpeed),
-            fluidPaletteCycleSpeed = f(from.fluidPaletteCycleSpeed, to.fluidPaletteCycleSpeed),
-            fluidParticleDrag = f(from.fluidParticleDrag, to.fluidParticleDrag),
-            fluidParticleBrightness = f(from.fluidParticleBrightness, to.fluidParticleBrightness),
-            fluidBloomIntensity = f(from.fluidBloomIntensity, to.fluidBloomIntensity),
-            fluidBloomThreshold = f(from.fluidBloomThreshold, to.fluidBloomThreshold),
-            fluidSunraysWeight = f(from.fluidSunraysWeight, to.fluidSunraysWeight),
-            fluidCurlAudio = f(from.fluidCurlAudio, to.fluidCurlAudio),
-            fluidBloomAudio = f(from.fluidBloomAudio, to.fluidBloomAudio),
-            fluidFadeAudio = f(from.fluidFadeAudio, to.fluidFadeAudio),
-            fluidRadiusPulse = f(from.fluidRadiusPulse, to.fluidRadiusPulse),
-            fluidSpawnProgress = f(from.fluidSpawnProgress, to.fluidSpawnProgress),
-            fluidCatchPull = f(from.fluidCatchPull, to.fluidCatchPull),
-            fluidCatchRadius = f(from.fluidCatchRadius, to.fluidCatchRadius),
-            fluidParticleLife = f(from.fluidParticleLife, to.fluidParticleLife),
-            flowStrength = f(from.flowStrength, to.flowStrength),
-            flowForce = f(from.flowForce, to.flowForce),
-            flowCurl = f(from.flowCurl, to.flowCurl),
-            waterWaveSpeed = f(from.waterWaveSpeed, to.waterWaveSpeed),
-            waterDamping = f(from.waterDamping, to.waterDamping),
-            waterRippleStrength = f(from.waterRippleStrength, to.waterRippleStrength),
-            waterDepth = f(from.waterDepth, to.waterDepth),
-            waterSpecular = f(from.waterSpecular, to.waterSpecular),
-            waterFlow = f(from.waterFlow, to.waterFlow),
-            waterLiquid = f(from.waterLiquid, to.waterLiquid),
-            waterLiquidFlow = f(from.waterLiquidFlow, to.waterLiquidFlow),
-            waterLiquidFade = f(from.waterLiquidFade, to.waterLiquidFade),
-            beamWidth = f(from.beamWidth, to.beamWidth),
-            beamIntensity = f(from.beamIntensity, to.beamIntensity),
-            beamTail = f(from.beamTail, to.beamTail),
-            cymaticsFundamental = f(from.cymaticsFundamental, to.cymaticsFundamental),
-            cymaticsRing = f(from.cymaticsRing, to.cymaticsRing),
-            cymaticsFocus = f(from.cymaticsFocus, to.cymaticsFocus),
-            cymaticsScale = f(from.cymaticsScale, to.cymaticsScale),
-            cymaticsFill = f(from.cymaticsFill, to.cymaticsFill),
-            cymaticsLine = f(from.cymaticsLine, to.cymaticsLine),
-            cymaticsGlow = f(from.cymaticsGlow, to.cymaticsGlow),
-            cymaticsIridescence = f(from.cymaticsIridescence, to.cymaticsIridescence),
-            cymaticsCaustic = f(from.cymaticsCaustic, to.cymaticsCaustic),
-            cymaticsFlow = f(from.cymaticsFlow, to.cymaticsFlow),
-            cymaticsSwirl = f(from.cymaticsSwirl, to.cymaticsSwirl),
-            hyperCycleSeconds = f(from.hyperCycleSeconds, to.hyperCycleSeconds),
-            hyperBodies = f(from.hyperBodies, to.hyperBodies),
-            hyperLifetime = f(from.hyperLifetime, to.hyperLifetime),
-            hyperSpin = f(from.hyperSpin, to.hyperSpin),
-            hyperOrbit = f(from.hyperOrbit, to.hyperOrbit),
-            hyperFold = f(from.hyperFold, to.hyperFold),
-            hyperDetail = f(from.hyperDetail, to.hyperDetail),
-            hyperGlow = f(from.hyperGlow, to.hyperGlow),
-            hyperNeon = f(from.hyperNeon, to.hyperNeon),
-            hyperField = f(from.hyperField, to.hyperField),
-            hyperHaze = f(from.hyperHaze, to.hyperHaze),
-            hyperCamera = f(from.hyperCamera, to.hyperCamera),
-            hyperTrap = f(from.hyperTrap, to.hyperTrap),
-            hyperMelt = f(from.hyperMelt, to.hyperMelt),
-            hyperStain = f(from.hyperStain, to.hyperStain),
-            hyperLiquid = f(from.hyperLiquid, to.hyperLiquid),
-            hyperRidges = f(from.hyperRidges, to.hyperRidges),
-            hyperStir = f(from.hyperStir, to.hyperStir),
-            hyperSwirl = f(from.hyperSwirl, to.hyperSwirl),
-            hyperFlowFade = f(from.hyperFlowFade, to.hyperFlowFade),
-            rippleOverlayStrength = f(from.rippleOverlayStrength, to.rippleOverlayStrength),
-            rippleOverlaySpecular = f(from.rippleOverlaySpecular, to.rippleOverlaySpecular),
-        )
-    }
 
     private fun gainAdjusted(
         f: dev.musicviz.analysis.AudioFeatures,
@@ -735,8 +662,18 @@ class VisualizerRenderer(
 
     /**
      * Constructs the scene named by [id], wired to this renderer's error
-     * channel. GL thread only, and only from [onSurfaceCreated]: the returned
-     * scene owns no GL resources until [Scene.init] runs.
+     * channel. GL thread only - [onSurfaceCreated]'s registry walk,
+     * [sceneFor]'s on-demand builds, and (with [export]) the export context's
+     * own GL thread via [exportSceneFactory]: the returned scene owns no GL
+     * resources until [Scene.init] runs.
+     *
+     * [export] covers the only two spots where the export context genuinely
+     * differs from the live one: a user-edited shader is baked into the
+     * constructor (the live path re-pushes edits AFTER init(), a second
+     * chance the export context never gets - and ShaderScene.init() discards
+     * a source queued before it), and MilkDrop's PCM callback is nulled so
+     * the scene feeds itself from the export timeline's per-frame waveform in
+     * update() instead of pulling the live tap.
      *
      * Every branch is reachable from [availableSceneIds] and nothing else asks
      * for an id, so `error` here is a wiring mistake rather than a device
@@ -747,8 +684,12 @@ class VisualizerRenderer(
         id: String,
         particleShaders: ParticleSceneBase.ShaderSources,
         quadVert: String,
+        export: Boolean = false,
     ): Scene {
-        SHADER_SCENES[id]?.let { res -> return ShaderScene(id, quadVert, loadRaw(res)) { onShaderError(it) } }
+        SHADER_SCENES[id]?.let { res ->
+            val frag = if (export) activeCustomShaders[id] ?: loadRaw(res) else loadRaw(res)
+            return ShaderScene(id, quadVert, frag) { onShaderError(it) }
+        }
         VisualStyleCatalog.cymatics(id)?.let { style ->
             return CymaticsScene(context, style).also { plate ->
                 plate.onShaderError = { onShaderError(it) }
@@ -784,14 +725,23 @@ class VisualizerRenderer(
                 BeamScene(context).also { beam ->
                     beam.onShaderError = { onShaderError(it) }
                 }
-            SceneIds.MILKDROP ->
+            SceneIds.MILKDROP -> {
+                // null -> the export scene feeds itself from the export
+                // timeline's per-frame waveform in update().
+                val milkPcm: () -> PcmChunk? =
+                    if (export) {
+                        { null }
+                    } else {
+                        { pcmProvider() }
+                    }
                 ProjectMScene(
                     postVertexSrc = loadRaw(R.raw.fade_vert),
                     postFragmentSrc = loadRaw(R.raw.pm_post_frag),
                     sharedTextureDir = File(context.filesDir, "milk/textures").absolutePath,
-                    pcmProvider = { pcmProvider() },
+                    pcmProvider = milkPcm,
                     onError = { onShaderError(it) },
                 )
+            }
             else -> error("availableSceneIds offers \"$id\" but createScene cannot build it")
         }
     }
@@ -1077,6 +1027,8 @@ class VisualizerRenderer(
         // F7 FlowField: advance the shared velocity field (its own tiny FBOs)
         // before any scene target is bound. When the FLUID scene is active
         // its own field is reused instead - never both (one source of truth).
+        // The service reads its own knobs - flowCurl, flowForce - off the
+        // params handed to step(); they are applied there, not here.
         val ff = flowField
         val fluidActive = scene is dev.musicviz.render.fluid.FluidScene
         // A field-DEFINED particle style (Inkflow) runs the service whatever
@@ -1084,7 +1036,25 @@ class VisualizerRenderer(
         // renders a frozen screen until the user finds a checkbox in another
         // tab would read as broken, not as opt-in.
         val sceneNeedsFlow = (scene as? ParticleSceneBase)?.requiresFlowField == true
-        if ((p.flowEnabled || sceneNeedsFlow) && ff != null && ff.available && !fluidActive) {
+        // Layers and transitions both want FBO B, so a transition WINS: it is
+        // brief and it is the thing the user just asked for, while the layer is
+        // a standing setting that can resume a second later. Resolved every
+        // frame because layerSceneId is written from another thread - and
+        // resolved HERE, before the FlowField step, because the layer has the
+        // same claim on the field the active scene has: Inkflow layered under
+        // a style that never asked for flow still needs the field stepped, or
+        // the layer rides a frozen field.
+        layerScene =
+            if (outgoingScene != null) {
+                null
+            } else {
+                layerSceneId
+                    ?.takeIf { it != requestedSceneId }
+                    ?.let { sceneFor(it) }
+                    ?.takeIf { it !== activeScene }
+            }
+        val layerNeedsFlow = (layerScene as? ParticleSceneBase)?.requiresFlowField == true
+        if ((p.flowEnabled || sceneNeedsFlow || layerNeedsFlow) && ff != null && ff.available && !fluidActive) {
             ff.step(gainAdjusted(features, p), dt, p)
         }
         // F2 ripple overlay: advance the shared heightfield (its own tiny
@@ -1115,20 +1085,8 @@ class VisualizerRenderer(
 
         var progress = 1f
         val outgoing = outgoingScene
-        // Layers and transitions both want FBO B, so a transition WINS: it is
-        // brief and it is the thing the user just asked for, while the layer is
-        // a standing setting that can resume a second later. Resolved every
-        // frame because layerSceneId is written from another thread.
-        layerScene =
-            if (outgoing != null) {
-                null
-            } else {
-                layerSceneId
-                    ?.takeIf { it != requestedSceneId }
-                    ?.let { sceneFor(it) }
-                    ?.takeIf { it !== activeScene }
-            }
         val layer = layerScene
+        var flowGridFresh = false
         if (layer != null) {
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboB.fbo)
             GLES30.glViewport(0, 0, renderWidth, renderHeight)
@@ -1136,8 +1094,13 @@ class VisualizerRenderer(
             // letting it accumulate would build an ever-brighter plate under
             // the active scene that no control could clear.
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+            // The layer is a full scene render, so it gets the FlowField
+            // plumbing the active scene gets - wired before its update, drained
+            // after it, exactly as the active scene's own sequence below.
+            flowGridFresh = wireFlowConsumers(layer, ff, p, layerNeedsFlow, flowGridFresh)
             layer.setParams(p)
             layer.update(gainAdjusted(features, p), dt)
+            drainFlowKicks(layer, ff, fluidActive)
             layer.draw(timeSeconds)
         }
         if (outgoing != null) {
@@ -1194,36 +1157,10 @@ class VisualizerRenderer(
         } else {
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
         }
-        // FlowField consumers on the active scene: CPU grid for particle
-        // scenes (CPU_GRID readback), uFlow sampler for shader scenes.
-        if ((p.flowEnabled || sceneNeedsFlow) && ff != null) {
-            if (scene is ParticleSceneBase && (p.flowAdvectParticles || sceneNeedsFlow) && ff.available) {
-                ff.readback(ff.velocityTex, ff.flowScale, ff.aspect)
-                scene.flowGrid = ff.cpuGrid
-            } else if (scene is ParticleSceneBase) {
-                scene.flowGrid = null
-            }
-            if (scene is ShaderScene && p.flowEnabled) {
-                scene.setFlow(if (ff.available) ff.velocityTex else zeroTex, p.flowStrength)
-            }
-        } else {
-            (scene as? ParticleSceneBase)?.flowGrid = null
-            (scene as? ShaderScene)?.setFlow(zeroTex, 0f)
-        }
+        wireFlowConsumers(scene, ff, p, sceneNeedsFlow, flowGridFresh)
         scene.setParams(p)
         scene.update(gainAdjusted(features, p), dt)
-        // Two-way coupling, the return leg: a particle style that rides the
-        // field can also push into it. Drained here, right after the update
-        // that produced them, so the kicks are queued before the next frame's
-        // step() consumes them - one frame of latency, and the field carries a
-        // trace of where the population has been.
-        if (ff != null && ff.available && !fluidActive && scene is ParticleSceneBase) {
-            val kicks = scene.flowKicks
-            for (i in 0 until kicks.size) {
-                ff.queueKick(kicks.x[i], kicks.y[i], kicks.vx[i], kicks.vy[i], kicks.radius[i])
-            }
-            kicks.clear()
-        }
+        drainFlowKicks(scene, ff, fluidActive)
         scene.draw(timeSeconds)
 
         // Composite to screen.
@@ -1429,7 +1366,9 @@ class VisualizerRenderer(
         val water = scene as? dev.musicviz.render.fluid.WaterScene
         // HYPERSPACE gets the stroke too: its medium is what molds the
         // fractals, so a drag across the screen pulls the geometry it crosses
-        // out of shape and stains it in the same gesture.
+        // out of shape and stains it in the same gesture. (The medium is
+        // MeltField's flow - the hyperStir/hyperSwirl/hyperFlowFade surface -
+        // which consumes those params inside the scene, not here.)
         val hyper = scene as? HyperspaceScene
         // WaterScene takes normalized coordinates and scales by its own sim
         // aspect; the shared overlay is scaled here, from its own.
@@ -1465,6 +1404,68 @@ class VisualizerRenderer(
                 )
             }
         }
+    }
+
+    /**
+     * FlowField consumers for one rendered scene: the CPU grid for a particle
+     * scene (a CPU_GRID readback), the uFlow sampler for a shader scene, and
+     * an explicit "off" for both so a disabled field never leaves last frame's
+     * flow attached. One function for the active scene AND the layer scene -
+     * the layer is a full scene render with the same claim on the field, and
+     * a second spelling of this wiring is how the layer went without it.
+     *
+     * [gridFresh] says this frame's readback already happened: the grid is one
+     * shared downsample of one field, so when both targets ride it the second
+     * reuses the first's instead of stalling on a second glReadPixels.
+     * Returns whether the grid is fresh after this call.
+     */
+    private fun wireFlowConsumers(
+        target: Scene,
+        ff: dev.musicviz.render.fluid.FlowField?,
+        p: SceneParams,
+        targetNeedsFlow: Boolean,
+        gridFresh: Boolean,
+    ): Boolean {
+        var fresh = gridFresh
+        if ((p.flowEnabled || targetNeedsFlow) && ff != null) {
+            if (target is ParticleSceneBase && (p.flowAdvectParticles || targetNeedsFlow) && ff.available) {
+                if (!fresh) {
+                    ff.readback(ff.velocityTex, ff.flowScale, ff.aspect)
+                    fresh = true
+                }
+                target.flowGrid = ff.cpuGrid
+            } else if (target is ParticleSceneBase) {
+                target.flowGrid = null
+            }
+            if (target is ShaderScene && p.flowEnabled) {
+                target.setFlow(if (ff.available) ff.velocityTex else zeroTex, p.flowStrength)
+            }
+        } else {
+            (target as? ParticleSceneBase)?.flowGrid = null
+            (target as? ShaderScene)?.setFlow(zeroTex, 0f)
+        }
+        return fresh
+    }
+
+    /**
+     * Two-way coupling, the return leg: a particle style that rides the field
+     * can also push into it. Called right after the update that produced the
+     * kicks, so they are queued before the next frame's step() consumes them -
+     * one frame of latency, and the field carries a trace of where the
+     * population has been. The layer scene pushes exactly as the active one
+     * does: ink layered under another style still stirs the water it rides.
+     */
+    private fun drainFlowKicks(
+        target: Scene,
+        ff: dev.musicviz.render.fluid.FlowField?,
+        fluidActive: Boolean,
+    ) {
+        if (ff == null || !ff.available || fluidActive || target !is ParticleSceneBase) return
+        val kicks = target.flowKicks
+        for (i in 0 until kicks.size) {
+            ff.queueKick(kicks.x[i], kicks.y[i], kicks.vx[i], kicks.vy[i], kicks.radius[i])
+        }
+        kicks.clear()
     }
 
     /**
@@ -1608,57 +1609,29 @@ class VisualizerRenderer(
     /**
      * Builds fresh scene instances for the export GL context. Never reuses
      * live-context objects: GL handles are not shareable across contexts.
+     *
+     * One switch, not two: this used to be a second hand-maintained spelling
+     * of [createScene] with a silent `else -> Nebula`, and the pair drifted
+     * exactly the way availableSceneIds once drifted from the registry. Built
+     * through [createScene], every id [availableSceneIds] offers exports the
+     * scene it names, and an unknown id fails the export loudly instead of
+     * silently rendering a Nebula clip.
      */
     fun exportSceneFactory(sceneId: String): VideoExporter.SceneFactory =
         object : VideoExporter.SceneFactory {
             override fun create(): Scene {
-                val exportParams = sceneParams
-                val particleShaders = particleShaderSources(context)
-                val quadVert = loadRaw(R.raw.quad_vert)
-                val cymaticsStyle = VisualStyleCatalog.cymatics(sceneId)
-                val hyperspaceStyle = VisualStyleCatalog.hyperspace(sceneId)
-                val scene: Scene =
-                    when {
-                        sceneId == SceneIds.FLUID ->
-                            dev.musicviz.render.fluid.FluidScene(context).also {
-                                it.setInjectionShaders(fluidForceSrc, fluidDyeSrc)
-                            }
-                        sceneId == SceneIds.CURLFLOW ->
-                            dev.musicviz.render.fluid
-                                .CurlFlowScene(context)
-                        sceneId == SceneIds.WATER ->
-                            dev.musicviz.render.fluid
-                                .WaterScene(context)
-                        cymaticsStyle != null -> CymaticsScene(context, cymaticsStyle)
-                        sceneId == SceneIds.BEAM -> BeamScene(context)
-                        hyperspaceStyle != null -> HyperspaceScene(context, hyperspaceStyle)
-                        sceneId == SceneIds.MILKDROP && PMBridge.available ->
-                            ProjectMScene(
-                                postVertexSrc = loadRaw(R.raw.fade_vert),
-                                postFragmentSrc = loadRaw(R.raw.pm_post_frag),
-                                sharedTextureDir = File(context.filesDir, "milk/textures").absolutePath,
-                                // null -> the scene feeds itself from the export
-                                // timeline's per-frame waveform in update().
-                                pcmProvider = { null },
-                            ).also { pm ->
-                                // Without this the export renders projectM's
-                                // default idle preset instead of what's on
-                                // screen.
-                                lastMilkPreset?.let { pm.queuePreset(it) }
-                            }
-                        sceneId == SceneIds.BURSTS -> BurstScene(particleShaders)
-                        sceneId == SceneIds.SWARM -> SwarmScene(particleShaders)
-                        sceneId == SceneIds.FOUNTAIN -> FountainScene(particleShaders)
-                        sceneId == SceneIds.ORBITS -> OrbitScene(particleShaders)
-                        sceneId == SceneIds.GALAXY -> GalaxyScene(particleShaders)
-                        sceneId == SceneIds.ATTRACTOR -> AttractorScene(particleShaders)
-                        sceneId == SceneIds.STORM -> StormScene(particleShaders)
-                        sceneId == SceneIds.INKFLOW -> InkflowScene(particleShaders)
-                        SHADER_SCENES.containsKey(sceneId) ->
-                            ShaderScene(sceneId, quadVert, activeCustomShaders[sceneId] ?: loadRaw(SHADER_SCENES.getValue(sceneId)))
-                        else -> NebulaScene(particleShaders)
-                    }
-                scene.setParams(exportParams)
+                val scene = createScene(sceneId, particleShaderSources(context), loadRaw(R.raw.quad_vert), export = true)
+                // State the live registry applies through channels the export
+                // context never sees (the fluidInjectionDirty flag drained in
+                // onDrawFrame, onSurfaceCreated's preset re-queue). Queued
+                // before init() exactly as the inline switch this replaces did.
+                (scene as? dev.musicviz.render.fluid.FluidScene)?.setInjectionShaders(fluidForceSrc, fluidDyeSrc)
+                (scene as? ProjectMScene)?.let { pm ->
+                    // Without this the export renders projectM's default idle
+                    // preset instead of what's on screen.
+                    lastMilkPreset?.let { pm.queuePreset(it) }
+                }
+                scene.setParams(sceneParams)
                 return scene
             }
         }

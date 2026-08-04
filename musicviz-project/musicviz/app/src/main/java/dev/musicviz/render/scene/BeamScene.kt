@@ -146,7 +146,13 @@ internal class BeamScene(
         } else {
             var peak = 0f
             for (i in samples.indices) {
-                val v = wave[i * wave.size / samples.size]
+                val raw = wave[i * wave.size / samples.size]
+                // Scrubbed at ingest, the fluid pipeline's isnan hygiene:
+                // max() propagates NaN, so one non-finite sample from an
+                // upstream glitch would poison peak - stalling the auto-gain
+                // - and land in the waveform texture as garbage beam
+                // geometry. A bad sample reads as silence.
+                val v = if (raw.isFinite()) raw else 0f
                 samples[i] = v
                 peak = max(peak, abs(v))
             }

@@ -40,4 +40,29 @@ class PcmRingBufferTest {
         assertTrue(ring.snapshotLatest(out))
         for (v in out) assertEquals(9f, v, 1e-6f)
     }
+
+    /**
+     * A reader a whole lap behind must not be handed the full ring: the
+     * oldest samples of that window sit AT the write head, where the audio
+     * thread overwrites them while the copy runs - a stale-vs-fresh seam,
+     * not the benign single-sample tearing the class signs up for. A quarter
+     * of the capacity stays clear as the writer's runway, and what the
+     * lagging reader gets is the NEWEST window of the reduced size.
+     */
+    @Test
+    fun `a lagging reader is kept clear of the write head`() {
+        val capacity = 256
+        val ring = PcmRingBuffer(capacity = capacity)
+        var value = 0f
+        repeat(10) {
+            val chunk = FloatArray(100) { value++ }
+            ring.writeInterleaved(chunk, frameCount = 100, channelCount = 1)
+        }
+        // 1000 samples written, the reader still at 0, an out array as large
+        // as the whole ring: the pre-clamp answer was all 256 slots.
+        val out = FloatArray(capacity)
+        val n = ring.copyNewSince(0L, out)
+        assertEquals(capacity - capacity / 4, n)
+        for (i in 0 until n) assertEquals("sample $i", (1000 - n + i).toFloat(), out[i], 0f)
+    }
 }

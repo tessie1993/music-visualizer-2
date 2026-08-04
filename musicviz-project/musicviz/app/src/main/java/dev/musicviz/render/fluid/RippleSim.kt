@@ -64,8 +64,14 @@ internal class RippleSim(
     var damping = 0.985f
 
     /**
-     * Allocate and run the liquid ink layer. Set BEFORE [create]/[resize];
-     * flipping it later takes effect on the next grid allocation.
+     * Allocate and run the liquid ink layer. Set BEFORE [create]: the ink
+     * shaders are compiled there and only there, so [allocGrid] honours a
+     * true only while those programs exist - a flip to true afterwards is
+     * ignored (the pool renders inkless) until the next [create], rather
+     * than allocating grids [step] has no programs to drive. Same shape as a
+     * FluidSim quality retier: the shader set is fixed at create, only grids
+     * move mid-life. Flipping to false takes effect on the next grid
+     * allocation.
      */
     var inkEnabled = false
 
@@ -208,7 +214,12 @@ internal class RippleSim(
             release()
             return
         }
-        if (inkEnabled) {
+        // Gated on the compiled program, not the flag alone: create() builds
+        // the ink shaders only when [inkEnabled] was set at that moment, and
+        // an ink grid without them would crash step()'s programs.getValue on
+        // the GL thread at the first splat. A post-create flip therefore
+        // degrades to the documented OFF behaviour instead.
+        if (inkEnabled && programs.containsKey(R.raw.water_ink_splat_frag)) {
             // The ink layer is an ENHANCEMENT: if the driver refuses the extra
             // RGBA16F pair the pool still renders, just without the liquid
             // film, rather than taking the whole style down with it.

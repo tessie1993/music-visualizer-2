@@ -23,6 +23,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.musicviz.analysis.IntelligenceMode
+import dev.musicviz.render.BlendMode
 import dev.musicviz.render.EnvBand
 import dev.musicviz.render.LfoConfig
 import dev.musicviz.render.LfoTarget
@@ -556,6 +558,7 @@ internal fun FxTab(
         LabeledSlider("Glitch", p.glitch, 0f..1f) { onChange(p.copy(glitch = it)) }
         LabeledSlider("Fisheye", p.fisheye, -1f..1f) { onChange(p.copy(fisheye = it)) }
         LabeledSlider("Strobe", p.strobe, 0f..1f) { onChange(p.copy(strobe = it)) }
+        LayersSection()
         SectionHeader("Envelopes (ADSR)")
         ControlHint(
             "Two beat-triggered envelopes. Each can drive SEVERAL parameters " +
@@ -578,6 +581,81 @@ internal fun FxTab(
             LfoCard(index = i, config = lfos.getOrElse(i) { LfoConfig() }, onChange = { onLfoChange(i, it) })
         }
     }
+}
+
+/**
+ * FX -> Layers: a SECOND style rendered under the active one every frame,
+ * combined by one of the [BlendMode] functions at the chosen mix.
+ *
+ * The layer fields are renderer state, not [SceneParams] entries (see
+ * `VisualizerRenderer.layerSceneId` for why), so this section does not ride
+ * the `p`/`onChange` path the rest of the panel uses: it reads and writes
+ * [LayersBus], and the shell-level engine bindings (`EnginePlumbing`) push the
+ * bus to the renderer from wherever the user goes next. That is also why none
+ * of these controls carries a lock chip - lock keys exist for `ParamRandomizer`
+ * rolls, and the randomizer only rolls [SceneParams] (the same shape as the
+ * Behavior tab's transition Duration slider).
+ */
+@Composable
+private fun LayersSection() {
+    val layers by LayersBus.state.collectAsState()
+    val layerScenes by LayersBus.availableScenes.collectAsState()
+    val activeScene by LayersBus.activeSceneId.collectAsState()
+    SectionHeader("Layers (second style)")
+    ControlHint(
+        "Renders a second style every frame and blends it under the active " +
+            "one - a whole extra scene, so it costs frames. Screen only: a " +
+            "video export carries the active style alone.",
+    )
+    CheckRow("Layers enabled", layers.enabled) { on ->
+        // First enable with nothing picked starts on the first style that is
+        // not the active one, so the switch visibly does something instead of
+        // arming a layer with no scene behind it.
+        val scene = layers.sceneId ?: layerScenes.firstOrNull { it != activeScene }
+        LayersBus.state.value = layers.copy(enabled = on, sceneId = scene)
+    }
+    if (!layers.enabled) return
+    var showLayerPicker by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { showLayerPicker = true }) {
+            Text("Layer style: ${layers.sceneId?.let { sceneDisplayLabel(it) } ?: "none"}")
+        }
+        DropdownMenu(expanded = showLayerPicker, onDismissRequest = { showLayerPicker = false }) {
+            // Minus the active scene: the renderer ignores a layer naming it
+            // (a style blended with itself is just that style at a different
+            // exposure), so offering it would be a picker entry that does
+            // nothing.
+            layerScenes.filter { it != activeScene }.forEach { id ->
+                DropdownMenuItem(
+                    text = { Text(sceneDisplayLabel(id)) },
+                    onClick = {
+                        LayersBus.state.value = layers.copy(sceneId = id)
+                        showLayerPicker = false
+                    },
+                )
+            }
+        }
+    }
+    if (layers.sceneId != null && layers.sceneId == activeScene) {
+        // The pick was valid when it was made; the ACTIVE style moved onto it
+        // afterwards. Said rather than auto-corrected: silently reassigning
+        // the layer would change the look for a reason the user cannot see.
+        ControlHint("That style is now the active one, so the layer is idle - pick another.")
+    }
+    Text("Blend", style = MaterialTheme.typography.labelSmall)
+    ChipRow(BlendMode.entries.map { it.name.lowercase() }, BlendMode.entries.indexOf(layers.blend)) {
+        LayersBus.state.value = layers.copy(blend = BlendMode.entries[it])
+    }
+    Text("Layer mix ${"%.2f".format(layers.mix)}", style = MaterialTheme.typography.labelMedium)
+    // 0..1 is exactly what the renderer accepts: VisualSafety.layerMix coerces
+    // into that range before its ADD/DIFFERENCE clamping, so the whole slider
+    // is live and nothing beyond it would be.
+    CrystalSlider(
+        value = layers.mix,
+        onValueChange = { LayersBus.state.value = layers.copy(mix = it) },
+        valueRange = 0f..1f,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable

@@ -81,7 +81,10 @@ class PlaybackCapture(
     /**
      * Bumped on every [start], so a worker that outlived its own [stop] - a
      * read still blocked when the join timed out - cannot clear [running] out
-     * from under the run that replaced it.
+     * from under the run that replaced it, and exits instead of re-entering
+     * its loop when that run flips [running] back on. Without the loop fence
+     * a stop-then-start pair left the old worker alive, holding its recorder
+     * and double-feeding the ring alongside the new one.
      */
     @Volatile
     private var runGeneration = 0
@@ -147,10 +150,13 @@ class PlaybackCapture(
             return CaptureFailure.UNAVAILABLE
         }
         record = rec
+        // Generation first, then the flag: a stale worker re-checks both, and
+        // the other order has a moment where it sees the new run's `running`
+        // while its own generation is still current.
+        val generation = ++runGeneration
         running = true
         blockedLikely = false
         lastAudibleAtMs = 0L
-        val generation = ++runGeneration
         onSampleRate(sampleRateHz)
         val channels = channelCount
         worker =
@@ -159,7 +165,7 @@ class PlaybackCapture(
                 val shorts = ShortArray(READ_FRAMES * channels)
                 val asFloat = rec.audioFormat == AudioFormat.ENCODING_PCM_FLOAT
                 val startedAt = android.os.SystemClock.elapsedRealtime()
-                while (running) {
+                while (running && runGeneration == generation) {
                     val n =
                         if (asFloat) {
                             rec.read(floats, 0, floats.size, AudioRecord.READ_BLOCKING)
@@ -170,6 +176,11 @@ class PlaybackCapture(
                             }
                             read
                         }
+                    // The read may have straddled a stop-then-start pair. If
+                    // so, these samples belong to the run that was stopped and
+                    // the ring already has a new worker feeding it - writing
+                    // them would double-feed it.
+                    if (runGeneration != generation) break
                     if (n > 0) {
                         val frames = n / channels
                         if (frames > 0) {

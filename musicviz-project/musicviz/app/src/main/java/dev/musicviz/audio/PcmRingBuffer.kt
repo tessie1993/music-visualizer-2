@@ -102,7 +102,16 @@ class PcmRingBuffer(
         var available = w - fromIndex
         if (available <= 0L) return 0
         if (available > out.size) available = out.size.toLong()
-        if (available > data.size) available = data.size.toLong()
+        // A reader lagging a full lap is clamped short of the whole ring, not
+        // to it: the oldest samples of a full-capacity window sit AT the
+        // write head, where the audio thread overwrites them mid-copy - a
+        // whole stale-vs-fresh seam, not the benign single-sample tearing
+        // this class signs up for. A quarter of the ring stays clear as the
+        // writer's runway (~340 ms at 48 kHz on the default capacity, far
+        // longer than any copy takes), the same headroom idea as the capture
+        // classes' BUFFER_MULTIPLIER.
+        val maxRun = data.size - (data.size shr SNAPSHOT_HEADROOM_SHIFT)
+        if (available > maxRun) available = maxRun.toLong()
         val start = w - available
         for (i in 0 until available.toInt()) {
             out[i] = data[((start + i) and mask).toInt()]
@@ -136,5 +145,15 @@ class PcmRingBuffer(
             r++
         }
         return true
+    }
+
+    private companion object {
+        /**
+         * Fraction of the ring (as a right shift: 2 = a quarter) kept clear
+         * between a lagging reader's window and the write head in
+         * [copyNewSince]. Proportional rather than a fixed sample count so a
+         * small test-sized ring keeps the same guarantee as the 64 K default.
+         */
+        const val SNAPSHOT_HEADROOM_SHIFT = 2
     }
 }

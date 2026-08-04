@@ -45,6 +45,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -1160,6 +1161,21 @@ private fun TexturesHubTab(
 // ---------------------------------------------------------------- GLSL
 
 /**
+ * Saved instance state rides a Binder transaction capped around 1 MB for the
+ * whole activity, so `rememberSaveable`-ing an arbitrarily large shader draft
+ * risks TransactionTooLargeException on backgrounding. Drafts up to this many
+ * chars are worth the budget; anything bigger [ShaderDraftSaver] drops from
+ * saved state, and the editor re-seeds from the renderer's committed source.
+ */
+private const val MAX_SAVED_SHADER_DRAFT_CHARS = 8 * 1024
+
+private val ShaderDraftSaver =
+    Saver<String, String>(
+        save = { draft -> draft.takeIf { it.length <= MAX_SAVED_SHADER_DRAFT_CHARS } },
+        restore = { it },
+    )
+
+/**
  * Shader-scene GLSL editor, restored after the navigation refactor: seeds
  * from the scene's current custom shader, applies through the ViewModel so
  * the shell-level engine bindings reach the renderer from any screen.
@@ -1170,7 +1186,9 @@ private fun GlslHubTab(
     visualizerView: VisualizerView,
 ) {
     val viz by viewModel.vizState.collectAsState()
-    var source by rememberSaveable(viz.sceneId) {
+    // Saveable so an uncommitted draft survives rotation, but through
+    // [ShaderDraftSaver] so a large source cannot blow the Binder budget.
+    var source by rememberSaveable(viz.sceneId, stateSaver = ShaderDraftSaver) {
         mutableStateOf(visualizerView.visualizerRenderer.customShaderFor(viz.sceneId) ?: "")
     }
     Column {

@@ -1,5 +1,7 @@
 package dev.musicviz.analysis
 
+import dev.musicviz.render.scene.SceneIds
+
 /** Intelligence modes selectable by the user. */
 enum class IntelligenceMode { MANUAL, SUGGEST, AUTO }
 
@@ -8,10 +10,13 @@ enum class IntelligenceMode { MANUAL, SUGGEST, AUTO }
  * Deliberately simple, transparent rules; fully overridable by the user.
  */
 object SceneSuggester {
-    const val SCENE_NEBULA = "nebula"
-    const val SCENE_BURSTS = "bursts"
-    const val SCENE_JULIA = "julia"
-    const val SCENE_TUNNEL = "tunnel"
+    // Aliases of the renderer's stable ids, NOT free literals: a renamed scene
+    // id must fail to compile here rather than silently suggest a scene the
+    // renderer no longer knows.
+    const val SCENE_NEBULA = SceneIds.NEBULA
+    const val SCENE_BURSTS = SceneIds.BURSTS
+    const val SCENE_JULIA = SceneIds.JULIA
+    const val SCENE_TUNNEL = SceneIds.TUNNEL
 
     fun suggestForTrack(timeline: FeatureTimeline): String = suggest(timeline.bpm, timeline.averageEnergy, timeline.averageCentroid)
 
