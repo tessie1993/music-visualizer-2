@@ -240,10 +240,11 @@ class AppSettingsTabSplitTest {
     @Test
     fun customizeLeftSettingsAndKeptItsOneDoorInVisuals() {
         // The Customize panel belongs to the Visuals hub; Settings no longer
-        // mounts a second copy of it.
+        // mounts a second copy of it. The shell may still MENTION it in docs
+        // (the KDoc explains where it went), so this matches the call.
         assertFalse(
             "SettingsScreen must not mount CustomizePanel any more",
-            "CustomizePanel" in sourceOf("AppShell.kt"),
+            "CustomizePanel(viewModel" in sourceOf("AppShell.kt"),
         )
         assertTrue(
             "the Visuals hub keeps the one CustomizePanel door",

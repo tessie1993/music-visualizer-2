@@ -68,9 +68,58 @@ const float LIQUID_EXTINCTION = 0.55;
 const float LIQUID_EMISSION = 0.40;
 
 uniform vec2 uResolution;
+/**
+ * Wrapped at HyperspaceMath.TIME_WRAP_SECONDS = 1000 turns of 2*pi. Every
+ * sin/cos multiplier of uTime in this file must therefore be a multiple of
+ * 0.001 (three decimals or fewer), so the wrap lands on a whole number of
+ * turns; floor()-seeded noise (the dust, the grain) reseeds at the wrap,
+ * which it already does several times a second by design.
+ * HyperspaceClockWrapTest enforces the rule.
+ */
 uniform float uTime;
 /** Family substyle: 0 original, 1..10 authored variants. */
 uniform int uStyle;
+
+// ---- substyle identity ---------------------------------------------------
+/**
+ * Worst-case Jacobian norm of styleBody()'s deform for this substyle
+ * (HyperspaceStyle.lipschitz, always >= 1). The deform runs BEFORE the
+ * estimator, so speciesDE bounds the distance in the DEFORMED frame; a twist
+ * or shell modulation can overestimate marched-space distance by up to this
+ * factor, and a ray stepping the raw estimate walks through thin geometry.
+ * map() divides every estimate by it.
+ */
+uniform float uLipschitz;
+/**
+ * Floor on the substyle signature weight in styleSky(): identity survives
+ * Filigree at 0 instead of eleven styles blanking into one void.
+ */
+uniform float uStyleFloor;
+/**
+ * The substyle's own screen pre-fold count, 0 = off. Already gated on the
+ * CPU by the act's styleMirror intent (BREAKTHROUGH releases every fold) and
+ * rescaled by the user's Mirror-folds control.
+ */
+uniform float uStyleKaleido;
+/** Accent colour: x hue OFFSET from uBaseHue in turns, y saturation,
+ *  z blend amount (0 = palette untouched). */
+uniform vec3 uStyleTint;
+/**
+ * Slew-limited bass/mid envelopes (HyperspaceMath.slewLimit): bounded 0..1
+ * with a bounded rate of change, which is what licenses them to steer
+ * GEOMETRY (fold rotations, shell swell, bulb power) where the raw uBass -
+ * and above all uBeat - must stay out of it; see the fold note in map().
+ */
+uniform float uSlewBass;
+uniform float uSlewMid;
+/**
+ * CPU-integrated substyle phase, wraps at 1 (HyperspaceScene). Consumers
+ * multiply it by WHOLE numbers only, so fract()/sin(2*pi*...) of it land
+ * exactly where they started when it wraps.
+ */
+uniform float uStylePhase;
+/** 16-bucket smoothed spectrum summary (SpectralSummary). */
+uniform float uBands[16];
 
 // ---- the living bodies -------------------------------------------------
 uniform int uBloomCount;
@@ -219,39 +268,65 @@ float hash31(vec3 p) {
  * Local, bounded deformations for the family substyles. The body's bounding
  * sphere still clips every result, so a profile cannot invalidate the CPU's
  * culling contract or reach outside the raymarch safety envelope.
+ *
+ * EVERY branch here has a Jacobian bound recorded in the style catalog
+ * (HyperspaceStyle.lipschitz) and uploaded as uLipschitz; map() divides the
+ * estimate by it, so a new deform is only correct together with a new bound.
+ * Rotations and abs() are isometries (bound 1); an additive sine of
+ * amplitude A and frequency f adds A*f; a twist of rate k adds k*R over a
+ * body of local radius R; a uniform scale multiplies by itself.
  */
 vec3 styleBody(vec3 q, float phase) {
-    if (uStyle == 1) { // Polytope: hard mirrored cells and four-dimensional turns.
-        q = abs(q);
-        q.xy = rot2(0.55 + 0.18 * sin(phase)) * q.xy;
-        q.yz = rot2(0.47) * q.yz;
+    if (uStyle == 1) {
+        // Polytope: a kaleidoscopic-IFS cathedral. Three fold-rotate-scale
+        // rounds carve the box species into stacked, terraced cells, and the
+        // FOLD ROTATION leans on the slew-limited bass, so the architecture
+        // visibly reorganises - breathes - on kicks without a single
+        // discontinuous frame (rotation is an isometry; the only Lipschitz
+        // cost is the scale, 1.24^3, carried in the catalog).
+        float ang = 0.42 + 0.30 * uSlewBass + 0.10 * sin(phase);
+        mat2 fold = rot2(ang);
+        mat2 tilt = rot2(0.31);
+        for (int k = 0; k < 3; k++) {
+            q = abs(q);
+            q.xy = fold * q.xy;
+            q.yz = tilt * q.yz;
+            q = q * 1.24 - vec3(0.42, 0.30, 0.36) * 0.24;
+        }
     } else if (uStyle == 2) { // Liquid Warp: a thin skin carried by the shared fluid field.
         q.z += 0.13 * sin(q.x * 3.1 + phase) + 0.10 * sin(q.y * 2.7 - phase * 0.7);
         q.z *= 0.62;
-    } else if (uStyle == 3) { // Caduceus: double-helical torsion along the body axis.
-        q.xy = rot2(q.z * 1.55 + phase * 0.18) * q.xy;
-        q.x += 0.08 * sin(q.z * 5.0 + phase);
+    } else if (uStyle == 3) {
+        // Caduceus: pure axial torsion - two lobes of the bulb wind around
+        // each other like the staff's serpents. No additive sine: the twist
+        // alone is the identity, and it keeps the Lipschitz bound at
+        // 1 + 0.9 * localRadius(BULB) instead of compounding it.
+        q.xy = rot2(q.z * 0.9 + phase * 0.18) * q.xy;
     } else if (uStyle == 4) { // Cortex: folded organic ridges.
         q += 0.075 * sin(q.yzx * 4.3 + vec3(phase, phase * 0.7, phase * 1.3));
     } else if (uStyle == 5) { // Reliquary: cut facets around a protected core.
         q = abs(q) - vec3(0.035, 0.06, 0.025);
         q.xz = rot2(0.785 + 0.08 * sin(phase)) * q.xz;
-    } else if (uStyle == 6) { // Moire: two close angular frames interfering.
-        q.xy = rot2(0.22 * sin(phase * 0.27)) * q.xy;
-        q.xz = rot2(0.25 * sin(phase * 0.23 + 1.4)) * q.xz;
-    } else if (uStyle == 7) { // Foam: pressure shells around every body.
-        q *= 1.0 + 0.055 * sin(length(q) * 10.0 - phase * 0.55);
-    } else if (uStyle == 8) { // Dustskin: a fine granular displacement at the surface.
-        q += 0.022 * sin(q.zxy * 18.0 + phase);
-    } else if (uStyle == 9) { // Plume: long, twisting bodies carried by the medium.
-        q.z *= 0.56;
-        q.xy = rot2(q.z * 1.15 + phase * 0.12) * q.xy;
-        q.x += 0.10 * sin(q.z * 4.0 + phase * 0.4);
-    } else if (uStyle == 10) { // Resonant Wormhole: cymatic shells cut through each body.
-        float shell = sin(length(q) * 11.0 - phase * 0.75);
-        q *= 1.0 + 0.055 * shell;
-        q.xy = rot2(0.16 * sin(phase * 0.31)) * q.xy;
+    } else if (uStyle == 7) {
+        // Foam: broad pressure shells over the sphere packing. Fewer, wider
+        // shells than the first draft (freq 3, not 10): the radial term of
+        // the Jacobian is eps*k*R, so the old frequency cost a factor-2 bound
+        // for a modulation nobody could tell from this one. The packing's
+        // own fold constant also swells on the bass - see map().
+        q *= 1.0 + 0.05 * sin(length(q) * 3.0 - phase * 0.55);
+    } else if (uStyle == 9) {
+        // Plume: stretched, slowly twisting drift - a rising column rather
+        // than Caduceus' tight double serpent (a third of the twist rate,
+        // plus a sway the serpents deliberately lack).
+        q.z *= 0.78;
+        q.xy = rot2(q.z * 0.3 + phase * 0.12) * q.xy;
+        q.x += 0.07 * sin(q.z * 2.2 + phase * 0.4);
     }
+    // Styles 6 (Moire), 8 (Dustskin) and 10 (Wormhole) leave the body clean:
+    // their old deforms were invisible (micro-rotations, a displacement below
+    // the hit epsilon, a duplicate of Foam's shells) and their identities now
+    // live in styleSky() and the full-frame signatures, where they cost one
+    // evaluation per pixel instead of one per march step.
     return q;
 }
 
