@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -24,8 +26,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,6 +42,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 
 /**
  * The seek bar, drawn as the track's own loudness.
@@ -171,8 +177,9 @@ fun LyricsPanel(
     }
     val current = lyrics.indexAt(positionMs)
     val listState = rememberLazyListState()
-    LaunchedEffect(current) {
-        if (current >= 0) {
+    val follows = rememberFollowsPlayback(listState)
+    LaunchedEffect(current, follows.value) {
+        if (follows.value && current >= 0) {
             listState.animateScrollToItem(current.coerceAtLeast(0), scrollOffset = -SCROLL_LEAD_PX)
         }
     }
@@ -190,7 +197,12 @@ fun LyricsPanel(
                     .fillMaxWidth()
                     .then(
                         if (lyrics.synced) {
-                            Modifier.clickable { onSeek(line.timeMs) }
+                            Modifier.clickable {
+                                // Jumping to a line is an explicit "take me
+                                // there": resume following immediately.
+                                follows.value = true
+                                onSeek(line.timeMs)
+                            }
                         } else {
                             Modifier
                         },
@@ -228,6 +240,42 @@ fun LyricsPanel(
 /** How far above centre the active lyric line rides, in pixels. */
 private const val SCROLL_LEAD_PX = 160
 
+/** How long after the user lets go of a following list before it resumes chasing playback. */
+private const val FOLLOW_RESUME_DELAY_MS = 5_000L
+
+/**
+ * Whether a list that follows playback should be following right now.
+ *
+ * A follow scroll that fires while the user is reading back through the lyrics
+ * or browsing the queue yanks the list out from under them, so following is
+ * suspended the moment the user grabs the list and resumes after
+ * [FOLLOW_RESUME_DELAY_MS] of idle. Invariant: programmatic scrolls must not
+ * count as user scrolls — the auto-scroller would suspend itself — which is
+ * why user intent is read from the list's drag interactions: only pointer
+ * gestures emit those, `animateScrollToItem` never does.
+ *
+ * The returned state is writable so a tap that expresses "take me to the
+ * playing item" can resume following immediately.
+ */
+@Composable
+private fun rememberFollowsPlayback(listState: LazyListState): MutableState<Boolean> {
+    val follows = remember { mutableStateOf(true) }
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collectLatest { interaction ->
+            if (interaction is DragInteraction.Start) {
+                follows.value = false
+            } else {
+                // Drag ended or was cancelled: wait out the idle window before
+                // resuming. collectLatest restarts the wait if the user grabs
+                // the list again, and any fling decays well inside it.
+                delay(FOLLOW_RESUME_DELAY_MS)
+                follows.value = true
+            }
+        }
+    }
+    return follows
+}
+
 /**
  * What is coming up, and the ability to change it.
  *
@@ -259,8 +307,11 @@ fun QueuePanel(
         return
     }
     val listState = rememberLazyListState()
-    LaunchedEffect(queue.index) {
-        listState.animateScrollToItem(queue.index.coerceIn(0, queue.tracks.lastIndex))
+    val follows = rememberFollowsPlayback(listState)
+    LaunchedEffect(queue.index, follows.value) {
+        if (follows.value) {
+            listState.animateScrollToItem(queue.index.coerceIn(0, queue.tracks.lastIndex))
+        }
     }
     LazyColumn(
         modifier,
@@ -272,8 +323,12 @@ fun QueuePanel(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clickable { onPlayIndex(index) }
-                    .padding(vertical = 6.dp, horizontal = 4.dp),
+                    .clickable {
+                        // Picking a track is an explicit "play from here":
+                        // resume following immediately.
+                        follows.value = true
+                        onPlayIndex(index)
+                    }.padding(vertical = 6.dp, horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TrackArtwork(track.uri, Modifier.size(40.dp), corner = 8.dp)

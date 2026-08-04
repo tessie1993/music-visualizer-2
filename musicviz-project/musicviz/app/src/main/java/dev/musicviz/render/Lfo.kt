@@ -93,6 +93,8 @@ class LfoEngine {
 
     private val phases = FloatArray(3)
     private val sampleHold = FloatArray(3)
+
+    /** S&H cycle counter, wrapped to [SH_PHASE_WRAP] - see that constant. */
     private val totalPhase = FloatArray(3)
     private val lastCycle = IntArray(3) { -1 }
 
@@ -157,7 +159,7 @@ class LfoEngine {
                 )
             val depth = (c.depth + depthAdd[i]).coerceIn(0f, 2f)
             phases[i] = (phases[i] + rate * dt) % 1f
-            totalPhase[i] += rate * dt
+            totalPhase[i] = (totalPhase[i] + rate * dt) % SH_PHASE_WRAP
             val ph = phases[i]
             val raw =
                 when (c.wave) {
@@ -167,8 +169,9 @@ class LfoEngine {
                     LfoWave.SQUARE -> if (ph < 0.5f) 1f else -1f
                     LfoWave.RANDOM -> {
                         // One new random value per full LFO cycle (the labeled
-                        // rate), using the unwrapped phase so the %1f wrap of
-                        // [phases] can't retrigger or skip samples.
+                        // rate), counted on [totalPhase] so the %1f wrap of
+                        // [phases] can't retrigger or skip samples. Its own
+                        // wrap is boundary-aligned: see [SH_PHASE_WRAP].
                         val cycle = floor(totalPhase[i]).toInt()
                         if (cycle != lastCycle[i]) {
                             lastCycle[i] = cycle
@@ -191,6 +194,32 @@ class LfoEngine {
     }
 
     companion object {
+        /**
+         * Wrap period for [totalPhase], the S&H wave's cycle counter - the
+         * float-absorption threat `VisualizerRenderer.TIME_WRAP_SEC`
+         * documents, on the one accumulator in this engine that grows for
+         * the life of the process. Unwrapped, an S&H LFO at the 30 Hz rate
+         * ceiling crosses 2^23 after ~3 days of wallpaper uptime, where the
+         * float32 ULP (1.0) starts absorbing a 60 fps frame's 0.5 advance;
+         * past 2^24 (~a week) the advance is under half an ULP, the
+         * accumulator stops moving, and the "random" wave holds one value
+         * forever.
+         *
+         * Any whole-number period is invisible to the consumer: it compares
+         * consecutive `floor()`s for INEQUALITY only, and the held value is
+         * a fresh draw per transition rather than a hash of the cycle index,
+         * so the 63 -> 0 step at the wrap is exactly the one transition that
+         * cycle boundary owes anyway (a fractional period would put the wrap
+         * mid-cycle and fire a spurious extra sample). 64 leaves margin both
+         * ways: a single tick advances at most 30 Hz * 0.1 s (the renderer's
+         * dt clamp) = 3, so no tick can lap the period; and the ULP just
+         * below 64 (2^-18 ~ 3.8e-6) keeps even the smallest advance
+         * (0.01 Hz at the renderer's 1 ms dt floor = 1e-5) above the
+         * absorption threshold, so the counter cannot stall just beneath
+         * the wrap the way it stalled at 2^24.
+         */
+        internal const val SH_PHASE_WRAP = 64f
+
         /** Applies LFO outputs onto [p], returning the modulated params. */
         fun apply(
             p: SceneParams,

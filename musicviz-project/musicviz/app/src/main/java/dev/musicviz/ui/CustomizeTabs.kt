@@ -29,7 +29,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.musicviz.analysis.IntelligenceMode
@@ -122,12 +127,40 @@ private fun ControlHint(text: String) {
 private fun LockChip(label: String) {
     val (locked, toggle) = LocalParamLocks.current
     val on = label in locked
-    Text(
-        if (on) "\uD83D\uDD12 locked" else "lock",
-        style = MaterialTheme.typography.labelSmall,
-        color = if (on) accentTextColor() else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
-        modifier = Modifier.clickable { toggle(label) }.padding(start = 8.dp),
-    )
+    val text = if (on) "\uD83D\uDD12 locked" else "lock"
+    // 48dp is the Android floor for touch targets, and this panel is worked
+    // mid-performance where a missed tap lands on a neighbouring control - but
+    // a 48dp pill in every label row would triple the height of the control
+    // stack. So the row is told only the drawn text's size, and the clickable
+    // square overflows it, centred: full-sized target, unchanged layout. The
+    // square is a sibling PLACED BEFORE each control's own slider in the
+    // column, so the slider still wins hit testing where the two overlap.
+    Layout(
+        content = {
+            Text(
+                text,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (on) accentTextColor() else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                // The overlay below is this chip's one accessible node.
+                modifier = Modifier.clearAndSetSemantics {},
+            )
+            Box(
+                modifier =
+                    Modifier
+                        .semantics { contentDescription = if (on) "$label locked" else "Lock $label" }
+                        .clickable(onClickLabel = if (on) "unlock" else "lock") { toggle(label) },
+            )
+        },
+        modifier = Modifier.padding(start = 8.dp),
+    ) { measurables, constraints ->
+        val pill = measurables[0].measure(constraints)
+        val minPx = 48.dp.roundToPx()
+        val touch = measurables[1].measure(Constraints.fixed(maxOf(pill.width, minPx), maxOf(pill.height, minPx)))
+        layout(pill.width, pill.height) {
+            pill.place(0, 0)
+            touch.place((pill.width - touch.width) / 2, (pill.height - touch.height) / 2)
+        }
+    }
 }
 
 /** Label row shared by the labelled controls: name on the left, lock right. */

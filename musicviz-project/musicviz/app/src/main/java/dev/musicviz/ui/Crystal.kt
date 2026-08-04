@@ -17,7 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
@@ -609,9 +609,13 @@ private val BACKDROP_SHARDS =
  * themes retain the moving shard highlights.
  */
 @Composable
-fun CrystalBackground(modifier: Modifier = Modifier) {
+fun CrystalBackground(
+    modifier: Modifier = Modifier,
+    reducedMotion: Boolean = false,
+) {
     val cs = MaterialTheme.colorScheme
     val theme = LocalCrystalTheme.current
+    val kind = theme.crystalTextureKind()
     // Fixed seed: the texture field is stable across recompositions and tabs.
     val stars =
         remember {
@@ -626,16 +630,41 @@ fun CrystalBackground(modifier: Modifier = Modifier) {
                 )
             }
         }
-    val t by rememberInfiniteTransition(label = "crystal-bg")
-        .animateFloat(
-            initialValue = 0f,
-            targetValue = 2f * PI.toFloat(),
-            animationSpec = infiniteRepeatable(tween(11000, easing = LinearEasing)),
-            label = "mineral-light",
-        )
+    // Pointed or bladed minerals get a few moving facets. Banded, cloudy
+    // and granular stones keep their own structures instead of inheriting
+    // the same floating crystals.
+    val showShards =
+        kind == CrystalTextureKind.CLEAR_QUARTZ ||
+            kind == CrystalTextureKind.AMETHYST ||
+            kind == CrystalTextureKind.KYANITE
+    // Sparkles are inclusions only for clear/black crystal and generic
+    // non-mineral themes. Lapis already has pyrite; adding stars on top
+    // would turn a mineral cue back into space wallpaper.
+    val showSparkles =
+        kind == CrystalTextureKind.CLEAR_QUARTZ ||
+            kind == CrystalTextureKind.ONYX ||
+            kind == CrystalTextureKind.GENERIC
+    // The infinite clock only runs when the stone actually has moving marks
+    // AND the user hasn't asked for reduced motion; otherwise the backdrop
+    // is a single static draw at t = 0.
+    val phase =
+        if ((showShards || showSparkles) && !reducedMotion) {
+            rememberInfiniteTransition(label = "crystal-bg")
+                .animateFloat(
+                    initialValue = 0f,
+                    targetValue = 2f * PI.toFloat(),
+                    animationSpec = infiniteRepeatable(tween(11000, easing = LinearEasing)),
+                    label = "mineral-light",
+                )
+        } else {
+            remember { mutableFloatStateOf(0f) }
+        }
     val lightTheme = cs.background.luminance() > 0.5f
     val sparkle = if (lightTheme) cs.primary else Color.White
     Canvas(modifier) {
+        // Read inside the draw scope so animation frames invalidate only the
+        // draw pass, never the composition.
+        val t = phase.value
         drawRect(cs.background)
         val d = max(size.width, size.height)
 
@@ -672,13 +701,6 @@ fun CrystalBackground(modifier: Modifier = Modifier) {
             panel = false,
         )
 
-        // Pointed or bladed minerals get a few moving facets. Banded, cloudy
-        // and granular stones keep their own structures instead of inheriting
-        // the same floating crystals.
-        val showShards =
-            theme.crystalTextureKind() == CrystalTextureKind.CLEAR_QUARTZ ||
-                theme.crystalTextureKind() == CrystalTextureKind.AMETHYST ||
-                theme.crystalTextureKind() == CrystalTextureKind.KYANITE
         if (showShards) {
             val shardBase = if (lightTheme) 0.38f else 0.72f
             BACKDROP_SHARDS.forEach { sh ->
@@ -713,13 +735,6 @@ fun CrystalBackground(modifier: Modifier = Modifier) {
             }
         }
 
-        // Sparkles are inclusions only for clear/black crystal and generic
-        // non-mineral themes. Lapis already has pyrite; adding stars on top
-        // would turn a mineral cue back into space wallpaper.
-        val showSparkles =
-            theme.crystalTextureKind() == CrystalTextureKind.CLEAR_QUARTZ ||
-                theme.crystalTextureKind() == CrystalTextureKind.ONYX ||
-                theme.crystalTextureKind() == CrystalTextureKind.GENERIC
         if (showSparkles) {
             stars.forEach { star ->
                 val twinkle = 0.5f + 0.5f * sin(t + star.phase)

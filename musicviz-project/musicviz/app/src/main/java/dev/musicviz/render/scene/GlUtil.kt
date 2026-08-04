@@ -36,9 +36,11 @@ object GlUtil {
         // for every fluid/composite texture fetch on that unit, and a leaked
         // pack PBO redirects FlowField.readback()'s glReadPixels into the
         // stale buffer object instead of client memory (corrupt readbacks,
-        // no GL error). Unbind samplers on the units the pipeline uses and
-        // clear both pixel-buffer binding points.
-        for (unit in 0..3) GLES30.glBindSampler(unit, 0)
+        // no GL error). Unbind samplers on every unit the pipeline uses -
+        // through unit 4, where the composite's blue-noise dither depends on
+        // NEAREST/REPEAT texture state (BlueNoise) that a leaked sampler
+        // would override - and clear both pixel-buffer binding points.
+        for (unit in 0..7) GLES30.glBindSampler(unit, 0)
         GLES30.glBindBuffer(GLES30.GL_PIXEL_PACK_BUFFER, 0)
         GLES30.glBindBuffer(GLES30.GL_PIXEL_UNPACK_BUFFER, 0)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)

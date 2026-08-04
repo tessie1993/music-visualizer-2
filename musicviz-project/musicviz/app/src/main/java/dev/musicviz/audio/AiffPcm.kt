@@ -11,8 +11,8 @@ import java.io.InputStream
  * MediaExtractor/MediaCodec stack has no AIFF support, so playback uses the
  * Media3 [AiffExtractor]; this reader covers the OTHER two decode paths -
  * offline analysis and export transcoding - by reading COMM (channels, bit
- * depth, 80-bit extended sample rate) and streaming SSND big-endian PCM as
- * 16-bit little-endian shorts.
+ * depth, 80-bit extended sample rate) and streaming SSND PCM (big-endian, or
+ * byte-swapped for AIFC "sowt") as 16-bit shorts.
  */
 class AiffPcm private constructor(
     private val input: DataInputStream,
@@ -20,6 +20,7 @@ class AiffPcm private constructor(
     val sampleRate: Int,
     private val bitsPerSample: Int,
     val totalFrames: Long,
+    private val littleEndian: Boolean,
 ) {
     private var framesRead = 0L
 
@@ -53,12 +54,14 @@ class AiffPcm private constructor(
         if (samples == 0) return -1
         for (i in 0 until samples) {
             val o = i * bytesPer
+            // "sowt" is the same PCM byte-swapped, so the two significant
+            // bytes sit at the opposite end of each sample.
+            val hi = if (littleEndian) o + bytesPer - 1 else o
+            val lo = if (littleEndian) o + bytesPer - 2 else o + 1
             out[i] =
                 when (bitsPerSample) {
                     8 -> ((raw[o].toInt()) shl 8).toShort()
-                    16 -> (((raw[o].toInt() and 0xFF) shl 8) or (raw[o + 1].toInt() and 0xFF)).toShort()
-                    24 -> (((raw[o].toInt() and 0xFF) shl 8) or (raw[o + 1].toInt() and 0xFF)).toShort()
-                    32 -> (((raw[o].toInt() and 0xFF) shl 8) or (raw[o + 1].toInt() and 0xFF)).toShort()
+                    16, 24, 32 -> (((raw[hi].toInt() and 0xFF) shl 8) or (raw[lo].toInt() and 0xFF)).toShort()
                     else -> 0
                 }
         }
@@ -80,7 +83,7 @@ class AiffPcm private constructor(
             return runCatching { parse(stream) }.getOrNull().also { if (it == null) runCatching { stream.close() } }
         }
 
-        private fun parse(rawStream: InputStream): AiffPcm? {
+        internal fun parse(rawStream: InputStream): AiffPcm? {
             val din = DataInputStream(rawStream.buffered(1 shl 16))
             val form = ByteArray(4).also { din.readFully(it) }
             if (String(form) != "FORM") return null
@@ -93,6 +96,7 @@ class AiffPcm private constructor(
             var bits = 0
             var rate = 0
             var frames = 0L
+            var littleEndian = false
             while (true) {
                 val id = ByteArray(4)
                 try {
@@ -109,11 +113,16 @@ class AiffPcm private constructor(
                         rate = readExtended80(din)
                         var consumed = 18
                         if (size > consumed) {
-                            // AIFC compression type: only uncompressed variants
-                            // ("NONE"/"sowt"-less big-endian) are supported.
+                            // AIFC compression type: only uncompressed PCM is
+                            // supported - "NONE" (big-endian, like plain AIFF)
+                            // and "sowt" (the same samples byte-swapped).
                             val comp = ByteArray(4).also { din.readFully(it) }
                             consumed += 4
-                            if (String(comp) != "NONE") return null
+                            when (String(comp)) {
+                                "NONE" -> Unit
+                                "sowt" -> littleEndian = true
+                                else -> return null
+                            }
                             din.skipBytes(size - consumed + (size and 1))
                         } else if (size and 1 == 1) {
                             din.skipBytes(1)
@@ -124,7 +133,7 @@ class AiffPcm private constructor(
                         din.readInt() // block size
                         if (offset > 0) din.skipBytes(offset)
                         if (channels <= 0 || rate <= 0 || bits <= 0) return null
-                        return AiffPcm(din, channels, rate, bits, frames)
+                        return AiffPcm(din, channels, rate, bits, frames, littleEndian)
                     }
                     else -> din.skipBytes(size + (size and 1))
                 }

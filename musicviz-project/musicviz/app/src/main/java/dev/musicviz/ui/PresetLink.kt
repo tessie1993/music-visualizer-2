@@ -36,6 +36,24 @@ object PresetLink {
      */
     const val MAX_LINK_LENGTH = 8_000
 
+    /**
+     * Most JSON a link is allowed to inflate to.
+     *
+     * A link arrives through an exported ACTION_VIEW intent, so it can be
+     * hostile: gzip expands ~1000:1, and a few hundred KB of payload would
+     * otherwise inflate to hundreds of MB and OOM-kill the app on import.
+     * A real preset - custom shader and all - is well under 1 MB of JSON,
+     * so 4 MB is generous headroom, not a functional limit.
+     */
+    private const val MAX_INFLATED_BYTES = 4 * 1024 * 1024
+
+    /**
+     * Longest Base64 payload worth decoding at all - a cheap first gate, so
+     * an absurdly long intent string is rejected before it is even copied
+     * into a byte array. Legitimate payloads are orders of magnitude smaller.
+     */
+    private const val MAX_PAYLOAD_LENGTH = 1024 * 1024
+
     /** True when [text] looks like one of our links (cheap pre-check). */
     fun isPresetLink(text: String): Boolean = text.trim().startsWith(PREFIX, ignoreCase = true)
 
@@ -62,13 +80,29 @@ object PresetLink {
         val trimmed = text.trim()
         if (!isPresetLink(trimmed)) return null
         val payload = trimmed.substring(PREFIX.length).substringBefore('#').substringBefore('?')
+        if (payload.length > MAX_PAYLOAD_LENGTH) return null
         return runCatching {
             val bytes =
                 java.util.Base64
                     .getUrlDecoder()
                     .decode(payload)
-            GZIPInputStream(bytes.inputStream()).use { it.readBytes() }.toString(Charsets.UTF_8)
+            GZIPInputStream(bytes.inputStream()).use { inflateBounded(it) }.toString(Charsets.UTF_8)
         }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Reads at most [MAX_INFLATED_BYTES] and throws past it, so the caller's
+     * `runCatching` turns a gzip bomb into the same null a corrupt link gets.
+     */
+    private fun inflateBounded(gzip: GZIPInputStream): ByteArray {
+        val out = ByteArrayOutputStream()
+        val buffer = ByteArray(16 * 1024)
+        while (true) {
+            val n = gzip.read(buffer)
+            if (n < 0) return out.toByteArray()
+            out.write(buffer, 0, n)
+            if (out.size() > MAX_INFLATED_BYTES) error("link inflates past $MAX_INFLATED_BYTES bytes")
+        }
     }
 
     /**

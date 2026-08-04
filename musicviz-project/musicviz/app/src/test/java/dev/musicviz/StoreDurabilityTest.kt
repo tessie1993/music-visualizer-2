@@ -5,13 +5,18 @@ import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import dev.musicviz.ui.AtomicWrite
 import dev.musicviz.ui.HistoryStore
+import dev.musicviz.ui.LibraryTrack
 import dev.musicviz.ui.MusicPlaylist
 import dev.musicviz.ui.MusicPlaylistStore
 import dev.musicviz.ui.PaletteStore
+import dev.musicviz.ui.Preset
+import dev.musicviz.ui.PresetStore
 import dev.musicviz.ui.TakeStore
 import dev.musicviz.ui.TextureStore
+import dev.musicviz.ui.TrackLibrary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -26,10 +31,11 @@ import java.io.IOException
 import java.io.InputStream
 
 /**
- * The five stores that keep a JSON (or image) document they rewrite whole,
- * against real files in filesDir.
+ * The stores that keep a JSON (or image) document they rewrite whole -
+ * history, presets, playlists, palettes, takes, textures and the track
+ * library - against real files in filesDir.
  *
- * All five used `File.writeText`, which truncates its target to zero before
+ * All of them used `File.writeText`, which truncates its target to zero before
  * writing a byte. The app being killed inside that window - or the device
  * losing power - left invalid content behind, and because every one of them
  * parses inside `runCatching { … }.getOrDefault(emptyList())` the damage was
@@ -50,10 +56,12 @@ class StoreDurabilityTest {
 
     @Before
     fun cleanFilesDir() {
-        filesFile("history.json").deleteRecursively()
-        filesFile("history.json" + AtomicWrite.TEMP_SUFFIX).deleteRecursively()
-        filesFile("history.json" + AtomicWrite.CORRUPT_SUFFIX).deleteRecursively()
-        listOf("music-playlists", "palettes", "takes", "milk").forEach { filesFile(it).deleteRecursively() }
+        listOf("history.json", "library.json").forEach { doc ->
+            filesFile(doc).deleteRecursively()
+            filesFile(doc + AtomicWrite.TEMP_SUFFIX).deleteRecursively()
+            filesFile(doc + AtomicWrite.CORRUPT_SUFFIX).deleteRecursively()
+        }
+        listOf("music-playlists", "palettes", "presets", "takes", "milk").forEach { filesFile(it).deleteRecursively() }
     }
 
     /**
@@ -137,6 +145,78 @@ class StoreDurabilityTest {
         assertEquals(listOf("a"), HistoryStore(ctx).recentlyPlayed().map { it.uri })
     }
 
+    // ---------------------------------------------------------------- presets
+
+    private fun preset(
+        name: String,
+        attack: Float = 0.5f,
+    ) = Preset(name, "fluid", attack, 0.2f)
+
+    @Test
+    fun `presets with distinct cjk names coexist instead of sharing one file`() {
+        // The old sanitizer collapsed both names to "__.json", so saving the
+        // second silently destroyed the first.
+        val store = PresetStore(ctx)
+        store.save(preset("夜曲", attack = 0.1f))
+        store.save(preset("月光", attack = 0.9f))
+
+        val back = PresetStore(ctx).list()
+        assertEquals(setOf("夜曲", "月光"), back.map { it.name }.toSet())
+        assertEquals(0.1f, back.single { it.name == "夜曲" }.attack, 1e-4f)
+
+        // Deleting one must find its own file and leave the other's alone.
+        store.delete("夜曲")
+        assertEquals(listOf("月光"), PresetStore(ctx).list().map { it.name })
+    }
+
+    @Test
+    fun `an interrupted preset save leaves the previous preset intact`() {
+        val store = PresetStore(ctx)
+        store.save(preset("Neon", attack = 0.1f))
+        blockWritesTo(filesFile("presets/Neon.json"))
+
+        // Re-saving a name deliberately REPLACES the preset, so a truncating
+        // write here used to sit on top of the only copy of it.
+        store.save(preset("Neon", attack = 0.9f))
+
+        assertEquals(0.1f, PresetStore(ctx).list().single().attack, 1e-4f)
+    }
+
+    @Test
+    fun `a preset saved under the old sanitizer is migrated to its hashed name`() {
+        filesFile("presets").mkdirs()
+        filesFile("milk").mkdirs()
+        // What the pre-hash sanitizer left on disk for "夜曲".
+        filesFile("presets/__.json").writeText(PresetStore.toJson(preset("夜曲", attack = 0.3f)))
+        filesFile("milk/__.milk").writeText("MILKDROP_PRESET_VERSION=201")
+
+        val store = PresetStore(ctx)
+
+        assertFalse(filesFile("presets/__.json").exists())
+        assertEquals(0.3f, PresetStore.fromJson(store.fileOf("夜曲")!!.readText()).attack, 1e-4f)
+        // The paired .milk moved with it: presets saved before sources were
+        // carried resolve their visual through this name.
+        assertEquals("MILKDROP_PRESET_VERSION=201", filesFile("milk/${PresetStore.milkFileName("夜曲")}").readText())
+
+        // The name that used to overwrite it now saves alongside it.
+        store.save(preset("月光", attack = 0.8f))
+        assertEquals(setOf("夜曲", "月光"), store.list().map { it.name }.toSet())
+    }
+
+    @Test
+    fun `migration never renames an old file over an existing one`() {
+        val store = PresetStore(ctx)
+        store.save(preset("夜曲", attack = 0.9f))
+        // A stale old-scheme file for the same name reappears (say from a
+        // restored backup): it must not replace the current save.
+        filesFile("presets/__.json").writeText(PresetStore.toJson(preset("夜曲", attack = 0.1f)))
+
+        val migrated = PresetStore(ctx)
+
+        assertTrue(filesFile("presets/__.json").exists())
+        assertEquals(0.9f, PresetStore.fromJson(migrated.fileOf("夜曲")!!.readText()).attack, 1e-4f)
+    }
+
     // -------------------------------------------------------------- playlists
 
     @Test
@@ -185,6 +265,34 @@ class StoreDurabilityTest {
         assertEquals(listOf("a", "b"), store.list().single { it.name == "Set" }.trackUris)
     }
 
+    @Test
+    fun `playlists with distinct emoji names coexist instead of sharing one file`() {
+        val store = MusicPlaylistStore(ctx)
+        store.save(MusicPlaylist("🔥 Mix", listOf("a")))
+        store.save(MusicPlaylist("💜 Mix", listOf("b")))
+
+        val back = MusicPlaylistStore(ctx).list()
+        assertEquals(setOf("🔥 Mix", "💜 Mix"), back.map { it.name }.toSet())
+        assertEquals(listOf("a"), back.single { it.name == "🔥 Mix" }.trackUris)
+
+        store.delete("🔥 Mix")
+        assertEquals(listOf("💜 Mix"), MusicPlaylistStore(ctx).list().map { it.name })
+    }
+
+    @Test
+    fun `a playlist saved under the old sanitizer is migrated and reachable`() {
+        filesFile("music-playlists").mkdirs()
+        // What the pre-hash sanitizer left on disk for "🔥 Mix".
+        filesFile("music-playlists/__ Mix.json").writeText("""{"name":"🔥 Mix","tracks":["a","b"]}""")
+
+        val store = MusicPlaylistStore(ctx)
+
+        assertFalse(filesFile("music-playlists/__ Mix.json").exists())
+        // Without the rename, fileOf would miss the old stem and addTrack
+        // would start from a fresh empty playlist.
+        assertEquals(listOf("a", "b", "c"), store.addTrack("🔥 Mix", "c").trackUris)
+    }
+
     // --------------------------------------------------------------- palettes
 
     @Test
@@ -212,6 +320,54 @@ class StoreDurabilityTest {
 
         assertEquals(listOf("Dusk"), PaletteStore(ctx).list().map { it.name })
         assertEquals(0.6f, PaletteStore(ctx).get("Dusk")!!.baseHue, 1e-4f)
+    }
+
+    @Test
+    fun `palettes with distinct cjk names coexist under distinct ids`() {
+        val store = PaletteStore(ctx)
+        val night = store.save(PaletteStore.create("夜曲", 0.1f, 0.2f))
+        val moon = store.save(PaletteStore.create("月光", 0.7f, 0.8f))
+
+        assertNotEquals(night.id, moon.id)
+        val back = PaletteStore(ctx)
+        assertEquals(0.1f, back.get(night.id)!!.baseHue, 1e-4f)
+        assertEquals(0.7f, back.get(moon.id)!!.baseHue, 1e-4f)
+    }
+
+    @Test
+    fun `a palette saved under the old sanitizer is re-keyed to its hashed id`() {
+        filesFile("palettes").mkdirs()
+        // What the pre-hash sanitizer left on disk for "夜曲": the id is the
+        // file stem AND lives inside the JSON, so migration must move both.
+        filesFile("palettes/__.json").writeText("""{"id":"__","name":"夜曲","baseHue":0.25,"hueSpan":0.5}""")
+
+        val store = PaletteStore(ctx)
+
+        assertFalse(filesFile("palettes/__.json").exists())
+        val migrated = store.get(PaletteStore.idFor("夜曲"))!!
+        assertEquals("夜曲", migrated.name)
+        assertEquals(0.25f, migrated.baseHue, 1e-4f)
+
+        // Re-keyed for real: saving the same name replaces the migrated file
+        // instead of forking a second palette.
+        store.save(PaletteStore.create("夜曲", 0.9f, 0.1f))
+        assertEquals(1, store.list().size)
+        assertEquals(0.9f, store.get(PaletteStore.idFor("夜曲"))!!.baseHue, 1e-4f)
+    }
+
+    // ---------------------------------------------------------------- library
+
+    @Test
+    fun `a blocked library write leaves the previous library on disk`() {
+        val store = TrackLibrary(ctx)
+        store.addAll(listOf(LibraryTrack(uri = "a", title = "A"), LibraryTrack(uri = "b", title = "B")))
+        blockWritesTo(filesFile("library.json"))
+
+        store.addAll(listOf(LibraryTrack(uri = "c", title = "C")))
+
+        // The write could not complete, so the previous two tracks are
+        // exactly where they were - not a truncated library.json.
+        assertEquals(setOf("a", "b"), TrackLibrary(ctx).list().map { it.uri }.toSet())
     }
 
     // ------------------------------------------------------------------ takes

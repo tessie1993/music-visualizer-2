@@ -41,6 +41,35 @@ class PaletteStore(
 ) {
     private val dir = File(context.filesDir, "palettes").apply { mkdirs() }
 
+    init {
+        migrateLegacyIds()
+    }
+
+    /**
+     * One-time re-key of palettes saved under the pre-hash sanitizer (see
+     * [PresetStore.safeFileName]). The id doubles as the file stem AND lives
+     * inside the JSON, so a bare rename would leave [save]/[delete]
+     * addressing the old stem; the file is rewritten under the new id
+     * instead. A preset still holding the old id keeps its gradient - the
+     * resolved hues live in the preset - and only the "which palette" label
+     * dangles, exactly as after a deletion (see [forgetDeleted]). A taken
+     * target keeps the old file in place rather than destroying either.
+     */
+    private fun migrateLegacyIds() {
+        dir
+            .listFiles()
+            .orEmpty()
+            .filter { it.isFile && it.extension == "json" }
+            .forEach { f ->
+                val p = runCatching { fromJson(f.readText()) }.getOrNull() ?: return@forEach
+                val id = idFor(p.name)
+                if (f.nameWithoutExtension == id) return@forEach
+                val target = File(dir, "$id.json")
+                if (target.exists()) return@forEach
+                if (AtomicWrite.text(target, toJson(p.copy(id = id)))) f.delete()
+            }
+    }
+
     /** All saved palettes, name-sorted; unreadable files are skipped rather than fatal. */
     fun list(): List<CustomPalette> =
         dir
@@ -179,9 +208,11 @@ class PaletteStore(
             }
         }
 
+        // The shared collision-free scheme: distinct names must never share
+        // a file (and so, here, an id).
         internal fun sanitize(name: String): String =
-            name
-                .replace(Regex("[^A-Za-z0-9-_ ]"), "_")
+            PresetStore
+                .safeFileName(name)
                 .trim()
                 .ifEmpty { "palette" }
 

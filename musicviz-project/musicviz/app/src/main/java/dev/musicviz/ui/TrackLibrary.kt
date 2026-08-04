@@ -157,22 +157,20 @@ class TrackLibrary(
     }
 
     /**
-     * Publishes a new list by writing a sibling temp file and renaming it
-     * over the real one, which is atomic on the local filesystem: readers see
-     * either the whole old library or the whole new one. `File.writeText`
-     * truncates to zero first, so process death inside that window would
-     * leave a zero-length library.json — a valid file that parses as an empty
-     * library. A failed rename leaves the previous file untouched; losing one
-     * write is recoverable, losing the library is not. Callers hold [lock].
+     * Publishes a new list through [AtomicWrite]: sibling temp file, fsync,
+     * then a rename over the real one, atomic on the local filesystem, so
+     * readers see either the whole old library or the whole new one.
+     * `File.writeText` on the target would truncate it to zero first, and
+     * process death inside that window leaves a zero-length library.json — a
+     * valid file that parses as an empty library. The fsync matters just as
+     * much: without it the rename can reach the disk before the bytes do,
+     * and a power loss then renames an EMPTY file into place just as
+     * permanently. A failed write leaves the previous file untouched; losing
+     * one write is recoverable, losing the library is not. Callers hold
+     * [lock].
      */
     private fun writeLocked(tracks: List<LibraryTrack>) {
-        val tmp = File(file.parentFile, "${file.name}.tmp")
-        val ok =
-            runCatching {
-                tmp.writeText(serialize(tracks))
-                tmp.renameTo(file)
-            }.getOrDefault(false)
-        if (!ok) runCatching { tmp.delete() }
+        AtomicWrite.text(file, serialize(tracks))
     }
 
     companion object {

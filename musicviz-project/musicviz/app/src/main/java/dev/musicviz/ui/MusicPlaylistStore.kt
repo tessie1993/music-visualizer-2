@@ -29,6 +29,30 @@ class MusicPlaylistStore(
 ) {
     private val dir = File(context.filesDir, "music-playlists").apply { mkdirs() }
 
+    init {
+        migrateLegacyFileNames()
+    }
+
+    /**
+     * One-time rename of files saved under the pre-hash sanitizer (see
+     * [PresetStore.safeFileName]): [fileOf] resolves through the hashed stem
+     * now, so a playlist left under its old stem would be unreachable by
+     * every mutator. A taken target keeps the old file in place, unrenamed
+     * rather than destroyed.
+     */
+    private fun migrateLegacyFileNames() {
+        dir
+            .listFiles { f -> f.extension == "json" }
+            .orEmpty()
+            .forEach { f ->
+                val name = runCatching { fromJson(f.readText()).name }.getOrNull() ?: return@forEach
+                val stem = sanitize(name)
+                if (f.nameWithoutExtension == stem) return@forEach
+                val target = File(dir, "$stem.json")
+                if (!target.exists()) f.renameTo(target)
+            }
+    }
+
     fun list(): List<MusicPlaylist> =
         dir
             .listFiles { f -> f.extension == "json" }
@@ -123,7 +147,8 @@ class MusicPlaylistStore(
 
     private fun fileOf(name: String): File = File(dir, sanitize(name) + ".json")
 
-    private fun sanitize(name: String): String = name.replace(Regex("[^A-Za-z0-9-_ ]"), "_")
+    // The shared collision-free scheme: distinct names must never share a file.
+    private fun sanitize(name: String): String = PresetStore.safeFileName(name)
 
     private fun toJson(p: MusicPlaylist): String {
         val arr = JSONArray()

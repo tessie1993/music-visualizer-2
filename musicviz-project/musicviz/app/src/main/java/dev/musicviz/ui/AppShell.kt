@@ -68,6 +68,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
+/** Crash reports are for copy-pasting into a bug report; 64 KB is plenty. */
+private const val CRASH_REPORT_MAX_BYTES = 64 * 1024
+
 /**
  * Navigation-v2 app shell: bottom nav (Home / Library / Visuals / Studio /
  * Settings)
@@ -112,13 +115,29 @@ fun AppRoot(
         SecondScreenCanvas(externalDisplay, visualizerView)
     }
 
-    var crashText by remember {
-        mutableStateOf(
-            java.io
-                .File(context.filesDir, "crash-latest.txt")
-                .takeIf { it.exists() }
-                ?.readText(),
-        )
+    // Crash-report read happens off the main thread — first composition is
+    // on the startup path — and is capped so a runaway report can't balloon
+    // memory. The dialog simply appears a beat later.
+    var crashText by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        crashText =
+            withContext(Dispatchers.IO) {
+                val file = java.io.File(context.filesDir, "crash-latest.txt")
+                if (file.exists()) {
+                    file.inputStream().use { stream ->
+                        val buf = ByteArray(CRASH_REPORT_MAX_BYTES)
+                        var read = 0
+                        while (read < buf.size) {
+                            val n = stream.read(buf, read, buf.size - read)
+                            if (n < 0) break
+                            read += n
+                        }
+                        String(buf, 0, read, Charsets.UTF_8)
+                    }
+                } else {
+                    null
+                }
+            }
     }
     VisualizerEngineBindings(viewModel, visualizerView)
     // System back: non-Home tabs return Home before the app exits. Composed
@@ -157,7 +176,7 @@ fun AppRoot(
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             // Nebula + star-field backdrop behind every shell tab; the
             // Scaffold goes transparent so the glow shows through the glass.
-            CrystalBackground(Modifier.fillMaxSize())
+            CrystalBackground(Modifier.fillMaxSize(), reducedMotion = gui.reducedMotion)
             Scaffold(
                 containerColor = Color.Transparent,
                 topBar = {
@@ -1161,6 +1180,7 @@ fun SearchScreen(
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var debounced by rememberSaveable { mutableStateOf("") }
+    val gui by viewModel.guiPrefs.collectAsState()
     val library by viewModel.library.collectAsState()
     val viz by viewModel.vizState.collectAsState()
     val deviceTracks by viewModel.deviceTracks.collectAsState()
@@ -1219,7 +1239,7 @@ fun SearchScreen(
     // nebula backdrop so results always read, and the field itself is cut
     // in the shard silhouette.
     Box(Modifier.fillMaxSize()) {
-        CrystalBackground(Modifier.fillMaxSize())
+        CrystalBackground(Modifier.fillMaxSize(), reducedMotion = gui.reducedMotion)
         Column(
             Modifier
                 .fillMaxSize()

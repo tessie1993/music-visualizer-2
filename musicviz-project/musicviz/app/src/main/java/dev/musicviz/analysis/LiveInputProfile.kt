@@ -60,14 +60,19 @@ enum class LiveInputProfile(
 
     /**
      * A PA heard across a room. Reverb smears the transients the beat detector
-     * keys off, and the low end blooms, so this asks for a LOWER threshold (the
-     * onsets are softer) while pulling the bass back and pushing the treble up
-     * to recover the detail the room ate.
+     * keys off, and the low end blooms, so this asks for the LOWEST usable
+     * threshold (the onsets are softer) while pulling the bass back and
+     * pushing the treble up to recover the detail the room ate.
+     *
+     * The original design wanted 1.15 sigma, below [FeatureExtractor.SIGMA_MIN];
+     * the engine clamps there because a lower gate fires on noise, so the old
+     * value silently ran at the floor anyway while Settings displayed 1.15.
+     * Pinned to the floor until a DSP review widens the engine range.
      */
     ROOM(
         label = "Room",
         summary = "A PA across a room: softer transients, boomy low end, reverb tail.",
-        beatSigma = 1.15f,
+        beatSigma = FeatureExtractor.SIGMA_MIN,
         beatIntervalMs = 260f,
         attack = 0.45f,
         decay = 0.2f,
@@ -80,15 +85,22 @@ enum class LiveInputProfile(
 
     /**
      * A guitar, a piano, a drum - something played into the phone. Sharp
-     * transients over near-silence, so the threshold drops far enough that a
-     * pluck registers, the attack goes fast enough to catch it, and the gap
-     * floor shortens so a fast passage is not thinned out.
+     * transients over near-silence, so the threshold drops as far as the
+     * engine allows so a pluck registers, the attack goes fast enough to
+     * catch it, and the gap floor sits at the engine minimum so a fast
+     * passage is thinned as little as possible.
+     *
+     * The original design wanted 1 sigma / 130 ms, below both engine floors
+     * ([FeatureExtractor.SIGMA_MIN] against noise triggers,
+     * [FeatureExtractor.INTERVAL_MS_MIN] = the 300 BPM refractory); the old
+     * values silently ran at the floors anyway while Settings displayed them.
+     * Pinned to the floors until a DSP review widens the engine range.
      */
     INSTRUMENT(
         label = "Instrument",
         summary = "Played into the phone: sharp attacks, wide dynamics, no steady beat.",
-        beatSigma = 1f,
-        beatIntervalMs = 130f,
+        beatSigma = FeatureExtractor.SIGMA_MIN,
+        beatIntervalMs = FeatureExtractor.INTERVAL_MS_MIN,
         attack = 0.85f,
         decay = 0.28f,
         audioDrive = 1.6f,
