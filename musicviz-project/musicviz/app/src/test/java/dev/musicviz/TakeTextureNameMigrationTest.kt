@@ -130,13 +130,24 @@ class TakeTextureNameMigrationTest {
         bytes: ByteArray,
     ) = Shadows.shadowOf(ctx.contentResolver).registerInputStream(uri, ByteArrayInputStream(bytes))
 
+    /** A real (decodable) PNG: import validates content now, not just extension. */
+    private fun pngBytes(argb: Int): ByteArray {
+        val bmp = android.graphics.Bitmap.createBitmap(4, 4, android.graphics.Bitmap.Config.ARGB_8888)
+        bmp.eraseColor(argb)
+        val out = java.io.ByteArrayOutputStream()
+        bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+        return out.toByteArray()
+    }
+
     @Test
     fun `textures with distinct cjk names coexist instead of one replacing the other`() {
         val store = TextureStore(ctx)
         val night = Uri.parse("content://test/夜曲.png")
         val moon = Uri.parse("content://test/月光.png")
-        registerImage(night, ByteArray(64) { 1 })
-        registerImage(moon, ByteArray(64) { 2 })
+        val nightBytes = pngBytes(0xFF102040.toInt())
+        val moonBytes = pngBytes(0xFFF0E0C0.toInt())
+        registerImage(night, nightBytes)
+        registerImage(moon, moonBytes)
 
         store.import(listOf(night))
         val listed = store.import(listOf(moon))
@@ -147,7 +158,7 @@ class TakeTextureNameMigrationTest {
         val names = listed.map { it.name }
         assertNotEquals(names[0], names[1])
         val bytes = listed.map { File(it.path).readBytes().toList() }.toSet()
-        assertEquals(setOf(List(64) { 1.toByte() }, List(64) { 2.toByte() }), bytes)
+        assertEquals(setOf(nightBytes.toList(), moonBytes.toList()), bytes)
 
         // Removal round-trips through the listed name.
         assertEquals(1, store.remove(names[0]).size)
@@ -160,19 +171,20 @@ class TakeTextureNameMigrationTest {
         // on disk is ever renamed by a migration for the same reason.
         val store = TextureStore(ctx)
         val uri = Uri.parse("content://test/logo.png")
-        registerImage(uri, ByteArray(16) { 3 })
+        registerImage(uri, pngBytes(0xFF336699.toInt()))
         assertEquals(listOf("logo.png"), store.import(listOf(uri)).map { it.name })
 
-        registerImage(uri, ByteArray(16) { 4 })
+        val second = pngBytes(0xFF996633.toInt())
+        registerImage(uri, second)
         assertEquals(listOf("logo.png"), store.import(listOf(uri)).map { it.name })
-        assertEquals(List(16) { 4.toByte() }, filesFile("milk/textures/logo.png").readBytes().toList())
+        assertEquals(second.toList(), filesFile("milk/textures/logo.png").readBytes().toList())
     }
 
     @Test
     fun `a hashed texture name still yields a usable display preset`() {
         val store = TextureStore(ctx)
         val uri = Uri.parse("content://test/夜曲.png")
-        registerImage(uri, ByteArray(16) { 5 })
+        registerImage(uri, pngBytes(0xFF442200.toInt()))
         val name = store.import(listOf(uri)).single().name
 
         val preset = File(store.generateDisplayPreset(name)).readText()

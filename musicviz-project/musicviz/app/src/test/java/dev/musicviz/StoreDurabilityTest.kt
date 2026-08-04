@@ -412,11 +412,20 @@ class StoreDurabilityTest {
         stream: InputStream,
     ) = Shadows.shadowOf(ctx.contentResolver).registerInputStream(uri, stream)
 
+    /** A real (decodable) PNG: import validates content now, not just extension. */
+    private fun pngBytes(argb: Int): ByteArray {
+        val bmp = android.graphics.Bitmap.createBitmap(4, 4, android.graphics.Bitmap.Config.ARGB_8888)
+        bmp.eraseColor(argb)
+        val out = java.io.ByteArrayOutputStream()
+        bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+        return out.toByteArray()
+    }
+
     @Test
     fun `an import that dies part-way leaves the previous texture usable`() {
         val store = TextureStore(ctx)
         val uri = Uri.parse("content://test/logo.png")
-        val good = ByteArray(4096) { (it % 251).toByte() }
+        val good = pngBytes(0xFF3366CC.toInt())
         registerImage(uri, ByteArrayInputStream(good))
         assertEquals(listOf("logo.png"), store.import(listOf(uri)).map { it.name })
 

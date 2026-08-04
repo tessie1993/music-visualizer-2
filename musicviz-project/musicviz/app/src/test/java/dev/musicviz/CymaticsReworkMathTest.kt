@@ -178,12 +178,16 @@ class CymaticsReworkMathTest {
         // the old mode releases at the ring time constant while the new one
         // attacks, so intermediate frames render their superposition. A frame
         // where the old amplitude teleports would pop the whole picture.
+        // Driven below the snapshot's sum-to-one budget, so the amplitudes
+        // observed here are the resonators' own dynamics, not the loudness
+        // normalization moving on top of them.
         val plate = CymaticsPlate()
         val bandCount = 64
         val low = FloatArray(bandCount).also { it[18] = 0.9f }
         val high = FloatArray(bandCount).also { it[46] = 0.9f }
         val ring = 0.6f
-        repeat(120) { plate.excite(low, dt, 110f, 1f, ring, 0.6f) }
+        val drive = 0.5f
+        repeat(120) { plate.excite(low, dt, 110f, drive, ring, 0f) }
         val out = FloatArray(CymaticsMath.MAX_RENDERED_MODES * 4)
         assertTrue(plate.snapshot(CymaticsMath.MAX_RENDERED_MODES, out) > 0)
         val oldN = out[0]
@@ -199,7 +203,7 @@ class CymaticsReworkMathTest {
         var sawSuperposition = false
         var previousOld = amplitudeOf(plate, out, oldN, oldM)
         repeat(200) {
-            plate.excite(high, dt, 110f, 1f, ring, 0.6f)
+            plate.excite(high, dt, 110f, drive, ring, 0f)
             val oldAmp = amplitudeOf(plate, out, oldN, oldM)
             val newAmp = amplitudeOf(plate, out, newMode.n.toFloat(), newMode.m.toFloat())
             if (oldAmp > 0.12f && newAmp > 0.12f) sawSuperposition = true

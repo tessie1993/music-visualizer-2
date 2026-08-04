@@ -290,7 +290,7 @@ object HyperspaceMath {
      * turns for all of them (to float precision), and the only non-sine
      * consumers of `uTime` are `floor()`-seeded noise reseeds (the dust and
      * the grain) that already reseed several times a second by design.
-     * `HyperspaceClockWrapTest` audits the shader against this rule.
+     * `HyperspaceReworkTest` audits the shader against this rule.
      */
     const val TIME_WRAP_SECONDS: Float = 6283.1853f
 

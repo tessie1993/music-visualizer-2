@@ -101,6 +101,26 @@ class PresetStore(
         if (src.isDirectory) src.renameTo(File(dir, sanitize(to)))
     }
 
+    /**
+     * Deletes the folder [name], but ONLY when nothing is filed under it: a
+     * folder that still holds any file - a preset, or anything else - is
+     * refused rather than emptied, so this can never take saved work with it.
+     * Empty subfolders do go with it (they are structure, not content). The
+     * root is refused too: it is the store itself. Returns whether the folder
+     * was removed.
+     */
+    fun removeFolder(name: String): Boolean {
+        if (name.isBlank()) return false
+        val f = File(dir, sanitize(name))
+        // sanitize() cannot produce a path that escapes or lands back on
+        // [dir], but a folder delete is the one operation worth a second
+        // lock on that door.
+        val isRoot = runCatching { f.canonicalPath == dir.canonicalPath }.getOrDefault(true)
+        if (isRoot || !f.isDirectory) return false
+        if (f.walkTopDown().any { it.isFile }) return false
+        return f.deleteRecursively()
+    }
+
     fun moveToFolder(
         name: String,
         folder: String,

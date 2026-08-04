@@ -74,7 +74,7 @@ uniform vec2 uResolution;
  * 0.001 (three decimals or fewer), so the wrap lands on a whole number of
  * turns; floor()-seeded noise (the dust, the grain) reseeds at the wrap,
  * which it already does several times a second by design.
- * HyperspaceClockWrapTest enforces the rule.
+ * HyperspaceReworkTest enforces the rule.
  */
 uniform float uTime;
 /** Family substyle: 0 original, 1..10 authored variants. */

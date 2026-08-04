@@ -263,7 +263,7 @@ internal class HyperspaceScene(
         // clock decays sin(uTime * k) into a stutter once its ULP passes the
         // frame advance. The period is 1000 turns of 2*pi, which every
         // multiplier in hyperspace_frag.glsl crosses on a whole turn - see
-        // HyperspaceMath.TIME_WRAP_SECONDS and HyperspaceClockWrapTest.
+        // HyperspaceMath.TIME_WRAP_SECONDS and HyperspaceReworkTest.
         time = (time + dt) % HyperspaceMath.TIME_WRAP_SECONDS
         lastDt = dt
         pendingFeatures = features

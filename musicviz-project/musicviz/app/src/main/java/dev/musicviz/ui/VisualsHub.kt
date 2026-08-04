@@ -1123,6 +1123,27 @@ private fun CustomizeToolbar(
 
 // ------------------------------------------------------------------ Takes
 
+/**
+ * Why the rename dialog's confirm must stay disabled, or null when [proposed]
+ * (already trimmed) can be renamed to. Case-insensitive collision like the
+ * folder-rename dialog: takes are files, and this is a phone, where "Sunset"
+ * and "sunset" are the same take to everyone but the user. Renaming a take to
+ * itself (or to its own name in a different case) is allowed - it collides
+ * with nothing.
+ */
+internal fun takeRenameError(
+    from: String,
+    proposed: String,
+    existingNames: List<String>,
+): String? =
+    when {
+        proposed.isEmpty() -> "A take needs a name."
+        !proposed.equals(from, ignoreCase = true) &&
+            existingNames.any { it.equals(proposed, ignoreCase = true) } ->
+            "There is already a take called \"$proposed\"."
+        else -> null
+    }
+
 /** mm:ss for a take's clock. */
 private fun formatTakeTime(ms: Long): String {
     val total = (ms / 1000).coerceAtLeast(0)
@@ -1241,15 +1262,31 @@ private fun TakesTab(viewModel: PlayerViewModel) {
         }
     }
     renaming?.let { old ->
+        // TakeStore.rename refuses a blank or taken name by returning false,
+        // and the ViewModel drops that result - so a dialog that closed on any
+        // confirm was a rename that silently never happened. The gate lives
+        // here instead: confirm is disabled while the name cannot succeed, and
+        // the inline line says why (the folder-rename dialog's pattern).
+        val proposed = renameText.trim()
+        val renameError = takeRenameError(old, proposed, takes.takes.map { it.name })
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { renaming = null },
             title = { Text("Rename take") },
             text = {
-                OutlinedTextField(value = renameText, onValueChange = { renameText = it }, singleLine = true)
+                Column {
+                    OutlinedTextField(value = renameText, onValueChange = { renameText = it }, singleLine = true)
+                    renameError?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
             },
             confirmButton = {
-                CrystalButton(onClick = {
-                    viewModel.renameTake(old, renameText.trim())
+                CrystalButton(enabled = renameError == null, onClick = {
+                    viewModel.renameTake(old, proposed)
                     renaming = null
                 }) { Text("Rename") }
             },
@@ -1287,6 +1324,9 @@ private fun TexturesHubTab(
     visualizerView: VisualizerView,
 ) {
     val textures by viewModel.textures.collectAsState()
+    // Held at tab level, not per row, for the same disposal reason as the
+    // preset and take dialogs.
+    var deletingTexture by remember { mutableStateOf<String?>(null) }
     val picker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
             if (uris.isNotEmpty()) {
@@ -1301,9 +1341,37 @@ private fun TexturesHubTab(
                 CrystalButton(compact = true, filled = false, onClick = {
                     viewModel.useTexture(tex.name) { path -> selectMilk(viewModel, visualizerView, path) }
                 }) { Text("Use") }
+                IconButton(onClick = { deletingTexture = tex.name }) {
+                    Icon(Icons.Filled.Delete, "Delete this texture", tint = MaterialTheme.colorScheme.error)
+                }
             }
         }
         if (textures.isEmpty()) Text("No textures imported yet.", style = MaterialTheme.typography.bodySmall)
+    }
+    deletingTexture?.let { name ->
+        // A texture delete removes the image file for good and takes any
+        // preset that references it down to noise or black, so - like take and
+        // preset delete - it confirms instead of firing on a tap that landed
+        // beside Use.
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { deletingTexture = null },
+            title = { Text("Delete texture \"$name\"?") },
+            text = {
+                Text(
+                    "Removes this image for good — there is no undo. MilkDrop presets that " +
+                        "reference it will show noise or black until it is imported again.",
+                )
+            },
+            confirmButton = {
+                CrystalButton(onClick = {
+                    viewModel.removeTexture(name)
+                    deletingTexture = null
+                }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingTexture = null }) { Text("Cancel") }
+            },
+        )
     }
 }
 
