@@ -316,6 +316,8 @@ internal object VisualStyleCatalog {
     val cymatics: List<CymaticsStyle> =
         listOf(
             CymaticsStyle(SceneIds.CYMATICS, "Original · Resonant Field", 0),
+            // Sand on a dark plate: grains gather along the nodal filigree
+            // and the music shakes them loose. Gold, narrow-span palette.
             CymaticsStyle(
                 "chladni_sand",
                 "Chladni Sand",
@@ -328,7 +330,12 @@ internal object VisualStyleCatalog {
                 iridescence = 0.18f,
                 caustic = 0.25f,
                 flow = 0.35f,
+                hueOffset = 0.06f,
+                hueSpan = 0.45f,
             ),
+            // A struck circular membrane: TWO clean Bessel modes at most -
+            // rings crossed by diametral nodes, clamped at a hard rim -
+            // instead of the original's eight-mode interference field.
             CymaticsStyle(
                 "bessel_drum",
                 "Drumhead",
@@ -340,6 +347,9 @@ internal object VisualStyleCatalog {
                 glow = 0.85f,
                 iridescence = 0.45f,
                 caustic = 0.9f,
+                hueOffset = -0.04f,
+                hueSpan = 0.7f,
+                modeCap = 2,
             ),
             CymaticsStyle(
                 "harmonograph",
@@ -353,6 +363,8 @@ internal object VisualStyleCatalog {
                 caustic = 0.35f,
                 flow = 1.35f,
                 swirl = 1.4f,
+                hueOffset = 0.18f,
+                hueSpan = 1.6f,
             ),
             CymaticsStyle(
                 "faraday",
@@ -366,6 +378,8 @@ internal object VisualStyleCatalog {
                 iridescence = 0.65f,
                 caustic = 1.2f,
                 flow = 1.55f,
+                hueOffset = -0.12f,
+                hueSpan = 1.15f,
             ),
             CymaticsStyle(
                 "harmonic_shell",
@@ -379,7 +393,11 @@ internal object VisualStyleCatalog {
                 iridescence = 1.25f,
                 caustic = 1.3f,
                 swirl = 0.45f,
+                hueOffset = 0.1f,
+                hueSpan = 1.35f,
             ),
+            // Sunlight through rippled water: few, coarse modes make clean
+            // caustic webs (and keep the style's extra curvature taps cheap).
             CymaticsStyle(
                 "caustic_sheet",
                 "Caustic Sheet",
@@ -391,7 +409,12 @@ internal object VisualStyleCatalog {
                 iridescence = 1.3f,
                 caustic = 1.65f,
                 flow = 1.2f,
+                hueOffset = -0.22f,
+                hueSpan = 0.5f,
+                modeCap = 4,
             ),
+            // Acoustic levitation: a few modes give clean antinode shelves
+            // for the droplet lattice to hang from.
             CymaticsStyle(
                 "levitator",
                 "Levitator",
@@ -404,7 +427,12 @@ internal object VisualStyleCatalog {
                 iridescence = 0.6f,
                 caustic = 0.72f,
                 flow = 0.55f,
+                hueOffset = 0.32f,
+                hueSpan = 0.8f,
+                modeCap = 3,
             ),
+            // Room modes: the shader recomposes the first four modes as
+            // product cosines, so the cap documents what is actually drawn.
             CymaticsStyle(
                 "standing_chamber",
                 "Standing Chamber",
@@ -417,6 +445,9 @@ internal object VisualStyleCatalog {
                 iridescence = 0.5f,
                 caustic = 0.8f,
                 flow = 0.65f,
+                hueOffset = -0.3f,
+                hueSpan = 0.9f,
+                modeCap = 4,
             ),
             CymaticsStyle(
                 "rosensweig",
@@ -430,6 +461,8 @@ internal object VisualStyleCatalog {
                 iridescence = 0.35f,
                 caustic = 1.45f,
                 flow = 0.48f,
+                hueOffset = 0.45f,
+                hueSpan = 0.35f,
             ),
             CymaticsStyle(
                 "kundt_tube",
@@ -443,6 +476,8 @@ internal object VisualStyleCatalog {
                 iridescence = 0.35f,
                 caustic = 0.55f,
                 flow = 1.1f,
+                hueOffset = 0.03f,
+                hueSpan = 0.6f,
             ),
         )
 

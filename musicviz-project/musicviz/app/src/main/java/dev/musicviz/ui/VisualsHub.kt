@@ -183,6 +183,54 @@ fun VisualsHub(
 
 // ---------------------------------------------------------------- Presets
 
+/**
+ * Index of the first visual-playlist entry that carries [presetName], or -1
+ * when the preset is not in the playlist. First match on purpose: playlists
+ * saved before the heart became a toggle can hold duplicates, and removing by
+ * first index drains them one tap at a time instead of skipping or crashing.
+ */
+internal fun vizPlaylistIndexOf(
+    playlist: List<VizPlaylistEntry>,
+    presetName: String,
+): Int = playlist.indexOfFirst { it.presetName == presetName }
+
+/**
+ * The saved USER preset a `savePreset(rawName)` would silently replace, or
+ * null when the name is new. Mirrors savePreset's own laundering (" · " is
+ * reserved for built-ins, and the store trims) so the answer is about the name
+ * that will actually hit disk, and matches exactly - PresetStore.save replaces
+ * the file whose stem is derived from the exact name, nothing looser.
+ * Built-ins are excluded: they are not on disk and the laundering guarantees a
+ * user save can never land on one.
+ */
+internal fun presetReplaceTarget(
+    rawName: String,
+    presets: List<Preset>,
+): String? {
+    val name = rawName.replace(" · ", " - ").trim().ifEmpty { "Preset" }
+    return presets.firstOrNull { !BuiltInPresets.isBuiltIn(it.name) && it.name == name }?.name
+}
+
+/**
+ * Family id whose built-in presets the Built-in section shows for
+ * [activeSceneId]. The hyperspace and cymatics substyles are parameter
+ * variations of one scene, and every built-in look for those families is
+ * authored against the family's original id - an exact-id filter left the
+ * section empty on all of them. Everything else keeps exact matching.
+ */
+internal fun builtInPresetSceneFamily(activeSceneId: String): String =
+    when {
+        VisualStyleCatalog.isHyperspace(activeSceneId) -> SceneIds.HYPERSPACE
+        VisualStyleCatalog.isCymatics(activeSceneId) -> SceneIds.CYMATICS
+        else -> activeSceneId
+    }
+
+/** Whether a built-in preset authored for [presetSceneId] belongs in the Built-in section on [activeSceneId]. */
+internal fun builtInPresetMatchesScene(
+    presetSceneId: String,
+    activeSceneId: String,
+): Boolean = presetSceneId == activeSceneId || presetSceneId == builtInPresetSceneFamily(activeSceneId)
+
 @Composable
 private fun PresetsTreeTab(
     viewModel: PlayerViewModel,
@@ -202,6 +250,9 @@ private fun PresetsTreeTab(
     var folderRenameText by remember { mutableStateOf("") }
     var movingPreset by remember { mutableStateOf<String?>(null) }
     var deletingPreset by remember { mutableStateOf<String?>(null) }
+    // The user preset a pending Save would silently replace; non-null while
+    // the confirm-replace dialog is up.
+    var replacingPreset by remember { mutableStateOf<String?>(null) }
     val userPresets = viz.presets.filterNot { BuiltInPresets.isBuiltIn(it.name) }.distinctBy { it.name }
     val byFolder = userPresets.groupBy { viewModel.presetFolderOf(it.name) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -301,14 +352,31 @@ private fun PresetsTreeTab(
                     IconButton(onClick = { sharePreset(context, viewModel, p.name) }) {
                         Icon(Icons.Filled.Share, "Share this preset")
                     }
+                    // Membership toggle, not an append: the heart reads back
+                    // whether the preset is in the visual playlist (tint) and a
+                    // second tap takes it OUT instead of quietly stacking a
+                    // duplicate the user could not see or remove from here.
+                    // Removal is by first-match index, so a playlist that
+                    // already carries duplicates drains one per tap and the
+                    // heart stays lit until the last copy is gone.
+                    val playlistIndex = vizPlaylistIndexOf(viz.vizPlaylist, p.name)
+                    val inPlaylist = playlistIndex >= 0
                     IconButton(
                         onClick = {
-                            viewModel.addToVizPlaylist(
-                                VizPlaylistEntry(sceneId = p.sceneId, presetName = p.name, label = p.name),
-                            )
+                            if (inPlaylist) {
+                                viewModel.removeVizPlaylistAt(playlistIndex)
+                            } else {
+                                viewModel.addToVizPlaylist(
+                                    VizPlaylistEntry(sceneId = p.sceneId, presetName = p.name, label = p.name),
+                                )
+                            }
                         },
                     ) {
-                        Icon(Icons.Filled.Favorite, "Add to visual playlist")
+                        Icon(
+                            Icons.Filled.Favorite,
+                            if (inPlaylist) "Remove from visual playlist" else "Add to visual playlist",
+                            tint = if (inPlaylist) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                        )
                     }
                     IconButton(onClick = { movingPreset = p.name }) {
                         Icon(Icons.AutoMirrored.Filled.DriveFileMove, "Move to another folder")
@@ -327,7 +395,10 @@ private fun PresetsTreeTab(
                 modifier = Modifier.padding(top = 8.dp),
             )
         }
-        items(viz.presets.filter { BuiltInPresets.isBuiltIn(it.name) && it.sceneId == viz.sceneId }, key = { "b_${it.name}" }) { p ->
+        items(
+            viz.presets.filter { BuiltInPresets.isBuiltIn(it.name) && builtInPresetMatchesScene(it.sceneId, viz.sceneId) },
+            key = { "b_${it.name}" },
+        ) { p ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(p.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 IconButton(onClick = { applyPresetLive(viewModel, visualizerView, p) }) {
@@ -350,12 +421,21 @@ private fun PresetsTreeTab(
                 )
                 CrystalButton(onClick = {
                     if (saveName.isNotBlank()) {
-                        viewModel.savePreset(
-                            saveName.trim(),
-                            visualizerView.visualizerRenderer.customShaderFor(viewModel.vizState.value.sceneId),
-                            saveFolder,
-                        )
-                        saveName = ""
+                        // PresetStore.save replaces by name with no undo, so a
+                        // name that is already a saved user preset asks first
+                        // (built-ins are excluded: savePreset launders " · "
+                        // out of the name, so they can never actually collide).
+                        val existing = presetReplaceTarget(saveName, viz.presets)
+                        if (existing != null) {
+                            replacingPreset = existing
+                        } else {
+                            viewModel.savePreset(
+                                saveName.trim(),
+                                visualizerView.visualizerRenderer.customShaderFor(viewModel.vizState.value.sceneId),
+                                saveFolder,
+                            )
+                            saveName = ""
+                        }
                     }
                 }) { Text("Save") }
             }
@@ -440,6 +520,33 @@ private fun PresetsTreeTab(
                 }
             },
             confirmButton = { TextButton(onClick = { movingPreset = null }) { Text("Close") } },
+        )
+    }
+    replacingPreset?.let { name ->
+        // Same confirm-before-losing-work rule as Delete: a save onto an
+        // existing name overwrites that preset's look on disk with no undo,
+        // which used to happen silently on a name typed from memory.
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { replacingPreset = null },
+            title = { Text("Replace \"$name\"?") },
+            text = {
+                Text(
+                    "A preset with this name already exists. Saving replaces its look " +
+                        "for good — there is no undo. Share it first if you might want it back.",
+                )
+            },
+            confirmButton = {
+                CrystalButton(onClick = {
+                    viewModel.savePreset(
+                        saveName.trim(),
+                        visualizerView.visualizerRenderer.customShaderFor(viewModel.vizState.value.sceneId),
+                        saveFolder,
+                    )
+                    saveName = ""
+                    replacingPreset = null
+                }) { Text("Replace") }
+            },
+            dismissButton = { TextButton(onClick = { replacingPreset = null }) { Text("Cancel") } },
         )
     }
     deletingPreset?.let { name ->
@@ -539,6 +646,28 @@ private fun StylesTab(
     // state flow. One source of truth is what keeps switching stable.
     val pickScene: (String) -> Unit = { viewModel.selectScene(it) }
     Column(Modifier.fillMaxSize()) {
+        // SceneSuggester's pick, surfaced where styles are chosen. An offer,
+        // not an action: the analysis writes suggestedSceneId and this is the
+        // one place a human sees it, so without this row the whole suggester
+        // ran for nobody. No dismiss affordance on purpose - the chip clears
+        // itself the moment the scene changes (applied or not), and suggestions
+        // are recomputed per track, so it never needs to be put away by hand.
+        suggestedSceneToOffer(viz.suggestedSceneId, viz.sceneId)?.let { suggested ->
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    "Suggested for this track",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                CrystalButton(compact = true, filled = false, onClick = { pickScene(suggested) }) {
+                    Text(sceneDisplayLabel(suggested), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
         CrystalTabs(
             // Cymatics and Hyperspace are each their own family, neither a
             // fluid style nor a shader one. Cymatics is the style whose
@@ -561,6 +690,17 @@ private fun StylesTab(
         }
     }
 }
+
+/**
+ * The scene the Suggested chip should offer, or null to render no chip: there
+ * is nothing to offer while the analysis has not spoken, and nothing to offer
+ * once the active scene IS the suggestion (whether the user tapped the chip or
+ * arrived there on their own).
+ */
+internal fun suggestedSceneToOffer(
+    suggestedSceneId: String?,
+    activeSceneId: String,
+): String? = suggestedSceneId?.takeIf { it != activeSceneId }
 
 /**
  * Human label for a scene id on a style tile. Catalogued substyles carry
@@ -600,7 +740,7 @@ private fun SceneList(
     }
 }
 
-/** Dedicated MilkDrop tab: Load .milk, user list, Next, Textures shortcut. */
+/** Dedicated MilkDrop tab: Load .milk, the user's preset list, Textures shortcut. */
 @Composable
 private fun MilkDropTab(
     viewModel: PlayerViewModel,

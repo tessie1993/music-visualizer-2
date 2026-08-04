@@ -164,14 +164,15 @@ export class Bloom {
     this.advance(0, 1, 1);
   }
 
-  advance(dt, motion, orbitScale) {
+  advance(dt, motion, orbitScale, spinScale = 1) {
     if (!this.alive) return;
     this.age += dt;
     if (this.age >= this.lifetime) { this.alive = false; this.fade = 0; return; }
     const m = Math.max(motion, 0);
+    const spin = m * Math.max(spinScale, 0);
     this.orbitPhase += dt * this.orbitRate * m * Math.max(orbitScale, 0) * 2 * Math.PI;
-    this.spinAngleA += dt * this.spinRateA * m * 2 * Math.PI;
-    this.spinAngleB += dt * this.spinRateB * m * 2 * Math.PI;
+    this.spinAngleA += dt * this.spinRateA * spin * 2 * Math.PI;
+    this.spinAngleB += dt * this.spinRateB * spin * 2 * Math.PI;
     this.breath += dt * this.breathRate * m;
     const c = Math.cos(this.orbitPhase), s = Math.sin(this.orbitPhase);
     for (let i = 0; i < 3; i++) {
@@ -210,20 +211,25 @@ export class BloomBank {
 
   get aliveCount() { return this.blooms.filter((b) => b.alive).length; }
 
-  advance({ dt, target, impulse, species, lifetime, spread, sizeScale, motion, orbitScale }) {
-    for (const b of this.blooms) b.advance(dt, motion, orbitScale);
+  advance({ dt, target, impulse, species, lifetime, spread, sizeScale, motion, orbitScale, spinScale = 1 }) {
+    for (const b of this.blooms) b.advance(dt, motion, orbitScale, spinScale);
     this.sinceSpawn += dt;
     this.sinceImpulse = impulse >= SPAWN_IMPULSE ? 0 : this.sinceImpulse + dt;
 
     const want = clamp(target, 0, MAX_BLOOMS);
     let living = this.aliveCount;
     if (living > want) {
+      // Oldest first, skipping bodies already inside their retire window, so
+      // the whole excess dissolves in one window (mirrors HyperspaceMath).
       let excess = living - want;
       while (excess > 0) {
-        const alive = this.blooms.filter((b) => b.alive);
-        if (alive.length === 0) break;
-        const victim = alive.reduce((a, b) => (b.age > a.age ? b : a));
-        if (victim.lifetime - victim.age <= RETIRE_SECONDS) break;
+        let victim = null;
+        for (const b of this.blooms) {
+          if (!b.alive) continue;
+          if (b.lifetime - b.age <= RETIRE_SECONDS) continue;
+          if (victim === null || b.age > victim.age) victim = b;
+        }
+        if (victim === null) break;
         victim.retire(RETIRE_SECONDS);
         excess--;
       }
@@ -350,7 +356,9 @@ export class HyperspaceCamera {
   constructor() { this.position = new Float32Array(3); this.basis = new Float32Array(9); this.t = 0; }
 
   advance({ dt, distance, drift }) {
-    this.t += dt * Math.max(drift, 0);
+    // Wrapped at 1000 turns of 2*pi (HyperspaceMath.TIME_WRAP_SECONDS): all
+    // five rates are multiples of 0.001, so the wrap is a whole turn each.
+    this.t = (this.t + dt * Math.max(drift, 0)) % 6283.1853;
     const t = this.t;
     const yaw = 0.11 * t + 0.37 * Math.sin(0.073 * t) + 0.13 * Math.sin(0.191 * t);
     const pitch = 0.42 * Math.sin(0.041 * t) + 0.17 * Math.sin(0.113 * t);

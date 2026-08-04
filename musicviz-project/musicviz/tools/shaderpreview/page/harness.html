@@ -509,6 +509,7 @@ function uploadUniforms(gl, plan, locOf) {
       case '1i': case 'tex': gl.uniform1i(loc, u.v); break;
       case '2f': gl.uniform2f(loc, u.v[0], u.v[1]); break;
       case '3f': gl.uniform3f(loc, u.v[0], u.v[1], u.v[2]); break;
+      case '1fv': gl.uniform1fv(loc, new Float32Array(u.v)); break;
       case '4fv': gl.uniform4fv(loc, new Float32Array(u.v)); break;
       case 'm3fv': gl.uniformMatrix3fv(loc, false, new Float32Array(u.v)); break;
       default: throw new Error('unknown uniform kind ' + u.t + ' for ' + name);

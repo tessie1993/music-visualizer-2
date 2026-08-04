@@ -1,6 +1,7 @@
 package dev.musicviz.ui
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import java.io.File
 import java.security.MessageDigest
@@ -9,6 +10,44 @@ import java.security.MessageDigest
 data class MilkTexture(
     val name: String,
     val path: String,
+)
+
+/**
+ * What happened to one picked file in [TextureStore.importDetailed]: either
+ * it landed under [storedName] (the name presets reference), or [skipReason]
+ * says - in words fit for an import note - why it did not.
+ */
+data class TextureImportResult(
+    /** The picked file's display name, as the user knows it. */
+    val name: String,
+    /** The file name it was saved under (may be hashed), null when skipped. */
+    val storedName: String?,
+    /** Null when imported; otherwise why the file was skipped. */
+    val skipReason: String?,
+) {
+    val imported: Boolean get() = storedName != null
+}
+
+/** Everything [TextureStore.importDetailed] has to say: per-file outcomes plus the updated listing. */
+data class TextureImportOutcome(
+    val results: List<TextureImportResult>,
+    /** The texture list after the import, exactly as [TextureStore.list] would return it. */
+    val textures: List<MilkTexture>,
+)
+
+/**
+ * The result of [TextureStore.removeDetailed]. [removedGeneratedPresetPath]
+ * is the absolute path of the `show_<base>.milk` display preset that was
+ * deleted along with the texture (null when there was none): the caller may
+ * be RENDERING that preset right now, so it needs the path to know whether
+ * its current .milk selection just went away.
+ */
+data class TextureRemoveOutcome(
+    /** Whether the texture file itself was deleted. */
+    val removed: Boolean,
+    val removedGeneratedPresetPath: String?,
+    /** The texture list after the removal, exactly as [TextureStore.list] would return it. */
+    val textures: List<MilkTexture>,
 )
 
 /**
