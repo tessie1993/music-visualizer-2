@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -24,6 +25,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
@@ -209,11 +211,14 @@ fun TrackArtwork(
             )
         } else {
             Box(Modifier.fillMaxSize().background(placeholderBrush(uri))) {
+                // The placeholder tile is dark by construction (see
+                // placeholderBrush), so the glyph stays light — but tinted
+                // toward the theme primary rather than theme-blind white.
                 Icon(
                     Icons.Filled.MusicNote,
                     null,
                     Modifier.align(Alignment.Center),
-                    tint = Color.White.copy(alpha = 0.55f),
+                    tint = lerp(MaterialTheme.colorScheme.primary, Color.White, 0.75f).copy(alpha = 0.6f),
                 )
             }
         }

@@ -86,6 +86,9 @@ fun WaveformSeekBar(
     val primary = MaterialTheme.colorScheme.primary
     val idle = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
     val loopTint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.28f)
+    // onSurface rather than white: follows the theme (dark playhead on the
+    // light stones) and any font colour override.
+    val playhead = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
     Canvas(
         modifier
             .pointerInput(durationMs) {
@@ -142,7 +145,7 @@ fun WaveformSeekBar(
         // stretch of similar-looking bars.
         val x = (size.width * played).coerceIn(1f, size.width - 1f)
         drawRoundRect(
-            Color.White.copy(alpha = 0.85f),
+            playhead,
             topLeft = Offset(x - 1.dp.toPx(), 0f),
             size = Size(2.dp.toPx(), size.height),
             cornerRadius = CornerRadius(1.dp.toPx()),
@@ -219,11 +222,14 @@ fun LyricsPanel(
                         MaterialTheme.typography.bodyMedium
                     },
                 color =
+                    // onSurface rather than white so the words follow the
+                    // theme (dark text on the light stones) and any font
+                    // colour override; only the alpha ranks the lines.
                     when {
                         active -> accentTextColor()
-                        !lyrics.synced -> Color.White.copy(alpha = 0.85f)
-                        index < current -> Color.White.copy(alpha = 0.35f)
-                        else -> Color.White.copy(alpha = 0.65f)
+                        !lyrics.synced -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+                        index < current -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
                     },
             )
         }
@@ -360,7 +366,7 @@ fun QueuePanel(
                         Text(
                             track.title,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = if (playing) accentTextColor() else Color.White,
+                            color = if (playing) accentTextColor() else MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )

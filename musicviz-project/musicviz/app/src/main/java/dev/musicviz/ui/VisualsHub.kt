@@ -90,13 +90,15 @@ fun VisualsHub(
             VisualizerCanvasHost(visualizerView, Modifier.fillMaxSize())
             // A whisper of dim over the whole canvas - the reading plate below
             // does the legibility work, so this only takes the very brightest
-            // frames off the top rather than greying the visuals down.
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.1f)))
+            // frames off the top rather than greying the visuals down. The
+            // scrim role rather than hardcoded black, so a theme could
+            // legitimately re-tint it.
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.1f)))
         }
         val bodyStyle =
             if (liveBackdrop) {
                 LocalTextStyle.current.copy(
-                    shadow = Shadow(color = Color.Black.copy(alpha = 0.9f), blurRadius = 10f),
+                    shadow = Shadow(color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.9f), blurRadius = 10f),
                 )
             } else {
                 LocalTextStyle.current
