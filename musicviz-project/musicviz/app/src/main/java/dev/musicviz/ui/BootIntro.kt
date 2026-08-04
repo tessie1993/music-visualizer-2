@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -71,13 +72,20 @@ fun BootIntro(onDone: () -> Unit) {
     }
 
     val primary = MaterialTheme.colorScheme.primary
+    // Stays dark (it hands off from the system splash) but carries the
+    // selected stone: a whisper of the theme primary in the ground, and the
+    // "white" marks are the primary lifted almost to white rather than a
+    // theme-blind pure white.
+    val glint = lerp(primary, Color.White, 0.82f)
+    val wordmark = LocalFontColor.current ?: glint
     Box(
         Modifier
             .fillMaxSize()
             .graphicsLayer { alpha = overlayAlpha.value }
-            // Matches windowSplashScreenBackground (MIDNIGHT background) so
-            // the system splash hands off without a visible seam.
-            .background(Color(0xFF05060B))
+            // Base matches windowSplashScreenBackground (MIDNIGHT background)
+            // so the system splash hands off without a visible seam; the tint
+            // is faint enough not to read as a jump.
+            .background(lerp(Color(0xFF05060B), primary, 0.08f))
             .pointerInput(Unit) { detectTapGestures { onDone() } },
         contentAlignment = Alignment.Center,
     ) {
@@ -109,7 +117,7 @@ fun BootIntro(onDone: () -> Unit) {
                 }
                 val r = startRadius * 1.15f * textScale.value
                 gemOutline(r, 45f, primary, 0.10f, strokeWidth * 5f)
-                gemOutline(r, 45f, Color.White, 0.35f, strokeWidth)
+                gemOutline(r, 45f, glint, 0.35f, strokeWidth)
                 gemOutline(r * 0.72f, 15f, primary, 0.45f, strokeWidth)
             }
             rings.forEach { ring ->
@@ -130,7 +138,7 @@ fun BootIntro(onDone: () -> Unit) {
                         style = Stroke(width = strokeWidth * 3f),
                     )
                     drawCircle(
-                        color = Color.White.copy(alpha = fade * 0.5f),
+                        color = glint.copy(alpha = fade * 0.5f),
                         radius = radius,
                         style = Stroke(width = strokeWidth),
                     )
@@ -148,7 +156,7 @@ fun BootIntro(onDone: () -> Unit) {
         ) {
             Text(
                 "MusicViz",
-                color = Color.White,
+                color = wordmark,
                 style =
                     MaterialTheme.typography.headlineLarge.copy(
                         shadow = Shadow(color = primary, blurRadius = 36f),

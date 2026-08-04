@@ -8,6 +8,7 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
@@ -35,16 +36,20 @@ private data class Anchors(
 enum class AppTheme(
     val label: String,
 ) {
-    // Crystal collection - one theme per design-system mockup. Lapis is the
-    // app default.
+    // Crystal collection - one theme per design-system mockup. The four hero
+    // stones (matched to the reference gemstone photography) lead the list;
+    // Lapis is the app default. Persistence is by enum NAME, so this order is
+    // presentation only and safe to change.
     LAPIS("Lapis"),
+    SUGILITE("Sugilite"),
+    ROSE_QUARTZ("Rose Quartz"),
+    AMETHYST("Amethyst"),
+    // Remaining crystal minerals.
     MALACHITE("Malachite"),
     CLEAR_QUARTZ("Clear Quartz"),
-    ROSE_QUARTZ("Rose Quartz"),
-    SUGILITE("Sugilite"),
-    AMETHYST("Amethyst"),
     KYANITE("Kyanite"),
     ONYX("Onyx"),
+    // Legacy accent themes.
     MIDNIGHT("Midnight"),
     NEON("Neon"),
     SUNSET("Sunset"),
@@ -61,21 +66,42 @@ enum class AppTheme(
     SAND("Sand"),
     GRAPE("Grape"),
     INK("Ink"),
+    // Light-surface themes.
     LIGHT("Light"),
     PAPER("Paper"),
     ;
 
     /**
-     * True for the two light-surface themes. "White font" is a no-op on them
-     * (white text on a near-white surface would blank the UI), so
-     * [colorScheme] and [whiteFontActive] gate on this one predicate rather
-     * than each testing the enum separately.
+     * True for the light-surface themes (Light, Paper, Rose Quartz). A font
+     * colour override on them must pass the [resolvedFontColor] contrast
+     * check (most of the curated swatches are pale and would blank the UI on
+     * a near-white surface), so [colorScheme] and [fontColorActive] gate on
+     * this one predicate rather than each testing the enum separately.
      */
     val isLight: Boolean
         get() = anchors().light
 
-    /** True when [whiteFont] actually takes effect for this theme. */
-    fun whiteFontActive(whiteFont: Boolean): Boolean = whiteFont && !isLight
+    /**
+     * The font colour that will actually be painted for [fontColorArgb], or
+     * null when the automatic theme colours stay in force.
+     *
+     * Dark themes accept any override. Light themes accept it only when it
+     * passes a simple contrast check against the theme background - a
+     * relative-luminance difference of at least [LIGHT_CONTRAST_MIN] - and
+     * silently ignore it otherwise: a pale override (white, ivory, rose, …)
+     * on a near-white surface would make the whole UI invisible, which is a
+     * worse failure than not honouring the preference.
+     */
+    fun resolvedFontColor(fontColorArgb: Int?): Int? {
+        if (fontColorArgb == null) return null
+        val a = anchors()
+        if (!a.light) return fontColorArgb
+        val diff = kotlin.math.abs(Color(fontColorArgb).luminance() - Color(a.background).luminance())
+        return if (diff >= LIGHT_CONTRAST_MIN) fontColorArgb else null
+    }
+
+    /** True when the font colour override actually takes effect for this theme. */
+    fun fontColorActive(fontColorArgb: Int?): Boolean = resolvedFontColor(fontColorArgb) != null
 
     private fun anchors(): Anchors =
         when (this) {
@@ -83,11 +109,17 @@ enum class AppTheme(
             // primary/secondary from the palette accents, background/surface
             // from the darkest stone + glass panel colors.
             LAPIS -> Anchors(0xFF2A63FF.toInt(), 0xFFD6B15A.toInt(), 0xFF050A1E.toInt(), 0xFF1A2340.toInt())
+            // Sugilite slab: violet-periwinkle marble with pink veins tracing
+            // the fractures - softer than the old neon violet/magenta pair.
+            SUGILITE -> Anchors(0xFF9B7BE8.toInt(), 0xFFE87BB0.toInt(), 0xFF120B20.toInt(), 0xFF241940.toInt())
+            // Rose quartz reads LIGHT in the reference photo: blush marble
+            // background, soft rose surface, deep plum accents (the standard
+            // light-branch derivation turns the primary into the dark text),
+            // and a pale-gold secondary for the occasional vein.
+            ROSE_QUARTZ -> Anchors(0xFF9C4460.toInt(), 0xFFB98A3E.toInt(), 0xFFF3DCE2.toInt(), 0xFFFBEEF2.toInt(), light = true)
+            AMETHYST -> Anchors(0xFFB58BFB.toInt(), 0xFFDB8AFE.toInt(), 0xFF0D0612.toInt(), 0xFF1E1235.toInt())
             MALACHITE -> Anchors(0xFF00D1B2.toInt(), 0xFFA4E6D8.toInt(), 0xFF050A09.toInt(), 0xFF0E1514.toInt())
             CLEAR_QUARTZ -> Anchors(0xFFCFE6FF.toInt(), 0xFFBECDDE.toInt(), 0xFF10141D.toInt(), 0xFF2B3342.toInt())
-            ROSE_QUARTZ -> Anchors(0xFFF8CCD6.toInt(), 0xFFFFCBA8.toInt(), 0xFF140C12.toInt(), 0xFF2A1D23.toInt())
-            SUGILITE -> Anchors(0xFF8C40FF.toInt(), 0xFFFF5CF7.toInt(), 0xFF0B0612.toInt(), 0xFF1E1430.toInt())
-            AMETHYST -> Anchors(0xFFB58BFB.toInt(), 0xFFDB8AFE.toInt(), 0xFF0D0612.toInt(), 0xFF1E1235.toInt())
             KYANITE -> Anchors(0xFF3D7BFF.toInt(), 0xFF7CABFF.toInt(), 0xFF070E17.toInt(), 0xFF152339.toInt())
             ONYX -> Anchors(0xFF6FA8FF.toInt(), 0xFFA7B7D1.toInt(), 0xFF0B0D12.toInt(), 0xFF171D26.toInt())
             MIDNIGHT -> Anchors(0xFF7C9CFF.toInt(), 0xFF9DA8C7.toInt(), 0xFF05060B.toInt(), 0xFF0F1320.toInt())
@@ -115,14 +147,16 @@ enum class AppTheme(
      * saturation of primary/secondary/tertiary; [backgroundDim] (0..0.6)
      * darkens background and surfaces. Both default to identity.
      *
-     * [whiteFont] forces every body/label text role to pure white. It is
-     * deliberately ignored on the light themes (Light, Paper): white text on
-     * a near-white surface would make the whole UI invisible.
+     * [fontColorArgb] (the Appearance "Font color" option; null = automatic)
+     * repaints every body/label text role in that colour. On the light
+     * themes it is honoured only when it survives [resolvedFontColor]'s
+     * contrast check - pale text on a near-white surface would make the
+     * whole UI invisible.
      */
     fun colorScheme(
         accentIntensity: Float = 1f,
         backgroundDim: Float = 0f,
-        whiteFont: Boolean = false,
+        fontColorArgb: Int? = null,
     ): ColorScheme {
         val a = anchors()
         val white = 0xFFFFFFFF.toInt()
@@ -147,6 +181,12 @@ enum class AppTheme(
                     onPrimaryContainer = Color(ColorDerive.lerpArgb(primary, black, 0.55f)),
                     secondaryContainer = Color(ColorDerive.lerpArgb(secondary, white, 0.8f)),
                     outline = Color(ColorDerive.lerpArgb(secondary, surface, 0.35f)),
+                    // Body text keeps the stone's character instead of the
+                    // Material near-black: deep plum on Rose Quartz, deep
+                    // navy on Light, deep umber on Paper.
+                    onBackground = Color(ColorDerive.lerpArgb(primary, black, 0.68f)),
+                    onSurface = Color(ColorDerive.lerpArgb(primary, black, 0.68f)),
+                    onSurfaceVariant = Color(ColorDerive.lerpArgb(primary, black, 0.45f)),
                 )
             } else {
                 darkColorScheme(
@@ -164,87 +204,97 @@ enum class AppTheme(
                     outline = Color(ColorDerive.lerpArgb(secondary, surface, 0.45f)),
                 )
             }
-        // Light themes opt out: white body text on a near-white surface would
-        // make the whole UI unreadable.
-        return if (whiteFont && !a.light) base.whiteText() else base
+        // resolvedFontColor is the single gate: dark themes always honour the
+        // override, light themes only when it can be read on their surface.
+        val resolved = resolvedFontColor(fontColorArgb)
+        return if (resolved != null) base.tintedText(Color(resolved)) else base
+    }
+
+    companion object {
+        /**
+         * Minimum relative-luminance difference between a font colour
+         * override and a LIGHT theme's background for the override to be
+         * honoured. 0.5 keeps every pale swatch (including pyrite gold, the
+         * darkest of the curated set) off the near-white surfaces while
+         * still admitting genuinely dark overrides.
+         */
+        const val LIGHT_CONTRAST_MIN = 0.5f
     }
 }
 
 /**
- * Repaints the text roles pure white for the "White font" appearance option.
- * [AppTheme.colorScheme] applies this to dark schemes only.
+ * Repaints the text roles in [color] for the Appearance "Font color" option.
+ * [AppTheme.colorScheme] applies this only after [AppTheme.resolvedFontColor]
+ * accepted the override.
  *
  * The three surface roles were not enough: a `Text` painted with an `on*`
  * CONTAINER role - every chip and every filled selection in the shell -
- * stayed theme-coloured with the switch on, which is the "not all writing
- * turns white" report. All four container roles are derived toward the dark
- * background in [AppTheme.colorScheme] (`lerpArgb(x, background, 0.65f)`), so
- * white reads on every one of them.
+ * stayed theme-coloured with the option on, which was the "not all writing
+ * turns white" report against the old white-font switch. All four container
+ * roles are derived toward the dark background in [AppTheme.colorScheme]
+ * (`lerpArgb(x, background, 0.65f)`), so a light override reads on every one
+ * of them.
  *
  * `onPrimary`/`onSecondary`/`onTertiary` are deliberately NOT in this list.
  * They sit on the SATURATED fill of a primary button, and several themes
- * (Clear Quartz, Rose Quartz, Mono) anchor a near-white primary - white on
- * white. Those surfaces are handled by [LocalWhiteFont]-aware call sites
- * instead, which can pick a readable colour per fill.
+ * (Clear Quartz, Mono) anchor a near-white primary - pale on pale. Those
+ * surfaces are handled by [onAccentTextColor]-aware call sites instead,
+ * which pick a readable colour per fill.
  *
  * Accent and surface roles themselves are untouched, so gems, sliders,
  * borders and glows keep the theme's identity - only writing changes.
  */
-private fun ColorScheme.whiteText(): ColorScheme =
+private fun ColorScheme.tintedText(color: Color): ColorScheme =
     copy(
-        onBackground = Color.White,
-        onSurface = Color.White,
-        onSurfaceVariant = Color.White,
-        onPrimaryContainer = Color.White,
-        onSecondaryContainer = Color.White,
-        onTertiaryContainer = Color.White,
-        onErrorContainer = Color.White,
+        onBackground = color,
+        onSurface = color,
+        onSurfaceVariant = color,
+        onPrimaryContainer = color,
+        onSecondaryContainer = color,
+        onTertiaryContainer = color,
+        onErrorContainer = color,
     )
 
 /**
- * True when [whiteText] produced this scheme, i.e. the Appearance option
- * "White font" is in force.
- *
- * Derived rather than plumbed as a CompositionLocal because the scheme IS the
- * signal: [whiteText] is the only producer of a pure-white `onSurface`, and
- * `WhiteFontThemeTest` pins that no theme resolves one on its own (with the
- * option off, and on the light themes, which opt out entirely). One
- * `MaterialTheme.colorScheme` read is all any call site needs, so no screen
- * has to be handed the GuiPrefs it would otherwise never look at.
+ * The font colour override in force, or null for automatic theme colours.
+ * [CrystalMaterialTheme] provides the RESOLVED override (after the light
+ * theme contrast gate in [AppTheme.resolvedFontColor]), so a value here is
+ * always readable on the current surfaces. Screens shown outside the crystal
+ * shell fall back to null, i.e. automatic colours.
  */
-val ColorScheme.whiteFontOn: Boolean
-    get() = onSurface == Color.White
+internal val LocalFontColor = staticCompositionLocalOf<Color?> { null }
 
 /**
  * Colour for accent-tinted WRITING - section headers, selected list rows, the
- * lock chip, tab titles. Pure white under "White font", the theme's primary
- * otherwise.
+ * lock chip, tab titles. The font colour override when one is set, the
+ * theme's primary otherwise.
  *
  * A [ColorScheme] can only repaint the roles Material resolves for you. Every
  * heading and selected row in this app names its colour EXPLICITLY
  * (`color = MaterialTheme.colorScheme.primary`), and those calls are invisible
- * to [whiteText] - which is exactly why turning the switch on used to leave
- * the section titles, tab labels, folder headers and "‹ Back" affordances
- * tinted while the body text went white.
+ * to [tintedText] - which is exactly why turning the old white-font switch on
+ * used to leave the section titles, tab labels, folder headers and "‹ Back"
+ * affordances tinted while the body text went white.
  *
  * Deliberately text-only: icons, gems, hairlines, slider tracks and glows keep
- * `colorScheme.primary`, because "white font" is about the legibility of
- * writing, not about draining the colour out of the whole shell.
+ * `colorScheme.primary`, because the font colour option is about the
+ * legibility of writing, not about draining the colour out of the shell.
  */
 @Composable
-fun accentTextColor(): Color = MaterialTheme.colorScheme.let { if (it.whiteFontOn) Color.White else it.primary }
+fun accentTextColor(): Color = LocalFontColor.current ?: MaterialTheme.colorScheme.primary
 
 /**
  * Colour for writing on a SATURATED accent fill (filled buttons, the play
- * gem). White text is unreadable on the near-white primaries some themes
- * anchor (Clear Quartz, Rose Quartz, Mono), so this picks white or black by
- * the fill's own luminance instead of forcing either - the one place "white
- * font" yields to legibility rather than the other way round.
+ * gem). A light override colour is unreadable on the near-white primaries
+ * some themes anchor (Clear Quartz, Mono), so with an override in force this
+ * picks white or black by the fill's own luminance instead of forcing the
+ * override - the one place the font colour option yields to legibility
+ * rather than the other way round.
  */
 @Composable
 fun onAccentTextColor(): Color {
     val cs = MaterialTheme.colorScheme
-    if (!cs.whiteFontOn) return cs.onPrimary
+    if (LocalFontColor.current == null) return cs.onPrimary
     return if (cs.primary.luminance() > 0.55f) Color.Black else Color.White
 }
 
@@ -312,9 +362,19 @@ data class GuiPrefs(
     /** Visuals hub renders as a text-only clear overlay on the live canvas,
      *  so adjustments are visible on the visuals while being adjusted. */
     val clearVisualsMenu: Boolean = false,
-    /** Forces body/label text to pure white (dark themes only). Off keeps the
-     *  theme-derived text colors, so existing users see no change. */
+    /** LEGACY "White font" switch. Superseded by [fontColorArgb]; still a
+     *  constructor field so the old Appearance switch keeps compiling until
+     *  the font-colour picker replaces it. True behaves like a white
+     *  [fontColorArgb] (see [fontColorOverride]); it is no longer persisted
+     *  under its own key. */
     val whiteFont: Boolean = false,
+    /** App-wide font colour override (ARGB), or null for automatic
+     *  theme-derived text colors. Applied through
+     *  [AppTheme.resolvedFontColor], so light themes ignore values that
+     *  cannot be read on their surfaces. */
+    val fontColorArgb: Int? = null,
+    /** Multiplies every font size in the crystal typography, 0.85..1.3. */
+    val textScale: Float = 1f,
     /** "Safe visuals": caps how fast and how deeply the whole frame may flash.
      *  Off by default, like every other optional visual change here, so saved
      *  presets keep looking the way the user left them. */
@@ -351,6 +411,16 @@ data class GuiPrefs(
     val touchTransform: Boolean = true,
 ) {
     /**
+     * The font colour override actually in force: [fontColorArgb] when set,
+     * else white while the legacy [whiteFont] switch is still on. Everything
+     * that paints text ([CrystalMaterialTheme], [ThemeStore.saveGui]) reads
+     * THIS rather than either raw field, so the two inputs can never
+     * disagree about what the user sees.
+     */
+    val fontColorOverride: Int?
+        get() = fontColorArgb ?: FontColorChoice.WHITE_ARGB.takeIf { whiteFont }
+
+    /**
      * [beatMinIntervalMs] after the Safe-visuals floor.
      *
      * EVERY consumer that feeds the beat detector must use this rather than
@@ -374,6 +444,12 @@ data class GuiPrefs(
                 allowInversion = allowInversion,
                 reducedMotion = reducedMotion,
             )
+
+    companion object {
+        /** Bounds for [textScale]; enforced on load and by the slider. */
+        const val TEXT_SCALE_MIN = 0.85f
+        const val TEXT_SCALE_MAX = 1.3f
+    }
 }
 
 /** Persists the chosen [AppTheme] in shared preferences. */
@@ -390,8 +466,18 @@ class ThemeStore(
         prefs.edit().putString(KEY, theme.name).apply()
     }
 
-    fun loadGui(): GuiPrefs =
-        GuiPrefs(
+    fun loadGui(): GuiPrefs {
+        // Font colour, with one-time migration off the legacy white-font
+        // Boolean: an absent new key plus legacy true loads as a white
+        // override; the next saveGui writes the new key and retires the
+        // legacy one.
+        val fontColor =
+            when {
+                prefs.contains(KEY_FONT_COLOR) -> prefs.getInt(KEY_FONT_COLOR, 0)
+                prefs.getBoolean(KEY_WHITE_FONT, false) -> FontColorChoice.WHITE_ARGB
+                else -> null
+            }
+        return GuiPrefs(
             playerPosition =
                 runCatching { PlayerPosition.valueOf(prefs.getString(KEY_POS, PlayerPosition.BOTTOM.name)!!) }
                     .getOrDefault(PlayerPosition.BOTTOM),
@@ -418,7 +504,14 @@ class ThemeStore(
             compactPlayer = prefs.getBoolean(KEY_COMPACT, false),
             followSystemDark = prefs.getBoolean(KEY_FOLLOW_DARK, false),
             clearVisualsMenu = prefs.getBoolean(KEY_CLEAR_VIZ_MENU, false),
-            whiteFont = prefs.getBoolean(KEY_WHITE_FONT, false),
+            fontColorArgb = fontColor,
+            // whiteFont is deliberately NOT loaded: after migration the new
+            // field carries the value, and "Auto" must be reachable by
+            // clearing fontColorArgb alone.
+            textScale =
+                prefs
+                    .getFloat(KEY_TEXT_SCALE, 1f)
+                    .coerceIn(GuiPrefs.TEXT_SCALE_MIN, GuiPrefs.TEXT_SCALE_MAX),
             safeVisuals = prefs.getBoolean(KEY_SAFE_VISUALS, false),
             // Coerced on read for the same reason as the beat settings above:
             // a stored value outside the slider's range would leave the thumb
@@ -438,8 +531,10 @@ class ThemeStore(
             keyColor = prefs.getBoolean(KEY_KEY_COLOR, false),
             secondScreen = prefs.getBoolean(KEY_SECOND_SCREEN, true),
         )
+    }
 
     fun saveGui(gui: GuiPrefs) {
+        val fontColor = gui.fontColorOverride
         prefs
             .edit()
             .putString(KEY_POS, gui.playerPosition.name)
@@ -454,7 +549,14 @@ class ThemeStore(
             .putBoolean(KEY_COMPACT, gui.compactPlayer)
             .putBoolean(KEY_FOLLOW_DARK, gui.followSystemDark)
             .putBoolean(KEY_CLEAR_VIZ_MENU, gui.clearVisualsMenu)
-            .putBoolean(KEY_WHITE_FONT, gui.whiteFont)
+            // The resolved override is what gets persisted (so the legacy
+            // whiteFont switch, while it still exists, also lands in the new
+            // key), and the legacy key is retired on every save - absent
+            // plus absent new key means "automatic", and a stale legacy true
+            // must never re-trigger the migration after the user picks Auto.
+            .apply { if (fontColor != null) putInt(KEY_FONT_COLOR, fontColor) else remove(KEY_FONT_COLOR) }
+            .remove(KEY_WHITE_FONT)
+            .putFloat(KEY_TEXT_SCALE, gui.textScale)
             .putBoolean(KEY_SAFE_VISUALS, gui.safeVisuals)
             .putFloat(KEY_MAX_FLASH_HZ, gui.maxFlashHz)
             .putFloat(KEY_MAX_FLASH_DEPTH, gui.maxFlashDepth)
@@ -478,7 +580,10 @@ class ThemeStore(
         const val KEY_COMPACT = "gui_compact_player"
         const val KEY_FOLLOW_DARK = "gui_follow_system_dark"
         const val KEY_CLEAR_VIZ_MENU = "gui_clear_visuals_menu"
+        // Legacy white-font Boolean; read once for migration, never written.
         const val KEY_WHITE_FONT = "gui_white_font"
+        const val KEY_FONT_COLOR = "gui_font_color"
+        const val KEY_TEXT_SCALE = "gui_text_scale"
         const val KEY_BEAT_INTERVAL = "beat_min_interval_ms"
         const val KEY_SAFE_VISUALS = "gui_safe_visuals"
         const val KEY_MAX_FLASH_HZ = "gui_max_flash_hz"

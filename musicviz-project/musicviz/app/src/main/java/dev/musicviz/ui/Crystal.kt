@@ -39,12 +39,15 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import dev.musicviz.R
 import dev.musicviz.render.VisualizerView
 import kotlin.math.PI
 import kotlin.math.cos
@@ -101,6 +104,11 @@ internal val LocalCrystalTheme = staticCompositionLocalOf { AppTheme.LAPIS }
  * MaterialTheme plus the selected stone identity. Keeping these together
  * prevents panels from silently falling back to Lapis when a screen is moved
  * or reused elsewhere in the shell.
+ *
+ * Also the single provider of [LocalFontColor]: the RESOLVED font colour
+ * override (null when automatic, or when the light-theme contrast gate in
+ * [AppTheme.resolvedFontColor] rejected it), so [accentTextColor] call sites
+ * never have to re-derive whether the override is readable.
  */
 @Composable
 internal fun CrystalMaterialTheme(
@@ -108,11 +116,15 @@ internal fun CrystalMaterialTheme(
     gui: GuiPrefs,
     content: @Composable () -> Unit,
 ) {
-    CompositionLocalProvider(LocalCrystalTheme provides appTheme) {
+    val fontColor = appTheme.resolvedFontColor(gui.fontColorOverride)
+    CompositionLocalProvider(
+        LocalCrystalTheme provides appTheme,
+        LocalFontColor provides fontColor?.let { Color(it) },
+    ) {
         MaterialTheme(
-            colorScheme = appTheme.colorScheme(gui.accentIntensity, gui.backgroundDim, gui.whiteFont),
+            colorScheme = appTheme.colorScheme(gui.accentIntensity, gui.backgroundDim, gui.fontColorOverride),
             shapes = gui.cornerStyle.shapes(),
-            typography = crystalTypography(),
+            typography = crystalTypography(gui.textScale),
             content = content,
         )
     }
@@ -137,22 +149,87 @@ private fun DrawScope.drawMineralTexture(
     val density = if (panel) 0.55f else 1f
     when (theme.crystalTextureKind()) {
         CrystalTextureKind.LAPIS -> {
-            // White calcite seams crossing an ultramarine body.
-            repeat(if (panel) 2 else 4) { i ->
-                val y = h * (0.18f + i * 0.21f)
+            // Cobblestone mosaic per the reference slab: rounded patches of
+            // royal blue / teal / navy on a shared jittered lattice, GOLD
+            // pyrite veins running BETWEEN the patches, and pyrite fleck
+            // clusters gathered near the veins.
+            val cols = if (panel) 4 else 6
+            val rows = if (panel) 5 else 9
+            val nx = cols + 1
+            val ny = rows + 1
+            val teal = lerp(primary, Color(0xFF17858C), 0.55f)
+            val navy = lerp(primary, Color.Black, 0.5f)
+            // Lattice vertices are jittered once and SHARED by neighbouring
+            // cells, so patch borders meet along common seams. The grid
+            // overshoots the bounds slightly so no background margin shows.
+            val px = FloatArray(nx * ny)
+            val py = FloatArray(nx * ny)
+            for (j in 0 until ny) {
+                for (i in 0 until nx) {
+                    val idx = j * nx + i
+                    val jx = (fract01(idx * 0.7548777f + 0.13f) - 0.5f) * 0.55f
+                    val jy = (fract01(idx * 0.5698403f + 0.71f) - 0.5f) * 0.55f
+                    px[idx] = w * (-0.04f + 1.08f * (i + jx) / cols)
+                    py[idx] = h * (-0.04f + 1.08f * (j + jy) / rows)
+                }
+            }
+            // Patches: each cell's corners pulled 10% toward its centre, so a
+            // vein channel opens between every pair of neighbours.
+            for (j in 0 until rows) {
+                for (i in 0 until cols) {
+                    val cell = j * cols + i
+                    val c = intArrayOf(j * nx + i, j * nx + i + 1, (j + 1) * nx + i + 1, (j + 1) * nx + i)
+                    val cxm = (px[c[0]] + px[c[1]] + px[c[2]] + px[c[3]]) / 4f
+                    val cym = (py[c[0]] + py[c[1]] + py[c[2]] + py[c[3]]) / 4f
+                    val path =
+                        Path().apply {
+                            for (k in 0..3) {
+                                val x = px[c[k]] + (cxm - px[c[k]]) * 0.10f
+                                val y = py[c[k]] + (cym - py[c[k]]) * 0.10f
+                                if (k == 0) moveTo(x, y) else lineTo(x, y)
+                            }
+                            close()
+                        }
+                    val tealMix = fract01(cell * 0.318309f + 0.07f)
+                    val darkMix = fract01(cell * 0.867532f + 0.51f)
+                    val tone = lerp(lerp(primary, teal, tealMix * 0.7f), navy, 0.25f + darkMix * 0.55f)
+                    drawPath(path, tone.copy(alpha = alpha * (0.10f + 0.09f * fract01(cell * 0.5417f))))
+                }
+            }
+            // Gold veins along the lattice seams - one polyline per grid row
+            // and column, each with its own brightness so the net reads
+            // hand-laid rather than woven.
+            fun vein(points: List<Offset>, a: Float) {
                 val path =
                     Path().apply {
-                        moveTo(-w * 0.05f, y)
-                        cubicTo(w * 0.22f, y - h * 0.12f, w * 0.57f, y + h * 0.10f, w * 1.05f, y - h * 0.04f)
+                        moveTo(points[0].x, points[0].y)
+                        for (p in points.drop(1)) lineTo(p.x, p.y)
                     }
-                drawPath(path, Color.White.copy(alpha = alpha * (0.10f + i * 0.012f)), style = Stroke(width = d * 0.004f))
+                drawPath(path, secondary.copy(alpha = alpha * a), style = Stroke(width = max(0.8f, d * 0.0016f)))
             }
-            // Irregular pyrite flecks, never a uniform star field.
-            repeat(if (panel) 11 else 34) { i ->
-                val x = fract01(i * 0.7548777f + 0.17f) * w
-                val y = fract01(i * 0.5698403f + 0.41f) * h
-                val r = (0.55f + fract01(i * 0.314159f) * 1.8f) * density
-                drawCircle(secondary.copy(alpha = alpha * 0.32f), r, Offset(x, y))
+            for (j in 0 until ny) {
+                vein(List(nx) { i -> Offset(px[j * nx + i], py[j * nx + i]) }, 0.16f + 0.14f * fract01(j * 0.6180f + 0.2f))
+            }
+            for (i in 0 until nx) {
+                vein(List(ny) { j -> Offset(px[j * nx + i], py[j * nx + i]) }, 0.16f + 0.14f * fract01(i * 0.6180f + 0.6f))
+            }
+            // Pyrite fleck clusters seeded on lattice vertices (i.e. on the
+            // veins), two fleck sizes per cluster.
+            val clusters = if (panel) 6 else 14
+            repeat(clusters) { n ->
+                val v = (fract01(n * 0.754877f + 0.29f) * (nx * ny - 1)).toInt()
+                val fx = px[v]
+                val fy = py[v]
+                repeat(4) { k ->
+                    val ang = fract01((n * 4 + k) * 0.618034f) * (2f * PI.toFloat())
+                    val dist = d * 0.004f * (1f + fract01((n * 4 + k) * 0.414214f) * 3f)
+                    val r = (if (k % 2 == 0) 1.4f else 0.7f) * density * max(1f, d * 0.0011f)
+                    drawCircle(
+                        secondary.copy(alpha = alpha * (0.30f + 0.25f * fract01(k * 0.31f + n * 0.17f))),
+                        r,
+                        Offset(fx + cos(ang) * dist, fy + sin(ang) * dist),
+                    )
+                }
             }
         }
         CrystalTextureKind.MALACHITE -> {
@@ -196,14 +273,18 @@ private fun DrawScope.drawMineralTexture(
             }
         }
         CrystalTextureKind.ROSE_QUARTZ -> {
-            repeat(if (panel) 5 else 12) { i ->
+            // Light blush marble per the reference: soft white cloudy veils,
+            // a fine network of high-curvature cracks in white and deep
+            // rose, and one pale gold vein. Airy - the lowest mark count of
+            // the four hero stones.
+            repeat(if (panel) 4 else 9) { i ->
                 val x = fract01(i * 0.618034f + 0.11f) * w
                 val y = fract01(i * 0.414214f + 0.27f) * h
-                val r = d * (0.08f + fract01(i * 0.2718f) * 0.13f)
+                val r = d * (0.06f + fract01(i * 0.2718f) * 0.11f)
                 drawCircle(
                     Brush.radialGradient(
-                        0f to Color.White.copy(alpha = alpha * 0.065f),
-                        0.65f to primary.copy(alpha = alpha * 0.04f),
+                        0f to Color.White.copy(alpha = alpha * 0.30f),
+                        0.7f to Color.White.copy(alpha = alpha * 0.10f),
                         1f to Color.Transparent,
                         center = Offset(x, y),
                         radius = r,
@@ -212,57 +293,193 @@ private fun DrawScope.drawMineralTexture(
                     Offset(x, y),
                 )
             }
-            repeat(if (panel) 2 else 5) { i ->
-                val y = h * (0.16f + i * 0.18f)
-                val path =
-                    Path().apply {
-                        moveTo(-w * 0.05f, y)
-                        cubicTo(w * 0.28f, y + h * 0.08f, w * 0.58f, y - h * 0.09f, w * 1.05f, y + h * 0.03f)
-                    }
-                drawPath(path, Color.White.copy(alpha = alpha * 0.065f), style = Stroke(width = max(0.7f, d * 0.0015f)))
+            // Crack network: each crack wanders as chained cubics whose
+            // control points swing hard sideways, alternating white and deep
+            // rose. Short branch cracks split off half of them.
+            val deepRose = lerp(primary, Color.Black, 0.30f)
+            val cracks = if (panel) 6 else 14
+            repeat(cracks) { i ->
+                var x = fract01(i * 0.754877f + 0.05f) * w
+                var y = fract01(i * 0.569840f + 0.43f) * h
+                val steps = 3
+                val path = Path().apply { moveTo(x, y) }
+                repeat(steps) { s ->
+                    val hgen = i * 7 + s * 3
+                    val dx = (fract01(hgen * 0.618034f) - 0.5f) * w * 0.24f
+                    val dy = (fract01(hgen * 0.414214f + 0.3f) - 0.5f) * h * 0.16f
+                    val swing = (fract01(hgen * 0.271828f + 0.7f) - 0.5f) * d * 0.09f
+                    path.cubicTo(x + dx * 0.3f - swing, y + dy * 0.3f + swing, x + dx * 0.7f + swing, y + dy * 0.7f - swing, x + dx, y + dy)
+                    x += dx
+                    y += dy
+                }
+                val white = i % 2 == 0
+                drawPath(
+                    path,
+                    (if (white) Color.White else deepRose).copy(alpha = alpha * (if (white) 0.45f else 0.16f)),
+                    style = Stroke(width = max(0.6f, d * 0.0011f)),
+                )
+                if (i % 2 == 1) {
+                    val ang = fract01(i * 0.318309f) * (2f * PI.toFloat())
+                    drawLine(
+                        deepRose.copy(alpha = alpha * 0.12f),
+                        Offset(x, y),
+                        Offset(x + cos(ang) * d * 0.05f, y + sin(ang) * d * 0.05f),
+                        max(0.5f, d * 0.0009f),
+                    )
+                }
             }
+            // The single pale gold vein, with a faint echo alongside.
+            val gold =
+                Path().apply {
+                    moveTo(-w * 0.05f, h * 0.68f)
+                    cubicTo(w * 0.25f, h * 0.60f, w * 0.45f, h * 0.80f, w * 0.72f, h * 0.70f)
+                    cubicTo(w * 0.86f, h * 0.65f, w * 0.96f, h * 0.72f, w * 1.05f, h * 0.66f)
+                }
+            drawPath(gold, secondary.copy(alpha = alpha * 0.30f), style = Stroke(width = max(0.8f, d * 0.0015f)))
+            drawPath(gold, secondary.copy(alpha = alpha * 0.10f), style = Stroke(width = max(1.6f, d * 0.004f)))
         }
         CrystalTextureKind.SUGILITE -> {
-            repeat(if (panel) 8 else 21) { i ->
+            // Violet-periwinkle marble slab per the reference: broad darker
+            // diagonal fracture bands, PINK veins tracing the band edges
+            // with small branches, lighter lavender cloud zones between the
+            // dark regions, and a fine granular dusting.
+            val bands = if (panel) 2 else 3
+            val lavender = lerp(primary, Color.White, 0.55f)
+            repeat(bands) { k ->
+                val c = 0.10f + 0.34f * k + 0.05f * fract01(k * 0.618f)
+                val yA = h * (c + 0.38f)
+                val yB = h * (c - 0.42f)
+                val th = h * (0.09f + 0.05f * fract01(k * 0.414f + 0.2f))
+                val band =
+                    Path().apply {
+                        moveTo(-w * 0.05f, yA)
+                        lineTo(w * 1.05f, yB)
+                        lineTo(w * 1.05f, yB + th)
+                        lineTo(-w * 0.05f, yA + th)
+                        close()
+                    }
+                drawPath(band, Color.Black.copy(alpha = alpha * (0.10f + 0.04f * fract01(k * 0.87f))))
+                // Pink vein tracing this band's top edge: jittered polyline
+                // plus a couple of short branches peeling away from it.
+                val pts = 8
+                val vein = Path()
+                for (p in 0..pts) {
+                    val t = p / pts.toFloat()
+                    val x = w * (-0.05f + 1.10f * t)
+                    val y = yA + (yB - yA) * t + h * 0.014f * (fract01((k * 9 + p) * 0.754877f) - 0.5f)
+                    if (p == 0) vein.moveTo(x, y) else vein.lineTo(x, y)
+                }
+                drawPath(vein, secondary.copy(alpha = alpha * 0.28f), style = Stroke(width = max(0.8f, d * 0.0018f)))
+                repeat(3) { b ->
+                    val t = fract01((k * 3 + b) * 0.618034f + 0.15f)
+                    val x = w * (-0.05f + 1.10f * t)
+                    val y = yA + (yB - yA) * t
+                    val ang = -(0.5f + fract01((k * 3 + b) * 0.271828f) * 0.9f)
+                    drawLine(
+                        secondary.copy(alpha = alpha * 0.18f),
+                        Offset(x, y),
+                        Offset(x + cos(ang) * d * 0.06f, y + sin(ang) * d * 0.06f),
+                        max(0.6f, d * 0.0012f),
+                    )
+                }
+            }
+            // Lavender cloud zones between the dark bands.
+            repeat(if (panel) 4 else 9) { i ->
                 val x = fract01(i * 0.73205f + 0.09f) * w
                 val y = fract01(i * 0.54321f + 0.33f) * h
-                val rx = d * (0.016f + fract01(i * 0.19f) * 0.045f)
+                val rx = d * (0.035f + fract01(i * 0.19f) * 0.075f)
                 drawOval(
-                    color = (if (i % 3 == 0) Color.Black else secondary).copy(alpha = alpha * 0.09f),
-                    topLeft = Offset(x - rx, y - rx * 0.55f),
-                    size = Size(rx * 2f, rx * 1.1f),
+                    color = lavender.copy(alpha = alpha * 0.055f),
+                    topLeft = Offset(x - rx, y - rx * 0.6f),
+                    size = Size(rx * 2f, rx * 1.2f),
                 )
             }
-            repeat(if (panel) 2 else 4) { i ->
-                val path =
-                    Path().apply {
-                        moveTo(w * (-0.1f + i * 0.27f), h)
-                        cubicTo(w * (0.08f + i * 0.21f), h * 0.72f, w * (0.12f + i * 0.30f), h * 0.31f, w * (0.42f + i * 0.22f), 0f)
+            // Fine granular specks - the sugary crystal grain of the stone.
+            repeat(if (panel) 26 else 70) { i ->
+                val x = fract01(i * 0.754877f + 0.21f) * w
+                val y = fract01(i * 0.569840f + 0.57f) * h
+                val r = (0.5f + fract01(i * 0.314159f) * 1.1f) * density
+                val tone =
+                    when (i % 3) {
+                        0 -> Color.Black.copy(alpha = alpha * 0.10f)
+                        1 -> secondary.copy(alpha = alpha * 0.12f)
+                        else -> Color.White.copy(alpha = alpha * 0.07f)
                     }
-                drawPath(path, primary.copy(alpha = alpha * 0.12f), style = Stroke(width = d * 0.006f))
+                drawCircle(tone, r, Offset(x, y))
             }
         }
         CrystalTextureKind.AMETHYST -> {
-            repeat(if (panel) 5 else 12) { i ->
-                val x0 = w * fract01(i * 0.382f)
-                val top = h * fract01(i * 0.217f) * 0.42f
-                val bw = w * (0.09f + fract01(i * 0.143f) * 0.12f)
+            // Densely packed faceted terminations per the reference: a
+            // jittered triangular mosaic, every facet lit from its own
+            // pseudo-random direction, white fracture lines between facets,
+            // and bright glints on a few corners.
+            val cols = if (panel) 3 else 5
+            val rows = if (panel) 4 else 7
+            val nx = cols + 1
+            val ny = rows + 1
+            val px = FloatArray(nx * ny)
+            val py = FloatArray(nx * ny)
+            for (j in 0 until ny) {
+                for (i in 0 until nx) {
+                    val idx = j * nx + i
+                    val jx = (fract01(idx * 0.7548777f + 0.37f) - 0.5f) * 0.62f
+                    val jy = (fract01(idx * 0.5698403f + 0.83f) - 0.5f) * 0.62f
+                    px[idx] = w * (-0.04f + 1.08f * (i + jx) / cols)
+                    py[idx] = h * (-0.04f + 1.08f * (j + jy) / rows)
+                }
+            }
+
+            fun facet(a: Int, b: Int, c: Int, seed: Int) {
                 val path =
                     Path().apply {
-                        moveTo(x0, h)
-                        lineTo(x0 + bw * 0.48f, top)
-                        lineTo(x0 + bw, h)
+                        moveTo(px[a], py[a])
+                        lineTo(px[b], py[b])
+                        lineTo(px[c], py[c])
                         close()
                     }
-                drawPath(path, (if (i % 2 == 0) primary else secondary).copy(alpha = alpha * 0.055f))
-                drawLine(
-                    Color.White.copy(alpha = alpha * 0.07f),
-                    Offset(x0 + bw * 0.48f, top),
-                    Offset(x0 + bw * 0.34f, h),
-                    max(
-                        0.8f,
-                        d * 0.0014f,
+                val cx = (px[a] + px[b] + px[c]) / 3f
+                val cy = (py[a] + py[b] + py[c]) / 3f
+                val ang = fract01(seed * 0.618034f + 0.11f) * (2f * PI.toFloat())
+                val reach = d * 0.09f
+                val deep = lerp(primary, Color.Black, 0.45f + 0.25f * fract01(seed * 0.414214f))
+                val pale = lerp(primary, Color.White, 0.30f + 0.30f * fract01(seed * 0.271828f))
+                drawPath(
+                    path,
+                    Brush.linearGradient(
+                        0f to deep.copy(alpha = alpha * 0.16f),
+                        1f to pale.copy(alpha = alpha * 0.12f),
+                        start = Offset(cx - cos(ang) * reach, cy - sin(ang) * reach),
+                        end = Offset(cx + cos(ang) * reach, cy + sin(ang) * reach),
                     ),
+                )
+                // White fracture/edge line between this facet and the next.
+                drawPath(path, Color.White.copy(alpha = alpha * 0.10f), style = Stroke(width = max(0.6f, d * 0.0011f)))
+            }
+            for (j in 0 until rows) {
+                for (i in 0 until cols) {
+                    val v00 = j * nx + i
+                    val v10 = v00 + 1
+                    val v01 = v00 + nx
+                    val v11 = v01 + 1
+                    val cell = j * cols + i
+                    // Alternate the split diagonal by hash so the mosaic
+                    // never settles into a woven herringbone.
+                    if (fract01(cell * 0.867532f) < 0.5f) {
+                        facet(v00, v10, v11, cell * 2)
+                        facet(v00, v11, v01, cell * 2 + 1)
+                    } else {
+                        facet(v10, v11, v01, cell * 2)
+                        facet(v10, v01, v00, cell * 2 + 1)
+                    }
+                }
+            }
+            // Glint dots where light catches a termination corner.
+            repeat(if (panel) 5 else 13) { g ->
+                val v = (fract01(g * 0.754877f + 0.19f) * (nx * ny - 1)).toInt()
+                drawCircle(
+                    Color.White.copy(alpha = alpha * (0.30f + 0.30f * fract01(g * 0.5417f))),
+                    max(1f, d * 0.0016f) * density,
+                    Offset(px[v], py[v]),
                 )
             }
         }
@@ -342,14 +559,56 @@ fun CrystalGem(
 // ------------------------------------------------------------- typography
 
 /**
- * Theme typography per the mockups: serif display/headline ("Display Serif —
- * for headlines & hero moments"), tracked sans labels/overlines for UI.
+ * Bundled OFL families (see THIRD_PARTY_NOTICES). Both ship as variable
+ * TTFs; each [Font] entry pins its weight through a `wght` variation
+ * setting, so every requested weight is a true instance rather than a
+ * fake-bold. Cinzel is the display serif (mystic-premium engraved capitals),
+ * Manrope the clean body/label sans.
+ *
+ * The variation-settings Font constructor is still marked experimental in
+ * this Compose release; the opt-in is confined to these two declarations.
  */
-fun crystalTypography(): Typography {
-    val base = Typography()
-    val serif = FontFamily.Serif
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+private val CinzelFamily =
+    FontFamily(
+        Font(R.font.cinzel, FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
+        Font(R.font.cinzel, FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
+        Font(R.font.cinzel, FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
+        Font(R.font.cinzel, FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
+    )
 
-    fun TextStyle.display(tracking: Float) = copy(fontFamily = serif, fontWeight = FontWeight.Medium, letterSpacing = tracking.sp)
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+private val ManropeFamily =
+    FontFamily(
+        Font(R.font.manrope, FontWeight.Light, variationSettings = FontVariation.Settings(FontVariation.weight(300))),
+        Font(R.font.manrope, FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
+        Font(R.font.manrope, FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
+        Font(R.font.manrope, FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
+        Font(R.font.manrope, FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
+    )
+
+/**
+ * Theme typography per the mockups: serif display/headline ("Display Serif —
+ * for headlines & hero moments") in Cinzel, body/labels in Manrope.
+ * [textScale] (the Appearance "Text size" option, [GuiPrefs.textScale])
+ * multiplies every font size; line heights scale with them so multi-line
+ * text does not collide at large scales.
+ */
+fun crystalTypography(textScale: Float = 1f): Typography {
+    val base = Typography()
+    val scale = textScale.coerceIn(GuiPrefs.TEXT_SCALE_MIN, GuiPrefs.TEXT_SCALE_MAX)
+
+    fun TextStyle.scaled(): TextStyle =
+        copy(
+            fontSize = fontSize * scale,
+            lineHeight = if (lineHeight.isSp) lineHeight * scale else lineHeight,
+        )
+
+    fun TextStyle.display(tracking: Float) =
+        scaled().copy(fontFamily = CinzelFamily, fontWeight = FontWeight.Medium, letterSpacing = tracking.sp)
+
+    fun TextStyle.body(tracking: Float? = null) =
+        scaled().copy(fontFamily = ManropeFamily, letterSpacing = tracking?.sp ?: letterSpacing)
     return Typography(
         displayLarge = base.displayLarge.display(1.5f),
         displayMedium = base.displayMedium.display(1.2f),
@@ -357,12 +616,15 @@ fun crystalTypography(): Typography {
         headlineLarge = base.headlineLarge.display(1f),
         headlineMedium = base.headlineMedium.display(0.8f),
         headlineSmall = base.headlineSmall.display(0.6f),
-        titleLarge = base.titleLarge.copy(fontFamily = serif, fontWeight = FontWeight.Medium, letterSpacing = 0.4.sp),
-        titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp),
-        titleSmall = base.titleSmall.copy(letterSpacing = 0.4.sp),
-        labelLarge = base.labelLarge.copy(letterSpacing = 1.sp),
-        labelMedium = base.labelMedium.copy(letterSpacing = 1.3.sp),
-        labelSmall = base.labelSmall.copy(letterSpacing = 1.1.sp),
+        titleLarge = base.titleLarge.display(0.4f),
+        titleMedium = base.titleMedium.body(0.5f).copy(fontWeight = FontWeight.SemiBold),
+        titleSmall = base.titleSmall.body(0.4f),
+        bodyLarge = base.bodyLarge.body(),
+        bodyMedium = base.bodyMedium.body(),
+        bodySmall = base.bodySmall.body(),
+        labelLarge = base.labelLarge.body(1f),
+        labelMedium = base.labelMedium.body(1.3f),
+        labelSmall = base.labelSmall.body(1.1f),
     )
 }
 
