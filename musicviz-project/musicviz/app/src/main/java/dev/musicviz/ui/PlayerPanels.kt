@@ -317,7 +317,13 @@ fun PlayerPanelSurface(
 ) {
     Box(
         modifier
-            .glassPanel(0.55f, MaterialTheme.colorScheme.surface, corner = 20.dp, glow = MaterialTheme.colorScheme.primary),
+            .crystalPanel(
+                0.55f,
+                MaterialTheme.colorScheme.surface,
+                MaterialTheme.colorScheme.primary,
+                corner = 20.dp,
+                glowStrength = 0.8f,
+            ),
     ) {
         Box(Modifier.fillMaxSize()) { content() }
     }

@@ -110,6 +110,7 @@ fun VisualsHub(
                         opacity = (gui.barOpacity * 0.62f).coerceIn(0.18f, 0.7f),
                         tint = MaterialTheme.colorScheme.surface,
                         corner = 20.dp,
+                        glow = MaterialTheme.colorScheme.primary,
                     )
             } else {
                 Modifier

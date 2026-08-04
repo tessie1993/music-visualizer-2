@@ -168,11 +168,13 @@ fun VisualizerScreen(
                     .align(Alignment.TopStart)
                     .statusBarsPadding()
                     .padding(12.dp)
-                    .glassPanel(
+                    .crystalPanel(
                         chromeAlpha,
                         MaterialTheme.colorScheme.surface,
+                        MaterialTheme.colorScheme.primary,
                         corner = 12.dp,
-                        glow = MaterialTheme.colorScheme.primary,
+                        glowStrength = 0.6f,
+                        facets = 0.7f,
                     ).padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
