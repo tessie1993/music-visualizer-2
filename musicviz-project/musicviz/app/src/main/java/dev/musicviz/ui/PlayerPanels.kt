@@ -41,7 +41,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -221,10 +220,10 @@ fun LyricsPanel(
                     } else {
                         MaterialTheme.typography.bodyMedium
                     },
+                // onSurface rather than white so the words follow the theme
+                // (dark text on the light stones) and any font colour
+                // override; only the alpha ranks the lines.
                 color =
-                    // onSurface rather than white so the words follow the
-                    // theme (dark text on the light stones) and any font
-                    // colour override; only the alpha ranks the lines.
                     when {
                         active -> accentTextColor()
                         !lyrics.synced -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)

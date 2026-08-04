@@ -44,11 +44,13 @@ enum class AppTheme(
     SUGILITE("Sugilite"),
     ROSE_QUARTZ("Rose Quartz"),
     AMETHYST("Amethyst"),
+
     // Remaining crystal minerals.
     MALACHITE("Malachite"),
     CLEAR_QUARTZ("Clear Quartz"),
     KYANITE("Kyanite"),
     ONYX("Onyx"),
+
     // Legacy accent themes.
     MIDNIGHT("Midnight"),
     NEON("Neon"),
@@ -66,6 +68,7 @@ enum class AppTheme(
     SAND("Sand"),
     GRAPE("Grape"),
     INK("Ink"),
+
     // Light-surface themes.
     LIGHT("Light"),
     PAPER("Paper"),
@@ -580,6 +583,7 @@ class ThemeStore(
         const val KEY_COMPACT = "gui_compact_player"
         const val KEY_FOLLOW_DARK = "gui_follow_system_dark"
         const val KEY_CLEAR_VIZ_MENU = "gui_clear_visuals_menu"
+
         // Legacy white-font Boolean; read once for migration, never written.
         const val KEY_WHITE_FONT = "gui_white_font"
         const val KEY_FONT_COLOR = "gui_font_color"

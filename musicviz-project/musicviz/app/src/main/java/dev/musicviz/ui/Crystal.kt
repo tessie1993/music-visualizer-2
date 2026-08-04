@@ -196,10 +196,14 @@ private fun DrawScope.drawMineralTexture(
                     drawPath(path, tone.copy(alpha = alpha * (0.10f + 0.09f * fract01(cell * 0.5417f))))
                 }
             }
+
             // Gold veins along the lattice seams - one polyline per grid row
             // and column, each with its own brightness so the net reads
             // hand-laid rather than woven.
-            fun vein(points: List<Offset>, a: Float) {
+            fun vein(
+                points: List<Offset>,
+                a: Float,
+            ) {
                 val path =
                     Path().apply {
                         moveTo(points[0].x, points[0].y)
@@ -429,7 +433,12 @@ private fun DrawScope.drawMineralTexture(
                 }
             }
 
-            fun facet(a: Int, b: Int, c: Int, seed: Int) {
+            fun facet(
+                a: Int,
+                b: Int,
+                c: Int,
+                seed: Int,
+            ) {
                 val path =
                     Path().apply {
                         moveTo(px[a], py[a])
@@ -607,8 +616,7 @@ fun crystalTypography(textScale: Float = 1f): Typography {
     fun TextStyle.display(tracking: Float) =
         scaled().copy(fontFamily = CinzelFamily, fontWeight = FontWeight.Medium, letterSpacing = tracking.sp)
 
-    fun TextStyle.body(tracking: Float? = null) =
-        scaled().copy(fontFamily = ManropeFamily, letterSpacing = tracking?.sp ?: letterSpacing)
+    fun TextStyle.body(tracking: Float? = null) = scaled().copy(fontFamily = ManropeFamily, letterSpacing = tracking?.sp ?: letterSpacing)
     return Typography(
         displayLarge = base.displayLarge.display(1.5f),
         displayMedium = base.displayMedium.display(1.2f),
