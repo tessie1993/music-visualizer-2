@@ -219,9 +219,14 @@ export class BloomBank {
     const want = clamp(target, 0, MAX_BLOOMS);
     let living = this.aliveCount;
     if (living > want) {
-      // Oldest first, skipping bodies already inside their retire window, so
-      // the whole excess dissolves in one window (mirrors HyperspaceMath).
-      let excess = living - want;
+      // Oldest first; bodies already dissolving count against the excess and
+      // are skipped as victims, so the whole excess goes in one window
+      // without over-retiring the survivors (mirrors HyperspaceMath).
+      let retiring = 0;
+      for (const b of this.blooms) {
+        if (b.alive && b.lifetime - b.age <= RETIRE_SECONDS) retiring++;
+      }
+      let excess = living - want - retiring;
       while (excess > 0) {
         let victim = null;
         for (const b of this.blooms) {

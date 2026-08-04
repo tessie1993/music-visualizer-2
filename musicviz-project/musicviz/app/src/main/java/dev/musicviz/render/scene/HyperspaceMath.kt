@@ -905,12 +905,22 @@ class BloomBank(
         // act had asked for a thinning NOW. No allocation: this runs every
         // frame, and the old `filter { }` built a list per excess body.
         if (living > want) {
-            var excess = living - want
+            // Bodies already inside their dissolve window are the previous
+            // frames' retirements still fading out: they count AGAINST the
+            // excess (they are leaving) and are skipped as victims (retire()
+            // has nothing left to shorten on them). Without the subtraction,
+            // frame two saw the same eight alive, skipped the six now
+            // dissolving, and retired the two survivors as well - the room
+            // emptied to zero instead of thinning to the target.
+            var retiring = 0
+            for (b in blooms) {
+                if (b.alive && b.lifetime - b.age <= RETIRE_SECONDS) retiring++
+            }
+            var excess = living - want - retiring
             while (excess > 0) {
                 var victim: Bloom? = null
                 for (b in blooms) {
                     if (!b.alive) continue
-                    // Already dissolving: retire() has nothing to shorten.
                     if (b.lifetime - b.age <= RETIRE_SECONDS) continue
                     if (victim == null || b.age > victim.age) victim = b
                 }
