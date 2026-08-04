@@ -157,15 +157,6 @@ data class DeviceTrack(
     val addedSec: Long = 0L,
 )
 
-/** One row on a Home shelf: enough to draw a tile and start playing it. */
-data class HomeTrack(
-    val uri: String,
-    val title: String,
-    val artist: String = "",
-    val playCount: Int = 0,
-    val listenedMs: Long = 0L,
-)
-
 /** Music library + playlists + batch-analysis progress. */
 data class LibraryState(
     val tracks: List<LibraryTrack> = emptyList(),
@@ -2248,55 +2239,6 @@ class PlayerViewModel(
 
     fun mostPlayed() = historyStore.mostPlayed()
 
-    // ---- Home ----
-
-    /**
-     * History rows with the artist filled in from whatever index knows it.
-     *
-     * History records what the player reported at the moment a track started,
-     * which for a freshly-opened content uri can be a title and nothing else.
-     * The device index and the imported library both know more, so Home asks
-     * them rather than showing a wall of tracks by "".
-     */
-    private fun enrich(entries: List<HistoryStore.Entry>): List<HomeTrack> {
-        val byUri = HashMap<String, Pair<String, String>>()
-        _deviceTracks.value.forEach { byUri[it.uri] = it.title to it.artist }
-        _library.value.tracks.forEach { t -> byUri[t.uri] = t.title to t.artist }
-        return entries.map { e ->
-            val known = byUri[e.uri]
-            HomeTrack(
-                uri = e.uri,
-                title = known?.first?.takeIf { it.isNotBlank() } ?: e.title,
-                artist = e.artist.takeIf { it.isNotBlank() } ?: known?.second.orEmpty(),
-                playCount = e.playCount,
-                listenedMs = e.listenedMs,
-            )
-        }
-    }
-
-    /** "Jump back in": most recent first, one row per track. */
-    fun homeRecent(limit: Int = 12): List<HomeTrack> = enrich(historyStore.recentlyPlayed(limit))
-
-    /** "On repeat": the tracks with the most starts behind them. */
-    fun homeMostPlayed(limit: Int = 12): List<HomeTrack> = enrich(historyStore.mostPlayed(limit))
-
-    /**
-     * "Recently added": newest by MediaStore's DATE_ADDED.
-     *
-     * Tracks whose date is unknown (0) are dropped rather than sorted to the
-     * bottom - a shelf called "recently added" holding files with no date is
-     * just the library in an arbitrary order.
-     */
-    fun homeRecentlyAdded(limit: Int = 12): List<HomeTrack> =
-        _deviceTracks.value
-            .filter { it.addedSec > 0 }
-            .sortedByDescending { it.addedSec }
-            .take(limit)
-            .map { HomeTrack(it.uri, it.title, it.artist) }
-
-    /** Totals behind Home's listening strip. */
-    fun listeningStats(): HistoryStore.Stats = historyStore.stats()
-
     /** Uri of whatever is loaded in the player, for artwork lookups. */
     fun currentTrackUri(): String? = currentUri?.toString()
 
@@ -2308,22 +2250,6 @@ class PlayerViewModel(
         favouritesStore.toggle(target)
         _favourites.value = favouritesStore.all().toSet()
         _historyTick.update { it + 1 }
-    }
-
-    /** The favourites shelf on Home, newest mark first. */
-    fun homeFavourites(limit: Int = 12): List<HomeTrack> {
-        val byUri = HashMap<String, Pair<String, String>>()
-        _deviceTracks.value.forEach { byUri[it.uri] = it.title to it.artist }
-        _library.value.tracks.forEach { t -> byUri[t.uri] = t.title to t.artist }
-        return favouritesStore.all().take(limit).map { uri ->
-            val known = byUri[uri]
-            val fallback = historyStore.entryFor(uri)
-            HomeTrack(
-                uri = uri,
-                title = known?.first ?: fallback?.title ?: "Unknown track",
-                artist = known?.second ?: fallback?.artist.orEmpty(),
-            )
-        }
     }
 
     /**
