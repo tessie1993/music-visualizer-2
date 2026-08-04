@@ -267,7 +267,8 @@ data class SceneParams(
     // the body lifecycle these tune.
     // how the act is chosen: 0 music, 1 hold, 2 cycle (HYPERSPACE_JOURNEYS)
     val hyperJourney: Int = 0,
-    // which act "Hold" pins, and where "Cycle" starts (HyperspaceMath.ACT_NAMES)
+    // which act "Hold" pins (HyperspaceMath.ACT_NAMES). Only Hold reads it:
+    // Cycle ignores it and always opens on the first act, Music follows energy
     val hyperAct: Int = 2,
     // seconds per act in "Cycle", 5..180
     val hyperCycleSeconds: Float = 30f,

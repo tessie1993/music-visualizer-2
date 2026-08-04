@@ -46,7 +46,9 @@ import dev.musicviz.render.LfoTarget
 import dev.musicviz.render.LfoWave
 import dev.musicviz.render.scene.CymaticsMath
 import dev.musicviz.render.scene.HyperspaceMath
+import dev.musicviz.render.scene.ParamRandomizer
 import dev.musicviz.render.scene.SceneParams
+import dev.musicviz.render.scene.VisualStyleCatalog
 
 /*
  * The scene customization panel's TABS. They are hosted by
@@ -124,9 +126,16 @@ private fun ControlHint(text: String) {
  * copy-pasted into `LabeledSlider`, `LabeledIntSlider` and
  * `LockableChipLabel`: three places that had to keep agreeing about what a
  * lock looks like and, more importantly, about what it keys on.
+ *
+ * A label the randomizer never rolls renders NO chip at all: locks exist for
+ * "Randomize unlocked" alone, so a chip on Fade time or an ADSR/LFO card
+ * slider persisted a key nothing honoured - a lock that guarded nothing.
+ * `ParamRandomizer.LOCKABLE_LABELS` is the single source of truth (derived
+ * from the keys its roll actually uses), so coverage can't drift from here.
  */
 @Composable
 private fun LockChip(label: String) {
+    if (label !in ParamRandomizer.LOCKABLE_LABELS) return
     val (locked, toggle) = LocalParamLocks.current
     val on = label in locked
     val text = if (on) "\uD83D\uDD12 locked" else "lock"
@@ -768,15 +777,27 @@ private fun LabeledSlider(
 @Composable
 private fun LockableChipLabel(label: String) = ControlLabelRow(label, label)
 
+/**
+ * Checkbox + label, carrying the same [LockChip] every other control shape
+ * renders. Fifteen randomizer keys are CheckRow labels (Endless zoom, XY
+ * plot, Kaleidoscope, Mirror, the fluid toggles...), and this row used to be
+ * the one lockable shape with no lock affordance at all - the panel claimed
+ * lock coverage the UI could not deliver, and every roll flipped toggles the
+ * user had no way to hold. The chip rides the row's right edge; the Checkbox
+ * already gives the row its 48dp touch height, and the chip's own overflowing
+ * 48dp square (see [LockChip]) stays inside it, so nothing grows. Labels the
+ * randomizer never rolls render no chip, exactly as sliders behave.
+ */
 @Composable
 private fun CheckRow(
     label: String,
     checked: Boolean,
     onChange: (Boolean) -> Unit,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Checkbox(checked = checked, onCheckedChange = onChange)
-        Text(label, style = MaterialTheme.typography.bodySmall)
+        Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+        LockChip(label)
     }
 }
 
