@@ -96,7 +96,7 @@ class StoreDurabilityTest {
             recordPlay("b", "B")
             awaitWrites()
         }
-        assertEquals(2, HistoryStore(ctx).stats().trackCount)
+        assertEquals(2, HistoryStore(ctx).recentlyPlayed().size)
     }
 
     @Test
@@ -135,7 +135,7 @@ class StoreDurabilityTest {
         store.recordPlay("b", "B")
         store.awaitWrites()
 
-        assertEquals(1, store.stats().trackCount)
+        assertEquals(1, store.recentlyPlayed().size)
         assertTrue(filesFile("history.json").isDirectory)
         assertFalse(filesFile("history.json" + AtomicWrite.CORRUPT_SUFFIX).exists())
 

@@ -2471,7 +2471,7 @@ class PlayerViewModel(
         listenTickAtMs = now
         // A delta far larger than the poll interval means the process was
         // suspended, not that the user listened through it.
-        if (delta in 1..MAX_LISTEN_TICK_MS) historyStore.addListenTime(uri, delta, now)
+        if (delta in 1..MAX_LISTEN_TICK_MS) historyStore.addListenTime(uri, delta)
     }
 
     /** Writes any accumulated listening time. Cheap when there is none. */
@@ -2482,7 +2482,7 @@ class PlayerViewModel(
 
     /**
      * Continues the most recently played track, preparing it if the player is
-     * empty. Home's hero card when nothing is loaded.
+     * empty. The Player's empty state when nothing is loaded.
      */
     fun resumeLastPlayed() {
         if (player.currentMediaItem != null) {

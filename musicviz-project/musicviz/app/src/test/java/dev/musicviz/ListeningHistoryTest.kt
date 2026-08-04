@@ -13,9 +13,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The numbers behind Home: play counts, real listening time, per-day totals,
- * and the v1 -> v2 history file migration. Robolectric only for a Context to
- * write files and preferences with.
+ * The listening history behind the Player (resume, shuffle-all, most-played)
+ * and favourites: play counts, real listening time, and the v1 -> v2 history
+ * file migration. Robolectric only for a Context to write files and
+ * preferences with.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = MusicVizApp::class)
@@ -51,34 +52,17 @@ class ListeningHistoryTest {
     }
 
     @Test
-    fun `listening time accumulates per track and per artist`() {
+    fun `listening time accumulates per track and breaks most-played ties`() {
         val store = HistoryStore(context)
-        store.recordPlay("a", "A", "Aphex Twin")
-        store.addListenTime("a", 120_000L)
-        store.recordPlay("b", "B", "Aphex Twin")
-        store.addListenTime("b", 60_000L)
-        store.recordPlay("c", "C", "Someone Else")
-        store.addListenTime("c", 30_000L)
-        val stats = store.stats()
-        assertEquals(210_000L, stats.totalListenedMs)
-        assertEquals("Aphex Twin", stats.topArtist)
-        assertEquals(180_000L, stats.topArtistMs)
-        assertEquals(3, stats.totalPlays)
-    }
-
-    @Test
-    fun `the week has seven days with today last`() {
-        val store = HistoryStore(context)
-        val now = System.currentTimeMillis()
-        val day = 24L * 60 * 60 * 1000
         store.recordPlay("a", "A")
-        store.addListenTime("a", 1_000L, now)
-        store.addListenTime("a", 5_000L, now - 2 * day)
-        val week = store.stats(now).week
-        assertEquals(HistoryStore.WEEK_DAYS, week.size)
-        assertEquals(1_000L, week.last())
-        assertEquals(5_000L, week[HistoryStore.WEEK_DAYS - 3])
-        assertEquals(6_000L, store.stats(now).weekListenedMs)
+        store.addListenTime("a", 120_000L)
+        store.addListenTime("a", 60_000L)
+        store.recordPlay("b", "B")
+        store.addListenTime("b", 30_000L)
+        assertEquals(180_000L, store.entryFor("a")?.listenedMs)
+        assertEquals(30_000L, store.entryFor("b")?.listenedMs)
+        // Same start count: real listening time is the tie-breaker.
+        assertEquals(listOf("a", "b"), store.mostPlayed().map { it.uri })
     }
 
     @Test
@@ -135,7 +119,7 @@ class ListeningHistoryTest {
         repeat(50) { store.recordPlay("uri://$it", "T$it") }
         store.awaitWrites()
         val reloaded = HistoryStore(context)
-        assertEquals(50, reloaded.stats().trackCount)
+        assertEquals(50, reloaded.recentlyPlayed(100).size)
         assertEquals("uri://49", reloaded.recentlyPlayed(1).single().uri)
     }
 

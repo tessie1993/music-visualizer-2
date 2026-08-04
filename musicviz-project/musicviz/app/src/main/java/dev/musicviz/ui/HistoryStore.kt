@@ -5,26 +5,24 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * What the Home screen knows about your listening: which tracks came back,
- * which ones you keep coming back to, and how much time actually went into
- * them. JSON in files dir - one capped file, rewritten whole, is not worth a
- * Room database.
+ * What the app remembers about your listening: which tracks came back, which
+ * ones you keep coming back to, and how much time actually went into them.
+ * It is what auto-resume, shuffle-all and "most played" draw on. JSON in
+ * files dir - one capped file, rewritten whole, is not worth a Room database.
  *
  * Two things are recorded, and they are deliberately different measurements.
  * [recordPlay] counts a track being STARTED, which is what "most played"
  * means to a person. [addListenTime] accumulates milliseconds actually spent
- * playing, which is what makes "you gave this artist four hours" true rather
- * than a count of how often you skipped past them. Per-day totals are kept
- * alongside so Home can draw the week without re-deriving it from timestamps
- * that only remember the LAST play of each track.
+ * playing, which is what breaks most-played ties with real listening rather
+ * than a count of how often you skipped past a track.
  *
  * Reads and mutations are cheap and happen wherever the caller is - usually
- * the main thread, from a player event or from Home reading the numbers back.
- * The expensive half, serializing up to 200 entries and rewriting the file, is
- * pushed onto [writer]: [recordPlay] fires on every track transition, so once
- * per tap while skipping a queue, and that was the app's heaviest main-thread
- * disk activity. [lock] is what makes that safe - the writer serializes the
- * same maps the main thread is mutating.
+ * the main thread, from a player event or from a screen reading the numbers
+ * back. The expensive half, serializing up to 200 entries and rewriting the
+ * file, is pushed onto [writer]: [recordPlay] fires on every track
+ * transition, so once per tap while skipping a queue, and that was the app's
+ * heaviest main-thread disk activity. [lock] is what makes that safe - the
+ * writer serializes the same map the main thread is mutating.
  *
  * That file is the only copy of everything above, and it is replaced whole on
  * every write, so both halves of losing it are guarded. The write itself goes
@@ -40,14 +38,11 @@ class HistoryStore(
 ) {
     private val file = java.io.File(context.filesDir, "history.json")
 
-    /** Held across every read, mutation and serialization of [entries]/[daily]. */
+    /** Held across every read, mutation and serialization of [entries]. */
     private val lock = Any()
 
     /** uri -> what we know about it */
     private val entries = LinkedHashMap<String, Entry>()
-
-    /** epoch day -> milliseconds listened on that day */
-    private val daily = LinkedHashMap<Long, Long>()
 
     /**
      * False once [readLocked] has found a history file it could not read at
@@ -73,19 +68,6 @@ class HistoryStore(
         var listenedMs: Long = 0L,
     )
 
-    /** Everything Home's stats strip shows, computed in one pass. */
-    data class Stats(
-        val trackCount: Int,
-        val totalPlays: Int,
-        val totalListenedMs: Long,
-        /** Milliseconds per day for the last [WEEK_DAYS] days, oldest first. */
-        val week: List<Long>,
-        val topArtist: String?,
-        val topArtistMs: Long,
-    ) {
-        val weekListenedMs: Long get() = week.sum()
-    }
-
     init {
         // Deliberately synchronous, unlike the writes. The ViewModel's
         // auto-resume reads the newest entry back a few lines after building
@@ -97,7 +79,7 @@ class HistoryStore(
     }
 
     /**
-     * Loads the file into [entries]/[daily], or decides that it must not be
+     * Loads the file into [entries], or decides that it must not be
      * written over. Callers hold [lock].
      *
      * The three outcomes are deliberately kept apart. No file at all is a
@@ -120,10 +102,9 @@ class HistoryStore(
         }
         if (text.isBlank()) return
         if (runCatching { load(text) }.isSuccess) return
-        // load() fills the maps as it walks the document, so a throw part-way
+        // load() fills the map as it walks the document, so a throw part-way
         // through leaves half a history behind; it goes with the file.
         entries.clear()
-        daily.clear()
         AtomicWrite.quarantine(file)
     }
 
@@ -134,13 +115,7 @@ class HistoryStore(
             readEntries(JSONArray(text))
             return
         }
-        val root = JSONObject(text)
-        readEntries(root.optJSONArray("tracks") ?: JSONArray())
-        val days = root.optJSONArray("daily") ?: JSONArray()
-        for (i in 0 until days.length()) {
-            val o = days.getJSONObject(i)
-            daily[o.getLong("day")] = o.getLong("ms")
-        }
+        readEntries(JSONObject(text).optJSONArray("tracks") ?: JSONArray())
     }
 
     private fun readEntries(arr: JSONArray) {
@@ -183,7 +158,7 @@ class HistoryStore(
     }
 
     /**
-     * Adds real playing time to a track and to its day.
+     * Adds real playing time to a track.
      *
      * Called from the player's polling tick, so it does NOT persist: writing
      * the file twice a second would be the app's busiest disk activity. The
@@ -193,13 +168,10 @@ class HistoryStore(
     fun addListenTime(
         uri: String,
         deltaMs: Long,
-        nowMs: Long = System.currentTimeMillis(),
     ) {
         if (deltaMs <= 0) return
         synchronized(lock) {
             entries[uri]?.let { it.listenedMs += deltaMs }
-            val day = nowMs / DAY_MS
-            daily[day] = (daily[day] ?: 0L) + deltaMs
             dirty = true
         }
     }
@@ -239,26 +211,6 @@ class HistoryStore(
         }
 
     fun entryFor(uri: String): Entry? = synchronized(lock) { entries[uri] }
-
-    fun stats(nowMs: Long = System.currentTimeMillis()): Stats =
-        synchronized(lock) {
-            val today = nowMs / DAY_MS
-            val week = (WEEK_DAYS - 1 downTo 0).map { back -> daily[today - back] ?: 0L }
-            val byArtist = HashMap<String, Long>()
-            for (e in entries.values) {
-                if (e.artist.isBlank()) continue
-                byArtist[e.artist] = (byArtist[e.artist] ?: 0L) + e.listenedMs
-            }
-            val top = byArtist.entries.maxByOrNull { it.value }?.takeIf { it.value > 0 }
-            Stats(
-                trackCount = entries.size,
-                totalPlays = entries.values.sumOf { it.playCount },
-                totalListenedMs = entries.values.sumOf { it.listenedMs },
-                week = week,
-                topArtist = top?.key,
-                topArtistMs = top?.value ?: 0L,
-            )
-        }
 
     /**
      * Queues a write of the CURRENT state onto [writer], coalescing bursts.
@@ -305,26 +257,13 @@ class HistoryStore(
                                 .put("ms", e.listenedMs),
                         )
                     }
-                    val days = JSONArray()
-                    val cutoff = System.currentTimeMillis() / DAY_MS - KEEP_DAYS
-                    daily.entries.filter { it.key >= cutoff }.sortedBy { it.key }.forEach { (day, ms) ->
-                        days.put(JSONObject().put("day", day).put("ms", ms))
-                    }
-                    JSONObject().put("tracks", arr).put("daily", days).toString()
+                    JSONObject().put("tracks", arr).toString()
                 }
             if (AtomicWrite.text(file, text)) dirty = false
         }
     }
 
     companion object {
-        /** Days on Home's listening bar. */
-        const val WEEK_DAYS = 7
-
-        private const val DAY_MS = 24L * 60 * 60 * 1000
-
-        /** Per-day totals older than this are dropped on the next write. */
-        private const val KEEP_DAYS = 60L
-
         /**
          * Longest [awaitWrites] will hold a teardown up. A history write is a
          * few tens of kilobytes; anything past this is a wedged filesystem, and

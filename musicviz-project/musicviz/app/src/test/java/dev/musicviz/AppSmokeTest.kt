@@ -5,6 +5,7 @@ import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import dev.musicviz.ui.MainActivity
@@ -35,8 +36,13 @@ class AppSmokeTest {
     }
 
     @Test
-    fun launches_and_shows_home() {
-        compose.onAllNodesWithText("Home").onFirst().assertExists()
+    fun launches_and_shows_player() {
+        compose.onAllNodesWithText("Player").onFirst().assertExists()
+        // Dest 0 IS the player: the transport is on screen from launch, even
+        // before anything is loaded (disabled, not absent).
+        compose.onNodeWithContentDescription("Play").assertExists()
+        compose.onNodeWithContentDescription("Shuffle").assertExists()
+        compose.onNodeWithContentDescription("Repeat").assertExists()
     }
 
     @Test
@@ -52,7 +58,7 @@ class AppSmokeTest {
         // of the lazy list on the small Robolectric display. Headers render
         // tracked-caps in the crystal design, hence ignoreCase.
         compose.onNodeWithText("Appearance", ignoreCase = true).assertExists()
-        navTo("Home")
+        navTo("Player")
     }
 
     @Test
@@ -85,9 +91,9 @@ class AppSmokeTest {
 
     @Test
     fun search_opens_and_closes() {
-        compose.onAllNodesWithText("Home").onFirst().assertExists()
-        // Home's search icon is the only Search content-description-free icon;
-        // open via the Library screen instead (has the same top-bar search).
+        compose.onAllNodesWithText("Player").onFirst().assertExists()
+        // The Player's search icon is the only Search content-description-free
+        // icon; open via the Library screen instead (same top-bar search).
         navTo("Library")
     }
 }
