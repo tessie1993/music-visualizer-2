@@ -58,8 +58,11 @@ def main() -> None:
     require("addAll(VisualStyleCatalog.hyperspaceIds)" in renderer, "renderer does not offer Hyperspace variants")
     require("VisualStyleCatalog.cymatics(id)?.let" in renderer, "live factory does not resolve Cymatics variants")
     require("VisualStyleCatalog.hyperspace(id)?.let" in renderer, "live factory does not resolve Hyperspace variants")
-    require("val cymaticsStyle = VisualStyleCatalog.cymatics(sceneId)" in renderer, "export factory loses Cymatics variants")
-    require("val hyperspaceStyle = VisualStyleCatalog.hyperspace(sceneId)" in renderer, "export factory loses Hyperspace variants")
+    # The export factory used to be a second hand-maintained switch (pinned
+    # here as `val cymaticsStyle = ...` / `val hyperspaceStyle = ...`); it now
+    # builds through the same createScene the live registry uses, so the
+    # variant resolution pinned above covers export too - pin the routing.
+    require("createScene(sceneId" in renderer, "export factory no longer routes through createScene")
     require("SceneList(VisualStyleCatalog.cymaticsIds" in hub, "Cymatics variants are absent from the picker")
     require("SceneList(VisualStyleCatalog.hyperspaceIds" in hub, "Hyperspace variants are absent from the picker")
 

@@ -23,6 +23,10 @@
 // (phase, angle, pitch class) with no seam. Their wrap gap is smaller than
 // one ordinary step between neighbouring entries, which is what makes them
 // safe to use where a linear ramp would show a hard edge at the wrap.
+// GLSL ES 3.00 defaults fragment sampler2D to LOWP; declare highp before
+// the LUT sampler so an including shader that forgot its own precision
+// statement still reads full-precision texels on Mali.
+precision highp sampler2D;
 uniform sampler2D uPalLut;
 /** 0 = the procedural palette, 1 = the colour map on uPalLutRow. */
 uniform float uPalLutMix;

@@ -53,6 +53,14 @@ class AttractorScene(
 
         /** Iterations per second at Speed 1. Not per frame: rate must be dt-based. */
         const val ITER_HZ = 26f
+
+        /**
+         * Clock wrap: 200 * pi seconds (CymaticsScene TIME_WRAP convention).
+         * Every read of [t] is sin/cos at a two-decimal rate (0.13 / 0.11 /
+         * 0.17 / 0.09), and k * 200pi is k * 100 whole turns - exact at the
+         * wrap.
+         */
+        const val TIME_WRAP_SECONDS = 628.31853f
     }
 
     private val random = Random(31)
@@ -78,7 +86,7 @@ class AttractorScene(
         dt: Float,
     ) {
         val p = sceneParams
-        t += dt * p.speed
+        t = (t + dt * p.speed) % TIME_WRAP_SECONDS
         val drive = p.audioDrive.coerceIn(0f, 2f)
         val beatEdge = features.beat && !prevBeat
         prevBeat = features.beat

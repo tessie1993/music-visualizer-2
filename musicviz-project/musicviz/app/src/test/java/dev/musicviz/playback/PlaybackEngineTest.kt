@@ -72,6 +72,17 @@ class PlaybackEngineTest {
     }
 
     @Test
+    fun `the sleep timer rides the player, not the screen`() {
+        // A timer in a ViewModel dies when the app is swiped away - the exact
+        // moment the user set it for. Hosting it on the session means the UI
+        // and the service see one timer, alive exactly as long as the player.
+        val forUi = PlaybackEngine.acquireForUi(ctx)
+        val forService = PlaybackEngine.acquireForService(ctx)
+        assertSame(forUi.sleepTimer, forService.sleepTimer)
+        assertNull("no timer runs until someone starts one", forUi.sleepTimer.remainingMs.value)
+    }
+
+    @Test
     fun `a player with nothing loaded is not worth keeping a service alive for`() {
         // This is what decides, when the last screen goes away, whether the
         // service stays up. Idle has to read as "no", or MusicViz would leave a

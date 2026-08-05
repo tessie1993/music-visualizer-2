@@ -18,7 +18,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.DataOutputStream
 import java.io.File
-import java.security.MessageDigest
 
 /**
  * Guards the analysis cache's disk format and, since v2, its beat contract.
@@ -103,8 +102,10 @@ class AnalysisCacheTest {
     private fun beatsOf(t: FeatureTimeline): List<Boolean> = t.frames.map { it.features.beat }
 
     private fun cacheFile(uri: Uri): File {
-        val digest = MessageDigest.getInstance("SHA-1").digest(uri.toString().toByteArray())
-        return File(File(ctx.filesDir, "analysis"), digest.joinToString("") { "%02x".format(it) } + ".mvac")
+        // content:// URIs with no backing provider report no size/mtime under
+        // Robolectric, so the key degrades to the (uri, 0, 0) stamp - which is
+        // also the production behaviour for a provider that declines to say.
+        return File(File(ctx.filesDir, "analysis"), AnalysisCache.cacheKey(uri.toString(), 0L, 0L) + ".mvac")
     }
 
     @Test
@@ -212,6 +213,36 @@ class AnalysisCacheTest {
             assertNull("bandCount/waveSize $lengths", AnalysisCache.load(ctx, uri, defaultSigma, defaultInterval))
             assertFalse("damaged entry should be deleted", f.exists())
         }
+    }
+
+    /**
+     * The keying half of the staleness fix, end to end: replacing the CONTENT
+     * behind an unchanged URI must be a cache miss, not a hit that replays the
+     * old audio's beat grid over the new audio. file:// is used because its
+     * size/mtime stamp comes straight from the filesystem, which Robolectric
+     * runs for real.
+     */
+    @Test
+    fun contentChangeUnderTheSameUriMissesInsteadOfServingStaleAnalysis() {
+        AnalysisCache.clear(ctx)
+        val src = File(ctx.cacheDir, "track.wav")
+        src.writeBytes(ByteArray(1_000))
+        assertTrue(src.setLastModified(1_000_000_000L))
+        val uri = Uri.fromFile(src)
+
+        AnalysisCache.save(ctx, uri, timeline())
+        assertTrue("unchanged file must hit", AnalysisCache.load(ctx, uri, defaultSigma, defaultInterval) != null)
+
+        // Re-download / re-export: same path, different size.
+        src.writeBytes(ByteArray(2_000))
+        assertTrue(src.setLastModified(1_000_000_000L))
+        assertNull("size change must miss", AnalysisCache.load(ctx, uri, defaultSigma, defaultInterval))
+
+        // Same size, edited in place: mtime alone must also invalidate.
+        AnalysisCache.save(ctx, uri, timeline())
+        assertTrue(AnalysisCache.load(ctx, uri, defaultSigma, defaultInterval) != null)
+        assertTrue(src.setLastModified(2_000_000_000L))
+        assertNull("mtime change must miss", AnalysisCache.load(ctx, uri, defaultSigma, defaultInterval))
     }
 
     @Test

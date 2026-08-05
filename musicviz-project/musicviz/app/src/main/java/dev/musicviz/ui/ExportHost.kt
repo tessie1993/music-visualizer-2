@@ -67,6 +67,21 @@ fun ExportHost(
     var pendingExport by rememberSaveable(stateSaver = PendingExportSaver) {
         mutableStateOf<PendingExport?>(null)
     }
+
+    /**
+     * Builds the export scene for an arbitrary scene id, so a chosen take
+     * renders on the style it was recorded on. Guarded against ids the
+     * renderer no longer offers (a take recorded before a style was
+     * removed): `exportSceneFactory` treats an unknown id as a wiring error,
+     * and a stale take must degrade to the live style, not crash the export.
+     */
+    val sceneFactoryFor: (String, String) -> dev.musicviz.export.VideoExporter.SceneFactory =
+        { requested, fallback ->
+            val renderer = visualizerView.visualizerRenderer
+            renderer.exportSceneFactory(
+                if (requested in renderer.availableSceneIds()) requested else fallback,
+            )
+        }
     val destinationPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { dest ->
             val req = pendingExport
@@ -78,6 +93,7 @@ fun ExportHost(
                     visualizerView.visualizerRenderer.exportSceneFactory(req.sceneId),
                     destination = dest,
                     loopSafe = req.loopSafe,
+                    sceneFactoryFor = { id -> sceneFactoryFor(id, req.sceneId) },
                 )
             }
         }
@@ -95,6 +111,7 @@ fun ExportHost(
                 fps,
                 visualizerView.visualizerRenderer.exportSceneFactory(viz.sceneId),
                 loopSafe = loopSafe,
+                sceneFactoryFor = { id -> sceneFactoryFor(id, viz.sceneId) },
             )
         },
         onStartToDestination = { aspect, fps, loopSafe ->

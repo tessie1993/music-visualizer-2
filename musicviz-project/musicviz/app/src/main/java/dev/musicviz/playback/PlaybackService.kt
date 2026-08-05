@@ -3,8 +3,15 @@ package dev.musicviz.playback
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import androidx.annotation.OptIn
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import dev.musicviz.ui.HistoryStore
 
 /**
  * Keeps music playing when MusicViz is not on screen, and publishes what is
@@ -42,7 +49,34 @@ class PlaybackService : MediaSessionService() {
                 // Tapping the notification reopens MusicViz where the user left
                 // it rather than starting a second copy of the app.
                 .setSessionActivity(openAppIntent())
+                .setCallback(ResumptionCallback(this))
                 .build()
+    }
+
+    /**
+     * What the system gets when it asks this session to resume playback with
+     * an empty player - the path behind a media button or System UI's media
+     * resumption after the process has been killed. Without it those
+     * controls connect, find nothing loaded, and silently do nothing.
+     */
+    private class ResumptionCallback(
+        private val context: Context,
+    ) : MediaSession.Callback {
+        @OptIn(UnstableApi::class)
+        override fun onPlaybackResumption(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            val resumption =
+                lastPlayedResumption(context)
+                    // The same refusal Media3's default gives: a failed future
+                    // makes the controller drop the request cleanly, rather
+                    // than "succeeding" with an empty queue.
+                    ?: return Futures.immediateFailedFuture(
+                        UnsupportedOperationException("nothing was ever played"),
+                    )
+            return Futures.immediateFuture(resumption)
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -85,6 +119,32 @@ class PlaybackService : MediaSessionService() {
     }
 
     companion object {
+        /**
+         * The most recently played track as a resumption queue, or null when
+         * nothing was ever played. Starts from 0:00 because positions are not
+         * persisted anywhere in the app (HistoryStore records play counts and
+         * listened time, not offsets) - resuming at the start is the same
+         * behaviour the in-app Resume card gives.
+         *
+         * Internal (not private) so the headless suite can pin it without
+         * standing up a MediaSession, which Robolectric cannot drive.
+         */
+        internal fun lastPlayedResumption(context: Context): MediaSession.MediaItemsWithStartPosition? {
+            val last = HistoryStore(context).recentlyPlayed(1).firstOrNull() ?: return null
+            val item =
+                MediaItem
+                    .Builder()
+                    .setUri(last.uri)
+                    .setMediaMetadata(
+                        MediaMetadata
+                            .Builder()
+                            .setTitle(last.title)
+                            .setArtist(last.artist)
+                            .build(),
+                    ).build()
+            return MediaSession.MediaItemsWithStartPosition(listOf(item), 0, 0L)
+        }
+
         /**
          * Makes sure the service exists, so that playback survives the app
          * going away. Safe to call repeatedly - starting an already started

@@ -38,6 +38,19 @@ internal class CurlFlowScene(
 ) : Scene {
     override val id: String = SceneIds.CURLFLOW
 
+    private companion object {
+        /**
+         * Noise-clock wrap: 200 * pi (CymaticsScene TIME_WRAP convention).
+         * uTime reaches curl_field_frag only as psrdnoise's 2pi-periodic
+         * gradient rotation at two-decimal octave rates, so k * 200pi is
+         * k * 100 whole turns - exactly periodic at the wrap.
+         */
+        const val NOISE_WRAP_SECONDS = 628.31853f
+
+        /** Hash-clock wrap, matching VisualizerRenderer.TIME_WRAP_SEC. */
+        const val WALL_WRAP_SECONDS = 7100f
+    }
+
     private val particles = FluidParticles(context)
     private val choreography = FluidChoreography()
     private lateinit var formats: FluidBuffers.Formats
@@ -49,7 +62,11 @@ internal class CurlFlowScene(
     private var params = SceneParams()
     private var pending: AudioFeatures? = null
     private var lastDt = 1f / 60f
+
+    /** Noise clock, wrapped at 200 * pi - see the wrap site in [draw]. */
     private var noiseTime = 0f
+
+    /** Respawn-hash clock, wrapped at the renderer's TIME_WRAP horizon. */
     private var wallTime = 0f
     private var beatEnv = 0f
 
@@ -144,13 +161,21 @@ internal class CurlFlowScene(
         GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
 
         if (f != null) {
-            wallTime += lastDt
+            // Wrapped (TIME_WRAP convention): wallTime only seeds the
+            // particle respawn hash, which is value-agnostic; the wrap point
+            // matches VisualizerRenderer.TIME_WRAP_SEC.
+            wallTime = (wallTime + lastDt) % WALL_WRAP_SECONDS
             beatEnv = kotlin.math.max(f.motionImpulse, beatEnv * kotlin.math.exp(-lastDt / 0.35f))
             // The envelope carries the timing, "Beat response" the depth: the
             // slider had no reader on this style, so it moved nothing while
             // "Audio drive" (the field kick below) worked.
             beatDrive = CurlFlowMath.beatDrive(beatEnv, params.beatResponse)
-            noiseTime += lastDt * (0.15f + f.mid * 1.4f) * FluidChoreography.sceneSpeed(params.speed)
+            // Wrapped at 200 * pi (CymaticsScene TIME_WRAP convention):
+            // curl_field_frag reads uTime only as psrdnoise's gradient
+            // rotation (2pi-periodic) at two-decimal octave rates (1.0 /
+            // 1.7 / 2.9), and k * 200pi is k * 100 whole turns.
+            noiseTime = (noiseTime + lastDt * (0.15f + f.mid * 1.4f) * FluidChoreography.sceneSpeed(params.speed)) %
+                NOISE_WRAP_SECONDS
 
             // Shared spawn/catch progression: same params as the fluid scene.
             choreography.path = params.fluidSpawnPath.coerceIn(0, FluidChoreography.PATH_LABELS.size - 1)

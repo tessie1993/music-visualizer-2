@@ -274,7 +274,7 @@ float hash31(vec3 p) {
  * estimate by it, so a new deform is only correct together with a new bound.
  * Rotations and abs() are isometries (bound 1); an additive sine of
  * amplitude A and frequency f adds A*f; a twist of rate k adds k*R over a
- * body of local radius R; a uniform scale multiplies by itself.
+ * body of local radius R; a uniform-scale factor multiplies by itself.
  */
 vec3 styleBody(vec3 q, float phase) {
     if (uStyle == 1) {

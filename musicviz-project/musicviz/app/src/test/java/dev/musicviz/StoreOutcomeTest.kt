@@ -241,6 +241,65 @@ class StoreOutcomeTest {
         assertEquals(listOf("Kept"), store.list().map { it.name })
     }
 
+    // ------------------------------------- .milk materialization (additive)
+
+    @Test
+    fun `materializeMilk writes the carried source under the preset's own sanitized stem`() {
+        val store = PresetStore(ctx)
+        // A name no filesystem takes verbatim: the .milk must land under the
+        // same sanitized stem the preset's .json uses, not under a path with
+        // a directory separator in it that silently fails to write.
+        val name = "Live / set 1"
+        val source = "MILKDROP_PRESET_VERSION=201\n[preset00]\nfDecay=0.98\n"
+
+        val path = store.materializeMilk(name, source)
+
+        assertNotNull(path)
+        assertEquals(store.milkFileOf(name).absolutePath, path)
+        assertEquals(source, File(path!!).readText())
+        assertEquals(PresetStore.milkFileName(name), File(path).name)
+        // No temp artifact left beside it - the write was atomic.
+        assertEquals(listOf(File(path).name), filesFile("milk").listFiles().orEmpty().map { it.name })
+    }
+
+    @Test
+    fun `materializeMilk with no source uses the pre-source-era file as-is or reports none`() {
+        val store = PresetStore(ctx)
+        // Nothing carried, nothing on disk: there is nothing to render.
+        assertNull(store.materializeMilk("Never Saved", null))
+
+        // A preset saved before sources were carried only left the copied
+        // file behind; that file IS the visual, not a broken preset.
+        val legacy = store.milkFileOf("Old Era")
+        legacy.parentFile!!.mkdirs()
+        legacy.writeText("[preset00]\nzoom=1.0\n")
+
+        assertEquals(legacy.absolutePath, store.materializeMilk("Old Era", null))
+        assertEquals("[preset00]\nzoom=1.0\n", legacy.readText())
+    }
+
+    @Test
+    fun `an interrupted materializeMilk leaves the previous milk whole`() {
+        val store = PresetStore(ctx)
+        val good = "[preset00]\nfGammaAdj=2.0\n"
+        val path = store.materializeMilk("Show", good)!!
+
+        // Block the write the way process death does: the temp path is taken.
+        val file = File(path)
+        assertTrue(File(file.absolutePath + dev.musicviz.ui.AtomicWrite.TEMP_SUFFIX).mkdirs())
+
+        // A changed source cannot be written - but the file the engine may be
+        // rendering RIGHT NOW is still the whole previous preset, and the
+        // returned path still points at it.
+        assertEquals(path, store.materializeMilk("Show", "[preset00]\nbroken"))
+        assertEquals(good, file.readText())
+
+        // An identical source is recognized on disk and never rewritten, so
+        // the blocked temp path does not even matter.
+        assertEquals(path, store.materializeMilk("Show", good))
+        assertEquals(good, file.readText())
+    }
+
     // --------------------------------------------------- take rename (fix 5)
 
     private fun takeJson(

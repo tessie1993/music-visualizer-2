@@ -40,6 +40,9 @@ class ProjectMScene(
 ) : Scene {
     companion object {
         private const val LOAD_DEBOUNCE_MS = 400L
+
+        /** [rotationAngle] wrap; pm_post_frag only reads it through cos/sin. */
+        private const val TWO_PI = (2.0 * Math.PI).toFloat()
     }
 
     override val id: String = SceneIds.MILKDROP
@@ -197,7 +200,10 @@ class ProjectMScene(
         dt: Float,
     ) {
         val p = sceneParams
-        rotationAngle += p.rotation * dt
+        // Wrapped to one turn: pm_post_frag only reads uRotation through its
+        // cos/sin mat2, so 2pi is an exact period, and an unwrapped `+= dt`
+        // on a days-long wallpaper is float mush (TIME_WRAP convention).
+        rotationAngle = (rotationAngle + p.rotation * dt) % TWO_PI
         zoomPhase = if (p.endlessZoom) (zoomPhase + p.endlessZoomSpeed * dt) % 1f else 0f
         if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * dt) % 1f
         // Graded: a soft hit nudges the envelope, a hard one snaps it high,

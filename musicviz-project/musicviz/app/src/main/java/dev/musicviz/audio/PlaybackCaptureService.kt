@@ -66,6 +66,7 @@ class PlaybackCaptureService : Service() {
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         val data = intent?.let { IntentCompat.projectionData(it) }
         if (resultCode == 0 || data == null) {
+            MediaProjectionHolder.noteStartFailure()
             stopSelf()
             return START_NOT_STICKY
         }
@@ -74,6 +75,13 @@ class PlaybackCaptureService : Service() {
         val mp =
             runCatching { manager.getMediaProjection(resultCode, data) }.getOrNull()
         if (mp == null) {
+            // Dying silently here is what left the ViewModel's "waiting for
+            // the capture permission…" state stuck forever: with no projection
+            // ever published, [MediaProjectionHolder.projection] never emits
+            // (it is usually already null, and a StateFlow will not repeat a
+            // value), so nothing downstream learned the start had failed. The
+            // failure tick is the signal that cannot be conflated away.
+            MediaProjectionHolder.noteStartFailure()
             stopSelf()
             return START_NOT_STICKY
         }
@@ -202,7 +210,30 @@ object MediaProjectionHolder {
     /** Non-null while the user has granted capture and the service is up. */
     val projection: StateFlow<MediaProjection?> = _projection
 
+    private val _startFailures = MutableStateFlow(0)
+
+    /**
+     * Ticks once for every service start that could not produce a projection
+     * (malformed intent, or `getMediaProjection` refusing the consent it was
+     * handed). A separate signal because [projection] cannot carry it: on a
+     * failed *first* start the StateFlow already holds null and will not
+     * re-emit it, so a consumer waiting on consent would wait forever.
+     *
+     * The value is a wrapping counter - only *changes* mean anything, the
+     * count itself is not a statistic. Consumers should `drop(1)` (or compare
+     * against the value they subscribed at) and treat each change as "the
+     * start you were waiting for is not coming".
+     */
+    val startFailures: StateFlow<Int> = _startFailures
+
     fun publish(projection: MediaProjection?) {
         _projection.value = projection
+    }
+
+    /** Called by the service on every start attempt that produced no projection. */
+    fun noteStartFailure() {
+        // Deliberate wrap-on-overflow: an Int StateFlow used as a tick, never
+        // summed, never persisted.
+        _startFailures.value += 1
     }
 }

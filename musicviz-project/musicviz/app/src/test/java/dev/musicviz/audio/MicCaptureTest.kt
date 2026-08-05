@@ -17,7 +17,9 @@ import org.robolectric.shadows.ShadowAudioRecord
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * The live-input state machine: what [MicCapture.start] reports, and whether
@@ -59,6 +61,43 @@ class MicCaptureTest {
 
     private fun grantMic() {
         Shadows.shadowOf(ctx).grantPermissions(Manifest.permission.RECORD_AUDIO)
+    }
+
+    /** A recorder whose reads return full buffers: audible when [loud], exact zeros otherwise. */
+    private fun readsFilling(loud: AtomicBoolean) =
+        object : ShadowAudioRecord.AudioRecordSource {
+            override fun readInFloatArray(
+                audioData: FloatArray,
+                offsetInFloats: Int,
+                sizeInFloats: Int,
+                isBlocking: Boolean,
+            ): Int {
+                audioData.fill(if (loud.get()) 0.25f else 0f)
+                return sizeInFloats
+            }
+
+            override fun readInShortArray(
+                audioData: ShortArray,
+                offsetInShorts: Int,
+                sizeInShorts: Int,
+                isBlocking: Boolean,
+            ): Int {
+                audioData.fill(if (loud.get()) 8_192 else 0)
+                return sizeInShorts
+            }
+        }
+
+    /** Polls [condition] for up to [timeoutMs]; true as soon as it holds. */
+    private fun await(
+        timeoutMs: Long = 2_000,
+        condition: () -> Boolean,
+    ): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (condition()) return true
+            Thread.sleep(5)
+        }
+        return condition()
     }
 
     /** Waits for [capture] to report itself inactive, up to [timeoutMs]. */
@@ -137,6 +176,74 @@ class MicCaptureTest {
         assertTrue(capture.active)
         capture.stop()
         assertFalse(capture.active)
+    }
+
+    /**
+     * The feedback the UI never had: a working microphone must report a
+     * signal level, so a muted or hardware-dead one no longer looks identical
+     * to a healthy one reading a real room.
+     */
+    @Test
+    fun `audible input raises the peak level and is never called silence`() {
+        grantMic()
+        installSource(readsFilling(AtomicBoolean(true)))
+        val capture = MicCapture(ctx, PcmRingBuffer())
+        assertNull(capture.start())
+        assertTrue("audible reads never surfaced as a peak level", await { capture.peakLevel > 0.2f })
+        assertFalse(capture.silenceLikely)
+        capture.stop()
+        assertEquals("stop must reset the meter, not freeze its last value", 0f, capture.peakLevel, 0f)
+        assertFalse(capture.silenceLikely)
+    }
+
+    /**
+     * A recorder that reads nothing but exact zeros past the grace period is
+     * a muted or dead microphone, and [MicCapture.silenceLikely] must say so.
+     * The clock is injected: four real seconds have no place in a unit test.
+     */
+    @Test
+    fun `a microphone hearing only zeros is flagged after the grace period`() {
+        grantMic()
+        installSource(readsFilling(AtomicBoolean(false)))
+        val clock = AtomicLong(1_000)
+        val ring = PcmRingBuffer()
+        val capture = MicCapture(ctx, ring) { clock.get() }
+        assertNull(capture.start())
+        // The worker reads its start stamp off the injected clock, so the
+        // clock may only advance once the worker demonstrably ran - the first
+        // ring write proves the stamp was taken at 1 s, not at 6.
+        assertTrue("worker never wrote to the ring", await { ring.currentWriteIndex() > 0 })
+        assertFalse("the grace period must hold the flag down at first", capture.silenceLikely)
+        clock.set(6_000)
+        assertTrue("4 s of exact zeros was never flagged", await { capture.silenceLikely })
+        assertEquals(0f, capture.peakLevel, 0f)
+        capture.stop()
+        assertFalse("stop must clear the flag", capture.silenceLikely)
+    }
+
+    /**
+     * Unlike the playback capture's blocked-app heuristic, the microphone's
+     * silence flag must also fire mid-run: a hardware mute switch thrown
+     * while listening is exactly the case the hint exists for.
+     */
+    @Test
+    fun `a microphone muted mid-run is flagged too`() {
+        grantMic()
+        val loud = AtomicBoolean(true)
+        installSource(readsFilling(loud))
+        val clock = AtomicLong(1_000)
+        val capture = MicCapture(ctx, PcmRingBuffer()) { clock.get() }
+        assertNull(capture.start())
+        assertTrue(await { capture.peakLevel > 0.2f })
+        loud.set(false)
+        clock.set(2_000)
+        assertTrue("zeros should drop the meter to the floor", await { capture.peakLevel == 0f })
+        assertFalse("only 1 s of silence - not proof of a mute", capture.silenceLikely)
+        clock.set(7_000)
+        assertTrue("mid-run mute was never flagged", await { capture.silenceLikely })
+        loud.set(true)
+        assertTrue("sound must clear the flag again", await { !capture.silenceLikely })
+        capture.stop()
     }
 
     /**

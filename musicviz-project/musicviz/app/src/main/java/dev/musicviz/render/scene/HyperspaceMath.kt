@@ -224,7 +224,16 @@ object HyperspaceMath {
                 hueSpread = 0.55f,
             ),
             // MAGIC_EYE
-            ActProfile(bodies = 5, field = 0.5f, mirror = 0f, styleMirror = 1f, camera = 5.4f, motion = 1f, glow = 1f, hueSpread = 0.7f),
+            ActProfile(
+                bodies = 5,
+                field = 0.5f,
+                mirror = 0f,
+                styleMirror = 1f,
+                camera = 5.4f,
+                motion = 1f,
+                glow = 1f,
+                hueSpread = 0.7f,
+            ),
             // WAITING_ROOM
             ActProfile(
                 bodies = 7,

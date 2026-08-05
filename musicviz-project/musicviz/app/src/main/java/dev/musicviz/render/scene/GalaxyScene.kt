@@ -44,6 +44,16 @@ class GalaxyScene(
 
         /** Winding tightness of the logarithmic spiral, in radians per ln(r). */
         const val PITCH = 3.1f
+
+        const val TWO_PI = 2f * PI.toFloat()
+
+        /**
+         * [wavePhase] wrap: the phase only ever appears as
+         * `wavePhase * 2pi * ARMS` inside a cosine with ARMS = 2, so 1.0 is
+         * two whole turns - an exact period. Unwrapped `+= dt` clocks decay
+         * into float32 mush on a days-long wallpaper (TIME_WRAP convention).
+         */
+        const val WAVE_WRAP = 1f
     }
 
     private val random = Random(19)
@@ -72,8 +82,8 @@ class GalaxyScene(
         // IS the density wave. A beat nudges it so the arms sweep on the hit.
         val beatEdge = features.beat && !prevBeat
         prevBeat = features.beat
-        wavePhase += (0.05f + features.mid * drive * 0.12f) * p.speed * dt
-        if (beatEdge) wavePhase += 0.05f * p.beatResponse * features.beatImpulse
+        wavePhase = (wavePhase + (0.05f + features.mid * drive * 0.12f) * p.speed * dt) % WAVE_WRAP
+        if (beatEdge) wavePhase = (wavePhase + 0.05f * p.beatResponse * features.beatImpulse) % WAVE_WRAP
         // Turbulence blurs the arms out into a flocculent disc.
         val armSharp = 5.5f / (1f + p.turbulence.coerceIn(0f, 2f) * 2.2f)
 
@@ -86,7 +96,9 @@ class GalaxyScene(
             val e = (bands[band[i] % n] * drive).coerceIn(0f, 1.5f)
             // Flat-ish rotation curve: solid-body inside CORE, ~1/r outside.
             val omega = (0.9f / (r + CORE)) * p.speed * (0.75f + features.mid * drive * 0.5f)
-            angle[i] += omega * dt
+            // Wrapped to one turn: every read is cos/sin of angle (or an
+            // integer multiple - ARMS, the *2 bob), so 2pi is exact.
+            angle[i] = (angle[i] + omega * dt) % TWO_PI
             // Distance to the nearest arm crest, in radians of pattern phase.
             val armPhase = (angle[i] - wavePhase * 2f * PI.toFloat()) * ARMS + PITCH * ln(r + CORE) * ARMS
             val toCrest = cos(armPhase)

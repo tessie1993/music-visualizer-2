@@ -183,15 +183,42 @@ data class TakeUiState(
     /**
      * Take the next video export replays, or null for the live settings.
      *
-     * PARAMETER AUTOMATION ONLY. The exporter builds one scene up front and
-     * renders every frame through it, so a style SWITCH inside a take cannot
-     * be reproduced offline without teaching the exporter to create, swap and
-     * release scenes mid-render. Everything else a take holds - every slider,
-     * colour, FX and fluid setting, moving exactly as it was performed - does
-     * reach the file. The export dialog says so where the take is chosen.
+     * PARAMETER AUTOMATION ONLY, with one honest exception: the export scene
+     * is built from the take's FIRST scene event (see [exportSceneIdFor]), so
+     * a take performed on another style at least renders on the style it was
+     * recorded on. A style SWITCH inside a take still cannot be reproduced
+     * offline without teaching the exporter to create, swap and release
+     * scenes mid-render. Everything else a take holds - every slider, colour,
+     * FX and fluid setting, moving exactly as it was performed - does reach
+     * the file. The export dialog says so where the take is chosen.
      */
     val exportTake: String? = null,
+    /**
+     * Transient user-facing note about the last recording action - set when a
+     * stop discarded a single-keyframe take, cleared automatically a few
+     * seconds later and on the next recording. Without it a discard was
+     * indistinguishable from a successful save.
+     */
+    val note: String? = null,
 )
+
+/**
+ * The scene the video export should build when it replays [take]: the take's
+ * first scene event, falling back to [liveSceneId] when the take is missing,
+ * empty, or carries no scene. Top-level so the headless suite can pin it
+ * without an export pipeline. Calling [PerformanceTake.Timeline.stateAt] at 0
+ * leaves the take's forward-walking cursor at the start, where the export's
+ * ascending per-frame reads expect it.
+ */
+internal fun exportSceneIdFor(
+    take: PerformanceTake.Timeline?,
+    liveSceneId: String,
+): String =
+    take
+        ?.stateAt(0L)
+        ?.sceneId
+        ?.takeIf { it.isNotEmpty() }
+        ?: liveSceneId
 
 /** Live-input state for the Settings switch: running, plus why it is not. */
 data class MicState(
@@ -993,8 +1020,32 @@ class PlayerViewModel(
         }
     }
 
+    /**
+     * Deletes a texture off the main thread (it is disk work, same as
+     * [importTextures]) and keeps the milk selection coherent: removing a
+     * texture also removes its generated `show_<base>.milk` display preset,
+     * and when THAT preset is the one the engine is showing, the persisted
+     * `milk_path` would point at a dead file on the next launch - so it is
+     * cleared and the engine simply keeps its currently loaded frame instead
+     * of being offered a preset that no longer exists.
+     */
     fun removeTexture(name: String) {
-        _textures.value = textureStore.remove(name)
+        viewModelScope.launch(Dispatchers.IO) {
+            val outcome = textureStore.removeDetailed(name)
+            withContext(Dispatchers.Main) {
+                _textures.value = outcome.textures
+                val gone = outcome.removedGeneratedPresetPath
+                if (gone != null) {
+                    if (_activeMilkPath.value == gone) _activeMilkPath.value = null
+                    // The pref can be stale even when the live value differs
+                    // (restore drops paths whose file is missing but leaves
+                    // the pref behind); compare it on its own.
+                    if (vizPrefs().getString("milk_path", null) == gone) {
+                        vizPrefs().edit().remove("milk_path").apply()
+                    }
+                }
+            }
+        }
     }
 
     /** Generates a display preset for [name] and hands its path to the caller. */
@@ -1044,33 +1095,6 @@ class PlayerViewModel(
         return if (n > 0) PcmChunk(pcmScratch, n) else null
     }
 
-    private var builtInIndex = -1
-
-    /** Async: copies bundled presets on first use, returns next path on main. */
-    fun nextMilkPresetAsync(onDone: (String?) -> Unit) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val path = nextBuiltInMilkPresetBlocking()
-            withContext(Dispatchers.Main) { onDone(path) }
-        }
-    }
-
-    private fun nextBuiltInMilkPresetBlocking(): String? =
-        try {
-            val files =
-                importDir()
-                    .listFiles { f -> f.extension == "milk" }
-                    .orEmpty()
-                    .sortedBy { it.name }
-            if (files.isEmpty()) {
-                null
-            } else {
-                builtInIndex = (builtInIndex + 1) % files.size
-                files[builtInIndex].absolutePath
-            }
-        } catch (t: Throwable) {
-            null
-        }
-
     private fun builtInDir(): java.io.File = java.io.File(getApplication<Application>().filesDir, "milk-builtin")
 
     private fun importDir(): java.io.File = java.io.File(getApplication<Application>().filesDir, "milk")
@@ -1108,18 +1132,46 @@ class PlayerViewModel(
         }
     }
 
-    private fun importMilkPresetBlocking(uri: Uri): String? =
+    /**
+     * Copies a picked .milk into the user's milk dir and returns its path, or
+     * null when nothing usable arrived.
+     *
+     * Three failure modes are closed here, each once shipped as "success":
+     * the name comes from [android.provider.OpenableColumns.DISPLAY_NAME]
+     * (SAF's `lastPathSegment` is an opaque document id like `document/1234`,
+     * so imports listed under names no user chose); a null stream returns
+     * null instead of the path of a file that was never written; and the copy
+     * goes through [AtomicWrite], so a kill mid-copy cannot leave a truncated
+     * preset that projectM answers with its idle "M". The filename is
+     * sanitized through [PresetStore.milkFileName], the same rule every other
+     * .milk in that directory obeys.
+     *
+     * Internal, not private, so the headless suite can pin the null-stream
+     * and naming contracts without racing the async wrapper.
+     */
+    internal fun importMilkPresetBlocking(uri: Uri): String? =
         try {
-            val dir = java.io.File(getApplication<Application>().filesDir, "milk").apply { mkdirs() }
-            val name = (uri.lastPathSegment ?: "preset").substringAfterLast('/').ifBlank { "preset" }
-            val file = java.io.File(dir, if (name.endsWith(".milk")) name else "$name.milk")
-            getApplication<Application>().contentResolver.openInputStream(uri)?.use { input ->
-                file.outputStream().use { input.copyTo(it) }
-            }
-            file.absolutePath
+            val app = getApplication<Application>()
+            val dir = java.io.File(app.filesDir, "milk").apply { mkdirs() }
+            val display = displayNameOf(uri).orEmpty().ifBlank { "preset" }
+            val file = java.io.File(dir, PresetStore.milkFileName(display))
+            val written =
+                app.contentResolver.openInputStream(uri)?.use { input ->
+                    AtomicWrite.stream(file) { out -> input.copyTo(out) }
+                } ?: false
+            if (written) file.absolutePath else null
         } catch (t: Throwable) {
             null
         }
+
+    /** The name the source app shows the user for [uri], or null. */
+    private fun displayNameOf(uri: Uri): String? =
+        runCatching {
+            getApplication<Application>()
+                .contentResolver
+                .query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/')
 
     private var timelineBacking: FeatureTimeline? = null
 
@@ -1143,22 +1195,10 @@ class PlayerViewModel(
     @Volatile
     private var exportCancelled = false
 
-    // Fields used by the construction-time main loop (launched in the init
-    // block below on Main.immediate, which executes synchronously until its
-    // first delay). They MUST be declared before that init block: on-device
-    // this crashed at launch with an NPE when applyIntelligence() read
-    // _presetLocked before its initializer had run. Robolectric's deferred
-    // looper hid the crash, which is why the smoke test passed.
     private val historyStore = HistoryStore(application)
     private val _historyTick = MutableStateFlow(0)
     val historyTick: StateFlow<Int> = _historyTick
 
-    // Declared here for the same reason as the fields above, not down in the
-    // "Performance takes" section they belong to: the init block below lists
-    // the saved takes, and a property declared after it has not been
-    // initialized when it runs. Kotlin does not catch that - the field is
-    // simply null - so it surfaces as an NPE inside the ViewModel constructor,
-    // i.e. as the app failing to start.
     private val takeStore = TakeStore(application)
     private val _takeState = MutableStateFlow(TakeUiState())
 
@@ -1169,13 +1209,6 @@ class PlayerViewModel(
     private val _presetLocked = MutableStateFlow(false)
     val presetLocked: StateFlow<Boolean> = _presetLocked
 
-    // Player state, declared up here for the same construction-order reason as
-    // the fields above rather than in the "Player" section it belongs to: the
-    // init block below starts the 500 ms poll, which touches the A-B loop and
-    // the queue on its FIRST iteration. A property declared after the init
-    // block is still null when that runs, and Kotlin does not catch it - it
-    // surfaces as an NPE inside the ViewModel constructor, i.e. as the app
-    // failing to start.
     private val favouritesStore = FavouritesStore(application)
 
     private val _favourites = MutableStateFlow(favouritesStore.all().toSet())
@@ -1236,167 +1269,6 @@ class PlayerViewModel(
      * and analysis state alongside the live one's.
      */
     private var playerListener: Player.Listener? = null
-
-    init {
-        engine.start(viewModelScope)
-        refreshNumericTitles()
-        refreshTakes()
-        // Everything startup reads off disk that is not needed to draw the
-        // first frame. See each function for what it costs and why waiting for
-        // it shows nothing wrong in the meantime.
-        refreshPresets()
-        refreshLibrary()
-        refreshTextures()
-        // Restore persisted playback options onto the player. Auto-resume runs
-        // BEFORE the listener registers so the startup preparation never
-        // records a phantom play into history (ExoPlayer only delivers events
-        // to listeners registered when they occurred).
-        val pp = _playerPrefs.value
-        player.shuffleModeEnabled = pp.shuffle
-        player.repeatMode = pp.repeatMode
-        applyPlaybackPrefs(pp)
-        // The player is no longer necessarily new: it survives the screen, so a
-        // second screen can open onto music that is already playing. Loading
-        // the last-played track over that would throw away what the user is
-        // listening to, so this branch adopts the queue that is there instead -
-        // and seeds the fields the transition event would otherwise have set,
-        // since that event happened before this ViewModel existed.
-        val alreadyLoaded = player.currentMediaItem != null
-        if (alreadyLoaded) {
-            currentUri = player.currentMediaItem?.localConfiguration?.uri
-        } else if (pp.autoResume) {
-            prepareLastPlayed()
-        }
-        val listener =
-            object : Player.Listener {
-                override fun onEvents(
-                    player: Player,
-                    events: Player.Events,
-                ) {
-                    refresh()
-                    if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
-                        currentUri = player.currentMediaItem?.localConfiguration?.uri
-                        currentUri?.let { u ->
-                            val title =
-                                player.mediaMetadata.title?.toString()
-                                    ?: player.currentMediaItem
-                                        ?.localConfiguration
-                                        ?.uri
-                                        ?.lastPathSegment
-                                        .orEmpty()
-                            // The old track's accumulated time belongs to the
-                            // old track: bank it before the uri moves on.
-                            flushListenTime()
-                            historyStore.recordPlay(
-                                u.toString(),
-                                title,
-                                player.mediaMetadata.artist
-                                    ?.toString()
-                                    .orEmpty(),
-                            )
-                            _historyTick.update { it + 1 }
-                        }
-                        onTrackChanged()
-                    }
-                }
-
-                override fun onPositionDiscontinuity(
-                    oldPosition: Player.PositionInfo,
-                    newPosition: Player.PositionInfo,
-                    reason: Int,
-                ) {
-                    // A seek breaks the audio stream's continuity just as a
-                    // track change does: the tracker's predicted beat frames
-                    // now point at music that will not arrive, so it would
-                    // suppress the real beats at the new position as off-grid
-                    // until it re-locked. Covers every seek path (transport
-                    // bar, gestures, any future notification controls), which
-                    // is why this hangs off the listener and not seekTo().
-                    // Auto-advance discontinuities are left to
-                    // EVENT_MEDIA_ITEM_TRANSITION, which resets anyway.
-                    if (reason == Player.DISCONTINUITY_REASON_SEEK ||
-                        reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
-                    ) {
-                        engine.reset()
-                    }
-                }
-
-                override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                    // The audiofx chain must follow the sink's session; attach
-                    // rebuilds the effects and restores persisted settings.
-                    audioFxController.attach(audioSessionId)
-                    refreshAudioFx()
-                }
-
-                /**
-                 * Everything that has to be true whenever playback starts, no
-                 * matter who started it.
-                 *
-                 * This used to be safe to do inside [togglePlayPause], because
-                 * that button was the only way to start. It is not any more:
-                 * the notification, the lock screen and a headset button all
-                 * drive the player straight through the MediaSession without
-                 * passing through this class at all. Hanging the rules off the
-                 * player is the same reasoning as the seek reset above - the
-                 * player is where every path meets.
-                 */
-                override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    if (!isPlaying) return
-                    // One ring buffer, one source. A track and the room (or a
-                    // track and Spotify) summed into a single spectrum drive
-                    // the visuals as neither.
-                    if (micCapture.active) setMicEnabled(false)
-                    if (_externalAudio.value.active) stopExternalAudio()
-                    // A faded pause leaves the output at zero and waits for the
-                    // matching fade in. A transport that is not ours knows
-                    // nothing about that, so its play would have been silent.
-                    if (fadeVolume < 1f && fadeJob?.isActive != true) fadeThen(fadeVolume, 1f) {}
-                    // From here on the music must survive this screen.
-                    PlaybackService.ensureRunning(getApplication())
-                }
-            }
-        playerListener = listener
-        player.addListener(listener)
-        // The sink may already have a session id (attach ignores UNSET = 0).
-        audioFxController.attach(player.audioSessionId)
-        refreshAudioFx()
-        // A screen opening onto music that is already playing has missed the
-        // track change that started it, and with it the lyrics, the cached
-        // analysis and the section grid for what it is now showing.
-        if (alreadyLoaded) onTrackChanged()
-        // Consent -> foreground service -> projection -> recorder. This is the
-        // last hop: the service publishes what the user granted, and the
-        // recorder opens against it here, where the ring buffer lives.
-        viewModelScope.launch {
-            dev.musicviz.audio.MediaProjectionHolder.projection
-                .collect { projection ->
-                    if (projection != null) {
-                        startPlaybackCapture(projection)
-                    } else if (_externalAudio.value.active) {
-                        // Revoked from the system UI, or the service died.
-                        playbackCapture.stop()
-                        engine.reset()
-                        engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
-                        _externalAudio.update { it.copy(active = false, refusedByApp = false) }
-                    }
-                }
-        }
-        viewModelScope.launch {
-            while (true) {
-                refresh()
-                accrueListenTime()
-                enforceAbLoop()
-                refreshQueue()
-                refreshExternalAudio()
-                refreshMicState()
-                applyIntelligence()
-                advanceVizPlaylist()
-                advanceRandomMode()
-                advanceSectionStaging()
-                delay(500)
-            }
-        }
-    }
 
     private fun refresh() {
         _uiState.value =
@@ -1526,15 +1398,32 @@ class PlayerViewModel(
     private var lastVizSwitchMs = 0L
     private var vizPlaylistIndex = 0
 
+    /**
+     * Adds an entry to the visual playlist, deduplicated: a preset already in
+     * the list (by [VizPlaylistEntry.presetName]) or an identical entry is
+     * not appended again. The heart in Visuals › Presets is a membership
+     * toggle, but a playlist that could accumulate silent duplicates from any
+     * OTHER caller would drain one copy per un-heart while looking removed.
+     * The list is persisted (see [AutoVisualsPrefsStore]) so the entries the
+     * standing `vizPlaylistEnabled` instruction rotates survive a restart
+     * with it.
+     */
     fun addToVizPlaylist(entry: VizPlaylistEntry) {
         val s = _vizState.value
+        val duplicate =
+            s.vizPlaylist.any {
+                it == entry || (entry.presetName != null && it.presetName == entry.presetName)
+            }
+        if (duplicate) return
         _vizState.value = s.copy(vizPlaylist = s.vizPlaylist + entry)
+        persistAutoVisuals()
     }
 
     fun removeVizPlaylistAt(index: Int) {
         val s = _vizState.value
         if (index in s.vizPlaylist.indices) {
             _vizState.value = s.copy(vizPlaylist = s.vizPlaylist.filterIndexed { i, _ -> i != index })
+            persistAutoVisuals()
         }
     }
 
@@ -2268,8 +2157,6 @@ class PlayerViewModel(
 
     fun recentlyPlayed() = historyStore.recentlyPlayed()
 
-    fun mostPlayed() = historyStore.mostPlayed()
-
     /** Uri of whatever is loaded in the player, for artwork lookups. */
     fun currentTrackUri(): String? = currentUri?.toString()
 
@@ -2578,6 +2465,10 @@ class PlayerViewModel(
         folder: String,
     ) {
         presetStore.moveToFolder(name, folder)
+        // The mirror tracks every write path, not just savePreset: a move
+        // that skipped it left the mirrored copy wherever the preset used to
+        // be, drifting from the store it exists to reflect.
+        mirrorPresetToChosenFolder(name)
         _vizState.update { it.copy(presets = BuiltInPresets.ALL + presetStore.list()) }
     }
 
@@ -3105,6 +2996,7 @@ class PlayerViewModel(
     private var recorder: PerformanceTake.Recorder? = null
     private var recordStartMs = 0L
     private var recordJob: Job? = null
+    private var recordTickJob: Job? = null
     private var replayJob: Job? = null
 
     /**
@@ -3121,7 +3013,7 @@ class PlayerViewModel(
         val s = _vizState.value
         recorder = PerformanceTake.Recorder(s.sceneId, s.params, _activeMilkPath.value)
         recordStartMs = android.os.SystemClock.elapsedRealtime()
-        _takeState.update { it.copy(recording = true, recordedEvents = 1, recordedMs = 0L) }
+        _takeState.update { it.copy(recording = true, recordedEvents = 1, recordedMs = 0L, note = null) }
         recordJob =
             viewModelScope.launch {
                 // One collector on the state flow, not a polling loop: a
@@ -3133,6 +3025,17 @@ class PlayerViewModel(
                     rec.append(at, live.sceneId, live.params, _activeMilkPath.value)
                     _takeState.update { it.copy(recordedEvents = rec.size, recordedMs = at) }
                     if (!rec.hasRoom) stopRecording()
+                }
+            }
+        // The clock is a clock, not a change counter: the collector above only
+        // fires on param traffic, so an untouched recording read "0:00" for
+        // its whole length. One tick a second is plenty for a wall clock.
+        recordTickJob =
+            viewModelScope.launch {
+                while (true) {
+                    delay(1_000L)
+                    val at = android.os.SystemClock.elapsedRealtime() - recordStartMs
+                    _takeState.update { if (it.recording) it.copy(recordedMs = at) else it }
                 }
             }
     }
@@ -3154,10 +3057,21 @@ class PlayerViewModel(
         val rec = recorder ?: return
         recordJob?.cancel()
         recordJob = null
+        recordTickJob?.cancel()
+        recordTickJob = null
         recorder = null
         val durationMs = android.os.SystemClock.elapsedRealtime() - recordStartMs
         _takeState.update { it.copy(recording = false, recordedEvents = 0, recordedMs = 0L) }
         if (rec.size <= 1) {
+            // Discarding is right - a one-keyframe take is a still - but
+            // doing it SILENTLY made "stop" and "save" look identical. The
+            // note is transient: it clears itself, and the next recording
+            // clears it early.
+            _takeState.update { it.copy(note = TAKE_DISCARDED_NOTE) }
+            viewModelScope.launch {
+                delay(TAKE_NOTE_MS)
+                _takeState.update { if (it.note == TAKE_DISCARDED_NOTE) it.copy(note = null) else it }
+            }
             refreshTakes()
             return
         }
@@ -3234,14 +3148,23 @@ class PlayerViewModel(
         refreshTakes()
     }
 
+    /**
+     * Renames a take, surfacing [TakeStore.rename]'s answer instead of
+     * dropping it: the dialog already refuses blank and duplicate names up
+     * front, so a false here is the disk disagreeing with the screen (a file
+     * created between the check and the click, an unwritable store) - and a
+     * caller that cannot see it closes over a rename that never happened.
+     */
     fun renameTake(
         from: String,
         to: String,
-    ) {
-        if (takeStore.rename(from, to)) {
+    ): Boolean {
+        val renamed = takeStore.rename(from, to)
+        if (renamed) {
             if (_takeState.value.replaying == from) stopReplay()
             refreshTakes()
         }
+        return renamed
     }
 
     /**
@@ -3346,7 +3269,7 @@ class PlayerViewModel(
             } else {
                 null
             }
-        milkSource?.let { source -> runCatching { milkFileFor(name).writeText(source) } }
+        milkSource?.let { source -> presetStore.materializeMilk(name, source) }
         presetStore.save(Preset(name, s.sceneId, s.attack, s.decay, customShader, s.params, milkSource), folder)
         mirrorPresetToChosenFolder(name)
         _vizState.value = s.copy(presets = BuiltInPresets.ALL + presetStore.list())
@@ -3401,21 +3324,13 @@ class PlayerViewModel(
 
     /**
      * The .milk file [preset] should render, materializing its carried source
-     * on the way, or null when it has none.
-     *
-     * Two eras resolve here. Presets saved with their source (the [Preset]
-     * `milkPreset` field) write it out under the preset's own name, so they
-     * work after a share, an import or a reinstall. Presets saved before that
-     * only ever left the copied file behind, so an existing file under the
-     * same name is used as-is rather than declaring the preset broken.
+     * on the way, or null when it has none. The two-era resolution (and the
+     * atomic write under the engine's feet) lives in
+     * [PresetStore.materializeMilk]; this only adds the scene gate.
      */
     internal fun milkPresetPathFor(preset: Preset): String? {
         if (preset.sceneId != SceneIds.MILKDROP) return null
-        val file = milkFileFor(preset.name)
-        preset.milkPreset?.let { source ->
-            runCatching { if (!file.isFile || file.readText() != source) file.writeText(source) }
-        }
-        return file.takeIf { it.isFile }?.absolutePath
+        return presetStore.materializeMilk(preset.name, preset.milkPreset)
     }
 
     /**
@@ -3529,7 +3444,15 @@ class PlayerViewModel(
     private fun importPresetJson(json: String): String? {
         val incoming = runCatching { PresetStore.fromJson(json) }.getOrNull() ?: return null
         val existing = _vizState.value.presets.map { it.name }.toSet()
-        val base = incoming.name.ifBlank { "Shared preset" }
+        // The same laundering savePreset applies: " · " is reserved for
+        // built-in presets (isBuiltIn matches on it), so an imported name
+        // carrying it was classified built-in - hidden from the user's list
+        // and undeletable in the browser.
+        val base =
+            incoming.name
+                .replace(" · ", " - ")
+                .trim()
+                .ifBlank { "Shared preset" }
         var name = base
         var n = 2
         while (name in existing) {
@@ -3546,8 +3469,31 @@ class PlayerViewModel(
 
     fun deletePreset(name: String) {
         if (BuiltInPresets.isBuiltIn(name)) return
+        // The mirror follows the store both ways. Save-only sync meant every
+        // deleted preset lived on in the user's chosen folder, so the mirror
+        // slowly became a directory of ghosts. File names are captured BEFORE
+        // the delete - fileOf resolves through the disk.
+        removeMirroredPreset(presetStore.fileOf(name)?.name, milkFileFor(name).name)
         presetStore.delete(name)
         _vizState.update { it.copy(presets = BuiltInPresets.ALL + presetStore.list()) }
+    }
+
+    /** Best-effort removal of a deleted preset's mirrored files (see [mirrorPresetToChosenFolder]). */
+    private fun removeMirroredPreset(
+        jsonName: String?,
+        milkName: String?,
+    ) {
+        val uriStr = _guiPrefs.value.presetMirrorUri ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val tree =
+                    androidx.documentfile.provider.DocumentFile
+                        .fromTreeUri(getApplication(), Uri.parse(uriStr))
+                        ?: return@runCatching
+                jsonName?.let { tree.findFile(it)?.delete() }
+                milkName?.let { tree.findFile(it)?.delete() }
+            }
+        }
     }
 
     // ---- Export ----
@@ -3559,6 +3505,14 @@ class PlayerViewModel(
         destination: Uri? = null,
         /** Trim to whole bars so the clip loops without a stumble. */
         loopSafe: Boolean = false,
+        /**
+         * Builds a factory for an arbitrary scene id, so a chosen export take
+         * renders on the style it was RECORDED on ([exportSceneIdFor]) rather
+         * than whatever style happens to be live when Export is pressed.
+         * Null (or no take) keeps [sceneFactory]. The take's scene id has to
+         * be read off disk, which is why this is a resolver and not a value.
+         */
+        sceneFactoryFor: ((String) -> VideoExporter.SceneFactory)? = null,
     ) {
         val uri = currentUri ?: return
         if (_exportState.value.running) return
@@ -3593,11 +3547,29 @@ class PlayerViewModel(
                         _vizState.update { it.copy(bpm = t.bpm, sections = t.detectSections()) }
                     }
                     val name = "musicviz_${System.currentTimeMillis()}.mp4"
+                    // A chosen take renders the performance instead of the
+                    // live settings. Loaded once, outside the frame loop: the
+                    // Timeline is a stateful cursor, and the export coroutine
+                    // is its only reader.
+                    val exportTake =
+                        _takeState.value.exportTake
+                            ?.let { takeStore.load(it) }
+                            ?.takeUnless { it.isEmpty }
+                    // Take export honesty, first half: the scene comes from
+                    // the take's own first scene event, not from whatever the
+                    // user was looking at. Mid-take scene switches still do
+                    // not render (see TakeUiState.exportTake).
+                    val factory =
+                        if (exportTake != null && sceneFactoryFor != null) {
+                            sceneFactoryFor(exportSceneIdFor(exportTake, _vizState.value.sceneId))
+                        } else {
+                            sceneFactory
+                        }
                     val result =
                         exporter.export(
                             audioUri = uri,
                             timeline = t,
-                            sceneFactory = sceneFactory,
+                            sceneFactory = factory,
                             aspect = aspect,
                             fileName = name,
                             sceneParams = _vizState.value.params,
@@ -3605,14 +3577,8 @@ class PlayerViewModel(
                             adsrConfigs = _adsrs.value,
                             safety = gui.safety,
                             requestedFps = fps,
-                            // A chosen take renders the performance instead of
-                            // the live settings. Loaded once, outside the frame
-                            // loop: the Timeline is a stateful cursor, and the
-                            // export coroutine is its only reader.
                             paramsAt =
-                                _takeState.value.exportTake
-                                    ?.let { takeStore.load(it) }
-                                    ?.takeUnless { it.isEmpty }
+                                exportTake
                                     ?.let { take -> { ms: Long -> take.stateAt(ms)?.params ?: _vizState.value.params } },
                             loopSafe = loopSafe,
                             destination = destination,
@@ -3783,6 +3749,176 @@ class PlayerViewModel(
         PlaybackEngine.releaseUi()
     }
 
+    // The main init block sits at the PHYSICAL END of the class, after every
+    // property declaration, so declaration order can never matter to it: it
+    // launches on Main.immediate and executes synchronously until its first
+    // delay, and a property declared after a mid-class init block is still
+    // null when that synchronous stretch reads it - Kotlin does not catch
+    // it, so it surfaced on-device as an NPE inside the constructor (the app
+    // failing to start) while Robolectric's deferred looper hid it.
+    // InitOrderTest scans the source and fails the build on any property
+    // declared after this block.
+    init {
+        engine.start(viewModelScope)
+        refreshNumericTitles()
+        refreshTakes()
+        // Everything startup reads off disk that is not needed to draw the
+        // first frame. See each function for what it costs and why waiting for
+        // it shows nothing wrong in the meantime.
+        refreshPresets()
+        refreshLibrary()
+        refreshTextures()
+        // Restore persisted playback options onto the player. Auto-resume runs
+        // BEFORE the listener registers so the startup preparation never
+        // records a phantom play into history (ExoPlayer only delivers events
+        // to listeners registered when they occurred).
+        val pp = _playerPrefs.value
+        player.shuffleModeEnabled = pp.shuffle
+        player.repeatMode = pp.repeatMode
+        applyPlaybackPrefs(pp)
+        // The player is no longer necessarily new: it survives the screen, so a
+        // second screen can open onto music that is already playing. Loading
+        // the last-played track over that would throw away what the user is
+        // listening to, so this branch adopts the queue that is there instead -
+        // and seeds the fields the transition event would otherwise have set,
+        // since that event happened before this ViewModel existed.
+        val alreadyLoaded = player.currentMediaItem != null
+        if (alreadyLoaded) {
+            currentUri = player.currentMediaItem?.localConfiguration?.uri
+        } else if (pp.autoResume) {
+            prepareLastPlayed()
+        }
+        val listener =
+            object : Player.Listener {
+                override fun onEvents(
+                    player: Player,
+                    events: Player.Events,
+                ) {
+                    refresh()
+                    if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
+                        currentUri = player.currentMediaItem?.localConfiguration?.uri
+                        currentUri?.let { u ->
+                            val title =
+                                player.mediaMetadata.title?.toString()
+                                    ?: player.currentMediaItem
+                                        ?.localConfiguration
+                                        ?.uri
+                                        ?.lastPathSegment
+                                        .orEmpty()
+                            // The old track's accumulated time belongs to the
+                            // old track: bank it before the uri moves on.
+                            flushListenTime()
+                            historyStore.recordPlay(
+                                u.toString(),
+                                title,
+                                player.mediaMetadata.artist
+                                    ?.toString()
+                                    .orEmpty(),
+                            )
+                            _historyTick.update { it + 1 }
+                        }
+                        onTrackChanged()
+                    }
+                }
+
+                override fun onPositionDiscontinuity(
+                    oldPosition: Player.PositionInfo,
+                    newPosition: Player.PositionInfo,
+                    reason: Int,
+                ) {
+                    // A seek breaks the audio stream's continuity just as a
+                    // track change does: the tracker's predicted beat frames
+                    // now point at music that will not arrive, so it would
+                    // suppress the real beats at the new position as off-grid
+                    // until it re-locked. Covers every seek path (transport
+                    // bar, gestures, any future notification controls), which
+                    // is why this hangs off the listener and not seekTo().
+                    // Auto-advance discontinuities are left to
+                    // EVENT_MEDIA_ITEM_TRANSITION, which resets anyway.
+                    if (reason == Player.DISCONTINUITY_REASON_SEEK ||
+                        reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
+                    ) {
+                        engine.reset()
+                    }
+                }
+
+                override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                    // The audiofx chain must follow the sink's session; attach
+                    // rebuilds the effects and restores persisted settings.
+                    audioFxController.attach(audioSessionId)
+                    refreshAudioFx()
+                }
+
+                /**
+                 * Everything that has to be true whenever playback starts, no
+                 * matter who started it.
+                 *
+                 * This used to be safe to do inside [togglePlayPause], because
+                 * that button was the only way to start. It is not any more:
+                 * the notification, the lock screen and a headset button all
+                 * drive the player straight through the MediaSession without
+                 * passing through this class at all. Hanging the rules off the
+                 * player is the same reasoning as the seek reset above - the
+                 * player is where every path meets.
+                 */
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    if (!isPlaying) return
+                    // One ring buffer, one source. A track and the room (or a
+                    // track and Spotify) summed into a single spectrum drive
+                    // the visuals as neither.
+                    if (micCapture.active) setMicEnabled(false)
+                    if (_externalAudio.value.active) stopExternalAudio()
+                    // A faded pause leaves the output at zero and waits for the
+                    // matching fade in. A transport that is not ours knows
+                    // nothing about that, so its play would have been silent.
+                    if (fadeVolume < 1f && fadeJob?.isActive != true) fadeThen(fadeVolume, 1f) {}
+                    // From here on the music must survive this screen.
+                    PlaybackService.ensureRunning(getApplication())
+                }
+            }
+        playerListener = listener
+        player.addListener(listener)
+        // The sink may already have a session id (attach ignores UNSET = 0).
+        audioFxController.attach(player.audioSessionId)
+        refreshAudioFx()
+        // A screen opening onto music that is already playing has missed the
+        // track change that started it, and with it the lyrics, the cached
+        // analysis and the section grid for what it is now showing.
+        if (alreadyLoaded) onTrackChanged()
+        // Consent -> foreground service -> projection -> recorder. This is the
+        // last hop: the service publishes what the user granted, and the
+        // recorder opens against it here, where the ring buffer lives.
+        viewModelScope.launch {
+            dev.musicviz.audio.MediaProjectionHolder.projection
+                .collect { projection ->
+                    if (projection != null) {
+                        startPlaybackCapture(projection)
+                    } else if (_externalAudio.value.active) {
+                        // Revoked from the system UI, or the service died.
+                        playbackCapture.stop()
+                        engine.reset()
+                        engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
+                        _externalAudio.update { it.copy(active = false, refusedByApp = false) }
+                    }
+                }
+        }
+        viewModelScope.launch {
+            while (true) {
+                refresh()
+                accrueListenTime()
+                enforceAbLoop()
+                refreshQueue()
+                refreshExternalAudio()
+                refreshMicState()
+                applyIntelligence()
+                advanceVizPlaylist()
+                advanceRandomMode()
+                advanceSectionStaging()
+                delay(500)
+            }
+        }
+    }
+
     private companion object {
         /**
          * Longest gap the listening accrual will believe. The poll runs every
@@ -3807,5 +3943,11 @@ class PlayerViewModel(
          * user let go still comes back to what they left.
          */
         const val VIZ_PERSIST_WINDOW_MS = 400L
+
+        /** What the Takes tab shows when a stop discarded a one-keyframe take. */
+        const val TAKE_DISCARDED_NOTE = "Nothing changed — take not saved"
+
+        /** How long [TakeUiState.note] stays up before clearing itself. */
+        const val TAKE_NOTE_MS = 4_000L
     }
 }

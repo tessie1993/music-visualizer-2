@@ -1,5 +1,10 @@
 #version 300 es
 precision highp float;
+// GLSL ES 3.00 defaults fragment sampler2D to LOWP (range [-2,2), ~8
+// fraction bits). uTexA/uTexB hold HDR scene colour; on GPUs honoring
+// sampler precision (Mali) every read is clamped and quantized. (uFlow
+// and uRipple below keep their own explicit highp qualifiers.)
+precision highp sampler2D;
 
 in vec2 vUv;
 out vec4 fragColor;

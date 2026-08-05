@@ -46,6 +46,15 @@ internal class WaterScene(
 
         /** Splat colour -> film stain gain; the film is HDR, so this is < 1. */
         const val INK_GAIN = 0.8f
+
+        /**
+         * Scene clock wrap: 200 * pi seconds (~10.5 min), the CymaticsScene
+         * TIME_WRAP convention. Every uTime read in water_display_frag.glsl
+         * and every idlePhase read here is sin/cos with a two-decimal rate
+         * constant k, and k * 200pi is k * 100 whole turns - the wrap lands
+         * each term back on its own phase (within float rounding).
+         */
+        const val TIME_WRAP_SECONDS = 628.31853f
     }
 
     private val sim = RippleSim(context).also { it.inkEnabled = true }
@@ -135,7 +144,13 @@ internal class WaterScene(
         features: AudioFeatures,
         dt: Float,
     ) {
-        time += dt
+        // Wrapped, not merely accumulated (TIME_WRAP convention, see
+        // CymaticsScene): the wallpaper renders for days and an unwrapped
+        // `+= dt` clock decays into float32 mush. 200*pi specifically:
+        // water_display_frag reads uTime only through sin/cos with
+        // TWO-DECIMAL rate constants, and k * 200pi is k * 100 whole turns,
+        // so every term lands back on its own phase at the wrap.
+        time = (time + dt) % TIME_WRAP_SECONDS
         lastDt = dt
         pendingFeatures = features
         lastFeatures = features
@@ -176,7 +191,8 @@ internal class WaterScene(
 
     /** Gentle synthetic features so the pool breathes with no track playing. */
     private fun idleFeatures(dt: Float): AudioFeatures {
-        idlePhase += dt
+        // Two-decimal sin rates below; periodic at the wrap (see the const).
+        idlePhase = (idlePhase + dt) % TIME_WRAP_SECONDS
         val t = idlePhase
         val bass = 0.16f + 0.10f * kotlin.math.sin(t * 0.6f)
         val mid = 0.13f + 0.09f * kotlin.math.sin(t * 1.0f + 1.7f)
@@ -267,7 +283,9 @@ internal class WaterScene(
         // especially) left anything dirty this frame.
         GlUtil.resetFrameState()
         val p = params
-        featuresAgeSec += lastDt
+        // Clamped: only the < 0.25 s comparisons below ever read it, and an
+        // unbounded += on a wallpaper that outruns update() is float mush.
+        featuresAgeSec = (featuresAgeSec + lastDt).coerceAtMost(1f)
         val idle = pendingFeatures == null && featuresAgeSec >= 0.25f
         // "Audio drive" is applied HERE, once, to the snapshot the choreography,
         // the emitter schedule and the display pass' treble glints all read -

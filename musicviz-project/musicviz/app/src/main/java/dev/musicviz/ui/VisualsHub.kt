@@ -967,9 +967,28 @@ internal fun CustomizePanel(
             }
         } + if (isShader) listOf(null) else emptyList()
     val titles = tabs.map { it?.title ?: "GLSL" }
-    LaunchedEffect(tabs.size) { if (sub >= tabs.size) sub = 0 }
+    // The reset is keyed on tab IDENTITY, not the list's size: a same-size
+    // swap (a Cymatics style straight to a Hyperspace style trades CYMATICS
+    // for HYPERSPACE at the same position) used to keep the index and land
+    // the user on a tab they never chose. Tracking the shown tab's title
+    // catches that; when it moves the selection follows it to its new index,
+    // and only a tab that actually disappeared falls back to the first.
+    var shownTitle by rememberSaveable { mutableStateOf(titles.getOrNull(sub)) }
+    LaunchedEffect(titles) {
+        if (titles.getOrNull(sub) != shownTitle) {
+            sub = titles.indexOf(shownTitle).coerceAtLeast(0)
+            shownTitle = titles[sub]
+        }
+    }
     Column(Modifier.fillMaxSize()) {
-        CrystalTabs(titles = titles, selected = sub, onSelect = { sub = it })
+        CrystalTabs(
+            titles = titles,
+            selected = sub,
+            onSelect = {
+                sub = it
+                shownTitle = titles[it]
+            },
+        )
         CustomizeToolbar(viewModel, viz.params, tabs.getOrNull(sub))
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             val locked by viewModel.lockedParams.collectAsState()
@@ -1039,8 +1058,12 @@ internal fun CustomizePanel(
                                 visualizerView.visualizerRenderer.submitFluidInjectionShaders(force, dye)
                             },
                         )
-                    CustomizeTab.CYMATICS -> CymaticsTab(p, onChange)
-                    CustomizeTab.HYPERSPACE -> HyperspaceTab(p, onChange)
+                    // Both take the live scene id so they can say when the
+                    // active substyle pins their selector (Geometry /
+                    // Fractal) instead of rendering chips the catalog
+                    // override makes no-ops.
+                    CustomizeTab.CYMATICS -> CymaticsTab(p, activeSceneId = viz.sceneId, onChange = onChange)
+                    CustomizeTab.HYPERSPACE -> HyperspaceTab(p, activeSceneId = viz.sceneId, onChange = onChange)
                     // The GLSL tab: shader source, not scene parameters.
                     null -> GlslHubTab(viewModel, visualizerView)
                 }

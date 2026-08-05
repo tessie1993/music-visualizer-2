@@ -24,6 +24,23 @@ internal class FluidScene(
 ) : Scene {
     override val id: String = SceneIds.FLUID
 
+    private companion object {
+        /**
+         * Scene clock wrap, matching VisualizerRenderer.TIME_WRAP_SEC. The
+         * clock feeds hash inputs and a one-shot probe threshold, none of
+         * which care about the value, so the wrap point only has to be far
+         * enough out that float precision (~0.5 ms at 7100 s) stays fine.
+         */
+        const val TIME_WRAP_SECONDS = 7100f
+
+        /**
+         * Idle-sweep wrap: 200 * pi (CymaticsScene TIME_WRAP convention).
+         * Every idlePhase read is sin with a two-decimal rate constant k,
+         * and k * 200pi is k * 100 whole turns - exactly periodic.
+         */
+        const val IDLE_WRAP_SECONDS = 628.31853f
+    }
+
     private val sim = FluidSim(context)
     private val look = FluidLook(context)
     private val particles = FluidParticles(context)
@@ -119,7 +136,12 @@ internal class FluidScene(
         features: AudioFeatures,
         dt: Float,
     ) {
-        time += dt
+        // Wrapped (TIME_WRAP convention, see VisualizerRenderer.TIME_WRAP_SEC):
+        // the wallpaper renders for days and an unwrapped `+= dt` decays into
+        // float32 mush. Consumers are wrap-safe: sim.timeSeconds feeds the
+        // custom-splat extension point and particle respawn hashes (any value
+        // works), and the `time > 1.5f` dye probe latches long before a wrap.
+        time = (time + dt) % TIME_WRAP_SECONDS
         lastDt = dt
         pendingFeatures = features
         lastFeatures = features
@@ -163,7 +185,8 @@ internal class FluidScene(
 
     /** Gentle synthetic features so the fluid breathes with no track playing. */
     private fun idleFeatures(dt: Float): AudioFeatures {
-        idlePhase += dt
+        // Two-decimal sin rates below; periodic at the wrap (see the const).
+        idlePhase = (idlePhase + dt) % IDLE_WRAP_SECONDS
         val t = idlePhase
         val bass = 0.18f + 0.12f * kotlin.math.sin(t * 0.7f)
         val mid = 0.15f + 0.10f * kotlin.math.sin(t * 1.1f + 1.7f)
@@ -190,7 +213,9 @@ internal class FluidScene(
         val p = params
         // Prefer this frame's features; fall back to the last REAL features
         // for a short grace window (draw can outrun update), then idle.
-        featuresAgeSec += lastDt
+        // Clamped: only sub-second comparisons read it, and an unbounded +=
+        // on a wallpaper that outruns update() is float mush.
+        featuresAgeSec = (featuresAgeSec + lastDt).coerceAtMost(1f)
         // "Audio drive" is applied HERE, once, to the snapshot the sim
         // uniforms, the choreography and the emitters all read - not in the
         // renderer's band-gain stage, which shader and particle scenes would

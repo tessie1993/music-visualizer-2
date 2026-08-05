@@ -24,6 +24,18 @@ class ShaderScene(
 ) : Scene {
     companion object {
         const val AUDIO_TEX_WIDTH: Int = 64
+
+        /**
+         * Shader clock wrap, matching VisualizerRenderer.TIME_WRAP_SEC: an
+         * unwrapped `+= dt` decays into float32 mush on a wallpaper that
+         * renders for days. uTime feeds arbitrary (user-editable) GLSL, so
+         * no exact period exists; like the renderer's own clock, the wrap
+         * sits ~2 h out where the one-frame jump is vanishingly rare.
+         */
+        private const val TIME_WRAP_SECONDS = 7100f
+
+        /** [rotationAngle] is only ever consumed through cos/sin. */
+        private const val TWO_PI = (2.0 * Math.PI).toFloat()
     }
 
     private var program = 0
@@ -137,8 +149,11 @@ class ShaderScene(
         dt: Float,
     ) {
         val p = sceneParams
-        shaderTime += p.speed * dt
-        rotationAngle += p.rotation * dt
+        shaderTime = (shaderTime + p.speed * dt) % TIME_WRAP_SECONDS
+        // Wrapped to one turn: uRotation is an angle by contract (every
+        // consumer builds cos/sin from it), and % keeps the sign, which
+        // trig is indifferent to.
+        rotationAngle = (rotationAngle + p.rotation * dt) % TWO_PI
         zoomPhase = if (p.endlessZoom) (zoomPhase + p.endlessZoomSpeed * dt) % 1f else 0f
         if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * dt) % 1f
         bass = (features.bass * p.audioDrive).coerceIn(0f, 1.5f)
