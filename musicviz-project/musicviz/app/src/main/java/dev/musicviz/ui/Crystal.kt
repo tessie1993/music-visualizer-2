@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
@@ -121,12 +122,23 @@ internal fun CrystalMaterialTheme(
     content: @Composable () -> Unit,
 ) {
     val fontColor = appTheme.resolvedFontColor(gui.fontColorOverride)
+    val scheme = appTheme.colorScheme(gui.accentIntensity, gui.backgroundDim, gui.fontColorOverride)
     CompositionLocalProvider(
         LocalCrystalTheme provides appTheme,
         LocalFontColor provides fontColor?.let { Color(it) },
+        // MaterialTheme does not touch LocalContentColor - only a Surface
+        // does, and the shell has none: the Scaffold is transparent so the
+        // crystal backdrop shows through, and contentColorFor(Transparent)
+        // resolves to nothing. Every `Text` without an explicit colour -
+        // track titles, style names, most list rows - therefore painted in
+        // the compositionLocal's own default (opaque black) whatever the
+        // theme said, which is what made the Appearance "Font color" option
+        // look hardcoded: it repaints the onSurface roles those Texts never
+        // read. Providing the role here is what connects the two.
+        LocalContentColor provides scheme.onSurface,
     ) {
         MaterialTheme(
-            colorScheme = appTheme.colorScheme(gui.accentIntensity, gui.backgroundDim, gui.fontColorOverride),
+            colorScheme = scheme,
             shapes = gui.cornerStyle.shapes(),
             typography = crystalTypography(gui.textScale),
             content = content,

@@ -7,6 +7,7 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import kotlin.math.abs
 import kotlin.math.exp
+import kotlin.math.min
 
 /**
  * Shared plumbing for the particle scenes: one static quad, one instance
@@ -337,6 +338,19 @@ abstract class ParticleSceneBase(
 
     protected open val stretchMax: Float get() = 2f
 
+    /**
+     * True when [simulate] writes positions in SQUARE units - a shape whose
+     * proportions are meant to survive to the screen (an orbit, a shell of
+     * debris, an attractor). The vertex stage then squashes the shorter screen
+     * axis so a circle stays a circle instead of an ellipse elongated down the
+     * long axis of the display.
+     *
+     * False - the default - keeps positions in raw NDC, which is what the
+     * field styles need: rain, swarms and nebulae fill the frame, and fitting
+     * them to a square would leave the frame's ends empty.
+     */
+    protected open val aspectCorrected: Boolean get() = false
+
     /** Advances the particle simulation and fills [vertexData]. */
     protected abstract fun simulate(
         features: AudioFeatures,
@@ -392,6 +406,9 @@ abstract class ParticleSceneBase(
         GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         GLES30.glUseProgram(program)
         GLES30.glUniform2f(loc("uViewport"), widthPx.toFloat(), heightPx.toFloat())
+        val fitX = if (aspectCorrected) min(1f, heightPx.toFloat() / widthPx) else 1f
+        val fitY = if (aspectCorrected) min(1f, widthPx.toFloat() / heightPx) else 1f
+        GLES30.glUniform2f(loc("uAspectFit"), fitX, fitY)
         GLES30.glUniform1f(loc("uZoom"), p.zoom * (1f + beatPulse * p.beatResponse * 0.2f))
         GLES30.glUniform1f(loc("uRotation"), rotationAngle)
         GLES30.glUniform1f(loc("uSat"), p.saturation)

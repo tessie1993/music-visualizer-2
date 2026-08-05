@@ -35,6 +35,9 @@ class GalaxyScene(
     shaders: ShaderSources,
     count: Int = 3200,
 ) : ParticleSceneBase(SceneIds.GALAXY, count, shaders) {
+    /** Square units - the disc is circular, seen face on. */
+    override val aspectCorrected: Boolean get() = true
+
     private companion object {
         /** Softening radius of the rotation curve; below it the disc is solid-body. */
         const val CORE = 0.22f
@@ -107,7 +110,7 @@ class GalaxyScene(
 
             val o = i * FLOATS_PER_PARTICLE
             vertexData[o] = ca * rr
-            vertexData[o + 1] = sa * rr * 0.82f
+            vertexData[o + 1] = sa * rr
             vertexData[o + 2] = 2f + bulge * 9f + arm * 8f + e * 7f
             // Hue walks outward: hot core, cool rim, arms pushed further still.
             vertexData[o + 3] = (0.06f + r * 0.55f + arm * 0.18f).coerceIn(0f, 1f)
@@ -115,7 +118,7 @@ class GalaxyScene(
             // Orbital tangent, so the shear itself is visible as streak length:
             // inner stars smear, rim stars stay round.
             vertexData[o + VELOCITY_OFFSET] = -sa * rr * omega
-            vertexData[o + VELOCITY_OFFSET + 1] = ca * rr * 0.82f * omega
+            vertexData[o + VELOCITY_OFFSET + 1] = ca * rr * omega
         }
     }
 

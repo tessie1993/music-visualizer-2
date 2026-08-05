@@ -14,6 +14,9 @@ class OrbitScene(
     shaders: ShaderSources,
     count: Int = 2200,
 ) : ParticleSceneBase(SceneIds.ORBITS, count, shaders) {
+    /** Square units - rings are rings. */
+    override val aspectCorrected: Boolean get() = true
+
     private val random = Random(7)
     private val angle = FloatArray(count) { random.nextFloat() * 2f * PI.toFloat() }
     private val radius = FloatArray(count) { 0.12f + random.nextFloat() * 0.95f }
@@ -44,15 +47,15 @@ class OrbitScene(
             val r = radius[i] * swell * (1f + e * 0.08f) * wob
             val o = i * FLOATS_PER_PARTICLE
             vertexData[o] = cos(angle[i]) * r
-            vertexData[o + 1] = sin(angle[i]) * r * 0.85f
+            vertexData[o + 1] = sin(angle[i]) * r
             vertexData[o + 2] = 2.5f + e * 16f
             vertexData[o + 3] = radius[i].coerceIn(0f, 1f)
             vertexData[o + 4] = e.coerceIn(0f, 1f)
-            // Tangent of the ellipse the particle is riding: d/dt of the two
+            // Tangent of the circle the particle is riding: d/dt of the two
             // lines above. Orbits are the one scene with no stored velocity,
             // and without this its billboards would never lean into the arc.
             vertexData[o + VELOCITY_OFFSET] = -sin(angle[i]) * r * angularRate
-            vertexData[o + VELOCITY_OFFSET + 1] = cos(angle[i]) * r * 0.85f * angularRate
+            vertexData[o + VELOCITY_OFFSET + 1] = cos(angle[i]) * r * angularRate
         }
     }
 }

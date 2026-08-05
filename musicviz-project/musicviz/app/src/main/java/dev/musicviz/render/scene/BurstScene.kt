@@ -11,6 +11,9 @@ class BurstScene(
     shaders: ShaderSources,
     count: Int = 3000,
 ) : ParticleSceneBase(SceneIds.BURSTS, count, shaders) {
+    /** Square units - a detonation throws debris equally in every direction. */
+    override val aspectCorrected: Boolean get() = true
+
     private val random = Random(7)
     private val px = FloatArray(count)
     private val py = FloatArray(count)

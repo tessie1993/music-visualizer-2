@@ -282,11 +282,18 @@ object HyperspaceMath {
         )
     }
 
-    /** Seconds of loud music that walk the journey from act 0 to act 4. */
-    const val RISE_SECONDS: Float = 26f
+    /**
+     * Seconds of loud music that walk the journey from act 0 to act 4.
+     *
+     * 26 put the second act about six seconds into any loud track, which read
+     * as the style snapping into a different shape rather than travelling
+     * there; five acts across a track wants tens of seconds an act, not one
+     * fifth of a chorus.
+     */
+    const val RISE_SECONDS: Float = 45f
 
     /** Seconds of quiet that walk it back down. Slower: coming back takes longer. */
-    const val FALL_SECONDS: Float = 44f
+    const val FALL_SECONDS: Float = 70f
 
     /**
      * Loudness (as [dev.musicviz.analysis.AudioFeatures.macroEnergy], the

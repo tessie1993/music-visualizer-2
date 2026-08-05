@@ -338,6 +338,36 @@ class HyperspaceReworkTest {
         return sqrt(dx * dx + dy * dy + dz * dz)
     }
 
+    /**
+     * The kaleidoscope must be the act it belongs to, not the style's resting
+     * state.
+     *
+     * CHRYSANTHEMUM is the one act carrying mirror = 1 and the profile table
+     * interpolates, so uMirror traces `1 - |actPosition - 1|`. A half-open
+     * gate therefore mirrored everything from actPosition 0.5 to 1.5 - a
+     * quarter of the whole journey - and the progress floor settles at
+     * PROGRESS_FLOOR_MAX * 4, which landed INSIDE that band: a quiet track
+     * snapped to a mandala within seconds and stayed there for good.
+     */
+    @Test
+    fun the_mandala_is_one_act_and_not_where_a_quiet_track_parks() {
+        val gate =
+            requireNotNull(Regex("""amount\s*<\s*([0-9.]+)""").find(shader)) {
+                "hyperspace_frag.glsl no longer gates kaleido() on the mirror amount"
+            }.groupValues[1].toFloat()
+        val last = HyperspaceMath.ACTS.size - 1
+        // Where the progress floor leaves a track that never gets loud.
+        val parked = HyperspaceMath.PROGRESS_FLOOR_MAX * last
+        val mirrorThere = HyperspaceMath.profileAt(parked).mirror
+        assertTrue(
+            "the progress floor parks at act $parked, inside the mirrored band (mirror $mirrorThere >= gate $gate)",
+            mirrorThere < gate,
+        )
+        // And the band it does open over is a passing moment, not a quarter
+        // of the journey: half-width (1 - gate) around the act that owns it.
+        assertTrue("the kaleidoscope gate $gate is still half-open", gate >= 0.75f)
+    }
+
     private val shader: String by lazy { repoFile("app/src/main/res/raw/hyperspace_frag.glsl") }
     private val sceneSource: String by lazy { repoFile("app/src/main/java/dev/musicviz/render/scene/HyperspaceScene.kt") }
 
