@@ -2,6 +2,7 @@ package dev.musicviz
 
 import dev.musicviz.render.scene.ParticleSceneBase
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -96,6 +97,34 @@ class ParticleStyleTest {
                 "(glGetUniformLocation returns -1 and the upload is silently dropped)",
             emptyList<String>(),
             uploaded.filterNot { it in declared },
+        )
+    }
+
+    @Test
+    fun onlyTheShapeStylesAreFittedToSquareUnits() {
+        // NDC's two axes are the screen's two DIFFERENT pixel counts, so a
+        // circle written straight into it is an ellipse stretched down the
+        // long axis of the display - the "round becomes oval" report. Orbit
+        // and Galaxy used to carry a hardcoded y-squash (0.85 / 0.82) that
+        // guessed at one aspect and was wrong on every other.
+        val shapes = listOf("OrbitScene", "GalaxyScene", "BurstScene", "AttractorScene")
+        shapes.forEach {
+            assertTrue(
+                "$it draws a shape whose proportions must survive to the screen",
+                stripComments(source("render/scene/$it.kt")).contains("aspectCorrected: Boolean get() = true"),
+            )
+        }
+        // The field styles fill the frame. Fitting them to a square would
+        // leave the frame's ends empty, so they must stay in raw NDC.
+        listOf("FountainScene", "NebulaScene", "SwarmScene", "StormScene", "InkflowScene").forEach {
+            assertFalse(
+                "$it fills the frame and must not be fitted to a square",
+                stripComments(source("render/scene/$it.kt")).contains("aspectCorrected"),
+            )
+        }
+        assertTrue(
+            "particle_vert.glsl declares uAspectFit but never applies it to the position",
+            vertexSource.contains("aPos * uZoom * uAspectFit"),
         )
     }
 

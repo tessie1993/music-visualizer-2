@@ -28,6 +28,13 @@ uniform float uRotation;
 uniform float uSize;
 uniform float uStretch;      // seconds of travel folded into the streak length
 uniform float uStretchMax;   // ceiling on the streak factor
+// Squashes the SHORTER screen axis so a shape built in square units stays that
+// shape on a non-square screen: a circle of radius r in the instance data is a
+// circle on screen, not an ellipse stretched down the long axis. (1,1) - the
+// default - leaves positions in raw NDC, which is what the field styles want:
+// they fill the frame, and fitting them would leave bars top and bottom.
+// ParticleSceneBase.aspectCorrected picks per style.
+uniform vec2 uAspectFit;
 
 out vec2 vShape;
 out float vHue;
@@ -40,8 +47,10 @@ void main() {
     // Same column-major expression the old sprite path used, so the Rotation
     // slider still turns the scene the same way.
     mat2 rot = mat2(cos(uRotation), -sin(uRotation), sin(uRotation), cos(uRotation));
-    vec2 p = rot * aPos * uZoom;
-    vec2 vel = rot * aVel * uZoom;
+    // Rotate in square units, THEN fit: the other order shears the shape,
+    // because a squashed frame rotated is not a rotated frame squashed.
+    vec2 p = rot * aPos * uZoom * uAspectFit;
+    vec2 vel = rot * aVel * uZoom * uAspectFit;
 
     // aSize is the sprite WIDTH in px, as it was when it fed gl_PointSize.
     float widthPx = aSize * uSize * max(uZoom, 0.25);

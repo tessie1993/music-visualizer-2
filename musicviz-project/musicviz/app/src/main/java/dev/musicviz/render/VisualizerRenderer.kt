@@ -764,12 +764,31 @@ class VisualizerRenderer(
      */
     private fun sceneFor(id: String): Scene? {
         scenes[id]?.let { return it }
-        if (id !in VisualStyleCatalog.lazyIds) return null
+        if (id !in availableSceneIds()) return null
         val scene = createScene(id, particleShaderSources(context), loadRaw(R.raw.quad_vert))
+        // Before init(), because init() is where a driver-rejected shader has
+        // something to report.
+        (scene as? ParticleSceneBase)?.onShaderError = { onShaderError(it) }
         scene.init()
-        // The state onSurfaceCreated/onSurfaceChanged already handed to every
-        // eagerly built scene. Without the resize this one renders at the 1x1
-        // default until the next surface change.
+        // Everything onSurfaceCreated used to hand every eagerly built scene.
+        // This is now the ONLY place a scene is finished, so a style built on
+        // its first frame is indistinguishable from one built at startup -
+        // without the resize it would render at the 1x1 default until the next
+        // surface change, and without the rest it would lose its palette, its
+        // edited shader source or its queued preset.
+        if (scene is ShaderScene) {
+            // Zero until the LUT is uploaded further down onSurfaceCreated;
+            // scenes built before that point are covered by the sweep there.
+            if (paletteLutTex != 0) scene.setPaletteLut(paletteLutTex)
+            activeCustomShaders[id]?.let { scene.setFragmentSource(it) }
+        }
+        if (scene is ProjectMScene) {
+            milkdropScene = scene
+            lastMilkPreset?.let { scene.queuePreset(it) }
+        }
+        if (scene is dev.musicviz.render.fluid.FluidScene && (fluidForceSrc != null || fluidDyeSrc != null)) {
+            scene.setInjectionShaders(fluidForceSrc, fluidDyeSrc)
+        }
         scene.setParams(sceneParams)
         scene.resize(renderWidth, renderHeight)
         scenes[id] = scene
@@ -821,35 +840,17 @@ class VisualizerRenderer(
         trailTex = 0
         trailW = 0
         trailH = 0
-        val particleShaders = particleShaderSources(context)
-        val quadVert = loadRaw(R.raw.quad_vert)
-        // Family substyles are skipped here and built by [sceneFor] the first
-        // time one is actually selected - see VisualStyleCatalog.lazyIds for
-        // what building all of them up front cost.
-        for (id in availableSceneIds()) {
-            if (id in VisualStyleCatalog.lazyIds) continue
-            scenes[id] = createScene(id, particleShaders, quadVert)
-        }
-        // The particle family shares one base, so it is wired here rather than
-        // nine times over in createScene. Before init(), because init() is
-        // where a driver-rejected shader has something to report.
-        scenes.values.filterIsInstance<ParticleSceneBase>().forEach { particles ->
-            particles.onShaderError = { onShaderError(it) }
-        }
-        milkdropScene = scenes[SceneIds.MILKDROP] as? ProjectMScene
-        scenes.values.forEach { it.init() }
-        // Restore state that would otherwise be lost when the EGL context is
-        // destroyed while backgrounded: re-apply the current params to every
-        // scene, re-push any edited custom shaders, and re-queue the last
-        // milkdrop preset so the visualizer resumes exactly where it was.
-        scenes.values.forEach { it.setParams(sceneParams) }
-        for ((sceneId, src) in activeCustomShaders) {
-            (scenes[sceneId] as? ShaderScene)?.setFragmentSource(src)
-        }
-        lastMilkPreset?.let { milkdropScene?.queuePreset(it) }
-        // Re-apply user fluid injection shaders lost with the old context.
-        if (fluidForceSrc != null || fluidDyeSrc != null) fluidInjectionDirty = true
-        activeScene = sceneFor(requestedSceneId) ?: scenes[SceneIds.NEBULA]
+        // NO scene is built here. Every style is constructed and finished by
+        // [sceneFor] the first time it is actually asked for, which is what the
+        // user is waiting on when they open the app: building the whole catalog
+        // up front put every style's shader compiles - the raymarcher, the
+        // fluid sim's dozen programs, every particle and shader scene - on the
+        // GL thread ahead of the first frame of the ONE style being shown.
+        // State that would otherwise be lost with the EGL context (params,
+        // edited shader sources, the queued milkdrop preset, the fluid
+        // injection sources) is re-applied per scene as it is rebuilt, so a
+        // context loss while backgrounded still resumes exactly where it was.
+        activeScene = sceneFor(requestedSceneId) ?: sceneFor(SceneIds.NEBULA)
         outgoingScene = null
         outgoingParams = null
 

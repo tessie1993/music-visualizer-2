@@ -54,10 +54,12 @@ class RendererWiringTest {
         // drifted: Curl Flow was offered for a release while nothing ever
         // constructed it, so picking it silently did nothing at all. One list
         // walked into one factory is what stops that recurring.
-        val onSurfaceCreated = functionBody("onSurfaceCreated")
+        // sceneFor is the registry's only door now that nothing is built at
+        // surface creation, so the one-list-into-one-factory rule lives there.
+        val sceneFor = functionBody("sceneFor")
         assertTrue(
-            "onSurfaceCreated no longer builds the registry from availableSceneIds()",
-            onSurfaceCreated.contains("availableSceneIds()") && onSurfaceCreated.contains("createScene("),
+            "sceneFor no longer builds the registry from availableSceneIds()",
+            sceneFor.contains("availableSceneIds()") && sceneFor.contains("createScene("),
         )
         assertFalse(
             "a style is being constructed under a hardcoded id again",
@@ -131,31 +133,36 @@ class RendererWiringTest {
     }
 
     @Test
-    fun familySubstylesAreBuiltOnDemandRatherThanAtSurfaceCreation() {
-        // A substyle is one uniform plus a few control biases on a program its
-        // family has already compiled - but the registry keys a constructed,
-        // init()ed instance per id, and HyperspaceScene.init() compiles the
-        // raymarcher AND creates a FluidSim (about a dozen more programs).
-        // Building all twenty in onSurfaceCreated put roughly a hundred and
-        // thirty extra shader compiles on the GL thread before the first frame
-        // of ANY style: the screen stayed black and the app stopped answering.
+    fun everySceneIsBuiltOnDemandRatherThanAtSurfaceCreation() {
+        // The registry keys a constructed, init()ed instance per id, and
+        // init() is where a scene compiles its programs - HyperspaceScene
+        // compiles the raymarcher AND creates a FluidSim (about a dozen more).
+        // Building the catalog in onSurfaceCreated put every style's compiles
+        // on the GL thread ahead of the first frame of the ONE style being
+        // shown, which is the "visuals load very slow" report. Only the style
+        // actually asked for may be built there.
+        val created = functionBody("onSurfaceCreated")
+        assertFalse(
+            "onSurfaceCreated must not construct scenes; sceneFor() builds them on demand",
+            created.contains("createScene("),
+        )
         assertEquals(
-            "every id beyond each family's original is built on demand",
-            VisualStyleCatalog.hyperspaceIds.size - 1 + VisualStyleCatalog.cymaticsIds.size - 1,
-            VisualStyleCatalog.lazyIds.size,
+            "onSurfaceCreated may only ask for the requested style and its fallback",
+            2,
+            Regex("""sceneFor\(""").findAll(created).count(),
         )
-        // The originals stay eager: what was ready at the first frame before
-        // the substyles existed must still be ready.
-        assertFalse(SceneIds.CYMATICS in VisualStyleCatalog.lazyIds)
-        assertFalse(SceneIds.HYPERSPACE in VisualStyleCatalog.lazyIds)
-        assertTrue(
-            "onSurfaceCreated must skip the ids sceneFor() builds on demand",
-            functionBody("onSurfaceCreated").contains("VisualStyleCatalog.lazyIds"),
-        )
+        val sceneFor = functionBody("sceneFor")
         assertTrue(
             "sceneFor must init() what it builds, or the scene draws with no program",
-            functionBody("sceneFor").contains(".init()"),
+            sceneFor.contains(".init()"),
         )
+        // sceneFor is now the ONLY place a scene is finished, so everything
+        // onSurfaceCreated used to sweep over the registry for has to happen
+        // here instead - a style built on its first frame is otherwise missing
+        // its size, params, palette, edited source or queued preset.
+        for (step in listOf("resize(", "setParams(", "setPaletteLut(", "setFragmentSource(", "queuePreset(", "onShaderError")) {
+            assertTrue("sceneFor must apply $step to what it builds", sceneFor.contains(step))
+        }
     }
 
     @Test

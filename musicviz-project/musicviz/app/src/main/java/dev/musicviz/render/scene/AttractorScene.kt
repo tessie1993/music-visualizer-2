@@ -44,6 +44,9 @@ class AttractorScene(
     shaders: ShaderSources,
     count: Int = 4200,
 ) : ParticleSceneBase(SceneIds.ATTRACTOR, count, shaders) {
+    /** Square units - the attractor's own proportions are the subject. */
+    override val aspectCorrected: Boolean get() = true
+
     private companion object {
         /** de Jong's attractor lives inside about +-2; this fits it to clip. */
         const val FIT = 0.46f

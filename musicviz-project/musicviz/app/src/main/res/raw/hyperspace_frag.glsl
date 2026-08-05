@@ -1114,9 +1114,18 @@ vec3 styleSky(vec3 rd, vec3 base) {
  * first thing wrong with this shader). The snap happens at most once per act
  * change, and a hard change of symmetry is exactly what the transitions in
  * the phenomenology this style follows are described as.
+ *
+ * The gate is HIGH, not a half. CHRYSANTHEMUM is the one act carrying
+ * mirror = 1 and the profile table interpolates, so uMirror traces
+ * 1 - |actPosition - 1| across the first two acts: a half-open gate mirrored
+ * everything from actPosition 0.5 to 1.5, a quarter of the whole journey, and
+ * the progress floor (PROGRESS_FLOOR_MAX * 4 = 1.2) parked a quiet track
+ * inside that band permanently. The kaleidoscope was not an act you passed
+ * through, it was where the style lived. At 0.85 the fold engages only within
+ * 0.15 of the act that owns it.
  */
 vec2 kaleido(vec2 uv, float folds, float amount) {
-    if (amount < 0.5 || folds < 2.0) return uv;
+    if (amount < 0.85 || folds < 2.0) return uv;
     float r = length(uv);
     float a = atan(uv.y, uv.x);
     float seg = 2.0 * PI / folds;
