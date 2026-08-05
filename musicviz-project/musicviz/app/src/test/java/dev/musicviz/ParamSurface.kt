@@ -138,14 +138,22 @@ object ParamSurface {
     /** Every field reachable from some Customize control. */
     val controlledFields: Set<String> by lazy { controlsByTab.values.flatten().toSet() }
 
-    /** Labels of the controls in [text] that render a lock chip. */
+    /**
+     * Labels of the controls in [text] rendered through a lock-capable shape.
+     * All four shapes route their label through the shared `LockChip`, which
+     * renders the chip only for labels in `ParamRandomizer.LOCKABLE_LABELS`
+     * (a lock guards nothing on a control no roll writes) - so the chips a
+     * user actually sees are this set INTERSECTED with the randomizer's keys.
+     * `CustomizeLockAffordanceTest` checks that rendered path against the
+     * real composition, both ways.
+     */
     fun lockableLabels(text: String): Set<String> =
         Regex("(?:LabeledSlider|LabeledIntSlider|CheckRow|LockableChipLabel)\\(\\s*\"([^\"]+)\"")
             .findAll(text)
             .map { it.groupValues[1] }
             .toSet()
 
-    /** Labels of every lockable control in the panel, whatever tab it is on. */
+    /** Labels of every lock-capable control in the panel, whatever tab it is on. */
     val allLockableLabels: Set<String> by lazy { lockableLabels(source("ui/CustomizeTabs.kt")) }
 
     /** Field -> the lock key whose roll writes it, from `ParamRandomizer`. */

@@ -76,6 +76,16 @@ internal object TransitionCatalog {
     private var library: List<Def>? = null
 
     /**
+     * [library] keyed by name. [definition] runs on the GL thread once per
+     * frame while a corpus transition is selected, and a 123-entry linear
+     * scan per frame is a cost paid for nothing when the list never changes.
+     * Written BEFORE [library], so a reader that sees the list also sees the
+     * index.
+     */
+    @Volatile
+    private var libraryByName: Map<String, Def>? = null
+
+    /**
      * The corpus, parsed once. Safe to call from any thread; the parse is a
      * ~150 KB JSON read, so it happens off the GL thread at first use rather
      * than during a frame.
@@ -88,6 +98,7 @@ internal object TransitionCatalog {
                 val arr = JSONArray(text)
                 (0 until arr.length()).map { i -> parseDef(arr.getJSONObject(i)) }
             }.getOrDefault(emptyList())
+        libraryByName = parsed.associateBy { it.name }
         library = parsed
         return parsed
     }
