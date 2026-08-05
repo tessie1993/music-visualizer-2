@@ -62,6 +62,7 @@ fun SettingsDialog(
     var loopSafe by remember {
         mutableStateOf(defaults.loopSafe && dev.musicviz.analysis.BarTrim.barDurationUs(bpm) != null)
     }
+
     // Written back after every change below, so the next export - and the
     // Settings › Export tab - start from what was chosen here.
     fun persistDefaults() = exportPrefs.save(ExportDefaults(quality, fps, ratio, loopSafe))

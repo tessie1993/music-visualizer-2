@@ -48,7 +48,6 @@ import dev.musicviz.render.scene.CymaticsMath
 import dev.musicviz.render.scene.HyperspaceMath
 import dev.musicviz.render.scene.ParamRandomizer
 import dev.musicviz.render.scene.SceneParams
-import dev.musicviz.render.scene.VisualStyleCatalog
 
 /*
  * The scene customization panel's TABS. They are hosted by
