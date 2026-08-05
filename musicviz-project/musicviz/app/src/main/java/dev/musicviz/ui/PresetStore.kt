@@ -133,6 +133,45 @@ class PresetStore(
     /** The on-disk JSON file for a saved preset, for mirroring/export. */
     fun fileOf(name: String): File? = findFile(name)
 
+    /**
+     * The .milk file a preset named [presetName] owns, whether or not it
+     * exists yet. Named through [milkFileName] so a preset's .milk and its
+     * .json always share one sanitized base name - the raw name was a
+     * different file for anything with a slash or a colon in it.
+     */
+    fun milkFileOf(presetName: String): File = File(milkDir, milkFileName(presetName))
+
+    /**
+     * Materializes a MilkDrop preset's carried .milk [source] under the
+     * preset's own file (see [milkFileOf]) and returns the path the engine
+     * should render, or null when there is nothing on disk to render.
+     *
+     * Two eras resolve here, exactly as `PlayerViewModel.milkPresetPathFor`
+     * resolves them. Presets saved with their source write it out under the
+     * preset's own name, so they work after a share, an import or a
+     * reinstall; a matching file already on disk is left untouched. Presets
+     * saved before the source was carried pass null and only ever left the
+     * copied file behind, so an existing file under the same name is used
+     * as-is rather than declaring the preset broken.
+     *
+     * The write goes through [AtomicWrite], not `File.writeText`: the
+     * engine may be RENDERING this very file when the preset is re-applied,
+     * and a truncating write's kill window would leave it half a preset -
+     * which projectM answers with its idle "M" logo. An interrupted write
+     * leaves the previous .milk whole instead.
+     */
+    fun materializeMilk(
+        presetName: String,
+        source: String?,
+    ): String? {
+        val file = milkFileOf(presetName)
+        if (source != null) {
+            val stale = runCatching { !file.isFile || file.readText() != source }.getOrDefault(true)
+            if (stale) AtomicWrite.text(file, source)
+        }
+        return file.takeIf { it.isFile }?.absolutePath
+    }
+
     private fun findFile(name: String): File? =
         dir.walkTopDown().firstOrNull { it.isFile && it.extension == "json" && it.nameWithoutExtension == safeFileName(name) }
 

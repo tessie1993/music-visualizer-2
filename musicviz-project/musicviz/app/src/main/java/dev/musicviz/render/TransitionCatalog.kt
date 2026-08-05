@@ -69,6 +69,14 @@ internal object TransitionCatalog {
         val glsl: String,
     )
 
+    /**
+     * The built-in styles keyed by id. [builtIn] is on the same per-frame
+     * path as [definition], and the scan it replaces re-lowercased all five
+     * enum names on every call - five string allocations per frame.
+     */
+    private val BUILT_IN_BY_ID: Map<String, TransitionStyle> =
+        TransitionStyle.entries.associateBy { it.name.lowercase() }
+
     /** The five styles the base composite shader implements itself. */
     val BUILT_IN_IDS: List<String> = TransitionStyle.entries.map { it.name.lowercase() }
 
@@ -110,10 +118,15 @@ internal object TransitionCatalog {
     fun definition(
         context: Context,
         id: String,
-    ): Def? = if (id in BUILT_IN_IDS) null else library(context).firstOrNull { it.name == id }
+    ): Def? {
+        if (id in BUILT_IN_BY_ID) return null
+        // Ensures the corpus is parsed, which populates the index first.
+        library(context)
+        return libraryByName?.get(id)
+    }
 
     /** The built-in style for [id], or null when [id] names a corpus entry. */
-    fun builtIn(id: String): TransitionStyle? = TransitionStyle.entries.firstOrNull { it.name.lowercase() == id }
+    fun builtIn(id: String): TransitionStyle? = BUILT_IN_BY_ID[id]
 
     /**
      * A copy of [base] with [def] spliced in: `MV_TRANSITION` defined so the

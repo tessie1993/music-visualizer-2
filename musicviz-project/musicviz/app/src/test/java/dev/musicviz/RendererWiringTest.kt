@@ -159,6 +159,62 @@ class RendererWiringTest {
     }
 
     @Test
+    fun aTransitionIsStampedWithTheClockAsItStandsAfterTheSceneBuild() {
+        // onDrawFrame reads the clock once at the top, then resolves the
+        // requested scene - and sceneFor may BUILD it, a lazy substyle being a
+        // shader compile plus (Hyperspace) a FluidSim, hundreds of ms. The
+        // transition used to be stamped with the pre-build timestamp, so a
+        // 500 ms build burned a 1200 ms transition down to its tail before
+        // the first frame of it was visible. The stamp must come from a clock
+        // read AFTER the sceneFor call, and lastFrameMs must move with it so
+        // the build is not billed to the next frame's dt either.
+        val draw = functionBody("onDrawFrame")
+        val build = draw.indexOf("sceneFor(requestedSceneId)")
+        assertTrue("onDrawFrame no longer resolves the scene through sceneFor", build >= 0)
+        val reread = draw.indexOf("SystemClock.elapsedRealtime()", build)
+        assertTrue("no clock re-read after the potential scene build", reread > build)
+        val stamp = draw.indexOf("transitionStartMs =")
+        assertTrue(
+            "the transition start must be stamped from the post-build clock read",
+            stamp > reread,
+        )
+        assertFalse(
+            "the transition is stamped with the top-of-frame timestamp again",
+            Regex("""transitionStartMs = now\b""").containsMatchIn(draw),
+        )
+        assertTrue(
+            "lastFrameMs must be restamped after a build, or the build lands in the next dt",
+            draw.indexOf("lastFrameMs =", reread) in (reread + 1) until stamp,
+        )
+        // The frame clock itself still wraps: timeSeconds is an accumulator.
+        assertTrue("the TIME_WRAP_SEC wrap on timeSeconds is gone", draw.contains("% TIME_WRAP_SEC"))
+    }
+
+    @Test
+    fun bothSceneConstructionPathsShareOneTypeDirectedWiring() {
+        // onSurfaceCreated wired the particle family's error channel and the
+        // shader scenes' palette LUT inline, so a scene built on demand by
+        // sceneFor arrived with neither: a driver-rejected shader had nowhere
+        // to report and the cyclic colour maps sampled nothing. One wireScene
+        // called from both paths is what keeps them from drifting apart.
+        val surface = functionBody("onSurfaceCreated")
+        assertTrue("onSurfaceCreated must wire scenes through wireScene", surface.contains("wireScene("))
+        val lazy = functionBody("sceneFor")
+        assertTrue("sceneFor must wire what it builds through wireScene", lazy.contains("wireScene("))
+        assertTrue(
+            "wiring must precede init(), or a shader rejected in init() reports into the void",
+            lazy.indexOf("wireScene(") in 0 until lazy.indexOf(".init()"),
+        )
+        val wire = functionBody("wireScene")
+        assertTrue("the particle error channel left wireScene", wire.contains("onShaderError"))
+        assertTrue("the palette LUT wiring left wireScene", wire.contains("setPaletteLut"))
+        assertFalse(
+            "a second inline particle wiring is growing back outside wireScene",
+            surface.contains("onShaderError"),
+        )
+    }
+
+    @Test
     fun onlyTheGlThreadCallbacksReadTheSceneRegistry() {
         // The GL thread clears and repopulates the registry wholesale on every
         // context recreation. A read from any other thread lands mid-rehash: a

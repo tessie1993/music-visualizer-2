@@ -52,6 +52,14 @@ internal class FluidChoreography {
         const val GOLDEN_ANGLE = 2.399963f
 
         /**
+         * Choreography clock wrap, matching VisualizerRenderer.TIME_WRAP_SEC.
+         * See the wrap site in [tick] for why ~2 h rather than an exact
+         * period: the composed sin rates share none, reset() runs per track,
+         * and the rare wrap jump is absorbed by the anchor easing.
+         */
+        private const val TIME_WRAP_SECONDS = 7100f
+
+        /**
          * The Motion tab's Speed slider, clamped to its OWN range.
          *
          * The fluid family (Fluid, Curl Flow, Water) used to clamp it to
@@ -147,7 +155,13 @@ internal class FluidChoreography {
         dt: Float,
         aspect: Float,
     ) {
-        time += dt * (0.4f + 0.6f * speed)
+        // Wrapped (TIME_WRAP convention, VisualizerRenderer.TIME_WRAP_SEC
+        // horizon). The sin rates composed below (e.g. 0.31 * 0.83) have no
+        // common exact period, so the wrap is placed ~2 h out where reset()
+        // per track means it is only ever reached on an endless live input,
+        // and the one-frame target jump there is no bigger than a section
+        // change, which the emitter easing already absorbs.
+        time = (time + dt * (0.4f + 0.6f * speed)) % TIME_WRAP_SECONDS
         // Edge-detect: the analysis publishes at ~62.5 Hz while draw runs at
         // the display rate, so one beat=true snapshot can be consumed by
         // several frames - counting frames instead of edges advanced the

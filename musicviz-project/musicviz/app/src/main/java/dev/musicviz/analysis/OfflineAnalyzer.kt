@@ -13,8 +13,10 @@ import java.nio.ByteOrder
  * Decodes a whole audio file (no playback) via MediaExtractor/MediaCodec and
  * runs the same FFT/feature pipeline as live analysis at a fixed hop.
  *
- * Streaming: decoded PCM is analyzed chunk-by-chunk and discarded, so memory
- * stays constant regardless of track length.
+ * Streaming: decoded PCM is analyzed chunk-by-chunk and discarded, so the
+ * PCM side of memory stays constant regardless of track length; the frame
+ * list itself is bounded by [FrameAccumulator], which trades time resolution
+ * for coverage on multi-hour files instead of growing without limit.
  *
  * The beat gate is driven by the caller's sensitivity settings, exactly as
  * [AnalysisEngine] drives the live one - otherwise every export and every
@@ -167,7 +169,10 @@ class OfflineAnalyzer(
         private val raw = FloatArray(processor.bandCount)
         private val smoothed = FloatArray(processor.bandCount)
         private val waveform = FloatArray(128)
-        private val frames = ArrayList<TimelineFrame>(16_384)
+
+        /** Bounded frame store: halves its own time resolution rather than
+         *  letting a 3-hour file OOM the process; see [FrameAccumulator]. */
+        private val frames = FrameAccumulator()
         private var buffer = FloatArray(processor.fftSize * 4)
         private var buffered = 0
         private var sampleRate = 44100
@@ -182,6 +187,10 @@ class OfflineAnalyzer(
             channels: Int,
             sampleRateHz: Int,
         ) {
+            // A malformed header or a broken codec reporting zero channels or
+            // rate would otherwise divide by zero below; there is no audio to
+            // analyse in either case.
+            if (channels <= 0 || sampleRateHz <= 0) return
             if (sampleRateHz != sampleRate) {
                 sampleRate = sampleRateHz
                 hopSamples = (sampleRate / 60).coerceAtLeast(1)
@@ -209,6 +218,7 @@ class OfflineAnalyzer(
             channels: Int,
             sampleRateHz: Int,
         ) {
+            if (channels <= 0 || sampleRateHz <= 0) return
             if (sampleRateHz != sampleRate) {
                 sampleRate = sampleRateHz
                 hopSamples = (sampleRate / 60).coerceAtLeast(1)
@@ -240,7 +250,7 @@ class OfflineAnalyzer(
                 val step = processor.fftSize / waveform.size
                 for (i in waveform.indices) waveform[i] = window[i * step]
                 val timeMs = absSample * 1000L / sampleRate
-                frames += TimelineFrame(timeMs, extractor.extract(smoothed, waveform, sampleRate))
+                frames.add(TimelineFrame(timeMs, extractor.extract(smoothed, waveform, sampleRate)))
                 absSample += hopSamples
                 start += hopSamples
             }
@@ -250,13 +260,21 @@ class OfflineAnalyzer(
             }
         }
 
-        fun finish(): FeatureTimeline =
-            FeatureTimeline(
-                frames,
-                hopMs = 1000L / 60,
+        fun finish(): FeatureTimeline {
+            // groupSize is 1 for every track under FrameAccumulator's bound,
+            // making this exactly the historical 60 Hz timeline; past it the
+            // effective hop rate halves per doubling and the timeline carries
+            // the true rate, so withBeatSensitivity's frame-based windows stay
+            // measured in the right units.
+            val out = frames.finish()
+            val group = frames.groupSize
+            return FeatureTimeline(
+                out,
+                hopMs = group * 1000L / 60,
                 key = keyDetector.finish(),
-                hopRateHz = HOP_RATE_HZ,
+                hopRateHz = HOP_RATE_HZ / group,
             )
+        }
 
         private companion object {
             /** Offline hop rate. Note hopMs above truncates it to 16 ms, which

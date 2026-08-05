@@ -14,6 +14,10 @@ class OrbitScene(
     shaders: ShaderSources,
     count: Int = 2200,
 ) : ParticleSceneBase(SceneIds.ORBITS, count, shaders) {
+    private companion object {
+        const val TWO_PI = 2f * PI.toFloat()
+    }
+
     private val random = Random(7)
     private val angle = FloatArray(count) { random.nextFloat() * 2f * PI.toFloat() }
     private val radius = FloatArray(count) { 0.12f + random.nextFloat() * 0.95f }
@@ -39,7 +43,10 @@ class OrbitScene(
             }
             val e = (bands[band[i] % n] * p.audioDrive).coerceIn(0f, 1.5f)
             val angularRate = speed[i] * p.speed * (0.4f + e)
-            angle[i] += angularRate * dt
+            // Wrapped to one turn: every read is cos/sin of angle (or the
+            // integer *3 wobble), so 2pi is exact, and an unwrapped `+= dt`
+            // on a days-long wallpaper is float mush (TIME_WRAP convention).
+            angle[i] = (angle[i] + angularRate * dt) % TWO_PI
             val wob = 1f + 0.07f * p.turbulence * sin(angle[i] * 3f + wobble[i])
             val r = radius[i] * swell * (1f + e * 0.08f) * wob
             val o = i * FLOATS_PER_PARTICLE

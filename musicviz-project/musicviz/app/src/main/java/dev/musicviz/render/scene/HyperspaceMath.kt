@@ -202,20 +202,65 @@ object HyperspaceMath {
     val ACT_PROFILES: List<ActProfile> =
         listOf(
             // THRESHOLD
-            ActProfile(bodies = 2, field = 0.22f, mirror = 0f, styleMirror = 1f, camera = 6.5f, motion = 0.45f, glow = 0.7f, hueSpread = 0.18f),
+            ActProfile(
+                bodies = 2,
+                field = 0.22f,
+                mirror = 0f,
+                styleMirror = 1f,
+                camera = 6.5f,
+                motion = 0.45f,
+                glow = 0.7f,
+                hueSpread = 0.18f,
+            ),
             // CHRYSANTHEMUM
-            ActProfile(bodies = 3, field = 1.35f, mirror = 1f, styleMirror = 1f, camera = 9f, motion = 0.8f, glow = 1.1f, hueSpread = 0.55f),
+            ActProfile(
+                bodies = 3,
+                field = 1.35f,
+                mirror = 1f,
+                styleMirror = 1f,
+                camera = 9f,
+                motion = 0.8f,
+                glow = 1.1f,
+                hueSpread = 0.55f,
+            ),
             // MAGIC_EYE
-            ActProfile(bodies = 5, field = 0.5f, mirror = 0f, styleMirror = 1f, camera = 5.4f, motion = 1f, glow = 1f, hueSpread = 0.7f),
+            ActProfile(
+                bodies = 5,
+                field = 0.5f,
+                mirror = 0f,
+                styleMirror = 1f,
+                camera = 5.4f,
+                motion = 1f,
+                glow = 1f,
+                hueSpread = 0.7f,
+            ),
             // WAITING_ROOM
-            ActProfile(bodies = 7, field = 0.35f, mirror = 0f, styleMirror = 1f, camera = 4.2f, motion = 1.15f, glow = 1.2f, hueSpread = 0.85f),
+            ActProfile(
+                bodies = 7,
+                field = 0.35f,
+                mirror = 0f,
+                styleMirror = 1f,
+                camera = 4.2f,
+                motion = 1.15f,
+                glow = 1.2f,
+                hueSpread = 0.85f,
+            ),
             // BREAKTHROUGH - deliberately NOT mirrored, and the substyle
             // pre-fold releases with it (styleMirror = 0). The mirror folds
             // every ray into one wedge of directions, which is what makes the
             // chrysanthemum a flat symmetric fabric; applying it here hid all
             // eight bodies behind a wedge that happened to contain none of
             // them. The breakthrough is the act that opens, so it opens.
-            ActProfile(bodies = MAX_BLOOMS, field = 0.65f, mirror = 0f, styleMirror = 0f, camera = 5.2f, motion = 1.5f, glow = 1.45f, hueSpread = 1f),
+            ActProfile(
+                bodies = MAX_BLOOMS,
+                field = 0.65f,
+                mirror = 0f,
+                styleMirror = 0f,
+                camera = 5.2f,
+                motion = 1.5f,
+                glow = 1.45f,
+                hueSpread = 1f,
+            ),
         )
 
     /**

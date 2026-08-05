@@ -1,5 +1,7 @@
 package dev.musicviz
 
+import android.app.Application
+import android.content.ComponentName
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
@@ -10,6 +12,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.test.core.app.ApplicationProvider
 import dev.musicviz.analysis.IntelligenceMode
 import dev.musicviz.render.scene.HyperspaceMath
 import dev.musicviz.render.scene.ParamRandomizer
@@ -27,8 +30,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.RuleChain
+import org.junit.rules.TestRule
 import org.junit.runner.RunWith
+import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -57,8 +64,30 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [34])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class CustomizeLockAffordanceTest {
+    private val compose = createAndroidComposeRule<ComponentActivity>()
+
+    /**
+     * The host is a bare [ComponentActivity] (the tabs need no app plumbing),
+     * which the app manifest does not declare - Robolectric's ActivityScenario
+     * refuses undeclared activities. Registering it in the shadow
+     * PackageManager must happen BEFORE the compose rule's scenario launches,
+     * i.e. outside the rule, hence the chain rather than an @Before.
+     */
     @get:Rule
-    val compose = createAndroidComposeRule<ComponentActivity>()
+    val rules: RuleChain =
+        RuleChain
+            .outerRule(
+                TestRule { base, _ ->
+                    object : Statement() {
+                        override fun evaluate() {
+                            val app = ApplicationProvider.getApplicationContext<Application>()
+                            shadowOf(app.packageManager)
+                                .addActivityIfNotPresent(ComponentName(app, ComponentActivity::class.java))
+                            base.evaluate()
+                        }
+                    }
+                },
+            ).around(compose)
 
     /** `CheckRow` labels as written in the panel source (the lock-key set). */
     private fun checkRowLabels(): Set<String> =
@@ -147,7 +176,7 @@ class CustomizeLockAffordanceTest {
         val name = pinned!!.geometryOverride?.let { SceneParams.CYMATICS_GEOMETRIES.getOrNull(it) }
         assumeTrue("geometryOverride outside CYMATICS_GEOMETRIES", name != null)
         compose.setContent {
-            MaterialTheme { CymaticsTab(SceneParams.DEFAULT, {}, activeSceneId = pinned.id) }
+            MaterialTheme { CymaticsTab(SceneParams.DEFAULT, activeSceneId = pinned.id) {} }
         }
         compose.onAllNodesWithText("Geometry set by this style: $name.").onFirst().assertExists()
         // The chips are genuinely gone, not disabled: no geometry name
@@ -163,7 +192,7 @@ class CustomizeLockAffordanceTest {
             MaterialTheme {
                 Column {
                     CymaticsTab(SceneParams.DEFAULT) {}
-                    CymaticsTab(SceneParams.DEFAULT, {}, activeSceneId = "not-a-style")
+                    CymaticsTab(SceneParams.DEFAULT, activeSceneId = "not-a-style") {}
                 }
             }
         }
@@ -178,7 +207,7 @@ class CustomizeLockAffordanceTest {
         val name = forced!!.forcedSpecies?.let { SceneParams.HYPERSPACE_SPECIES.getOrNull(it) }
         assumeTrue("forcedSpecies outside HYPERSPACE_SPECIES", name != null)
         compose.setContent {
-            MaterialTheme { HyperspaceTab(SceneParams.DEFAULT, {}, activeSceneId = forced.id) }
+            MaterialTheme { HyperspaceTab(SceneParams.DEFAULT, activeSceneId = forced.id) {} }
         }
         compose.onAllNodesWithText("Fractal set by this style: $name.").onFirst().assertExists()
         SceneParams.HYPERSPACE_SPECIES.forEach { species ->
@@ -192,7 +221,7 @@ class CustomizeLockAffordanceTest {
             MaterialTheme {
                 Column {
                     HyperspaceTab(SceneParams.DEFAULT) {}
-                    HyperspaceTab(SceneParams.DEFAULT, {}, activeSceneId = "not-a-style")
+                    HyperspaceTab(SceneParams.DEFAULT, activeSceneId = "not-a-style") {}
                 }
             }
         }
@@ -226,6 +255,44 @@ class CustomizeLockAffordanceTest {
             compose.onAllNodesWithText(act).onFirst().assertIsEnabled()
         }
         compose.onAllNodesWithText("Act is live on Hold only", substring = true).assertCountEquals(0)
+    }
+
+    /**
+     * The host side of the forced-selector hints: `CustomizePanel` must hand
+     * the two substyle tabs the LIVE scene id, or the tab-side logic above
+     * never sees a pinned style and the dead chips come back. Pinned at the
+     * source level (the ParamSurface idiom) because composing CustomizePanel
+     * needs the whole PlayerViewModel + GL view stack.
+     */
+    @Test
+    fun customize_panel_hands_the_substyle_tabs_the_live_scene_id() {
+        val src = ParamSurface.source("ui/VisualsHub.kt")
+        listOf("CymaticsTab", "HyperspaceTab").forEach { tab ->
+            assertTrue(
+                "$tab is called without activeSceneId = viz.sceneId in CustomizePanel",
+                Regex("$tab\\(\\s*p,\\s*activeSceneId = viz\\.sceneId").containsMatchIn(src),
+            )
+        }
+    }
+
+    /**
+     * The Customize tab strip's reset must key on tab IDENTITY: keying on the
+     * list's SIZE let a same-size swap (a Cymatics style straight to a
+     * Hyperspace style trades CYMATICS for HYPERSPACE at the same position)
+     * keep the stale index and land the user on a tab they never chose.
+     * Source-pinned for the same reason as above.
+     */
+    @Test
+    fun customize_tab_reset_is_keyed_on_tab_identity_not_size() {
+        val src = ParamSurface.source("ui/VisualsHub.kt")
+        assertTrue(
+            "the reset effect keys on the size again - same-size tab swaps keep a stale index",
+            !src.contains("LaunchedEffect(tabs.size)"),
+        )
+        assertTrue(
+            "the reset effect no longer keys on the tab titles (identity)",
+            src.contains("LaunchedEffect(titles)"),
+        )
     }
 
     @Test

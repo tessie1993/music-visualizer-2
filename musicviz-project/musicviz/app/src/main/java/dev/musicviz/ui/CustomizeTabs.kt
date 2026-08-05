@@ -1138,13 +1138,14 @@ internal fun FluidTab(
 @Composable
 internal fun CymaticsTab(
     p: SceneParams,
-    onChange: (SceneParams) -> Unit,
     // The active style's scene id, when the host provides it (null keeps the
     // pre-plumbing behavior at every existing call site). Eight of the eleven
     // Cymatics substyles pin the geometry via the catalog's geometryOverride,
     // and on those the Geometry chips were pure no-ops - so with the id in
-    // hand the pin is SAID instead of rendered dead.
+    // hand the pin is SAID instead of rendered dead. Sits before the callback
+    // so trailing-lambda call shapes keep compiling.
     activeSceneId: String? = null,
+    onChange: (SceneParams) -> Unit,
 ) {
     Column {
         SectionHeader("Wave")
@@ -1213,13 +1214,14 @@ internal fun CymaticsTab(
 @Composable
 internal fun HyperspaceTab(
     p: SceneParams,
-    onChange: (SceneParams) -> Unit,
     // The active style's scene id, when the host provides it (null keeps the
     // pre-plumbing behavior at every existing call site). Five of the eleven
     // Hyperspace substyles force the species via the catalog's forcedSpecies,
     // and on those the Fractal chips were pure no-ops - so with the id in
-    // hand the pin is SAID instead of rendered dead.
+    // hand the pin is SAID instead of rendered dead. Sits before the callback
+    // so trailing-lambda call shapes keep compiling.
     activeSceneId: String? = null,
+    onChange: (SceneParams) -> Unit,
 ) {
     Column {
         SectionHeader("Journey")

@@ -44,6 +44,13 @@ abstract class ParticleSceneBase(
         private val QUAD_CORNERS = floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)
 
         /**
+         * [rotationAngle] wrap: particle_vert only ever reads uRotation
+         * through cos/sin (its mat2), so one turn is an exact period, and
+         * an unwrapped `+= dt` on a days-long wallpaper is float mush.
+         */
+        private const val TWO_PI = (2.0 * Math.PI).toFloat()
+
+        /**
          * Where the FlowField may carry a particle to, in clip units. Just
          * outside the frame, so a tracer can leave and come back.
          */
@@ -249,7 +256,9 @@ abstract class ParticleSceneBase(
         dt: Float,
     ) {
         val p = sceneParams
-        rotationAngle += p.rotation * dt
+        // Wrapped to one turn (see TWO_PI); % keeps the sign, trig is
+        // indifferent to it.
+        rotationAngle = (rotationAngle + p.rotation * dt) % TWO_PI
         if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * dt) % 1f
         // Graded: a soft hit nudges the envelope, a hard one snaps it high,
         // and budgeted off-grid transients add texture between beats.

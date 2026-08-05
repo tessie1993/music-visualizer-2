@@ -1,5 +1,10 @@
 #version 300 es
 precision highp float;
+// GLSL ES 3.00 defaults sampler2D to LOWP (range [-2,2), ~8 fraction
+// bits) in the vertex stage too. uWave is R32F waveform data; on GPUs
+// honoring sampler precision (Mali) every texelFetch is clamped and
+// quantized.
+precision highp sampler2D;
 
 // Oscilloscope beam geometry: one quad per waveform segment, expanded here so
 // the fragment stage can integrate a Gaussian beam along it.

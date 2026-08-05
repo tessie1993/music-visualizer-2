@@ -7,7 +7,6 @@ import org.junit.Assert.fail
 import org.junit.Test
 import java.io.File
 import kotlin.math.PI
-import kotlin.math.abs
 
 /**
  * The CYMATICS family's clock/phase contract and its flat-field safety gate.

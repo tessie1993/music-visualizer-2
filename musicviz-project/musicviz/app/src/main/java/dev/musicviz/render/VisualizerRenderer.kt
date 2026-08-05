@@ -766,6 +766,11 @@ class VisualizerRenderer(
         scenes[id]?.let { return it }
         if (id !in VisualStyleCatalog.lazyIds) return null
         val scene = createScene(id, particleShaderSources(context), loadRaw(R.raw.quad_vert))
+        // The same type-directed wiring [onSurfaceCreated] gives every eagerly
+        // built scene, and in the same order: before init() so a rejected
+        // shader has an error channel to report on. Unlike surface creation
+        // the palette LUT already exists here, so wireScene binds it directly.
+        wireScene(scene)
         scene.init()
         // The state onSurfaceCreated/onSurfaceChanged already handed to every
         // eagerly built scene. Without the resize this one renders at the 1x1
@@ -774,6 +779,27 @@ class VisualizerRenderer(
         scene.resize(renderWidth, renderHeight)
         scenes[id] = scene
         return scene
+    }
+
+    /**
+     * Wiring owed to a scene's TYPE rather than to any one construction path:
+     * the particle family's shared error channel, and the palette LUT atlas
+     * for shader scenes. One function called by both [onSurfaceCreated]'s
+     * registry walk and [sceneFor]'s on-demand builds - these used to be
+     * inline in onSurfaceCreated only, so a lazily built scene of either type
+     * would have arrived with no error channel and no colour maps.
+     *
+     * The LUT branch is skipped while the texture does not exist yet:
+     * [onSurfaceCreated] wires scenes before it recreates the LUT, then
+     * re-broadcasts the fresh texture to every shader scene afterwards.
+     */
+    private fun wireScene(scene: Scene) {
+        if (scene is ParticleSceneBase) {
+            scene.onShaderError = { onShaderError(it) }
+        }
+        if (scene is ShaderScene && paletteLutTex != 0) {
+            scene.setPaletteLut(paletteLutTex)
+        }
     }
 
     fun submitShader(
@@ -821,6 +847,17 @@ class VisualizerRenderer(
         trailTex = 0
         trailW = 0
         trailH = 0
+        // Same story for the shared textures: their names belong to the old
+        // context. Zeroed BEFORE the registry is rebuilt, so [wireScene] hands
+        // a freshly built scene "no LUT yet" instead of a dead texture name.
+        if (noiseTex != 0) {
+            GLES30.glDeleteTextures(1, intArrayOf(noiseTex), 0)
+            noiseTex = 0
+        }
+        if (paletteLutTex != 0) {
+            GLES30.glDeleteTextures(1, intArrayOf(paletteLutTex), 0)
+            paletteLutTex = 0
+        }
         val particleShaders = particleShaderSources(context)
         val quadVert = loadRaw(R.raw.quad_vert)
         // Family substyles are skipped here and built by [sceneFor] the first
@@ -830,12 +867,11 @@ class VisualizerRenderer(
             if (id in VisualStyleCatalog.lazyIds) continue
             scenes[id] = createScene(id, particleShaders, quadVert)
         }
-        // The particle family shares one base, so it is wired here rather than
-        // nine times over in createScene. Before init(), because init() is
-        // where a driver-rejected shader has something to report.
-        scenes.values.filterIsInstance<ParticleSceneBase>().forEach { particles ->
-            particles.onShaderError = { onShaderError(it) }
-        }
+        // Type-directed wiring, shared with [sceneFor]'s on-demand builds so
+        // the two construction paths cannot drift apart. Before init(),
+        // because init() is where a driver-rejected shader has something to
+        // report.
+        scenes.values.forEach { wireScene(it) }
         milkdropScene = scenes[SceneIds.MILKDROP] as? ProjectMScene
         scenes.values.forEach { it.init() }
         // Restore state that would otherwise be lost when the EGL context is
@@ -854,14 +890,6 @@ class VisualizerRenderer(
         outgoingParams = null
 
         // FlowField service (F7) + the always-valid zero flow texture.
-        if (noiseTex != 0) {
-            GLES30.glDeleteTextures(1, intArrayOf(noiseTex), 0)
-            noiseTex = 0
-        }
-        if (paletteLutTex != 0) {
-            GLES30.glDeleteTextures(1, intArrayOf(paletteLutTex), 0)
-            paletteLutTex = 0
-        }
         flowField?.release()
         flowField =
             dev.musicviz.render.fluid
@@ -974,11 +1002,21 @@ class VisualizerRenderer(
         val requested = sceneFor(requestedSceneId)
         var sceneJustSwitched = false
         if (requested != null && requested !== activeScene) {
+            // sceneFor above may have just BUILT the requested scene - a lazy
+            // family substyle is a shader compile, and for Hyperspace a whole
+            // FluidSim, hundreds of milliseconds - so `now` from the top of
+            // the frame is stale by that much here. Stamping the transition
+            // with it burned most (at worst all) of the transition window
+            // before its first visible frame; stamping lastFrameMs keeps the
+            // build out of the next frame's dt too, instead of billing it as
+            // up to 100 ms of animation time.
+            val afterBuildMs = SystemClock.elapsedRealtime()
+            lastFrameMs = afterBuildMs
             val cuts = TransitionCatalog.builtIn(transitionId) == TransitionStyle.CUT
             if (!cuts && activeScene != null) {
                 outgoingScene = activeScene
                 outgoingParams = lastFinalParams
-                transitionStartMs = now
+                transitionStartMs = afterBuildMs
             }
             activeScene = requested
             sceneJustSwitched = true

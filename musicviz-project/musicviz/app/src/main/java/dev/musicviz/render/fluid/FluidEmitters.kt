@@ -43,6 +43,15 @@ internal class FluidEmitters(
         const val BASE_SPEED = 6f
         private const val MAX_SPLATS_PER_FRAME = 16
 
+        /**
+         * Suction-phase wrap: 200 * pi (CymaticsScene TIME_WRAP convention).
+         * Both readers are cos/sin at two-decimal rates, so k * 200pi is
+         * k * 100 whole turns - exactly periodic at the wrap.
+         */
+        private const val PHASE_WRAP_SECONDS = 628.31853f
+
+        private const val TWO_PI = (2.0 * Math.PI).toFloat()
+
         /** "Beat response" slider domain (CustomizeTabs), neutral at 1. */
         const val MIN_BEAT_RESPONSE = 0f
         const val MAX_BEAT_RESPONSE = 2f
@@ -191,7 +200,10 @@ internal class FluidEmitters(
         // threshold doesn't depend on frame rate.
         trebleMean += (f.treble - trebleMean) * (dt / 0.32f).coerceAtMost(1f)
         palettePhase = (palettePhase + dt * paletteCycleSpeed * 0.05f) % 1f
-        suctionPhase += dt
+        // Wrapped at 200 * pi (CymaticsScene TIME_WRAP convention): both
+        // consumers are cos/sin of suctionPhase at two-decimal rates (0.4,
+        // 2.7), and k * 200pi is k * 100 whole turns - exact at the wrap.
+        suctionPhase = (suctionPhase + dt) % PHASE_WRAP_SECONDS
 
         val radius = splatRadius * (1f + radiusPulse * beatEnv).coerceAtMost(MAX_RADIUS_SWELL)
         val speed = BASE_SPEED * forceScale * (0.4f + 1.6f * f.bass) * (0.3f + 0.7f * beatEnv)
@@ -279,7 +291,10 @@ internal class FluidEmitters(
             val cxA = anchorX
             val cyA = anchorY
             val orbitR = 0.14f + 0.10f * (i % 3)
-            stirrerAngle[i] += dt * stirrerSpeed * (0.3f + band * 1.7f) * (if (i % 2 == 0) 1f else -1f)
+            // Wrapped to one turn: only ever read through cos/sin. Kotlin's
+            // % keeps the sign, which trig is indifferent to.
+            stirrerAngle[i] =
+                (stirrerAngle[i] + dt * stirrerSpeed * (0.3f + band * 1.7f) * (if (i % 2 == 0) 1f else -1f)) % TWO_PI
             val x = cxA + cos(stirrerAngle[i]) * orbitR
             val y = cyA + sin(stirrerAngle[i]) * orbitR
             val px = stirrerPrevX[i]

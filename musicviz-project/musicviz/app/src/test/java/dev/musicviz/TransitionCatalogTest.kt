@@ -68,6 +68,48 @@ class TransitionCatalogTest {
     }
 
     @Test
+    fun the_per_frame_lookup_resolves_through_the_name_index() {
+        // definition() runs on the GL thread once per frame while a corpus
+        // transition is selected. It used to be a linear scan over all 123
+        // entries, every frame, for a list that never changes after parse;
+        // now a Map keyed by name rides alongside the cached list. assertSame
+        // (not assertEquals) is the point: the index must hold the very same
+        // Def instances as the list, so the two can never disagree about what
+        // a name means.
+        val library = TransitionCatalog.library(context)
+        for (def in library) {
+            org.junit.Assert.assertSame(
+                "the name index and the corpus list disagree about '${def.name}'",
+                def,
+                TransitionCatalog.definition(context, def.name),
+            )
+        }
+        assertEquals(null, TransitionCatalog.definition(context, "no-such-transition"))
+        // Pin the shape, not just the behaviour: a revert to the per-frame
+        // scan would pass every assertion above.
+        val definitionBody = catalogSource().substringAfter("fun definition").substringBefore("\n    fun ")
+        assertTrue("definition() must resolve through the libraryByName index", definitionBody.contains("libraryByName"))
+        assertFalse(
+            "definition() scans the list again instead of using the index",
+            definitionBody.contains("firstOrNull"),
+        )
+    }
+
+    /** TransitionCatalog.kt's source, found from wherever the tests run. */
+    private fun catalogSource(): String {
+        val relative = "src/main/java/dev/musicviz/render/TransitionCatalog.kt"
+        var dir: java.io.File? = java.io.File("").absoluteFile
+        while (dir != null) {
+            for (prefix in listOf("", "app/")) {
+                val candidate = java.io.File(dir, "$prefix$relative")
+                if (candidate.isFile) return candidate.readText()
+            }
+            dir = dir.parentFile
+        }
+        error("$relative not found from ${java.io.File("").absolutePath}")
+    }
+
+    @Test
     fun splicing_produces_a_shader_that_would_run_the_transition() {
         val base = context.resources.openRawResource(dev.musicviz.R.raw.composite_frag).bufferedReader().use { it.readText() }
         assertTrue("the splice marker is gone from composite_frag", base.contains("// __GL_TRANSITION_SOURCE__"))
