@@ -261,7 +261,15 @@ class HyperspaceReworkTest {
     fun track_progress_walks_a_quiet_track_out_of_threshold() {
         val far = HyperspaceJourney()
         repeat(secondsAsFrames(60f)) {
-            far.advance(FRAME, energy = 0f, mode = HyperspaceMath.JOURNEY_MUSIC, holdAct = 0, cycleSeconds = 30f, pace = 1f, progress = 0.9f)
+            far.advance(
+                FRAME,
+                energy = 0f,
+                mode = HyperspaceMath.JOURNEY_MUSIC,
+                holdAct = 0,
+                cycleSeconds = 30f,
+                pace = 1f,
+                progress = 0.9f,
+            )
         }
         assertTrue("a nearly-finished quiet track is still parked in THRESHOLD", far.actPosition > 0.8f)
         // Conservative: the floor may not push past the second act.
