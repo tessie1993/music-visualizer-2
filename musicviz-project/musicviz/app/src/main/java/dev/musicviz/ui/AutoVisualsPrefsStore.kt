@@ -3,7 +3,7 @@ package dev.musicviz.ui
 import android.content.Context
 
 /**
- * Persists the auto-visuals KNOBS - how Random mode and the visual playlist
+ * Persists the auto-visuals knobs - how Random mode and the visual playlist
  * rotate the look while a track plays - across restarts, in the same
  * "musicviz-viz" prefs file that carries the live scene state. Same
  * whole-snapshot load/save pattern as [ThemeStore] and [PlayerPrefsStore],
