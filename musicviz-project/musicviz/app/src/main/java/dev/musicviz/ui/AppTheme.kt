@@ -89,22 +89,37 @@ enum class AppTheme(
      * null when the automatic theme colours stay in force.
      *
      * Dark themes accept any override. Light themes accept it only when it
-     * passes a simple contrast check against the theme background - a
-     * relative-luminance difference of at least [LIGHT_CONTRAST_MIN] - and
-     * silently ignore it otherwise: a pale override (white, ivory, rose, …)
-     * on a near-white surface would make the whole UI invisible, which is a
-     * worse failure than not honouring the preference.
+     * passes a simple contrast check against the background they are ACTUALLY
+     * painting - a relative-luminance difference of at least
+     * [LIGHT_CONTRAST_MIN] - and silently ignore it otherwise: a pale override
+     * (white, ivory, rose, …) on a near-white surface would make the whole UI
+     * invisible, which is a worse failure than not honouring the preference.
+     *
+     * [backgroundDim] is that "actually painting" part, and it is why this
+     * takes the appearance preference at all: [colorScheme] dims background
+     * and surfaces by it, so a light theme at Background dim 60% is painting a
+     * DARK surface. Gating against the undimmed anchor there rejected every
+     * pale swatch on a screen those swatches were the only readable choice
+     * for, and the Settings picker (which greys out what this rejects) left
+     * the user with a row of dead swatches and near-black text.
      */
-    fun resolvedFontColor(fontColorArgb: Int?): Int? {
+    fun resolvedFontColor(
+        fontColorArgb: Int?,
+        backgroundDim: Float = 0f,
+    ): Int? {
         if (fontColorArgb == null) return null
         val a = anchors()
         if (!a.light) return fontColorArgb
-        val diff = kotlin.math.abs(Color(fontColorArgb).luminance() - Color(a.background).luminance())
+        val painted = Color(ColorDerive.dim(a.background, backgroundDim))
+        val diff = kotlin.math.abs(Color(fontColorArgb).luminance() - painted.luminance())
         return if (diff >= LIGHT_CONTRAST_MIN) fontColorArgb else null
     }
 
     /** True when the font colour override actually takes effect for this theme. */
-    fun fontColorActive(fontColorArgb: Int?): Boolean = resolvedFontColor(fontColorArgb) != null
+    fun fontColorActive(
+        fontColorArgb: Int?,
+        backgroundDim: Float = 0f,
+    ): Boolean = resolvedFontColor(fontColorArgb, backgroundDim) != null
 
     private fun anchors(): Anchors =
         when (this) {
@@ -172,6 +187,7 @@ enum class AppTheme(
         val tertiary = ColorDerive.lerpArgb(primary, secondary, 0.5f)
         val background = ColorDerive.dim(a.background, backgroundDim)
         val surface = ColorDerive.dim(a.surface, backgroundDim)
+        val surfaceVariant = ColorDerive.lerpArgb(surface, primary, 0.06f)
         val base =
             if (a.light) {
                 lightColorScheme(
@@ -180,7 +196,7 @@ enum class AppTheme(
                     tertiary = Color(tertiary),
                     background = Color(background),
                     surface = Color(surface),
-                    surfaceVariant = Color(ColorDerive.lerpArgb(surface, primary, 0.06f)),
+                    surfaceVariant = Color(surfaceVariant),
                     surfaceContainer = Color(ColorDerive.lerpArgb(surface, primary, 0.04f)),
                     surfaceContainerHigh = Color(ColorDerive.lerpArgb(surface, primary, 0.08f)),
                     primaryContainer = Color(ColorDerive.lerpArgb(primary, white, 0.8f)),
@@ -189,10 +205,13 @@ enum class AppTheme(
                     outline = Color(ColorDerive.lerpArgb(secondary, surface, 0.35f)),
                     // Body text keeps the stone's character instead of the
                     // Material near-black: deep plum on Rose Quartz, deep
-                    // navy on Light, deep umber on Paper.
-                    onBackground = Color(ColorDerive.lerpArgb(primary, black, 0.68f)),
-                    onSurface = Color(ColorDerive.lerpArgb(primary, black, 0.68f)),
-                    onSurfaceVariant = Color(ColorDerive.lerpArgb(primary, black, 0.45f)),
+                    // navy on Light, deep umber on Paper - and the pale side
+                    // of the same hues once the dim has taken the surface
+                    // dark under them. Undimmed these pick the dark tone, so
+                    // the light themes look exactly as they always did.
+                    onBackground = Color(readableTone(primary, background)),
+                    onSurface = Color(readableTone(primary, surface)),
+                    onSurfaceVariant = Color(readableTone(primary, surfaceVariant, 0.45f, HINT_CONTRAST_MIN)),
                 )
             } else {
                 darkColorScheme(
@@ -211,8 +230,9 @@ enum class AppTheme(
                 )
             }
         // resolvedFontColor is the single gate: dark themes always honour the
-        // override, light themes only when it can be read on their surface.
-        val resolved = resolvedFontColor(fontColorArgb)
+        // override, light themes only when it can be read on the surface they
+        // are painting - which is the DIMMED one, so the dim goes with it.
+        val resolved = resolvedFontColor(fontColorArgb, backgroundDim)
         return if (resolved != null) base.tintedText(Color(resolved)) else base
     }
 
@@ -223,9 +243,74 @@ enum class AppTheme(
          * honoured. 0.5 keeps every pale swatch (including pyrite gold, the
          * darkest of the curated set) off the near-white surfaces while
          * still admitting genuinely dark overrides.
+         *
+         * Measured against the surface actually being PAINTED, so the same
+         * one number covers a light theme at every Background dim setting:
+         * near-white it rejects the pale swatches, dimmed to near-black it
+         * rejects the dark ones instead, and around the crossover - where
+         * nothing separates well from a mid-grey - it rejects whatever fails
+         * to.
          */
         const val LIGHT_CONTRAST_MIN = 0.5f
+
+        /** WCAG AA for body text; what the derived `on*` writing roles hold to. */
+        const val BODY_CONTRAST_MIN = 4.5f
+
+        /** WCAG AA for large text and UI parts; the bar for the muted hint role. */
+        const val HINT_CONTRAST_MIN = 3.0f
     }
+}
+
+/** WCAG contrast ratio between two opaque colours. */
+private fun contrastRatio(
+    a: Int,
+    b: Int,
+): Float {
+    val la = Color(a).luminance()
+    val lb = Color(b).luminance()
+    return (maxOf(la, lb) + 0.05f) / (minOf(la, lb) + 0.05f)
+}
+
+/**
+ * The light branch's writing colour for one role: [primary] pulled at least
+ * [amount] of the way toward black or toward white, so that it reads on the
+ * [on] surface the role is actually painted on.
+ *
+ * A fixed direction cannot work, because the surface is not fixed. Background
+ * dim (0..0.6) darkens background and surfaces, and Rose Quartz crosses from
+ * light to dark around a quarter of the way along it; derived toward black
+ * regardless, the light themes painted near-black writing on near-black
+ * panels for the whole top half of the slider.
+ *
+ * Two things this deliberately does NOT do:
+ *
+ *  - switch on the surface's luminance crossing 0.5. The two candidate tones
+ *    do not straddle the surface symmetrically, so a midpoint switch puts the
+ *    WORST contrast either side of itself; the direction is chosen by which
+ *    extreme (pure black, pure white) the surface is further from, which is
+ *    the same question asked correctly.
+ *  - keep [amount] fixed. Around the crossover a 68%-of-the-way tone cannot
+ *    reach [minRatio] in either direction, so the pull deepens - and only
+ *    there - until it does or it runs out. Everywhere else (which includes
+ *    every undimmed light theme) the first candidate already clears the bar
+ *    and the stone keeps exactly the colour it always had.
+ */
+private fun readableTone(
+    primary: Int,
+    on: Int,
+    amount: Float = 0.68f,
+    minRatio: Float = AppTheme.BODY_CONTRAST_MIN,
+): Int {
+    val black = 0xFF000000.toInt()
+    val white = 0xFFFFFFFF.toInt()
+    val end = if (contrastRatio(black, on) >= contrastRatio(white, on)) black else white
+    var t = amount
+    var tone = ColorDerive.lerpArgb(primary, end, t)
+    while (t < 1f && contrastRatio(tone, on) < minRatio) {
+        t = minOf(1f, t + 0.08f)
+        tone = ColorDerive.lerpArgb(primary, end, t)
+    }
+    return tone
 }
 
 /**

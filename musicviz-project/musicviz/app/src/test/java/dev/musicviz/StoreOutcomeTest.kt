@@ -10,6 +10,7 @@ import dev.musicviz.ui.TakeStore
 import dev.musicviz.ui.TextureStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -28,9 +29,10 @@ import java.io.File
  * The store-side contracts the Visuals hub actions lean on, against real
  * files in filesDir:
  *
- *  - removing a texture also removes the `show_<base>.milk` display preset
- *    generated for it (otherwise the orphan renders noise or black once the
- *    image is gone) and reports that path so the caller can react;
+ *  - removing a texture also removes the display preset generated for it
+ *    (otherwise the orphan renders noise or black once the image is gone) and
+ *    reports that path so the caller can react - keyed on the WHOLE stored
+ *    name, since two textures can share a stem;
  *  - texture import answers per file - imported under which name, or skipped
  *    why - and validates CONTENT, not just extension, before anything
  *    touches the disk;
@@ -118,6 +120,66 @@ class StoreOutcomeTest {
         assertEquals(emptyList<String>(), store.remove(stored).map { it.name })
 
         assertFalse(File(presetPath).exists())
+    }
+
+    @Test
+    fun `two textures sharing a stem get their own display presets`() {
+        // cover.png and cover.jpg both survive safeTextureFileName as
+        // themselves, and the preset key used to be the stem alone - so the
+        // second Use overwrote the first's preset and either delete took the
+        // other's away. The stored name is unique by construction; the key
+        // has to be the whole of it.
+        val store = TextureStore(ctx)
+        val png = Uri.parse("content://test/cover.png")
+        val jpg = Uri.parse("content://test/cover.jpg")
+        registerImage(png, pngBytes(0xFF112233.toInt()))
+        registerImage(jpg, pngBytes(0xFF445566.toInt()))
+        store.import(listOf(png, jpg))
+        assertEquals(listOf("cover.jpg", "cover.png"), store.list().map { it.name })
+
+        val forPng = store.generateDisplayPreset("cover.png")
+        val forJpg = store.generateDisplayPreset("cover.jpg")
+        assertNotEquals("one preset file for two textures", forPng, forJpg)
+        assertTrue(File(forPng).isFile)
+        assertTrue(File(forJpg).isFile)
+
+        val outcome = store.removeDetailed("cover.jpg")
+
+        assertEquals(listOf(forJpg), outcome.removedGeneratedPresetPaths)
+        assertFalse(File(forJpg).exists())
+        assertTrue("deleting one texture deleted the other's live preset", File(forPng).isFile)
+        assertEquals(listOf("cover.png"), outcome.textures.map { it.name })
+    }
+
+    @Test
+    fun `an older stem-keyed preset is swept, but only when nothing still claims that stem`() {
+        // Installs upgrading across the key change carry show_<stem>.milk
+        // files this version no longer writes. Left behind they are exactly
+        // the orphan removeDetailed exists to prevent - unless another
+        // texture with the same stem is still there, in which case the
+        // legacy file may be ITS preset and deleting it is the old bug.
+        val store = TextureStore(ctx)
+        val png = Uri.parse("content://test/art.png")
+        val jpg = Uri.parse("content://test/art.jpg")
+        registerImage(png, pngBytes(0xFF778899.toInt()))
+        registerImage(jpg, pngBytes(0xFF99AABB.toInt()))
+        store.import(listOf(png, jpg))
+        val generated = File(ctx.filesDir, "milk/generated").apply { mkdirs() }
+        val legacy = File(generated, "show_art.milk")
+
+        legacy.writeText("MILKDROP_PRESET_VERSION=201\n[preset00]\n")
+        assertEquals(
+            "art.jpg is gone but art.png still answers to that stem",
+            emptyList<String>(),
+            store.removeDetailed("art.jpg").removedGeneratedPresetPaths,
+        )
+        assertTrue(legacy.isFile)
+
+        assertEquals(
+            listOf(legacy.absolutePath),
+            store.removeDetailed("art.png").removedGeneratedPresetPaths,
+        )
+        assertFalse("the orphan outlived the last texture that could own it", legacy.exists())
     }
 
     // ------------------------------------------------- texture import (fix 9)

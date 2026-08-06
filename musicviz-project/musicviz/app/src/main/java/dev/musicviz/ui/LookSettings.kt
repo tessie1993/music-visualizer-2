@@ -171,7 +171,10 @@ private fun FontColorRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(FontColorChoice.CHOICES) { choice ->
-                val usable = choice.argb == null || appTheme.fontColorActive(choice.argb)
+                // The dim is part of the question: it is what decides whether
+                // this theme is painting a light surface right now, and the
+                // greying here has to agree with what colorScheme will do.
+                val usable = choice.argb == null || appTheme.fontColorActive(choice.argb, gui.backgroundDim)
                 val sel = gui.fontColorArgb == choice.argb
                 val shape = crystalShardShape(8.dp, 3.dp)
                 val fill =

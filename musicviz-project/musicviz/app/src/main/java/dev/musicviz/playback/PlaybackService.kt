@@ -129,6 +129,7 @@ class PlaybackService : MediaSessionService() {
          * Internal (not private) so the headless suite can pin it without
          * standing up a MediaSession, which Robolectric cannot drive.
          */
+        @OptIn(UnstableApi::class)
         internal fun lastPlayedResumption(context: Context): MediaSession.MediaItemsWithStartPosition? {
             val last = HistoryStore(context).recentlyPlayed(1).firstOrNull() ?: return null
             val item =

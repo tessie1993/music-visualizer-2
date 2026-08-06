@@ -165,6 +165,11 @@ fun AppRoot(
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             // Nebula + star-field backdrop behind every shell tab; the
             // Scaffold goes transparent so the glow shows through the glass.
+            // Transparent has no `contentColorFor` role, so the writing colour
+            // it derives is whatever LocalContentColor holds - Material's own
+            // default for that is BLACK, and [CrystalMaterialTheme] is what
+            // provides the theme's onBackground in its place. Setting it here
+            // as well would be a second copy of the same decision.
             CrystalBackground(Modifier.fillMaxSize(), reducedMotion = gui.reducedMotion)
             Scaffold(
                 containerColor = Color.Transparent,

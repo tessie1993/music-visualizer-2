@@ -122,6 +122,30 @@
         </service>
 
         <!--
+          Media buttons, and with them playback resumption.
+
+          Media3 routes hardware transport keys and the system's "resume what
+          you were playing" request through a MEDIA_BUTTON broadcast, and it
+          finds the target by looking for a receiver with this filter in the
+          app's own manifest — the library declares none of its own. Without
+          it the merged manifest carried exactly one receiver (the profile
+          installer) and zero MEDIA_BUTTON filters, so PlaybackService's
+          onPlaybackResumption was never invoked: MusicViz never appeared in
+          the System UI media carousel after its process died, and
+          lastPlayedResumption was code that could not run in production.
+
+          Exported, like the service it drives, because the callers are other
+          processes: System UI, Bluetooth, a wired headset's buttons.
+        -->
+        <receiver
+            android:name="androidx.media3.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
+        <!--
           Playback capture: holds the MediaProjection and the ongoing
           notification for as long as another app's audio is being read.
           Not exported — it is started only by this app, with consent the user
