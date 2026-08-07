@@ -82,7 +82,16 @@ jobs:
           echo "file_name=$FILE_NAME" >> "$GITHUB_OUTPUT"
           echo "Built dist/$FILE_NAME"
 
+      # Convenience, not a gate: the APK is here so a reviewer can install the
+      # build without running it themselves. It must never decide whether the
+      # PR is green. Run 185 failed on "Artifact storage quota has been hit"
+      # AFTER the APK had already been assembled, which skipped every
+      # verification step below and reported the whole job as a failure - a
+      # red check that said "the build is broken" when the build was fine and
+      # nothing had been verified at all. continue-on-error keeps a full
+      # artifact store (or a flaky upload) from speaking for the code.
       - name: Upload debug APK
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: musicviz-debug-${{ github.run_number }}-${{ github.sha }}
@@ -90,7 +99,9 @@ jobs:
             dist/${{ steps.package.outputs.file_name }}
             dist/${{ steps.package.outputs.file_name }}.sha256
           if-no-files-found: error
-          retention-days: 30
+          # 7 days, not 30: every PR run stores an uncompressed ~35 MB APK, and
+          # the quota that broke run 185 is the sum of them.
+          retention-days: 7
           compression-level: 0
 
       # Verification runs after the APK upload. If a check fails, the APK is
