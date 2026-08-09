@@ -868,6 +868,15 @@ the record, and the plan document it lived in is gone.
 
 Requires JDK 17+, Android SDK 36. `local.properties` must point at your SDK.
 
+On a machine with no SDK — a Claude Code cloud session, a fresh container —
+`tools/setup-android-sdk.sh` installs the packages `compileSdk` asks for and
+writes `local.properties` for you. Every package comes from `dl.google.com`,
+which the "Trusted" network policy does not allow and `maven.google.com`
+redirects to, so a cloud environment needs **Full** network access or
+**Custom** with `dl.google.com` and `maven.google.com` allowed. Without that,
+Gradle cannot resolve the Android plugin either, and the script says so rather
+than failing mid-download.
+
 ## Architecture (one-way: ui -> audio/analysis/render)
 - `audio/` — ExoPlayer wiring: `TapRenderersFactory` overrides `buildAudioSink`
   to insert a `TeeAudioProcessor`; `PcmTapSink` copies PCM (16-bit or float,
