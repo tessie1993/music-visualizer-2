@@ -49,7 +49,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
-import dev.musicviz.analysis.AudioFeatures
 import kotlinx.coroutines.delay
 
 /**
@@ -114,6 +113,7 @@ fun PlayerScreen(
                 micActive = mic.active,
                 external = external,
                 favourites = favourites,
+                canResume = canShuffle,
                 onExpand = onExpand,
                 onOpenLibrary = onOpenLibrary,
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -172,6 +172,11 @@ fun PlayerScreen(
  * With no source at all it becomes the empty state: a placeholder tile and
  * the two ways back into sound (resume what was last playing, or go pick
  * something in the library).
+ *
+ * [canResume] is the same listening-history predicate the "Shuffle all"
+ * quick action gates on: [PlayerViewModel.resumeLastPlayed] returns silently
+ * on an empty history, so on a fresh install one of the empty state's two
+ * buttons did nothing at all, forever, with no toast and no navigation.
  */
 @Composable
 private fun PlayerHero(
@@ -181,6 +186,7 @@ private fun PlayerHero(
     micActive: Boolean,
     external: ExternalAudioState,
     favourites: Set<String>,
+    canResume: Boolean,
     onExpand: () -> Unit,
     onOpenLibrary: () -> Unit,
     modifier: Modifier = Modifier,
@@ -282,7 +288,9 @@ private fun PlayerHero(
         }
         if (!hasSource) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CrystalButton(onClick = viewModel::resumeLastPlayed) { Text("Resume last played") }
+                CrystalButton(enabled = canResume, onClick = viewModel::resumeLastPlayed) {
+                    Text("Resume last played")
+                }
                 CrystalButton(filled = false, onClick = onOpenLibrary) { Text("Open library") }
             }
         }
@@ -513,30 +521,7 @@ private fun LiveSpectrum(
     modifier: Modifier = Modifier,
 ) {
     val bars by produceState(initialValue = FloatArray(BARS), live) {
-        val smoothed = FloatArray(BARS)
-        while (true) {
-            val features: AudioFeatures = viewModel.features.value
-            val bands = features.bands
-            for (i in 0 until BARS) {
-                val target =
-                    if (!live || bands.isEmpty()) {
-                        0f
-                    } else {
-                        // Each bar averages its slice of the band array, so the
-                        // shape survives a change in band count.
-                        val from = i * bands.size / BARS
-                        val to = ((i + 1) * bands.size / BARS).coerceAtLeast(from + 1)
-                        var acc = 0f
-                        for (b in from until minOf(to, bands.size)) acc += bands[b]
-                        acc / (minOf(to, bands.size) - from)
-                    }
-                // Fast up, slow down: peaks stay legible between samples.
-                smoothed[i] =
-                    if (target > smoothed[i]) target else smoothed[i] + (target - smoothed[i]) * 0.35f
-            }
-            value = smoothed.copyOf()
-            delay(50)
-        }
+        driveSpectrum(live, { viewModel.features.value.bands }) { value = it }
     }
     val primary = MaterialTheme.colorScheme.primary
     val secondary = MaterialTheme.colorScheme.secondary
@@ -562,7 +547,60 @@ private fun LiveSpectrum(
     }
 }
 
-private const val BARS = 24
+internal const val BARS = 24
+
+/** How often [driveSpectrum] publishes a row while something is playing. */
+internal const val SPECTRUM_TICK_MS = 50L
+
+/**
+ * The spectrum row's sampler: reduces [bands] to [BARS] every
+ * [SPECTRUM_TICK_MS] and hands each row to [emit], until cancelled.
+ *
+ * RETURNS IMMEDIATELY when [live] is false, after one resting row. That early
+ * return is the whole point of the function existing outside the composable:
+ * every tick publishes a FRESH FloatArray, and Compose's default state policy
+ * compares by reference, so a run of the loop with nothing playing invalidated
+ * and redrew the Canvas twenty times a second, forever, on the app's default
+ * tab. The loop must not run when there is no audio to sample - and "must not
+ * run" is a property of this function, which a test can simply call and watch
+ * return.
+ *
+ * Extracted rather than left inline for that reason alone; the composable owns
+ * the `live` key and the state, this owns the sampling.
+ */
+internal suspend fun driveSpectrum(
+    live: Boolean,
+    bands: () -> FloatArray,
+    emit: (FloatArray) -> Unit,
+) {
+    if (!live) {
+        emit(FloatArray(BARS))
+        return
+    }
+    val smoothed = FloatArray(BARS)
+    while (true) {
+        val current = bands()
+        for (i in 0 until BARS) {
+            val target =
+                if (current.isEmpty()) {
+                    0f
+                } else {
+                    // Each bar averages its slice of the band array, so the
+                    // shape survives a change in band count.
+                    val from = i * current.size / BARS
+                    val to = ((i + 1) * current.size / BARS).coerceAtLeast(from + 1)
+                    var acc = 0f
+                    for (b in from until minOf(to, current.size)) acc += current[b]
+                    acc / (minOf(to, current.size) - from)
+                }
+            // Fast up, slow down: peaks stay legible between samples.
+            smoothed[i] =
+                if (target > smoothed[i]) target else smoothed[i] + (target - smoothed[i]) * 0.35f
+        }
+        emit(smoothed.copyOf())
+        delay(SPECTRUM_TICK_MS)
+    }
+}
 
 /** The four things worth one tap from the Player. */
 @Composable

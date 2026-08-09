@@ -64,6 +64,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
+import dev.musicviz.data.MusicPlaylist
 import kotlin.math.roundToInt
 
 @Composable

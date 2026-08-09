@@ -1,5 +1,6 @@
 package dev.musicviz
 
+import dev.musicviz.data.PerformanceTake
 import dev.musicviz.render.scene.SceneParams
 import dev.musicviz.ui.PerformanceTake
 import org.junit.Assert.assertEquals

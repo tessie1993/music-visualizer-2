@@ -65,12 +65,23 @@ private fun PresetFolderGroup(
     val folderPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) {
-                ctx.contentResolver.takePersistableUriPermission(
-                    uri,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                        android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                )
-                viewModel.setGuiPrefs(gui.copy(presetMirrorUri = uri.toString()))
+                // Not every DocumentsProvider hands back a PERSISTABLE grant,
+                // and taking one that was not offered throws SecurityException
+                // - on the main thread, inside an ActivityResult callback,
+                // i.e. a crash. The mirror is a convenience; a folder whose
+                // permission cannot outlive this process is not one to record,
+                // so the preference is only written when the grant was taken.
+                // Same guard as the three sibling call sites (MainActivity's
+                // onPersistUri, importTracks, importFolder).
+                val persisted =
+                    runCatching {
+                        ctx.contentResolver.takePersistableUriPermission(
+                            uri,
+                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                        )
+                    }.isSuccess
+                if (persisted) viewModel.setGuiPrefs(gui.copy(presetMirrorUri = uri.toString()))
             }
         }
     Column {

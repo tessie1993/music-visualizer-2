@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
@@ -113,6 +114,20 @@ internal val LocalCrystalTheme = staticCompositionLocalOf { AppTheme.LAPIS }
  * override (null when automatic, or when the light-theme contrast gate in
  * [AppTheme.resolvedFontColor] rejected it), so [accentTextColor] call sites
  * never have to re-derive whether the override is readable.
+ *
+ * And of [LocalContentColor], which Material does NOT provide: `MaterialTheme`
+ * supplies the ColorScheme, indication, shapes, text selection and typography
+ * and nothing else, so the composition local every un-coloured `Text`, `Icon`
+ * and `IconButton` falls back to keeps its library default of BLACK unless
+ * something in the tree provides it. Normally a `Surface` does - it derives
+ * one with `contentColorFor(its container)` - but the shell's `Scaffold`
+ * deliberately runs `containerColor = Color.Transparent` so the nebula
+ * backdrop shows through the glass, and `contentColorFor(Transparent)`
+ * matches no role, falls through to `LocalContentColor.current`, and hands
+ * the whole app black-on-near-black. Providing it HERE rather than on the
+ * Scaffold covers the overlays composed outside it too (search, the crash
+ * dialog, the fullscreen visualizer, the second screen), which have exactly
+ * the same problem and no Scaffold of their own.
  */
 @Composable
 internal fun CrystalMaterialTheme(
@@ -120,13 +135,15 @@ internal fun CrystalMaterialTheme(
     gui: GuiPrefs,
     content: @Composable () -> Unit,
 ) {
-    val fontColor = appTheme.resolvedFontColor(gui.fontColorOverride)
+    val fontColor = appTheme.resolvedFontColor(gui.fontColorOverride, gui.backgroundDim)
+    val scheme = appTheme.colorScheme(gui.accentIntensity, gui.backgroundDim, gui.fontColorOverride)
     CompositionLocalProvider(
         LocalCrystalTheme provides appTheme,
         LocalFontColor provides fontColor?.let { Color(it) },
+        LocalContentColor provides scheme.onBackground,
     ) {
         MaterialTheme(
-            colorScheme = appTheme.colorScheme(gui.accentIntensity, gui.backgroundDim, gui.fontColorOverride),
+            colorScheme = scheme,
             shapes = gui.cornerStyle.shapes(),
             typography = crystalTypography(gui.textScale),
             content = content,

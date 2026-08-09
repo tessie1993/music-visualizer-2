@@ -2,10 +2,10 @@ package dev.musicviz
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import dev.musicviz.data.ExportDefaults
+import dev.musicviz.data.ExportPrefsStore
 import dev.musicviz.export.ExportQuality
 import dev.musicviz.export.ExportRatio
-import dev.musicviz.ui.ExportDefaults
-import dev.musicviz.ui.ExportPrefsStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

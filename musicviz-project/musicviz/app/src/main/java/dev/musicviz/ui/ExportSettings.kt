@@ -19,6 +19,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import dev.musicviz.data.ExportDefaults
+import dev.musicviz.data.ExportPrefsStore
+import dev.musicviz.data.exportQualityLabel
 import dev.musicviz.export.ExportQuality
 import dev.musicviz.export.ExportRatio
 

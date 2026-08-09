@@ -252,6 +252,10 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(kotlin("reflect"))
     testImplementation(libs.junit)
+    // Virtual time for the suspend loops the UI drives (the Player's spectrum
+    // sampler): a test that has to wait out real delays is a test that either
+    // takes seconds or is flaky about how many ticks it saw.
+    testImplementation(libs.kotlinx.coroutines.test)
     // Real org.json for plain (non-Robolectric) unit tests: the mockable
     // android.jar's org.json classes throw "Stub!" (TrackLibraryMigrationTest).
     testImplementation(libs.json)

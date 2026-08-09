@@ -1,8 +1,8 @@
 package dev.musicviz
 
 import androidx.test.core.app.ApplicationProvider
-import dev.musicviz.ui.FavouritesStore
-import dev.musicviz.ui.HistoryStore
+import dev.musicviz.data.FavouritesStore
+import dev.musicviz.data.HistoryStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

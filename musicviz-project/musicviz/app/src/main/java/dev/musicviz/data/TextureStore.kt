@@ -1,4 +1,4 @@
-package dev.musicviz.ui
+package dev.musicviz.data
 
 import android.content.Context
 import android.graphics.BitmapFactory
@@ -36,19 +36,26 @@ data class TextureImportOutcome(
 )
 
 /**
- * The result of [TextureStore.removeDetailed]. [removedGeneratedPresetPath]
- * is the absolute path of the `show_<base>.milk` display preset that was
- * deleted along with the texture (null when there was none): the caller may
- * be RENDERING that preset right now, so it needs the path to know whether
- * its current .milk selection just went away.
+ * The result of [TextureStore.removeDetailed]. [removedGeneratedPresetPaths]
+ * holds the absolute paths of the generated display presets deleted along
+ * with the texture (empty when there were none): the caller may be RENDERING
+ * one of them right now, so it needs the paths to know whether its current
+ * .milk selection just went away.
  */
 data class TextureRemoveOutcome(
     /** Whether the texture file itself was deleted. */
     val removed: Boolean,
-    val removedGeneratedPresetPath: String?,
+    val removedGeneratedPresetPaths: List<String>,
     /** The texture list after the removal, exactly as [TextureStore.list] would return it. */
     val textures: List<MilkTexture>,
-)
+) {
+    /**
+     * The preset a single-path caller means: the one keyed on the removed
+     * texture's own stored name. Derived, never stored beside the list, so the
+     * two can never disagree.
+     */
+    val removedGeneratedPresetPath: String? get() = removedGeneratedPresetPaths.firstOrNull()
+}
 
 /**
  * Manages the shared milkdrop texture directory (filesDir/milk/textures),
@@ -161,25 +168,38 @@ class TextureStore(
     fun remove(name: String): List<MilkTexture> = removeDetailed(name).textures
 
     /**
-     * Deletes the texture AND the `milk/generated/show_<base>.milk` display
-     * preset [generateDisplayPreset] wrote for it, which references the
-     * texture by name and renders noise or black once the image is gone -
-     * an orphan there silently outlives every removal otherwise. The base is
-     * derived exactly as [generateDisplayPreset] derives it from this stored
-     * name (the extension dropped; the name is already [safeTextureFileName]
-     * output, so they can never disagree). The outcome carries the deleted
-     * preset's path so a caller whose CURRENT .milk selection was that
-     * preset can react.
+     * Deletes the texture AND the display preset [generateDisplayPreset] wrote
+     * for it, which references the texture by name and renders noise or black
+     * once the image is gone - an orphan there silently outlives every removal
+     * otherwise. Both sides derive the path through [generatedPresetFile], so
+     * they cannot disagree about which file that is.
+     *
+     * Also sweeps the OLDER name for the same preset - the stem alone - left
+     * on disk by installs written before the key changed. Only when no
+     * surviving texture still shares that stem, though: with `cover.png` and
+     * `cover.jpg` both imported, the legacy file belongs to whichever of them
+     * generated it last, and deleting it out from under the other is the very
+     * collision this scheme fixed.
+     *
+     * The outcome carries every deleted preset path so a caller whose CURRENT
+     * .milk selection was one of them can react.
      */
     fun removeDetailed(name: String): TextureRemoveOutcome {
         val removed = runCatching { File(dir, name).delete() }.getOrDefault(false)
-        val base = name.substringBeforeLast('.')
-        val generated = File(File(appContext.filesDir, "milk/generated"), "show_$base.milk")
-        val generatedRemoved = runCatching { generated.isFile && generated.delete() }.getOrDefault(false)
+        val generated = generatedPresetFile(name)
+        val remaining = list()
+        val stem = name.substringBeforeLast('.')
+        val legacy = File(generatedDir(), "show_$stem.milk")
+        val sweepLegacy = legacy != generated && remaining.none { it.name.substringBeforeLast('.') == stem }
+        val gone =
+            listOfNotNull(
+                generated.takeIf { runCatching { it.isFile && it.delete() }.getOrDefault(false) },
+                legacy.takeIf { sweepLegacy && runCatching { it.isFile && it.delete() }.getOrDefault(false) },
+            )
         return TextureRemoveOutcome(
             removed = removed,
-            removedGeneratedPresetPath = if (generatedRemoved) generated.absolutePath else null,
-            textures = list(),
+            removedGeneratedPresetPaths = gone.map { it.absolutePath },
+            textures = remaining,
         )
     }
 
@@ -190,6 +210,24 @@ class TextureStore(
                 ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
         }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/')
 
+    private fun generatedDir(): File = File(appContext.filesDir, "milk/generated")
+
+    /**
+     * Where the display preset for the stored texture [name] lives.
+     *
+     * Keyed on the WHOLE stored name, extension included, because the stem
+     * alone is not unique: `cover.png` and `cover.jpg` both survive
+     * [safeTextureFileName] as themselves and both used to claim
+     * `show_cover.milk`, so using one and then deleting the other deleted the
+     * preset that was on screen and left the pointer to it persisted. The
+     * stored name is unique by construction, so this is.
+     *
+     * Note this is the PRESET FILE's name only. The sampler the preset
+     * declares still carries the stem, because that is the name projectM
+     * resolves a texture by.
+     */
+    private fun generatedPresetFile(name: String): File = File(generatedDir(), "show_${name.replace('.', '_')}.milk")
+
     /**
      * Generates a .milk preset that displays [textureName] full-screen with
      * audio-reactive zoom/rotation/brightness, and returns its path. This is
@@ -198,8 +236,8 @@ class TextureStore(
      */
     fun generateDisplayPreset(textureName: String): String {
         val base = textureName.substringBeforeLast('.')
-        val genDir = File(appContext.filesDir, "milk/generated").apply { mkdirs() }
-        val file = File(genDir, "show_$base.milk")
+        generatedDir().mkdirs()
+        val file = generatedPresetFile(textureName)
         // Kept deliberately minimal: projectM's HLSL->GLSL transpiler is fragile
         // with comp shaders (see projectM issue #310), so we use a single
         // sampler declaration, no per-pixel branching, and only intrinsics

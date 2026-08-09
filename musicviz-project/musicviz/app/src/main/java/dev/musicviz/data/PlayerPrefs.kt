@@ -1,4 +1,4 @@
-package dev.musicviz.ui
+package dev.musicviz.data
 
 import android.content.Context
 

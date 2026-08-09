@@ -772,8 +772,8 @@ class Bloom {
         HyperspaceMath.randomPlane(rng, planeU, planeV)
         // An ellipse, not a circle: two different radii in the orbit plane
         // means no two bodies trace the same shape even at the same rate.
-        radiusU = spread * (0.35f + 0.85f * rng.nextFloat())
-        radiusV = spread * (0.35f + 0.85f * rng.nextFloat())
+        radiusU = spread * jitter(rng, MIN_ORBIT_RADIUS, MAX_ORBIT_RADIUS)
+        radiusV = spread * jitter(rng, MIN_ORBIT_RADIUS, MAX_ORBIT_RADIUS)
         orbitRate = (0.035f + 0.16f * rng.nextFloat()) * if (rng.nextBoolean()) 1f else -1f
         orbitPhase = rng.nextFloat() * 2f * PI.toFloat()
         HyperspaceMath.randomUnitVector(rng, spinAxisA)
@@ -784,7 +784,7 @@ class Bloom {
         spinRateB = (0.03f + 0.19f * rng.nextFloat()) * if (rng.nextBoolean()) 1f else -1f
         spinAngleA = rng.nextFloat() * 2f * PI.toFloat()
         spinAngleB = rng.nextFloat() * 2f * PI.toFloat()
-        scale = sizeScale * (0.55f + 0.9f * rng.nextFloat())
+        scale = sizeScale * jitter(rng, MIN_SIZE_JITTER, MAX_SIZE_JITTER)
         hue = rng.nextFloat()
         foldJitter = rng.nextFloat() * 2f - 1f
         glow = 0.7f + 0.7f * rng.nextFloat()
@@ -861,6 +861,36 @@ class Bloom {
         offset: Int,
     ) {
         HyperspaceMath.worldToLocalRotation(spinAxisA, spinAngleA, spinAxisB, spinAngleB, out, offset)
+    }
+
+    companion object {
+        /**
+         * The orbit-radius roll, as a multiple of the act's spread.
+         *
+         * [MAX_ORBIT_RADIUS] is public because it is not a private detail of
+         * spawning: it is how far out a body can actually get, so it is what
+         * [HyperspaceLook.cameraDistance] has to keep the eye clear of. The
+         * two used to state it separately - the camera assumed `spread`
+         * flat - and the roll that landed at the top of this range reached
+         * 20% past where the eye was standing.
+         */
+        const val MIN_ORBIT_RADIUS = 0.35f
+        const val MAX_ORBIT_RADIUS = 1.2f
+
+        /**
+         * The body-size roll, as a multiple of the act's [HyperspaceLook.bodySize].
+         * [MAX_SIZE_JITTER] is public for the same reason: it is a factor in
+         * [HyperspaceLook.maxBodyRadius].
+         */
+        const val MIN_SIZE_JITTER = 0.55f
+        const val MAX_SIZE_JITTER = 1.45f
+
+        /** One uniform roll in [lo]..[hi]. */
+        private fun jitter(
+            rng: Random,
+            lo: Float,
+            hi: Float,
+        ): Float = lo + (hi - lo) * rng.nextFloat()
     }
 }
 
@@ -1384,7 +1414,7 @@ object HyperspaceLook {
      * The largest world radius a body spawned at [bodySize] can reach: the
      * biggest species, at the top of [Bloom.spawn]'s size jitter.
      */
-    fun maxBodyRadius(bodies: Int): Float = bodySize(bodies) * 1.45f * HyperspaceMath.MAX_LOCAL_RADIUS
+    fun maxBodyRadius(bodies: Int): Float = bodySize(bodies) * Bloom.MAX_SIZE_JITTER * HyperspaceMath.MAX_LOCAL_RADIUS
 
     /**
      * How far the eye sits from the origin.
@@ -1395,12 +1425,27 @@ object HyperspaceLook {
      * raymarcher started inside a folded distance estimator does not draw the
      * inside of an object: it draws a screen of striped garbage, because the
      * estimate is only valid outside the set.
+     *
+     * Two things the floor has to account for, both of which used to be
+     * applied OUTSIDE it and so escaped it:
+     *
+     *  - [cameraScale], the substyle's wider/tighter framing. Multiplying the
+     *    result scaled the floor down with the request, so the two styles
+     *    asking for 0.90 and 0.92 ended up 8-10% inside their own guarantee.
+     *  - the orbit reach. [Bloom.spawn] draws orbit radii up to spread times
+     *    [Bloom.MAX_ORBIT_RADIUS], not spread flat, so the outermost body a
+     *    roll can produce sits further out than the floor allowed for even at
+     *    scale 1.
+     *
+     * Together they were enough for a JEWEL (the largest local radius) at the
+     * top of both jitters to swallow the eye's clip sphere.
      */
     fun cameraDistance(
         actCamera: Float,
         spread: Float,
         maxBodyRadius: Float,
-    ): Float = max(actCamera, spread + maxBodyRadius + 0.9f)
+        cameraScale: Float = 1f,
+    ): Float = max(actCamera * cameraScale, spread * Bloom.MAX_ORBIT_RADIUS + maxBodyRadius + 0.9f)
 
     /**
      * Bodies the act wants alive, after the user's density multiplier.

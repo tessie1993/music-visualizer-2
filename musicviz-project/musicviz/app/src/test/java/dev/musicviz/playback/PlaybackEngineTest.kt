@@ -117,6 +117,36 @@ class PlaybackEngineTest {
     }
 
     @Test
+    fun `a media-button receiver exists, or playback resumption never happens`() {
+        // Media3 finds the target of a MEDIA_BUTTON broadcast by looking for a
+        // receiver with this filter in the app's own manifest - the library
+        // declares none of its own. Without it the merged manifest carried one
+        // receiver (the profile installer) and zero MEDIA_BUTTON filters, so
+        // `PlaybackService.onPlaybackResumption` could not be invoked at all:
+        // MusicViz never appeared in the System UI media carousel after its
+        // process died, and `lastPlayedResumption` - which
+        // PlaybackResumptionTest covers in full - was code with no path to it
+        // in production.
+        val resolved =
+            ctx.packageManager.queryBroadcastReceivers(
+                Intent(Intent.ACTION_MEDIA_BUTTON).setPackage(ctx.packageName),
+                0,
+            )
+        assertEquals(
+            "no MEDIA_BUTTON receiver: headset buttons and playback resumption reach nothing",
+            1,
+            resolved.size,
+        )
+        assertEquals(
+            "androidx.media3.session.MediaButtonReceiver",
+            resolved[0].activityInfo.name,
+        )
+        // The callers are other processes (System UI, Bluetooth, a headset),
+        // exactly like the session service it drives.
+        assertTrue(resolved[0].activityInfo.exported)
+    }
+
+    @Test
     fun `the capture service keeps its own foreground type, so the two can run at once`() {
         // Android runs several foreground services happily, but each needs the
         // type that matches what it is doing: mediaProjection is what makes

@@ -1,8 +1,8 @@
 package dev.musicviz
 
 import androidx.test.core.app.ApplicationProvider
-import dev.musicviz.ui.MusicPlaylist
-import dev.musicviz.ui.MusicPlaylistStore
+import dev.musicviz.data.MusicPlaylist
+import dev.musicviz.data.MusicPlaylistStore
 import dev.musicviz.ui.playlistNameAccepted
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

@@ -1011,13 +1011,21 @@ vec3 styleSky(vec3 rd, vec3 base) {
         // slewed bass through uStylePhase (integrated on the CPU), and a
         // beat sends a light pulse down the near end of the tunnel. The
         // angular span is 6 lattice periods and the phase advances 8 cells
-        // per wrap - whole numbers, so neither seam is visible.
+        // per wrap - whole numbers, so neither seam is visible IN THE
+        // LATTICE. The cell IDENTITY has to be wrapped to the same two
+        // periods by hand: hash31 is pure fract() arithmetic and is periodic
+        // in nothing, so hashing the raw id repainted every cell in the
+        // tunnel - new hue, new spectrum bucket - in the single frame
+        // uStylePhase wrapped at (every ~4 s at Speed 1, three times a second
+        // on a bassy track at Speed 4), and put a permanent seam down the
+        // atan branch cut at a = +-PI where the two sides of one cell hashed
+        // as different cells.
         float depth = 1.0 / max(r, 0.10);
         vec2 st = vec2(depth * 1.8 + uStylePhase * 8.0, (a / (2.0 * PI)) * 10.392305);
         vec2 id;
         vec2 gv = hexCell(st, id);
         float wall = smoothstep(0.48, 0.30, length(gv));
-        float pick = hash31(vec3(id, 3.7));
+        float pick = hash31(vec3(mod(id.x, 8.0), mod(id.y, 10.392305), 3.7));
         float lvl = bandAt(pick);
         float fade = exp(-depth * 0.5) * smoothstep(0.06, 0.35, r);
         float pulse = 1.0 + 0.8 * clamp(uBeat, 0.0, 1.0) * exp(-depth * 1.4);

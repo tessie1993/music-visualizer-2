@@ -1,8 +1,8 @@
 package dev.musicviz
 
+import dev.musicviz.data.Preset
 import dev.musicviz.render.scene.SceneIds
 import dev.musicviz.render.scene.VisualStyleCatalog
-import dev.musicviz.ui.Preset
 import dev.musicviz.ui.VizPlaylistEntry
 import dev.musicviz.ui.builtInPresetMatchesScene
 import dev.musicviz.ui.builtInPresetSceneFamily

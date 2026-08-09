@@ -199,6 +199,45 @@ class HyperspaceReworkTest {
         }
     }
 
+    /**
+     * A whole-number multiplier makes the LATTICE continuous across the phase
+     * wrap. It does nothing for what is hashed off that lattice: `hash31` is
+     * pure `fract` arithmetic and is periodic in nothing, so Moire hashing the
+     * raw cell id gave every cell in the tunnel a new hue and a new spectrum
+     * bucket in the one frame the phase wrapped - a full recolour every ~4 s
+     * at Speed 1 and about three times a second on a bassy track at Speed 4 -
+     * plus a standing seam down the `atan` branch cut at a = +-PI, where the
+     * two halves of a cell hashed as two different cells.
+     *
+     * So the id is wrapped to the coordinate's own periods before hashing, and
+     * the periods must be the SAME numbers the coordinate is built from. Both
+     * are read out of the shader here rather than restated, because a change
+     * to one that misses the other is exactly the defect returning.
+     */
+    @Test
+    fun the_moire_cell_identity_is_periodic_in_both_of_its_coordinates() {
+        val st =
+            Regex("""vec2 st = vec2\(depth \* [0-9.]+ \+ uStylePhase \* ([0-9.]+), \(a / \(2\.0 \* PI\)\) \* ([0-9.]+)\)""")
+                .find(shader)
+        assertTrue("the Moire tunnel coordinate is no longer where this test reads it", st != null)
+        val phasePeriod = st!!.groupValues[1]
+        val angularSpan = st.groupValues[2]
+
+        // Six whole hex lattice periods around the circle: the angular seam
+        // only closes if the span is a multiple of the lattice's y period.
+        val latticeY = 1.7320508
+        val spans = angularSpan.toDouble() / latticeY
+        assertEquals("the angular span is not a whole number of lattice periods", 6.0, spans, 1e-4)
+
+        val pick = Regex("""float pick = hash31\(([^;]+)\);""").find(shader)
+        assertTrue("the Moire spectrum pick is no longer where this test reads it", pick != null)
+        assertEquals(
+            "the cell id must be wrapped to the periods its coordinate actually has before hashing",
+            "vec3(mod(id.x, $phasePeriod), mod(id.y, $angularSpan), 3.7)",
+            pick!!.groupValues[1].trim(),
+        )
+    }
+
     @Test
     fun the_camera_crosses_its_wrap_without_a_jump() {
         val cam = HyperspaceCamera()

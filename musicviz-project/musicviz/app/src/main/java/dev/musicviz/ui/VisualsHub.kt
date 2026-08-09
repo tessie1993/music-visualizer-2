@@ -57,6 +57,7 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.musicviz.data.Preset
 import dev.musicviz.render.VisualizerRenderer
 import dev.musicviz.render.VisualizerView
 import dev.musicviz.render.scene.CustomizeTab

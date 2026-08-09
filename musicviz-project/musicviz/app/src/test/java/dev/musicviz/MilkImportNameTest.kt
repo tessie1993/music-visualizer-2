@@ -4,8 +4,8 @@ import android.app.Application
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.test.core.app.ApplicationProvider
+import dev.musicviz.data.PresetStore
 import dev.musicviz.ui.PlayerViewModel
-import dev.musicviz.ui.PresetStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue

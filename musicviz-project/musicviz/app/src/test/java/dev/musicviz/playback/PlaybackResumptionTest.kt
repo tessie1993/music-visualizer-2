@@ -2,7 +2,7 @@ package dev.musicviz.playback
 
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
-import dev.musicviz.ui.HistoryStore
+import dev.musicviz.data.HistoryStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

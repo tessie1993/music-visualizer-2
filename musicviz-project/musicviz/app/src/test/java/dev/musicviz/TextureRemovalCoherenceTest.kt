@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
+import dev.musicviz.data.TextureStore
 import dev.musicviz.ui.PlayerViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -19,14 +20,18 @@ import java.io.File
 /**
  * Removing a texture must not strand the milk selection on a deleted file.
  *
- * TextureStore.removeDetailed deletes the texture AND the generated
- * `show_<base>.milk` display preset that references it. When that preset is
- * the one the engine is showing, the persisted `milk_path` pointed at a dead
- * file: the next launch offered it to the engine, which answers a missing
- * preset with its idle "M" logo. [PlayerViewModel.removeTexture] now runs the
- * removal off the main thread and clears both the live [activeMilkPath] and
- * the persisted key when they named the deleted preset - and leaves them
- * alone when they did not.
+ * TextureStore.removeDetailed deletes the texture AND the generated display
+ * preset that references it. When that preset is the one the engine is
+ * showing, the persisted `milk_path` pointed at a dead file: the next launch
+ * offered it to the engine, which answers a missing preset with its idle "M"
+ * logo. [PlayerViewModel.removeTexture] now runs the removal off the main
+ * thread and clears both the live [activeMilkPath] and the persisted key when
+ * they named a deleted preset - and leaves them alone when they did not.
+ *
+ * The preset path is taken from the store rather than spelled out here: its
+ * name is the store's business (it is keyed on the whole stored file name, so
+ * cover.png and cover.jpg cannot collide), and a copy of that rule in a test
+ * is a copy that can go stale.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -39,9 +44,7 @@ class TextureRemovalCoherenceTest {
     /** A texture on disk plus the generated display preset that shows it. */
     private fun plantTexture(base: String): Pair<File, File> {
         val tex = File(File(app.filesDir, "milk/textures").apply { mkdirs() }, "$base.png").apply { writeBytes(byteArrayOf(1)) }
-        val gen =
-            File(File(app.filesDir, "milk/generated").apply { mkdirs() }, "show_$base.milk")
-                .apply { writeText("MILKDROP_PRESET_VERSION=201\n[preset00]\n") }
+        val gen = File(dev.musicviz.ui.TextureStore(app).generateDisplayPreset(tex.name))
         return tex to gen
     }
 

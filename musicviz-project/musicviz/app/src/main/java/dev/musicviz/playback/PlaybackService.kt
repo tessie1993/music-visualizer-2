@@ -11,7 +11,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
-import dev.musicviz.ui.HistoryStore
+import dev.musicviz.data.HistoryStore
 
 /**
  * Keeps music playing when MusicViz is not on screen, and publishes what is
@@ -129,6 +129,7 @@ class PlaybackService : MediaSessionService() {
          * Internal (not private) so the headless suite can pin it without
          * standing up a MediaSession, which Robolectric cannot drive.
          */
+        @OptIn(UnstableApi::class)
         internal fun lastPlayedResumption(context: Context): MediaSession.MediaItemsWithStartPosition? {
             val last = HistoryStore(context).recentlyPlayed(1).firstOrNull() ?: return null
             val item =

@@ -21,6 +21,22 @@ import dev.musicviz.analysis.PlaybackMath
 import dev.musicviz.analysis.SceneSuggester
 import dev.musicviz.audio.AudioFxState
 import dev.musicviz.audio.MicCapture
+import dev.musicviz.data.AtomicWrite
+import dev.musicviz.data.FavouritesStore
+import dev.musicviz.data.HistoryStore
+import dev.musicviz.data.LfoStore
+import dev.musicviz.data.MilkTexture
+import dev.musicviz.data.MusicPlaylist
+import dev.musicviz.data.MusicPlaylistStore
+import dev.musicviz.data.PaletteStore
+import dev.musicviz.data.PerformanceTake
+import dev.musicviz.data.PlayerPrefs
+import dev.musicviz.data.PlayerPrefsStore
+import dev.musicviz.data.Preset
+import dev.musicviz.data.PresetStore
+import dev.musicviz.data.TakeInfo
+import dev.musicviz.data.TakeStore
+import dev.musicviz.data.TextureStore
 import dev.musicviz.export.ExportAspect
 import dev.musicviz.export.VideoExporter
 import dev.musicviz.playback.PlaybackEngine
@@ -40,6 +56,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -1023,8 +1040,8 @@ class PlayerViewModel(
     /**
      * Deletes a texture off the main thread (it is disk work, same as
      * [importTextures]) and keeps the milk selection coherent: removing a
-     * texture also removes its generated `show_<base>.milk` display preset,
-     * and when THAT preset is the one the engine is showing, the persisted
+     * texture also removes the generated display preset(s) written for it,
+     * and when one of THOSE is the preset the engine is showing, the persisted
      * `milk_path` would point at a dead file on the next launch - so it is
      * cleared and the engine simply keeps its currently loaded frame instead
      * of being offered a preset that no longer exists.
@@ -1034,13 +1051,13 @@ class PlayerViewModel(
             val outcome = textureStore.removeDetailed(name)
             withContext(Dispatchers.Main) {
                 _textures.value = outcome.textures
-                val gone = outcome.removedGeneratedPresetPath
-                if (gone != null) {
-                    if (_activeMilkPath.value == gone) _activeMilkPath.value = null
+                val gone = outcome.removedGeneratedPresetPaths
+                if (gone.isNotEmpty()) {
+                    if (_activeMilkPath.value in gone) _activeMilkPath.value = null
                     // The pref can be stale even when the live value differs
                     // (restore drops paths whose file is missing but leaves
                     // the pref behind); compare it on its own.
-                    if (vizPrefs().getString("milk_path", null) == gone) {
+                    if (vizPrefs().getString("milk_path", null) in gone) {
                         vizPrefs().edit().remove("milk_path").apply()
                     }
                 }
@@ -1329,16 +1346,50 @@ class PlayerViewModel(
 
     // ---- Sleep timer ----
 
-    private var sleepTimerJob: Job? = null
-    private val _sleepTimerRemainingMs = MutableStateFlow<Long?>(null)
+    /**
+     * The timer itself lives on [dev.musicviz.playback.PlaybackSession], not
+     * here, and this class only drives it.
+     *
+     * A countdown on `viewModelScope` dies the moment the last Activity goes
+     * away - which is precisely when a sleep timer is doing its job: set for
+     * thirty minutes, phone put down, app swiped away, music playing on out of
+     * the service with nothing left to stop it. The engine's timer shares the
+     * PLAYER's lifetime instead, so it outlives the screen exactly as the
+     * music does. It also waits for the current item's play-through to end
+     * rather than for `isPlaying` to go false, which on a queue (auto-advance)
+     * or under repeat-one never happens at all. See
+     * [dev.musicviz.playback.SleepTimer].
+     */
+    private val sleepTimer = playback.sleepTimer
+
+    /**
+     * Fade hook, held as a field so [onCleared] can tell OUR hook from the one
+     * a replacement ViewModel may already have installed - the same identity
+     * check the audio-format hook makes, and for the same reason (Android may
+     * build the next screen's ViewModel before clearing this one).
+     *
+     * While a screen is attached the timer's fade is mixed with the
+     * play/pause fade through [applyVolume] rather than written straight to
+     * the player, so the two cannot overwrite each other's ramp. Unhooked, the
+     * timer writes the player's volume itself.
+     */
+    private val sleepFadeHook: (Float) -> Unit = { v ->
+        sleepVolume = v
+        applyVolume()
+    }
 
     /** Remaining sleep-timer time, or null when no timer is running. */
-    val sleepTimerRemainingMs: StateFlow<Long?> = _sleepTimerRemainingMs
+    val sleepTimerRemainingMs: StateFlow<Long?> = sleepTimer.remainingMs
 
     /**
      * Starts (or restarts) the sleep timer: counts down, fades the volume
      * over the final 3 s, pauses, then restores full volume for next play.
      * Persists [minutes] as the last-chosen duration (never a running state).
+     *
+     * "Let the track finish" is read HERE, at the moment the timer is armed,
+     * because that is the shape of the engine's API - the mode is a property
+     * of the timer that is running, not a preference re-read at expiry.
+     * Flipping the switch afterwards therefore applies to the next timer.
      */
     fun startSleepTimer(minutes: Int) {
         if (minutes <= 0) {
@@ -1346,41 +1397,12 @@ class PlayerViewModel(
             return
         }
         setPlayerPrefs(_playerPrefs.value.copy(sleepTimerMinutes = minutes))
-        sleepTimerJob?.cancel()
-        sleepTimerJob =
-            viewModelScope.launch {
-                val endMs = android.os.SystemClock.elapsedRealtime() + minutes * 60_000L
-                while (true) {
-                    val remaining = endMs - android.os.SystemClock.elapsedRealtime()
-                    if (remaining <= 0L) break
-                    _sleepTimerRemainingMs.value = remaining
-                    sleepVolume = PlaybackMath.sleepFadeVolume(remaining)
-                    applyVolume()
-                    delay(if (remaining <= PlaybackMath.SLEEP_FADE_MS) 100 else 500)
-                }
-                // "Finish this track" waits out whatever is playing when the
-                // clock runs down, so a timer set mid-song does not cut it off
-                // thirty seconds from the end.
-                if (_playerPrefs.value.sleepFinishTrack) {
-                    sleepVolume = 1f
-                    applyVolume()
-                    while (player.isPlaying) delay(500)
-                }
-                player.pause()
-                sleepVolume = 1f
-                applyVolume()
-                _sleepTimerRemainingMs.value = null
-                sleepTimerJob = null
-            }
+        sleepTimer.start(minutes, _playerPrefs.value.sleepFinishTrack)
     }
 
     /** Cancels a running sleep timer and restores full volume. */
     fun cancelSleepTimer() {
-        sleepTimerJob?.cancel()
-        sleepTimerJob = null
-        _sleepTimerRemainingMs.value = null
-        sleepVolume = 1f
-        applyVolume()
+        sleepTimer.cancel()
     }
 
     // ---- Visual playlist ----
@@ -3738,6 +3760,10 @@ class PlayerViewModel(
         playerListener?.let { player.removeListener(it) }
         playerListener = null
         if (playback.onAudioFormat === audioFormatHook) playback.onAudioFormat = null
+        // Same identity check, same reason: a running timer must go on fading
+        // and pausing after this screen is gone, and with no mixer left to
+        // fold into it goes back to writing the player's volume directly.
+        if (sleepTimer.onFadeVolume === sleepFadeHook) sleepTimer.onFadeVolume = null
         // This is where the app stops owning playback and starts merely being
         // one of its two owners. Music that is playing keeps playing: the
         // service holds the other reference and the notification is now the
@@ -3878,6 +3904,10 @@ class PlayerViewModel(
             }
         playerListener = listener
         player.addListener(listener)
+        // Fold the sleep fade into this screen's volume mix while it is up.
+        // Dropped again in onCleared, after which the timer - which outlives
+        // this object - writes the player's volume itself.
+        sleepTimer.onFadeVolume = sleepFadeHook
         // The sink may already have a session id (attach ignores UNSET = 0).
         audioFxController.attach(player.audioSessionId)
         refreshAudioFx()
@@ -3899,6 +3929,26 @@ class PlayerViewModel(
                         engine.reset()
                         engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
                         _externalAudio.update { it.copy(active = false, refusedByApp = false) }
+                    }
+                }
+        }
+        // The other half of that hop: a start that produced NO projection.
+        // `projection` cannot carry it - it already holds null on a failed
+        // first start, and a StateFlow does not re-emit a value it is already
+        // at - so the service ticks a separate counter, and only its CHANGES
+        // mean anything, hence drop(1). With nothing collecting it the switch
+        // stayed on and "Waiting for the capture permission…" stayed up for
+        // the rest of the session whenever getMediaProjection refused the
+        // consent it was handed (an expired token, an OEM that says no).
+        viewModelScope.launch {
+            dev.musicviz.audio.MediaProjectionHolder.startFailures
+                .drop(1)
+                .collect {
+                    _externalAudio.update {
+                        it.copy(
+                            awaitingConsent = false,
+                            failure = dev.musicviz.audio.CaptureFailure.CONSENT,
+                        )
                     }
                 }
         }

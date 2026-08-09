@@ -395,7 +395,11 @@ internal class HyperspaceScene(
                 actCamera = profile.camera,
                 spread = spread,
                 maxBodyRadius = HyperspaceLook.maxBodyRadius(target),
-            ) * style.cameraScale
+                // Inside the call, not applied to its result: the substyle's
+                // framing scales what the act ASKS for, never the floor that
+                // keeps the eye outside every body.
+                cameraScale = style.cameraScale,
+            )
         camera.advance(
             dt = dt,
             distance = camDistance,

@@ -5,8 +5,8 @@ import android.opengl.GLSurfaceView
 import android.service.wallpaper.WallpaperService
 import android.view.SurfaceHolder
 import dev.musicviz.audio.AudioBus
+import dev.musicviz.data.PresetStore
 import dev.musicviz.render.VisualizerRenderer
-import dev.musicviz.ui.PresetStore
 import dev.musicviz.ui.ThemeStore
 
 /**

@@ -605,6 +605,81 @@ class HyperspaceMathTest {
         }
     }
 
+    /**
+     * The same guarantee, against the two things that used to slip past it.
+     *
+     * The substyle's `cameraScale` was applied to the RESULT of
+     * cameraDistance, so a style asking for a tighter shot (0.90, 0.92)
+     * scaled the safety floor down with its request; and the floor measured
+     * the body reach as `spread`, while [Bloom.spawn] draws orbit radii up to
+     * `spread * MAX_ORBIT_RADIUS`. Together they put the eye up to 20% inside
+     * the sphere a JEWEL at the top of both jitters can reach.
+     *
+     * The reach is computed from Bloom's own constants, so a change to the
+     * spawn jitter cannot leave this test measuring the old one.
+     */
+    @Test
+    fun no_substyle_scales_its_way_inside_a_body() {
+        val styles = dev.musicviz.render.scene.VisualStyleCatalog.hyperspace
+        assertTrue("no hyperspace substyles found", styles.isNotEmpty())
+        for (style in styles) {
+            for (profile in HyperspaceMath.ACT_PROFILES) {
+                for (density in listOf(0.1f, 0.2f, 1f, 2f)) {
+                    val target = HyperspaceLook.bodyTarget(profile.bodies, density * style.bodyScale)
+                    val spread = HyperspaceLook.spread(target)
+                    val maxRadius = HyperspaceLook.maxBodyRadius(target)
+                    // The furthest a body's clip sphere can reach: the top of
+                    // the orbit-radius roll plus the top of the size roll.
+                    val reach = spread * Bloom.MAX_ORBIT_RADIUS + maxRadius
+                    val d =
+                        HyperspaceLook.cameraDistance(
+                            actCamera = profile.camera,
+                            spread = spread,
+                            maxBodyRadius = maxRadius,
+                            cameraScale = style.cameraScale,
+                        )
+                    assertTrue(
+                        "${style.id} at density $density: eye at $d, a body can reach $reach",
+                        d > reach,
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun the_spawn_jitter_and_the_camera_floor_read_the_same_constants() {
+        // The floor is only as good as its idea of how far a body gets, so
+        // the declared maxima are checked against what spawn() actually
+        // rolls - measured from the orbit the body traces, not from the
+        // literals. A change to one that misses the other lands here.
+        val rng = Random(7)
+        val spread = 3f
+        var widest = 0f
+        var largest = 0f
+        repeat(600) {
+            val body = Bloom()
+            body.spawn(rng, HyperspaceMath.Species.JEWEL, lifetime = 1_000f, spread = spread, sizeScale = 1f)
+            largest = maxOf(largest, body.scale)
+            // One slow lap of the ellipse; its furthest point from the origin
+            // is the larger of the two orbit radii.
+            repeat(400) {
+                body.advance(0.25f, motion = 1f, orbitScale = 1f)
+                widest = maxOf(widest, len(body.centre) / spread)
+            }
+        }
+        assertTrue(
+            "orbit rolls reached ${widest}x spread, past the declared ${Bloom.MAX_ORBIT_RADIUS}",
+            widest <= Bloom.MAX_ORBIT_RADIUS + eps,
+        )
+        assertTrue("orbit rolls never came near the declared maximum: $widest", widest > Bloom.MAX_ORBIT_RADIUS * 0.97f)
+        assertTrue(
+            "size rolls reached $largest, past the declared ${Bloom.MAX_SIZE_JITTER}",
+            largest <= Bloom.MAX_SIZE_JITTER + eps,
+        )
+        assertTrue("size rolls never came near the declared maximum: $largest", largest > Bloom.MAX_SIZE_JITTER * 0.97f)
+    }
+
     @Test
     fun the_camera_looks_at_the_origin_from_the_distance_it_was_given() {
         val cam = HyperspaceCamera()

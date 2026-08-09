@@ -1,7 +1,7 @@
 package dev.musicviz
 
-import dev.musicviz.ui.PresetStore
-import dev.musicviz.ui.TextureStore
+import dev.musicviz.data.PresetStore
+import dev.musicviz.data.TextureStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue

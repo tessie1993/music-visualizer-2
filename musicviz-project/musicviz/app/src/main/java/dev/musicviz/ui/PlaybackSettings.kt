@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.musicviz.analysis.PlaybackMath
+import dev.musicviz.data.PlayerPrefs
 
 /** Sleep-timer choices in minutes; 0 renders as "Off". */
 private val SLEEP_TIMER_CHOICES = listOf(0, 15, 30, 45, 60)

@@ -1,9 +1,9 @@
 package dev.musicviz
 
+import dev.musicviz.data.PresetStore
 import dev.musicviz.render.scene.CustomizeTab
 import dev.musicviz.render.scene.ParamRandomizer
 import dev.musicviz.render.scene.SceneParams
-import dev.musicviz.ui.PresetStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
