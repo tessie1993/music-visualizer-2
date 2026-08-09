@@ -436,13 +436,32 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
         )
     }
     renaming?.let { old ->
+        // MusicPlaylistStore.rename refuses a blank or already-taken name by
+        // returning false, and a dialog that closed on any confirm was a
+        // rename that silently never happened. Gated here on the same
+        // playlistNameAccepted check the create dialog uses, minus `old`
+        // itself so renaming to the name already being edited is allowed.
+        val proposed = renameText.trim()
+        val otherNames = library.playlists.map { it.name }.filterNot { it == old }.toSet()
+        val nameOk = playlistNameAccepted(proposed, otherNames)
         AlertDialog(
             onDismissRequest = { renaming = null },
             title = { Text("Rename playlist") },
-            text = { OutlinedTextField(value = renameText, onValueChange = { renameText = it }, singleLine = true) },
+            text = {
+                Column {
+                    OutlinedTextField(value = renameText, onValueChange = { renameText = it }, singleLine = true)
+                    if (!nameOk) {
+                        Text(
+                            if (proposed.isEmpty()) "A playlist needs a name." else "There is already a playlist called \"$proposed\".",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            },
             confirmButton = {
-                CrystalButton(onClick = {
-                    viewModel.renameMusicPlaylist(old, renameText)
+                CrystalButton(enabled = nameOk, onClick = {
+                    viewModel.renameMusicPlaylist(old, proposed)
                     renaming = null
                 }) { Text("Rename") }
             },

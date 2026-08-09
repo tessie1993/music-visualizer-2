@@ -1193,6 +1193,16 @@ class PlayerViewModel(
     private var timelineBacking: FeatureTimeline? = null
 
     /**
+     * The track [analyzeCurrentTrack] currently has an analysis in flight
+     * for, so a track switch can start a new analysis instead of bouncing
+     * off a boolean left over from the track that was just abandoned - and
+     * so that track's own completion (landing on Default after the switch)
+     * clears state only if it is still the one being tracked, rather than
+     * clobbering a newer analysis already under way for the new track.
+     */
+    private var analyzingUri: Uri? = null
+
+    /**
      * Offline analysis for the current track. A property rather than a field
      * so the waveform is republished from every assignment site - there are
      * five, on three different paths (cache hit, fresh analysis, take replay),
@@ -2106,13 +2116,21 @@ class PlayerViewModel(
         _library.update { it.copy(playlists = musicPlaylists.list()) }
     }
 
+    /**
+     * Renames a music playlist, surfacing [MusicPlaylistStore.rename]'s
+     * answer instead of dropping it - a caller that cannot see a false here
+     * closes over a rename that never happened (see [renameTake], which this
+     * mirrors).
+     */
     fun renameMusicPlaylist(
         oldName: String,
         newName: String,
-    ) {
-        if (musicPlaylists.rename(oldName, newName.trim())) {
+    ): Boolean {
+        val renamed = musicPlaylists.rename(oldName, newName.trim())
+        if (renamed) {
             _library.update { it.copy(playlists = musicPlaylists.list()) }
         }
+        return renamed
     }
 
     fun moveMusicPlaylistTrack(
@@ -2883,6 +2901,10 @@ class PlayerViewModel(
             val pixels = artworkPixels(uri)
             val extracted = pixels?.let { dev.musicviz.analysis.ArtPalette.extract(it) }
             withContext(Dispatchers.Main) {
+                // Gated on the track that requested this still being current:
+                // otherwise a switch away mid-decode applies the previous
+                // track's sleeve colours to whatever is now playing.
+                if (currentUri != uri) return@withContext
                 when {
                     pixels == null -> _artPaletteNote.value = "This track has no embedded artwork."
                     extracted == null ->
@@ -2953,7 +2975,11 @@ class PlayerViewModel(
 
     fun analyzeCurrentTrack() {
         val uri = currentUri ?: return
-        if (_vizState.value.analyzing) return
+        // Keyed by track rather than a single "is anything analyzing" flag:
+        // a boolean left set by a track that was abandoned mid-analysis used
+        // to block the new track's own analysis from ever starting.
+        if (analyzingUri == uri) return
+        analyzingUri = uri
         _vizState.update { it.copy(analyzing = true, analysisProgress = 0f) }
         viewModelScope.launch(Dispatchers.Default) {
             try {
@@ -2964,8 +2990,8 @@ class PlayerViewModel(
                 trackLibrary
                     .updateAnalysis(uri.toString(), titleFor(uri), t.durationMs, t.bpm, t.key)
                     ?.let { merged -> _library.update { it.copy(tracks = merged) } }
-                withContext(Dispatchers.Main) { applyKeyColor(t.key) }
                 if (currentUri == uri) {
+                    withContext(Dispatchers.Main) { applyKeyColor(t.key) }
                     timeline = t
                     val suggestion = SceneSuggester.suggestForTrack(t)
                     // update, not a read-then-write: this runs on Default while
@@ -2982,17 +3008,30 @@ class PlayerViewModel(
                             suggestedSceneId = suggestion,
                         )
                     }
+                    if (analyzingUri == uri) analyzingUri = null
                     // ExoPlayer may only be accessed from its application thread;
                     // this coroutine runs on Dispatchers.Default.
                     withContext(Dispatchers.Main) { applyIntelligence() }
                 } else {
-                    _vizState.update { it.copy(analyzing = false) }
-                    if (_vizState.value.intelligenceMode != IntelligenceMode.MANUAL) {
-                        withContext(Dispatchers.Main) { analyzeCurrentTrack() }
+                    // Stale: the track changed while this ran. Only clear
+                    // shared state if nothing newer claimed analyzingUri in
+                    // the meantime - otherwise this completion would turn off
+                    // the spinner (or worse, re-launch) for a track that is
+                    // still genuinely analyzing.
+                    if (analyzingUri == uri) {
+                        analyzingUri = null
+                        _vizState.update { it.copy(analyzing = false) }
+                        if (_vizState.value.intelligenceMode != IntelligenceMode.MANUAL) {
+                            withContext(Dispatchers.Main) { analyzeCurrentTrack() }
+                        }
                     }
                 }
             } catch (t: Throwable) {
-                _vizState.update { it.copy(analyzing = false) }
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                if (analyzingUri == uri) {
+                    analyzingUri = null
+                    _vizState.update { it.copy(analyzing = false) }
+                }
             }
         }
     }

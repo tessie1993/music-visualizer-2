@@ -1,8 +1,10 @@
 package dev.musicviz
 
+import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import dev.musicviz.data.MusicPlaylist
 import dev.musicviz.data.MusicPlaylistStore
+import dev.musicviz.ui.PlayerViewModel
 import dev.musicviz.ui.playlistNameAccepted
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -75,5 +77,26 @@ class PlaylistCreationTest {
         val store = MusicPlaylistStore(context)
         store.addTrack("Fresh", "a")
         assertEquals(listOf("a"), store.list().first { it.name == "Fresh" }.trackUris)
+    }
+
+    @Test
+    fun `renameMusicPlaylist surfaces the store's answer instead of dropping it`() {
+        // PlayerViewModel.renameMusicPlaylist used to return Unit, so a
+        // caller had no way to tell a real rename from one the store
+        // refused. It now mirrors MusicPlaylistStore.rename's Boolean.
+        val store = MusicPlaylistStore(context)
+        store.save(MusicPlaylist("Drive"))
+        store.save(MusicPlaylist("Gym"))
+        val viewModel = PlayerViewModel(ApplicationProvider.getApplicationContext<Application>())
+        assertTrue(viewModel.renameMusicPlaylist("Drive", "Commute"))
+        assertTrue(store.list().any { it.name == "Commute" })
+        assertFalse(store.list().any { it.name == "Drive" })
+        // A name already taken by another playlist must be refused, not
+        // silently reported as a success that closes the dialog.
+        assertFalse(viewModel.renameMusicPlaylist("Gym", "Commute"))
+        assertTrue("the refused rename must not have touched Gym", store.list().any { it.name == "Gym" })
+        // A blank name must be refused the same way.
+        assertFalse(viewModel.renameMusicPlaylist("Gym", "   "))
+        assertTrue(store.list().any { it.name == "Gym" })
     }
 }
