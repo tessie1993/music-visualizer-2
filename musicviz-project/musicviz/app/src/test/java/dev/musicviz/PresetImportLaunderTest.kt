@@ -2,12 +2,12 @@ package dev.musicviz
 
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
+import dev.musicviz.data.Preset
+import dev.musicviz.data.PresetStore
 import dev.musicviz.render.scene.SceneIds
 import dev.musicviz.ui.BuiltInPresets
 import dev.musicviz.ui.PlayerViewModel
-import dev.musicviz.ui.Preset
 import dev.musicviz.ui.PresetLink
-import dev.musicviz.ui.PresetStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

@@ -1,5 +1,6 @@
 package dev.musicviz
 
+import dev.musicviz.data.AtomicWrite
 import dev.musicviz.ui.AtomicWrite
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

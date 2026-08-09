@@ -11,7 +11,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
-import dev.musicviz.ui.HistoryStore
+import dev.musicviz.data.HistoryStore
 
 /**
  * Keeps music playing when MusicViz is not on screen, and publishes what is

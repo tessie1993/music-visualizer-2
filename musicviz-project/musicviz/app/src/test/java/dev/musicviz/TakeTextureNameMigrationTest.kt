@@ -3,8 +3,8 @@ package dev.musicviz
 import android.content.Context
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
-import dev.musicviz.ui.TakeStore
-import dev.musicviz.ui.TextureStore
+import dev.musicviz.data.TakeStore
+import dev.musicviz.data.TextureStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals

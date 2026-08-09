@@ -3,8 +3,8 @@ package dev.musicviz.playback
 import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import dev.musicviz.ui.PlayerPrefs
-import dev.musicviz.ui.PlayerPrefsStore
+import dev.musicviz.data.PlayerPrefs
+import dev.musicviz.data.PlayerPrefsStore
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith

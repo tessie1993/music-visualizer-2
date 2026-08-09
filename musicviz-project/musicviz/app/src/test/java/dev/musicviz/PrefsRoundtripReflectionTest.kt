@@ -3,12 +3,12 @@ package dev.musicviz
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import dev.musicviz.analysis.FeatureExtractor
-import dev.musicviz.ui.AutoVisualsPrefsStore
-import dev.musicviz.ui.ExportDefaults
-import dev.musicviz.ui.ExportPrefsStore
+import dev.musicviz.data.AutoVisualsPrefsStore
+import dev.musicviz.data.ExportDefaults
+import dev.musicviz.data.ExportPrefsStore
+import dev.musicviz.data.PlayerPrefs
+import dev.musicviz.data.PlayerPrefsStore
 import dev.musicviz.ui.GuiPrefs
-import dev.musicviz.ui.PlayerPrefs
-import dev.musicviz.ui.PlayerPrefsStore
 import dev.musicviz.ui.ThemeStore
 import dev.musicviz.ui.VizPlaylistEntry
 import dev.musicviz.ui.VizUiState

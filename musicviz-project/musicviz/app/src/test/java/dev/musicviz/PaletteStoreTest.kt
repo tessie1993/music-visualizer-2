@@ -2,8 +2,8 @@ package dev.musicviz
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import dev.musicviz.data.PaletteStore
 import dev.musicviz.render.scene.SceneParams
-import dev.musicviz.ui.PaletteStore
 import dev.musicviz.ui.paletteChipIndex
 import dev.musicviz.ui.paletteChipSelected
 import org.junit.Assert.assertEquals

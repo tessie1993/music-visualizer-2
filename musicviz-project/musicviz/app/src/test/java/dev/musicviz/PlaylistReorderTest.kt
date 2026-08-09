@@ -1,8 +1,8 @@
 package dev.musicviz
 
 import androidx.test.core.app.ApplicationProvider
-import dev.musicviz.ui.MusicPlaylist
-import dev.musicviz.ui.MusicPlaylistStore
+import dev.musicviz.data.MusicPlaylist
+import dev.musicviz.data.MusicPlaylistStore
 import dev.musicviz.ui.playlistDropIndex
 import dev.musicviz.ui.playlistRowShift
 import org.junit.Assert.assertEquals

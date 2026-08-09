@@ -1,5 +1,6 @@
 package dev.musicviz.ui
 
+import dev.musicviz.data.Preset
 import dev.musicviz.render.VisualizerRenderer
 import dev.musicviz.render.scene.SceneParams
 

@@ -4,10 +4,11 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
-import dev.musicviz.ui.Preset
-import dev.musicviz.ui.PresetStore
-import dev.musicviz.ui.TakeStore
-import dev.musicviz.ui.TextureStore
+import dev.musicviz.data.AtomicWrite
+import dev.musicviz.data.Preset
+import dev.musicviz.data.PresetStore
+import dev.musicviz.data.TakeStore
+import dev.musicviz.data.TextureStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals

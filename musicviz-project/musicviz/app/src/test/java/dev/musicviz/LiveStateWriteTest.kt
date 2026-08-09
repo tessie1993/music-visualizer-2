@@ -3,9 +3,9 @@ package dev.musicviz
 import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import dev.musicviz.data.Preset
+import dev.musicviz.data.PresetStore
 import dev.musicviz.ui.PlayerViewModel
-import dev.musicviz.ui.Preset
-import dev.musicviz.ui.PresetStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before

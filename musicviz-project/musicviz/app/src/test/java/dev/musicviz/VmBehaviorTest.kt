@@ -3,9 +3,10 @@ package dev.musicviz
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import dev.musicviz.analysis.IntelligenceMode
-import dev.musicviz.ui.HistoryStore
+import dev.musicviz.data.HistoryStore
+import dev.musicviz.data.Preset
+import dev.musicviz.data.PresetStore
 import dev.musicviz.ui.PlayerViewModel
-import dev.musicviz.ui.PresetStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
