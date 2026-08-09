@@ -237,10 +237,16 @@ class PlaybackCapture(
     /** Closes the capture. Safe to call when already stopped. */
     fun stop() {
         running = false
+        // See MicCapture.stop(): the worker's read() only re-checks `running`
+        // between reads, so a HAL stall or projection handoff delaying the
+        // next buffer can outlast the join below with the flag alone. Calling
+        // AudioRecord.stop() here unblocks the pending read immediately
+        // instead of leaving the worker thread and native recorder orphaned.
+        record?.let { runCatching { it.stop() } }
         worker?.let { runCatching { it.join(500) } }
         worker = null
-        // The worker owns stop()/release(); dropping the reference here keeps
-        // a second stop() from racing it.
+        // The worker owns release(); dropping the reference here keeps a
+        // second stop() from racing it.
         record = null
         blockedLikely = false
     }

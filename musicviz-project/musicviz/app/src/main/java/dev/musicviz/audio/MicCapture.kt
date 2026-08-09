@@ -218,10 +218,21 @@ class MicCapture(
     /** Closes the microphone. Safe to call when already stopped. */
     fun stop() {
         running = false
+        // The worker's read() is blocking (READ_BLOCKING / the default
+        // blocking read) and only re-checks `running` between reads, so
+        // clearing the flag alone does nothing while a read is in progress -
+        // a HAL stall or a source handoff can delay the next buffer well past
+        // the join below. AudioRecord.stop() is what actually unblocks a
+        // pending read; called here, before the join, instead of waiting for
+        // the worker's own loop-exit stop() to run. Without this a slow
+        // device left the worker thread and the native recorder alive after
+        // stop() returned, so the mic stayed open and a second start() raced
+        // it for the same source.
+        record?.let { runCatching { it.stop() } }
         worker?.let { runCatching { it.join(500) } }
         worker = null
-        // The worker owns stop()/release(); dropping the reference here keeps
-        // a second stop() from racing it.
+        // The worker owns release(); dropping the reference here keeps a
+        // second stop() from racing it.
         record = null
         peakLevel = 0f
         silenceLikely = false

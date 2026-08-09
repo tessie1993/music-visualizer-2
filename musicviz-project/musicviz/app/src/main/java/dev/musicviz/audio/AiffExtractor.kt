@@ -3,6 +3,7 @@ package dev.musicviz.audio
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.ParserException
 import androidx.media3.common.util.ParsableByteArray
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.extractor.Extractor
@@ -108,9 +109,31 @@ class AiffExtractor : Extractor {
             val size = scratch.readInt().toLong() and 0xFFFFFFFFL
             when (id) {
                 COMM -> {
+                    // size is an untrusted 32-bit field from the file. A real
+                    // COMM chunk is 18 bytes (AIFF) or a little more (AIFC's
+                    // compression fourcc + pascal string); a declared size
+                    // far past that is a corrupt or hostile file, not a
+                    // format this app has ever produced. Bounding it here
+                    // keeps `size.toInt()` from wrapping negative (top bit
+                    // set) into a NegativeArraySizeException, and keeps a
+                    // large-but-still-positive value from allocating up to
+                    // ~2 GB in one ByteArray.
+                    if (size !in 18L..MAX_COMM_BYTES) {
+                        throw ParserException.createForMalformedContainer(
+                            "AIFF: implausible COMM chunk size ($size)",
+                            null,
+                        )
+                    }
                     val comm = ByteArray(size.toInt())
                     input.readFully(comm, 0, comm.size)
                     val parsed = parseComm(comm, isAifc)
+                    if (!parsed.isPlausible()) {
+                        throw ParserException.createForMalformedContainer(
+                            "AIFF: invalid COMM fields (channels=${parsed.channels}, " +
+                                "bits=${parsed.bitsPerSample}, rate=${parsed.sampleRate})",
+                            null,
+                        )
+                    }
                     channels = parsed.channels
                     sampleRate = parsed.sampleRate
                     bitsPerSample = parsed.bitsPerSample
@@ -118,7 +141,9 @@ class AiffExtractor : Extractor {
                     commSeen = true
                 }
                 SSND -> {
-                    check(commSeen) { "AIFF: SSND before COMM" }
+                    if (!commSeen) {
+                        throw ParserException.createForMalformedContainer("AIFF: SSND before COMM", null)
+                    }
                     scratch.reset(8)
                     input.readFully(scratch.data, 0, 8)
                     scratch.setPosition(0)
@@ -131,7 +156,16 @@ class AiffExtractor : Extractor {
                 }
                 else -> {
                     // Chunks are word-aligned: odd sizes carry a pad byte.
-                    input.skipFully((size + (size and 1L)).toInt())
+                    // Same untrusted-field guard as COMM above: an implied
+                    // skip beyond Int range must not be handed to skipFully.
+                    val padded = size + (size and 1L)
+                    if (padded > Int.MAX_VALUE) {
+                        throw ParserException.createForMalformedContainer(
+                            "AIFF: implausible chunk size ($size)",
+                            null,
+                        )
+                    }
+                    input.skipFully(padded.toInt())
                 }
             }
             if (id == COMM && (size and 1L) == 1L) input.skipFully(1)
@@ -139,8 +173,11 @@ class AiffExtractor : Extractor {
     }
 
     private fun emitFormat() {
-        check(pcmEncoding != C.ENCODING_INVALID) {
-            "AIFF: unsupported sample format ($bitsPerSample-bit)"
+        if (pcmEncoding == C.ENCODING_INVALID) {
+            throw ParserException.createForMalformedContainer(
+                "AIFF: unsupported sample format ($bitsPerSample-bit)",
+                null,
+            )
         }
         track.format(
             Format
@@ -183,7 +220,17 @@ class AiffExtractor : Extractor {
         val sampleRate: Int,
         val bitsPerSample: Int,
         val pcmEncoding: @C.PcmEncoding Int,
-    )
+    ) {
+        /**
+         * False for any field a real encoder would never produce (a zero or
+         * negative channel count, bit depth, or sample rate) - the shape a
+         * corrupt or hostile COMM chunk takes. `channels * (bitsPerSample /
+         * 8)` and every later `/ sampleRate` in [AiffExtractor] assume this
+         * holds; unchecked, a zero here is a divide-by-zero on the extractor
+         * thread the moment the track is opened.
+         */
+        fun isPlausible(): Boolean = channels > 0 && bitsPerSample > 0 && sampleRate > 0
+    }
 
     companion object {
         private const val FORM = 0x464F524D
@@ -194,6 +241,15 @@ class AiffExtractor : Extractor {
         private const val SOWT = 0x736F7774
         private const val NONE = 0x4E4F4E45
         private const val MAX_SAMPLE_BYTES = 32 * 1024
+
+        /**
+         * A real COMM chunk is 18 bytes (AIFF) or a little more (AIFC's
+         * compression fourcc + a short pascal-string name); this bound is
+         * generous headroom above that, not a spec limit, so a
+         * declared size outside it is treated as a malformed file rather
+         * than allocated verbatim.
+         */
+        internal const val MAX_COMM_BYTES = 256L
 
         /**
          * Parses a COMM chunk body. AIFC appends a compressionType fourcc;

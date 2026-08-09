@@ -132,7 +132,12 @@ class AiffPcm private constructor(
                         val offset = din.readInt()
                         din.readInt() // block size
                         if (offset > 0) din.skipBytes(offset)
-                        if (channels <= 0 || rate <= 0 || bits <= 0) return null
+                        // bits <= 0 alone is not enough: a depth in 1..7
+                        // still passes it but makes bytesPer = bits / 8 == 0
+                        // in read(), dividing by zero on the first call. Only
+                        // the depths this reader actually decodes (the same
+                        // set read()'s `when` branches on) are valid here.
+                        if (channels <= 0 || rate <= 0 || bits !in intArrayOf(8, 16, 24, 32)) return null
                         return AiffPcm(din, channels, rate, bits, frames, littleEndian)
                     }
                     else -> din.skipBytes(size + (size and 1))

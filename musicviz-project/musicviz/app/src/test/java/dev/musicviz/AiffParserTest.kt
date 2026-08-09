@@ -4,8 +4,10 @@ import dev.musicviz.audio.AiffExtractor
 import dev.musicviz.audio.AiffPcm
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
 
@@ -104,5 +106,49 @@ class AiffParserTest {
         assertArrayEquals(samples, decode(file("AIFC", "sowt", littleEndian)))
         // Genuinely compressed AIFC must still be rejected, matching AiffExtractor.
         assertNull(AiffPcm.parse(ByteArrayInputStream(file("AIFC", "ima4", littleEndian))))
+    }
+
+    @Test
+    fun commInfoRejectsFieldsThatWouldDivideByZero() {
+        // channels * (bitsPerSample / 8) and every `/ sampleRate` downstream
+        // in AiffExtractor assume none of these are zero; a corrupt or
+        // hostile COMM chunk can report any of them as zero (or negative).
+        val encoding = androidx.media3.common.C.ENCODING_PCM_16BIT_BIG_ENDIAN
+        assertFalse(AiffExtractor.CommInfo(0, 44100, 16, encoding).isPlausible())
+        assertFalse(AiffExtractor.CommInfo(2, 0, 16, encoding).isPlausible())
+        assertFalse(AiffExtractor.CommInfo(2, 44100, 0, encoding).isPlausible())
+        assertFalse(AiffExtractor.CommInfo(-1, 44100, 16, encoding).isPlausible())
+        assertTrue(AiffExtractor.CommInfo(2, 44100, 16, encoding).isPlausible())
+    }
+
+    @Test
+    fun commChunkSizeBoundNeverAllowsTheIntOverflowThatCausedNegativeArraySizeException() {
+        // `size.toInt()` in AiffExtractor.parseHeaders wraps negative once
+        // size reaches 0x80000000; if this bound is ever widened past
+        // Int.MAX_VALUE, ByteArray(size.toInt()) throws
+        // NegativeArraySizeException again instead of failing the parse
+        // cleanly.
+        assertTrue(AiffExtractor.MAX_COMM_BYTES <= Int.MAX_VALUE)
+    }
+
+    @Test
+    fun aiffPcmRejectsABitDepthItCannotDecode() {
+        fun fourcc(s: String) = s.toByteArray(Charsets.US_ASCII)
+
+        fun int32(v: Int) = byteArrayOf((v ushr 24).toByte(), (v ushr 16).toByte(), (v ushr 8).toByte(), v.toByte())
+
+        fun int16(v: Int) = byteArrayOf((v ushr 8).toByte(), v.toByte())
+
+        // bits=4 passes a `bits <= 0` guard but makes bytesPer = bits / 8 ==
+        // 0 in AiffPcm.read() - an ArithmeticException on the very first read.
+        val rate44100 = byteArrayOf(0x40, 0x0E, 0xAC.toByte(), 0x44, 0, 0, 0, 0, 0, 0)
+        val comm = int16(1) + int32(4) + int16(4) + rate44100
+        val ssnd = int32(0) + int32(0) + ByteArray(8)
+        val body =
+            fourcc("AIFF") + fourcc("COMM") + int32(comm.size) + comm +
+                fourcc("SSND") + int32(ssnd.size) + ssnd
+        val bytes = fourcc("FORM") + int32(body.size) + body
+
+        assertNull(AiffPcm.parse(ByteArrayInputStream(bytes)))
     }
 }
