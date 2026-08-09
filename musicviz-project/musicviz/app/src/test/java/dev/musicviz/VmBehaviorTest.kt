@@ -29,7 +29,7 @@ class VmBehaviorTest {
      * value lands at all, not how fast, and a tight bound would only make the
      * suite flaky on a loaded machine.
      */
-    private fun awaitPersistedLiveState(matches: (dev.musicviz.ui.Preset) -> Boolean) {
+    private fun awaitPersistedLiveState(matches: (dev.musicviz.data.Preset) -> Boolean) {
         val prefs =
             ApplicationProvider
                 .getApplicationContext<Application>()

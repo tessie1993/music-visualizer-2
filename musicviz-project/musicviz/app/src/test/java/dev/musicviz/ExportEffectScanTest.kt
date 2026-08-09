@@ -3,7 +3,6 @@ package dev.musicviz
 import dev.musicviz.data.PerformanceTake
 import dev.musicviz.export.VideoExporter
 import dev.musicviz.render.scene.SceneParams
-import dev.musicviz.ui.PerformanceTake
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

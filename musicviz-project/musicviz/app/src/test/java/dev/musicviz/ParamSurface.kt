@@ -74,7 +74,7 @@ object ParamSurface {
      * (and because `PaletteStore` owns the override sentinel rule).
      */
     private val TAB_EXTRA_FILES: Map<CustomizeTab, List<String>> =
-        mapOf(CustomizeTab.COLOR to listOf("ui/PaletteMaker.kt", "ui/PaletteStore.kt"))
+        mapOf(CustomizeTab.COLOR to listOf("ui/PaletteMaker.kt", "data/PaletteStore.kt"))
 
     /**
      * Derived properties a scene reads INSTEAD of the field behind them, so
@@ -105,7 +105,7 @@ object ParamSurface {
 
     /** Keys `PresetStore.toJson` writes; the preset document's vocabulary. */
     val presetKeys: Set<String> by lazy {
-        Regex("\\.put\\(\"(\\w+)\"").findAll(source("ui/PresetStore.kt")).map { it.groupValues[1] }.toSet()
+        Regex("\\.put\\(\"(\\w+)\"").findAll(source("data/PresetStore.kt")).map { it.groupValues[1] }.toSet()
     }
 
     /** Each tab's composable body, sliced out of `CustomizeTabs.kt`. */
