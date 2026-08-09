@@ -20,8 +20,24 @@ data class AudioFxBand(
 
 /** Snapshot of the whole audio-effects chain for the Settings UI. */
 data class AudioFxState(
-    /** False when the device rejected the effect constructors (or no session yet). */
+    /**
+     * True while an Equalizer is live. False covers two very different
+     * situations - no audio session exists yet, and the device genuinely
+     * rejected the effect - and the UI must branch on [attached] to tell
+     * "play something first" apart from "not supported on this device".
+     */
     val available: Boolean = false,
+    /**
+     * True once [AudioFxController.attach] has seen a real (positive) audio
+     * session id. ExoPlayer's id is UNSET (0) until the audio sink first
+     * initializes, so a fresh app with nothing played yet is `attached =
+     * false` - which says nothing at all about device support.
+     */
+    val attached: Boolean = false,
+    /** True while a BassBoost is live; the device may grant it without an Equalizer. */
+    val bassAvailable: Boolean = false,
+    /** True while a LoudnessEnhancer is live; independent of the other two. */
+    val loudnessAvailable: Boolean = false,
     val enabled: Boolean = false,
     val bands: List<AudioFxBand> = emptyList(),
     val presets: List<String> = emptyList(),
@@ -98,6 +114,14 @@ class AudioFxController(
     /** True once an Equalizer was successfully built for a real session. */
     val available: Boolean
         get() = equalizer != null
+
+    /**
+     * True while a real (positive) session id is attached. Only with this
+     * true does `available == false` mean the device refused the effect;
+     * before any audio has played it merely means "nothing to attach to yet".
+     */
+    val attached: Boolean
+        get() = sessionId > 0
 
     /**
      * (Re)builds the effect chain for [sessionId] and restores the persisted
@@ -201,6 +225,9 @@ class AudioFxController(
         val base =
             AudioFxState(
                 available = available,
+                attached = attached,
+                bassAvailable = bassBoost != null,
+                loudnessAvailable = loudness != null,
                 enabled = prefs.getBoolean(KEY_ENABLED, false),
                 presetIndex = prefs.getInt(KEY_PRESET, -1),
                 bassBoost = prefs.getInt(KEY_BASS, 0),

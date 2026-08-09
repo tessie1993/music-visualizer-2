@@ -53,6 +53,13 @@ class InkflowScene(
         /** Per-1/60 s blend of local flow into particle velocity. */
         const val DRAG = 0.32f
 
+        /**
+         * Clock wrap: 200 * pi seconds (CymaticsScene TIME_WRAP convention).
+         * Every read of [t] is sin/cos at a two-decimal rate (0.7, 0.5), and
+         * k * 200pi is k * 100 whole turns - exact at the wrap.
+         */
+        const val TIME_WRAP_SECONDS = 628.31853f
+
         /** Kicks injected per frame; the field only needs a few strong ones. */
         const val KICKS_PER_FRAME = 6
 
@@ -82,7 +89,7 @@ class InkflowScene(
         dt: Float,
     ) {
         val p = sceneParams
-        t += dt * p.speed.coerceIn(0.1f, 3f)
+        t = (t + dt * p.speed.coerceIn(0.1f, 3f)) % TIME_WRAP_SECONDS
         val drive = p.audioDrive.coerceIn(0f, 2f)
         val bass = (features.bass * drive).coerceIn(0f, 1.5f)
         val mid = (features.mid * drive).coerceIn(0f, 1.5f)

@@ -21,11 +21,14 @@ import org.robolectric.annotation.Config
  * tuned Random to switch every 90 seconds on strong beats, styles only, got
  * 20-seconds-anything back on every app start.
  *
- * Pinned here: the store round-trips all nine knobs, coerces intervals into
- * the slider range on load, [PlayerViewModel] loads them into [VizUiState] at
- * construction and writes them back on every setter - and the two things
- * that must NOT persist (Random's own on/off, the playlist contents) stay
- * session-only.
+ * Pinned here: the store round-trips all nine knobs AND the playlist entries,
+ * coerces intervals into the slider range on load, [PlayerViewModel] loads
+ * them into [VizUiState] at construction and writes them back on every setter
+ * - and the one thing that must NOT persist (Random's own on/off) stays
+ * session-only. The entries persist because `vizPlaylistEnabled` does: a flag
+ * that survived a restart while the hearts it rotates did not came back
+ * enabled-but-inert, so the two now travel together, with an
+ * enabled-but-empty restore cleared as the backstop.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -36,6 +39,12 @@ class AutoVisualsPersistenceTest {
 
     private fun vm(): PlayerViewModel = PlayerViewModel(ApplicationProvider.getApplicationContext<Application>())
 
+    private val heartedLooks =
+        listOf(
+            dev.musicviz.ui.VizPlaylistEntry(sceneId = "fluid", presetName = "Dusk", label = "Dusk"),
+            dev.musicviz.ui.VizPlaylistEntry(sceneId = "milkdrop", milkPath = "/x/y.milk", label = "y"),
+        )
+
     /** A knob set where every value differs from its [VizUiState] default. */
     private val tuned =
         VizUiState(
@@ -45,6 +54,7 @@ class AutoVisualsPersistenceTest {
             randomIncludePresets = false,
             randomIncludeMilk = true,
             randomizeColors = true,
+            vizPlaylist = heartedLooks,
             vizPlaylistEnabled = true,
             vizPlaylistIntervalSec = 120,
             vizPlaylistIntelligent = true,
@@ -73,6 +83,58 @@ class AutoVisualsPersistenceTest {
         assertTrue(loaded.vizPlaylistEnabled)
         assertEquals(120, loaded.vizPlaylistIntervalSec)
         assertTrue(loaded.vizPlaylistIntelligent)
+        assertEquals(heartedLooks, loaded.vizPlaylist)
+    }
+
+    @Test
+    fun anEnabledPlaylistNeverRestoresInert() {
+        // Older builds persisted the flag without the entries. Restoring the
+        // standing instruction with nothing to rotate draws a switch that is
+        // on and does nothing - the flag is cleared instead.
+        prefs.edit().putBoolean("auto_playlist_enabled", true).commit()
+        assertFalse(store.applyTo(VizUiState()).vizPlaylistEnabled)
+    }
+
+    @Test
+    fun aMalformedEntriesDocumentRestoresEmptyInsteadOfCrashing() {
+        prefs
+            .edit()
+            .putBoolean("auto_playlist_enabled", true)
+            .putString("auto_playlist_entries", "not json at all")
+            .commit()
+        val loaded = store.applyTo(VizUiState())
+        assertTrue(loaded.vizPlaylist.isEmpty())
+        assertFalse(loaded.vizPlaylistEnabled)
+    }
+
+    @Test
+    fun heartingALookPersistsItAndDedupsByPresetName() {
+        val v = vm()
+        val entry = dev.musicviz.ui.VizPlaylistEntry(sceneId = "fluid", presetName = "Dusk", label = "Dusk")
+        v.addToVizPlaylist(entry)
+        // The same preset hearted again (from any surface) must not stack: a
+        // duplicate the heart cannot show is one the user cannot remove.
+        v.addToVizPlaylist(entry.copy(label = "Dusk again"))
+        v.addToVizPlaylist(entry)
+        assertEquals(1, v.vizState.value.vizPlaylist.size)
+        v.setVizPlaylistEnabled(true)
+
+        // A fresh ViewModel = a fresh app process: the entries come back WITH
+        // the enabled flag, so the standing instruction has something to do.
+        val restored = vm().vizState.value
+        assertEquals(listOf(entry), restored.vizPlaylist)
+        assertTrue(restored.vizPlaylistEnabled)
+    }
+
+    @Test
+    fun unheartingTheLastLookDisablesTheRestoredPlaylist() {
+        val v = vm()
+        v.addToVizPlaylist(dev.musicviz.ui.VizPlaylistEntry(sceneId = "fluid", presetName = "Dusk", label = "Dusk"))
+        v.setVizPlaylistEnabled(true)
+        v.removeVizPlaylistAt(0)
+        val restored = vm().vizState.value
+        assertTrue(restored.vizPlaylist.isEmpty())
+        assertFalse("an empty playlist restored enabled-but-inert", restored.vizPlaylistEnabled)
     }
 
     @Test
@@ -100,16 +162,18 @@ class AutoVisualsPersistenceTest {
         assertTrue(s.vizPlaylistEnabled)
         assertEquals(120, s.vizPlaylistIntervalSec)
         assertTrue(s.vizPlaylistIntelligent)
-        // The knobs persist; the runtime switches do not. Random stays off
-        // until the Now Playing Auto button, and the playlist CONTENTS stay
-        // with the hearts in Visuals › Presets that build them.
+        // The playlist entries persist with their flag; Random's own on/off
+        // does not - it stays with the Now Playing Auto button.
+        assertEquals(heartedLooks, s.vizPlaylist)
         assertFalse(s.randomEnabled)
-        assertTrue(s.vizPlaylist.isEmpty())
     }
 
     @Test
     fun everySetterWritesStraightBackToDisk() {
         val v = vm()
+        // The playlist needs a hearted look for the enabled flag to survive
+        // the round trip - enabled-with-nothing-to-rotate is never restored.
+        v.addToVizPlaylist(heartedLooks.first())
         v.setRandomInterval(66)
         v.setRandomOnBeat(false)
         v.setRandomIncludeStyles(false)

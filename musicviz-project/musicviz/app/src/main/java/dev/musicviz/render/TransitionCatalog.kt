@@ -69,11 +69,29 @@ internal object TransitionCatalog {
         val glsl: String,
     )
 
+    /**
+     * The built-in styles keyed by id. [builtIn] is on the same per-frame
+     * path as [definition], and the scan it replaces re-lowercased all five
+     * enum names on every call - five string allocations per frame.
+     */
+    private val BUILT_IN_BY_ID: Map<String, TransitionStyle> =
+        TransitionStyle.entries.associateBy { it.name.lowercase() }
+
     /** The five styles the base composite shader implements itself. */
     val BUILT_IN_IDS: List<String> = TransitionStyle.entries.map { it.name.lowercase() }
 
     @Volatile
     private var library: List<Def>? = null
+
+    /**
+     * [library] keyed by name. [definition] runs on the GL thread once per
+     * frame while a corpus transition is selected, and a 123-entry linear
+     * scan per frame is a cost paid for nothing when the list never changes.
+     * Written BEFORE [library], so a reader that sees the list also sees the
+     * index.
+     */
+    @Volatile
+    private var libraryByName: Map<String, Def>? = null
 
     /**
      * The corpus, parsed once. Safe to call from any thread; the parse is a
@@ -88,6 +106,7 @@ internal object TransitionCatalog {
                 val arr = JSONArray(text)
                 (0 until arr.length()).map { i -> parseDef(arr.getJSONObject(i)) }
             }.getOrDefault(emptyList())
+        libraryByName = parsed.associateBy { it.name }
         library = parsed
         return parsed
     }
@@ -99,10 +118,15 @@ internal object TransitionCatalog {
     fun definition(
         context: Context,
         id: String,
-    ): Def? = if (id in BUILT_IN_IDS) null else library(context).firstOrNull { it.name == id }
+    ): Def? {
+        if (id in BUILT_IN_BY_ID) return null
+        // Ensures the corpus is parsed, which populates the index first.
+        library(context)
+        return libraryByName?.get(id)
+    }
 
     /** The built-in style for [id], or null when [id] names a corpus entry. */
-    fun builtIn(id: String): TransitionStyle? = TransitionStyle.entries.firstOrNull { it.name.lowercase() == id }
+    fun builtIn(id: String): TransitionStyle? = BUILT_IN_BY_ID[id]
 
     /**
      * A copy of [base] with [def] spliced in: `MV_TRANSITION` defined so the

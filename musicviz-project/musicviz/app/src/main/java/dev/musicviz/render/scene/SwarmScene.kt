@@ -13,6 +13,15 @@ class SwarmScene(
     shaders: ShaderSources,
     count: Int = 2200,
 ) : ParticleSceneBase(SceneIds.SWARM, count, shaders) {
+    private companion object {
+        /**
+         * Clock wrap: 200 * pi seconds (CymaticsScene TIME_WRAP convention).
+         * Every read of [t] is sin/cos at a two-decimal rate (0.4, 0.31, 12),
+         * and k * 200pi is k * 100 whole turns - exact at the wrap.
+         */
+        const val TIME_WRAP_SECONDS = 628.31853f
+    }
+
     private val random = Random(11)
     private val px = FloatArray(count) { random.nextFloat() * 2f - 1f }
     private val py = FloatArray(count) { random.nextFloat() * 2f - 1f }
@@ -28,7 +37,7 @@ class SwarmScene(
         dt: Float,
     ) {
         val p = sceneParams
-        t += dt * p.speed
+        t = (t + dt * p.speed) % TIME_WRAP_SECONDS
         if (features.beat && p.beatResponse > 0.2f) {
             ax = random.nextFloat() * 1.2f - 0.6f
             ay = random.nextFloat() * 1.2f - 0.6f

@@ -20,11 +20,16 @@ import java.security.MessageDigest
  *           waveform as Short*waveformSize (x32767), rms/bass/mid/treble/
  *           onset/bpm/centroid as Float, beat as Byte, flux as Float
  *
- * The key is deliberately the URI alone, with no beat sensitivity folded in:
- * v2 stores the raw onset curve (`flux`) and [load] re-decides the beats at
- * the caller's current sensitivity, so a single entry stays valid for every
- * setting. Keying on the settings instead would re-analyse the whole track on
- * every slider drag and thrash the 15-entry LRU.
+ * The key is the URI plus the file's current size and mtime, with no beat
+ * sensitivity folded in: v2 stores the raw onset curve (`flux`) and [load]
+ * re-decides the beats at the caller's current sensitivity, so a single entry
+ * stays valid for every setting. Keying on the settings instead would
+ * re-analyse the whole track on every slider drag and thrash the 15-entry
+ * LRU. The size/mtime stamp is what keeps the entry honest when the CONTENT
+ * changes under an unchanged URI - a re-downloaded file, a re-exported mix,
+ * a re-tagged MP3 - which previously replayed the old audio's beat grid over
+ * the new audio. A provider that reports neither (both read as 0) degrades to
+ * the old URI-only behaviour rather than failing.
  *
  * v1 stored only the decided beat flags and no flux, so its entries cannot be
  * re-thresholded; [load] deletes them on sight and the track is re-analysed
@@ -46,10 +51,64 @@ object AnalysisCache {
         context: Context,
         uri: Uri,
     ): File {
-        val digest = MessageDigest.getInstance("SHA-1").digest(uri.toString().toByteArray())
-        val name = digest.joinToString("") { "%02x".format(it) }
-        return File(dir(context), "$name.mvac")
+        val (size, mtime) = contentStamp(context, uri)
+        return File(dir(context), cacheKey(uri.toString(), size, mtime) + ".mvac")
     }
+
+    /**
+     * Pure key derivation, split out so it is testable without Android: SHA-1
+     * over the URI string and the source's size/mtime stamp. Changing either
+     * stamp changes the key, so a stale entry is simply never found again (and
+     * ages out of the LRU) rather than needing explicit invalidation.
+     */
+    internal fun cacheKey(
+        uriString: String,
+        sizeBytes: Long,
+        lastModifiedMs: Long,
+    ): String {
+        val digest =
+            MessageDigest
+                .getInstance("SHA-1")
+                .digest("$uriString|$sizeBytes|$lastModifiedMs".toByteArray())
+        return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * The (sizeBytes, lastModifiedMs) stamp of what [uri] currently points at,
+     * or (0, 0) for whatever a provider declines to report - the key then
+     * falls back toward URI-only keying instead of throwing. Blocking (one
+     * provider query); every caller is already on Dispatchers.IO.
+     */
+    private fun contentStamp(
+        context: Context,
+        uri: Uri,
+    ): Pair<Long, Long> =
+        runCatching {
+            when (uri.scheme) {
+                null, "file" -> {
+                    val f = File(uri.path ?: return@runCatching 0L to 0L)
+                    f.length() to f.lastModified()
+                }
+                "content" ->
+                    context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                        if (!c.moveToFirst()) return@use 0L to 0L
+
+                        fun col(name: String): Long {
+                            val i = c.getColumnIndex(name)
+                            return if (i >= 0 && !c.isNull(i)) c.getLong(i) else 0L
+                        }
+                        val size = col(android.provider.OpenableColumns.SIZE)
+                        // SAF documents stamp "last_modified" in ms;
+                        // MediaStore rows stamp "date_modified" in seconds.
+                        val mtime =
+                            col(android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                                .takeIf { it != 0L }
+                                ?: (col(android.provider.MediaStore.MediaColumns.DATE_MODIFIED) * 1000L)
+                        size to mtime
+                    } ?: (0L to 0L)
+                else -> 0L to 0L
+            }
+        }.getOrDefault(0L to 0L)
 
     /**
      * Reads the cached timeline and decides its beats at the given

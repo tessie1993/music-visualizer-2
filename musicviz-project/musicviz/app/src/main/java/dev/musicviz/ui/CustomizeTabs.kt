@@ -196,6 +196,14 @@ internal fun MotionTab(
     Column {
         SectionHeader("Movement")
         LabeledSlider("Speed", p.speed, 0.05f..4f) { onChange(p.copy(speed = it)) }
+        // The same honesty the Behavior tab's Turbulence/Density hints give:
+        // this tab is handed no scene predicate to gate on, so the hint names
+        // the styles that ignore the control instead of hiding it.
+        ControlHint(
+            "The scene clock. Beam draws the signal and MilkDrop presets pace " +
+                "themselves, so those two ignore it; every other style moves " +
+                "at this speed.",
+        )
         LabeledSlider("Zoom", p.zoom, 0.3f..3f) { onChange(p.copy(zoom = it)) }
         LabeledSlider("Rotation", p.rotation, -3f..3f) { onChange(p.copy(rotation = it)) }
         LabeledSlider("Sway", p.sway, 0f..1f) { onChange(p.copy(sway = it)) }
@@ -206,6 +214,11 @@ internal fun MotionTab(
         LabeledSlider("Beat pulse", p.pulse, 0f..1f) { onChange(p.copy(pulse = it)) }
         LabeledSlider("Beat shake", p.shake, 0f..1f) { onChange(p.copy(shake = it)) }
         SectionHeader("Endless zoom")
+        ControlHint(
+            "A dive that never arrives: the shader looks, MilkDrop and the " +
+                "particle styles ride it, with Dive speed setting the rate. " +
+                "Fluid, Water, Cymatics, Beam and Hyperspace ignore it.",
+        )
         CheckRow("Endless zoom", p.endlessZoom) { onChange(p.copy(endlessZoom = it)) }
         if (p.endlessZoom) {
             LabeledSlider("Dive speed", p.endlessZoomSpeed, 0.05f..1.2f) { onChange(p.copy(endlessZoomSpeed = it)) }
@@ -735,6 +748,10 @@ private fun LfoCard(
 private fun ChipRow(
     labels: List<String>,
     selectedIndex: Int,
+    // False renders the chips visibly inert instead of hiding them - for a
+    // selector another control currently owns (the Act chips outside Hold),
+    // where the choice should stay visible but not pretend to be live.
+    enabled: Boolean = true,
     onSelect: (Int) -> Unit,
 ) {
     Row(
@@ -744,6 +761,7 @@ private fun ChipRow(
         labels.forEachIndexed { index, label ->
             FilterChip(
                 selected = index == selectedIndex,
+                enabled = enabled,
                 onClick = { onSelect(index) },
                 label = { Text(label, style = MaterialTheme.typography.labelSmall) },
             )
@@ -1119,6 +1137,13 @@ internal fun FluidTab(
 @Composable
 internal fun CymaticsTab(
     p: SceneParams,
+    // The active style's scene id, when the host provides it (null keeps the
+    // pre-plumbing behavior at every existing call site). Eight of the eleven
+    // Cymatics substyles pin the geometry via the catalog's geometryOverride,
+    // and on those the Geometry chips were pure no-ops - so with the id in
+    // hand the pin is SAID instead of rendered dead. Sits before the callback
+    // so trailing-lambda call shapes keep compiling.
+    activeSceneId: String? = null,
     onChange: (SceneParams) -> Unit,
 ) {
     Column {
@@ -1128,11 +1153,22 @@ internal fun CymaticsTab(
                 "on live input - drawn fullscreen. A pure tone gives one clean " +
                 "symmetric figure, a chord the superposition of its notes'.",
         )
-        LockableChipLabel("Geometry")
-        ChipRow(
-            SceneParams.CYMATICS_GEOMETRIES,
-            p.cymaticsGeometry,
-        ) { onChange(p.copy(cymaticsGeometry = it)) }
+        // Resolved through the catalog's id lookup so an unknown or
+        // mid-rework id (or an override index the geometry list has outgrown)
+        // degrades to the chips rather than to a wrong hint.
+        val forcedGeometry =
+            activeSceneId
+                ?.let { VisualStyleCatalog.cymatics(it)?.geometryOverride }
+                ?.let { SceneParams.CYMATICS_GEOMETRIES.getOrNull(it) }
+        if (forcedGeometry != null) {
+            ControlHint("Geometry set by this style: $forcedGeometry.")
+        } else {
+            LockableChipLabel("Geometry")
+            ChipRow(
+                SceneParams.CYMATICS_GEOMETRIES,
+                p.cymaticsGeometry,
+            ) { onChange(p.copy(cymaticsGeometry = it)) }
+        }
         LabeledSlider(
             "Fundamental (Hz)",
             p.cymaticsFundamental,
@@ -1177,6 +1213,13 @@ internal fun CymaticsTab(
 @Composable
 internal fun HyperspaceTab(
     p: SceneParams,
+    // The active style's scene id, when the host provides it (null keeps the
+    // pre-plumbing behavior at every existing call site). Five of the eleven
+    // Hyperspace substyles force the species via the catalog's forcedSpecies,
+    // and on those the Fractal chips were pure no-ops - so with the id in
+    // hand the pin is SAID instead of rendered dead. Sits before the callback
+    // so trailing-lambda call shapes keep compiling.
+    activeSceneId: String? = null,
     onChange: (SceneParams) -> Unit,
 ) {
     Column {
@@ -1193,10 +1236,17 @@ internal fun HyperspaceTab(
             p.hyperJourney,
         ) { onChange(p.copy(hyperJourney = it)) }
         LockableChipLabel("Act")
+        // Only Hold reads hyperAct (Music follows the track's energy, Cycle
+        // always opens on the first act and walks from there), so outside
+        // Hold the chips are shown inert instead of pretending to be live.
         ChipRow(
             HyperspaceMath.ACT_NAMES,
             p.hyperAct,
+            enabled = p.hyperJourney == HyperspaceMath.JOURNEY_HOLD,
         ) { onChange(p.copy(hyperAct = it)) }
+        if (p.hyperJourney != HyperspaceMath.JOURNEY_HOLD) {
+            ControlHint("Act is live on Hold only - Music and Cycle choose the act themselves.")
+        }
         LabeledSlider("Act length (s)", p.hyperCycleSeconds, 5f..180f) {
             onChange(p.copy(hyperCycleSeconds = it))
         }
@@ -1207,11 +1257,22 @@ internal fun HyperspaceTab(
                 "turns on its own axis, drifts on its own orbit, and dissolves. " +
                 "Mixed gives a room of all six at once.",
         )
-        LockableChipLabel("Fractal")
-        ChipRow(
-            SceneParams.HYPERSPACE_SPECIES,
-            p.hyperSpecies,
-        ) { onChange(p.copy(hyperSpecies = it)) }
+        // Same shape as CymaticsTab's forced geometry: resolved through the
+        // catalog's id lookup, so an unknown or mid-rework id (or a species
+        // index the list has outgrown) degrades to the chips.
+        val forcedSpecies =
+            activeSceneId
+                ?.let { VisualStyleCatalog.hyperspace(it)?.forcedSpecies }
+                ?.let { SceneParams.HYPERSPACE_SPECIES.getOrNull(it) }
+        if (forcedSpecies != null) {
+            ControlHint("Fractal set by this style: $forcedSpecies.")
+        } else {
+            LockableChipLabel("Fractal")
+            ChipRow(
+                SceneParams.HYPERSPACE_SPECIES,
+                p.hyperSpecies,
+            ) { onChange(p.copy(hyperSpecies = it)) }
+        }
         LabeledSlider("Bodies", p.hyperBodies, 0.2f..2f) { onChange(p.copy(hyperBodies = it)) }
         LabeledSlider("Body life (s)", p.hyperLifetime, 3f..45f) { onChange(p.copy(hyperLifetime = it)) }
         LabeledSlider("Body spin", p.hyperSpin, 0f..3f) { onChange(p.copy(hyperSpin = it)) }

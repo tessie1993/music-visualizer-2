@@ -254,7 +254,9 @@ class RecoveredShaderStylesTest {
         }
         assertTrue(
             "uTime must stay the speed-integrated clock, or Speed stops meaning anything",
-            shaderSceneSource.contains("shaderTime += p.speed * dt"),
+            // Integrated AND wrapped (TIME_WRAP convention): the wrap does not
+            // change the speed integration this assertion protects.
+            shaderSceneSource.contains("shaderTime = (shaderTime + p.speed * dt) % TIME_WRAP_SECONDS"),
         )
     }
 

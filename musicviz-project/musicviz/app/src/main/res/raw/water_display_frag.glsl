@@ -40,9 +40,14 @@ float H(vec2 c) {
 }
 
 void main() {
-    // Slow drift: the surface lookup slides so ripples + wakes travel.
+    // Slow drift: the surface lookup wanders so ripples + wakes travel.
+    // Bounded (sines only, no linear term): H() clamps its lookup into the
+    // grid, so a linear uTime term pinned the whole lookup to the border
+    // texel within ~2 minutes and the control went dead - and it also kept
+    // uTime from wrapping cleanly. All rates are TWO-DECIMAL constants, so
+    // every term is exactly periodic at WaterScene.TIME_WRAP_SECONDS (200pi).
     vec2 drift = uFlowDrift * 0.012 *
-        vec2(uTime * 0.7 + 0.35 * sin(uTime * 0.23), 0.4 * sin(uTime * 0.31));
+        vec2(2.5 * sin(uTime * 0.11) + 0.35 * sin(uTime * 0.23), 0.4 * sin(uTime * 0.31));
     vec2 uv = vUv + drift;
     float hC = H(uv);
     float hL = H(uv - vec2(uInvRes.x, 0.0));

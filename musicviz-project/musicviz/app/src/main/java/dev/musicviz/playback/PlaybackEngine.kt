@@ -11,6 +11,10 @@ import dev.musicviz.audio.AudioFxController
 import dev.musicviz.audio.PcmRingBuffer
 import dev.musicviz.audio.PcmTapSink
 import dev.musicviz.audio.TapRenderersFactory
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 /**
  * One player and everything welded to it: the PCM tap that feeds the
@@ -97,6 +101,20 @@ class PlaybackSession internal constructor(
     val audioFx = AudioFxController(context)
 
     /**
+     * Work that must live exactly as long as the player does - currently the
+     * sleep timer. Main-dispatcher because everything launched here talks to
+     * the player; cancelled in [release], the only moment the player goes away.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    /**
+     * The sleep timer. Here rather than in the ViewModel because a timer the
+     * user set and walked away from must survive the screen being swiped
+     * away, exactly like the music it is going to stop - see [SleepTimer].
+     */
+    val sleepTimer = SleepTimer(player, scope)
+
+    /**
      * True while the player intends to make sound, including while it is
      * buffering and while the system has suppressed it (a transient focus
      * loss). Deliberately weaker than [ExoPlayer.isPlaying], which is false in
@@ -110,6 +128,7 @@ class PlaybackSession internal constructor(
                 player.playbackState != Player.STATE_ENDED
 
     internal fun release() {
+        scope.cancel()
         onAudioFormat = null
         audioFx.release()
         player.release()

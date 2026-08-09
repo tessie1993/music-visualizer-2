@@ -59,6 +59,84 @@ class PlaybackCaptureContractTest {
         }
     }
 
+    /**
+     * Both onStartCommand branches that cannot produce a projection must tick
+     * [MediaProjectionHolder.noteStartFailure] before dying, or the ViewModel's
+     * "waiting for the capture permission…" state has nothing to wake it (the
+     * holder's StateFlow already holds null and will not repeat it). The
+     * malformed-intent branch is pinned behaviourally by
+     * [PlaybackCaptureServiceTest]; the getMediaProjection-refused branch
+     * cannot be reached without a real projection manager, so it is pinned
+     * here: every early return except the user's own ACTION_STOP carries the
+     * tick.
+     */
+    @Test
+    fun `every projection-less start path ticks the failure signal`() {
+        val body =
+            source("PlaybackCaptureService.kt")
+                .substringAfter("fun onStartCommand")
+                .substringBefore("override fun onDestroy")
+        // Statement lines only - the file's own comments mention stopSelf too.
+        val code = body.lines().filter { !it.trim().startsWith("//") }
+        val stops = code.withIndex().filter { it.value.trim() == "stopSelf()" }.map { it.index }
+        assertTrue("expected the ACTION_STOP exit plus two failure exits", stops.size >= 3)
+        var from = 0
+        stops.forEachIndexed { i, at ->
+            val branch = code.subList(from, at).joinToString("\n")
+            if (i == 0) {
+                // First stopSelf() is ACTION_STOP - the user asked, nothing failed.
+                assertTrue(
+                    "the ACTION_STOP branch must not report a failure",
+                    !branch.contains("noteStartFailure()"),
+                )
+            } else {
+                assertTrue(
+                    "projection-less exit #$i does not tick noteStartFailure() before stopSelf()",
+                    branch.contains("noteStartFailure()"),
+                )
+            }
+            from = at
+        }
+    }
+
+    /**
+     * UNPROCESSED is a request, not a guarantee: the platform contract is
+     * that an app checks PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED first,
+     * because on a device without support the source silently behaves like an
+     * ordinary voice source - AGC and noise suppression included, which
+     * flatten exactly the dynamics the beat tracker keys off. Where it is not
+     * declared, VOICE_RECOGNITION is the documented flat-tuned fallback.
+     */
+    @Test
+    fun `the microphone only asks for UNPROCESSED where the device declares support`() {
+        val src = source("MicCapture.kt")
+        assertTrue(
+            "MicCapture never checks PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED",
+            src.contains("PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED"),
+        )
+        assertTrue(
+            "the fallback source must be VOICE_RECOGNITION, the flat-tuned one",
+            src.contains("MediaRecorder.AudioSource.VOICE_RECOGNITION"),
+        )
+    }
+
+    /**
+     * Both capture workers meter what they hear ([MicCaptureTest] proves the
+     * microphone's meter behaviourally); this pins that the metering happens
+     * on the samples that were actually written, inside the generation fence,
+     * so a zombie worker can no longer move the meter either.
+     */
+    @Test
+    fun `both capture workers meter inside the fence, after the write`() {
+        for (name in listOf("MicCapture.kt", "PlaybackCapture.kt")) {
+            val src = source(name)
+            val write = src.indexOf("ring.writeInterleaved(")
+            val meter = src.indexOf("noteLevel(floats,")
+            assertTrue("$name: worker never meters its samples", meter >= 0)
+            assertTrue("$name: metering must follow the fenced write", meter > write && write >= 0)
+        }
+    }
+
     private fun source(name: String): String {
         val relatives =
             listOf(
