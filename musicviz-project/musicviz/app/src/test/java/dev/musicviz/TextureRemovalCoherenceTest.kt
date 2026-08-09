@@ -44,7 +44,7 @@ class TextureRemovalCoherenceTest {
     /** A texture on disk plus the generated display preset that shows it. */
     private fun plantTexture(base: String): Pair<File, File> {
         val tex = File(File(app.filesDir, "milk/textures").apply { mkdirs() }, "$base.png").apply { writeBytes(byteArrayOf(1)) }
-        val gen = File(dev.musicviz.ui.TextureStore(app).generateDisplayPreset(tex.name))
+        val gen = File(dev.musicviz.data.TextureStore(app).generateDisplayPreset(tex.name))
         return tex to gen
     }
 

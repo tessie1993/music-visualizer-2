@@ -3,7 +3,7 @@ package dev.musicviz
 import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import dev.musicviz.data.AutoVisualsPrefsStore
+import dev.musicviz.ui.AutoVisualsPrefsStore
 import dev.musicviz.ui.PlayerViewModel
 import dev.musicviz.ui.VizUiState
 import org.junit.Assert.assertEquals

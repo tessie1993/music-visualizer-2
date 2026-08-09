@@ -6,7 +6,6 @@ import androidx.test.core.app.ApplicationProvider
 import dev.musicviz.data.PerformanceTake
 import dev.musicviz.data.TakeStore
 import dev.musicviz.render.scene.SceneParams
-import dev.musicviz.ui.PerformanceTake
 import dev.musicviz.ui.PlayerViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

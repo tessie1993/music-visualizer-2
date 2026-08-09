@@ -349,7 +349,7 @@ class StoreOutcomeTest {
 
         // Block the write the way process death does: the temp path is taken.
         val file = File(path)
-        assertTrue(File(file.absolutePath + dev.musicviz.ui.AtomicWrite.TEMP_SUFFIX).mkdirs())
+        assertTrue(File(file.absolutePath + dev.musicviz.data.AtomicWrite.TEMP_SUFFIX).mkdirs())
 
         // A changed source cannot be written - but the file the engine may be
         // rendering RIGHT NOW is still the whole previous preset, and the
