@@ -7,7 +7,8 @@
     "explanations": true
   },
   "domains": [
-    "python"
+    "kotlin",
+    "android"
   ],
   "suggestedBy": "ecc-tools-repo-analysis",
   "createdAt": "2026-08-09T08:41:26.908Z"

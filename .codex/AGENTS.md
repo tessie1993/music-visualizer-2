@@ -1,6 +1,6 @@
 # ECC for Codex CLI
 
-This supplements the root `AGENTS.md` with a repo-local ECC baseline.
+This file is the repo-local ECC baseline for Codex CLI sessions in this repository (there is no root `AGENTS.md`; this file stands alone).
 
 ## Repo Skill
 
