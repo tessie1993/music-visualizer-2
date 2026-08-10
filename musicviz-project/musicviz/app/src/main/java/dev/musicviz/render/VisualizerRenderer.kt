@@ -1646,7 +1646,8 @@ class VisualizerRenderer(
     fun exportSceneFactory(sceneId: String): VideoExporter.SceneFactory =
         object : VideoExporter.SceneFactory {
             override fun create(): Scene {
-                val scene = createScene(sceneId, particleShaderSources(context), GlUtil.loadShader(context, R.raw.quad_vert), export = true)
+                val quadVert = GlUtil.loadShader(context, R.raw.quad_vert)
+                val scene = createScene(sceneId, particleShaderSources(context), quadVert, export = true)
                 // State the live registry applies through channels the export
                 // context never sees (the fluidInjectionDirty flag drained in
                 // onDrawFrame, onSurfaceCreated's preset re-queue). Queued
