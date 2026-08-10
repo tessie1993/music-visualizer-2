@@ -149,6 +149,7 @@ class AudioReactivityHarnessTest {
         val offGridRun = run(offGrid, Pipeline())
         val offGridHop = (offGridAt * HOP_HZ).toInt()
         val onGridHop = (12.0f * HOP_HZ).toInt()
+
         fun peakNear(
             hop: Int,
             pick: (AudioFeatures) -> Float,
@@ -198,7 +199,9 @@ class AudioReactivityHarnessTest {
         report.append("[5] TRANSIENT COST OF UPSTREAM SMOOTHING (peak flux)\n")
         report.append("    detector fed BandSmoother output = ${"%.4f".format(smoothedFlux)}\n")
         report.append("    detector fed raw FFT bands       = ${"%.4f".format(rawFlux)}\n")
-        report.append("    smoothing retains ${"%.0f".format(if (rawFlux > 1e-9f) smoothedFlux / rawFlux * 100f else 0f)}% of peak transient\n")
+        report.append(
+            "    smoothing retains ${"%.0f".format(if (rawFlux > 1e-9f) smoothedFlux / rawFlux * 100f else 0f)}% of peak transient\n",
+        )
         report.append("================================\n")
         println(report)
 
