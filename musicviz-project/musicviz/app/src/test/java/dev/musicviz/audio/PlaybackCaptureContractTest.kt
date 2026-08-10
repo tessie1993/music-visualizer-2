@@ -8,9 +8,9 @@ import java.io.File
 /**
  * Source-level contracts on the playback-capture pair that no JVM test can
  * reach behaviourally: Robolectric cannot mint a real MediaProjection for the
- * service, and the zombie-worker fence in [PlaybackCapture] runs on a thread
- * whose reads cannot be intercepted the way [MicCaptureTest] intercepts the
- * microphone's.
+ * service, and the zombie-worker fence in the shared [AudioCapturePump] runs
+ * on a thread whose reads cannot be intercepted for [PlaybackCapture] the way
+ * [MicCaptureTest] intercepts the microphone's.
  */
 class PlaybackCaptureContractTest {
     /**
@@ -37,26 +37,25 @@ class PlaybackCaptureContractTest {
     }
 
     /**
-     * The stop-then-start fence: both capture workers gate their loop AND the
+     * The stop-then-start fence: the capture worker gates its loop AND the
      * write after a blocked read on the run's generation, or a worker that
      * outlived stop()'s bounded join keeps feeding the ring alongside the run
      * that replaced it. [MicCaptureTest] proves the fence works; this pins
-     * that [PlaybackCapture] carries the identical one, since the two classes
-     * are deliberate mirrors of each other.
+     * that [AudioCapturePump] - the one worker both captures now run on -
+     * keeps carrying it, so a rewrite cannot quietly lose the fence for
+     * either capture.
      */
     @Test
-    fun `both capture workers fence their loop and their write on the generation`() {
-        for (name in listOf("MicCapture.kt", "PlaybackCapture.kt")) {
-            val src = source(name)
-            assertTrue(
-                "$name: worker loop is not generation-fenced",
-                src.contains("while (running && runGeneration == generation)"),
-            )
-            assertTrue(
-                "$name: a read that straddled stop-then-start is not discarded",
-                src.contains("if (runGeneration != generation) break"),
-            )
-        }
+    fun `the shared capture pump fences its loop and its write on the generation`() {
+        val src = source("AudioCapturePump.kt")
+        assertTrue(
+            "AudioCapturePump.kt: worker loop is not generation-fenced",
+            src.contains("while (running && runGeneration == generation)"),
+        )
+        assertTrue(
+            "AudioCapturePump.kt: a read that straddled stop-then-start is not discarded",
+            src.contains("if (runGeneration != generation) break"),
+        )
     }
 
     /**
@@ -121,20 +120,18 @@ class PlaybackCaptureContractTest {
     }
 
     /**
-     * Both capture workers meter what they hear ([MicCaptureTest] proves the
-     * microphone's meter behaviourally); this pins that the metering happens
-     * on the samples that were actually written, inside the generation fence,
-     * so a zombie worker can no longer move the meter either.
+     * Both captures meter what they hear ([MicCaptureTest] proves the
+     * microphone's meter behaviourally); this pins that the shared pump
+     * meters the samples that were actually written, inside the generation
+     * fence, so a zombie worker can no longer move the meter either.
      */
     @Test
-    fun `both capture workers meter inside the fence, after the write`() {
-        for (name in listOf("MicCapture.kt", "PlaybackCapture.kt")) {
-            val src = source(name)
-            val write = src.indexOf("ring.writeInterleaved(")
-            val meter = src.indexOf("noteLevel(floats,")
-            assertTrue("$name: worker never meters its samples", meter >= 0)
-            assertTrue("$name: metering must follow the fenced write", meter > write && write >= 0)
-        }
+    fun `the shared capture pump meters inside the fence, after the write`() {
+        val src = source("AudioCapturePump.kt")
+        val write = src.indexOf("ring.writeInterleaved(")
+        val meter = src.indexOf("noteLevel(floats,")
+        assertTrue("AudioCapturePump.kt: worker never meters its samples", meter >= 0)
+        assertTrue("AudioCapturePump.kt: metering must follow the fenced write", meter > write && write >= 0)
     }
 
     private fun source(name: String): String {
