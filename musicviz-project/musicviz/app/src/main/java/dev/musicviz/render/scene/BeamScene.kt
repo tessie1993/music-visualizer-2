@@ -61,7 +61,7 @@ internal class BeamScene(
     }
 
     private var program = 0
-    private val uniforms = HashMap<String, Int>()
+    private var uniforms = GlUtil.UniformCache(0)
     private var programOk = false
     private var vao = 0
     private var waveTex = 0
@@ -97,15 +97,16 @@ internal class BeamScene(
         program = 0
         vao = 0
         waveTex = 0
-        uniforms.clear()
+        uniforms = GlUtil.UniformCache(0)
         programOk = false
-        try {
-            program = GlUtil.buildProgram(loadRaw(R.raw.beam_vert), loadRaw(R.raw.beam_frag))
-            programOk = true
-        } catch (e: GlUtil.ShaderCompileException) {
-            onShaderError("Beam unavailable on this GPU: ${e.message}")
-            return
-        }
+        program =
+            GlUtil.buildProgramReporting(
+                GlUtil.loadShader(context, R.raw.beam_vert),
+                GlUtil.loadShader(context, R.raw.beam_frag),
+            ) { onShaderError("Beam unavailable on this GPU: $it") }
+        if (program == 0) return
+        programOk = true
+        uniforms = GlUtil.UniformCache(program)
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
         vao = ids[0]
@@ -206,7 +207,7 @@ internal class BeamScene(
         GLES30.glDisable(GLES30.GL_BLEND)
     }
 
-    private fun loc(name: String): Int = uniforms.getOrPut(name) { GLES30.glGetUniformLocation(program, name) }
+    private fun loc(name: String): Int = uniforms.loc(name)
 
     override fun release() {
         if (program != 0) GLES30.glDeleteProgram(program)
@@ -216,9 +217,6 @@ internal class BeamScene(
         vao = 0
         waveTex = 0
         programOk = false
-        uniforms.clear()
+        uniforms = GlUtil.UniformCache(0)
     }
-
-    /** Reads a raw shader, resolving its `//#include` directives. */
-    private fun loadRaw(resId: Int): String = GlUtil.loadShader(context, resId)
 }

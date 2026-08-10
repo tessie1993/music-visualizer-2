@@ -226,8 +226,8 @@ tasks.withType<Test>().configureEach {
 }
 
 dependencies {
-    robolectricSdk34("org.robolectric:android-all-instrumented:14-robolectric-10818077-i7")
-    robolectricSdk35("org.robolectric:android-all-instrumented:15-robolectric-12650502-i7")
+    robolectricSdk34(libs.android.all.sdk34)
+    robolectricSdk35(libs.android.all.sdk35)
 
     implementation(libs.core.splashscreen)
     implementation(libs.media3.exoplayer)
@@ -259,9 +259,9 @@ dependencies {
     // Real org.json for plain (non-Robolectric) unit tests: the mockable
     // android.jar's org.json classes throw "Stub!" (TrackLibraryMigrationTest).
     testImplementation(libs.json)
-    testImplementation("org.robolectric:robolectric:4.14.1")
-    testImplementation("androidx.test:core-ktx:1.6.1")
-    testImplementation("androidx.test.ext:junit-ktx:1.2.1")
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core.ktx)
+    testImplementation(libs.androidx.test.junit.ktx)
     testImplementation(platform(libs.compose.bom))
-    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation(libs.ui.test.junit4)
 }

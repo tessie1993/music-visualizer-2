@@ -77,7 +77,7 @@ internal class WaterScene(
     private var height = 1
 
     private var displayProgram = 0
-    private val displayUniforms = HashMap<String, Int>()
+    private var displayUniforms = GlUtil.UniformCache(0)
     private var displayOk = false
 
     /** Latched automatic downgrade steps; never upgrades during a session. */
@@ -101,8 +101,7 @@ internal class WaterScene(
     override fun init() {
         // Handles from a lost EGL context are dead names; forget them so the
         // lazy fullscreen VAO is recreated in the new context.
-        quadVao = 0
-        quadVbo = 0
+        quad.forget()
         sim.onShaderError = { onShaderError(it) }
         sim.inkEnabled = true
         sim.create()
@@ -116,14 +115,16 @@ internal class WaterScene(
             onShaderError("Water style unavailable: this GPU can't render half-float buffers")
             return
         }
-        try {
-            displayProgram = GlUtil.buildProgram(loadRaw(R.raw.fluid_base_vert), loadRaw(R.raw.water_display_frag))
-            displayUniforms.clear()
-            displayOk = true
-        } catch (e: GlUtil.ShaderCompileException) {
-            android.util.Log.w("RippleSim", "water display shader rejected by driver: ${e.message}")
-            onShaderError("Water display unavailable on this GPU: ${e.message}")
-        }
+        displayProgram =
+            GlUtil.buildProgramReporting(
+                GlUtil.loadShader(context, R.raw.fluid_base_vert),
+                GlUtil.loadShader(context, R.raw.water_display_frag),
+            ) {
+                android.util.Log.w("RippleSim", "water display shader rejected by driver: $it")
+                onShaderError("Water display unavailable on this GPU: $it")
+            }
+        displayUniforms = GlUtil.UniformCache(displayProgram)
+        displayOk = displayProgram != 0
         applyQualityTier()
     }
 
@@ -426,61 +427,28 @@ internal class WaterScene(
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, if (sim.inkAvailable) sim.inkTex else sim.heightTex)
         GLES30.glUniform1i(dLoc("uInk"), 1)
         GLES30.glUniform1f(dLoc("uInkAmount"), if (sim.inkAvailable) p.waterLiquid.coerceIn(0f, 1f) else 0f)
-        drawFullscreen()
+        quad.draw()
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
 
         if (blendWas) GLES30.glEnable(GLES30.GL_BLEND) else GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glBlendFuncSeparate(prevBlendFunc[0], prevBlendFunc[1], prevBlendFunc[2], prevBlendFunc[3])
     }
 
-    // Fullscreen triangle VAO owned by the scene (the sim's VAO is private).
-    private var quadVao = 0
-    private var quadVbo = 0
+    // Fullscreen triangle owned by the scene (the sim's is private), created
+    // lazily on the first display pass.
+    private val quad = GlUtil.FullscreenTriangle()
 
-    private fun drawFullscreen() {
-        if (quadVao == 0) {
-            val ids = IntArray(1)
-            GLES30.glGenVertexArrays(1, ids, 0)
-            quadVao = ids[0]
-            GLES30.glGenBuffers(1, ids, 0)
-            quadVbo = ids[0]
-            val quad = floatArrayOf(-1f, -1f, 3f, -1f, -1f, 3f)
-            val buf =
-                java.nio.ByteBuffer
-                    .allocateDirect(quad.size * 4)
-                    .order(java.nio.ByteOrder.nativeOrder())
-                    .asFloatBuffer()
-                    .put(quad)
-                    .apply { position(0) }
-            GLES30.glBindVertexArray(quadVao)
-            GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, quadVbo)
-            GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, quad.size * 4, buf, GLES30.GL_STATIC_DRAW)
-            GLES30.glEnableVertexAttribArray(0)
-            GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 0, 0)
-        } else {
-            GLES30.glBindVertexArray(quadVao)
-        }
-        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
-        GLES30.glBindVertexArray(0)
-    }
-
-    private fun dLoc(name: String): Int = displayUniforms.getOrPut(name) { GLES30.glGetUniformLocation(displayProgram, name) }
+    private fun dLoc(name: String): Int = displayUniforms.loc(name)
 
     override fun release() {
         sim.release()
         if (displayProgram != 0) GLES30.glDeleteProgram(displayProgram)
         displayProgram = 0
-        displayUniforms.clear()
+        displayUniforms = GlUtil.UniformCache(0)
         displayOk = false
-        if (quadVbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(quadVbo), 0)
-        if (quadVao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(quadVao), 0)
-        quadVbo = 0
-        quadVao = 0
+        quad.release()
         appliedTier = -1
     }
-
-    /** Reads a raw shader, resolving its `//#include` directives. */
-    private fun loadRaw(resId: Int): String = GlUtil.loadShader(context, resId)
 }
 
 /**

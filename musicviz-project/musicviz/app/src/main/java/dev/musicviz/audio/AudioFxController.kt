@@ -166,9 +166,6 @@ class AudioFxController(
             ?.let { eq -> runCatching { eq.bandLevelRange.let { it[0].toInt() to it[1].toInt() } }.getOrNull() }
             ?: (-1500 to 1500)
 
-    /** Center frequency of [band] in millihertz. */
-    fun bandCenterFreq(band: Int): Int = equalizer?.let { eq -> runCatching { eq.getCenterFreq(band.toShort()) }.getOrNull() } ?: 0
-
     /** Sets one band's gain (millibels) and switches to the custom "preset". */
     fun setBandLevel(
         band: Int,

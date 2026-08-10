@@ -2,12 +2,108 @@ package dev.musicviz.render.scene
 
 import android.opengl.GLES30
 import dev.musicviz.R
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /** Shader compile/link helpers with error capture for the in-app editor. */
 object GlUtil {
     class ShaderCompileException(
         message: String,
     ) : RuntimeException(message)
+
+    /**
+     * The fullscreen-triangle geometry every offscreen pass here draws with:
+     * one clip-space triangle big enough to cover the screen (no diagonal
+     * seam, one vertex fewer than a quad), uploaded once into a VAO/VBO pair
+     * with position as attribute 0. Seven render classes used to carry their
+     * own copy of this bootstrap. GL thread only.
+     */
+    class FullscreenTriangle {
+        var vao = 0
+            private set
+        private var vbo = 0
+
+        /** Creates the VAO/VBO pair; leaves no VAO bound. */
+        fun create() {
+            val ids = IntArray(1)
+            GLES30.glGenVertexArrays(1, ids, 0)
+            vao = ids[0]
+            GLES30.glGenBuffers(1, ids, 0)
+            vbo = ids[0]
+            val quad = floatArrayOf(-1f, -1f, 3f, -1f, -1f, 3f)
+            val buf =
+                ByteBuffer
+                    .allocateDirect(quad.size * 4)
+                    .order(ByteOrder.nativeOrder())
+                    .asFloatBuffer()
+                    .put(quad)
+                    .apply { position(0) }
+            GLES30.glBindVertexArray(vao)
+            GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vbo)
+            GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, quad.size * 4, buf, GLES30.GL_STATIC_DRAW)
+            GLES30.glEnableVertexAttribArray(0)
+            GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 0, 0)
+            GLES30.glBindVertexArray(0)
+        }
+
+        /** Binds the VAO for a run of passes; pair with [unbind]. */
+        fun bind() {
+            GLES30.glBindVertexArray(vao)
+        }
+
+        fun unbind() {
+            GLES30.glBindVertexArray(0)
+        }
+
+        /**
+         * One whole pass: bind, draw the triangle, unbind. Creates the
+         * geometry on first use for callers that draw lazily.
+         */
+        fun draw() {
+            if (vao == 0) create()
+            GLES30.glBindVertexArray(vao)
+            GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
+            GLES30.glBindVertexArray(0)
+        }
+
+        fun release() {
+            if (vbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(vbo), 0)
+            if (vao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(vao), 0)
+            vbo = 0
+            vao = 0
+        }
+
+        /**
+         * Drops handles from a lost EGL context: dead names, never valid
+         * again, so they are forgotten rather than deleted.
+         */
+        fun forget() {
+            vao = 0
+            vbo = 0
+        }
+    }
+
+    /**
+     * A linked [program] and the uniform locations resolved against it.
+     * Caching the lookups is worth an object: dozens of glGetUniformLocation
+     * calls per frame are measurable driver overhead on mobile GPUs.
+     *
+     * The cache travels WITH the program rather than living in a map keyed by
+     * the GL name, because a name is not an identity: glDeleteProgram frees it
+     * and the next glCreateProgram is free to hand the same number straight
+     * back, at which point locations cached under that key point into some
+     * other program's slots - a sampler on the wrong unit, a uniform that
+     * never moves, no GL error anywhere to trace it from. Tying the two
+     * together makes that class of bug unrepresentable: dropping the program
+     * drops its locations because they are the same object.
+     */
+    class UniformCache(
+        val program: Int,
+    ) {
+        private val locations = HashMap<String, Int>()
+
+        fun loc(name: String): Int = locations.getOrPut(name) { GLES30.glGetUniformLocation(program, name) }
+    }
 
     /**
      * Resets the mutable GL state the render pipeline assumes but never sets
@@ -134,6 +230,26 @@ object GlUtil {
         }
         return prog
     }
+
+    /**
+     * [buildProgram] with the failure path every scene shares: a
+     * driver-rejected shader must degrade the style, never throw on the GL
+     * thread - every scene is init()ed before the user has picked one, so an
+     * exception out of one build would take the whole visualizer down on
+     * launch. Reports through [onError] and returns 0; callers gate their GL
+     * setup on the returned handle.
+     */
+    fun buildProgramReporting(
+        vertexSrc: String,
+        fragmentSrc: String,
+        onError: (String?) -> Unit,
+    ): Int =
+        try {
+            buildProgram(vertexSrc, fragmentSrc)
+        } catch (e: ShaderCompileException) {
+            onError(e.message)
+            0
+        }
 
     fun compile(
         type: Int,

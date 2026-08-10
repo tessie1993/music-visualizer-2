@@ -34,9 +34,8 @@ internal class FluidParticles(
     private var updateProgram = 0
     private var seedProgram = 0
     private var renderProgram = 0
-    private val uniforms = HashMap<Int, HashMap<String, Int>>()
-    private var quadVao = 0
-    private var quadVbo = 0
+    private val uniforms = HashMap<Int, GlUtil.UniformCache>()
+    private val quad = GlUtil.FullscreenTriangle()
     private var pointsVao = 0
     private var pointsVbo = 0
     private var seeded = false
@@ -80,9 +79,9 @@ internal class FluidParticles(
         // create() also runs mid-draw on quality-tier changes; a compile
         // failure must disable the layer, never throw on the GL thread.
         try {
-            val vert = loadRaw(R.raw.fluid_base_vert)
-            seedProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_particle_seed_frag))
-            updateProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_particle_update_frag))
+            val vert = GlUtil.loadShader(context, R.raw.fluid_base_vert)
+            seedProgram = GlUtil.buildProgram(vert, GlUtil.loadShader(context, R.raw.fluid_particle_seed_frag))
+            updateProgram = GlUtil.buildProgram(vert, GlUtil.loadShader(context, R.raw.fluid_particle_update_frag))
             // The app-wide particle look, the same libraries the CPU styles'
             // shaders include: constants and shapes in both stages, the
             // fwidth-based shading in the fragment stage only. Each shader
@@ -90,32 +89,23 @@ internal class FluidParticles(
             // up assembling different looks out of the same files.
             renderProgram =
                 GlUtil.buildProgram(
-                    loadRaw(R.raw.fluid_particle_vert),
-                    loadRaw(R.raw.fluid_particle_frag),
+                    GlUtil.loadShader(context, R.raw.fluid_particle_vert),
+                    GlUtil.loadShader(context, R.raw.fluid_particle_frag),
                 )
         } catch (e: GlUtil.ShaderCompileException) {
             android.util.Log.w("FluidSim", "particle shader rejected by driver: ${e.message}")
             release()
             return
         }
-        uniforms[seedProgram] = HashMap()
-        uniforms[updateProgram] = HashMap()
-        uniforms[renderProgram] = HashMap()
+        uniforms[seedProgram] = GlUtil.UniformCache(seedProgram)
+        uniforms[updateProgram] = GlUtil.UniformCache(updateProgram)
+        uniforms[renderProgram] = GlUtil.UniformCache(renderProgram)
 
         // Fullscreen triangle for the state passes.
-        val ids = IntArray(1)
-        GLES30.glGenVertexArrays(1, ids, 0)
-        quadVao = ids[0]
-        GLES30.glGenBuffers(1, ids, 0)
-        quadVbo = ids[0]
-        val quad = floatArrayOf(-1f, -1f, 3f, -1f, -1f, 3f)
-        GLES30.glBindVertexArray(quadVao)
-        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, quadVbo)
-        GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, quad.size * 4, floatBuf(quad), GLES30.GL_STATIC_DRAW)
-        GLES30.glEnableVertexAttribArray(0)
-        GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 0, 0)
+        quad.create()
 
         // Static texel-coordinate VBO: one vec2 per particle, never changes.
+        val ids = IntArray(1)
         val texels = FloatArray(count * 2)
         var k = 0
         for (y in 0 until side) {
@@ -165,7 +155,7 @@ internal class FluidParticles(
     ) {
         val st = state ?: return
         GLES30.glDisable(GLES30.GL_BLEND)
-        GLES30.glBindVertexArray(quadVao)
+        quad.bind()
         if (!seeded) {
             GLES30.glUseProgram(seedProgram)
             GLES30.glUniform1f(loc(seedProgram, "uAspect"), aspect)
@@ -202,7 +192,7 @@ internal class FluidParticles(
         GLES30.glUniform1i(loc(updateProgram, "uCatchCount"), catchCount)
         blit(st.write)
         st.swap()
-        GLES30.glBindVertexArray(0)
+        quad.unbind()
     }
 
     /**
@@ -260,12 +250,9 @@ internal class FluidParticles(
         seedProgram = 0
         renderProgram = 0
         uniforms.clear()
-        if (quadVbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(quadVbo), 0)
-        if (quadVao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(quadVao), 0)
+        quad.release()
         if (pointsVbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(pointsVbo), 0)
         if (pointsVao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(pointsVao), 0)
-        quadVao = 0
-        quadVbo = 0
         pointsVao = 0
         pointsVbo = 0
         seeded = false
@@ -281,7 +268,7 @@ internal class FluidParticles(
     private fun loc(
         program: Int,
         name: String,
-    ): Int = uniforms.getValue(program).getOrPut(name) { GLES30.glGetUniformLocation(program, name) }
+    ): Int = uniforms.getValue(program).loc(name)
 
     private fun floatBuf(data: FloatArray) =
         java.nio.ByteBuffer
@@ -290,7 +277,4 @@ internal class FluidParticles(
             .asFloatBuffer()
             .put(data)
             .apply { position(0) }
-
-    /** Reads a raw shader, resolving its `//#include` directives. */
-    private fun loadRaw(resId: Int): String = GlUtil.loadShader(context, resId)
 }

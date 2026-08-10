@@ -107,8 +107,7 @@ internal class FluidSim(
     private var divergence: FluidBuffers.Fbo? = null
     private var curl: FluidBuffers.Fbo? = null
 
-    private var vao = 0
-    private var vbo = 0
+    private val quad = GlUtil.FullscreenTriangle()
 
     /**
      * Linear sampler object for the dye-advection velocity read: the
@@ -120,13 +119,12 @@ internal class FluidSim(
      */
     private var linearSampler = 0
     private var baseVertSrc = ""
-    private val programs = HashMap<Int, Int>()
-    private val uniforms = HashMap<Int, HashMap<String, Int>>()
+    private val programs = HashMap<Int, GlUtil.UniformCache>()
     private val pending = ArrayList<Splat>()
 
-    /** User injection programs (program handle + uniform cache), or null. */
-    private var customForce: Pair<Int, HashMap<String, Int>>? = null
-    private var customDye: Pair<Int, HashMap<String, Int>>? = null
+    /** User injection programs (program + uniform cache), or null. */
+    private var customForce: GlUtil.UniformCache? = null
+    private var customDye: GlUtil.UniformCache? = null
     private var pendingForceSrc: String? = null
     private var pendingDyeSrc: String? = null
     private var injectionDirty = false
@@ -148,25 +146,8 @@ internal class FluidSim(
         formats = FluidBuffers.probeFormats()
         available = formats.ok
         if (!available) return
+        quad.create()
         val ids = IntArray(1)
-        GLES30.glGenVertexArrays(1, ids, 0)
-        vao = ids[0]
-        GLES30.glGenBuffers(1, ids, 0)
-        vbo = ids[0]
-        val quad = floatArrayOf(-1f, -1f, 3f, -1f, -1f, 3f)
-        val buf =
-            java.nio.ByteBuffer
-                .allocateDirect(quad.size * 4)
-                .order(java.nio.ByteOrder.nativeOrder())
-                .asFloatBuffer()
-                .put(quad)
-                .apply { position(0) }
-        GLES30.glBindVertexArray(vao)
-        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vbo)
-        GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, quad.size * 4, buf, GLES30.GL_STATIC_DRAW)
-        GLES30.glEnableVertexAttribArray(0)
-        GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 0, 0)
-        GLES30.glBindVertexArray(0)
         GLES30.glGenSamplers(1, ids, 0)
         linearSampler = ids[0]
         GLES30.glSamplerParameteri(linearSampler, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
@@ -189,15 +170,13 @@ internal class FluidSim(
                 R.raw.fluid_copy_frag,
                 R.raw.fluid_display_frag,
             )
-        baseVertSrc = loadRaw(R.raw.fluid_base_vert)
+        baseVertSrc = GlUtil.loadShader(context, R.raw.fluid_base_vert)
         // A driver-rejected shader must degrade the style to "unavailable",
         // never crash the GL thread: headless validation cannot guarantee
         // every device driver accepts these sources.
         try {
             for (f in frags) {
-                val p = GlUtil.buildProgram(baseVertSrc, loadRaw(f))
-                programs[f] = p
-                uniforms[f] = HashMap()
+                programs[f] = GlUtil.UniformCache(GlUtil.buildProgram(baseVertSrc, GlUtil.loadShader(context, f)))
             }
         } catch (e: GlUtil.ShaderCompileException) {
             android.util.Log.w("FluidSim", "base shader rejected by driver: ${e.message}")
@@ -307,11 +286,11 @@ internal class FluidSim(
         dst: FluidBuffers.Fbo,
     ) {
         GLES30.glDisable(GLES30.GL_BLEND)
-        GLES30.glBindVertexArray(vao)
+        quad.bind()
         useProgram(R.raw.fluid_copy_frag, dst.width, dst.height)
         bindTex("uTexture", src.tex, 0, R.raw.fluid_copy_frag)
         blit(dst)
-        GLES30.glBindVertexArray(0)
+        quad.unbind()
     }
 
     /**
@@ -349,22 +328,18 @@ internal class FluidSim(
 
     private fun compileCustom(
         src: String?,
-        current: Pair<Int, HashMap<String, Int>>?,
+        current: GlUtil.UniformCache?,
         reportError: (String?) -> Unit,
-    ): Pair<Int, HashMap<String, Int>>? {
+    ): GlUtil.UniformCache? {
         if (src.isNullOrBlank()) {
-            current?.let { GLES30.glDeleteProgram(it.first) }
+            current?.let { GLES30.glDeleteProgram(it.program) }
             return null
         }
-        return try {
-            val p = GlUtil.buildProgram(baseVertSrc, src)
-            current?.let { GLES30.glDeleteProgram(it.first) }
-            p to HashMap()
-        } catch (e: GlUtil.ShaderCompileException) {
-            // Keep the last good program rather than dropping to black.
-            reportError(e.message)
-            current
-        }
+        val p = GlUtil.buildProgramReporting(baseVertSrc, src, reportError)
+        // Keep the last good program rather than dropping to black.
+        if (p == 0) return current
+        current?.let { GLES30.glDeleteProgram(it.program) }
+        return GlUtil.UniformCache(p)
     }
 
     fun queueSplat(s: Splat) {
@@ -409,7 +384,7 @@ internal class FluidSim(
         val dt = dtRaw.coerceIn(0f, 1f / 30f)
         compileInjectionIfNeeded()
         GLES30.glDisable(GLES30.GL_BLEND)
-        GLES30.glBindVertexArray(vao)
+        quad.bind()
         val velInvW = 1f / vel.width
         val velInvH = 1f / vel.height
 
@@ -495,47 +470,44 @@ internal class FluidSim(
             GLES30.glBindSampler(0, 0)
         }
         pending.clear()
-        GLES30.glBindVertexArray(0)
+        quad.unbind()
     }
 
     /** One injection pass per queued splat, via the built-in or user program. */
     private fun runInjection(
         target: FluidBuffers.DoubleFbo,
         mode: Int,
-        custom: Pair<Int, HashMap<String, Int>>?,
+        custom: GlUtil.UniformCache?,
         dt: Float,
     ) {
         for (s in pending) {
-            val (program, cache) =
-                custom ?: (programs.getValue(R.raw.fluid_splat_frag) to uniforms.getValue(R.raw.fluid_splat_frag))
-            GLES30.glUseProgram(program)
-
-            fun cLoc(name: String): Int = cache.getOrPut(name) { GLES30.glGetUniformLocation(program, name) }
-            GLES30.glUniform2f(cLoc("uInvRes"), 1f / target.width, 1f / target.height)
-            GLES30.glUniform1f(cLoc("uAspect"), aspect)
+            val cache = custom ?: programs.getValue(R.raw.fluid_splat_frag)
+            GLES30.glUseProgram(cache.program)
+            GLES30.glUniform2f(cache.loc("uInvRes"), 1f / target.width, 1f / target.height)
+            GLES30.glUniform1f(cache.loc("uAspect"), aspect)
             GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, target.read.tex)
-            GLES30.glUniform1i(cLoc("uTarget"), 0)
-            GLES30.glUniform2f(cLoc("uPrev"), s.prevX, s.prevY)
-            GLES30.glUniform2f(cLoc("uCur"), s.curX, s.curY)
-            GLES30.glUniform1f(cLoc("uRadius"), s.radius)
+            GLES30.glUniform1i(cache.loc("uTarget"), 0)
+            GLES30.glUniform2f(cache.loc("uPrev"), s.prevX, s.prevY)
+            GLES30.glUniform2f(cache.loc("uCur"), s.curX, s.curY)
+            GLES30.glUniform1f(cache.loc("uRadius"), s.radius)
             if (mode == 0) {
-                GLES30.glUniform3f(cLoc("uValue"), s.velX, s.velY, 0f)
+                GLES30.glUniform3f(cache.loc("uValue"), s.velX, s.velY, 0f)
             } else {
-                GLES30.glUniform3f(cLoc("uValue"), s.r, s.g, s.b)
+                GLES30.glUniform3f(cache.loc("uValue"), s.r, s.g, s.b)
             }
-            GLES30.glUniform1i(cLoc("uMode"), mode)
-            GLES30.glUniform1f(cLoc("uCeiling"), dyeCeiling)
+            GLES30.glUniform1i(cache.loc("uMode"), mode)
+            GLES30.glUniform1f(cache.loc("uCeiling"), dyeCeiling)
             if (custom != null) {
                 // Extension-point context (same set the scene shaders get).
-                GLES30.glUniform1f(cLoc("uDt"), dt)
-                GLES30.glUniform1f(cLoc("uDx"), cellSize)
-                GLES30.glUniform1f(cLoc("uTime"), timeSeconds)
-                GLES30.glUniform1f(cLoc("uBass"), audioBass)
-                GLES30.glUniform1f(cLoc("uMid"), audioMid)
-                GLES30.glUniform1f(cLoc("uTreble"), audioTreble)
-                GLES30.glUniform1f(cLoc("uEnergy"), audioEnergy)
-                GLES30.glUniform1f(cLoc("uBeat"), audioBeat)
+                GLES30.glUniform1f(cache.loc("uDt"), dt)
+                GLES30.glUniform1f(cache.loc("uDx"), cellSize)
+                GLES30.glUniform1f(cache.loc("uTime"), timeSeconds)
+                GLES30.glUniform1f(cache.loc("uBass"), audioBass)
+                GLES30.glUniform1f(cache.loc("uMid"), audioMid)
+                GLES30.glUniform1f(cache.loc("uTreble"), audioTreble)
+                GLES30.glUniform1f(cache.loc("uEnergy"), audioEnergy)
+                GLES30.glUniform1f(cache.loc("uBeat"), audioBeat)
             }
             blit(target.write)
             target.swap()
@@ -546,16 +518,16 @@ internal class FluidSim(
     fun drawDisplay() {
         if (!available) return
         val d = dye ?: return
-        GLES30.glBindVertexArray(vao)
+        quad.bind()
         val prog = programs.getValue(R.raw.fluid_display_frag)
-        GLES30.glUseProgram(prog)
+        GLES30.glUseProgram(prog.program)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, d.read.tex)
         GLES30.glUniform1i(loc(R.raw.fluid_display_frag, "uDye"), 0)
         GLES30.glUniform2f(loc(R.raw.fluid_display_frag, "uInvRes"), 1f / d.width, 1f / d.height)
         GLES30.glUniform2f(loc(R.raw.fluid_display_frag, "uTexelSize"), 1f / d.width, 1f / d.height)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
-        GLES30.glBindVertexArray(0)
+        quad.unbind()
     }
 
     /**
@@ -611,19 +583,15 @@ internal class FluidSim(
         pressure = null
         divergence = null
         curl = null
-        programs.values.forEach { GLES30.glDeleteProgram(it) }
+        programs.values.forEach { GLES30.glDeleteProgram(it.program) }
         programs.clear()
-        uniforms.clear()
-        customForce?.let { GLES30.glDeleteProgram(it.first) }
-        customDye?.let { GLES30.glDeleteProgram(it.first) }
+        customForce?.let { GLES30.glDeleteProgram(it.program) }
+        customDye?.let { GLES30.glDeleteProgram(it.program) }
         customForce = null
         customDye = null
-        if (vbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(vbo), 0)
-        if (vao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(vao), 0)
+        quad.release()
         if (linearSampler != 0) GLES30.glDeleteSamplers(1, intArrayOf(linearSampler), 0)
         linearSampler = 0
-        vbo = 0
-        vao = 0
         pending.clear()
         available = false
     }
@@ -635,9 +603,9 @@ internal class FluidSim(
         gridH: Int,
     ) {
         val p = programs.getValue(fragId)
-        GLES30.glUseProgram(p)
-        GLES30.glUniform2f(loc(fragId, "uInvRes"), 1f / gridW, 1f / gridH)
-        GLES30.glUniform1f(loc(fragId, "uAspect"), aspect)
+        GLES30.glUseProgram(p.program)
+        GLES30.glUniform2f(p.loc("uInvRes"), 1f / gridW, 1f / gridH)
+        GLES30.glUniform1f(p.loc("uAspect"), aspect)
     }
 
     private fun blit(target: FluidBuffers.Fbo) {
@@ -651,7 +619,7 @@ internal class FluidSim(
     private fun loc(
         fragId: Int,
         name: String,
-    ): Int = uniforms.getValue(fragId).getOrPut(name) { GLES30.glGetUniformLocation(programs.getValue(fragId), name) }
+    ): Int = programs.getValue(fragId).loc(name)
 
     private fun bindTex(
         name: String,
@@ -684,7 +652,4 @@ internal class FluidSim(
         b: Float,
         c: Float,
     ) = GLES30.glUniform3f(loc(id, n), a, b, c)
-
-    /** Reads a raw shader, resolving its `//#include` directives. */
-    private fun loadRaw(resId: Int): String = GlUtil.loadShader(context, resId)
 }

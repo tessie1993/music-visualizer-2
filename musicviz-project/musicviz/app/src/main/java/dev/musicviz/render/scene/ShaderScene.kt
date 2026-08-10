@@ -106,7 +106,7 @@ class ShaderScene(
 
     override fun init() {
         program = 0
-        uniformLocs.clear()
+        uniformLocs = GlUtil.UniformCache(0)
         pendingFragment = currentFragment
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
@@ -299,29 +299,26 @@ class ShaderScene(
         GLES30.glBindVertexArray(0)
     }
 
-    private val uniformLocs = HashMap<String, Int>()
+    private var uniformLocs = GlUtil.UniformCache(0)
 
     private fun setUniform1f(
         name: String,
         value: Float,
     ) {
-        GLES30.glUniform1f(uniformLocs.getOrPut(name) { GLES30.glGetUniformLocation(program, name) }, value)
+        GLES30.glUniform1f(uniformLocs.loc(name), value)
     }
 
     private fun compilePendingIfAny() {
         val src = synchronized(this) { pendingFragment.also { pendingFragment = null } } ?: return
-        try {
-            val newProgram = GlUtil.buildProgram(vertexSrc, src)
-            if (program != 0) GLES30.glDeleteProgram(program)
-            program = newProgram
-            // Locations are per-program; stale entries would write values to
-            // the wrong uniforms of the freshly-linked program.
-            uniformLocs.clear()
-            currentFragment = src
-            onError(null)
-        } catch (e: GlUtil.ShaderCompileException) {
-            onError(e.message)
-        }
+        val newProgram = GlUtil.buildProgramReporting(vertexSrc, src, onError)
+        if (newProgram == 0) return
+        if (program != 0) GLES30.glDeleteProgram(program)
+        program = newProgram
+        // Locations are per-program; a cache carried over would write values
+        // to the wrong uniforms of the freshly-linked program.
+        uniformLocs = GlUtil.UniformCache(newProgram)
+        currentFragment = src
+        onError(null)
     }
 
     override fun release() {

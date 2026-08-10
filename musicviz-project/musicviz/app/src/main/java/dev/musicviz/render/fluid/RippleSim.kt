@@ -97,10 +97,8 @@ internal class RippleSim(
     private lateinit var formats: FluidBuffers.Formats
     private var grid: FluidBuffers.DoubleFbo? = null
     private var ink: FluidBuffers.DoubleFbo? = null
-    private var vao = 0
-    private var vbo = 0
-    private val programs = HashMap<Int, Int>()
-    private val uniforms = HashMap<Int, HashMap<String, Int>>()
+    private val quad = GlUtil.FullscreenTriangle()
+    private val programs = HashMap<Int, GlUtil.UniformCache>()
     private val pending = ArrayList<Drop>()
     private val dropVec = FloatArray(DROPS_PER_PASS * 4)
     private val dropColorVec = FloatArray(DROPS_PER_PASS * 4)
@@ -124,28 +122,10 @@ internal class RippleSim(
         formats = FluidBuffers.probeFormats()
         available = formats.ok
         if (!available) return
-        val ids = IntArray(1)
-        GLES30.glGenVertexArrays(1, ids, 0)
-        vao = ids[0]
-        GLES30.glGenBuffers(1, ids, 0)
-        vbo = ids[0]
-        val quad = floatArrayOf(-1f, -1f, 3f, -1f, -1f, 3f)
-        val buf =
-            java.nio.ByteBuffer
-                .allocateDirect(quad.size * 4)
-                .order(java.nio.ByteOrder.nativeOrder())
-                .asFloatBuffer()
-                .put(quad)
-                .apply { position(0) }
-        GLES30.glBindVertexArray(vao)
-        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vbo)
-        GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, quad.size * 4, buf, GLES30.GL_STATIC_DRAW)
-        GLES30.glEnableVertexAttribArray(0)
-        GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 0, 0)
-        GLES30.glBindVertexArray(0)
+        quad.create()
         // A driver-rejected shader must degrade the style to "unavailable",
         // never crash the GL thread (FluidSim convention).
-        val baseVert = loadRaw(R.raw.fluid_base_vert)
+        val baseVert = GlUtil.loadShader(context, R.raw.fluid_base_vert)
         val frags =
             if (inkEnabled) {
                 intArrayOf(
@@ -159,8 +139,7 @@ internal class RippleSim(
             }
         try {
             for (f in frags) {
-                programs[f] = GlUtil.buildProgram(baseVert, loadRaw(f))
-                uniforms[f] = HashMap()
+                programs[f] = GlUtil.UniformCache(GlUtil.buildProgram(baseVert, GlUtil.loadShader(context, f)))
             }
         } catch (e: GlUtil.ShaderCompileException) {
             android.util.Log.w("RippleSim", "ripple shader rejected by driver: ${e.message}")
@@ -328,7 +307,7 @@ internal class RippleSim(
         }
         val dt = dtRaw.coerceIn(0f, 1f / 30f)
         GLES30.glDisable(GLES30.GL_BLEND)
-        GLES30.glBindVertexArray(vao)
+        quad.bind()
 
         // 1. Drop injection, batched. The same batch feeds the height splat
         //    and the ink splat, so a drop's ring and its colour always land in
@@ -418,7 +397,7 @@ internal class RippleSim(
             inkFbo.swap()
             GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         }
-        GLES30.glBindVertexArray(0)
+        quad.unbind()
     }
 
     fun release() {
@@ -426,13 +405,9 @@ internal class RippleSim(
         grid = null
         ink?.release()
         ink = null
-        programs.values.forEach { GLES30.glDeleteProgram(it) }
+        programs.values.forEach { GLES30.glDeleteProgram(it.program) }
         programs.clear()
-        uniforms.clear()
-        if (vbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(vbo), 0)
-        if (vao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(vao), 0)
-        vbo = 0
-        vao = 0
+        quad.release()
         synchronized(this) { pending.clear() }
         available = false
     }
@@ -444,9 +419,9 @@ internal class RippleSim(
         gridH: Int,
     ) {
         val p = programs.getValue(fragId)
-        GLES30.glUseProgram(p)
-        GLES30.glUniform2f(loc(fragId, "uInvRes"), 1f / gridW, 1f / gridH)
-        GLES30.glUniform1f(loc(fragId, "uAspect"), aspect)
+        GLES30.glUseProgram(p.program)
+        GLES30.glUniform2f(p.loc("uInvRes"), 1f / gridW, 1f / gridH)
+        GLES30.glUniform1f(p.loc("uAspect"), aspect)
     }
 
     private fun blit(target: FluidBuffers.Fbo) {
@@ -458,7 +433,7 @@ internal class RippleSim(
     private fun loc(
         fragId: Int,
         name: String,
-    ): Int = uniforms.getValue(fragId).getOrPut(name) { GLES30.glGetUniformLocation(programs.getValue(fragId), name) }
+    ): Int = programs.getValue(fragId).loc(name)
 
     private fun bindTex(
         name: String,
@@ -476,7 +451,4 @@ internal class RippleSim(
         n: String,
         v: Float,
     ) = GLES30.glUniform1f(loc(id, n), v)
-
-    /** Reads a raw shader, resolving its `//#include` directives. */
-    private fun loadRaw(resId: Int): String = GlUtil.loadShader(context, resId)
 }

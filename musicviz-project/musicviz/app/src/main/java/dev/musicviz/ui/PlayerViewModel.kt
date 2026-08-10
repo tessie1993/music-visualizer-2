@@ -2106,10 +2106,6 @@ class PlayerViewModel(
         }
     }
 
-    fun removeFromLibrary(uri: String) {
-        trackLibrary.remove(uri)?.let { merged -> _library.update { it.copy(tracks = merged) } }
-    }
-
     fun createMusicPlaylist(name: String) {
         if (name.isBlank()) return
         musicPlaylists.save(MusicPlaylist(name.trim()))
@@ -2161,17 +2157,6 @@ class PlayerViewModel(
     ) {
         musicPlaylists.removeTrack(playlist, uri)
         _library.update { it.copy(playlists = musicPlaylists.list()) }
-    }
-
-    /** Resolves a playlist's track uris to library entries, preserving order. */
-    fun playlistTracks(playlist: String): List<LibraryTrack> {
-        val byUri = _library.value.tracks.associateBy { it.uri }
-        val names =
-            _library.value.playlists
-                .firstOrNull { it.name == playlist }
-                ?.trackUris
-                .orEmpty()
-        return names.map { uri -> byUri[uri] ?: LibraryTrack(uri = uri, title = titleFor(Uri.parse(uri))) }
     }
 
     /** Plays a music playlist from the given start index. */
@@ -2521,27 +2506,6 @@ class PlayerViewModel(
             .orEmpty()
     }
 
-    fun seekBy(deltaMs: Long) {
-        val d = player.duration
-        val target = (player.currentPosition + deltaMs).coerceAtLeast(0L)
-        player.seekTo(if (d > 0) target.coerceAtMost(d) else target)
-    }
-
-    /** Swipe left/right in Now Playing: step through this scene's presets. */
-    private var quickPresetIndex = -1
-
-    fun nextQuickPreset() = stepQuickPreset(+1)
-
-    fun prevQuickPreset() = stepQuickPreset(-1)
-
-    private fun stepQuickPreset(dir: Int) {
-        val s0 = _vizState.value
-        val pool = s0.presets.filter { it.sceneId == s0.sceneId }
-        if (pool.isEmpty()) return
-        quickPresetIndex = (quickPresetIndex + dir).mod(pool.size)
-        applyPreset(pool[quickPresetIndex])
-    }
-
     /**
      * Plays [uri], with the list it belongs to as the queue.
      *
@@ -2594,40 +2558,6 @@ class PlayerViewModel(
      * instead of collapsing the queue back to one item.
      */
     private var lastBrowseContext: List<QueueTrack> = emptyList()
-
-    /**
-     * Analyzes every track in a playlist in the background, caching BPM +
-     * duration into the library so results persist and show up later.
-     */
-    fun analyzePlaylist(playlist: String) {
-        val uris =
-            _library.value.playlists
-                .firstOrNull { it.name == playlist }
-                ?.trackUris
-                .orEmpty()
-        if (uris.isEmpty() || _library.value.analyzing) return
-        _library.update { it.copy(analyzing = true, analyzeProgress = 0f) }
-        viewModelScope.launch(Dispatchers.Default) {
-            uris.forEachIndexed { index, uriStr ->
-                val uri = Uri.parse(uriStr)
-                val merged =
-                    runCatching {
-                        val t = analyzeCached(uri) { }
-                        trackLibrary.updateAnalysis(uriStr, titleFor(uri), t.durationMs, t.bpm, t.key)
-                    }.getOrNull()
-                // Progress advances even for tracks that fail to decode, so
-                // the bar never freezes on a bad file.
-                withContext(Dispatchers.Main) {
-                    _library.value =
-                        _library.value.copy(
-                            tracks = merged ?: _library.value.tracks,
-                            analyzeProgress = (index + 1f) / uris.size,
-                        )
-                }
-            }
-            withContext(Dispatchers.Main) { _library.update { it.copy(analyzing = false) } }
-        }
-    }
 
     // ---- Queue ----
 
@@ -2930,10 +2860,6 @@ class PlayerViewModel(
 
     /** Result of the last artwork-palette attempt, for the Colour tab to show. */
     val artPaletteNote: StateFlow<String?> = _artPaletteNote
-
-    fun clearArtPaletteNote() {
-        _artPaletteNote.value = null
-    }
 
     /**
      * Embedded artwork as ARGB pixels, downsampled hard.

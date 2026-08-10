@@ -162,7 +162,7 @@ internal class HyperspaceScene(
     private var height = 1
 
     private var program = 0
-    private val uniforms = HashMap<String, Int>()
+    private var uniforms = GlUtil.UniformCache(0)
     private var programOk = false
     private var vao = 0
 
@@ -203,7 +203,7 @@ internal class HyperspaceScene(
         // Handles from a lost EGL context are dead names, never valid again.
         program = 0
         vao = 0
-        uniforms.clear()
+        uniforms = GlUtil.UniformCache(0)
         programOk = false
         bank.reset()
         journey.reset()
@@ -216,14 +216,17 @@ internal class HyperspaceScene(
         spectral.reset()
         melt.onShaderError = { onShaderError(it) }
         melt.create()
-        try {
-            program = GlUtil.buildProgram(loadRaw(R.raw.quad_vert), loadRaw(R.raw.hyperspace_frag))
-            programOk = true
-        } catch (e: GlUtil.ShaderCompileException) {
-            // Silent black is the worst failure mode: say why instead.
-            onShaderError("Hyperspace unavailable on this GPU: ${e.message}")
-            return
-        }
+        program =
+            GlUtil.buildProgramReporting(
+                GlUtil.loadShader(context, R.raw.quad_vert),
+                GlUtil.loadShader(context, R.raw.hyperspace_frag),
+            ) {
+                // Silent black is the worst failure mode: say why instead.
+                onShaderError("Hyperspace unavailable on this GPU: $it")
+            }
+        if (program == 0) return
+        programOk = true
+        uniforms = GlUtil.UniformCache(program)
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
         vao = ids[0]
@@ -601,7 +604,7 @@ internal class HyperspaceScene(
         return folds.coerceIn(2, 16).toFloat()
     }
 
-    private fun loc(name: String): Int = uniforms.getOrPut(name) { GLES30.glGetUniformLocation(program, name) }
+    private fun loc(name: String): Int = uniforms.loc(name)
 
     override fun release() {
         melt.release()
@@ -610,9 +613,6 @@ internal class HyperspaceScene(
         program = 0
         vao = 0
         programOk = false
-        uniforms.clear()
+        uniforms = GlUtil.UniformCache(0)
     }
-
-    /** Reads a raw shader, resolving its `//#include` directives. */
-    private fun loadRaw(resId: Int): String = GlUtil.loadShader(context, resId)
 }

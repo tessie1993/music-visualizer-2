@@ -7,7 +7,6 @@ import android.media.AudioRecord
 import android.media.projection.MediaProjection
 import android.os.Build
 import androidx.annotation.RequiresApi
-import kotlin.concurrent.thread
 import kotlin.math.abs
 
 /**
@@ -45,7 +44,9 @@ val playbackCaptureSupported: Boolean get() = Build.VERSION.SDK_INT >= Build.VER
  * an ordinary app to see another app's audio. Like [MicCapture] it writes into
  * the SAME [PcmRingBuffer] the playback tap feeds, so the FFT, the beat
  * tracker and every scene downstream are unchanged and unaware of where the
- * samples came from.
+ * samples came from - and like [MicCapture] its worker thread, generation
+ * fence and recorder release live in the shared [AudioCapturePump]; this
+ * class supplies the capture recorder and the blocked-app metering.
  *
  * ## What can and cannot be captured
  *
@@ -70,36 +71,8 @@ val playbackCaptureSupported: Boolean get() = Build.VERSION.SDK_INT >= Build.VER
  * place that actually touches the new API.
  */
 class PlaybackCapture(
-    private val ring: PcmRingBuffer,
-) {
-    private var record: AudioRecord? = null
-    private var worker: Thread? = null
-
-    @Volatile
-    private var running = false
-
-    /**
-     * Bumped on every [start], so a worker that outlived its own [stop] - a
-     * read still blocked when the join timed out - cannot clear [running] out
-     * from under the run that replaced it, and exits instead of re-entering
-     * its loop when that run flips [running] back on. Without the loop fence
-     * a stop-then-start pair left the old worker alive, holding its recorder
-     * and double-feeding the ring alongside the new one.
-     */
-    @Volatile
-    private var runGeneration = 0
-
-    /** True while the capture is open and feeding the ring buffer. */
-    val active: Boolean get() = running
-
-    /**
-     * Rate the capture actually opened at, for the analyzer's `sampleRateHz`.
-     * Meaningless while stopped.
-     */
-    @Volatile
-    var sampleRateHz: Int = DEFAULT_RATE
-        private set
-
+    ring: PcmRingBuffer,
+) : AudioCapturePump(ring, DEFAULT_RATE) {
     /**
      * True once the capture has run for [SILENCE_GRACE_MS] without a single
      * non-zero sample.
@@ -115,12 +88,13 @@ class PlaybackCapture(
     var blockedLikely: Boolean = false
         private set
 
-    /** Elapsed-time stamp of the last non-zero sample; 0 when never. */
     @Volatile
-    private var lastAudibleAtMs: Long = 0L
+    private var channelCount: Int = 1
+
+    override val threadName = "musicviz-playback-capture"
 
     /**
-     * Opens the capture and starts feeding [ring]. Returns null once the
+     * Opens the capture and starts feeding the ring. Returns null once the
      * recorder is actually recording, or the [CaptureFailure] that stopped it;
      * already-running is a success no-op.
      *
@@ -132,77 +106,9 @@ class PlaybackCapture(
         projection: MediaProjection,
         onSampleRate: (Int) -> Unit = {},
     ): CaptureFailure? {
-        if (running) return null
+        if (active) return null
         val rec = openRecord(projection) ?: return CaptureFailure.UNAVAILABLE
-        // startRecording(), not the builder, is where the system actually
-        // refuses a capture, so it runs here, before the caller is told this
-        // worked. Started on the worker instead, its failure could only be
-        // logged - and the foreground service and its "reading the audio
-        // playing on this device" notification stayed up over a capture that
-        // never began.
-        val recording =
-            runCatching { rec.startRecording() }.isSuccess &&
-                rec.recordingState == AudioRecord.RECORDSTATE_RECORDING
-        if (!recording) {
-            android.util.Log.w("PlaybackCapture", "startRecording refused")
-            runCatching { rec.stop() }
-            runCatching { rec.release() }
-            return CaptureFailure.UNAVAILABLE
-        }
-        record = rec
-        // Generation first, then the flag: a stale worker re-checks both, and
-        // the other order has a moment where it sees the new run's `running`
-        // while its own generation is still current.
-        val generation = ++runGeneration
-        running = true
-        blockedLikely = false
-        lastAudibleAtMs = 0L
-        onSampleRate(sampleRateHz)
-        val channels = channelCount
-        worker =
-            thread(name = "musicviz-playback-capture", isDaemon = true) {
-                val floats = FloatArray(READ_FRAMES * channels)
-                val shorts = ShortArray(READ_FRAMES * channels)
-                val asFloat = rec.audioFormat == AudioFormat.ENCODING_PCM_FLOAT
-                val startedAt = android.os.SystemClock.elapsedRealtime()
-                while (running && runGeneration == generation) {
-                    val n =
-                        if (asFloat) {
-                            rec.read(floats, 0, floats.size, AudioRecord.READ_BLOCKING)
-                        } else {
-                            val read = rec.read(shorts, 0, shorts.size)
-                            if (read > 0) {
-                                for (i in 0 until read) floats[i] = shorts[i] / 32768f
-                            }
-                            read
-                        }
-                    // The read may have straddled a stop-then-start pair. If
-                    // so, these samples belong to the run that was stopped and
-                    // the ring already has a new worker feeding it - writing
-                    // them would double-feed it.
-                    if (runGeneration != generation) break
-                    if (n > 0) {
-                        val frames = n / channels
-                        if (frames > 0) {
-                            ring.writeInterleaved(floats, frames, channels)
-                            noteLevel(floats, n, startedAt)
-                        }
-                    } else if (n < 0) {
-                        // A negative result is an error code, not a short read:
-                        // spinning on it would burn a core for nothing.
-                        android.util.Log.w("PlaybackCapture", "AudioRecord.read error $n")
-                        break
-                    }
-                }
-                runCatching { rec.stop() }
-                runCatching { rec.release() }
-                // Every way out of the loop ends with a released recorder, so
-                // `active` must stop reporting a running capture: after a read
-                // error it stayed true forever, and the card kept claiming to
-                // be listening to a stream nothing was reading. Only the run
-                // that is still current may clear it.
-                if (runGeneration == generation) running = false
-            }
+        if (!startPump(rec, channelCount, onSampleRate)) return CaptureFailure.UNAVAILABLE
         return null
     }
 
@@ -215,7 +121,7 @@ class PlaybackCapture(
      * zeroes. The grace period exists because the first buffers after
      * `startRecording` legitimately arrive empty.
      */
-    private fun noteLevel(
+    override fun noteLevel(
         buffer: FloatArray,
         count: Int,
         startedAtMs: Long,
@@ -225,7 +131,7 @@ class PlaybackCapture(
             val v = abs(buffer[i])
             if (v > peak) peak = v
         }
-        val now = android.os.SystemClock.elapsedRealtime()
+        val now = nowMs()
         if (peak > SILENCE_EPSILON) {
             lastAudibleAtMs = now
             blockedLikely = false
@@ -234,25 +140,10 @@ class PlaybackCapture(
         }
     }
 
-    /** Closes the capture. Safe to call when already stopped. */
-    fun stop() {
-        running = false
-        // See MicCapture.stop(): the worker's read() only re-checks `running`
-        // between reads, so a HAL stall or projection handoff delaying the
-        // next buffer can outlast the join below with the flag alone. Calling
-        // AudioRecord.stop() here unblocks the pending read immediately
-        // instead of leaving the worker thread and native recorder orphaned.
-        record?.let { runCatching { it.stop() } }
-        worker?.let { runCatching { it.join(500) } }
-        worker = null
-        // The worker owns release(); dropping the reference here keeps a
-        // second stop() from racing it.
-        record = null
+    /** Cleared on start and stop: the hint must not outlive its capture. */
+    override fun resetLevel() {
         blockedLikely = false
     }
-
-    @Volatile
-    private var channelCount: Int = 1
 
     /**
      * Builds a capture AudioRecord, preferring the tap's own float format so
@@ -309,21 +200,5 @@ class PlaybackCapture(
 
     private companion object {
         const val DEFAULT_RATE = 48_000
-
-        /** Frames per read: ~21 ms at 48 kHz, well under the analyzer's hop. */
-        const val READ_FRAMES = 1024
-
-        /** Headroom over the device minimum so a slow frame never drops audio. */
-        const val BUFFER_MULTIPLIER = 4
-
-        /**
-         * Anything at or below this counts as digital silence. Not zero: a
-         * 16-bit source converted to float lands on exact multiples of 1/32768,
-         * and the smallest of those must still read as sound.
-         */
-        const val SILENCE_EPSILON = 1e-6f
-
-        /** How long silence must last before it means "refused" and not "starting". */
-        const val SILENCE_GRACE_MS = 4_000L
     }
 }

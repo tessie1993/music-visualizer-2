@@ -1,21 +1,22 @@
 ---
 name: music-visualizer-2-conventions
-description: Development conventions and patterns for music-visualizer-2. Python project with freeform commits.
+description: Development conventions and patterns for music-visualizer-2. Kotlin Android app with conventional commits.
 ---
 
 # Music Visualizer 2 Conventions
 
-> Generated from [tessie1993/music-visualizer-2](https://github.com/tessie1993/music-visualizer-2) on 2026-08-09
+> Generated from [tessie1993/music-visualizer-2](https://github.com/tessie1993/music-visualizer-2) on 2026-08-09; corrected by hand on 2026-08-10. The original auto-analysis misdetected the stack (it claimed a Python project with camelCase files and `*.test.ts` tests — none of that is true).
 
 ## Overview
 
-This skill teaches Claude the development patterns and conventions used in music-visualizer-2.
+This skill teaches Claude the development patterns and conventions used in music-visualizer-2 (MusicViz): a native Android music player and real-time GPU music visualizer.
 
 ## Tech Stack
 
-- **Primary Language**: Python
-- **Architecture**: hybrid module organization
-- **Test Location**: mixed
+- **Primary Language**: Kotlin (Jetpack Compose UI, OpenGL ES 3.0 rendering, a thin C/JNI layer for libprojectM)
+- **Build**: Gradle, single module `:app`, package `dev.musicviz`, compileSdk 36, JDK 17+
+- **Project Root**: `musicviz-project/musicviz/` (run all Gradle commands from there)
+- **Test Location**: `app/src/test/java/dev/musicviz/` (headless JUnit, some Robolectric)
 
 ## When to Use This Skill
 
@@ -25,126 +26,99 @@ Activate this skill when:
 - Writing tests that match project conventions
 - Creating commits with proper message format
 
+## Build & Test Commands
+
+```bash
+./gradlew assembleDebug           # build the debug APK
+./gradlew :app:testDebugUnitTest  # unit tests
+./gradlew lintDebug               # Android lint
+./gradlew ktlintCheck             # style (CI-enforced)
+```
+
+No Android SDK on the machine? `tools/setup-android-sdk.sh` installs it and writes `local.properties` (needs `dl.google.com` and `maven.google.com` reachable).
+
 ## Commit Conventions
 
-Follow these commit message conventions based on 3 analyzed commits.
-
-### Commit Style: Free-form Messages
-
-### Message Guidelines
-
-- Average message length: ~57 characters
-- Keep first line concise and descriptive
-- Use imperative mood ("Add feature" not "Added feature")
-
-
-*Commit message example*
+Conventional commits:
 
 ```text
-Install the ECC agent harness into the repo
+<type>: <description>
 ```
 
-*Commit message example*
+Types: feat, fix, refactor, docs, test, chore, perf, ci. Imperative mood, concise first line.
+
+*Commit message examples*
 
 ```text
-Install the complete ECC surface, not just the Kotlin profile
+fix: restart beat tracking between tracks and on seeks
 ```
 
-*Commit message example*
-
 ```text
-Complete the ECC surface: add the one skill the full profile misses
+feat: visualize other apps' audio via playback capture
 ```
 
 ## Architecture
 
-### Project Structure: Single Package
+Source layout under `app/src/main/java/dev/musicviz/`:
 
-This project uses **hybrid** module organization.
+| Package | Contents |
+|---------|----------|
+| `ui/` | Compose app shell, player, library, customize surfaces, settings |
+| `audio/` | ExoPlayer PCM tap, AIFF reading, mic input, playback capture |
+| `analysis/` | FFT bands, beat/BPM/key/section extraction, analysis cache |
+| `render/` | GL ES 3.0 renderer, scenes, fluid sim, composite/FX, visual safety |
+| `playback/` | Playback service, queue operations, sleep timer |
+| `export/` | Deterministic video export and the Export Studio editor |
+| `data/` | JSON-on-disk stores (presets, palettes, favourites, history) |
+| `wallpaper/` | Live-wallpaper service |
 
-### Guidelines
-
-- This project uses a hybrid organization
-- Follow existing patterns when adding new code
+Dependency direction is one-way: `ui` depends on the engine packages, never the reverse.
 
 ## Code Style
 
-### Language: Python
+### Language: Kotlin
+
+**ktlint** (official Kotlin style, `kotlin.code.style=official`) is CI-enforced — run `./gradlew ktlintCheck` before committing.
 
 ### Naming Conventions
 
 | Element | Convention |
 |---------|------------|
-| Files | camelCase |
+| Files | PascalCase (`FeatureExtractor.kt`, named after the primary type) |
 | Functions | camelCase |
 | Classes | PascalCase |
 | Constants | SCREAMING_SNAKE_CASE |
 
-### Import Style: Relative Imports
-
-### Export Style: Named Exports
-
-
-*Preferred import style*
-
-```typescript
-// Use relative imports
-import { Button } from '../components/Button'
-import { useAuth } from './hooks/useAuth'
-```
-
-*Preferred export style*
-
-```typescript
-// Use named exports
-export function calculateTotal() { ... }
-export const TAX_RATE = 0.1
-export interface Order { ... }
-```
+Comments are sparse and only where the code cannot say it.
 
 ## Testing
 
 ### Test Framework
 
-No specific test framework detected — use the repository's existing test patterns.
+JUnit, run headless on the JVM (`./gradlew :app:testDebugUnitTest`); some suites use Robolectric/Compose UI testing.
 
-### File Pattern: `*.test.ts`
+### File Pattern: `*Test.kt`
+
+Tests live flat under `app/src/test/java/dev/musicviz/`.
+
+### CRITICAL: Source-Text Test Gates
+
+Many test files assert on **main source text** — they read `.kt` files under `app/src/main` as strings (e.g. `ParamSurface.kt`/`CustomizeSurfaceTest` regenerate `docs/PARAM_MATRIX.md` from the sources and fail until the committed copy matches). Renaming an identifier or moving a file can fail a gate even when the code still compiles.
+
+Before editing any main source file: grep `app/src/test` for its filename and for the identifiers you are changing, read any gating test, and update it faithfully in the same change.
 
 ### Test Types
 
-- **Unit tests**: Test individual functions and components in isolation
-
-### Coverage
-
-This project has coverage reporting configured. Aim for 80%+ coverage.
-
-
-## Error Handling
-
-### Error Handling Style: Try-Catch Blocks
-
-
-*Standard error handling pattern*
-
-```typescript
-try {
-  const result = await riskyOperation()
-  return result
-} catch (error) {
-  console.error('Operation failed:', error)
-  throw new Error('User-friendly message')
-}
-```
+- **Unit tests**: math/shader logic gets a CPU mirror pinned by a headless test; behavior contracts (export parity, preset roundtrips) are tested the same way.
 
 ## Best Practices
 
-Based on analysis of the codebase, follow these practices:
-
 ### Do
 
-- Follow *.test.ts naming pattern
-- Use camelCase for file names
-- Prefer named exports
+- Follow the `*Test.kt` naming pattern under `app/src/test`
+- Use PascalCase file names matching the primary declared type
+- Keep changes ktlint-clean
+- Grep the test tree before renaming or moving anything under `app/src/main`
 
 ### Don't
 
@@ -153,4 +127,4 @@ Based on analysis of the codebase, follow these practices:
 
 ---
 
-*This skill was auto-generated by [ECC Tools](https://ecc.tools). Review and customize as needed for your team.*
+*Originally auto-generated by [ECC Tools](https://ecc.tools); corrected by hand to match the actual repository.*

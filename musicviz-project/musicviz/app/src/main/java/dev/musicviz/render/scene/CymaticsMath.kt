@@ -270,25 +270,6 @@ object CymaticsMath {
     }
 
     /**
-     * The square plate's surface: the superposition of [count] modes packed
-     * into [modes] as (n, m, amplitude, phase) quads - the shader's `uModes[]`
-     * layout - so this is the CPU mirror of the plate half of `field()`.
-     */
-    fun surfaceHeight(
-        modes: FloatArray,
-        count: Int,
-        x: Float,
-        y: Float,
-    ): Float {
-        var h = 0f
-        for (i in 0 until count) {
-            val base = i * 4
-            h += modes[base + 2] * cos(modes[base + 3]) * modeHeight(modes[base].toInt(), modes[base + 1].toInt(), x, y)
-        }
-        return h
-    }
-
-    /**
      * Angular order of [mode] when the field is read as a circular dish: how
      * many petals the figure has around the centre.
      *

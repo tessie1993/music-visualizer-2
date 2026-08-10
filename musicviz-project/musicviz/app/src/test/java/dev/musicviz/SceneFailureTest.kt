@@ -63,15 +63,31 @@ class SceneFailureTest {
 
     @Test
     fun everySceneThatBuildsAProgramCatchesTheDriverRejectingIt() {
+        // `GlUtil.buildProgramReporting` carries the catch for the scenes
+        // that build through it (the next test pins that); a raw
+        // `GlUtil.buildProgram(` call still needs a catch of its own.
         val offenders =
             sceneSources
-                .filter { (_, src) -> src.contains("GlUtil.buildProgram") }
+                .filter { (_, src) -> src.contains("GlUtil.buildProgram(") }
                 .filterNot { (_, src) -> src.contains("catch (e: GlUtil.ShaderCompileException)") }
                 .map { it.first }
         assertEquals(
             "these scenes let a driver-rejected shader out of init() and into GLThread.run",
             emptyList<String>(),
             offenders,
+        )
+    }
+
+    @Test
+    fun theSharedReportingBuilderCatchesTheRejectionItself() {
+        // The scenes that delegate their catch to GlUtil.buildProgramReporting
+        // are only safe while the helper actually catches and reports; losing
+        // that catch would re-arm the launch crash for all of them at once.
+        val glUtil = repoDir("src/main/java/dev/musicviz/render").resolve("scene/GlUtil.kt").readText()
+        assertTrue(
+            "GlUtil.buildProgramReporting no longer catches ShaderCompileException and reports it",
+            Regex("""fun buildProgramReporting[\s\S]*?catch \(e: ShaderCompileException\) \{\s*onError\(e\.message\)""")
+                .containsMatchIn(glUtil),
         )
     }
 

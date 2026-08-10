@@ -56,9 +56,8 @@ internal class CurlFlowScene(
     private lateinit var formats: FluidBuffers.Formats
     private var field: FluidBuffers.Fbo? = null
     private var fieldProgram = 0
-    private val fieldUniforms = HashMap<String, Int>()
-    private var quadVao = 0
-    private var quadVbo = 0
+    private var fieldUniforms = GlUtil.UniformCache(0)
+    private val quad = GlUtil.FullscreenTriangle()
     private var params = SceneParams()
     private var pending: AudioFeatures? = null
     private var lastDt = 1f / 60f
@@ -86,39 +85,19 @@ internal class CurlFlowScene(
         available = formats.ok
         if (!available) return
         choreography.reset()
-        val ids = IntArray(1)
-        GLES30.glGenVertexArrays(1, ids, 0)
-        quadVao = ids[0]
-        GLES30.glGenBuffers(1, ids, 0)
-        quadVbo = ids[0]
-        val quad = floatArrayOf(-1f, -1f, 3f, -1f, -1f, 3f)
-        val buf =
-            java.nio.ByteBuffer
-                .allocateDirect(quad.size * 4)
-                .order(java.nio.ByteOrder.nativeOrder())
-                .asFloatBuffer()
-                .put(quad)
-                .apply { position(0) }
-        GLES30.glBindVertexArray(quadVao)
-        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, quadVbo)
-        GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, quad.size * 4, buf, GLES30.GL_STATIC_DRAW)
-        GLES30.glEnableVertexAttribArray(0)
-        GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 0, 0)
-        GLES30.glBindVertexArray(0)
+        quad.create()
         // Compile failure must degrade the style, never crash the GL thread.
-        try {
-            fieldProgram =
-                GlUtil.buildProgram(
-                    GlUtil.loadShader(context, R.raw.fluid_base_vert),
-                    // Resolves the psrdnoise include the field is built on.
-                    GlUtil.loadShader(context, R.raw.curl_field_frag),
-                )
-        } catch (e: GlUtil.ShaderCompileException) {
-            android.util.Log.w("FluidSim", "curl field shader rejected by driver: ${e.message}")
+        fieldProgram =
+            GlUtil.buildProgramReporting(
+                GlUtil.loadShader(context, R.raw.fluid_base_vert),
+                // Resolves the psrdnoise include the field is built on.
+                GlUtil.loadShader(context, R.raw.curl_field_frag),
+            ) { android.util.Log.w("FluidSim", "curl field shader rejected by driver: $it") }
+        if (fieldProgram == 0) {
             release()
             return
         }
-        fieldUniforms.clear()
+        fieldUniforms = GlUtil.UniformCache(fieldProgram)
         particles.create(49_152, formats)
         if (!particles.available) {
             release()
@@ -151,7 +130,7 @@ internal class CurlFlowScene(
         lastDt = dt.coerceIn(0f, 1f / 30f)
     }
 
-    private fun loc(name: String): Int = fieldUniforms.getOrPut(name) { GLES30.glGetUniformLocation(fieldProgram, name) }
+    private fun loc(name: String): Int = fieldUniforms.loc(name)
 
     override fun draw(timeSeconds: Float) {
         if (!available) return
@@ -186,7 +165,7 @@ internal class CurlFlowScene(
             choreography.tick(f, lastDt, aspect)
 
             GLES30.glDisable(GLES30.GL_BLEND)
-            GLES30.glBindVertexArray(quadVao)
+            quad.bind()
             GLES30.glUseProgram(fieldProgram)
             GLES30.glUniform2f(loc("uInvRes"), 1f / fld.width, 1f / fld.height)
             GLES30.glUniform1f(loc("uAspect"), aspect)
@@ -200,7 +179,7 @@ internal class CurlFlowScene(
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fld.fbo)
             GLES30.glViewport(0, 0, fld.width, fld.height)
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
-            GLES30.glBindVertexArray(0)
+            quad.unbind()
 
             // Field speeds are already sim units/s -> flowScale 1. Lifecycle
             // recycling (ttl + catch capture) replaces the old stochastic
@@ -253,11 +232,8 @@ internal class CurlFlowScene(
         field = null
         if (fieldProgram != 0) GLES30.glDeleteProgram(fieldProgram)
         fieldProgram = 0
-        fieldUniforms.clear()
-        if (quadVbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(quadVbo), 0)
-        if (quadVao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(quadVao), 0)
-        quadVbo = 0
-        quadVao = 0
+        fieldUniforms = GlUtil.UniformCache(0)
+        quad.release()
         available = false
     }
 }
