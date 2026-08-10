@@ -583,19 +583,15 @@ internal class FluidSim(
         pressure = null
         divergence = null
         curl = null
-        programs.values.forEach { GLES30.glDeleteProgram(it) }
+        programs.values.forEach { GLES30.glDeleteProgram(it.program) }
         programs.clear()
-        uniforms.clear()
-        customForce?.let { GLES30.glDeleteProgram(it.first) }
-        customDye?.let { GLES30.glDeleteProgram(it.first) }
+        customForce?.let { GLES30.glDeleteProgram(it.program) }
+        customDye?.let { GLES30.glDeleteProgram(it.program) }
         customForce = null
         customDye = null
-        if (vbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(vbo), 0)
-        if (vao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(vao), 0)
+        quad.release()
         if (linearSampler != 0) GLES30.glDeleteSamplers(1, intArrayOf(linearSampler), 0)
         linearSampler = 0
-        vbo = 0
-        vao = 0
         pending.clear()
         available = false
     }
@@ -607,9 +603,9 @@ internal class FluidSim(
         gridH: Int,
     ) {
         val p = programs.getValue(fragId)
-        GLES30.glUseProgram(p)
-        GLES30.glUniform2f(loc(fragId, "uInvRes"), 1f / gridW, 1f / gridH)
-        GLES30.glUniform1f(loc(fragId, "uAspect"), aspect)
+        GLES30.glUseProgram(p.program)
+        GLES30.glUniform2f(p.loc("uInvRes"), 1f / gridW, 1f / gridH)
+        GLES30.glUniform1f(p.loc("uAspect"), aspect)
     }
 
     private fun blit(target: FluidBuffers.Fbo) {
@@ -623,7 +619,7 @@ internal class FluidSim(
     private fun loc(
         fragId: Int,
         name: String,
-    ): Int = uniforms.getValue(fragId).getOrPut(name) { GLES30.glGetUniformLocation(programs.getValue(fragId), name) }
+    ): Int = programs.getValue(fragId).loc(name)
 
     private fun bindTex(
         name: String,
@@ -656,7 +652,4 @@ internal class FluidSim(
         b: Float,
         c: Float,
     ) = GLES30.glUniform3f(loc(id, n), a, b, c)
-
-    /** Reads a raw shader, resolving its `//#include` directives. */
-    private fun loadRaw(resId: Int): String = GlUtil.loadShader(context, resId)
 }

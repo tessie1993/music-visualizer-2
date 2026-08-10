@@ -20,6 +20,10 @@ import java.io.File
  *  - `removeVizPlaylistAt`: dead at audit time, but the heart-membership
  *    toggle in Visuals › Presets now calls it - kept, and this test holds the
  *    caller in place so it cannot quietly become dead API again.
+ *  - The next zero-caller batch (`analyzePlaylist`, `clearArtPaletteNote`,
+ *    the quick-preset trio, `playlistTracks`, `removeFromLibrary`, `seekBy`):
+ *    swipe/gesture and playlist affordances whose screens were rebuilt
+ *    without them. Deleted; pinned below like the trio above.
  */
 class DeadVmApiTest {
     private val viewModel = ParamSurface.source("ui/PlayerViewModel.kt")
@@ -40,6 +44,27 @@ class DeadVmApiTest {
             "PlayerViewModel.mostPlayed() is back; callers read HistoryStore directly",
             Regex("""fun mostPlayed\(""").containsMatchIn(viewModel),
         )
+    }
+
+    @Test
+    fun `the deleted playlist and gesture batch does not come back`() {
+        val batch =
+            listOf(
+                "analyzePlaylist",
+                "clearArtPaletteNote",
+                "nextQuickPreset",
+                "prevQuickPreset",
+                "stepQuickPreset",
+                "playlistTracks",
+                "removeFromLibrary",
+                "seekBy",
+            )
+        for (name in batch) {
+            assertFalse(
+                "$name is back in PlayerViewModel; it was deleted as dead API - wire a caller or keep it out",
+                viewModel.contains(name),
+            )
+        }
     }
 
     @Test

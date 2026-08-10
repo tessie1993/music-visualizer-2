@@ -36,6 +36,27 @@ import javax.microedition.khronos.opengles.GL10
 import kotlin.math.pow
 
 /**
+ * A linked composite program and the uniform locations resolved against it -
+ * [GlUtil.UniformCache] under the name this file has always used. Caching is
+ * worth an object: ~30 glGetUniformLocation calls per frame are measurable
+ * driver overhead on mobile GPUs.
+ *
+ * The cache travels WITH the program rather than living in a map keyed by the
+ * GL name, because a name is not an identity: glDeleteProgram frees it and the
+ * next glCreateProgram is free to hand the same number straight back. Keyed by
+ * handle, an evicted variant's locations were inherited by whatever linked
+ * next - and every spliced variant declares its own uniforms (see
+ * [TransitionCatalog.spliceInto]), so those locations point at other slots, or
+ * at -1 where the splice pruned one. The result was a sampler bound to the
+ * wrong unit and a uProgress that never advanced - a black or frozen
+ * transition, with no GL error anywhere to trace it from, lasting until the
+ * next context loss. Tying the two together makes that class of bug
+ * unrepresentable: evicting the program evicts its locations because they are
+ * the same object.
+ */
+private typealias CompositeProgram = GlUtil.UniformCache
+
+/**
  * Multi-scene GL ES 3.0 renderer with an offscreen pipeline: the active scene
  * renders into FBO A; during a transition the outgoing scene renders into
  * FBO B and a compositor shader blends them (Cut/Fade/Melt). Trails work by
@@ -469,32 +490,6 @@ class VisualizerRenderer(
     private var baseCompositeProgram = CompositeProgram(0)
 
     /**
-     * A linked composite program and the uniform locations resolved against
-     * it. Caching them is worth an object: ~30 glGetUniformLocation calls per
-     * frame are measurable driver overhead on mobile GPUs.
-     *
-     * The cache travels WITH the program rather than living in a map keyed by
-     * the GL name, because a name is not an identity: glDeleteProgram frees it
-     * and the next glCreateProgram is free to hand the same number straight
-     * back. Keyed by handle, an evicted variant's locations were inherited by
-     * whatever linked next - and every spliced variant declares its own
-     * uniforms (see [TransitionCatalog.spliceInto]), so those locations point
-     * at other slots, or at -1 where the splice pruned one. The result was a
-     * sampler bound to the wrong unit and a uProgress that never advanced -
-     * a black or frozen transition, with no GL error anywhere to trace it
-     * from, lasting until the next context loss. Tying the two together makes
-     * that class of bug unrepresentable: evicting the program evicts its
-     * locations because they are the same object.
-     */
-    private class CompositeProgram(
-        val handle: Int,
-    ) {
-        private val locs = HashMap<String, Int>()
-
-        fun loc(name: String): Int = locs.getOrPut(name) { GLES30.glGetUniformLocation(handle, name) }
-    }
-
-    /**
      * Selected transition, as a [TransitionCatalog] id. Built-in styles are
      * handled by the base composite program; anything else names a corpus
      * transition and gets its own spliced variant.
@@ -516,8 +511,8 @@ class VisualizerRenderer(
 
     /** Base composite source, kept so variants can be spliced without a re-read. */
     private var compositeSource: String = ""
-    private val fadeLocs = HashMap<String, Int>()
-    private val trailLocs = HashMap<String, Int>()
+    private var fadeUniforms = GlUtil.UniformCache(0)
+    private var trailUniforms = GlUtil.UniformCache(0)
 
     private fun cLoc(name: String): Int = compositeProgram.loc(name)
 
@@ -548,7 +543,10 @@ class VisualizerRenderer(
         val program =
             runCatching {
                 CompositeProgram(
-                    GlUtil.buildProgram(loadRaw(R.raw.fade_vert), TransitionCatalog.spliceInto(compositeSource, def)),
+                    GlUtil.buildProgram(
+                        GlUtil.loadShader(context, R.raw.fade_vert),
+                        TransitionCatalog.spliceInto(compositeSource, def),
+                    ),
                 )
             }.getOrElse {
                 android.util.Log.w("Transitions", "\"$id\" failed to link: ${it.message}")
@@ -558,7 +556,7 @@ class VisualizerRenderer(
             val oldest = transitionPrograms.keys.first()
             // Dropping the entry drops the evicted program's uniform locations
             // with it - the driver is about to reissue that name.
-            transitionPrograms.remove(oldest)?.let { p -> GLES30.glDeleteProgram(p.handle) }
+            transitionPrograms.remove(oldest)?.let { p -> GLES30.glDeleteProgram(p.program) }
         }
         transitionPrograms[id] = program
         return program
@@ -687,7 +685,7 @@ class VisualizerRenderer(
         export: Boolean = false,
     ): Scene {
         SHADER_SCENES[id]?.let { res ->
-            val frag = if (export) activeCustomShaders[id] ?: loadRaw(res) else loadRaw(res)
+            val frag = if (export) activeCustomShaders[id] ?: GlUtil.loadShader(context, res) else GlUtil.loadShader(context, res)
             return ShaderScene(id, quadVert, frag) { onShaderError(it) }
         }
         VisualStyleCatalog.cymatics(id)?.let { style ->
@@ -735,8 +733,8 @@ class VisualizerRenderer(
                         { pcmProvider() }
                     }
                 ProjectMScene(
-                    postVertexSrc = loadRaw(R.raw.fade_vert),
-                    postFragmentSrc = loadRaw(R.raw.pm_post_frag),
+                    postVertexSrc = GlUtil.loadShader(context, R.raw.fade_vert),
+                    postFragmentSrc = GlUtil.loadShader(context, R.raw.pm_post_frag),
                     sharedTextureDir = File(context.filesDir, "milk/textures").absolutePath,
                     pcmProvider = milkPcm,
                     onError = { onShaderError(it) },
@@ -765,7 +763,7 @@ class VisualizerRenderer(
     private fun sceneFor(id: String): Scene? {
         scenes[id]?.let { return it }
         if (id !in VisualStyleCatalog.lazyIds) return null
-        val scene = createScene(id, particleShaderSources(context), loadRaw(R.raw.quad_vert))
+        val scene = createScene(id, particleShaderSources(context), GlUtil.loadShader(context, R.raw.quad_vert))
         // The same type-directed wiring [onSurfaceCreated] gives every eagerly
         // built scene, and in the same order: before init() so a rejected
         // shader has an error channel to report on. Unlike surface creation
@@ -809,8 +807,6 @@ class VisualizerRenderer(
         pendingCustomShaders.add(sceneId to fragmentSrc)
         activeCustomShaders[sceneId] = fragmentSrc
     }
-
-    fun shaderSourceFor(sceneId: String): String? = SHADER_SCENES[sceneId]?.let { loadRaw(it) }
 
     /** The user-edited fragment source for [sceneId], or null if unedited. */
     fun customShaderFor(sceneId: String): String? = activeCustomShaders[sceneId]
