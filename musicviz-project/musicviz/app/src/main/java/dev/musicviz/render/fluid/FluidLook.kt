@@ -62,14 +62,14 @@ internal class FluidLook(
         // Driver-rejected look shaders must not crash the GL thread: on
         // failure the scene falls back to the sim's plain dye display.
         try {
-            val vert = loadRaw(R.raw.fluid_base_vert)
-            prefilterProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_bloom_prefilter_frag))
-            bloomBlurProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_bloom_blur_frag))
-            bloomFinalProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_bloom_final_frag))
-            sunraysMaskProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_sunrays_mask_frag))
-            sunraysProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_sunrays_frag))
-            blurProgram = GlUtil.buildProgram(vert, loadRaw(R.raw.fluid_blur_frag))
-            val displaySrc = loadRaw(R.raw.fluid_display_frag)
+            val vert = GlUtil.loadShader(context, R.raw.fluid_base_vert)
+            prefilterProgram = GlUtil.buildProgram(vert, GlUtil.loadShader(context, R.raw.fluid_bloom_prefilter_frag))
+            bloomBlurProgram = GlUtil.buildProgram(vert, GlUtil.loadShader(context, R.raw.fluid_bloom_blur_frag))
+            bloomFinalProgram = GlUtil.buildProgram(vert, GlUtil.loadShader(context, R.raw.fluid_bloom_final_frag))
+            sunraysMaskProgram = GlUtil.buildProgram(vert, GlUtil.loadShader(context, R.raw.fluid_sunrays_mask_frag))
+            sunraysProgram = GlUtil.buildProgram(vert, GlUtil.loadShader(context, R.raw.fluid_sunrays_frag))
+            blurProgram = GlUtil.buildProgram(vert, GlUtil.loadShader(context, R.raw.fluid_blur_frag))
+            val displaySrc = GlUtil.loadShader(context, R.raw.fluid_display_frag)
             for (flags in 0 until 8) {
                 displayPrograms[flags] = GlUtil.buildProgram(vert, withKeywords(displaySrc, flags))
             }
@@ -85,8 +85,8 @@ internal class FluidLook(
             sunraysMaskProgram,
             sunraysProgram,
             blurProgram,
-        ).forEach { uniforms[it] = HashMap() }
-        displayPrograms.values.forEach { uniforms[it] = HashMap() }
+        ).forEach { uniforms[it] = GlUtil.UniformCache(it) }
+        displayPrograms.values.forEach { uniforms[it] = GlUtil.UniformCache(it) }
 
         // Ordered-noise dither kills banding in the dark bloom gradients. This
         // used to generate a hashed WHITE-noise tile "visually equivalent at
@@ -94,27 +94,9 @@ internal class FluidLook(
         // not in the same frequencies, and white noise puts a share of its
         // error exactly where the eye is most sensitive. The real blue-noise
         // mask is 4 KB (see BlueNoise.kt) and shared with the composite pass.
-        val ids = IntArray(1)
         ditherTex = dev.musicviz.render.BlueNoise.createTexture(context)
 
-        GLES30.glGenVertexArrays(1, ids, 0)
-        vao = ids[0]
-        GLES30.glGenBuffers(1, ids, 0)
-        vbo = ids[0]
-        val quad = floatArrayOf(-1f, -1f, 3f, -1f, -1f, 3f)
-        val qbuf =
-            java.nio.ByteBuffer
-                .allocateDirect(quad.size * 4)
-                .order(java.nio.ByteOrder.nativeOrder())
-                .asFloatBuffer()
-                .put(quad)
-                .apply { position(0) }
-        GLES30.glBindVertexArray(vao)
-        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vbo)
-        GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, quad.size * 4, qbuf, GLES30.GL_STATIC_DRAW)
-        GLES30.glEnableVertexAttribArray(0)
-        GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 0, 0)
-        GLES30.glBindVertexArray(0)
+        quad.create()
         available = true
     }
 
@@ -166,10 +148,10 @@ internal class FluidLook(
     ) {
         if (!available) return
         GLES30.glDisable(GLES30.GL_BLEND)
-        GLES30.glBindVertexArray(vao)
+        quad.bind()
         if (bloomOn) applyBloom(dyeTex)
         if (sunraysOn) applySunrays(dyeTex)
-        GLES30.glBindVertexArray(0)
+        quad.unbind()
     }
 
     private fun applyBloom(dyeTex: Int) {
@@ -266,9 +248,7 @@ internal class FluidLook(
             viewportH.toFloat() / dev.musicviz.render.BlueNoise.SIZE,
         )
         GLES30.glUniform2f(loc(program, "uTexelSize"), 1f / viewportW, 1f / viewportH)
-        GLES30.glBindVertexArray(vao)
-        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
-        GLES30.glBindVertexArray(0)
+        quad.draw()
         GLES30.glDisable(GLES30.GL_BLEND)
     }
 
@@ -294,10 +274,7 @@ internal class FluidLook(
         uniforms.clear()
         if (ditherTex != 0) GLES30.glDeleteTextures(1, intArrayOf(ditherTex), 0)
         ditherTex = 0
-        if (vbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(vbo), 0)
-        if (vao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(vao), 0)
-        vbo = 0
-        vao = 0
+        quad.release()
         targetW = 1
         targetH = 1
         available = false
@@ -350,7 +327,7 @@ internal class FluidLook(
     private fun loc(
         program: Int,
         name: String,
-    ): Int = uniforms.getValue(program).getOrPut(name) { GLES30.glGetUniformLocation(program, name) }
+    ): Int = uniforms.getValue(program).loc(name)
 
     private fun bindTex(
         program: Int,
@@ -362,7 +339,4 @@ internal class FluidLook(
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, tex)
         GLES30.glUniform1i(loc(program, name), unit)
     }
-
-    /** Reads a raw shader, resolving its `//#include` directives. */
-    private fun loadRaw(resId: Int): String = GlUtil.loadShader(context, resId)
 }
