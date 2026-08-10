@@ -99,8 +99,7 @@ internal class FlowField(
     private var readFbo = 0
     private var readTex = 0
     private var copyProgram = 0
-    private var copyVao = 0
-    private var copyVbo = 0
+    private val copyQuad = GlUtil.FullscreenTriangle()
     private val readBuf =
         java.nio.ByteBuffer
             .allocateDirect(CPU_GRID * CPU_GRID * 4 * 4)
@@ -179,45 +178,17 @@ internal class FlowField(
                 0,
             )
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
-            try {
-                val ctx = copyContext()
-                copyProgram = ctx.first
-                copyVao = ctx.second
-                copyVbo = ctx.third
-            } catch (e: GlUtil.ShaderCompileException) {
-                // The uFlow / fluidWarp paths still work without CPU readback.
-                android.util.Log.w("FluidSim", "flowfield copy shader rejected: ${e.message}")
-                canReadback = false
-            }
+            copyProgram =
+                GlUtil.buildProgramReporting(
+                    GlUtil.loadShader(contextRef, R.raw.fluid_base_vert),
+                    GlUtil.loadShader(contextRef, R.raw.fluid_copy_frag),
+                ) {
+                    // The uFlow / fluidWarp paths still work without CPU readback.
+                    android.util.Log.w("FluidSim", "flowfield copy shader rejected: $it")
+                    canReadback = false
+                }
+            if (copyProgram != 0) copyQuad.create()
         }
-    }
-
-    private fun copyContext(): Triple<Int, Int, Int> {
-        val program =
-            GlUtil.buildProgram(
-                loadRaw(R.raw.fluid_base_vert),
-                loadRaw(R.raw.fluid_copy_frag),
-            )
-        val ids = IntArray(1)
-        GLES30.glGenVertexArrays(1, ids, 0)
-        val vao = ids[0]
-        GLES30.glGenBuffers(1, ids, 0)
-        val vbo = ids[0]
-        val quad = floatArrayOf(-1f, -1f, 3f, -1f, -1f, 3f)
-        val buf =
-            java.nio.ByteBuffer
-                .allocateDirect(quad.size * 4)
-                .order(java.nio.ByteOrder.nativeOrder())
-                .asFloatBuffer()
-                .put(quad)
-                .apply { position(0) }
-        GLES30.glBindVertexArray(vao)
-        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vbo)
-        GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, quad.size * 4, buf, GLES30.GL_STATIC_DRAW)
-        GLES30.glEnableVertexAttribArray(0)
-        GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 0, 0)
-        GLES30.glBindVertexArray(0)
-        return Triple(program, vao, vbo)
     }
 
     fun resize(
@@ -307,9 +278,7 @@ internal class FlowField(
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, sourceTex)
         GLES30.glUniform1i(GLES30.glGetUniformLocation(copyProgram, "uTexture"), 0)
-        GLES30.glBindVertexArray(copyVao)
-        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
-        GLES30.glBindVertexArray(0)
+        copyQuad.draw()
         readBuf.clear()
         GLES30.glReadPixels(0, 0, CPU_GRID, CPU_GRID, GLES30.GL_RGBA, GLES30.GL_FLOAT, readBuf)
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
@@ -325,18 +294,12 @@ internal class FlowField(
         if (readTex != 0) GLES30.glDeleteTextures(1, intArrayOf(readTex), 0)
         if (readFbo != 0) GLES30.glDeleteFramebuffers(1, intArrayOf(readFbo), 0)
         if (copyProgram != 0) GLES30.glDeleteProgram(copyProgram)
-        if (copyVbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(copyVbo), 0)
-        if (copyVao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(copyVao), 0)
+        copyQuad.release()
         readTex = 0
         readFbo = 0
         copyProgram = 0
-        copyVao = 0
-        copyVbo = 0
         canReadback = false
     }
 
     private val contextRef = context.applicationContext
-
-    /** Reads a raw shader, resolving its `//#include` directives. */
-    private fun loadRaw(resId: Int): String = GlUtil.loadShader(contextRef, resId)
 }

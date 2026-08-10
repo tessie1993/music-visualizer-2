@@ -41,7 +41,7 @@ internal class FluidLook(
 
     /** Display program per keyword set (bit0 SHADING, bit1 BLOOM, bit2 SUNRAYS). */
     private val displayPrograms = HashMap<Int, Int>()
-    private val uniforms = HashMap<Int, HashMap<String, Int>>()
+    private val uniforms = HashMap<Int, GlUtil.UniformCache>()
 
     private var bloomMips = ArrayList<FluidBuffers.Fbo>()
     private var bloomResult: FluidBuffers.Fbo? = null
@@ -49,8 +49,7 @@ internal class FluidLook(
     private var sunrays: FluidBuffers.Fbo? = null
     private var sunraysTemp: FluidBuffers.Fbo? = null
     private var ditherTex = 0
-    private var vao = 0
-    private var vbo = 0
+    private val quad = GlUtil.FullscreenTriangle()
     private var targetW = 1
     private var targetH = 1
 
