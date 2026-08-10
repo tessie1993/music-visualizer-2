@@ -855,7 +855,7 @@ class VisualizerRenderer(
             paletteLutTex = 0
         }
         val particleShaders = particleShaderSources(context)
-        val quadVert = loadRaw(R.raw.quad_vert)
+        val quadVert = GlUtil.loadShader(context, R.raw.quad_vert)
         // Family substyles are skipped here and built by [sceneFor] the first
         // time one is actually selected - see VisualStyleCatalog.lazyIds for
         // what building all of them up front cost.
@@ -927,17 +927,18 @@ class VisualizerRenderer(
         noiseTex = BlueNoise.createTexture(context)
         paletteLutTex = CyclicPalettes.createTexture(context)
         scenes.values.filterIsInstance<ShaderScene>().forEach { it.setPaletteLut(paletteLutTex) }
-        fadeProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), loadRaw(R.raw.fade_frag))
-        trailWarpProgram = GlUtil.buildProgram(loadRaw(R.raw.fade_vert), loadRaw(R.raw.trail_warp_frag))
-        compositeSource = loadRaw(R.raw.composite_frag)
-        baseCompositeProgram = CompositeProgram(GlUtil.buildProgram(loadRaw(R.raw.fade_vert), compositeSource))
+        val fadeVert = GlUtil.loadShader(context, R.raw.fade_vert)
+        fadeProgram = GlUtil.buildProgram(fadeVert, GlUtil.loadShader(context, R.raw.fade_frag))
+        trailWarpProgram = GlUtil.buildProgram(fadeVert, GlUtil.loadShader(context, R.raw.trail_warp_frag))
+        compositeSource = GlUtil.loadShader(context, R.raw.composite_frag)
+        baseCompositeProgram = CompositeProgram(GlUtil.buildProgram(fadeVert, compositeSource))
         compositeProgram = baseCompositeProgram
         // Variants belong to the lost context; their names are dead now, and
         // their cached locations go with them because they are the same object.
         transitionPrograms.clear()
         activeTransition = null
-        fadeLocs.clear()
-        trailLocs.clear()
+        fadeUniforms = GlUtil.UniformCache(fadeProgram)
+        trailUniforms = GlUtil.UniformCache(trailWarpProgram)
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
         quadVao = ids[0]
@@ -1206,8 +1207,8 @@ class VisualizerRenderer(
         // write them into the previous variant.
         compositeProgram = transitionProgram(transitionId)
         activeTransition = TransitionCatalog.definition(context, transitionId)
-        GLES30.glUseProgram(compositeProgram.handle)
-        activeTransition?.let { TransitionCatalog.uploadParams(compositeProgram.handle, it) }
+        GLES30.glUseProgram(compositeProgram.program)
+        activeTransition?.let { TransitionCatalog.uploadParams(compositeProgram.program, it) }
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, fboA.tex)
         GLES30.glUniform1i(cLoc("uTexA"), 0)
@@ -1560,7 +1561,7 @@ class VisualizerRenderer(
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, trailTex)
 
-        fun tLoc(n: String) = trailLocs.getOrPut(n) { GLES30.glGetUniformLocation(trailWarpProgram, n) }
+        fun tLoc(n: String) = trailUniforms.loc(n)
         GLES30.glUniform1i(tLoc("uPrev"), 0)
         // [retention], NOT p.trailLength: styles with their own persistence
         // band (Curl Flow) hand in a remapped value, and reading the raw
@@ -1624,21 +1625,12 @@ class VisualizerRenderer(
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         GLES30.glUseProgram(fadeProgram)
-        GLES30.glUniform1f(
-            fadeLocs.getOrPut("uFadeAlpha") { GLES30.glGetUniformLocation(fadeProgram, "uFadeAlpha") },
-            alpha.coerceIn(0.02f, 1f),
-        )
+        GLES30.glUniform1f(fadeUniforms.loc("uFadeAlpha"), alpha.coerceIn(0.02f, 1f))
         GLES30.glBindVertexArray(quadVao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)
         GLES30.glDisable(GLES30.GL_BLEND)
     }
-
-    /**
-     * Reads a shader, resolving its `//#include` directives - so every source
-     * that reaches a driver here has its libraries already spliced in.
-     */
-    private fun loadRaw(resId: Int): String = GlUtil.loadShader(context, resId)
 
     /**
      * Builds fresh scene instances for the export GL context. Never reuses
@@ -1654,7 +1646,7 @@ class VisualizerRenderer(
     fun exportSceneFactory(sceneId: String): VideoExporter.SceneFactory =
         object : VideoExporter.SceneFactory {
             override fun create(): Scene {
-                val scene = createScene(sceneId, particleShaderSources(context), loadRaw(R.raw.quad_vert), export = true)
+                val scene = createScene(sceneId, particleShaderSources(context), GlUtil.loadShader(context, R.raw.quad_vert), export = true)
                 // State the live registry applies through channels the export
                 // context never sees (the fluidInjectionDirty flag drained in
                 // onDrawFrame, onSurfaceCreated's preset re-queue). Queued
@@ -1679,8 +1671,8 @@ class VisualizerRenderer(
         // takes is stated in the shader that needs them rather than assembled
         // here, so the two particle families cannot drift apart.
         return ParticleSceneBase.ShaderSources(
-            loadRaw(R.raw.particle_vert),
-            loadRaw(R.raw.particle_frag),
+            GlUtil.loadShader(context, R.raw.particle_vert),
+            GlUtil.loadShader(context, R.raw.particle_frag),
         )
     }
 }
