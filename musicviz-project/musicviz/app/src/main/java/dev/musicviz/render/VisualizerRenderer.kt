@@ -579,6 +579,13 @@ class VisualizerRenderer(
 
     /** Cyclic colour-map atlas shared by every shader scene; 0 if unavailable. */
     private var paletteLutTex = 0
+
+    /**
+     * The style ids [sceneFor] will build, seeded in [onSurfaceCreated] from
+     * [availableSceneIds]. Cached rather than recomputed because [sceneFor]
+     * runs on the frame path.
+     */
+    private var buildableIds: Set<String> = emptySet()
     private val fboA = RenderTarget("sceneA")
     private val fboB = RenderTarget("sceneB")
 
@@ -717,19 +724,50 @@ class VisualizerRenderer(
      */
     private fun sceneFor(id: String): Scene? {
         scenes[id]?.let { return it }
-        if (id !in VisualStyleCatalog.lazyIds) return null
+        // createScene throws for an id it cannot build, so membership is
+        // checked here rather than discovered as a crash on the GL thread.
+        if (id !in buildableIds) return null
+        return buildScene(id)
+    }
+
+    /**
+     * The one construction path: builds [id], wires it, and restores the state
+     * this renderer holds on its behalf.
+     *
+     * Every style is built here, the first time it is actually selected -
+     * nothing is constructed at surface creation. Building them all up front
+     * cost about sixty shader-program compiles and every fluid grid allocation
+     * on the GL thread BEFORE the first frame of any style, which is what made
+     * the visuals slow to appear. The substyles were made lazy for exactly this
+     * reason and the other thirty-eight styles kept paying it.
+     *
+     * The restores at the end are the reason this is one function rather than
+     * two: an on-demand build has to be indistinguishable from one made at
+     * surface creation, and each of these was previously done by a separate
+     * loop over a registry that was assumed to hold everything.
+     */
+    private fun buildScene(id: String): Scene {
         val scene = createScene(id, particleShaderSources(context), GlUtil.loadShader(context, R.raw.quad_vert))
-        // The same type-directed wiring [onSurfaceCreated] gives every eagerly
-        // built scene, and in the same order: before init() so a rejected
-        // shader has an error channel to report on. Unlike surface creation
-        // the palette LUT already exists here, so wireScene binds it directly.
+        // Before init(), so a driver-rejected shader has an error channel to
+        // report on. wireScene also binds the palette LUT once it exists.
         wireScene(scene)
         scene.init()
-        // The state onSurfaceCreated/onSurfaceChanged already handed to every
-        // eagerly built scene. Without the resize this one renders at the 1x1
-        // default until the next surface change.
         scene.setParams(sceneParams)
+        // Without this the scene renders at the 1x1 default until the next
+        // surface change.
         scene.resize(renderWidth, renderHeight)
+        // User GLSL for this style, which outlived the context that compiled it.
+        activeCustomShaders[id]?.let { (scene as? ShaderScene)?.setFragmentSource(it) }
+        if (scene is ProjectMScene) {
+            milkdropScene = scene
+            // Re-queued here rather than at surface creation: loadMilkPreset
+            // records the path before it queues, precisely so a preset chosen
+            // while this scene did not exist is still applied when it does.
+            lastMilkPreset?.let { scene.queuePreset(it) }
+        }
+        if (scene is dev.musicviz.render.fluid.FluidScene && (fluidForceSrc != null || fluidDyeSrc != null)) {
+            scene.setInjectionShaders(fluidForceSrc, fluidDyeSrc)
+        }
         scenes[id] = scene
         return scene
     }
@@ -824,34 +862,14 @@ class VisualizerRenderer(
             GLES30.glDeleteTextures(1, intArrayOf(paletteLutTex), 0)
             paletteLutTex = 0
         }
-        val particleShaders = particleShaderSources(context)
-        val quadVert = GlUtil.loadShader(context, R.raw.quad_vert)
-        // Family substyles are skipped here and built by [sceneFor] the first
-        // time one is actually selected - see VisualStyleCatalog.lazyIds for
-        // what building all of them up front cost.
-        for (id in availableSceneIds()) {
-            if (id in VisualStyleCatalog.lazyIds) continue
-            scenes[id] = createScene(id, particleShaders, quadVert)
-        }
-        // Type-directed wiring, shared with [sceneFor]'s on-demand builds so
-        // the two construction paths cannot drift apart. Before init(),
-        // because init() is where a driver-rejected shader has something to
-        // report.
-        scenes.values.forEach { wireScene(it) }
-        milkdropScene = scenes[SceneIds.MILKDROP] as? ProjectMScene
-        scenes.values.forEach { it.init() }
-        // Restore state that would otherwise be lost when the EGL context is
-        // destroyed while backgrounded: re-apply the current params to every
-        // scene, re-push any edited custom shaders, and re-queue the last
-        // milkdrop preset so the visualizer resumes exactly where it was.
-        scenes.values.forEach { it.setParams(sceneParams) }
-        for ((sceneId, src) in activeCustomShaders) {
-            (scenes[sceneId] as? ShaderScene)?.setFragmentSource(src)
-        }
-        lastMilkPreset?.let { milkdropScene?.queuePreset(it) }
-        // Re-apply user fluid injection shaders lost with the old context.
+        // The set [sceneFor] admits. One list walked into one factory, so a
+        // style can never be offered in the picker that nothing can construct.
+        buildableIds = availableSceneIds().toSet()
+        // Nothing is built here. [buildScene] constructs each style the first
+        // time it is selected, including every restore the old context lost -
+        // see its docs for what building all of them up front cost.
         if (fluidForceSrc != null || fluidDyeSrc != null) fluidInjectionDirty = true
-        activeScene = sceneFor(requestedSceneId) ?: scenes[SceneIds.NEBULA]
+        activeScene = sceneFor(requestedSceneId) ?: sceneFor(SceneIds.NEBULA)
         outgoingScene = null
         outgoingParams = null
 
@@ -1025,9 +1043,14 @@ class VisualizerRenderer(
         postCyclePhase = CompositeGrade.integrateCyclePhase(postCyclePhase, p.cycleSpeed, dt, p.colorCycle)
         postBeatPulse = CompositeGrade.integrateBeatPulse(postBeatPulse, features.motionImpulse, dt)
         if (fluidInjectionDirty) {
-            fluidInjectionDirty = false
-            (scenes[SceneIds.FLUID] as? dev.musicviz.render.fluid.FluidScene)
-                ?.setInjectionShaders(fluidForceSrc, fluidDyeSrc)
+            // The flag is consumed only once there is a scene to hand it to.
+            // Clearing it unconditionally lost the user's injection shaders
+            // whenever FLUID had not been built yet - which, now that styles
+            // are built on demand, is the normal case rather than a race.
+            (scenes[SceneIds.FLUID] as? dev.musicviz.render.fluid.FluidScene)?.let { fluid ->
+                fluidInjectionDirty = false
+                fluid.setInjectionShaders(fluidForceSrc, fluidDyeSrc)
+            }
         }
         // F7 FlowField: advance the shared velocity field (its own tiny FBOs)
         // before any scene target is bound. When the FLUID scene is active

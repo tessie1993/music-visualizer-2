@@ -28,10 +28,13 @@ class RendererWiringTest {
          *
          * `sceneFor` is a helper rather than a callback: it is how the two
          * reading callbacks resolve an id, and it may also BUILD the scene, so
-         * it is as GL-thread-bound as they are. It is listed here rather than
-         * exempted, so a reader added anywhere else still fails this test.
+         * it is as GL-thread-bound as they are. `buildScene` is the same: it is
+         * reached only from `sceneFor` and is the sole writer of the registry.
+         * Both are listed here rather than exempted, so a reader added anywhere
+         * else still fails this test.
          */
-        val GL_THREAD_CALLBACKS = setOf("onSurfaceCreated", "onSurfaceChanged", "onDrawFrame", "sceneFor")
+        val GL_THREAD_CALLBACKS =
+            setOf("onSurfaceCreated", "onSurfaceChanged", "onDrawFrame", "sceneFor", "buildScene")
     }
 
     private val source: String by lazy { repoFile("src/main/java/dev/musicviz/render/VisualizerRenderer.kt") }
@@ -56,8 +59,17 @@ class RendererWiringTest {
         // walked into one factory is what stops that recurring.
         val onSurfaceCreated = functionBody("onSurfaceCreated")
         assertTrue(
-            "onSurfaceCreated no longer builds the registry from availableSceneIds()",
-            onSurfaceCreated.contains("availableSceneIds()") && onSurfaceCreated.contains("createScene("),
+            "onSurfaceCreated no longer seeds the buildable set from availableSceneIds()",
+            onSurfaceCreated.contains("availableSceneIds()"),
+        )
+        assertFalse(
+            "onSurfaceCreated constructs a style again - every style is built on demand by " +
+                "buildScene(), and constructing them here is what made the visuals slow to appear",
+            onSurfaceCreated.contains("createScene("),
+        )
+        assertTrue(
+            "sceneFor must refuse ids the factory cannot build, or createScene throws on the GL thread",
+            functionBody("sceneFor").contains("buildableIds"),
         )
         assertFalse(
             "a style is being constructed under a hardcoded id again",
@@ -131,31 +143,41 @@ class RendererWiringTest {
     }
 
     @Test
-    fun familySubstylesAreBuiltOnDemandRatherThanAtSurfaceCreation() {
-        // A substyle is one uniform plus a few control biases on a program its
-        // family has already compiled - but the registry keys a constructed,
-        // init()ed instance per id, and HyperspaceScene.init() compiles the
-        // raymarcher AND creates a FluidSim (about a dozen more programs).
-        // Building all twenty in onSurfaceCreated put roughly a hundred and
-        // thirty extra shader compiles on the GL thread before the first frame
-        // of ANY style: the screen stayed black and the app stopped answering.
-        assertEquals(
-            "every id beyond each family's original is built on demand",
-            VisualStyleCatalog.hyperspaceIds.size - 1 + VisualStyleCatalog.cymaticsIds.size - 1,
-            VisualStyleCatalog.lazyIds.size,
+    fun everyStyleIsBuiltOnDemandRatherThanAtSurfaceCreation() {
+        // The registry keys a constructed, init()ed instance per id, and init()
+        // is where the shader programs get compiled - ShaderScene one apiece,
+        // HyperspaceScene the raymarcher AND a FluidSim, FLUID about a dozen
+        // between the sim, the look and the particles. Building the twenty
+        // substyles up front put roughly a hundred and thirty compiles on the
+        // GL thread before the first frame of ANY style and read as the app
+        // freezing; they were made lazy and the other thirty-eight styles kept
+        // paying the same toll, about sixty compiles plus every fluid grid
+        // allocation, which is why the visuals were slow to appear.
+        //
+        // So nothing is eager now. The whole point is one construction path,
+        // and these are the properties that keep it honest.
+        assertFalse(
+            "no style may be constructed at surface creation",
+            functionBody("onSurfaceCreated").contains("createScene("),
         )
-        // The originals stay eager: what was ready at the first frame before
-        // the substyles existed must still be ready.
-        assertFalse(SceneIds.CYMATICS in VisualStyleCatalog.lazyIds)
-        assertFalse(SceneIds.HYPERSPACE in VisualStyleCatalog.lazyIds)
+        val build = functionBody("buildScene")
+        assertTrue("buildScene must construct through the one factory", build.contains("createScene("))
         assertTrue(
-            "onSurfaceCreated must skip the ids sceneFor() builds on demand",
-            functionBody("onSurfaceCreated").contains("VisualStyleCatalog.lazyIds"),
+            "buildScene must init() what it builds, or the scene draws with no program",
+            build.contains(".init()"),
         )
         assertTrue(
-            "sceneFor must init() what it builds, or the scene draws with no program",
-            functionBody("sceneFor").contains(".init()"),
+            "buildScene must size what it builds, or it renders at the 1x1 default",
+            build.contains(".resize("),
         )
+        // The restores that used to be separate loops over a registry assumed
+        // to hold every style. An on-demand build has to be indistinguishable
+        // from an eager one, and each of these was a real piece of state the
+        // context loss destroyed.
+        assertTrue("buildScene must re-apply edited user GLSL", build.contains("activeCustomShaders["))
+        assertTrue("buildScene must re-queue the last milkdrop preset", build.contains("lastMilkPreset"))
+        assertTrue("buildScene must re-apply fluid injection shaders", build.contains("setInjectionShaders("))
+        assertTrue("buildScene must adopt the milkdrop scene", build.contains("milkdropScene ="))
     }
 
     @Test
@@ -193,17 +215,21 @@ class RendererWiringTest {
     @Test
     fun bothSceneConstructionPathsShareOneTypeDirectedWiring() {
         // onSurfaceCreated wired the particle family's error channel and the
-        // shader scenes' palette LUT inline, so a scene built on demand by
-        // sceneFor arrived with neither: a driver-rejected shader had nowhere
-        // to report and the cyclic colour maps sampled nothing. One wireScene
-        // called from both paths is what keeps them from drifting apart.
+        // shader scenes' palette LUT inline, so a scene built on demand arrived
+        // with neither: a driver-rejected shader had nowhere to report and the
+        // cyclic colour maps sampled nothing. That was two construction paths
+        // sharing a helper; there is now exactly one, which is why
+        // onSurfaceCreated must NOT wire anything - it has nothing to wire.
         val surface = functionBody("onSurfaceCreated")
-        assertTrue("onSurfaceCreated must wire scenes through wireScene", surface.contains("wireScene("))
-        val lazy = functionBody("sceneFor")
-        assertTrue("sceneFor must wire what it builds through wireScene", lazy.contains("wireScene("))
+        assertFalse(
+            "onSurfaceCreated wires a scene again - construction belongs to buildScene alone",
+            surface.contains("wireScene("),
+        )
+        val build = functionBody("buildScene")
+        assertTrue("buildScene must wire what it builds through wireScene", build.contains("wireScene("))
         assertTrue(
             "wiring must precede init(), or a shader rejected in init() reports into the void",
-            lazy.indexOf("wireScene(") in 0 until lazy.indexOf(".init()"),
+            build.indexOf("wireScene(") in 0 until build.indexOf(".init()"),
         )
         val wire = functionBody("wireScene")
         assertTrue("the particle error channel left wireScene", wire.contains("onShaderError"))
