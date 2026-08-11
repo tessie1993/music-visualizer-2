@@ -1,0 +1,33 @@
+# Tuned detekt config (see app/build.gradle.kts for the reasoning).
+style:
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    active: false # ktlint owns line length
+
+naming:
+  FunctionNaming:
+    ignoreAnnotated: ["Composable"]
+
+complexity:
+  # Size/complexity thresholds are tracked by review, not the build; the
+  # decomposition work shrinks them incrementally.
+  LongMethod:
+    active: false
+  LongParameterList:
+    active: false
+  CyclomaticComplexMethod:
+    active: false
+  TooManyFunctions:
+    active: false
+  LargeClass:
+    active: false
+
+potential-bugs:
+  active: true
+
+exceptions:
+  active: true
+
+coroutines:
+  active: true

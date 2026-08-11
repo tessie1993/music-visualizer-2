@@ -68,6 +68,12 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: chmod +x gradlew
 
+      # Baselined static analysis: the SwallowedException/UnusedParameter
+      # class of bug is caught at PR time instead of the next audit.
+      - name: detekt
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./gradlew :app:detekt --stacktrace --no-daemon
+
       - name: Assemble debug APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
