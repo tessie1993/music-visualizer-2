@@ -4,4 +4,9 @@
     <string name="wallpaper_label">MusicViz</string>
     <string name="wallpaper_description">Your last MusicViz style, reacting to whatever the app is playing and drifting gently when it is not.</string>
     <string name="notification_listener_label">MusicViz — now playing in other apps</string>
+    <string name="capture_channel_name">Visualizing other apps</string>
+    <string name="capture_channel_description">Shown while MusicViz is reading the audio another app is playing.</string>
+    <string name="capture_notification_title">Visualizing other apps</string>
+    <string name="capture_notification_text">MusicViz is reading the audio playing on this device.</string>
+    <string name="capture_notification_stop">Stop</string>
 </resources>
