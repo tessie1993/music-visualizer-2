@@ -42,25 +42,54 @@ but see section 1: several 'absent' blueprint entries were in fact complete.
 
 All items below touch **no existing file**; every one can run simultaneously with every other and with the whole serial queue. Ranked value/effort.
 
-| # | deliverable | new files |
-|---|---|---|
-| 1 | **#16 backup-rules source-text gate** — highest value-per-line in the repo; nothing pins `backup_rules.xml`/`data_extraction_rules.xml` today, so the next `filesDir` store silently breaks the 25 MB quota for presets, playlists and history | `app/src/test/java/dev/musicviz/BackupRulesCoverageTest.kt` |
-| 2 | **#46 engine** — Camelot wheel + queue planner; imports `KeyPalette` rather than duplicating it, degrades key→BPM→no-op for unanalysed tracks | `analysis/CamelotWheel.kt`, `analysis/QueuePlanner.kt`, `+2 tests` |
-| 3 | **#75 engine** — export queue state machine | `export/ExportQueue.kt`, `+test` |
-| 4 | **#8 parsers** — M3U/PLS/XSPF, with basename+byte-size resolution mirroring `TrackLibrary.identityKey:205` | `data/PlaylistFormats.kt`, `+test` |
-| 5 | **#79 table** — named platform export bundles (ratio/quality/fps/loopSafe all already persist) | `export/ExportPresets.kt`, `+test` |
-| 6 | **#13 planner** — album / balanced / weighted orderings computed *before* `setMediaItems`, not ShuffleOrder subclasses | `playback/ShuffleModes.kt`, `+test` |
-| 7 | **#30 matrix builder** — mono/balance/width/pseudo-stereo + #32's polarity flip as coefficients; media3's `ChannelMixingAudioProcessor` does the rest | `audio/dsp/StereoMatrix.kt`, `+test` |
-| 8 | **#83 parser** — `.cube` LUT → `SingleColorLut` bitmap | `export/CubeLut.kt`, `+test` |
-| 9 | **#37 doc** — collect the chain contract already written in `MvzAudioProcessorChain.kt:11-47` + `AudioChainContractTest.kt:9-31` + `EqualizerSettings.kt:79-95` | `docs/AUDIO_CHAIN.md` |
-| 10 | **#9 tree builder** — path list → nested nodes with single-child collapsing (fixes `/Music/Live` + `/Podcasts/Live` merging at `LibraryScreen.kt:680`) | `ui/FolderTree.kt`, `+test` |
-| 11 | **#88 planner** — bpm + beat times + target length → cut list, copying `BarTrim`'s 50-220 BPM trust guard | `export/BeatCutPlanner.kt`, `+test` |
-| 12 | **#84 edit module** — insert/move/delete/retime over take JSON | `data/TakeEdit.kt`, `+test` |
-| 13 | **#25 parser** — AutoEQ ParametricEQ.txt as a sealed parse result. Inert until #24 lands | `audio/dsp/AutoEqPreset.kt`, `+test` |
-| 14 | **#81 parser** — SRT/VTT. Extend the cue model with end times **now** if #76 is coming | `ui/SubtitleParse.kt`, `+test` |
-| 15 | **#1 gapless regression gate** — the only work left on #1 (touches `PlaybackEngineTest.kt` only) | test edit |
+| # | deliverable | new files | state |
+|---|---|---|---|
+| 1 | **#16 backup-rules source-text gate** — highest value-per-line in the repo; nothing pins `backup_rules.xml`/`data_extraction_rules.xml` today, so the next `filesDir` store silently breaks the 25 MB quota for presets, playlists and history | `app/src/test/java/dev/musicviz/BackupRulesCoverageTest.kt` | **DONE** |
+| 2 | **#46 engine** — Camelot wheel + queue planner; imports `KeyPalette` rather than duplicating it, degrades key→BPM→no-op for unanalysed tracks | `analysis/CamelotWheel.kt`, `analysis/QueuePlanner.kt`, `+2 tests` | waits on a consumer |
+| 3 | **#75 engine** — export queue state machine | `export/ExportQueue.kt`, `+test` | waits on a consumer |
+| 4 | **#8 parsers** — M3U/PLS/XSPF, with basename+byte-size resolution mirroring `TrackLibrary.identityKey:205` | `data/PlaylistFormats.kt`, `+test` | **DONE** (no caller) |
+| 5 | **#79 table** — named platform export bundles (ratio/quality/fps/loopSafe all already persist) | `export/ExportPresets.kt`, `+test` | **DONE + wired** |
+| 6 | **#13 planner** — album / balanced / weighted orderings computed *before* `setMediaItems`, not ShuffleOrder subclasses | `playback/ShuffleModes.kt`, `+test` | **DONE** (no caller) |
+| 7 | **#30 matrix builder** — mono/balance/width/pseudo-stereo + #32's polarity flip as coefficients; media3's `ChannelMixingAudioProcessor` does the rest | `audio/dsp/StereoMatrix.kt`, `+test` | waits on a consumer |
+| 8 | **#83 parser** — `.cube` LUT → `SingleColorLut` bitmap | `export/CubeLut.kt`, `+test` | waits on a consumer |
+| 9 | **#37 doc** — collect the chain contract already written in `MvzAudioProcessorChain.kt:11-47` + `AudioChainContractTest.kt:9-31` + `EqualizerSettings.kt:79-95` | `docs/AUDIO_CHAIN.md` | **DONE** |
+| 10 | **#9 tree builder** — path list → nested nodes with single-child collapsing (fixes `/Music/Live` + `/Podcasts/Live` merging at `LibraryScreen.kt:680`) | `ui/FolderTree.kt`, `+test` | **DONE + wired** (labelling half; nested nodes belong with #9b) |
+| 11 | **#88 planner** — bpm + beat times + target length → cut list, copying `BarTrim`'s 50-220 BPM trust guard | `export/BeatCutPlanner.kt`, `+test` | waits on a consumer |
+| 12 | **#84 edit module** — insert/move/delete/retime over take JSON | `data/TakeEdit.kt`, `+test` | waits on a consumer |
+| 13 | **#25 parser** — AutoEQ ParametricEQ.txt as a sealed parse result. Inert until #24 lands | `audio/dsp/AutoEqPreset.kt`, `+test` | **DROPPED from this wave** |
+| 14 | **#81 parser** — SRT/VTT. Extend the cue model with end times **now** if #76 is coming | `ui/SubtitleParse.kt`, `+test` | waits on a consumer |
+| 15 | **#1 gapless regression gate** — the only work left on #1 | `app/src/test/java/dev/musicviz/playback/GaplessQueueTest.kt` | **DONE** |
 
 Skip in this wave: #7 CueSheet parser (parser is 20% of the cost; uri-as-identity is the other 80%), #73 GifWriter (frame source doesn't exist, output looks bad).
+
+### 2a. What "waits on a consumer" means, and why the wave stopped there
+
+Seven of the fifteen are built. The remaining seven are engines whose only caller
+would be a slice in section 3, so building them now adds main-source code that
+nothing calls and no gate protects — and two of the seven already delivered
+(`ShuffleModes`, `PlaylistFormats`) are in exactly that state, which is the
+evidence rather than the theory. The wave was ranked by value/effort assuming
+the engine was the expensive half; for these seven the *consumer* is the
+expensive half, so the ranking inverts and they should be built inside their
+consumer's slice.
+
+**#25 is dropped, not deferred.** It is inert until #24 lands, #24 is an
+unstarted XL keystone, and a parser for a config format nothing can consume is
+the clearest waste on the list. Re-add it as the first step of #24.
+
+Two sizings found while checking, both of which change section 3:
+
+- **#90(1) is not independent of #75.** The export pipeline runs on
+  `viewModelScope` (`PlayerViewModel.kt:2197`), so a long 4K render does die
+  with the ViewModel as claimed — but `exportSceneFactory` is bound to the live
+  `VisualizerView` (`ExportHost.kt:78-84`), so a render moved into a service
+  would have no scene. They are one M/L slice, not an S followed by an M.
+- **#13's wiring is not small.** It needs `PlayerPrefs` + `PlayerPrefsStore` (a
+  persisted-format change under `PrefsRoundtripReflectionTest`), a control with
+  a non-`*Controller.kt` caller under `ViewModelSurfaceTest`, and it has to
+  decide how a planned ordering composes with the five existing
+  `player.shuffleModeEnabled` sites — one of which is the `playOrder()` the
+  queue fix just added. Its own slice, its own review.
 
 ## 3. SERIAL QUEUE
 
