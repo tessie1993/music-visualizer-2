@@ -33,7 +33,6 @@ import dev.musicviz.data.PlayerPrefs
 import dev.musicviz.data.PlayerPrefsStore
 import dev.musicviz.data.Preset
 import dev.musicviz.data.PresetStore
-import dev.musicviz.data.TextureStore
 import dev.musicviz.export.ExportAspect
 import dev.musicviz.export.VideoExporter
 import dev.musicviz.playback.PlaybackEngine
@@ -546,7 +545,6 @@ class PlayerViewModel(
      * reads this store.
      */
     private val autoVisualsPrefsStore = AutoVisualsPrefsStore(application)
-    private val textureStore = TextureStore(application)
     private val lfoStore = LfoStore(application)
     private val musicPlaylists = MusicPlaylistStore(application)
     private val audioFxController = playback.audioFx
@@ -819,18 +817,25 @@ class PlayerViewModel(
         refreshAudioFx()
     }
 
-    /** Filled by [refreshTextures]; only the milkdrop texture picker reads it. */
-    private val _textures = MutableStateFlow<List<MilkTexture>>(emptyList())
-    val textures: StateFlow<List<MilkTexture>> = _textures
+    private val textureController =
+        TextureController(
+            application,
+            viewModelScope,
+            object : TextureController.Host {
+                override fun onGeneratedPresetsRemoved(paths: List<String>) {
+                    if (_activeMilkPath.value in paths) _activeMilkPath.value = null
+                    // The pref can be stale even when the live value differs
+                    // (restore drops paths whose file is missing but leaves
+                    // the pref behind); compare it on its own.
+                    if (vizPrefs().getString("milk_path", null) in paths) {
+                        vizPrefs().edit().remove("milk_path").apply()
+                    }
+                }
+            },
+        )
 
-    private fun refreshTextures() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val listed = textureStore.list()
-            // Same one-shot rule as the library: an import or a removal
-            // publishes its own list and this one may predate it.
-            withContext(Dispatchers.Main) { if (_textures.value.isEmpty()) _textures.value = listed }
-        }
-    }
+    /** Imported milkdrop textures; only the texture picker reads it. */
+    val textures: StateFlow<List<MilkTexture>> get() = textureController.textures
 
     private val _lfos = MutableStateFlow(lfoStore.load())
     private val _adsrs = MutableStateFlow(lfoStore.loadAdsrs())
@@ -892,63 +897,17 @@ class PlayerViewModel(
         }
     }
 
-    /**
-     * Imports images into the shared milkdrop texture folder. [onImported] is
-     * invoked so the caller can reload the current preset and have projectM
-     * pick the new textures up.
-     */
     fun importTextures(
         uris: List<Uri>,
         onImported: () -> Unit,
-    ) {
-        if (uris.isEmpty()) return
-        viewModelScope.launch(Dispatchers.IO) {
-            val updated = textureStore.import(uris)
-            withContext(Dispatchers.Main) {
-                _textures.value = updated
-                onImported()
-            }
-        }
-    }
+    ) = textureController.importTextures(uris, onImported)
 
-    /**
-     * Deletes a texture off the main thread (it is disk work, same as
-     * [importTextures]) and keeps the milk selection coherent: removing a
-     * texture also removes the generated display preset(s) written for it,
-     * and when one of THOSE is the preset the engine is showing, the persisted
-     * `milk_path` would point at a dead file on the next launch - so it is
-     * cleared and the engine simply keeps its currently loaded frame instead
-     * of being offered a preset that no longer exists.
-     */
-    fun removeTexture(name: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val outcome = textureStore.removeDetailed(name)
-            withContext(Dispatchers.Main) {
-                _textures.value = outcome.textures
-                val gone = outcome.removedGeneratedPresetPaths
-                if (gone.isNotEmpty()) {
-                    if (_activeMilkPath.value in gone) _activeMilkPath.value = null
-                    // The pref can be stale even when the live value differs
-                    // (restore drops paths whose file is missing but leaves
-                    // the pref behind); compare it on its own.
-                    if (vizPrefs().getString("milk_path", null) in gone) {
-                        vizPrefs().edit().remove("milk_path").apply()
-                    }
-                }
-            }
-        }
-    }
+    fun removeTexture(name: String) = textureController.removeTexture(name)
 
-    /** Generates a display preset for [name] and hands its path to the caller. */
     fun useTexture(
         name: String,
         onReady: (String) -> Unit,
-    ) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val path = runCatching { textureStore.generateDisplayPreset(name) }.getOrNull()
-            withContext(Dispatchers.Main) { path?.let(onReady) }
-        }
-    }
+    ) = textureController.useTexture(name, onReady)
 
     val features: StateFlow<AudioFeatures> = engine.features
 
@@ -3209,7 +3168,7 @@ class PlayerViewModel(
         // it shows nothing wrong in the meantime.
         presetLibrary.refreshInitial()
         refreshLibrary()
-        refreshTextures()
+        textureController.refresh()
         // Restore persisted playback options onto the player. Auto-resume runs
         // BEFORE the listener registers so the startup preparation never
         // records a phantom play into history (ExoPlayer only delivers events
