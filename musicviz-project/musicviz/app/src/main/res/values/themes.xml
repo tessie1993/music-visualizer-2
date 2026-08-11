@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- System splash shown while the process cold-starts. Background matches
-         the MIDNIGHT theme background so the handoff to the Compose BootIntro
-         overlay (same color) is seamless. -->
+         the default Clear Quartz pack background so the handoff to the
+         Compose BootIntro overlay (same color) is seamless. -->
     <style name="Theme.MusicViz.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">#05060B</item>
+        <item name="windowSplashScreenBackground">#EEEAE3</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
         <item name="postSplashScreenTheme">@android:style/Theme.Material.NoActionBar</item>
     </style>

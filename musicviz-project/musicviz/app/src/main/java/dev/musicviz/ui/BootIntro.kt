@@ -72,20 +72,21 @@ fun BootIntro(onDone: () -> Unit) {
     }
 
     val primary = MaterialTheme.colorScheme.primary
-    // Stays dark (it hands off from the system splash) but carries the
-    // selected stone: a whisper of the theme primary in the ground, and the
-    // "white" marks are the primary lifted almost to white rather than a
-    // theme-blind pure white.
-    val glint = lerp(primary, Color.White, 0.82f)
+    // Hands off from the system splash (default Clear Quartz stone ground)
+    // and carries the selected stone: a whisper of the theme primary in the
+    // ground, and the marks are the primary pulled toward the readable
+    // extreme for that ground rather than a theme-blind pure white.
+    val onBackground = MaterialTheme.colorScheme.onBackground
+    val glint = lerp(primary, onBackground, 0.72f)
     val wordmark = LocalFontColor.current ?: glint
     Box(
         Modifier
             .fillMaxSize()
             .graphicsLayer { alpha = overlayAlpha.value }
-            // Base matches windowSplashScreenBackground (MIDNIGHT background)
-            // so the system splash hands off without a visible seam; the tint
-            // is faint enough not to read as a jump.
-            .background(lerp(Color(0xFF05060B), primary, 0.08f))
+            // Base matches windowSplashScreenBackground (the default pack's
+            // background) so the system splash hands off without a visible
+            // seam; the tint is faint enough not to read as a jump.
+            .background(lerp(Color(0xFFEEEAE3), primary, 0.08f))
             .pointerInput(Unit) { detectTapGestures { onDone() } },
         contentAlignment = Alignment.Center,
     ) {

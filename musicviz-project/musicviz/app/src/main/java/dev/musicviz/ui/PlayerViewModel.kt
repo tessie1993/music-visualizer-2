@@ -393,7 +393,7 @@ class PlayerViewModel(
     val trackOverrides: StateFlow<Map<String, LibraryTrack>> get() = musicLibrary.trackOverrides
 
     private val _theme = MutableStateFlow(themeStore.load())
-    val theme: StateFlow<AppTheme> = _theme
+    val theme: StateFlow<dev.musicviz.ui.theme.ThemePack> = _theme
 
     private val _guiPrefs = MutableStateFlow(themeStore.loadGui())
 
@@ -452,7 +452,7 @@ class PlayerViewModel(
             }
     }
 
-    fun setTheme(theme: AppTheme) {
+    fun setTheme(theme: dev.musicviz.ui.theme.ThemePack) {
         themeStore.save(theme)
         _theme.value = theme
     }

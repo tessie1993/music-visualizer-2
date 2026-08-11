@@ -104,43 +104,42 @@ internal fun LookSettingsTab(viewModel: PlayerViewModel) {
 }
 
 /**
- * Texture-true theme swatches: each chip renders inside a [LocalCrystalTheme]
- * override so [crystalPanel] draws the CANDIDATE stone's mineral texture and
- * colors rather than the current theme's - a tray of material samples, not a
- * row of labeled buttons. The hero stones lead because [AppTheme.entries]
- * already orders them first (Lapis, Sugilite, Rose Quartz, Amethyst).
+ * Material-true theme swatches: each chip renders inside a
+ * [dev.musicviz.ui.theme.LocalThemePack] override so [crystalPanel] tiles the
+ * CANDIDATE pack's photographed stone rather than the current one's - a tray
+ * of material samples, not a row of labeled buttons. Order is the catalog's,
+ * which is the pack import order.
  */
 @Composable
 private fun ThemePickerRow(
     viewModel: PlayerViewModel,
-    appTheme: AppTheme,
+    current: dev.musicviz.ui.theme.ThemePack,
 ) {
     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        items(AppTheme.entries.toList()) { t ->
-            val sel = t == appTheme
-            val scheme = remember(t) { t.colorScheme() }
-            CompositionLocalProvider(LocalCrystalTheme provides t) {
+        items(dev.musicviz.ui.theme.ThemePackCatalog.all) { t ->
+            val sel = t.slug == current.slug
+            CompositionLocalProvider(dev.musicviz.ui.theme.LocalThemePack provides t) {
                 Column(
                     Modifier
                         .width(88.dp)
                         .crystalPanel(
                             if (sel) 0.95f else 0.8f,
-                            scheme.surface,
-                            scheme.primary,
+                            t.palette.surface,
+                            t.palette.primary,
                             corner = 14.dp,
                             glowStrength = if (sel) 1.1f else 0.35f,
                             prismatic = sel,
-                            sheen = scheme.secondary,
+                            sheen = t.palette.secondary,
                         ).clickable { viewModel.setTheme(t) }
                         .padding(horizontal = 8.dp, vertical = 10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    CrystalGem(scheme.primary, size = 9.dp, glow = sel)
+                    CrystalGem(t.palette.primary, size = 9.dp, glow = sel)
                     Text(
-                        t.label,
+                        t.name,
                         style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSurface,
+                        color = t.palette.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -161,7 +160,7 @@ private fun ThemePickerRow(
 private fun FontColorRow(
     viewModel: PlayerViewModel,
     gui: GuiPrefs,
-    appTheme: AppTheme,
+    appTheme: dev.musicviz.ui.theme.ThemePack,
 ) {
     val cs = MaterialTheme.colorScheme
     Column {
