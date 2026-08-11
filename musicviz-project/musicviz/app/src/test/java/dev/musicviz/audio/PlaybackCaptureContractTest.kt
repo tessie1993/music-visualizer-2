@@ -134,6 +134,26 @@ class PlaybackCaptureContractTest {
         assertTrue("AudioCapturePump.kt: metering must follow the fenced write", meter > write && write >= 0)
     }
 
+    /**
+     * The blocked-app hint must flip MID-run, not only when a capture never
+     * heard anything: start on YouTube, switch to Spotify, and the perfect
+     * silence that follows is exactly what the hint exists to name. Pinned at
+     * source level because [noteLevel] is protected and the pump's worker
+     * thread cannot be intercepted for [PlaybackCapture] (see class doc); the
+     * line asserted is the one that restarts the clock from the last audible
+     * sample instead of only from stream start, mirroring [MicCapture].
+     */
+    @Test
+    fun `playback capture restarts its silence clock from the last audible sample`() {
+        val src = source("PlaybackCapture.kt")
+        assertTrue(
+            "PlaybackCapture.noteLevel latches blockedLikely only for never-audible runs; " +
+                "a capture that goes silent mid-session (app switch to a capture-blocking " +
+                "player) must trip it too - clock from lastAudibleAtMs, like MicCapture",
+            src.contains("val quietSince = if (lastAudibleAtMs == 0L) startedAtMs else lastAudibleAtMs"),
+        )
+    }
+
     private fun source(name: String): String {
         val relatives =
             listOf(
