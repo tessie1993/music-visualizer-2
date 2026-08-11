@@ -1,9 +1,7 @@
 package dev.musicviz.ui
 
 import android.app.Application
-import android.content.ContentUris
 import android.net.Uri
-import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -25,8 +23,6 @@ import dev.musicviz.data.FavouritesStore
 import dev.musicviz.data.HistoryStore
 import dev.musicviz.data.LfoStore
 import dev.musicviz.data.MilkTexture
-import dev.musicviz.data.MusicPlaylist
-import dev.musicviz.data.MusicPlaylistStore
 import dev.musicviz.data.PaletteStore
 import dev.musicviz.data.PlayerPrefs
 import dev.musicviz.data.PlayerPrefsStore
@@ -49,11 +45,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -157,75 +150,11 @@ data class QueueTrack(
     val artist: String = "",
 )
 
-/** One row of the device music index (MediaStore). */
-data class DeviceTrack(
-    val uri: String,
-    val title: String,
-    val artist: String,
-    val album: String,
-    val folder: String,
-    val durationMs: Long,
-    /** MediaStore DATE_ADDED, in SECONDS since the epoch; 0 when unknown. */
-    val addedSec: Long = 0L,
-)
-
-/** Music library + playlists + batch-analysis progress. */
-data class LibraryState(
-    val tracks: List<LibraryTrack> = emptyList(),
-    val playlists: List<MusicPlaylist> = emptyList(),
-    val analyzing: Boolean = false,
-    val analyzeProgress: Float = 0f,
-)
-
-private val AUDIO_EXTS = setOf("mp3", "wav", "flac", "ogg", "m4a", "aac", "opus", "wma", "aiff")
-
-/** Live-input state for the Settings switch: running, plus why it is not. */
-data class MicState(
-    val active: Boolean = false,
-    val failure: MicCapture.Failure? = null,
-)
-
-/**
- * "Visualize other apps": whether the capture is running, what it can hear,
- * and - when it can hear nothing - enough context to say why.
- */
-data class ExternalAudioState(
-    /** False on Android 9 and older, where the API does not exist. */
-    val supported: Boolean = dev.musicviz.audio.playbackCaptureSupported,
-    /** True while the capture is open and feeding the analyzer. */
-    val active: Boolean = false,
-    /** True while waiting for the user to answer the system consent dialog. */
-    val awaitingConsent: Boolean = false,
-    val failure: dev.musicviz.audio.CaptureFailure? = null,
-    /** What another app's media session says is playing, when readable. */
-    val nowPlaying: dev.musicviz.audio.NowPlayingBridge.External? = null,
-    /** True when the notification-listener switch is on, so [nowPlaying] works. */
-    val hasSessionAccess: Boolean = false,
-    /**
-     * The capture is open, something is playing, and every sample has been an
-     * exact zero for seconds: the playing app forbids capture. Spotify is the
-     * one people hit.
-     */
-    val refusedByApp: Boolean = false,
-) {
-    /** The app to name in a "…won't let us listen" message, if we know it. */
-    val refusingApp: String? get() = if (refusedByApp) nowPlaying?.appLabel else null
-}
-
 /** The player's queue as the Now Playing queue tab reads it. */
 data class QueueUiState(
     val tracks: List<QueueTrack> = emptyList(),
     val index: Int = 0,
 )
-
-/**
- * Graded beat impulse a "switch on a musical moment" decision (intelligent
- * visual playlist, Random mode's switch-on-beat) treats as strong enough to
- * act on. Track-relative by construction - [AudioFeatures.beatImpulse] folds
- * in the macro-energy envelope - so this is "one of this song's bigger hits",
- * not an absolute loudness that quiet masters never reach.
- */
-private const val STRONG_MOMENT_IMPULSE = 0.6f
 
 /**
  * Longest edge the artwork is decoded to before its hues are counted. A hue
@@ -263,207 +192,45 @@ class PlayerViewModel(
      */
     private val engine = playback.analysis
 
-    /**
-     * "Live input": the microphone as a second producer for the SAME ring
-     * buffer the playback tap writes into, so every consumer downstream is
-     * unchanged. Nothing is stored or transmitted - see [MicCapture].
-     */
-    private val micCapture = MicCapture(application, ring)
+    // ---- Alternate audio sources (machinery lives in CaptureController) ----
 
-    private val _micState = MutableStateFlow(MicState())
+    private val captureController =
+        CaptureController(
+            application,
+            viewModelScope,
+            ring,
+            object : CaptureController.Host {
+                override fun pausePlayback() = player.pause()
+
+                override fun resetAnalysis() = engine.reset()
+
+                override fun setAnalysisRate(rateHz: Int) {
+                    engine.sampleRateHz = rateHz
+                }
+
+                override fun setMicReactivePref(on: Boolean) {
+                    setGuiPrefs(_guiPrefs.value.copy(micReactive = on))
+                }
+            },
+        )
 
     /** Microphone-driven visuals: on/off plus the last failure to report. */
-    val micState: StateFlow<MicState> = _micState
-
-    /**
-     * Turns live input on or off.
-     *
-     * Turning it ON pauses playback: the ring buffer has ONE analysis window,
-     * so a track and the room would be summed into a single spectrum and
-     * neither would drive the visuals recognisably. That is also what the
-     * feature asks for - visuals reacting to the room, with no music playing.
-     *
-     * Returns the failure that stopped it, or null on success. A refused
-     * permission is reported rather than swallowed so the caller can send the
-     * user to the system prompt instead of leaving a switch that silently
-     * springs back.
-     */
-    fun setMicEnabled(enabled: Boolean): MicCapture.Failure? {
-        if (!enabled) {
-            micCapture.stop()
-            engine.reset()
-            engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
-            _micState.value = MicState(active = false)
-            setGuiPrefs(_guiPrefs.value.copy(micReactive = false))
-            return null
-        }
-        if (micCapture.active) return null
-        player.pause()
-        val failure = micCapture.start { rate -> engine.sampleRateHz = rate }
-        if (failure != null) {
-            _micState.value = MicState(active = false, failure = failure)
-            return failure
-        }
-        // The beat grid and energy envelope model one continuous piece of
-        // audio; the room is a different one, exactly like a track change.
-        engine.reset()
-        _micState.value = MicState(active = true)
-        setGuiPrefs(_guiPrefs.value.copy(micReactive = true))
-        return null
-    }
-
-    /** True when the RECORD_AUDIO permission is already granted. */
-    fun hasMicPermission(): Boolean = micCapture.hasPermission()
-
-    /**
-     * True while a source other than our own playback is feeding the ring
-     * buffer, and therefore owns the analyzer's sample rate.
-     */
-    private fun externalAudioOwnsAnalyzer(): Boolean = micCapture.active || playbackCapture.active
-
-    // ---- Visualize other apps (Spotify, YouTube, anything playing) ----
-
-    /**
-     * Third producer for the one ring buffer, after the playback tap and the
-     * microphone. Held on every API level; only starting it needs Android 10,
-     * and that gate lives in [startPlaybackCapture] where the reason for it
-     * can be turned into something the user reads.
-     */
-    private val playbackCapture = dev.musicviz.audio.PlaybackCapture(ring)
-
-    private val nowPlayingBridge = dev.musicviz.audio.NowPlayingBridge(application)
-
-    private val _externalAudio = MutableStateFlow(ExternalAudioState())
+    val micState: StateFlow<MicState> get() = captureController.micState
 
     /** State behind the "Visualize other apps" card. */
-    val externalAudio: StateFlow<ExternalAudioState> = _externalAudio
+    val externalAudio: StateFlow<ExternalAudioState> get() = captureController.externalAudio
 
-    /**
-     * Records that the consent dialog is up, so the switch can show that it is
-     * waiting rather than springing back while the system UI is in front.
-     */
-    fun noteExternalAudioConsentPending() {
-        _externalAudio.update { it.copy(awaitingConsent = true, failure = null) }
-    }
+    fun setMicEnabled(enabled: Boolean): MicCapture.Failure? = captureController.setMicEnabled(enabled)
 
-    /** The user dismissed the system capture dialog. */
-    fun noteExternalAudioConsentDenied() {
-        _externalAudio.update {
-            it.copy(awaitingConsent = false, failure = dev.musicviz.audio.CaptureFailure.CONSENT)
-        }
-    }
+    fun hasMicPermission(): Boolean = captureController.hasMicPermission()
 
-    /**
-     * Starts reading another app's audio with a projection the service has
-     * just published. Called from the [MediaProjectionHolder] collector, not
-     * by the UI: consent, the foreground service and the recorder are three
-     * separate steps and only the last one belongs here.
-     */
-    private fun startPlaybackCapture(projection: android.media.projection.MediaProjection) {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
-            _externalAudio.update {
-                it.copy(
-                    awaitingConsent = false,
-                    failure = dev.musicviz.audio.CaptureFailure.UNSUPPORTED,
-                )
-            }
-            return
-        }
-        if (!micCapture.hasPermission()) {
-            _externalAudio.update {
-                it.copy(
-                    awaitingConsent = false,
-                    failure = dev.musicviz.audio.CaptureFailure.PERMISSION,
-                )
-            }
-            return
-        }
-        // One ring buffer, one source. Our own playback and the microphone
-        // both step aside, exactly as they do for each other.
-        player.pause()
-        if (micCapture.active) setMicEnabled(false)
-        val failure = playbackCapture.start(projection) { rate -> engine.sampleRateHz = rate }
-        // The beat grid and energy envelope model one continuous piece of
-        // audio; another app's stream is a different one, like a track change.
-        engine.reset()
-        if (failure != null) {
-            // The service is what the consent flow started, and it is running
-            // by the time we get here. A recorder that never opened leaves it -
-            // and its "this app can hear you" notification - standing over a
-            // capture that does not exist, with the only way back a switch the
-            // user just watched fail. Hand the analyzer back too, since nothing
-            // is going to feed it.
-            engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
-            dev.musicviz.audio.PlaybackCaptureService
-                .stop(getApplication())
-        }
-        _externalAudio.update {
-            it.copy(
-                active = failure == null,
-                awaitingConsent = false,
-                failure = failure,
-                refusedByApp = false,
-            )
-        }
-    }
+    fun noteExternalAudioConsentPending() = captureController.noteExternalAudioConsentPending()
 
-    /** Stops the capture and takes the foreground service down with it. */
-    fun stopExternalAudio() {
-        playbackCapture.stop()
-        engine.reset()
-        engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
-        dev.musicviz.audio.PlaybackCaptureService
-            .stop(getApplication())
-        _externalAudio.update {
-            it.copy(active = false, awaitingConsent = false, refusedByApp = false)
-        }
-    }
+    fun noteExternalAudioConsentDenied() = captureController.noteExternalAudioConsentDenied()
 
-    /** Where to send the user to switch the notification listener on. */
-    fun notificationAccessIntent(): android.content.Intent = nowPlayingBridge.settingsIntent()
+    fun stopExternalAudio() = captureController.stopExternalAudio()
 
-    /**
-     * Refreshes what another app is playing, and re-decides whether a silent
-     * capture is being refused.
-     *
-     * The refusal verdict needs BOTH halves: the capture reporting nothing but
-     * exact zeroes, and a session reporting that something is in fact playing.
-     * Either alone is ordinary - a paused phone is silent, and a session can
-     * be playing while the capture is simply not running.
-     */
-    private fun refreshExternalAudio() {
-        val state = _externalAudio.value
-        val access = nowPlayingBridge.hasAccess()
-        val now = if (access) nowPlayingBridge.current() else null
-        val refused = playbackCapture.active && playbackCapture.blockedLikely && (now?.playing ?: false)
-        val next =
-            state.copy(
-                active = playbackCapture.active,
-                nowPlaying = now,
-                hasSessionAccess = access,
-                refusedByApp = refused,
-            )
-        if (next != state) _externalAudio.value = next
-    }
-
-    /**
-     * Notices a microphone that died under us and puts the switch back.
-     *
-     * [MicCapture.active] goes false on its own when the recorder stops mid-
-     * capture - a call takes the microphone, another app grabs it, the device
-     * refuses a read - but nothing else re-reads it: [_micState] is otherwise
-     * only ever written by [setMicEnabled]. So the switch stayed on, the
-     * "listening" affordance stayed up, and the visuals sat on a spectrum that
-     * had stopped arriving. Hands the analyzer back to playback the same way
-     * an explicit switch-off does.
-     */
-    private fun refreshMicState() {
-        if (!_micState.value.active || micCapture.active) return
-        engine.reset()
-        engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
-        _micState.value = MicState(active = false, failure = MicCapture.Failure.UNAVAILABLE)
-        setGuiPrefs(_guiPrefs.value.copy(micReactive = false))
-    }
+    fun notificationAccessIntent(): android.content.Intent = captureController.notificationAccessIntent()
 
     /**
      * Retunes the analysis chain for what the microphone is pointed at.
@@ -490,29 +257,6 @@ class PlayerViewModel(
     }
 
     /**
-     * Sample rate the decoded audio pipeline last reconfigured to, remembered
-     * so live input can hand the analyzer back the playback rate when it
-     * stops. Written from the playback thread.
-     */
-    @Volatile
-    private var tapSampleRateHz: Int = 0
-
-    /**
-     * Held as a field rather than passed as a lambda so [onCleared] can check
-     * whether the hook still installed on the player is this ViewModel's own
-     * before clearing it - see there for the race that makes the check matter.
-     */
-    private val audioFormatHook: (sampleRateHz: Int, channelCount: Int, encoding: Int) -> Unit =
-        { rate, _, _ ->
-            // Live input owns the analyzer's rate while it is running: the
-            // player can still reconfigure its pipeline (a queued track being
-            // prepared) and would otherwise retune the FFT to a rate no
-            // samples are arriving at.
-            tapSampleRateHz = rate
-            if (!externalAudioOwnsAnalyzer()) engine.sampleRateHz = rate
-        }
-
-    /**
      * Its own init block, run here rather than from the main one at the bottom
      * of the class, because the player it hooks into may already be playing:
      * the engine hands back a live player when a previous screen left one
@@ -520,7 +264,7 @@ class PlayerViewModel(
      * would leave the analyzer tuned to a rate no samples arrive at.
      */
     init {
-        playback.onAudioFormat = audioFormatHook
+        playback.onAudioFormat = captureController.audioFormatHook
     }
 
     private val offlineAnalyzer = OfflineAnalyzer(application)
@@ -540,7 +284,6 @@ class PlayerViewModel(
                 override val activeMilkPath: String? get() = _activeMilkPath.value
             },
         )
-    private val trackLibrary = TrackLibrary(application)
     private val themeStore = ThemeStore(application)
     private val playerPrefsStore = PlayerPrefsStore(application)
 
@@ -551,7 +294,6 @@ class PlayerViewModel(
      */
     private val autoVisualsPrefsStore = AutoVisualsPrefsStore(application)
     private val lfoStore = LfoStore(application)
-    private val musicPlaylists = MusicPlaylistStore(application)
     private val audioFxController = playback.audioFx
 
     val player: ExoPlayer = playback.player
@@ -642,47 +384,13 @@ class PlayerViewModel(
 
     val exportState: StateFlow<ExportUiState> get() = exportController.exportState
 
-    /**
-     * Starts empty and is filled by [refreshLibrary]: the library file is one
-     * JSON document covering every imported track and the playlists are a file
-     * each, which is not work to make the first frame wait for. Every screen
-     * that reads this already renders an empty list as "nothing here yet" for
-     * the seconds before a device scan returns.
-     */
-    private val _library = MutableStateFlow(LibraryState())
-    val library: StateFlow<LibraryState> = _library
+    private val musicLibrary = MusicLibraryController(application, viewModelScope)
 
-    /**
-     * Reads the imported-track library and the playlists off the main thread,
-     * once, to fill the initial value. Skips if anything has published a list
-     * meanwhile - an import or a playlist edit re-lists synchronously, and this
-     * listing may have begun before it.
-     */
-    private fun refreshLibrary() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val tracks = trackLibrary.list()
-            val playlists = musicPlaylists.list()
-            withContext(Dispatchers.Main) {
-                _library.update {
-                    if (it.tracks.isNotEmpty() || it.playlists.isNotEmpty()) it else it.copy(tracks = tracks, playlists = playlists)
-                }
-            }
-        }
-    }
+    /** Imported tracks, playlists and scan state (see MusicLibraryController). */
+    val library: StateFlow<LibraryState> get() = musicLibrary.library
 
-    /**
-     * App-side metadata overrides keyed by uri, derived from [library].
-     * Screens (and search) join device/MediaStore rows against this map;
-     * every [saveTrackInfo]/import/analysis pass bumps it.
-     */
-    val trackOverrides: StateFlow<Map<String, LibraryTrack>> =
-        _library
-            .map { st -> st.tracks.associateBy { it.uri } }
-            .stateIn(
-                viewModelScope,
-                SharingStarted.Eagerly,
-                _library.value.tracks.associateBy { it.uri },
-            )
+    /** App-side metadata overrides keyed by uri, derived from [library]. */
+    val trackOverrides: StateFlow<Map<String, LibraryTrack>> get() = musicLibrary.trackOverrides
 
     private val _theme = MutableStateFlow(themeStore.load())
     val theme: StateFlow<AppTheme> = _theme
@@ -1283,57 +991,47 @@ class PlayerViewModel(
     /** One-shot preset-morph fade (seconds) for the renderer; never persisted. */
     val morphFade: SharedFlow<Float> = _morphFade
 
-    private var lastVizSwitchMs = 0L
-    private var vizPlaylistIndex = 0
+    private val autoVisuals =
+        AutoVisualsController(
+            autoVisualsPrefsStore,
+            object : AutoVisualsController.Host {
+                override val vizState: StateFlow<VizUiState> get() = _vizState
 
-    /**
-     * Adds an entry to the visual playlist, deduplicated: a preset already in
-     * the list (by [VizPlaylistEntry.presetName]) or an identical entry is
-     * not appended again. The heart in Visuals › Presets is a membership
-     * toggle, but a playlist that could accumulate silent duplicates from any
-     * OTHER caller would drain one copy per un-heart while looking removed.
-     * The list is persisted (see [AutoVisualsPrefsStore]) so the entries the
-     * standing `vizPlaylistEnabled` instruction rotates survive a restart
-     * with it.
-     */
-    fun addToVizPlaylist(entry: VizPlaylistEntry) {
-        val s = _vizState.value
-        val duplicate =
-            s.vizPlaylist.any {
-                it == entry || (entry.presetName != null && it.presetName == entry.presetName)
-            }
-        if (duplicate) return
-        _vizState.value = s.copy(vizPlaylist = s.vizPlaylist + entry)
-        persistAutoVisuals()
-    }
+                override fun updateViz(transform: (VizUiState) -> VizUiState) = _vizState.update(transform)
 
-    fun removeVizPlaylistAt(index: Int) {
-        val s = _vizState.value
-        if (index in s.vizPlaylist.indices) {
-            _vizState.value = s.copy(vizPlaylist = s.vizPlaylist.filterIndexed { i, _ -> i != index })
-            persistAutoVisuals()
-        }
-    }
+                override val isPlaying: Boolean get() = _uiState.value.isPlaying
+                override val positionMs: Long get() = _uiState.value.positionMs
 
-    fun setVizPlaylistEnabled(enabled: Boolean) {
-        _vizState.value =
-            _vizState.value.copy(
-                vizPlaylistEnabled = enabled,
-                randomEnabled = if (enabled) false else _vizState.value.randomEnabled,
-            )
-        lastVizSwitchMs = android.os.SystemClock.elapsedRealtime()
-        persistAutoVisuals()
-    }
+                override fun features() = engine.features.value
 
-    fun setVizPlaylistIntelligent(enabled: Boolean) {
-        _vizState.update { it.copy(vizPlaylistIntelligent = enabled) }
-        persistAutoVisuals()
-    }
+                override val presetLocked: Boolean get() = _presetLocked.value
 
-    fun setVizPlaylistInterval(seconds: Int) {
-        _vizState.update { it.copy(vizPlaylistIntervalSec = seconds.coerceIn(AutoVisualsPrefsStore.INTERVAL_SEC)) }
-        persistAutoVisuals()
-    }
+                override fun selectScene(sceneId: String) = this@PlayerViewModel.selectScene(sceneId)
+
+                override fun applyPreset(preset: Preset) = this@PlayerViewModel.applyPreset(preset)
+
+                override fun applyMilk(
+                    path: String,
+                    sceneId: String,
+                ) {
+                    _vizApply.tryEmit(VizApply(milkPath = path, sceneId = sceneId))
+                }
+
+                override fun analyzeCurrentTrack() = this@PlayerViewModel.analyzeCurrentTrack()
+
+                override fun milkFilesAsync(onDone: (List<MilkFile>) -> Unit) = milkPresetFilesAsync(onDone)
+            },
+        )
+
+    fun addToVizPlaylist(entry: VizPlaylistEntry) = autoVisuals.addToVizPlaylist(entry)
+
+    fun removeVizPlaylistAt(index: Int) = autoVisuals.removeVizPlaylistAt(index)
+
+    fun setVizPlaylistEnabled(enabled: Boolean) = autoVisuals.setVizPlaylistEnabled(enabled)
+
+    fun setVizPlaylistIntelligent(enabled: Boolean) = autoVisuals.setVizPlaylistIntelligent(enabled)
+
+    fun setVizPlaylistInterval(seconds: Int) = autoVisuals.setVizPlaylistInterval(seconds)
 
     /**
      * Applies user GLSL to the current shader scene: stored in state (so
@@ -1368,465 +1066,48 @@ class PlayerViewModel(
         _vizState.update { it.copy(transitionDurationSec = seconds.coerceIn(0.3f, 5f)) }
     }
 
-    private fun advanceVizPlaylist() {
-        val s = _vizState.value
-        if (!s.vizPlaylistEnabled || s.vizPlaylist.size < 2 || !_uiState.value.isPlaying) return
-        val now = android.os.SystemClock.elapsedRealtime()
-        val elapsed = now - lastVizSwitchMs
-        val intervalMs = s.vizPlaylistIntervalSec * 1000L
-        val due =
-            if (s.vizPlaylistIntelligent) {
-                // Intelligent: after a minimum dwell, switch on a strong
-                // musical moment; force a switch at 2x interval so quiet
-                // passages still rotate. "Strong" is the tracker's graded beat
-                // impulse, which is TRACK-RELATIVE (it folds in the macro-
-                // energy envelope) - the absolute rms gate this replaced never
-                // opened on a quietly mastered track, so intelligent mode
-                // silently degraded into the plain 2x-interval timer there.
-                val f = engine.features.value
-                val minDwell = maxOf(8_000L, intervalMs / 2)
-                (elapsed >= minDwell && f.beatImpulse >= STRONG_MOMENT_IMPULSE) || elapsed >= intervalMs * 2
-            } else {
-                elapsed >= intervalMs
-            }
-        if (!due) return
-        lastVizSwitchMs = now
-        vizPlaylistIndex = (vizPlaylistIndex + 1) % s.vizPlaylist.size
-        applyVizEntry(s.vizPlaylist[vizPlaylistIndex])
-    }
+    // ---- Random mode + section staging (machinery lives in AutoVisualsController) ----
 
-    // ---- Random mode ----
+    fun setRandomEnabled(enabled: Boolean) = autoVisuals.setRandomEnabled(enabled)
 
-    private var lastRandomSwitchMs = 0L
-    private val randomRng = kotlin.random.Random(android.os.SystemClock.elapsedRealtime())
+    fun setRandomInterval(seconds: Int) = autoVisuals.setRandomInterval(seconds)
 
-    /** Cached .milk files so random picks don't touch disk on the tick loop. */
-    private var cachedMilkFiles: List<MilkFile> = emptyList()
+    fun setRandomOnBeat(enabled: Boolean) = autoVisuals.setRandomOnBeat(enabled)
 
-    fun setRandomEnabled(enabled: Boolean) {
-        _vizState.value =
-            _vizState.value.copy(
-                randomEnabled = enabled,
-                vizPlaylistEnabled = if (enabled) false else _vizState.value.vizPlaylistEnabled,
-            )
-        lastRandomSwitchMs = android.os.SystemClock.elapsedRealtime()
-        if (enabled && _vizState.value.randomIncludeMilk) refreshMilkCache()
-        if (enabled) randomStepNow()
-        // randomEnabled itself is session-only, but turning Random on clears
-        // the PERSISTED vizPlaylistEnabled, and that clear must stick.
-        persistAutoVisuals()
-    }
+    fun setRandomIncludeStyles(enabled: Boolean) = autoVisuals.setRandomIncludeStyles(enabled)
 
-    fun setRandomInterval(seconds: Int) {
-        _vizState.update { it.copy(randomIntervalSec = seconds.coerceIn(AutoVisualsPrefsStore.INTERVAL_SEC)) }
-        persistAutoVisuals()
-    }
+    fun setRandomIncludePresets(enabled: Boolean) = autoVisuals.setRandomIncludePresets(enabled)
 
-    fun setRandomOnBeat(enabled: Boolean) {
-        _vizState.update { it.copy(randomOnBeat = enabled) }
-        persistAutoVisuals()
-    }
+    fun setRandomIncludeMilk(enabled: Boolean) = autoVisuals.setRandomIncludeMilk(enabled)
 
-    fun setRandomIncludeStyles(enabled: Boolean) {
-        _vizState.update { it.copy(randomIncludeStyles = enabled) }
-        persistAutoVisuals()
-    }
+    fun setRandomizeColors(enabled: Boolean) = autoVisuals.setRandomizeColors(enabled)
 
-    fun setRandomIncludePresets(enabled: Boolean) {
-        _vizState.update { it.copy(randomIncludePresets = enabled) }
-        persistAutoVisuals()
-    }
-
-    fun setRandomIncludeMilk(enabled: Boolean) {
-        _vizState.update { it.copy(randomIncludeMilk = enabled) }
-        if (enabled) refreshMilkCache()
-        persistAutoVisuals()
-    }
-
-    fun setRandomizeColors(enabled: Boolean) {
-        _vizState.update { it.copy(randomizeColors = enabled) }
-        persistAutoVisuals()
-    }
-
-    /**
-     * Saves the auto-visuals knobs after every setter above - the same
-     * write-on-set pattern [setGuiPrefs]/[setPlayerPrefs] use, small enough
-     * (nine primitives) not to need the live state's coalescing window.
-     */
-    private fun persistAutoVisuals() {
-        autoVisualsPrefsStore.save(_vizState.value)
-    }
-
-    private fun refreshMilkCache() {
-        milkPresetFilesAsync { cachedMilkFiles = it }
-    }
-
-    /** Section the playhead is inside, from the offline analysis boundaries. */
-    private fun currentSectionIndex(): Int {
-        val sections = _vizState.value.sections
-        if (sections.isEmpty()) return 0
-        val pos = _uiState.value.positionMs
-        var idx = 0
-        for (boundary in sections) {
-            if (boundary <= pos) idx++ else break
-        }
-        return idx
-    }
-
-    /** Section last staged, so a look is applied once per section, not per tick. */
-    private var lastStagedSection = -1
-
-    /**
-     * Applies a look when the playhead crosses into a new section.
-     *
-     * Deterministic by section INDEX rather than "next in the list": the point
-     * is that a chorus looks like the chorus every time, so the third section
-     * of a track must get the same look on every play - and on the export.
-     * Falls back to the current style's presets when no visual playlist has
-     * been built, so the mode works without any setup at all.
-     */
-    private fun advanceSectionStaging() {
-        val s = _vizState.value
-        if (!s.sectionStaging || !_uiState.value.isPlaying) return
-        val index = currentSectionIndex()
-        if (index == lastStagedSection) return
-        lastStagedSection = index
-        if (s.vizPlaylist.isNotEmpty()) {
-            applyVizEntry(s.vizPlaylist[index % s.vizPlaylist.size])
-            return
-        }
-        val pool = s.presets.filter { it.sceneId == s.sceneId }
-        if (pool.isNotEmpty()) applyPreset(pool[index % pool.size])
-    }
-
-    /**
-     * Turns section staging on or off.
-     *
-     * Switching it on kicks off the offline analysis when it has not run:
-     * sections come from that pass, and a mode whose input is missing would
-     * otherwise just sit there doing nothing with no way to tell why.
-     */
-    fun setSectionStaging(enabled: Boolean) {
-        _vizState.update { it.copy(sectionStaging = enabled) }
-        lastStagedSection = -1
-        if (enabled && _vizState.value.sections.isEmpty()) analyzeCurrentTrack()
-    }
-
-    private fun advanceRandomMode() {
-        val s = _vizState.value
-        if (!s.randomEnabled || !_uiState.value.isPlaying) return
-        val now = android.os.SystemClock.elapsedRealtime()
-        val elapsed = now - lastRandomSwitchMs
-        val intervalMs = s.randomIntervalSec * 1000L
-        val due =
-            if (s.randomOnBeat) {
-                // Switch on a strong musical moment after a minimum dwell;
-                // force a switch at 2x interval so quiet passages still move.
-                // Graded and track-relative, as in advanceVizPlaylist().
-                val f = engine.features.value
-                val minDwell = maxOf(6_000L, intervalMs / 2)
-                (elapsed >= minDwell && f.beatImpulse >= STRONG_MOMENT_IMPULSE) || elapsed >= intervalMs * 2
-            } else {
-                elapsed >= intervalMs
-            }
-        if (!due) return
-        randomStepNow()
-    }
+    fun setSectionStaging(enabled: Boolean) = autoVisuals.setSectionStaging(enabled)
 
     /** Jumps to a random style/preset immediately (also used on enable). */
-    fun randomStepNow() {
-        if (_presetLocked.value) return
-        val s = _vizState.value
-        lastRandomSwitchMs = android.os.SystemClock.elapsedRealtime()
-        val choices = mutableListOf<VizPlaylistEntry>()
-        val sceneIds =
-            dev.musicviz.render.VisualizerRenderer.PARTICLE_SCENES +
-                dev.musicviz.render.VisualizerRenderer.SHADER_SCENES.keys
-        if (s.randomIncludeStyles) sceneIds.forEach { choices += VizPlaylistEntry(sceneId = it, label = it) }
-        if (s.randomIncludePresets) {
-            s.presets.forEach { choices += VizPlaylistEntry(sceneId = it.sceneId, presetName = it.name, label = it.name) }
-        }
-        if (s.randomIncludeMilk && dev.musicviz.render.scene.PMBridge.available) {
-            cachedMilkFiles.forEach {
-                choices += VizPlaylistEntry(sceneId = SceneIds.MILKDROP, milkPath = it.path, label = it.name)
-            }
-        }
-        if (choices.isEmpty()) return
-        var pick = choices[randomRng.nextInt(choices.size)]
-        // One retry to avoid landing on the scene already showing.
-        if (choices.size > 1 && pick.sceneId == s.sceneId && pick.presetName == null && pick.milkPath == null) {
-            pick = choices[randomRng.nextInt(choices.size)]
-        }
-        applyVizEntry(pick)
-        if (s.randomizeColors) {
-            // The roll is drawn out here, once: update re-runs its block on a
-            // losing compare-and-set, and drawing inside it would give the
-            // retry different colours from the ones this step decided on.
-            val palette = randomRng.nextInt(SceneParams.PALETTES.size)
-            val palette2 = randomRng.nextInt(SceneParams.PALETTES.size)
-            val paletteMix = if (randomRng.nextBoolean()) randomRng.nextFloat() * 0.6f else 0f
-            val colorShift = randomRng.nextFloat()
-            _vizState.update { cur ->
-                val rolled =
-                    cur.params.copy(
-                        palette = palette,
-                        palette2 = palette2,
-                        paletteMix = paletteMix,
-                        colorShift = colorShift,
-                    )
-                // A custom-palette override outranks the PALETTES lookup, so the
-                // new indices stay invisible unless both slots are cleared too.
-                cur.copy(params = PaletteStore.clear(PaletteStore.clear(rolled), second = true))
-            }
-        }
-    }
+    fun randomStepNow() = autoVisuals.randomStepNow()
 
-    /** Applies a playlist entry: scene, saved preset params and side effects.
-     *  The preset's custom shader (if any) is emitted by [applyPreset]. */
-    fun applyVizEntry(entry: VizPlaylistEntry) {
-        selectScene(entry.sceneId)
-        if (entry.presetName != null) {
-            _vizState.value.presets
-                .firstOrNull { it.name == entry.presetName && it.sceneId == entry.sceneId }
-                ?.let { applyPreset(it) }
-        }
-        if (entry.milkPath != null) {
-            _vizApply.tryEmit(VizApply(milkPath = entry.milkPath, sceneId = entry.sceneId))
-        }
-    }
+    /** Applies a playlist entry: scene, saved preset params and side effects. */
+    fun applyVizEntry(entry: VizPlaylistEntry) = autoVisuals.applyVizEntry(entry)
 
-    // ---- Music library & playlists ----
-
-    /**
-     * Embedded-tag metadata read from a file; fields blank/zero when absent.
-     * [fileName]/[sizeBytes] are not tags but the provider's view of the file
-     * itself, carried here because they are what identifies it in the library.
-     */
-    private data class FileMeta(
-        val title: String,
-        val artist: String = "",
-        val album: String = "",
-        val genre: String = "",
-        val year: Int = 0,
-        val trackNo: Int = 0,
-        val fileName: String = "",
-        val sizeBytes: Long = 0L,
-    )
-
-    private val _deviceTracks = MutableStateFlow<List<DeviceTrack>>(emptyList())
+    // ---- Music library & playlists (machinery lives in MusicLibraryController) ----
 
     /** Device music index (MediaStore); refreshed on demand from the UI. */
-    val deviceTracks: StateFlow<List<DeviceTrack>> = _deviceTracks
+    val deviceTracks: StateFlow<List<DeviceTrack>> get() = musicLibrary.deviceTracks
 
-    /**
-     * Re-queries the MediaStore device index on IO. Safe to call from any
-     * screen: without the audio permission it just publishes an empty list.
-     * (The query used to run synchronously inside LibraryScreen composition,
-     * janking the first frame of the Library tab on large collections.)
-     */
-    fun refreshDeviceTracks() {
-        viewModelScope.launch(Dispatchers.IO) {
-            _deviceTracks.value = queryDeviceTracksBlocking()
-        }
-    }
+    /** Persistent library folders (SAF tree URIs); rescanned on demand. */
+    val mediaRoots: StateFlow<Set<String>> get() = musicLibrary.mediaRoots
 
-    /** Full MediaStore music query; call on Dispatchers.IO. */
-    private fun queryDeviceTracksBlocking(): List<DeviceTrack> {
-        val app = getApplication<Application>()
-        val permission =
-            if (android.os.Build.VERSION.SDK_INT >= 33) {
-                android.Manifest.permission.READ_MEDIA_AUDIO
-            } else {
-                android.Manifest.permission.READ_EXTERNAL_STORAGE
-            }
-        val granted =
-            androidx.core.content.ContextCompat
-                .checkSelfPermission(app, permission) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (!granted) return emptyList()
-        val out = mutableListOf<DeviceTrack>()
-        val proj =
-            arrayOf(
-                MediaStore.Audio.Media._ID,
-                MediaStore.Audio.Media.TITLE,
-                MediaStore.Audio.Media.ARTIST,
-                MediaStore.Audio.Media.ALBUM,
-                MediaStore.Audio.Media.DURATION,
-                MediaStore.Audio.Media.DATA,
-                MediaStore.Audio.Media.DATE_ADDED,
-            )
-        runCatching {
-            app.contentResolver
-                .query(
-                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                    proj,
-                    "${MediaStore.Audio.Media.IS_MUSIC} != 0",
-                    null,
-                    "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC",
-                )?.use { c ->
-                    val id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-                    val ti = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-                    val ar = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-                    val al = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-                    val du = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-                    val da = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
-                    val ad = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
-                    while (c.moveToNext()) {
-                        val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, c.getLong(id))
-                        val path = c.getString(da).orEmpty()
-                        out +=
-                            DeviceTrack(
-                                uri = uri.toString(),
-                                title = c.getString(ti) ?: "Unknown",
-                                artist = c.getString(ar) ?: "Unknown artist",
-                                album = c.getString(al) ?: "Unknown album",
-                                folder = path.substringBeforeLast('/', ""),
-                                durationMs = c.getLong(du),
-                                addedSec = c.getLong(ad),
-                            )
-                    }
-                }
-        }
-        return out
-    }
+    val libraryScanning: StateFlow<Boolean> get() = musicLibrary.libraryScanning
 
-    /**
-     * Resolves tag metadata the way real media players do: embedded tags
-     * first (MediaMetadataRetriever), then the provider's display name, and
-     * only then the URI path - so content URIs never surface as bare
-     * document numbers. Call on Dispatchers.IO; the retriever hits disk.
-     */
-    private fun metadataFor(uri: Uri): FileMeta {
-        val app = getApplication<Application>()
-        var title: String? = null
-        var artist: String? = null
-        var album = ""
-        var genre = ""
-        var year = 0
-        var trackNo = 0
-        runCatching {
-            val r = android.media.MediaMetadataRetriever()
-            try {
-                r.setDataSource(app, uri)
+    fun refreshDeviceTracks() = musicLibrary.refreshDeviceTracks()
 
-                fun tag(key: Int): String? = r.extractMetadata(key)?.trim()?.ifBlank { null }
-                title = tag(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE)
-                artist = tag(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                album = tag(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: ""
-                genre = tag(android.media.MediaMetadataRetriever.METADATA_KEY_GENRE) ?: ""
-                // Year tags arrive as "1997" or full dates; track numbers as "3" or "3/12".
-                year =
-                    tag(android.media.MediaMetadataRetriever.METADATA_KEY_YEAR)
-                        ?.filter { it.isDigit() }
-                        ?.take(4)
-                        ?.toIntOrNull() ?: 0
-                trackNo =
-                    tag(android.media.MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
-                        ?.substringBefore('/')
-                        ?.trim()
-                        ?.toIntOrNull() ?: 0
-            } finally {
-                runCatching { r.release() }
-            }
-        }
-        val openable = openableInfoFor(uri)
-        if (title == null) title = openable.first.ifBlank { null }?.substringBeforeLast('.')
-        return FileMeta(
-            title = title ?: uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Track",
-            artist = artist ?: "",
-            album = album,
-            genre = genre,
-            year = year,
-            trackNo = trackNo,
-            fileName = openable.first,
-            sizeBytes = openable.second,
-        )
-    }
+    fun importTracks(uris: List<Uri>) = musicLibrary.importTracks(uris)
 
-    /**
-     * The provider's display name and byte size for [uri], blank/zero when it
-     * reports neither. This is the library's dedup identity (see
-     * [LibraryTrack.fileName]), so it is queried for every file rather than
-     * only as a title fallback: SAF and MediaStore hand out different uris
-     * for the same file but the same DISPLAY_NAME/SIZE. One cursor next to
-     * the retriever above, whose disk I/O dwarfs it.
-     */
-    private fun openableInfoFor(uri: Uri): Pair<String, Long> =
-        runCatching {
-            val cols = arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE)
-            getApplication<Application>()
-                .contentResolver
-                .query(uri, cols, null, null, null)
-                ?.use { c ->
-                    if (!c.moveToFirst()) return@use null
-                    val ni = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    val si = c.getColumnIndex(android.provider.OpenableColumns.SIZE)
-                    val name = if (ni >= 0 && !c.isNull(ni)) c.getString(ni).orEmpty() else ""
-                    val size = if (si >= 0 && !c.isNull(si)) c.getLong(si) else 0L
-                    name to size
-                }
-        }.getOrNull() ?: ("" to 0L)
+    fun trackOverride(uri: String): LibraryTrack? = musicLibrary.trackOverride(uri)
 
-    private fun libraryTrackFor(
-        uriStr: String,
-        m: FileMeta,
-    ): LibraryTrack =
-        LibraryTrack(
-            uri = uriStr,
-            title = m.title,
-            artist = m.artist,
-            album = m.album,
-            genre = m.genre,
-            year = m.year,
-            trackNo = m.trackNo,
-            fileName = m.fileName,
-            sizeBytes = m.sizeBytes,
-        )
+    suspend fun trackInfoFor(uriStr: String): LibraryTrack = musicLibrary.trackInfoFor(uriStr)
 
-    private fun titleFor(uri: Uri): String = metadataFor(uri).title
-
-    /** Imports picked audio files into the library (persist read permission first). */
-    fun importTracks(uris: List<Uri>) {
-        if (uris.isEmpty()) return
-        // titleFor() runs a content-resolver metadata query per file; a large
-        // multi-select would jank/ANR the main thread, so do it on IO.
-        viewModelScope.launch(Dispatchers.IO) {
-            val app = getApplication<Application>()
-            val tracks =
-                uris.map { uri ->
-                    runCatching {
-                        app.contentResolver.takePersistableUriPermission(
-                            uri,
-                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                        )
-                    }
-                    libraryTrackFor(uri.toString(), metadataFor(uri))
-                }
-            // A null result means the store was unreadable and nothing was
-            // written, so leave the on-screen list exactly as it is rather
-            // than publishing a list that does not reflect the disk.
-            trackLibrary.addAll(tracks)?.let { merged -> _library.update { it.copy(tracks = merged) } }
-        }
-    }
-
-    /** The stored library/override entry for [uri], if any (imported or user-edited). */
-    fun trackOverride(uri: String): LibraryTrack? = _library.value.tracks.firstOrNull { it.uri == uri }
-
-    /**
-     * Track-info-editor prefill: the stored override when one exists, else
-     * the file's embedded tags (retriever runs on IO).
-     */
-    suspend fun trackInfoFor(uriStr: String): LibraryTrack =
-        trackOverride(uriStr) ?: withContext(Dispatchers.IO) {
-            libraryTrackFor(uriStr, metadataFor(Uri.parse(uriStr)))
-        }
-
-    /**
-     * Saves user-edited track info into the app-side store. Upserts, so it
-     * works for MediaStore tracks that were never imported; the audio file
-     * itself is never modified. Publishing through [_library] (and thus
-     * [trackOverrides]) is what refreshes every observing screen.
-     */
     fun saveTrackInfo(
         uri: String,
         title: String,
@@ -1836,12 +1117,38 @@ class PlayerViewModel(
         year: Int,
         trackNo: Int,
         comment: String,
-    ) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val merged = trackLibrary.updateMetadata(uri, title, artist, album, genre, year, trackNo, comment)
-            merged?.let { withContext(Dispatchers.Main) { _library.update { s -> s.copy(tracks = it) } } }
-        }
-    }
+    ) = musicLibrary.saveTrackInfo(uri, title, artist, album, genre, year, trackNo, comment)
+
+    fun importFolder(treeUri: Uri) = musicLibrary.importFolder(treeUri)
+
+    fun removeMediaRoot(uriStr: String) = musicLibrary.removeMediaRoot(uriStr)
+
+    fun rescanMediaRoots() = musicLibrary.rescanMediaRoots()
+
+    fun createMusicPlaylist(name: String) = musicLibrary.createMusicPlaylist(name)
+
+    fun renameMusicPlaylist(
+        oldName: String,
+        newName: String,
+    ): Boolean = musicLibrary.renameMusicPlaylist(oldName, newName)
+
+    fun moveMusicPlaylistTrack(
+        name: String,
+        from: Int,
+        to: Int,
+    ) = musicLibrary.moveMusicPlaylistTrack(name, from, to)
+
+    fun deleteMusicPlaylist(name: String) = musicLibrary.deleteMusicPlaylist(name)
+
+    fun addTrackToPlaylist(
+        playlist: String,
+        uri: String,
+    ) = musicLibrary.addTrackToPlaylist(playlist, uri)
+
+    fun removeTrackFromPlaylist(
+        playlist: String,
+        uri: String,
+    ) = musicLibrary.removeTrackFromPlaylist(playlist, uri)
 
     /**
      * Analysis with the persistent cache: a hit skips the whole offline
@@ -1872,155 +1179,13 @@ class PlayerViewModel(
             }
     }
 
-    private fun libraryPrefs(): android.content.SharedPreferences =
-        getApplication<Application>().getSharedPreferences("musicviz-library", android.content.Context.MODE_PRIVATE)
-
-    private val _mediaRoots =
-        MutableStateFlow<Set<String>>(libraryPrefs().getStringSet("roots", emptySet()) ?: emptySet())
-
-    /** Persistent library folders (SAF tree URIs); rescanned on demand. */
-    val mediaRoots: StateFlow<Set<String>> = _mediaRoots
-
-    private val _libraryScanning = MutableStateFlow(false)
-    val libraryScanning: StateFlow<Boolean> = _libraryScanning
-
-    fun importFolder(treeUri: Uri) {
-        val app = getApplication<Application>()
-        runCatching {
-            app.contentResolver.takePersistableUriPermission(
-                treeUri,
-                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
-        }
-        _mediaRoots.update { it + treeUri.toString() }
-        libraryPrefs().edit().putStringSet("roots", _mediaRoots.value).apply()
-        viewModelScope.launch(Dispatchers.IO) {
-            _libraryScanning.value = true
-            try {
-                scanTreeBlocking(treeUri)
-            } finally {
-                _libraryScanning.value = false
-            }
-        }
-    }
-
-    fun removeMediaRoot(uriStr: String) {
-        _mediaRoots.update { it - uriStr }
-        libraryPrefs().edit().putStringSet("roots", _mediaRoots.value).apply()
-    }
-
-    /** Re-walks every registered folder; existing entries keep their analysis. */
-    fun rescanMediaRoots() {
-        if (_libraryScanning.value) return
-        viewModelScope.launch(Dispatchers.IO) {
-            _libraryScanning.value = true
-            try {
-                for (root in _mediaRoots.value) {
-                    scanTreeBlocking(Uri.parse(root))
-                }
-            } finally {
-                _libraryScanning.value = false
-            }
-        }
-    }
-
-    /** Recursive SAF walk (VLC-mirror: full tree, hidden dirs skipped). */
-    private suspend fun scanTreeBlocking(treeUri: Uri) {
-        val app = getApplication<Application>()
-        val found = mutableListOf<LibraryTrack>()
-        runCatching {
-            val root =
-                androidx.documentfile.provider.DocumentFile
-                    .fromTreeUri(app, treeUri) ?: return@runCatching
-
-            fun walk(
-                dir: androidx.documentfile.provider.DocumentFile,
-                depth: Int,
-            ) {
-                if (depth > 8) return
-                dir.listFiles().forEach { f ->
-                    val name = f.name ?: return@forEach
-                    if (name.startsWith(".")) return@forEach
-                    if (f.isDirectory) {
-                        walk(f, depth + 1)
-                    } else {
-                        val isAudio =
-                            f.type?.startsWith("audio/") == true ||
-                                name.substringAfterLast('.', "").lowercase() in AUDIO_EXTS
-                        if (isAudio) {
-                            found += libraryTrackFor(f.uri.toString(), metadataFor(f.uri))
-                        }
-                    }
-                }
-            }
-            walk(root, 0)
-        }
-        if (found.isNotEmpty()) {
-            val merged = trackLibrary.addAll(found)
-            merged?.let { withContext(Dispatchers.Main) { _library.update { s -> s.copy(tracks = it) } } }
-        }
-    }
-
-    fun createMusicPlaylist(name: String) {
-        if (name.isBlank()) return
-        musicPlaylists.save(MusicPlaylist(name.trim()))
-        _library.update { it.copy(playlists = musicPlaylists.list()) }
-    }
-
-    /**
-     * Renames a music playlist, surfacing [MusicPlaylistStore.rename]'s
-     * answer instead of dropping it - a caller that cannot see a false here
-     * closes over a rename that never happened (see [renameTake], which this
-     * mirrors).
-     */
-    fun renameMusicPlaylist(
-        oldName: String,
-        newName: String,
-    ): Boolean {
-        val renamed = musicPlaylists.rename(oldName, newName.trim())
-        if (renamed) {
-            _library.update { it.copy(playlists = musicPlaylists.list()) }
-        }
-        return renamed
-    }
-
-    fun moveMusicPlaylistTrack(
-        name: String,
-        from: Int,
-        to: Int,
-    ) {
-        musicPlaylists.move(name, from, to)
-        _library.update { it.copy(playlists = musicPlaylists.list()) }
-    }
-
-    fun deleteMusicPlaylist(name: String) {
-        musicPlaylists.delete(name)
-        _library.update { it.copy(playlists = musicPlaylists.list()) }
-    }
-
-    fun addTrackToPlaylist(
-        playlist: String,
-        uri: String,
-    ) {
-        musicPlaylists.addTrack(playlist, uri)
-        _library.update { it.copy(playlists = musicPlaylists.list()) }
-    }
-
-    fun removeTrackFromPlaylist(
-        playlist: String,
-        uri: String,
-    ) {
-        musicPlaylists.removeTrack(playlist, uri)
-        _library.update { it.copy(playlists = musicPlaylists.list()) }
-    }
-
     /** Plays a music playlist from the given start index. */
     fun playPlaylist(
         playlist: String,
         startIndex: Int = 0,
     ) {
         val uris =
-            _library.value.playlists
+            library.value.playlists
                 .firstOrNull { it.name == playlist }
                 ?.trackUris
                 .orEmpty()
@@ -2028,7 +1193,7 @@ class PlayerViewModel(
         // Through the same funnel as every other list, so a later single-track
         // play of one of these rejoins the playlist instead of truncating the
         // queue to it (and so the titles come from the library, not a query).
-        val byUri = _library.value.tracks.associateBy { it.uri }
+        val byUri = library.value.tracks.associateBy { it.uri }
         val tracks = uris.map { u -> byUri[u]?.let(PlaybackQueue::queueTrack) ?: QueueTrack(u) }
         playFrom(tracks, uris[startIndex.coerceIn(0, uris.size - 1)])
     }
@@ -2214,7 +1379,7 @@ class PlayerViewModel(
 
     /** Pause with a fade out; resume with a fade in. */
     fun togglePlayPauseFaded() {
-        if (micCapture.active) setMicEnabled(false)
+        if (captureController.micActive) setMicEnabled(false)
         if (player.isPlaying) {
             fadeThen(fadeVolume, 0f) { player.pause() }
         } else {
@@ -2359,7 +1524,7 @@ class PlayerViewModel(
      * device index or the imported library), so the transport behaves the way
      * it does in any other music player.
      */
-    fun playTrack(uri: String) = playFrom(PlaybackQueue.contextFor(uri, lastBrowseContext, _deviceTracks.value, _library.value.tracks), uri)
+    fun playTrack(uri: String) = playFrom(PlaybackQueue.contextFor(uri, lastBrowseContext, deviceTracks.value, library.value.tracks), uri)
 
     /**
      * Opens [tracks] as the queue and starts at [startUri]. The one path a
@@ -2375,7 +1540,7 @@ class PlayerViewModel(
         if (window.tracks.isEmpty()) return
         // One ring buffer, one source: playing a track ends live input rather
         // than summing a song and the room into a single spectrum.
-        if (micCapture.active) setMicEnabled(false)
+        if (captureController.micActive) setMicEnabled(false)
         lastBrowseContext = tracks
         player.setMediaItems(window.tracks.map { mediaItemFor(it) })
         player.prepare()
@@ -2406,7 +1571,7 @@ class PlayerViewModel(
     /** Builds a MediaItem carrying library/tag metadata so the player state
      *  (and lockscreen) shows real titles, never document-id numbers. */
     private fun mediaItemFor(uri: Uri): MediaItem {
-        val known = _library.value.tracks.firstOrNull { it.uri == uri.toString() }
+        val known = library.value.tracks.firstOrNull { it.uri == uri.toString() }
         val (t, a) = if (known != null) known.title to known.artist else metadataQuick(uri)
         return MediaItem
             .Builder()
@@ -2450,30 +1615,6 @@ class PlayerViewModel(
                     ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
             }.getOrNull()?.substringBeforeLast('.')
         return (name ?: "Track") to ""
-    }
-
-    /**
-     * One-shot repair for library entries imported before tag reading:
-     * anything titled like a bare document number gets re-resolved from
-     * its embedded tags / display name.
-     */
-    private fun refreshNumericTitles() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val bad =
-                _library.value.tracks.filter {
-                    it.title.matches(Regex("^[0-9:%A-F]{4,}$")) || it.artist.isEmpty() && it.title.matches(Regex("^\\d+$"))
-                }
-            var latest: List<LibraryTrack>? = null
-            for (t in bad) {
-                runCatching {
-                    val (title, artist) = metadataFor(Uri.parse(t.uri))
-                    if (title != t.title || artist != t.artist) {
-                        trackLibrary.updateMetadata(t.uri, title, artist)?.let { latest = it }
-                    }
-                }
-            }
-            latest?.let { l -> withContext(Dispatchers.Main) { _library.update { it.copy(tracks = l) } } }
-        }
     }
 
     fun open(uris: List<Uri>) {
@@ -2550,7 +1691,7 @@ class PlayerViewModel(
 
     fun togglePlayPause() {
         // Starting playback ends live input: one ring buffer, one source.
-        if (!player.isPlaying && micCapture.active) setMicEnabled(false)
+        if (!player.isPlaying && captureController.micActive) setMicEnabled(false)
         if (_playerPrefs.value.fadeMs > 0) {
             togglePlayPauseFaded()
         } else if (player.isPlaying) {
@@ -2576,9 +1717,7 @@ class PlayerViewModel(
         // Before anything else: the live analyzer's beat grid, energy envelope
         // and flux history all describe the track that just ended.
         engine.reset()
-        // A new track has a new structure; section 2 of this one is not
-        // section 2 of the last.
-        lastStagedSection = -1
+        autoVisuals.onTrackChanged()
         timeline = null
         clearAbLoop()
         loadLyricsFor(currentUri)
@@ -2647,7 +1786,7 @@ class PlayerViewModel(
     /** The current track's detected key, from the library cache; "" if none. */
     fun currentTrackKey(): String? {
         val uri = currentUri?.toString() ?: return null
-        return _library.value.tracks
+        return library.value.tracks
             .firstOrNull { it.uri == uri }
             ?.key
             ?.takeIf { it.isNotBlank() }
@@ -2755,9 +1894,7 @@ class PlayerViewModel(
                     analyzeCached(uri) { p ->
                         _vizState.update { it.copy(analysisProgress = p) }
                     }
-                trackLibrary
-                    .updateAnalysis(uri.toString(), titleFor(uri), t.durationMs, t.bpm, t.key)
-                    ?.let { merged -> _library.update { it.copy(tracks = merged) } }
+                musicLibrary.noteAnalysis(uri, t)
                 if (currentUri == uri) {
                     withContext(Dispatchers.Main) { applyKeyColor(t.key) }
                     timeline = t
@@ -3115,13 +2252,7 @@ class PlayerViewModel(
         // first still holds. The flag is also what makes the exporter delete
         // its half-written file, exactly as a user-cancel does.
         cancelExport()
-        // The microphone goes first: an open AudioRecord outliving the
-        // ViewModel would keep the recording indicator up with nothing left
-        // to read it.
-        micCapture.stop()
-        // Same for the playback capture, which additionally holds a
-        // foreground service and its "this app can hear you" notification.
-        if (_externalAudio.value.active) stopExternalAudio()
+        captureController.shutdown()
         // The screen's interest in live analysis ends here. The analyzer
         // itself belongs to the session now and keeps running if a visible
         // wallpaper still wants it - that is the whole feature - and the
@@ -3140,7 +2271,7 @@ class PlayerViewModel(
         // live screen's analyzer deaf to every sample-rate change.
         playerListener?.let { player.removeListener(it) }
         playerListener = null
-        if (playback.onAudioFormat === audioFormatHook) playback.onAudioFormat = null
+        if (playback.onAudioFormat === captureController.audioFormatHook) playback.onAudioFormat = null
         // Same identity check, same reason: a running timer must go on fading
         // and pausing after this screen is gone, and with no mixer left to
         // fold into it goes back to writing the player's volume directly.
@@ -3168,13 +2299,13 @@ class PlayerViewModel(
     init {
         dev.musicviz.audio.AudioBus
             .addConsumer()
-        refreshNumericTitles()
+        musicLibrary.refreshNumericTitles()
         takeController.refresh()
         // Everything startup reads off disk that is not needed to draw the
         // first frame. See each function for what it costs and why waiting for
         // it shows nothing wrong in the meantime.
         presetLibrary.refreshInitial()
-        refreshLibrary()
+        musicLibrary.refresh()
         textureController.refresh()
         // Restore persisted playback options onto the player. Auto-resume runs
         // BEFORE the listener registers so the startup preparation never
@@ -3274,8 +2405,8 @@ class PlayerViewModel(
                     // One ring buffer, one source. A track and the room (or a
                     // track and Spotify) summed into a single spectrum drive
                     // the visuals as neither.
-                    if (micCapture.active) setMicEnabled(false)
-                    if (_externalAudio.value.active) stopExternalAudio()
+                    if (captureController.micActive) setMicEnabled(false)
+                    if (externalAudio.value.active) stopExternalAudio()
                     // A faded pause leaves the output at zero and waits for the
                     // matching fade in. A transport that is not ours knows
                     // nothing about that, so its play would have been silent.
@@ -3297,55 +2428,18 @@ class PlayerViewModel(
         // track change that started it, and with it the lyrics, the cached
         // analysis and the section grid for what it is now showing.
         if (alreadyLoaded) onTrackChanged()
-        // Consent -> foreground service -> projection -> recorder. This is the
-        // last hop: the service publishes what the user granted, and the
-        // recorder opens against it here, where the ring buffer lives.
-        viewModelScope.launch {
-            dev.musicviz.audio.MediaProjectionHolder.projection
-                .collect { projection ->
-                    if (projection != null) {
-                        startPlaybackCapture(projection)
-                    } else if (_externalAudio.value.active) {
-                        // Revoked from the system UI, or the service died.
-                        playbackCapture.stop()
-                        engine.reset()
-                        engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
-                        _externalAudio.update { it.copy(active = false, refusedByApp = false) }
-                    }
-                }
-        }
-        // The other half of that hop: a start that produced NO projection.
-        // `projection` cannot carry it - it already holds null on a failed
-        // first start, and a StateFlow does not re-emit a value it is already
-        // at - so the service ticks a separate counter, and only its CHANGES
-        // mean anything, hence drop(1). With nothing collecting it the switch
-        // stayed on and "Waiting for the capture permission…" stayed up for
-        // the rest of the session whenever getMediaProjection refused the
-        // consent it was handed (an expired token, an OEM that says no).
-        viewModelScope.launch {
-            dev.musicviz.audio.MediaProjectionHolder.startFailures
-                .drop(1)
-                .collect {
-                    _externalAudio.update {
-                        it.copy(
-                            awaitingConsent = false,
-                            failure = dev.musicviz.audio.CaptureFailure.CONSENT,
-                        )
-                    }
-                }
-        }
         viewModelScope.launch {
             while (true) {
                 refresh()
                 accrueListenTime()
                 enforceAbLoop()
                 refreshQueue()
-                refreshExternalAudio()
-                refreshMicState()
+                captureController.refreshExternalAudio()
+                captureController.refreshMicState()
                 applyIntelligence()
-                advanceVizPlaylist()
-                advanceRandomMode()
-                advanceSectionStaging()
+                autoVisuals.advanceVizPlaylist()
+                autoVisuals.advanceRandomMode()
+                autoVisuals.advanceSectionStaging()
                 delay(500)
             }
         }
