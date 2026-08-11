@@ -686,7 +686,15 @@ class VisualizerRenderer(
     ): Scene {
         SHADER_SCENES[id]?.let { res ->
             val frag = if (export) activeCustomShaders[id] ?: GlUtil.loadShader(context, res) else GlUtil.loadShader(context, res)
-            return ShaderScene(id, quadVert, frag) { onShaderError(it) }
+            return ShaderScene(
+                id,
+                quadVert,
+                frag,
+                onError = { onShaderError(it) },
+                // The single writer of activeCustomShaders, and it fires on the
+                // GL thread only after a successful link - see submitShader.
+                onUserSourceCompiled = { compiled -> activeCustomShaders[id] = compiled },
+            )
         }
         VisualStyleCatalog.cymatics(id)?.let { style ->
             return CymaticsScene(context, style).also { plate ->
@@ -800,15 +808,31 @@ class VisualizerRenderer(
         }
     }
 
+    /**
+     * Queues user GLSL for compilation on the GL thread. Deliberately does NOT
+     * record the source anywhere: [activeCustomShaders] is written by the
+     * ShaderScene's compiled-source callback, on the far side of a successful
+     * link.
+     *
+     * Recording here instead was a real defect. This map is re-pushed into
+     * every fresh context by [onSurfaceCreated], baked into export scenes by
+     * [createScene], and returned by [customShaderFor] for presets to save - so
+     * a source that never compiled would be kept as the style's look. The
+     * failure was invisible until a resume: the last working program masked the
+     * broken text, then died with the context, and the style came back
+     * permanently black with the broken source already saved into presets.
+     */
     fun submitShader(
         sceneId: String,
         fragmentSrc: String,
     ) {
         pendingCustomShaders.add(sceneId to fragmentSrc)
-        activeCustomShaders[sceneId] = fragmentSrc
     }
 
-    /** The user-edited fragment source for [sceneId], or null if unedited. */
+    /**
+     * The user-edited fragment source for [sceneId], or null if unedited. Only
+     * ever source that compiled - see [submitShader].
+     */
     fun customShaderFor(sceneId: String): String? = activeCustomShaders[sceneId]
 
     /** Thread-safe: the scene queues the path and loads it on the GL thread. */

@@ -101,7 +101,7 @@ reach every style through the composite pass, which is its own column.
 | `strobe` | FX | `Strobe` | `strobe` |   |   |   |   | · |   |   |   |   | · | · |
 | `paramFadeSec` | FX | — | `paramFadeSec` |   |   |   |   |   |   |   |   |   | · |   |
 | `fluidQuality` | Fluid | — | `fluidQuality` |   |   |   | · |   | · |   |   |   |   |   |
-| `fluidAutoQuality` | Fluid | — | `fluidAutoQuality` |   |   |   | · |   | · |   |   |   |   |   |
+| `fluidAutoQuality` | Fluid | — | `fluidAutoQuality` |   |   |   | · |   | · |   |   |   |   | · |
 | `fluidIterations` | Fluid | `Solver iterations` | `fluidIterations` |   |   |   | · |   |   |   |   |   |   |   |
 | `fluidPressure` | Fluid | `Pressure` | `fluidPressure` |   |   |   | · |   |   |   |   |   |   |   |
 | `fluidCurl` | Fluid | `Fluid curl` | `fluidCurl` |   |   |   | · |   |   |   |   |   |   |   |

@@ -4,6 +4,7 @@ import android.content.Context
 import android.opengl.GLES30
 import dev.musicviz.R
 import dev.musicviz.analysis.AudioFeatures
+import dev.musicviz.render.BlendMode
 import dev.musicviz.render.CompositeGrade
 import dev.musicviz.render.fluid.CurlFlowMath
 import dev.musicviz.render.scene.GlUtil
@@ -207,7 +208,12 @@ internal class FxCompositor(
         )
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
 
-        // A 1x1 texture for the unused second (transition) sampler.
+        // A 1x1 texture for the unused second (transition) sampler. Explicitly
+        // zero-filled, like the live renderer's zeroTex: passing null leaves the
+        // contents driver-defined, and this is bound to a live sampler unit on
+        // every exported frame. It is unread today only because the strengths
+        // that would sample it are 0, which makes "undefined" a latent source of
+        // nondeterminism in the one pipeline that must be reproducible.
         GLES30.glGenTextures(1, ids, 0)
         emptyTex = ids[0]
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, emptyTex)
@@ -222,7 +228,7 @@ internal class FxCompositor(
             0,
             GLES30.GL_RGBA,
             GLES30.GL_UNSIGNED_BYTE,
-            null,
+            java.nio.ByteBuffer.allocateDirect(4),
         )
     }
 
@@ -410,6 +416,15 @@ internal class FxCompositor(
         // unreachable here. uRatio is uploaded regardless so the two composite
         // call sites stay uniform-for-uniform identical.
         GLES30.glUniform1i(loc("uStyle"), 0)
+        // Layers are a live-only feature (the export renders one scene), so
+        // these two are the neutral values rather than a stack's. They are
+        // uploaded rather than left out because "unreachable" is a property of
+        // uStyle today and not a guarantee: an unset uniform reads GL's zero,
+        // which for uLayerMix is silently "bottom layer only". Parity between
+        // the two call sites is now enforced by CompositeUniformParityTest
+        // instead of promised by the comment above.
+        GLES30.glUniform1f(loc("uLayerMix"), 0f)
+        GLES30.glUniform1i(loc("uBlendMode"), BlendMode.NORMAL.ordinal)
         GLES30.glUniform1f(loc("uRatio"), width.toFloat() / height.toFloat())
         GLES30.glUniform1f(loc("uTime"), timeSeconds)
         GLES30.glUniform1f(loc("uBeat"), features.beatImpulse)
