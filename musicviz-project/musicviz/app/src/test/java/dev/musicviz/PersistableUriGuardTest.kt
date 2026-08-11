@@ -54,7 +54,9 @@ class PersistableUriGuardTest {
                 }
             }
         }
-        assertTrue("no takePersistableUriPermission call sites found - the scan went stale", total >= 4)
+        // Three since MainActivity's dead onPersistUri chain was removed:
+        // importTracks, importFolder, and FolderSettings' preset mirror.
+        assertTrue("no takePersistableUriPermission call sites found - the scan went stale", total >= 3)
         assertEquals(
             "an unguarded takePersistableUriPermission crashes the process when a provider " +
                 "returns a non-persistable grant; wrap it in runCatching and only record the " +
