@@ -55,8 +55,8 @@ fun ThemePack.resolvedFontColor(
     fontColorArgb: Int?,
     backgroundDim: Float = 0f,
 ): Int? {
-    if (fontColorArgb == null) return null
-    if (!isLight) return fontColorArgb
+    // Null override and dark packs pass straight through (null stays null).
+    if (fontColorArgb == null || !isLight) return fontColorArgb
     val painted = Color(ColorDerive.dim(palette.background.toArgbInt(), backgroundDim))
     val diff = kotlin.math.abs(Color(fontColorArgb).luminance() - painted.luminance())
     return if (diff >= ThemeContrast.LIGHT_CONTRAST_MIN) fontColorArgb else null
