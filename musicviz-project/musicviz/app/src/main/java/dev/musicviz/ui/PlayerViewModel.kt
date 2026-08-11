@@ -1293,9 +1293,29 @@ class PlayerViewModel(
         if (player.currentPosition >= end) player.seekTo(loop.startMs)
     }
 
+    /**
+     * The queue's timeline indices in play order; see [QueueOps.playOrder] for
+     * why the timeline order is not it once shuffle is on. Recomputed per call
+     * rather than cached: the player's shuffle permutation is regenerated on
+     * `setMediaItems` and on every shuffle toggle, and a stale copy would point
+     * the mutations at the wrong tracks.
+     */
+    private fun playOrder(): List<Int> {
+        if (!player.shuffleModeEnabled) return (0 until player.mediaItemCount).toList()
+        val timeline = player.currentTimeline
+        return QueueOps.playOrder(
+            count = player.mediaItemCount,
+            first = timeline.getFirstWindowIndex(true),
+            // REPEAT_MODE_OFF regardless of the player's mode - the walk ends
+            // on INDEX_UNSET and REPEAT_MODE_ALL never would.
+            next = { i -> timeline.getNextWindowIndex(i, Player.REPEAT_MODE_OFF, true) },
+        )
+    }
+
     private fun refreshQueue() {
+        val order = playOrder()
         val tracks =
-            (0 until player.mediaItemCount).map { i ->
+            order.mapIndexed { position, i ->
                 val item = player.getMediaItemAt(i)
                 QueueTrack(
                     uri = item.localConfiguration?.uri?.toString().orEmpty(),
@@ -1306,21 +1326,24 @@ class PlayerViewModel(
                                 ?.lastPathSegment
                                 ?.substringAfterLast('/')
                                 ?.substringBeforeLast('.')
-                            ?: "Track ${i + 1}",
+                            ?: "Track ${position + 1}",
                     artist =
                         item.mediaMetadata.artist
                             ?.toString()
                             .orEmpty(),
                 )
             }
-        val next = QueueUiState(tracks, player.currentMediaItemIndex)
+        // The row to highlight is the playing item's position in what is
+        // displayed, which is only its timeline index while shuffle is off.
+        val next = QueueUiState(tracks, order.indexOf(player.currentMediaItemIndex))
         if (next != _queue.value) _queue.value = next
     }
 
     /** Drops one entry. Removing what is playing advances, as ExoPlayer does. */
     fun removeQueueItem(index: Int) {
-        if (index !in 0 until player.mediaItemCount) return
-        player.removeMediaItem(index)
+        val timelineIndex = QueueOps.timelineIndexOf(playOrder(), index)
+        if (timelineIndex < 0) return
+        player.removeMediaItem(timelineIndex)
         refreshQueue()
     }
 
@@ -1329,9 +1352,17 @@ class PlayerViewModel(
         from: Int,
         to: Int,
     ) {
-        val count = player.mediaItemCount
-        if (from !in 0 until count || to !in 0 until count || from == to) return
-        player.moveMediaItem(from, to)
+        val order = playOrder()
+        val timelineFrom = QueueOps.timelineIndexOf(order, from)
+        val timelineTo = QueueOps.timelineIndexOf(order, to)
+        if (timelineFrom < 0 || timelineTo < 0 || timelineFrom == timelineTo) return
+        // Moves the item in the TIMELINE, which is the only order the player
+        // lets us reorder. With shuffle on the visible result will not always
+        // match the drag, because the shuffle permutation is ExoPlayer's and a
+        // timeline move does not renumber it - a caller wiring drag-reorder
+        // should either disable it while shuffle is on or commit the visible
+        // order as the timeline first.
+        player.moveMediaItem(timelineFrom, timelineTo)
         refreshQueue()
     }
 
@@ -1628,7 +1659,7 @@ class PlayerViewModel(
 
     /** Human-readable labels for the playback queue, in play order. */
     fun queueTitles(): List<String> =
-        (0 until player.mediaItemCount).map { i ->
+        playOrder().mapIndexed { position, i ->
             val item = player.getMediaItemAt(i)
             item.mediaMetadata.title?.toString()
                 ?: item.localConfiguration
@@ -1636,13 +1667,14 @@ class PlayerViewModel(
                     ?.lastPathSegment
                     ?.substringAfterLast('/')
                     ?.substringBeforeLast('.')
-                ?: "Track ${i + 1}"
+                ?: "Track ${position + 1}"
         }
 
     /** Jumps playback to the given queue position. */
     fun playQueueIndex(index: Int) {
-        if (index in 0 until player.mediaItemCount) {
-            player.seekTo(index, 0L)
+        val timelineIndex = QueueOps.timelineIndexOf(playOrder(), index)
+        if (timelineIndex >= 0) {
+            player.seekTo(timelineIndex, 0L)
             player.play()
         }
     }
