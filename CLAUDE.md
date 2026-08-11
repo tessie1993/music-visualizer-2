@@ -42,6 +42,8 @@ Conventional commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
 
 ## Key Docs
 
+- `musicviz-project/musicviz/docs/AUDIO_CHAIN.md` — audio chain order, the
+  tap-first invariant, and why DSP never moves the visuals
 - `musicviz-project/musicviz/docs/quality/QUALITY_BAR.md` — quality bar
 - `musicviz-project/musicviz/docs/quality/PRODUCT_REVIEW.md` — product review
 - `musicviz-project/musicviz/docs/quality/GAUNTLET_BACKLOG.md` — gauntlet backlog

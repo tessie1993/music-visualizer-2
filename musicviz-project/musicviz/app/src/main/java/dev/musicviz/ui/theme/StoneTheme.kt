@@ -13,8 +13,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import dev.musicviz.R
-import dev.musicviz.ui.ThemeContrast.BODY_CONTRAST_MIN
-import dev.musicviz.ui.ThemeContrast.HINT_CONTRAST_MIN
+import dev.musicviz.ui.ThemeContrast
 
 /**
  * The active crystal pack. Provided by `CrystalMaterialTheme` at the app
@@ -104,15 +103,13 @@ fun ThemePack.colorScheme(
     val background = p.background.dimmed()
     val surface = p.surface.dimmed()
     val surfaceHigh = p.surfaceHigh.dimmed()
-    // Background dim darkens the surfaces under the authored writing colours.
-    // A light pack crosses from light to dark partway up the slider, and its
-    // authored near-black ink would then sit on a near-black panel - so every
-    // writing role is re-anchored against the surface it actually paints on.
-    // Undimmed (and on dark packs, where dim only widens the gap) the authored
-    // colour already clears the bar and passes through untouched.
-    val onBackground = readableOn(p.onBackground, background, BODY_CONTRAST_MIN)
-    val onSurface = readableOn(p.onSurface, surface, BODY_CONTRAST_MIN)
-    val onSurfaceVariant = readableOn(p.muted, surfaceHigh, HINT_CONTRAST_MIN)
+
+    // Writing roles are authored against the UNDIMMED stone, so each one is
+    // re-checked against the surface it is actually painted on. Undimmed that
+    // is a no-op - every shipped pack clears its bars as authored - and it
+    // only engages once the dim has moved the ground out from under a colour.
+    val onBackground = readableOn(p.onBackground, background, ThemeContrast.BODY_CONTRAST_MIN)
+    val onSurface = readableOn(p.onSurface, surface, ThemeContrast.BODY_CONTRAST_MIN)
     val base =
         if (isLight) {
             lightColorScheme(
@@ -125,13 +122,13 @@ fun ThemePack.colorScheme(
                 surface = surface,
                 onSurface = onSurface,
                 surfaceVariant = surfaceHigh,
-                onSurfaceVariant = onSurfaceVariant,
+                onSurfaceVariant = readableOn(p.muted, surfaceHigh, ThemeContrast.HINT_CONTRAST_MIN),
                 surfaceContainer = surface,
                 surfaceContainerHigh = surfaceHigh,
                 primaryContainer = surfaceHigh,
-                onPrimaryContainer = readableOn(p.accent, surfaceHigh, HINT_CONTRAST_MIN),
+                onPrimaryContainer = readableOn(p.accent, surfaceHigh, ThemeContrast.HINT_CONTRAST_MIN),
                 secondaryContainer = surfaceHigh,
-                onSecondaryContainer = onSurface,
+                onSecondaryContainer = readableOn(p.onSurface, surfaceHigh, ThemeContrast.BODY_CONTRAST_MIN),
                 outline = p.outline,
                 error = p.danger,
             )
@@ -146,13 +143,13 @@ fun ThemePack.colorScheme(
                 surface = surface,
                 onSurface = onSurface,
                 surfaceVariant = surfaceHigh,
-                onSurfaceVariant = onSurfaceVariant,
+                onSurfaceVariant = readableOn(p.muted, surfaceHigh, ThemeContrast.HINT_CONTRAST_MIN),
                 surfaceContainer = surface,
                 surfaceContainerHigh = surfaceHigh,
                 primaryContainer = surfaceHigh,
-                onPrimaryContainer = readableOn(p.accent, surfaceHigh, HINT_CONTRAST_MIN),
+                onPrimaryContainer = readableOn(p.accent, surfaceHigh, ThemeContrast.HINT_CONTRAST_MIN),
                 secondaryContainer = surfaceHigh,
-                onSecondaryContainer = onSurface,
+                onSecondaryContainer = readableOn(p.onSurface, surfaceHigh, ThemeContrast.BODY_CONTRAST_MIN),
                 outline = p.outline,
                 error = p.danger,
             )
@@ -172,48 +169,55 @@ fun ThemePack.colorScheme(
     }
 }
 
-/** WCAG contrast ratio between two opaque colours. */
-private fun contrast(
-    a: Color,
-    b: Color,
-): Float {
-    val hi = maxOf(a.luminance(), b.luminance())
-    val lo = minOf(a.luminance(), b.luminance())
-    return (hi + 0.05f) / (lo + 0.05f)
-}
-
 /**
- * [authored] if it already clears [minRatio] against [surface]; otherwise the
- * authored colour pulled toward whichever pole (white or black) opposes the
- * surface, by the smallest step that clears the bar. This is what flips a
- * light pack's ink pale once background dim has pushed its panels dark.
+ * The pack's authored writing colour for [surface], pulled toward black or
+ * white only as far as it must be to stay readable on it.
+ *
+ * The packs author each writing role against the stone as photographed, and
+ * publish the contrast figures for it - so at the shipped setting this
+ * returns [authored] untouched and the design is exactly what the pack says.
+ * Background dim (0..0.6) is the one thing that moves the ground afterwards:
+ * it darkens background and surfaces while the authored writing stays put,
+ * and Clear Quartz crosses from light to dark around a third of the way along
+ * the slider. Past that the panels are near-black and near-black writing goes
+ * with them - a blank screen, from a slider that only claimed to dim.
+ *
+ * Two things this deliberately does NOT do:
+ *
+ *  - switch on the surface's luminance crossing 0.5. The two candidate tones
+ *    do not straddle the surface symmetrically, so a midpoint switch puts the
+ *    WORST contrast either side of itself; the direction is chosen by which
+ *    extreme the surface is further from, which is the same question asked
+ *    correctly.
+ *  - pull a fixed amount. The pull deepens only until [minRatio] is met, so a
+ *    role that has just crossed its bar keeps almost all of its authored
+ *    colour instead of being flattened to plain white.
  */
 private fun readableOn(
     authored: Color,
     surface: Color,
     minRatio: Float,
 ): Color {
-    if (contrast(authored, surface) >= minRatio) return authored
-    val pole = if (surface.luminance() < 0.5f) Color.White else Color.Black
-    var t = 0.1f
-    while (t < 1f) {
-        val candidate = lerp(authored, pole, t)
-        if (contrast(candidate, surface) >= minRatio) return candidate
-        t += 0.1f
+    if (contrastRatio(authored, surface) >= minRatio) return authored
+    val end = if (contrastRatio(Color.Black, surface) >= contrastRatio(Color.White, surface)) Color.Black else Color.White
+    var t = 0f
+    var tone = authored
+    while (t < 1f && contrastRatio(tone, surface) < minRatio) {
+        t = minOf(1f, t + 0.08f)
+        tone = Color(dev.musicviz.ui.ColorDerive.lerpArgb(authored.toArgbInt(), end.toArgbInt(), t))
     }
-    return pole
+    return tone
 }
 
-private fun lerp(
+/** WCAG contrast ratio between two opaque colours. */
+private fun contrastRatio(
     a: Color,
     b: Color,
-    t: Float,
-): Color =
-    Color(
-        red = a.red + (b.red - a.red) * t,
-        green = a.green + (b.green - a.green) * t,
-        blue = a.blue + (b.blue - a.blue) * t,
-    )
+): Float {
+    val la = a.luminance()
+    val lb = b.luminance()
+    return (maxOf(la, lb) + 0.05f) / (minOf(la, lb) + 0.05f)
+}
 
 private fun Color.toArgbInt(): Int =
     ((alpha * 255f + 0.5f).toInt() shl 24) or

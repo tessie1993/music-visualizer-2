@@ -74,6 +74,7 @@ reach every style through the composite pass, which is its own column.
 | `paletteLut` | Color | `Colour map` | `paletteLut` | · |   |   |   |   |   |   |   |   |   |   |
 | `customPalette2Id` | Color | — | `customPalette2Id` |   |   |   |   |   |   |   |   |   |   |   |
 | `milkdropPaletteTint` | Color | `MilkDrop palette tint` | `milkdropPaletteTint` |   |   | · |   |   |   |   |   |   | · |   |
+| `milkdropBlendPresets` | Behavior | `Blend preset changes` | `milkdropBlendPresets` |   |   | · |   |   |   |   |   |   |   |   |
 | `colorShift` | Color | `Hue shift` | `colorShift` | · | · | · |   | · |   |   |   |   | · | · |
 | `hueRange` | Color | `Hue range` | `hueRange` | · | · | · | · | · | · | · |   | · | · |   |
 | `saturation` | Color | `Saturation` | `saturation` | · | · | · |   |   |   |   |   |   | · | · |
@@ -101,7 +102,7 @@ reach every style through the composite pass, which is its own column.
 | `strobe` | FX | `Strobe` | `strobe` |   |   |   |   | · |   |   |   |   | · | · |
 | `paramFadeSec` | FX | — | `paramFadeSec` |   |   |   |   |   |   |   |   |   | · |   |
 | `fluidQuality` | Fluid | — | `fluidQuality` |   |   |   | · |   | · |   |   |   |   |   |
-| `fluidAutoQuality` | Fluid | — | `fluidAutoQuality` |   |   |   | · |   | · |   |   |   |   |   |
+| `fluidAutoQuality` | Fluid | — | `fluidAutoQuality` |   |   |   | · |   | · |   |   |   |   | · |
 | `fluidIterations` | Fluid | `Solver iterations` | `fluidIterations` |   |   |   | · |   |   |   |   |   |   |   |
 | `fluidPressure` | Fluid | `Pressure` | `fluidPressure` |   |   |   | · |   |   |   |   |   |   |   |
 | `fluidCurl` | Fluid | `Fluid curl` | `fluidCurl` |   |   |   | · |   |   |   |   |   |   |   |
@@ -240,7 +241,7 @@ and "⚄ Randomize <tab>" rolls exactly the keys below it.
 |---|---|---|
 | Motion | 10 | 10 |
 | Shape | 15 | 14 |
-| Behavior | 13 | 13 |
+| Behavior | 14 | 14 |
 | Color | 25 | 19 |
 | FX | 8 | 7 |
 | Fluid | 55 | 48 |

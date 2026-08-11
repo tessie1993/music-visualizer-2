@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # The .so files are committed blobs built out-of-band by native-libs.yml;
       # the recorded hashes are the only link between those bytes and the
@@ -47,7 +47,7 @@ jobs:
           java-version: "17"
 
       - name: Set up Gradle and cache
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
@@ -105,7 +105,7 @@ jobs:
       # artifact store (or a flaky upload) from speaking for the code.
       - name: Upload debug APK
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: musicviz-debug-${{ github.run_number }}-${{ github.sha }}
           path: |
@@ -142,7 +142,7 @@ jobs:
 
       - name: Upload reports when verification fails
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: musicviz-build-reports-${{ github.run_number }}
           path: |
