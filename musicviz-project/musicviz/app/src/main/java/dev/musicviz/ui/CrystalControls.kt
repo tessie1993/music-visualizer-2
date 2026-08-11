@@ -3,15 +3,10 @@ package dev.musicviz.ui
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -23,11 +18,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -39,40 +32,41 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.musicviz.ui.theme.StoneComponent
+import dev.musicviz.ui.theme.StoneState
+import dev.musicviz.ui.theme.StoneSurfaceArt
+import dev.musicviz.ui.theme.rememberStoneInteraction
+import dev.musicviz.ui.theme.rememberStoneState
+import dev.musicviz.ui.theme.stonePress
 
 /*
- * Crystal interactive controls: the faceted counterparts of Material's
- * Button / Slider / NavigationBar / TabRow / segmented selector, so every
- * touch target in the shell carries the same cut-gem language as the panels
- * in Crystal.kt. Selection is always marked the same two ways — the shard
- * silhouette lights up, and a small CrystalGem diamond appears.
+ * Crystal interactive controls: tumbled-stone counterparts of Material's
+ * Button / Slider / NavigationBar / TabRow / segmented selector. Every touch
+ * target is painted from the active pack's photographed component art in its
+ * five shipped interaction states - a pressed button shows the pack's
+ * pressed photograph, scaled by the pack's own press motion.
  */
 
 // ------------------------------------------------------------- buttons
 
 /**
- * Faceted button in the shard silhouette. [filled] is the primary action
- * (luminous gradient gem fill + outer halo); un-filled is the quiet variant
- * (translucent glass + luminous edge), replacing OutlinedButton.
+ * Stone button on the pack's photographed button art. [filled] picks the
+ * primary-button surface (the stone with the strongest internal light);
+ * un-filled is the quieter secondary-button surface. [compact] uses the
+ * compact-button art at a smaller minimum size.
  */
 @Composable
 fun CrystalButton(
@@ -84,64 +78,42 @@ fun CrystalButton(
     content: @Composable RowScope.() -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    val shape = crystalShardShape(if (compact) 9.dp else 12.dp, 4.dp)
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val press by animateFloatAsState(if (pressed) 0.96f else 1f, label = "crystalButtonPress")
-    val fill =
-        if (filled) {
-            Brush.verticalGradient(
-                0f to lerp(cs.primary, Color.White, 0.28f),
-                0.35f to cs.primary,
-                1f to lerp(cs.primary, Color.Black, 0.30f),
-            )
-        } else {
-            Brush.verticalGradient(
-                0f to cs.primary.copy(alpha = 0.16f),
-                1f to cs.primary.copy(alpha = 0.05f),
-            )
+    val interaction = rememberStoneInteraction()
+    val state = rememberStoneState(interaction, enabled = enabled)
+    val component =
+        when {
+            compact -> StoneComponent.COMPACT_BUTTON
+            filled -> StoneComponent.PRIMARY_BUTTON
+            else -> StoneComponent.SECONDARY_BUTTON
         }
-    val edge =
-        Brush.verticalGradient(
-            0f to (if (filled) Color.White.copy(alpha = 0.75f) else cs.primary.copy(alpha = 0.75f)),
-            0.55f to cs.primary.copy(alpha = if (filled) 0.35f else 0.25f),
-            1f to cs.primary.copy(alpha = 0.55f),
-        )
-    Row(
+    Box(
         modifier
-            .scale(press)
-            .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
-            .then(
-                if (filled && enabled) {
-                    Modifier.drawBehind { crystalHalo(cs.primary, 12.dp.toPx(), 0.7f) }
-                } else {
-                    Modifier
-                },
-            ).clip(shape)
-            .background(fill)
-            .drawBehind { crystalFacets(if (filled) 1.6f else 0.9f) }
-            .border(1.dp, edge, shape)
+            .stonePress(interaction)
             .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
-            .defaultMinSize(minHeight = if (compact) 36.dp else 44.dp)
-            .padding(horizontal = if (compact) 14.dp else 18.dp, vertical = if (compact) 6.dp else 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
+            .defaultMinSize(minHeight = if (compact) 36.dp else 48.dp),
     ) {
-        // Text on the filled gem rides onAccentTextColor(): "White font" must
-        // not paint a label white on a near-white primary (Clear Quartz, Mono).
-        val label = if (filled) onAccentTextColor() else accentTextColor()
-        CompositionLocalProvider(LocalContentColor provides label) {
-            ProvideTextStyle(MaterialTheme.typography.labelLarge.copy(letterSpacing = 0.8.sp)) {
-                content()
+        StoneSurfaceArt(component, state, Modifier.matchParentSize())
+        Row(
+            Modifier
+                .align(Alignment.Center)
+                .padding(horizontal = if (compact) 16.dp else 22.dp, vertical = if (compact) 6.dp else 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            // Writing stays live ink over the stone - never baked into art.
+            val label = (LocalFontColor.current ?: cs.onSurface).copy(alpha = if (enabled) 1f else 0.55f)
+            CompositionLocalProvider(LocalContentColor provides label) {
+                ProvideTextStyle(MaterialTheme.typography.labelLarge.copy(letterSpacing = 0.8.sp)) {
+                    content()
+                }
             }
         }
     }
 }
 
 /**
- * The hero transport control: a diamond-cut gem with a luminous gradient
- * fill and halo, holding the play/pause icon. The 50%-cut corners turn the
- * square into the kit's gem silhouette at button scale.
+ * The hero transport control: the pack's icon-button pebble at hero size,
+ * holding the play/pause icon as live ink over the stone.
  */
 @Composable
 fun CrystalPlayButton(
@@ -152,37 +124,31 @@ fun CrystalPlayButton(
     enabled: Boolean = true,
 ) {
     val cs = MaterialTheme.colorScheme
-    val shape = CutCornerShape(50)
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val press by animateFloatAsState(if (pressed) 0.92f else 1f, label = "crystalPlayPress")
+    val interaction = rememberStoneInteraction()
+    val state = rememberStoneState(interaction, enabled = enabled)
     Box(
         modifier
-            .size(56.dp)
-            .scale(press)
-            .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
-            .then(if (enabled) Modifier.softGlow(cs.primary, 16.dp, 0.9f) else Modifier)
-            .clip(shape)
-            .background(
-                Brush.verticalGradient(
-                    0f to lerp(cs.primary, Color.White, 0.35f),
-                    0.45f to cs.primary,
-                    1f to lerp(cs.primary, Color.Black, 0.35f),
-                ),
-            ).border(1.dp, Color.White.copy(alpha = 0.65f), shape)
+            .size(60.dp)
+            .stonePress(interaction)
+            .then(if (enabled) Modifier.softGlow(cs.primary, 14.dp, 0.5f) else Modifier)
             .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription, tint = cs.onPrimary)
+        StoneSurfaceArt(StoneComponent.ICON_BUTTON, state, Modifier.matchParentSize())
+        Icon(
+            icon,
+            contentDescription,
+            tint = (LocalFontColor.current ?: cs.onSurface).copy(alpha = if (enabled) 1f else 0.55f),
+        )
     }
 }
 
 // ------------------------------------------------------------- slider
 
 /**
- * Crystal slider: a thin luminous track whose active side runs
- * secondary→primary, gem-diamond thumb with bloom, and small tick diamonds
- * when [steps] > 0. Drop-in for the Material Slider call sites in this app
+ * Stone slider: the pack's slider-track art as the groove, its slider-thumb
+ * pebble as the handle, and a primary-light fill for the active side.
+ * Drop-in for the Material Slider call sites in this app
  * (value/range/steps/enabled only). The custom thumb/track Slider overload
  * is still experimental in Material 3, hence the opt-in.
  */
@@ -197,7 +163,8 @@ fun CrystalSlider(
     enabled: Boolean = true,
 ) {
     val cs = MaterialTheme.colorScheme
-    val interaction = remember { MutableInteractionSource() }
+    val interaction = rememberStoneInteraction()
+    val thumbState = rememberStoneState(interaction, enabled = enabled)
     Slider(
         value = value,
         onValueChange = onValueChange,
@@ -207,56 +174,52 @@ fun CrystalSlider(
         enabled = enabled,
         interactionSource = interaction,
         thumb = {
-            Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
-                Box(
-                    Modifier
-                        .size(13.dp)
-                        .then(if (enabled) Modifier.softGlow(cs.primary, 8.dp, 0.9f) else Modifier)
-                        .rotate(45f)
-                        .background(
-                            Brush.linearGradient(
-                                listOf(lerp(cs.primary, Color.White, 0.55f), cs.primary),
-                            ),
-                        ).border(1.dp, Color.White.copy(alpha = if (enabled) 0.8f else 0.3f)),
-                )
-            }
+            StoneSurfaceArt(StoneComponent.SLIDER_THUMB, thumbState, Modifier.size(24.dp))
         },
         track = {
             val span = valueRange.endInclusive - valueRange.start
             val fraction = if (span > 0f) ((value - valueRange.start) / span).coerceIn(0f, 1f) else 0f
             val dim = if (enabled) 1f else 0.4f
-            Canvas(Modifier.fillMaxWidth().height(8.dp)) {
-                val y = size.height / 2f
-                drawLine(
-                    color = cs.onSurface.copy(alpha = 0.16f * dim),
-                    start = Offset(0f, y),
-                    end = Offset(size.width, y),
-                    strokeWidth = 2.dp.toPx(),
-                    cap = StrokeCap.Round,
+            Box(Modifier.fillMaxWidth().height(14.dp)) {
+                StoneSurfaceArt(
+                    StoneComponent.SLIDER_TRACK,
+                    if (enabled) StoneState.DEFAULT else StoneState.DISABLED,
+                    Modifier.matchParentSize(),
                 )
-                if (steps > 0) {
-                    for (i in 1..steps) {
-                        val x = size.width * i / (steps + 1)
-                        drawCircle(cs.onSurface.copy(alpha = 0.30f * dim), radius = 1.5.dp.toPx(), center = Offset(x, y))
+                Canvas(Modifier.matchParentSize()) {
+                    val y = size.height / 2f
+                    if (steps > 0) {
+                        for (i in 1..steps) {
+                            val x = size.width * i / (steps + 1)
+                            drawCircle(
+                                cs.onSurface.copy(alpha = 0.30f * dim),
+                                radius = 1.5.dp.toPx(),
+                                center = Offset(x, y),
+                            )
+                        }
                     }
-                }
-                if (fraction > 0f) {
-                    val endX = size.width * fraction
-                    drawLine(
-                        brush = Brush.horizontalGradient(listOf(cs.secondary, cs.primary), endX = endX.coerceAtLeast(1f)),
-                        start = Offset(0f, y),
-                        end = Offset(endX, y),
-                        strokeWidth = 3.5.dp.toPx(),
-                        cap = StrokeCap.Round,
-                    )
-                    // Soft light spill under the lit part of the track.
-                    drawLine(
-                        color = cs.primary.copy(alpha = 0.20f * dim),
-                        start = Offset(0f, y),
-                        end = Offset(endX, y),
-                        strokeWidth = 8.dp.toPx(),
-                        cap = StrokeCap.Round,
-                    )
+                    if (fraction > 0f) {
+                        val endX = size.width * fraction
+                        drawLine(
+                            brush =
+                                Brush.horizontalGradient(
+                                    listOf(cs.secondary, cs.primary),
+                                    endX = endX.coerceAtLeast(1f),
+                                ),
+                            start = Offset(0f, y),
+                            end = Offset(endX, y),
+                            strokeWidth = 3.5.dp.toPx(),
+                            cap = StrokeCap.Round,
+                        )
+                        // Soft light spill inside the stone groove.
+                        drawLine(
+                            color = cs.primary.copy(alpha = 0.20f * dim),
+                            start = Offset(0f, y),
+                            end = Offset(endX, y),
+                            strokeWidth = 8.dp.toPx(),
+                            cap = StrokeCap.Round,
+                        )
+                    }
                 }
             }
         },
@@ -272,9 +235,10 @@ data class CrystalNavItem(
 )
 
 /**
- * Bottom navigation as cut glass: gradient glass bar, and the selected
- * destination lit by a floating gem diamond above its icon. Items expose
- * selectable semantics (Role.Tab) like Material's NavigationBarItem.
+ * Bottom navigation on the pack's navigation-bar stone: one continuous
+ * tumbled slab, the selected destination marked by a lit gem and label
+ * weight. Items expose selectable semantics (Role.Tab) like Material's
+ * NavigationBarItem.
  */
 @Composable
 fun CrystalNavBar(
@@ -284,63 +248,61 @@ fun CrystalNavBar(
     opacity: Float,
 ) {
     val cs = MaterialTheme.colorScheme
-    val fillAlpha = (opacity * 0.9f).coerceIn(0f, 1f)
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    0f to cs.surfaceContainer.copy(alpha = fillAlpha),
-                    1f to lerp(cs.surfaceContainer, Color.Black, 0.4f).copy(alpha = (fillAlpha + 0.05f).coerceAtMost(1f)),
-                ),
-            ).windowInsetsPadding(WindowInsets.navigationBars)
-            .height(68.dp)
-            .selectableGroup(),
-    ) {
-        // The icon keeps the accent; the LABEL follows accentTextColor() so
-        // "White font" reaches the nav writing too (the icon is not writing).
-        val selectedLabel = accentTextColor()
-        items.forEachIndexed { i, item ->
-            val sel = i == selected
-            val tint by animateColorAsState(
-                if (sel) cs.primary else cs.onSurfaceVariant.copy(alpha = 0.75f),
-                label = "crystalNavTint",
-            )
-            val labelTint by animateColorAsState(
-                if (sel) selectedLabel else cs.onSurfaceVariant.copy(alpha = 0.75f),
-                label = "crystalNavLabel",
-            )
-            val gemAlpha by animateFloatAsState(if (sel) 1f else 0f, label = "crystalNavGem")
-            Column(
-                Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .selectable(selected = sel, role = Role.Tab, onClick = { onSelect(i) }),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Box(Modifier.size(7.dp).graphicsLayer { alpha = gemAlpha }) {
-                    CrystalGem(cs.primary, size = 7.dp)
-                }
-                Spacer(Modifier.height(3.dp))
-                Icon(item.icon, item.label, tint = tint)
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    item.label,
-                    style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.2.sp),
-                    fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
-                    color = labelTint,
+    Box(Modifier.fillMaxWidth().graphicsLayer { alpha = (0.55f + 0.45f * opacity).coerceIn(0f, 1f) }) {
+        StoneSurfaceArt(StoneComponent.NAVIGATION_BAR, StoneState.DEFAULT, Modifier.matchParentSize())
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .height(68.dp)
+                .selectableGroup(),
+        ) {
+            // The icon keeps the accent; the LABEL follows accentTextColor() so
+            // "White font" reaches the nav writing too (the icon is not writing).
+            val selectedLabel = accentTextColor()
+            items.forEachIndexed { i, item ->
+                val sel = i == selected
+                val tint by animateColorAsState(
+                    if (sel) cs.primary else cs.onSurfaceVariant.copy(alpha = 0.75f),
+                    label = "crystalNavTint",
                 )
+                val labelTint by animateColorAsState(
+                    if (sel) selectedLabel else cs.onSurfaceVariant.copy(alpha = 0.75f),
+                    label = "crystalNavLabel",
+                )
+                val gemAlpha by animateFloatAsState(if (sel) 1f else 0f, label = "crystalNavGem")
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .selectable(selected = sel, role = Role.Tab, onClick = { onSelect(i) }),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Box(Modifier.size(7.dp).graphicsLayer { alpha = gemAlpha }) {
+                        CrystalGem(cs.primary, size = 7.dp)
+                    }
+                    Spacer(Modifier.height(3.dp))
+                    Icon(item.icon, item.label, tint = tint)
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        item.label,
+                        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.2.sp),
+                        fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
+                        color = labelTint,
+                    )
+                }
             }
         }
     }
 }
 
 /**
- * Tab strip in the crystal language: transparent, a luminous hairline as the
- * divider, and the selected title underscored by a gem diamond instead of a
- * Material indicator. Space for the gem is always reserved so titles do not
- * jump when selection moves.
+ * Tab strip in the stone language: transparent over the ambient backdrop
+ * (dense editor screens reserve decorative material for grouping surfaces),
+ * a luminous hairline as the divider, and the selected title underscored by
+ * a gem instead of a Material indicator. Space for the gem is always
+ * reserved so titles do not jump when selection moves.
  */
 @Composable
 fun CrystalTabs(
@@ -391,9 +353,9 @@ fun CrystalTabs(
 // ------------------------------------------------------------- segmented
 
 /**
- * Segmented selector cut as one shard: cells share a faceted glass body,
- * the chosen cell fills with primary glass behind a gem marker. Replaces
- * the "● label" OutlinedButton rows.
+ * Segmented selector as a row of stone chips: each option is the pack's
+ * chip pebble, the chosen one showing its selected photograph (the steady
+ * low backlight of the pack contract). Replaces the "● label" rows.
  */
 @Composable
 fun CrystalSegmented(
@@ -403,43 +365,35 @@ fun CrystalSegmented(
     modifier: Modifier = Modifier,
 ) {
     val cs = MaterialTheme.colorScheme
-    val shape = crystalShardShape(10.dp, 4.dp)
-    Row(
-        modifier
-            .height(IntrinsicSize.Min)
-            .clip(shape)
-            .background(cs.surfaceVariant.copy(alpha = 0.22f))
-            .drawBehind { crystalFacets(0.8f) }
-            .border(1.dp, cs.primary.copy(alpha = 0.35f), shape),
-    ) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEachIndexed { i, label ->
-            if (i > 0) {
-                Box(Modifier.fillMaxHeight().width(1.dp).background(cs.primary.copy(alpha = 0.18f)))
-            }
             val sel = i == selected
-            val fill by animateColorAsState(
-                if (sel) cs.primary.copy(alpha = 0.30f) else Color.Transparent,
-                label = "crystalSegmentFill",
-            )
-            Row(
+            val interaction = rememberStoneInteraction()
+            val state = rememberStoneState(interaction, selected = sel)
+            Box(
                 Modifier
-                    .fillMaxHeight()
-                    .background(fill)
-                    .selectable(selected = sel, role = Role.RadioButton, onClick = { onSelect(i) })
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
+                    .weight(1f)
+                    .stonePress(interaction)
+                    .defaultMinSize(minHeight = 40.dp)
+                    .selectable(
+                        selected = sel,
+                        role = Role.RadioButton,
+                        interactionSource = interaction,
+                        indication = null,
+                        onClick = { onSelect(i) },
+                    ),
+                contentAlignment = Alignment.Center,
             ) {
-                val gemAlpha by animateFloatAsState(if (sel) 1f else 0f, label = "crystalSegmentGem")
-                Box(Modifier.size(5.dp).graphicsLayer { alpha = gemAlpha }) {
-                    CrystalGem(cs.primary, size = 5.dp)
-                }
-                Spacer(Modifier.width(6.dp))
+                StoneSurfaceArt(StoneComponent.CHIP, state, Modifier.matchParentSize())
                 Text(
                     label,
+                    Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.labelMedium,
                     textAlign = TextAlign.Center,
-                    color = if (sel) cs.onSurface else cs.onSurfaceVariant,
+                    fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
+                    color =
+                        (LocalFontColor.current ?: cs.onSurface)
+                            .copy(alpha = if (sel) 1f else 0.75f),
                 )
             }
         }

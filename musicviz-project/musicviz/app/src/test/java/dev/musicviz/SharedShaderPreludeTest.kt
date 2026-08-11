@@ -351,16 +351,24 @@ class SharedShaderPreludeTest {
 
     private fun meanX(scene: ParticleSceneBase): Float = rowsOf(scene).map { it[0] }.average().toFloat()
 
-    /** A top-level function body, from its signature to the closing brace. */
+    /**
+     * A top-level function body, from its signature to the closing brace.
+     *
+     * Line endings are normalised to `\n` first: `res/raw` is checked out
+     * as CRLF wherever git's `core.autocrlf` is on (every Windows checkout
+     * in practice), and a literal `"\n}\n"` search would otherwise never
+     * match a `"\r\n}\r\n"` file - i.e. every shader, not just a drifted one.
+     */
     private fun block(
         source: String,
         header: String,
     ): String {
-        val start = source.indexOf(header)
+        val text = source.replace("\r\n", "\n")
+        val start = text.indexOf(header)
         assertTrue("$header not found", start >= 0)
-        val end = source.indexOf("\n}\n", start)
+        val end = text.indexOf("\n}\n", start)
         assertTrue("$header is never closed", end > start)
-        return source.substring(start, end + 3)
+        return text.substring(start, end + 3)
     }
 
     /** [text] without the optional Morph stage; see [WITHOUT_MORPH]. */

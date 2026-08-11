@@ -71,12 +71,18 @@ private const val CRASH_REPORT_MAX_BYTES = 64 * 1024
 fun AppRoot(viewModel: PlayerViewModel) {
     val context = LocalContext.current
     val visualizerView = remember { VisualizerView(context) }
-    val appTheme by viewModel.theme.collectAsState()
+    val themePack by viewModel.theme.collectAsState()
     val gui by viewModel.guiPrefs.collectAsState()
     val systemDark = isSystemInDarkTheme()
-    // Follow-system-dark: when the OS is in light mode, swap to the LIGHT
-    // theme; otherwise keep the user's picked theme.
-    val effectiveTheme = if (gui.followSystemDark && !systemDark) AppTheme.LIGHT else appTheme
+    // Follow-system-dark: when the OS is in light mode, swap to the lightest
+    // shipped pack; otherwise keep the user's picked stone.
+    val effectiveTheme =
+        if (gui.followSystemDark && !systemDark) {
+            dev.musicviz.ui.theme.ThemePackCatalog.all
+                .firstOrNull { it.isLight } ?: themePack
+        } else {
+            themePack
+        }
     var dest by rememberSaveable { mutableStateOf(0) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
@@ -131,7 +137,7 @@ fun AppRoot(viewModel: PlayerViewModel) {
     // the right order: visualizer > search > drill-in > tab > exit.
     androidx.activity.compose.BackHandler(enabled = dest != 0) { dest = 0 }
     CrystalMaterialTheme(
-        appTheme = effectiveTheme,
+        pack = effectiveTheme,
         gui = gui,
     ) {
         val miniPlayer: @Composable () -> Unit = {
