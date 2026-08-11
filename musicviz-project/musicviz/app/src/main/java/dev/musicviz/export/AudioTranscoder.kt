@@ -131,9 +131,12 @@ class AudioTranscoder(
         var pcmCarry: ByteBuffer? = null
         var carryTimeUs = 0L
         var fedBytes = 0L
+        var progressed = false
+        var stallIterations = 0
         try {
             while (!encoderDone) {
                 if (isCancelled()) throw kotlinx.coroutines.CancellationException("Export cancelled")
+                progressed = false
                 if (pcmCarry == null && !srcDone) {
                     val n = aiff.read(readBuf)
                     if (n <= 0 || (maxUs > 0 && carryTimeUs > maxUs)) {
@@ -158,12 +161,13 @@ class AudioTranscoder(
                         pcmCarry = bb
                         onProgress(aiff.progress)
                     }
+                    progressed = true
                 }
                 if (pcmCarry != null) {
                     val carry = pcmCarry!!
                     val inIndex = encoder.dequeueInputBuffer(10_000)
                     if (inIndex >= 0) {
-                        val inBuf = encoder.getInputBuffer(inIndex)!!
+                        val inBuf = checkNotNull(encoder.getInputBuffer(inIndex)) { "encoder input buffer null (codec error state)" }
                         val toWrite = minOf(inBuf.remaining(), carry.remaining())
                         val slice = carry.duplicate().apply { limit(position() + toWrite) }
                         inBuf.put(slice)
@@ -172,23 +176,27 @@ class AudioTranscoder(
                         carryTimeUs = fedBytes * 1_000_000L / (sampleRate.toLong() * channels * 2)
                         carry.position(carry.position() + toWrite)
                         if (!carry.hasRemaining()) pcmCarry = null
+                        progressed = true
                     }
                 } else if (srcDone && !eosSent) {
                     val inIndex = encoder.dequeueInputBuffer(10_000)
                     if (inIndex >= 0) {
                         encoder.queueInputBuffer(inIndex, 0, 0, carryTimeUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                         eosSent = true
+                        progressed = true
                     }
                 }
                 while (true) {
                     val outIndex = encoder.dequeueOutputBuffer(encInfo, if (eosSent) 10_000 else 0)
                     if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                         outFormat = encoder.outputFormat
+                        progressed = true
                         continue
                     }
                     if (outIndex >= 0) {
+                        progressed = true
                         if (encInfo.size > 0 && encInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
-                            val buf = encoder.getOutputBuffer(outIndex)!!
+                            val buf = checkNotNull(encoder.getOutputBuffer(outIndex)) { "encoder output buffer null (codec error state)" }
                             buf.position(encInfo.offset)
                             buf.limit(encInfo.offset + encInfo.size)
                             val bytes = ByteArray(encInfo.size)
@@ -206,6 +214,13 @@ class AudioTranscoder(
                     } else {
                         break
                     }
+                }
+                // Same wedge guard as the decoder path: fail loudly instead of
+                // spinning at 10 ms waits until the user cancels.
+                if (progressed) {
+                    stallIterations = 0
+                } else if (++stallIterations > STALL_LIMIT) {
+                    throw IllegalStateException("Audio transcode stalled (codec made no progress)")
                 }
             }
             out.flush()
@@ -237,11 +252,11 @@ class AudioTranscoder(
         }
         val extractor = MediaExtractor()
         val srcFormat: MediaFormat
-        val sampleRate: Int
-        val srcChannels: Int
-        val channels: Int
+        var sampleRate: Int
+        var srcChannels: Int
+        var channels: Int
         val decoder: MediaCodec
-        val encoder: MediaCodec
+        var encoder: MediaCodec? = null
         val outFile: File
         val out: BufferedOutputStream
         var decoderRef: MediaCodec? = null
@@ -264,24 +279,46 @@ class AudioTranscoder(
             decoder.configure(srcFormat, null, null, 0)
             decoder.start()
 
+            outFile = File.createTempFile("musicviz_aac_", ".bin", context.cacheDir).also { outFileRef = it }
+            out = BufferedOutputStream(FileOutputStream(outFile))
+        } catch (t: Throwable) {
+            runCatching { decoderRef?.release() }
+            runCatching { outFileRef?.delete() }
+            runCatching { extractor.release() }
+            throw t
+        }
+
+        // The encoder is NOT configured from the container format: for
+        // HE-AAC v1/v2 the container understates the rate (SBR doubles it)
+        // and Parametric Stereo understates the channels (1 declared, 2
+        // decoded), so an encoder configured up front ran at the wrong rate -
+        // chipmunk or garbled audio in the exported file, silently. It is
+        // created here instead, on the first decoded buffer, from what the
+        // DECODER says it is emitting; the container values above remain only
+        // as the fallback for a stream that dies before producing anything.
+        fun ensureEncoder(decoderFormat: MediaFormat?) {
+            if (encoder != null) return
+            if (decoderFormat != null) {
+                if (decoderFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                    sampleRate = decoderFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                }
+                if (decoderFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                    srcChannels = decoderFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                    channels = srcChannels.coerceAtMost(2)
+                }
+            }
             val encFormat =
                 MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, channels).apply {
                     setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
                     setInteger(MediaFormat.KEY_BIT_RATE, 192_000)
                     setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 65536)
                 }
-            encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).also { encoderRef = it }
-            encoder.configure(encFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            encoder.start()
-
-            outFile = File.createTempFile("musicviz_aac_", ".bin", context.cacheDir).also { outFileRef = it }
-            out = BufferedOutputStream(FileOutputStream(outFile))
-        } catch (t: Throwable) {
-            runCatching { decoderRef?.release() }
-            runCatching { encoderRef?.release() }
-            runCatching { outFileRef?.delete() }
-            runCatching { extractor.release() }
-            throw t
+            encoder =
+                MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).also {
+                    encoderRef = it
+                    it.configure(encFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                    it.start()
+                }
         }
         var outBytes = 0L
         val infos = mutableListOf<SampleInfo>()
@@ -304,30 +341,35 @@ class AudioTranscoder(
         var encoderDone = false
         var pcmCarry: ByteBuffer? = null
         var carryTimeUs = 0L
+        var progressed = false
+        var stallIterations = 0
 
         fun feedEncoder(): Boolean {
             val carry = pcmCarry ?: return true
-            val inIndex = encoder.dequeueInputBuffer(10_000)
+            val enc = checkNotNull(encoder) { "PCM queued before the encoder existed" }
+            val inIndex = enc.dequeueInputBuffer(10_000)
             if (inIndex < 0) return false
-            val inBuf = encoder.getInputBuffer(inIndex)!!
+            val inBuf = checkNotNull(enc.getInputBuffer(inIndex)) { "encoder input buffer null (codec error state)" }
             val toWrite = minOf(inBuf.remaining(), carry.remaining())
             val slice = carry.duplicate().apply { limit(position() + toWrite) }
             inBuf.put(slice)
             val bytesPerUs = sampleRate.toLong() * channels * 2 / 1_000_000.0
-            encoder.queueInputBuffer(inIndex, 0, toWrite, carryTimeUs, 0)
+            enc.queueInputBuffer(inIndex, 0, toWrite, carryTimeUs, 0)
             carryTimeUs += (toWrite / bytesPerUs).toLong()
             carry.position(carry.position() + toWrite)
             if (!carry.hasRemaining()) pcmCarry = null
+            progressed = true
             return pcmCarry == null
         }
 
         try {
             while (!encoderDone) {
                 if (isCancelled()) throw kotlinx.coroutines.CancellationException("Export cancelled")
+                progressed = false
                 if (!extractorDone) {
                     val inIndex = decoder.dequeueInputBuffer(10_000)
                     if (inIndex >= 0) {
-                        val buf = decoder.getInputBuffer(inIndex)!!
+                        val buf = checkNotNull(decoder.getInputBuffer(inIndex)) { "decoder input buffer null (codec error state)" }
                         val size = extractor.readSampleData(buf, 0)
                         if (size < 0 || (maxUs > 0 && extractor.sampleTime > maxUs)) {
                             decoder.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
@@ -337,16 +379,19 @@ class AudioTranscoder(
                             if (estimatedUs > 0) onProgress((extractor.sampleTime / estimatedUs.toFloat()).coerceIn(0f, 1f))
                             extractor.advance()
                         }
+                        progressed = true
                     }
                 }
                 if (!decoderDone && pcmCarry == null) {
                     val outIndex = decoder.dequeueOutputBuffer(decInfo, 10_000)
                     if (outIndex >= 0) {
+                        progressed = true
                         if (decInfo.size > 0) {
-                            val buf = decoder.getOutputBuffer(outIndex)!!
+                            val buf = checkNotNull(decoder.getOutputBuffer(outIndex)) { "decoder output buffer null (codec error state)" }
                             buf.position(decInfo.offset)
                             buf.limit(decInfo.offset + decInfo.size)
                             val outFmt = decoder.outputFormat
+                            ensureEncoder(outFmt)
                             val pcmEnc =
                                 if (outFmt.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
                                     outFmt.getInteger(MediaFormat.KEY_PCM_ENCODING)
@@ -371,15 +416,23 @@ class AudioTranscoder(
                                 copy.flip()
                             }
                             // Multichannel sources (5.1 etc.): the AAC encoder
-                            // was configured for at most 2 channels, but the
-                            // decoder emits ALL source channels interleaved.
-                            // Feeding that stream unchanged garbles the audio
-                            // and breaks the bytes-per-microsecond timestamp
-                            // math, so fold the frames down to the encoder's
-                            // channel count here.
+                            // takes at most 2 channels, but the decoder emits
+                            // ALL source channels interleaved. Feeding that
+                            // stream unchanged garbles the audio and breaks
+                            // the bytes-per-microsecond timestamp math, so
+                            // fold the frames down to the encoder's channel
+                            // count here. The stride comes from THIS buffer's
+                            // format, not the container's - they disagree for
+                            // Parametric Stereo and friends.
+                            val bufChannels =
+                                if (outFmt.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                                    outFmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                                } else {
+                                    srcChannels
+                                }
                             val mixed =
-                                if (srcChannels > channels) {
-                                    downmix(copy, srcChannels, channels)
+                                if (bufChannels > channels) {
+                                    downmix(copy, bufChannels, channels)
                                 } else {
                                     copy
                                 }
@@ -393,23 +446,32 @@ class AudioTranscoder(
                 if (pcmCarry != null) {
                     feedEncoder()
                 } else if (decoderDone && !eosSent) {
-                    val inIndex = encoder.dequeueInputBuffer(10_000)
+                    // A stream that died before its first buffer still needs an
+                    // encoder to carry the EOS; container values are all that
+                    // is left to configure it from.
+                    ensureEncoder(null)
+                    val enc = checkNotNull(encoder)
+                    val inIndex = enc.dequeueInputBuffer(10_000)
                     if (inIndex >= 0) {
-                        encoder.queueInputBuffer(inIndex, 0, 0, carryTimeUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                        enc.queueInputBuffer(inIndex, 0, 0, carryTimeUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                         // Flag separately instead of clearing decoderDone: that
                         // hack made every remaining flush iteration block 10 ms
                         // on the finished decoder's dequeue, dragging out the
                         // export tail.
                         eosSent = true
+                        progressed = true
                     }
                 }
                 while (true) {
-                    val outIndex = encoder.dequeueOutputBuffer(encInfo, 0)
+                    val enc = encoder ?: break
+                    val outIndex = enc.dequeueOutputBuffer(encInfo, 0)
                     if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                        outFormat = encoder.outputFormat
+                        outFormat = enc.outputFormat
+                        progressed = true
                     } else if (outIndex >= 0) {
+                        progressed = true
                         if (encInfo.size > 0 && encInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
-                            val buf = encoder.getOutputBuffer(outIndex)!!
+                            val buf = checkNotNull(enc.getOutputBuffer(outIndex)) { "encoder output buffer null (codec error state)" }
                             buf.position(encInfo.offset)
                             buf.limit(encInfo.offset + encInfo.size)
                             val bytes = ByteArray(encInfo.size)
@@ -419,7 +481,7 @@ class AudioTranscoder(
                             outBytes += encInfo.size
                         }
                         val eos = encInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
-                        encoder.releaseOutputBuffer(outIndex, false)
+                        enc.releaseOutputBuffer(outIndex, false)
                         if (eos) {
                             encoderDone = true
                             break
@@ -427,6 +489,15 @@ class AudioTranscoder(
                     } else {
                         break
                     }
+                }
+                // A wedged codec used to spin here at 10 ms waits until the
+                // user cancelled; the video side's flush already had a bound,
+                // this loop had none. Every productive iteration resets the
+                // count, so only a codec making NO progress at all trips it.
+                if (progressed) {
+                    stallIterations = 0
+                } else if (++stallIterations > STALL_LIMIT) {
+                    throw IllegalStateException("Audio transcode stalled (codec made no progress)")
                 }
             }
             out.flush()
@@ -442,9 +513,18 @@ class AudioTranscoder(
             runCatching { out.close() }
             runCatching { decoder.stop() }
             runCatching { decoder.release() }
-            runCatching { encoder.stop() }
-            runCatching { encoder.release() }
+            runCatching { encoder?.stop() }
+            runCatching { encoder?.release() }
             runCatching { extractor.release() }
         }
+    }
+
+    private companion object {
+        /**
+         * Consecutive loop iterations with no codec progress (each blocks at
+         * least 10 ms on a dequeue) before the transcode is declared wedged
+         * and fails loudly instead of spinning until the user cancels.
+         */
+        const val STALL_LIMIT = 1_000
     }
 }
