@@ -16,18 +16,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RepeatOne
-import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import dev.musicviz.render.VisualizerView
 import dev.musicviz.render.scene.TouchTransform
+import dev.musicviz.ui.theme.StoneIcon
+import dev.musicviz.ui.theme.StoneIconArt
 
 /**
  * Now Playing: the fullscreen visualizer canvas with the app shell's design
@@ -217,8 +208,8 @@ fun VisualizerScreen(
                 }
                 if (state.hasMedia && !external.active) {
                     IconButton(onClick = { viewModel.toggleFavourite() }) {
-                        Icon(
-                            if (isFavourite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        StoneIconArt(
+                            StoneIcon.FAVORITE,
                             if (isFavourite) "Remove from favourites" else "Add to favourites",
                             tint =
                                 if (isFavourite) {
@@ -314,8 +305,8 @@ fun VisualizerScreen(
                         horizontalArrangement = Arrangement.SpaceEvenly,
                     ) {
                         IconButton(onClick = viewModel::toggleShuffle) {
-                            Icon(
-                                Icons.Filled.Shuffle,
+                            StoneIconArt(
+                                StoneIcon.SHUFFLE,
                                 "Shuffle",
                                 tint =
                                     if (state.shuffle) {
@@ -326,24 +317,20 @@ fun VisualizerScreen(
                             )
                         }
                         IconButton(onClick = viewModel::previous, enabled = state.hasMedia) {
-                            Icon(Icons.Filled.SkipPrevious, "Previous")
+                            StoneIconArt(StoneIcon.PREVIOUS, "Previous")
                         }
                         CrystalPlayButton(
-                            icon = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            icon = if (state.isPlaying) StoneIcon.PAUSE else StoneIcon.PLAY,
                             contentDescription = if (state.isPlaying) "Pause" else "Play",
                             onClick = viewModel::togglePlayPause,
                             enabled = state.hasMedia,
                         )
                         IconButton(onClick = viewModel::next, enabled = state.hasMedia) {
-                            Icon(Icons.Filled.SkipNext, "Next")
+                            StoneIconArt(StoneIcon.NEXT, "Next")
                         }
                         IconButton(onClick = viewModel::cycleRepeatMode) {
-                            Icon(
-                                if (state.repeatMode == Player.REPEAT_MODE_ONE) {
-                                    Icons.Filled.RepeatOne
-                                } else {
-                                    Icons.Filled.Repeat
-                                },
+                            StoneIconArt(
+                                StoneIcon.REPEAT,
                                 "Repeat",
                                 tint =
                                     if (state.repeatMode != Player.REPEAT_MODE_OFF) {
@@ -360,11 +347,11 @@ fun VisualizerScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         TextButton(onClick = onOpenVisuals) {
-                            Icon(Icons.Filled.Tune, null)
+                            StoneIconArt(StoneIcon.SETTINGS, null)
                             Text("  Visuals")
                         }
                         TextButton(onClick = viewModel::cycleAutoMode) {
-                            Icon(Icons.AutoMirrored.Filled.QueueMusic, null)
+                            StoneIconArt(StoneIcon.QUEUE, null)
                             Text(
                                 when (autoMode) {
                                     1 -> "  Auto: random"

@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
@@ -39,13 +38,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.musicviz.ui.theme.StoneComponent
+import dev.musicviz.ui.theme.StoneIcon
+import dev.musicviz.ui.theme.StoneIconArt
 import dev.musicviz.ui.theme.StoneState
 import dev.musicviz.ui.theme.StoneSurfaceArt
 import dev.musicviz.ui.theme.rememberStoneInteraction
@@ -117,7 +117,7 @@ fun CrystalButton(
  */
 @Composable
 fun CrystalPlayButton(
-    icon: ImageVector,
+    icon: StoneIcon,
     contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -135,7 +135,7 @@ fun CrystalPlayButton(
         contentAlignment = Alignment.Center,
     ) {
         StoneSurfaceArt(StoneComponent.ICON_BUTTON, state, Modifier.matchParentSize())
-        Icon(
+        StoneIconArt(
             icon,
             contentDescription,
             tint = (LocalFontColor.current ?: cs.onSurface).copy(alpha = if (enabled) 1f else 0.55f),
@@ -231,7 +231,7 @@ fun CrystalSlider(
 /** One destination of [CrystalNavBar]. */
 data class CrystalNavItem(
     val label: String,
-    val icon: ImageVector,
+    val icon: StoneIcon,
 )
 
 /**
@@ -283,7 +283,7 @@ fun CrystalNavBar(
                         CrystalGem(cs.primary, size = 7.dp)
                     }
                     Spacer(Modifier.height(3.dp))
-                    Icon(item.icon, item.label, tint = tint)
+                    StoneIconArt(item.icon, item.label, tint = tint)
                     Spacer(Modifier.height(2.dp))
                     Text(
                         item.label,

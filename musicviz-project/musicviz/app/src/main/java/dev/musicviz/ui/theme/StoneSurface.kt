@@ -10,11 +10,13 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 
 /**
@@ -99,6 +101,14 @@ fun Modifier.stonePress(
 ): Modifier {
     val motion = LocalThemePack.current.motion
     val pressed by interaction.collectIsPressedAsState()
+    // "Haptic and sound start together; internal light begins within 16 ms" -
+    // firing on the press edge puts the cue alongside the scale and the state
+    // crossfade rather than after them. Reduced motion silences the movement,
+    // not the touch confirmation.
+    val view = LocalView.current
+    LaunchedEffect(pressed) {
+        if (pressed) view.performStoneHaptic(StoneHapticCue.TAP)
+    }
     val scale by animateFloatAsState(
         targetValue = if (pressed && !reducedMotion) motion.pressScale else 1f,
         animationSpec =

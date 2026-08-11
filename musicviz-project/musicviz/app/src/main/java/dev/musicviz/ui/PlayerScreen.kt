@@ -17,17 +17,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Cast
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RepeatOne
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,11 +33,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
+import dev.musicviz.ui.theme.StoneIcon
+import dev.musicviz.ui.theme.StoneIconArt
 import kotlinx.coroutines.delay
 
 /**
@@ -101,7 +93,7 @@ fun PlayerScreen(
                     CrystalOverline("MusicViz")
                     GlowTitle("Player")
                 }
-                IconButton(onClick = onOpenSearch) { Icon(Icons.Filled.Search, "Search") }
+                IconButton(onClick = onOpenSearch) { StoneIconArt(StoneIcon.SEARCH, "Search") }
             }
         }
 
@@ -261,8 +253,8 @@ private fun PlayerHero(
             }
             if (state.hasMedia && !foreign) {
                 IconButton(onClick = { viewModel.toggleFavourite() }) {
-                    Icon(
-                        if (isFavourite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    StoneIconArt(
+                        StoneIcon.FAVORITE,
                         if (isFavourite) "Remove from favourites" else "Add to favourites",
                         tint =
                             if (isFavourite) {
@@ -374,8 +366,8 @@ private fun TransportCard(
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
             IconButton(onClick = viewModel::toggleShuffle) {
-                Icon(
-                    Icons.Filled.Shuffle,
+                StoneIconArt(
+                    StoneIcon.SHUFFLE,
                     "Shuffle",
                     tint =
                         if (state.shuffle) {
@@ -386,24 +378,20 @@ private fun TransportCard(
                 )
             }
             IconButton(onClick = viewModel::previous, enabled = state.hasMedia) {
-                Icon(Icons.Filled.SkipPrevious, "Previous")
+                StoneIconArt(StoneIcon.PREVIOUS, "Previous")
             }
             CrystalPlayButton(
-                icon = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                icon = if (state.isPlaying) StoneIcon.PAUSE else StoneIcon.PLAY,
                 contentDescription = if (state.isPlaying) "Pause" else "Play",
                 onClick = viewModel::togglePlayPause,
                 enabled = state.hasMedia,
             )
             IconButton(onClick = viewModel::next, enabled = state.hasMedia) {
-                Icon(Icons.Filled.SkipNext, "Next")
+                StoneIconArt(StoneIcon.NEXT, "Next")
             }
             IconButton(onClick = viewModel::cycleRepeatMode) {
-                Icon(
-                    if (state.repeatMode == Player.REPEAT_MODE_ONE) {
-                        Icons.Filled.RepeatOne
-                    } else {
-                        Icons.Filled.Repeat
-                    },
+                StoneIconArt(
+                    StoneIcon.REPEAT,
                     "Repeat",
                     tint =
                         if (state.repeatMode != Player.REPEAT_MODE_OFF) {
@@ -652,7 +640,7 @@ private fun QuickActions(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
     ) {
         item {
-            QuickAction(Icons.Filled.Mic, if (micActive) "Room: on" else "Live input", active = micActive) {
+            QuickAction(StoneIcon.MICROPHONE, if (micActive) "Room: on" else "Live input", active = micActive) {
                 if (micActive) {
                     viewModel.setMicEnabled(false)
                 } else if (viewModel.hasMicPermission()) {
@@ -696,13 +684,27 @@ private fun QuickActions(
             }
         }
         item {
-            QuickAction(Icons.Filled.Shuffle, "Shuffle all", enabled = canShuffle) {
+            QuickAction(StoneIcon.SHUFFLE, "Shuffle all", enabled = canShuffle) {
                 viewModel.shuffleAllHistory()
             }
         }
     }
 }
 
+/** Quick action carrying one of the pack's own icons. */
+@Composable
+private fun QuickAction(
+    icon: StoneIcon,
+    label: String,
+    enabled: Boolean = true,
+    active: Boolean = false,
+    onClick: () -> Unit,
+) = QuickActionShell(label, enabled, active, onClick) { StoneIconArt(icon, null, Modifier.size(22.dp), tint = it) }
+
+/**
+ * Quick action for the few affordances the packs ship no icon for (casting,
+ * sleep timer). Material carries those rather than inventing pack art for them.
+ */
 @Composable
 private fun QuickAction(
     icon: ImageVector,
@@ -710,6 +712,15 @@ private fun QuickAction(
     enabled: Boolean = true,
     active: Boolean = false,
     onClick: () -> Unit,
+) = QuickActionShell(label, enabled, active, onClick) { Icon(icon, null, Modifier.size(22.dp), tint = it) }
+
+@Composable
+private fun QuickActionShell(
+    label: String,
+    enabled: Boolean,
+    active: Boolean,
+    onClick: () -> Unit,
+    icon: @Composable (Color) -> Unit,
 ) {
     val tint =
         when {
@@ -732,7 +743,7 @@ private fun QuickAction(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Icon(icon, null, Modifier.size(22.dp), tint = tint)
+        icon(tint)
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,

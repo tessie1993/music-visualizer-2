@@ -6,9 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.musicviz.ui.theme.StoneIcon
+import dev.musicviz.ui.theme.StoneIconArt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -146,7 +145,7 @@ internal fun MusicFoldersEditor(viewModel: PlayerViewModel) {
                     style = MaterialTheme.typography.bodySmall,
                 )
                 IconButton(onClick = { viewModel.removeMediaRoot(root) }) {
-                    Icon(Icons.Filled.Close, "Remove folder")
+                    StoneIconArt(StoneIcon.CLOSE, "Remove folder")
                 }
             }
         }

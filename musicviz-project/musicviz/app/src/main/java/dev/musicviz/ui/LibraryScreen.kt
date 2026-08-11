@@ -24,14 +24,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -65,6 +61,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import dev.musicviz.data.MusicPlaylist
+import dev.musicviz.ui.theme.StoneIcon
+import dev.musicviz.ui.theme.StoneIconArt
 import kotlin.math.roundToInt
 
 @Composable
@@ -96,7 +94,7 @@ fun LibraryScreen(
                 CrystalOverline("MusicViz")
                 GlowTitle("Library")
             }
-            IconButton(onClick = onOpenSearch) { Icon(Icons.Filled.Search, "Search") }
+            IconButton(onClick = onOpenSearch) { StoneIconArt(StoneIcon.SEARCH, "Search") }
         }
         if (!granted) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -385,14 +383,14 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
                         IconButton(onClick = {
                             renaming = pl.name
                             renameText = pl.name
-                        }) { Icon(Icons.Filled.Edit, "Rename") }
+                        }) { StoneIconArt(StoneIcon.EDIT, "Rename") }
                         IconButton(onClick = { viewModel.playPlaylist(pl.name) }) {
-                            Icon(Icons.Filled.PlayArrow, "Play")
+                            StoneIconArt(StoneIcon.PLAY, "Play")
                         }
                         // Behind a confirm: this row's other taps are all
                         // recoverable, deleting a playlist is not.
                         IconButton(onClick = { deleting = pl.name }) {
-                            Icon(Icons.Filled.Close, "Delete playlist")
+                            StoneIconArt(StoneIcon.CLOSE, "Delete playlist")
                         }
                     }
                     if (expanded == pl.name) {
@@ -610,7 +608,7 @@ private fun PlaylistTracks(
                 enabled = i < count - 1,
             ) { Icon(Icons.Filled.KeyboardArrowDown, "Down") }
             IconButton(onClick = { viewModel.removeTrackFromPlaylist(playlist.name, uri) }) {
-                Icon(Icons.Filled.Close, "Remove from playlist", Modifier.size(18.dp))
+                StoneIconArt(StoneIcon.CLOSE, "Remove from playlist", Modifier.size(18.dp))
             }
         }
     }
@@ -648,7 +646,7 @@ private fun FoldersTab(
                     style = MaterialTheme.typography.bodySmall,
                 )
                 IconButton(onClick = { viewModel.removeMediaRoot(root) }) {
-                    Icon(Icons.Filled.Close, "Remove folder")
+                    StoneIconArt(StoneIcon.CLOSE, "Remove folder")
                 }
             }
         }
