@@ -237,6 +237,7 @@ object ParamRandomizer {
         r("Audio drive") { it.copy(audioDrive = f(0.6f, 1.8f)) }
         r("Beat response") { it.copy(beatResponse = f(0.3f, 2f)) }
         r("Beat flash") { it.copy(flash = sometimes(0.5f, 0.1f, 0.6f)) }
+        r("Blend preset changes") { it.copy(milkdropBlendPresets = chance(0.35f)) }
         r("Bass gain") { it.copy(bassGain = f(0.8f, 1.4f)) }
         r("Mid gain") { it.copy(midGain = f(0.8f, 1.4f)) }
         r("Treble gain") { it.copy(trebGain = f(0.8f, 1.4f)) }

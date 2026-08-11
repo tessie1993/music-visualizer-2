@@ -94,6 +94,15 @@ data class SceneParams(
     // TOWARD - anything else would repaint every preset a user already saved
     // and flatten the whole format onto one look.
     val milkdropPaletteTint: Float = 0f,
+    /**
+     * Blend MilkDrop preset changes instead of cutting to the next one.
+     *
+     * libprojectM can cross-blend between the outgoing and incoming preset
+     * over its soft-cut duration, which is what desktop MilkDrop does; the app
+     * has always asked for a hard cut. Off by default, because a hard cut is
+     * what every saved preset and every existing user is used to seeing.
+     */
+    val milkdropBlendPresets: Boolean = false,
     val colorShift: Float = 0f,
     val hueRange: Float = 1f,
     val saturation: Float = 1f,

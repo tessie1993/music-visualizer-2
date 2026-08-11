@@ -393,6 +393,9 @@ internal fun BehaviorTab(
         LabeledSlider("Audio drive", p.audioDrive, 0.2f..2.5f) { onChange(p.copy(audioDrive = it)) }
         LabeledSlider("Beat response", p.beatResponse, 0f..2f) { onChange(p.copy(beatResponse = it)) }
         LabeledSlider("Beat flash", p.flash, 0f..1f) { onChange(p.copy(flash = it)) }
+        CheckRow("Blend preset changes", p.milkdropBlendPresets) {
+            onChange(p.copy(milkdropBlendPresets = it))
+        }
         SectionHeader("Band balance")
         LabeledSlider("Bass gain", p.bassGain, 0f..2f) { onChange(p.copy(bassGain = it)) }
         LabeledSlider("Mid gain", p.midGain, 0f..2f) { onChange(p.copy(midGain = it)) }
