@@ -24,13 +24,12 @@ import java.io.File
  * of a fluid scene therefore rendered at minimum quality, on every device,
  * deterministically, while the screen it was exported from looked fine.
  *
- * [everyThirtyFpsFrameLooksLikeADeficitToTheSensor] pins the sensor arithmetic
- * so the reason stays visible; [theExportLoopDisablesAdaptiveQuality] pins the
- * fix. The sensor is not wrong - asking it about an export was.
+ * The first test below pins that arithmetic so the reason stays visible, and the
+ * third pins the fix. The sensor is not wrong - asking it about an export was.
  */
 class ExportDeterministicQualityTest {
     @Test
-    fun everyThirtyFpsFrameLooksLikeADeficitToTheSensor() {
+    fun `every 30 fps frame looks like a deficit to the sensor`() {
         // Exactly what VideoExporter feeds a scene at 30 fps: a constant dt.
         val monitor = PerformanceMonitor()
         val dt = 1f / 30f
@@ -51,7 +50,7 @@ class ExportDeterministicQualityTest {
     }
 
     @Test
-    fun aSixtyFpsFeedIsHealthyAndNeverDowngrades() {
+    fun `a 60 fps feed is healthy and never downgrades`() {
         // The counterweight: 60 > 50, so a 60 fps export escaped the bug
         // entirely. That asymmetry is why it went unnoticed for so long.
         val monitor = PerformanceMonitor()
@@ -59,7 +58,7 @@ class ExportDeterministicQualityTest {
     }
 
     @Test
-    fun theExportLoopDisablesAdaptiveQuality() {
+    fun `the export loop disables adaptive quality`() {
         // Both FluidScene and WaterScene gate their monitor on
         // p.fluidAutoQuality, and VideoExporter builds the frame's params in
         // one place - so neutralising it there covers every current and future
@@ -73,7 +72,7 @@ class ExportDeterministicQualityTest {
     }
 
     @Test
-    fun theSensorIsStillConsultedOnTheLivePath() {
+    fun `the sensor is still consulted on the live path`() {
         // The fix must not turn adaptive quality off for everyone - a device
         // that genuinely cannot run FLUID still needs to step down.
         for (scene in listOf("FluidScene", "WaterScene")) {

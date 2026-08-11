@@ -41,6 +41,22 @@ class RenderTargetOwnershipTest {
                 "render/fluid/FlowField.kt" to "its own velocity-field ping-pong at field resolution",
                 "render/scene/ProjectMScene.kt" to "the FBO handed to libprojectM's native renderer",
             )
+
+        /**
+         * The call sites that bind what they allocate, so must check it.
+         *
+         * `onSurfaceChanged` is deliberately absent: it pre-allocates so the
+         * first frame after a resize is free of a multi-megabyte allocation, it
+         * binds nothing itself, and `onDrawFrame` re-ensures every frame and
+         * handles the failure. That is the one place where ignoring the result
+         * is correct, and `preallocationRange` is how this test says so out
+         * loud rather than by omission.
+         */
+        val ENSURE_CALLERS: Map<String, List<String>> =
+            mapOf(
+                "render/VisualizerRenderer.kt" to listOf("fboA.ensure(", "fboB.ensure(", "trail.ensure("),
+                "export/FxCompositor.kt" to listOf("sceneTarget.ensure(", "trail.ensure("),
+            )
     }
 
     @Test
@@ -83,12 +99,63 @@ class RenderTargetOwnershipTest {
     }
 
     @Test
+    fun `every ensure result is acted on`() {
+        // ensure() returning false zeroes the handles, so a caller that ignores
+        // it binds framebuffer 0 - the screen, or the encoder surface - and
+        // samples texture 0. That is strictly worse than the unchecked
+        // allocation this replaced, where an incomplete framebuffer at least
+        // made the draws no-ops. So every call site that goes on to bind the
+        // target must consume the Boolean.
+        val offenders =
+            ENSURE_CALLERS.flatMap { (path, calls) ->
+                val text = source(path)
+                val exempt = preallocationRange(text)
+                calls.flatMap { unconsumed(text, it, exempt) }.map { "$path: $it" }
+            }
+        assertEquals(
+            "these call sites ignore ensure()'s result - an unusable target would be bound as " +
+                "framebuffer 0, which is the screen or the encoder surface",
+            emptyList<String>(),
+            offenders,
+        )
+    }
+
+    @Test
     fun `context loss drops trail handles without deleting them`() {
         // release() on names from a dead context is only safe while nothing new
         // has been allocated; by the time the trail buffer is reached the names
         // may belong to someone else's object. onSurfaceCreated must forget().
         val body = functionBody(source("render/VisualizerRenderer.kt"), "override fun onSurfaceCreated")
         assertTrue("onSurfaceCreated must forget() the trail target, not release() it", body.contains("trail.forget()"))
+    }
+
+    /** A result is consumed by a guard, a check, an assignment or a return. */
+    private val consumed = Regex("""(if\s*\(|check\(|require\(|val\s+\w+\s*=|var\s+\w+\s*=|return\s)""")
+
+    /** Character range of the pre-allocation function, or empty if there is none. */
+    private fun preallocationRange(text: String): IntRange {
+        val at = text.indexOf("override fun onSurfaceChanged")
+        if (at < 0) return IntRange.EMPTY
+        val body = functionBody(text, "override fun onSurfaceChanged")
+        val start = text.indexOf(body, at)
+        return start until (start + body.length)
+    }
+
+    /** Every occurrence of [call] outside [exempt] whose result is discarded. */
+    private fun unconsumed(
+        text: String,
+        call: String,
+        exempt: IntRange,
+    ): List<String> {
+        val found = mutableListOf<String>()
+        var from = 0
+        while (true) {
+            val at = text.indexOf(call, from)
+            if (at < 0) return found
+            from = at + call.length
+            val line = text.substring(text.lastIndexOf('\n', at) + 1, text.indexOf('\n', at)).trim()
+            if (at !in exempt && !consumed.containsMatchIn(line)) found += line
+        }
     }
 
     /** Every main-source Kotlin file, keyed by its path below `dev/musicviz/`. */

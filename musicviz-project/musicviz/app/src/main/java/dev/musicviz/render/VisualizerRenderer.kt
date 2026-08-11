@@ -1085,8 +1085,30 @@ class VisualizerRenderer(
             }
             ripple.step(dt)
         }
-        fboA.ensure(renderWidth, renderHeight)
-        fboB.ensure(renderWidth, renderHeight)
+        if (!fboA.ensure(renderWidth, renderHeight)) {
+            // The active scene has nowhere to render. Drawing it straight to the
+            // default framebuffer instead would skip the composite pass - and
+            // with it the strobe and flash ceilings VisualSafety enforces there
+            // - so a black frame is the only safe degradation. ensure() is
+            // idempotent and retries next frame.
+            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
+            GLES30.glViewport(0, 0, width, height)
+            GLES30.glClearColor(0f, 0f, 0f, 1f)
+            GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+            return
+        }
+        // FBO B is optional - it carries a layer, or a transition's outgoing
+        // scene - so if it cannot be built both are dropped for this frame
+        // rather than binding framebuffer 0 and compositing texture 0.
+        if (!fboB.ensure(renderWidth, renderHeight)) {
+            // Cleared on the FIELDS, not on locals: the composite reads
+            // layerScene for uStyle and uGateB, and the transition's own
+            // progress >= 1 reset below only runs while an outgoing scene is
+            // still being rendered, so a local null would strand it forever.
+            layerScene = null
+            outgoingScene = null
+            outgoingParams = null
+        }
 
         var progress = 1f
         val outgoing = outgoingScene

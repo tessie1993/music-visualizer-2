@@ -184,7 +184,16 @@ internal class FxCompositor(
         // Colour texture the scene renders into. Same shared target type the
         // live renderer uses, so both paths get the completeness check and the
         // initial clear rather than two of the four sites having them.
-        sceneTarget.ensure(width, height)
+        //
+        // Checked, and fatal: the export has no degraded mode worth shipping.
+        // Without this target the exporter would bind framebuffer 0 - the
+        // encoder surface - and composite texture 0, writing a black or
+        // scrambled video file and reporting success. Failing construction
+        // surfaces as a failed export instead, which VideoExporter already
+        // propagates.
+        check(sceneTarget.ensure(width, height)) {
+            "export scene target ${width}x$height is incomplete on this device"
+        }
 
         // A 1x1 texture for the unused second (transition) sampler. Explicitly
         // zero-filled, like the live renderer's zeroTex: passing null leaves the

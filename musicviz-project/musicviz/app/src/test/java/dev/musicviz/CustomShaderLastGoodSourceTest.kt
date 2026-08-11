@@ -41,7 +41,7 @@ class CustomShaderLastGoodSourceTest {
     private val compileBody: String by lazy { functionBody(shaderScene, "private fun compilePendingIfAny()") }
 
     @Test
-    fun submitShaderOnlyQueuesAndDoesNotRecordTheSource() {
+    fun `submit only queues - it does not record the source`() {
         assertTrue("submitShader must still queue the source", submitShaderBody.contains("pendingCustomShaders"))
         assertFalse(
             "submitShader must not write activeCustomShaders: it runs off the GL thread, " +
@@ -51,7 +51,7 @@ class CustomShaderLastGoodSourceTest {
     }
 
     @Test
-    fun theRecordIsWrittenFromACompileSuccessCallback() {
+    fun `the record is written from a compile-success callback`() {
         // The one remaining writer is the callback the ShaderScene invokes
         // after a successful link.
         val writes = Regex("""activeCustomShaders\[[^\]]+\]\s*=""").findAll(renderer).count()
@@ -63,7 +63,7 @@ class CustomShaderLastGoodSourceTest {
     }
 
     @Test
-    fun theCallbackFiresOnlyAfterTheLinkSucceeded() {
+    fun `the callback fires only after the link succeeded`() {
         // Ordering inside compilePendingIfAny: the bail-out on a failed link
         // must come before the success notification, or the callback fires for
         // source that did not compile and we are back where we started.
@@ -75,7 +75,7 @@ class CustomShaderLastGoodSourceTest {
     }
 
     @Test
-    fun onlyUserSubmittedSourceIsRecorded() {
+    fun `only user-submitted source is recorded`() {
         // Every ShaderScene compiles its BUILT-IN source on first frame and
         // again after each context loss. Recording those would make every
         // shader style look user-edited, defeat "null if unedited", and bake
