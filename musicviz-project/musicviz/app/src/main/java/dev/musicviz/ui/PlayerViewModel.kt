@@ -51,7 +51,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -179,39 +178,6 @@ data class LibraryState(
 
 private val AUDIO_EXTS = setOf("mp3", "wav", "flac", "ogg", "m4a", "aac", "opus", "wma", "aiff")
 
-/** Live-input state for the Settings switch: running, plus why it is not. */
-data class MicState(
-    val active: Boolean = false,
-    val failure: MicCapture.Failure? = null,
-)
-
-/**
- * "Visualize other apps": whether the capture is running, what it can hear,
- * and - when it can hear nothing - enough context to say why.
- */
-data class ExternalAudioState(
-    /** False on Android 9 and older, where the API does not exist. */
-    val supported: Boolean = dev.musicviz.audio.playbackCaptureSupported,
-    /** True while the capture is open and feeding the analyzer. */
-    val active: Boolean = false,
-    /** True while waiting for the user to answer the system consent dialog. */
-    val awaitingConsent: Boolean = false,
-    val failure: dev.musicviz.audio.CaptureFailure? = null,
-    /** What another app's media session says is playing, when readable. */
-    val nowPlaying: dev.musicviz.audio.NowPlayingBridge.External? = null,
-    /** True when the notification-listener switch is on, so [nowPlaying] works. */
-    val hasSessionAccess: Boolean = false,
-    /**
-     * The capture is open, something is playing, and every sample has been an
-     * exact zero for seconds: the playing app forbids capture. Spotify is the
-     * one people hit.
-     */
-    val refusedByApp: Boolean = false,
-) {
-    /** The app to name in a "…won't let us listen" message, if we know it. */
-    val refusingApp: String? get() = if (refusedByApp) nowPlaying?.appLabel else null
-}
-
 /** The player's queue as the Now Playing queue tab reads it. */
 data class QueueUiState(
     val tracks: List<QueueTrack> = emptyList(),
@@ -263,207 +229,45 @@ class PlayerViewModel(
      */
     private val engine = playback.analysis
 
-    /**
-     * "Live input": the microphone as a second producer for the SAME ring
-     * buffer the playback tap writes into, so every consumer downstream is
-     * unchanged. Nothing is stored or transmitted - see [MicCapture].
-     */
-    private val micCapture = MicCapture(application, ring)
+    // ---- Alternate audio sources (machinery lives in CaptureController) ----
 
-    private val _micState = MutableStateFlow(MicState())
+    private val captureController =
+        CaptureController(
+            application,
+            viewModelScope,
+            ring,
+            object : CaptureController.Host {
+                override fun pausePlayback() = player.pause()
+
+                override fun resetAnalysis() = engine.reset()
+
+                override fun setAnalysisRate(rateHz: Int) {
+                    engine.sampleRateHz = rateHz
+                }
+
+                override fun setMicReactivePref(on: Boolean) {
+                    setGuiPrefs(_guiPrefs.value.copy(micReactive = on))
+                }
+            },
+        )
 
     /** Microphone-driven visuals: on/off plus the last failure to report. */
-    val micState: StateFlow<MicState> = _micState
-
-    /**
-     * Turns live input on or off.
-     *
-     * Turning it ON pauses playback: the ring buffer has ONE analysis window,
-     * so a track and the room would be summed into a single spectrum and
-     * neither would drive the visuals recognisably. That is also what the
-     * feature asks for - visuals reacting to the room, with no music playing.
-     *
-     * Returns the failure that stopped it, or null on success. A refused
-     * permission is reported rather than swallowed so the caller can send the
-     * user to the system prompt instead of leaving a switch that silently
-     * springs back.
-     */
-    fun setMicEnabled(enabled: Boolean): MicCapture.Failure? {
-        if (!enabled) {
-            micCapture.stop()
-            engine.reset()
-            engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
-            _micState.value = MicState(active = false)
-            setGuiPrefs(_guiPrefs.value.copy(micReactive = false))
-            return null
-        }
-        if (micCapture.active) return null
-        player.pause()
-        val failure = micCapture.start { rate -> engine.sampleRateHz = rate }
-        if (failure != null) {
-            _micState.value = MicState(active = false, failure = failure)
-            return failure
-        }
-        // The beat grid and energy envelope model one continuous piece of
-        // audio; the room is a different one, exactly like a track change.
-        engine.reset()
-        _micState.value = MicState(active = true)
-        setGuiPrefs(_guiPrefs.value.copy(micReactive = true))
-        return null
-    }
-
-    /** True when the RECORD_AUDIO permission is already granted. */
-    fun hasMicPermission(): Boolean = micCapture.hasPermission()
-
-    /**
-     * True while a source other than our own playback is feeding the ring
-     * buffer, and therefore owns the analyzer's sample rate.
-     */
-    private fun externalAudioOwnsAnalyzer(): Boolean = micCapture.active || playbackCapture.active
-
-    // ---- Visualize other apps (Spotify, YouTube, anything playing) ----
-
-    /**
-     * Third producer for the one ring buffer, after the playback tap and the
-     * microphone. Held on every API level; only starting it needs Android 10,
-     * and that gate lives in [startPlaybackCapture] where the reason for it
-     * can be turned into something the user reads.
-     */
-    private val playbackCapture = dev.musicviz.audio.PlaybackCapture(ring)
-
-    private val nowPlayingBridge = dev.musicviz.audio.NowPlayingBridge(application)
-
-    private val _externalAudio = MutableStateFlow(ExternalAudioState())
+    val micState: StateFlow<MicState> get() = captureController.micState
 
     /** State behind the "Visualize other apps" card. */
-    val externalAudio: StateFlow<ExternalAudioState> = _externalAudio
+    val externalAudio: StateFlow<ExternalAudioState> get() = captureController.externalAudio
 
-    /**
-     * Records that the consent dialog is up, so the switch can show that it is
-     * waiting rather than springing back while the system UI is in front.
-     */
-    fun noteExternalAudioConsentPending() {
-        _externalAudio.update { it.copy(awaitingConsent = true, failure = null) }
-    }
+    fun setMicEnabled(enabled: Boolean): MicCapture.Failure? = captureController.setMicEnabled(enabled)
 
-    /** The user dismissed the system capture dialog. */
-    fun noteExternalAudioConsentDenied() {
-        _externalAudio.update {
-            it.copy(awaitingConsent = false, failure = dev.musicviz.audio.CaptureFailure.CONSENT)
-        }
-    }
+    fun hasMicPermission(): Boolean = captureController.hasMicPermission()
 
-    /**
-     * Starts reading another app's audio with a projection the service has
-     * just published. Called from the [MediaProjectionHolder] collector, not
-     * by the UI: consent, the foreground service and the recorder are three
-     * separate steps and only the last one belongs here.
-     */
-    private fun startPlaybackCapture(projection: android.media.projection.MediaProjection) {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
-            _externalAudio.update {
-                it.copy(
-                    awaitingConsent = false,
-                    failure = dev.musicviz.audio.CaptureFailure.UNSUPPORTED,
-                )
-            }
-            return
-        }
-        if (!micCapture.hasPermission()) {
-            _externalAudio.update {
-                it.copy(
-                    awaitingConsent = false,
-                    failure = dev.musicviz.audio.CaptureFailure.PERMISSION,
-                )
-            }
-            return
-        }
-        // One ring buffer, one source. Our own playback and the microphone
-        // both step aside, exactly as they do for each other.
-        player.pause()
-        if (micCapture.active) setMicEnabled(false)
-        val failure = playbackCapture.start(projection) { rate -> engine.sampleRateHz = rate }
-        // The beat grid and energy envelope model one continuous piece of
-        // audio; another app's stream is a different one, like a track change.
-        engine.reset()
-        if (failure != null) {
-            // The service is what the consent flow started, and it is running
-            // by the time we get here. A recorder that never opened leaves it -
-            // and its "this app can hear you" notification - standing over a
-            // capture that does not exist, with the only way back a switch the
-            // user just watched fail. Hand the analyzer back too, since nothing
-            // is going to feed it.
-            engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
-            dev.musicviz.audio.PlaybackCaptureService
-                .stop(getApplication())
-        }
-        _externalAudio.update {
-            it.copy(
-                active = failure == null,
-                awaitingConsent = false,
-                failure = failure,
-                refusedByApp = false,
-            )
-        }
-    }
+    fun noteExternalAudioConsentPending() = captureController.noteExternalAudioConsentPending()
 
-    /** Stops the capture and takes the foreground service down with it. */
-    fun stopExternalAudio() {
-        playbackCapture.stop()
-        engine.reset()
-        engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
-        dev.musicviz.audio.PlaybackCaptureService
-            .stop(getApplication())
-        _externalAudio.update {
-            it.copy(active = false, awaitingConsent = false, refusedByApp = false)
-        }
-    }
+    fun noteExternalAudioConsentDenied() = captureController.noteExternalAudioConsentDenied()
 
-    /** Where to send the user to switch the notification listener on. */
-    fun notificationAccessIntent(): android.content.Intent = nowPlayingBridge.settingsIntent()
+    fun stopExternalAudio() = captureController.stopExternalAudio()
 
-    /**
-     * Refreshes what another app is playing, and re-decides whether a silent
-     * capture is being refused.
-     *
-     * The refusal verdict needs BOTH halves: the capture reporting nothing but
-     * exact zeroes, and a session reporting that something is in fact playing.
-     * Either alone is ordinary - a paused phone is silent, and a session can
-     * be playing while the capture is simply not running.
-     */
-    private fun refreshExternalAudio() {
-        val state = _externalAudio.value
-        val access = nowPlayingBridge.hasAccess()
-        val now = if (access) nowPlayingBridge.current() else null
-        val refused = playbackCapture.active && playbackCapture.blockedLikely && (now?.playing ?: false)
-        val next =
-            state.copy(
-                active = playbackCapture.active,
-                nowPlaying = now,
-                hasSessionAccess = access,
-                refusedByApp = refused,
-            )
-        if (next != state) _externalAudio.value = next
-    }
-
-    /**
-     * Notices a microphone that died under us and puts the switch back.
-     *
-     * [MicCapture.active] goes false on its own when the recorder stops mid-
-     * capture - a call takes the microphone, another app grabs it, the device
-     * refuses a read - but nothing else re-reads it: [_micState] is otherwise
-     * only ever written by [setMicEnabled]. So the switch stayed on, the
-     * "listening" affordance stayed up, and the visuals sat on a spectrum that
-     * had stopped arriving. Hands the analyzer back to playback the same way
-     * an explicit switch-off does.
-     */
-    private fun refreshMicState() {
-        if (!_micState.value.active || micCapture.active) return
-        engine.reset()
-        engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
-        _micState.value = MicState(active = false, failure = MicCapture.Failure.UNAVAILABLE)
-        setGuiPrefs(_guiPrefs.value.copy(micReactive = false))
-    }
+    fun notificationAccessIntent(): android.content.Intent = captureController.notificationAccessIntent()
 
     /**
      * Retunes the analysis chain for what the microphone is pointed at.
@@ -490,29 +294,6 @@ class PlayerViewModel(
     }
 
     /**
-     * Sample rate the decoded audio pipeline last reconfigured to, remembered
-     * so live input can hand the analyzer back the playback rate when it
-     * stops. Written from the playback thread.
-     */
-    @Volatile
-    private var tapSampleRateHz: Int = 0
-
-    /**
-     * Held as a field rather than passed as a lambda so [onCleared] can check
-     * whether the hook still installed on the player is this ViewModel's own
-     * before clearing it - see there for the race that makes the check matter.
-     */
-    private val audioFormatHook: (sampleRateHz: Int, channelCount: Int, encoding: Int) -> Unit =
-        { rate, _, _ ->
-            // Live input owns the analyzer's rate while it is running: the
-            // player can still reconfigure its pipeline (a queued track being
-            // prepared) and would otherwise retune the FFT to a rate no
-            // samples are arriving at.
-            tapSampleRateHz = rate
-            if (!externalAudioOwnsAnalyzer()) engine.sampleRateHz = rate
-        }
-
-    /**
      * Its own init block, run here rather than from the main one at the bottom
      * of the class, because the player it hooks into may already be playing:
      * the engine hands back a live player when a previous screen left one
@@ -520,7 +301,7 @@ class PlayerViewModel(
      * would leave the analyzer tuned to a rate no samples arrive at.
      */
     init {
-        playback.onAudioFormat = audioFormatHook
+        playback.onAudioFormat = captureController.audioFormatHook
     }
 
     private val offlineAnalyzer = OfflineAnalyzer(application)
@@ -2214,7 +1995,7 @@ class PlayerViewModel(
 
     /** Pause with a fade out; resume with a fade in. */
     fun togglePlayPauseFaded() {
-        if (micCapture.active) setMicEnabled(false)
+        if (captureController.micActive) setMicEnabled(false)
         if (player.isPlaying) {
             fadeThen(fadeVolume, 0f) { player.pause() }
         } else {
@@ -2375,7 +2156,7 @@ class PlayerViewModel(
         if (window.tracks.isEmpty()) return
         // One ring buffer, one source: playing a track ends live input rather
         // than summing a song and the room into a single spectrum.
-        if (micCapture.active) setMicEnabled(false)
+        if (captureController.micActive) setMicEnabled(false)
         lastBrowseContext = tracks
         player.setMediaItems(window.tracks.map { mediaItemFor(it) })
         player.prepare()
@@ -2550,7 +2331,7 @@ class PlayerViewModel(
 
     fun togglePlayPause() {
         // Starting playback ends live input: one ring buffer, one source.
-        if (!player.isPlaying && micCapture.active) setMicEnabled(false)
+        if (!player.isPlaying && captureController.micActive) setMicEnabled(false)
         if (_playerPrefs.value.fadeMs > 0) {
             togglePlayPauseFaded()
         } else if (player.isPlaying) {
@@ -3115,13 +2896,7 @@ class PlayerViewModel(
         // first still holds. The flag is also what makes the exporter delete
         // its half-written file, exactly as a user-cancel does.
         cancelExport()
-        // The microphone goes first: an open AudioRecord outliving the
-        // ViewModel would keep the recording indicator up with nothing left
-        // to read it.
-        micCapture.stop()
-        // Same for the playback capture, which additionally holds a
-        // foreground service and its "this app can hear you" notification.
-        if (_externalAudio.value.active) stopExternalAudio()
+        captureController.shutdown()
         // The screen's interest in live analysis ends here. The analyzer
         // itself belongs to the session now and keeps running if a visible
         // wallpaper still wants it - that is the whole feature - and the
@@ -3140,7 +2915,7 @@ class PlayerViewModel(
         // live screen's analyzer deaf to every sample-rate change.
         playerListener?.let { player.removeListener(it) }
         playerListener = null
-        if (playback.onAudioFormat === audioFormatHook) playback.onAudioFormat = null
+        if (playback.onAudioFormat === captureController.audioFormatHook) playback.onAudioFormat = null
         // Same identity check, same reason: a running timer must go on fading
         // and pausing after this screen is gone, and with no mixer left to
         // fold into it goes back to writing the player's volume directly.
@@ -3274,8 +3049,8 @@ class PlayerViewModel(
                     // One ring buffer, one source. A track and the room (or a
                     // track and Spotify) summed into a single spectrum drive
                     // the visuals as neither.
-                    if (micCapture.active) setMicEnabled(false)
-                    if (_externalAudio.value.active) stopExternalAudio()
+                    if (captureController.micActive) setMicEnabled(false)
+                    if (externalAudio.value.active) stopExternalAudio()
                     // A faded pause leaves the output at zero and waits for the
                     // matching fade in. A transport that is not ours knows
                     // nothing about that, so its play would have been silent.
@@ -3297,51 +3072,14 @@ class PlayerViewModel(
         // track change that started it, and with it the lyrics, the cached
         // analysis and the section grid for what it is now showing.
         if (alreadyLoaded) onTrackChanged()
-        // Consent -> foreground service -> projection -> recorder. This is the
-        // last hop: the service publishes what the user granted, and the
-        // recorder opens against it here, where the ring buffer lives.
-        viewModelScope.launch {
-            dev.musicviz.audio.MediaProjectionHolder.projection
-                .collect { projection ->
-                    if (projection != null) {
-                        startPlaybackCapture(projection)
-                    } else if (_externalAudio.value.active) {
-                        // Revoked from the system UI, or the service died.
-                        playbackCapture.stop()
-                        engine.reset()
-                        engine.sampleRateHz = tapSampleRateHz.takeIf { it > 0 } ?: 44100
-                        _externalAudio.update { it.copy(active = false, refusedByApp = false) }
-                    }
-                }
-        }
-        // The other half of that hop: a start that produced NO projection.
-        // `projection` cannot carry it - it already holds null on a failed
-        // first start, and a StateFlow does not re-emit a value it is already
-        // at - so the service ticks a separate counter, and only its CHANGES
-        // mean anything, hence drop(1). With nothing collecting it the switch
-        // stayed on and "Waiting for the capture permission…" stayed up for
-        // the rest of the session whenever getMediaProjection refused the
-        // consent it was handed (an expired token, an OEM that says no).
-        viewModelScope.launch {
-            dev.musicviz.audio.MediaProjectionHolder.startFailures
-                .drop(1)
-                .collect {
-                    _externalAudio.update {
-                        it.copy(
-                            awaitingConsent = false,
-                            failure = dev.musicviz.audio.CaptureFailure.CONSENT,
-                        )
-                    }
-                }
-        }
         viewModelScope.launch {
             while (true) {
                 refresh()
                 accrueListenTime()
                 enforceAbLoop()
                 refreshQueue()
-                refreshExternalAudio()
-                refreshMicState()
+                captureController.refreshExternalAudio()
+                captureController.refreshMicState()
                 applyIntelligence()
                 advanceVizPlaylist()
                 advanceRandomMode()
