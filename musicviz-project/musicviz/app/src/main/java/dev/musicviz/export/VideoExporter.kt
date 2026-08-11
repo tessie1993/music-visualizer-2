@@ -93,6 +93,14 @@ class VideoExporter(
         private const val FPS: Int = 60
         private const val TIMEOUT_US: Long = 10_000
 
+        /**
+         * TRY_AGAIN rounds tolerated in the post-EOS drain before the encoder
+         * is declared stalled: x [TIMEOUT_US] = 6 s of no output at all, far
+         * past any healthy flush, but enough headroom that a slow 4K encoder
+         * is not mistaken for a wedged one.
+         */
+        private const val FLUSH_ATTEMPT_LIMIT = 600
+
         /** Ripple overlay grid short side - matches the live renderer's. */
         private const val RIPPLE_OVERLAY_RES = 256
 
@@ -386,6 +394,7 @@ class VideoExporter(
         var fxRef: FxCompositor? = null
         var flowFieldRef: dev.musicviz.render.fluid.FlowField? = null
         var rippleRef: dev.musicviz.render.fluid.RippleSim? = null
+        var audioFeedRef: AudioFeed? = null
         var muxerStarted = false
         var muxerStopped = false
         try {
@@ -686,11 +695,23 @@ class VideoExporter(
                         muxer.start()
                         muxerStarted = true
                     } else if (outIndex >= 0) {
-                        writeSample(muxer, videoTrack, encoder.getOutputBuffer(outIndex)!!, info, muxerStarted)
+                        val buf = checkNotNull(encoder.getOutputBuffer(outIndex)) { "video encoder buffer null (codec error state)" }
+                        writeSample(muxer, videoTrack, buf, info, muxerStarted)
                         encoder.releaseOutputBuffer(outIndex, false)
                     } else {
                         break
                     }
+                }
+                // Feed the audio interleaved with the video it accompanies.
+                // Muxed as one block after the frame loop (the old shape),
+                // the MP4 was legal but fully non-interleaved - all video,
+                // then all audio - which streams badly everywhere the file is
+                // most likely to go (Drive preview, chat players, casting):
+                // the first second of sound lives at the far end of the file.
+                if (muxerStarted && audioTrack >= 0) {
+                    val feed =
+                        audioFeedRef ?: AudioFeed(muxer, audioTrack, aac, exportDurationUs).also { audioFeedRef = it }
+                    feed.writeUpTo(timeMs * 1000L)
                 }
                 onProgress(0.1f + frame / totalFrames.toFloat() * 0.85f)
             }
@@ -698,7 +719,8 @@ class VideoExporter(
             // Encoders return TRY_AGAIN repeatedly while flushing; keep draining
             // until EOS (bounded so a stuck codec cannot hang the export).
             var flushAttempts = 0
-            drain@ while (flushAttempts < 200) {
+            var sawEos = false
+            drain@ while (flushAttempts < FLUSH_ATTEMPT_LIMIT) {
                 val outIndex = encoder.dequeueOutputBuffer(info, TIMEOUT_US)
                 when {
                     outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
@@ -708,10 +730,14 @@ class VideoExporter(
                         muxerStarted = true
                     }
                     outIndex >= 0 -> {
-                        writeSample(muxer, videoTrack, encoder.getOutputBuffer(outIndex)!!, info, muxerStarted)
+                        val buf = checkNotNull(encoder.getOutputBuffer(outIndex)) { "video encoder buffer null (codec error state)" }
+                        writeSample(muxer, videoTrack, buf, info, muxerStarted)
                         val eos = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
                         encoder.releaseOutputBuffer(outIndex, false)
-                        if (eos) break@drain
+                        if (eos) {
+                            sawEos = true
+                            break@drain
+                        }
                     }
                     else -> flushAttempts++
                 }
@@ -720,12 +746,19 @@ class VideoExporter(
             // muxed: without this check the export would "succeed" with an
             // empty/broken file.
             check(muxerStarted || isCancelled()) { "Video encoder produced no output (encoder/format unsupported?)" }
+            // An encoder that stalled before EOS used to exit the bounded
+            // drain silently, publishing a file with its tail frames missing.
+            // An export that cannot finish is a failure, not a shorter video.
+            check(sawEos || isCancelled()) { "Video encoder stalled while flushing - export incomplete" }
             if (muxerStarted && !isCancelled() && audioTrack >= 0) {
-                // The audio is trimmed to the same instant as the video: a
-                // loop-safe picture over full-length sound still stumbles.
-                writeTranscodedAudio(muxer, audioTrack, aac, exportDurationUs) {
-                    onProgress(0.95f + it * 0.05f)
-                }
+                // Whatever the frame loop has not fed yet - normally just the
+                // last frame's span of samples, trimmed to the same instant as
+                // the video: a loop-safe picture over full-length sound still
+                // stumbles.
+                val feed =
+                    audioFeedRef ?: AudioFeed(muxer, audioTrack, aac, exportDurationUs).also { audioFeedRef = it }
+                feed.writeUpTo(Long.MAX_VALUE)
+                onProgress(1f)
             }
             if (muxerStarted && !isCancelled()) {
                 // stop() is where the moov atom is written, so a failure here
@@ -745,6 +778,7 @@ class VideoExporter(
             runCatching { flowFieldRef?.release() }
             runCatching { rippleRef?.release() }
             runCatching { fxRef?.release() }
+            runCatching { audioFeedRef?.close() }
             // Only the abandoned runs - cancelled, or unwinding from an
             // exception - stop the muxer here, where the failure must stay
             // swallowed so it cannot mask the reason the export is unwinding.
@@ -772,22 +806,36 @@ class VideoExporter(
         muxer.writeSampleData(track, buffer, info)
     }
 
-    /** Streams the pre-transcoded AAC samples from the temp file into the muxer. */
-    private fun writeTranscodedAudio(
-        muxer: MediaMuxer,
-        track: Int,
-        aac: AudioTranscoder.Result,
+    /**
+     * Streams the pre-transcoded AAC samples from the temp file into the
+     * muxer, in step with the video: [writeUpTo] is fed inside the frame loop
+     * with the frame's own timestamp, then once more with no bound after the
+     * final drain. The cursor makes each sample write exactly once.
+     */
+    private class AudioFeed(
+        private val muxer: MediaMuxer,
+        private val track: Int,
+        private val aac: AudioTranscoder.Result,
         /** Samples at or after this timestamp are dropped (loop-safe trim). */
-        limitUs: Long,
-        onProgress: (Float) -> Unit,
-    ) {
-        val info = MediaCodec.BufferInfo()
-        val total = aac.sampleInfos.size.coerceAtLeast(1)
-        java.io.RandomAccessFile(aac.file, "r").use { raf ->
+        private val limitUs: Long,
+    ) : java.io.Closeable {
+        private val raf = java.io.RandomAccessFile(aac.file, "r")
+        private val info = MediaCodec.BufferInfo()
+        private var scratch = ByteBuffer.allocate(64 * 1024)
+        private var next = 0
+
+        /** Writes every not-yet-written sample with a timestamp before [upToUs]. */
+        fun writeUpTo(upToUs: Long) {
             val channel = raf.channel
-            var scratch = ByteBuffer.allocate(64 * 1024)
-            aac.sampleInfos.forEachIndexed { index, sample ->
-                if (sample.presentationTimeUs >= limitUs) return@forEachIndexed
+            while (next < aac.sampleInfos.size) {
+                val sample = aac.sampleInfos[next]
+                if (sample.presentationTimeUs >= upToUs) return
+                if (sample.presentationTimeUs >= limitUs) {
+                    // Samples are in timestamp order; past the trim, done for good.
+                    next = aac.sampleInfos.size
+                    return
+                }
+                next++
                 if (scratch.capacity() < sample.size) scratch = ByteBuffer.allocate(sample.size)
                 scratch.clear()
                 scratch.limit(sample.size)
@@ -801,8 +849,11 @@ class VideoExporter(
                 // writeSampleData reads [info.offset, info.offset + info.size) of the buffer.
                 info.set(0, read, sample.presentationTimeUs, sample.flags)
                 muxer.writeSampleData(track, scratch, info)
-                if (index % 64 == 0) onProgress(index / total.toFloat())
             }
+        }
+
+        override fun close() {
+            runCatching { raf.close() }
         }
     }
 }
