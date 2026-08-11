@@ -56,6 +56,11 @@ JNIEXPORT void JNICALL
 Java_dev_musicviz_render_scene_PMBridge_nativeAddPcmMono(JNIEnv *env, jobject thiz, jlong handle,
                                                          jfloatArray samples, jint count) {
     if (!handle || !samples || count <= 0) return;
+    /* Clamp to the array's real length: a Java-side caller bug must surface
+     * as short audio, not as an out-of-bounds heap read inside projectM. */
+    jsize len = (*env)->GetArrayLength(env, samples);
+    if (count > len) count = len;
+    if (count <= 0) return;
     jfloat *data = (*env)->GetFloatArrayElements(env, samples, NULL);
     if (data) {
         projectm_pcm_add_float((projectm_handle) handle, data, (unsigned int) count, PROJECTM_MONO);
@@ -75,15 +80,20 @@ Java_dev_musicviz_render_scene_PMBridge_nativeSetTexturePaths(JNIEnv *env, jobje
     jsize n = (*env)->GetArrayLength(env, dirs);
     if (n <= 0 || n > 8) return;
     const char *paths[8];
+    /* What GetStringUTFChars actually returned, kept apart from paths[]:
+     * it is NULL on OOM, and NULL must neither be logged, handed to
+     * projectM, nor released (all three are UB). */
+    const char *owned[8];
     jstring strs[8];
     for (jsize i = 0; i < n; i++) {
         strs[i] = (jstring) (*env)->GetObjectArrayElement(env, dirs, i);
-        paths[i] = strs[i] ? (*env)->GetStringUTFChars(env, strs[i], NULL) : "";
+        owned[i] = strs[i] ? (*env)->GetStringUTFChars(env, strs[i], NULL) : NULL;
+        paths[i] = owned[i] ? owned[i] : "";
         LOGI("texture search path[%d]: %s", (int) i, paths[i]);
     }
     projectm_set_texture_search_paths((projectm_handle) handle, paths, (size_t) n);
     for (jsize i = 0; i < n; i++) {
-        if (strs[i]) (*env)->ReleaseStringUTFChars(env, strs[i], paths[i]);
+        if (owned[i]) (*env)->ReleaseStringUTFChars(env, strs[i], owned[i]);
     }
 }
 
