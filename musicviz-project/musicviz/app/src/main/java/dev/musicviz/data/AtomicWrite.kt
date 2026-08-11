@@ -44,6 +44,18 @@ object AtomicWrite {
     const val CORRUPT_SUFFIX = ".corrupt"
 
     /**
+     * One lock per target path. The temp name is deterministic (see
+     * [TEMP_SUFFIX]), so two concurrent writers to the SAME target would
+     * open the same temp file - one truncating it under the other - and the
+     * survivor's rename would install interleaved bytes over the target: the
+     * exact corruption this object exists to prevent. Serializing per path
+     * makes concurrent writes last-writer-wins with both files whole, and
+     * costs unrelated targets nothing. Bounded by the number of distinct
+     * files a process ever writes, which for these stores is small.
+     */
+    private val locks = java.util.concurrent.ConcurrentHashMap<String, Any>()
+
+    /**
      * Writes [text] to [file], atomically. Returns false and leaves any
      * existing file untouched when it could not be completed.
      */
@@ -68,24 +80,26 @@ object AtomicWrite {
         // directory was removed under it should still be able to save.
         if (parent != null && !parent.exists() && !parent.mkdirs()) return false
         val temp = File(file.absolutePath + TEMP_SUFFIX)
-        val ok =
-            runCatching {
-                FileOutputStream(temp).use { out ->
-                    body(out)
-                    out.flush()
-                    // Without this the rename can reach the disk before the
-                    // bytes do, and a power loss then leaves an atomically
-                    // renamed EMPTY file - which defeats the point of the
-                    // temp file entirely.
-                    out.fd.sync()
-                }
-                temp.renameTo(file)
-            }.getOrDefault(false)
-        // Clearing up matters as much as the write: a temp file left behind
-        // by a crash is stale content that the next write must be free to
-        // overwrite, and it must never accumulate in a listed directory.
-        if (!ok) runCatching { temp.delete() }
-        return ok
+        synchronized(locks.computeIfAbsent(file.absolutePath) { Any() }) {
+            val ok =
+                runCatching {
+                    FileOutputStream(temp).use { out ->
+                        body(out)
+                        out.flush()
+                        // Without this the rename can reach the disk before the
+                        // bytes do, and a power loss then leaves an atomically
+                        // renamed EMPTY file - which defeats the point of the
+                        // temp file entirely.
+                        out.fd.sync()
+                    }
+                    temp.renameTo(file)
+                }.getOrDefault(false)
+            // Clearing up matters as much as the write: a temp file left behind
+            // by a crash is stale content that the next write must be free to
+            // overwrite, and it must never accumulate in a listed directory.
+            if (!ok) runCatching { temp.delete() }
+            return ok
+        }
     }
 
     /**
