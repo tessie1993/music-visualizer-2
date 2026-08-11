@@ -22,9 +22,9 @@ class AnalysisEngine(
     @Volatile
     var sampleRateHz: Int = 44100
 
-    // delay(16) yields ~62.5 iterations/sec; the extractor's beat/BPM math
-    // must use the real hop rate or live BPM reads ~4% high.
-    private val extractor = FeatureExtractor(processor.bandCount, hopRateHz = 1000f / 16f)
+    // The worker ticks on a 16 ms deadline schedule; the extractor's beat/BPM
+    // math must use the real hop rate or live BPM reads ~4% high.
+    private val extractor = FeatureExtractor(processor.bandCount, hopRateHz = HOP_RATE_HZ)
 
     /** Beat sensitivity in sigmas; higher = fewer, surer beats (less flicker). */
     var beatThresholdSigma: Float
@@ -88,7 +88,10 @@ class AnalysisEngine(
                 // length: the stereo measurements are taken over this, not
                 // over the decimated `waveform` below.
                 val sideBuf = FloatArray(processor.fftSize)
-                val chroma = Chromagram(hopRateHz = 60f)
+                // Same hop rate as the extractor: the chroma's decay math ran
+                // ~4% fast at an assumed 60 Hz while the loop ticks at 62.5.
+                val chroma = Chromagram(hopRateHz = HOP_RATE_HZ)
+                var deadlineNs = System.nanoTime()
                 while (true) {
                     if (resetPending) {
                         resetPending = false
@@ -100,8 +103,16 @@ class AnalysisEngine(
                         processor.process(windowBuf, sampleRateHz, raw)
                         processor.updateChroma(chroma, sampleRateHz)
                         smoother.apply(raw, smoothed)
+                        // Box-average each span rather than point-sampling it:
+                        // one sample in ~16 aliases hi-hats into shimmer on
+                        // the scope scene; the mean over the span does not.
                         val step = processor.fftSize / waveform.size
-                        for (i in waveform.indices) waveform[i] = windowBuf[i * step]
+                        for (i in waveform.indices) {
+                            var acc = 0f
+                            val base = i * step
+                            for (j in 0 until step) acc += windowBuf[base + j]
+                            waveform[i] = acc / step
+                        }
                         val stereo =
                             if (ring.snapshotLatestSide(sideBuf)) {
                                 StereoField.of(windowBuf, sideBuf)
@@ -110,7 +121,15 @@ class AnalysisEngine(
                             }
                         _features.value = extractor.extract(smoothed, waveform, sampleRateHz, stereo, chroma)
                     }
-                    delay(16)
+                    // Drift-corrected: a plain delay(16) sleeps 16 ms AFTER
+                    // each tick's work, so the real hop rate sagged under
+                    // load and the extractor's fixed-rate beat/BPM math
+                    // skewed with it. Advancing a deadline keeps the average
+                    // rate at HOP_RATE_HZ regardless of per-tick cost.
+                    deadlineNs += TICK_NS
+                    val now = System.nanoTime()
+                    if (deadlineNs < now) deadlineNs = now // stalled: no catch-up burst
+                    delay((deadlineNs - now) / 1_000_000)
                 }
             }
     }
@@ -118,5 +137,11 @@ class AnalysisEngine(
     fun stop() {
         job?.cancel()
         job = null
+    }
+
+    companion object {
+        /** One tick per 16 ms deadline = 62.5 Hz, shared by the extractor and the chroma. */
+        private const val TICK_NS = 16_000_000L
+        internal const val HOP_RATE_HZ = 1000f / 16f
     }
 }
