@@ -103,6 +103,7 @@ class AppSettingsTabSplitTest {
             "Visualize other apps" to "ExternalAudioSettings.kt",
             // EXPORT - the button from old "Export & About" + new defaults.
             "Export video" to "ExportSettings.kt",
+            "Platform preset" to "ExportSettings.kt",
             "Quality" to "ExportSettings.kt",
             "Frame rate" to "ExportSettings.kt",
             "Aspect ratio" to "ExportSettings.kt",

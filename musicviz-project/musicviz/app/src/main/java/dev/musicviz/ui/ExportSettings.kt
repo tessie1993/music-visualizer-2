@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import dev.musicviz.data.ExportDefaults
 import dev.musicviz.data.ExportPrefsStore
 import dev.musicviz.data.exportQualityLabel
+import dev.musicviz.export.ExportPresets
 import dev.musicviz.export.ExportQuality
 import dev.musicviz.export.ExportRatio
 
@@ -51,6 +52,41 @@ internal fun ExportSettingsTab(
     SettingsTabColumn {
         item {
             SettingsGroup("Defaults") {
+                Column {
+                    Text("Platform preset", style = MaterialTheme.typography.labelMedium)
+                    // Six named targets against 36 reachable combinations of the
+                    // four controls below. The row is a shortcut into those
+                    // controls, never a fifth setting: it writes the same
+                    // ExportDefaults and nothing reads it back at render time.
+                    Row(Modifier.fillMaxWidth().padding(top = 4.dp).horizontalScroll(rememberScrollState())) {
+                        CrystalSegmented(
+                            options = ExportPresets.ALL.map { it.name },
+                            selected =
+                                ExportPresets.indexMatching(
+                                    defaults.quality,
+                                    defaults.ratio,
+                                    defaults.fps,
+                                    defaults.loopSafe,
+                                ),
+                            onSelect = {
+                                val preset = ExportPresets.ALL[it]
+                                update(
+                                    defaults.copy(
+                                        quality = preset.quality,
+                                        ratio = preset.ratio,
+                                        fps = preset.fps,
+                                        loopSafe = preset.loopSafe,
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                    Text(
+                        presetCaption(defaults),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Column {
                     Text("Quality", style = MaterialTheme.typography.labelMedium)
                     CrystalSegmented(
@@ -112,4 +148,21 @@ internal fun ExportSettingsTab(
             }
         }
     }
+}
+
+/**
+ * What the preset row is currently describing.
+ *
+ * Says the settings out loud either way, because the four controls below the row
+ * can be moved individually: once they no longer spell any named target the row
+ * lights nothing, and a row lighting nothing with no explanation reads as broken.
+ */
+private fun presetCaption(defaults: ExportDefaults): String {
+    val spec =
+        "${defaults.ratio.label}, ${exportQualityLabel(defaults.quality)}, ${defaults.fps} fps" +
+            if (defaults.loopSafe) ", loop-safe" else ""
+    return ExportPresets
+        .matching(defaults.quality, defaults.ratio, defaults.fps, defaults.loopSafe)
+        ?.let { "${it.name} — $spec" }
+        ?: "Custom — $spec"
 }
