@@ -251,7 +251,10 @@ class ProjectMScene(
                 val dirs = mutableListOf(dir, "$dir/textures")
                 sharedTextureDir?.let { dirs += it }
                 PMBridge.nativeSetTexturePaths(handle, dirs.toTypedArray())
-                PMBridge.nativeLoadPreset(handle, path, false)
+                // The soft-cut flag libprojectM has always accepted and this
+                // call has always passed as false. Its duration is configured
+                // natively at create time.
+                PMBridge.nativeLoadPreset(handle, path, sceneParams.milkdropBlendPresets)
                 val error = PMBridge.nativeGetLastError()
                 onError(error)
                 if (error == null) lastPresetPath = path

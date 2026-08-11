@@ -263,6 +263,7 @@ class PresetStore(
                 .put("customPaletteId", p.params.customPaletteId)
                 .put("customPalette2Id", p.params.customPalette2Id)
                 .put("milkdropPaletteTint", p.params.milkdropPaletteTint.toDouble())
+                .put("milkdropBlendPresets", p.params.milkdropBlendPresets)
                 .put("duotone", p.params.duotone)
                 .put("bloom", p.params.bloom.toDouble())
                 .put("driftX", p.params.driftX.toDouble())
@@ -511,6 +512,7 @@ class PresetStore(
                         // palette tint existed; 0 keeps those looking exactly
                         // as they were authored.
                         milkdropPaletteTint = o.optDouble("milkdropPaletteTint", 0.0).toFloat(),
+                        milkdropBlendPresets = o.optBoolean("milkdropBlendPresets", false),
                         colorShift = o.optDouble("colorShift", 0.0).toFloat(),
                         hueRange = o.optDouble("hueRange", 1.0).toFloat(),
                         saturation = o.optDouble("saturation", 1.0).toFloat(),

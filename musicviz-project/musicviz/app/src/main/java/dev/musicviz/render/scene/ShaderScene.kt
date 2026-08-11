@@ -21,6 +21,15 @@ class ShaderScene(
     private val vertexSrc: String,
     initialFragmentSrc: String,
     private val onError: (String?) -> Unit = {},
+    /**
+     * Invoked on the GL thread with a source that came from
+     * [setFragmentSource] and **linked successfully**. This is the only signal
+     * a caller should use to remember "this is what the style looks like now":
+     * source that failed to compile never reaches it, so it can never be
+     * restored after a context loss, baked into an export, or saved into a
+     * preset. The built-in source is deliberately not reported.
+     */
+    private val onUserSourceCompiled: (String) -> Unit = {},
 ) : Scene {
     companion object {
         const val AUDIO_TEX_WIDTH: Int = 64
@@ -45,6 +54,13 @@ class ShaderScene(
     private var height = 1
     private var pendingFragment: String? = initialFragmentSrc
     private var currentFragment: String = initialFragmentSrc
+
+    /**
+     * Whether [pendingFragment] came from [setFragmentSource] rather than from
+     * the constructor or from [init]'s post-context-loss re-queue. Only a user
+     * source is reported to [onUserSourceCompiled].
+     */
+    private var pendingIsUserSource: Boolean = false
     private val texData = ByteBuffer.allocateDirect(AUDIO_TEX_WIDTH * 2 * 4).order(ByteOrder.nativeOrder())
 
     /**
@@ -102,6 +118,7 @@ class ShaderScene(
     @Synchronized
     fun setFragmentSource(src: String) {
         pendingFragment = src
+        pendingIsUserSource = true
     }
 
     override fun init() {
@@ -309,7 +326,15 @@ class ShaderScene(
     }
 
     private fun compilePendingIfAny() {
-        val src = synchronized(this) { pendingFragment.also { pendingFragment = null } } ?: return
+        val pending =
+            synchronized(this) {
+                val queued = pendingFragment
+                val fromUser = pendingIsUserSource
+                pendingFragment = null
+                pendingIsUserSource = false
+                queued?.let { it to fromUser }
+            } ?: return
+        val (src, fromUser) = pending
         val newProgram = GlUtil.buildProgramReporting(vertexSrc, src, onError)
         if (newProgram == 0) return
         if (program != 0) GLES30.glDeleteProgram(program)
@@ -319,6 +344,9 @@ class ShaderScene(
         uniformLocs = GlUtil.UniformCache(newProgram)
         currentFragment = src
         onError(null)
+        // Past the bail-out above, so only source that actually linked is ever
+        // reported as the style's current look.
+        if (fromUser) onUserSourceCompiled(src)
     }
 
     override fun release() {

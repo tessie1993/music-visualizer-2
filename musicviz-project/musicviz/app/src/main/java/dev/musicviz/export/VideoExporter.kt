@@ -534,6 +534,16 @@ class VideoExporter(
 
             for (frame in 0 until totalFrames) {
                 if (isCancelled()) break
+                // Same first line as the live frame: projectM's native render
+                // leaves GL state dirty, and the live renderer has undone it at
+                // the top of every frame since that bug was found. The export
+                // path never did - it happened to survive because the scenes
+                // that dirty state also reset it themselves, which is a
+                // property of those scenes rather than a guarantee. This is the
+                // one path where a corrupt frame is written to a file instead
+                // of to a screen someone is looking at.
+                dev.musicviz.render.scene.GlUtil
+                    .resetFrameState()
                 val timeMs = frame * 1000L / fps
                 // An exported frame is on screen until the next one, so it has
                 // to see the WHOLE span of 60 Hz timeline frames it covers, not
@@ -571,6 +581,16 @@ class VideoExporter(
                 p =
                     dev.musicviz.render.VisualSafety
                         .apply(p, safety)
+                // Adaptive fluid quality is a frame-time sensor, and this loop
+                // has no frame times - it drives every scene with a constant
+                // dt = 1/fps off the export clock. Left on, a 30 fps render
+                // reads as a permanent deficit against PerformanceMonitor's
+                // 50 fps target and drops two tiers every 2.5 s until it
+                // bottoms out, so the file came out at minimum quality while
+                // the screen it was exported from looked fine. The tier the
+                // user chose is the tier that renders; see
+                // ExportDeterministicQualityTest for the arithmetic.
+                p = p.copy(fluidAutoQuality = false)
                 scene.setParams(p)
                 scene.update(
                     dev.musicviz.render.scene
@@ -593,7 +613,20 @@ class VideoExporter(
                 }
                 if ((p.flowEnabled || sceneNeedsFlow) && flowField != null && flowField.available) {
                     // Steps into the FlowField's own FBOs, before the scene
-                    // target is bound - mirrors the live frame order.
+                    // target is bound.
+                    //
+                    // KNOWN DIVERGENCE, deliberate and not yet decided: the live
+                    // renderer steps the field BEFORE scene.update, so a kick
+                    // the scene queues this frame is consumed by the NEXT
+                    // frame's step ("one frame of latency", VisualizerRenderer).
+                    // Here the drain above happens after the update that
+                    // produced the kicks and before the step that consumes them,
+                    // so the coupling closes within a single frame. Both are
+                    // self-consistent; they are not the same, and a
+                    // field-defined style (Inkflow) therefore renders one frame
+                    // of coupling phase away from what the screen showed.
+                    // Aligning them changes rendered output, so it wants a
+                    // golden-frame comparison rather than a quiet edit.
                     flowField.step(
                         dev.musicviz.render.scene
                             .applyBandGains(features, p),

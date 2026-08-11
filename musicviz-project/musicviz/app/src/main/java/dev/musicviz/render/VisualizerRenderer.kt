@@ -482,8 +482,13 @@ class VisualizerRenderer(
     private var timeSeconds = 0f
     private var fadeProgram = 0
     private var trailWarpProgram = 0
-    private var trailFbo = 0
-    private var trailTex = 0
+
+    /**
+     * Feedback buffer for the warp trail. Allocated lazily, only while the trail
+     * is actually on ([SceneParams.trailZoom] / [SceneParams.trailWarp]), and
+     * degraded to the plain fade when the target cannot be built.
+     */
+    private val trail = RenderTarget("trail")
     private var compositeProgram = CompositeProgram(0)
 
     /** The unspliced composite, used for the built-in styles and as fallback. */
@@ -574,66 +579,8 @@ class VisualizerRenderer(
 
     /** Cyclic colour-map atlas shared by every shader scene; 0 if unavailable. */
     private var paletteLutTex = 0
-    private var fboA = TargetFbo()
-    private var fboB = TargetFbo()
-
-    private class TargetFbo {
-        var fbo = 0
-        var tex = 0
-        var w = 0
-        var h = 0
-
-        fun ensure(
-            width: Int,
-            height: Int,
-        ) {
-            if (fbo != 0 && w == width && h == height) return
-            release()
-            val ids = IntArray(1)
-            GLES30.glGenTextures(1, ids, 0)
-            tex = ids[0]
-            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, tex)
-            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
-            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
-            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
-            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
-            GLES30.glTexImage2D(
-                GLES30.GL_TEXTURE_2D,
-                0,
-                GLES30.GL_RGBA8,
-                width,
-                height,
-                0,
-                GLES30.GL_RGBA,
-                GLES30.GL_UNSIGNED_BYTE,
-                null,
-            )
-            GLES30.glGenFramebuffers(1, ids, 0)
-            fbo = ids[0]
-            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fbo)
-            GLES30.glFramebufferTexture2D(
-                GLES30.GL_FRAMEBUFFER,
-                GLES30.GL_COLOR_ATTACHMENT0,
-                GLES30.GL_TEXTURE_2D,
-                tex,
-                0,
-            )
-            GLES30.glClearColor(0f, 0f, 0f, 1f)
-            GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
-            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
-            w = width
-            h = height
-        }
-
-        fun release() {
-            if (fbo != 0) GLES30.glDeleteFramebuffers(1, intArrayOf(fbo), 0)
-            if (tex != 0) GLES30.glDeleteTextures(1, intArrayOf(tex), 0)
-            fbo = 0
-            tex = 0
-            w = 0
-            h = 0
-        }
-    }
+    private val fboA = RenderTarget("sceneA")
+    private val fboB = RenderTarget("sceneB")
 
     /**
      * Every style this build can offer, in the order the registry holds them.
@@ -686,7 +633,15 @@ class VisualizerRenderer(
     ): Scene {
         SHADER_SCENES[id]?.let { res ->
             val frag = if (export) activeCustomShaders[id] ?: GlUtil.loadShader(context, res) else GlUtil.loadShader(context, res)
-            return ShaderScene(id, quadVert, frag) { onShaderError(it) }
+            return ShaderScene(
+                id,
+                quadVert,
+                frag,
+                onError = { onShaderError(it) },
+                // The single writer of activeCustomShaders, and it fires on the
+                // GL thread only after a successful link - see submitShader.
+                onUserSourceCompiled = { compiled -> activeCustomShaders[id] = compiled },
+            )
         }
         VisualStyleCatalog.cymatics(id)?.let { style ->
             return CymaticsScene(context, style).also { plate ->
@@ -800,15 +755,31 @@ class VisualizerRenderer(
         }
     }
 
+    /**
+     * Queues user GLSL for compilation on the GL thread. Deliberately does NOT
+     * record the source anywhere: [activeCustomShaders] is written by the
+     * ShaderScene's compiled-source callback, on the far side of a successful
+     * link.
+     *
+     * Recording here instead was a real defect. This map is re-pushed into
+     * every fresh context by [onSurfaceCreated], baked into export scenes by
+     * [createScene], and returned by [customShaderFor] for presets to save - so
+     * a source that never compiled would be kept as the style's look. The
+     * failure was invisible until a resume: the last working program masked the
+     * broken text, then died with the context, and the style came back
+     * permanently black with the broken source already saved into presets.
+     */
     fun submitShader(
         sceneId: String,
         fragmentSrc: String,
     ) {
         pendingCustomShaders.add(sceneId to fragmentSrc)
-        activeCustomShaders[sceneId] = fragmentSrc
     }
 
-    /** The user-edited fragment source for [sceneId], or null if unedited. */
+    /**
+     * The user-edited fragment source for [sceneId], or null if unedited. Only
+     * ever source that compiled - see [submitShader].
+     */
     fun customShaderFor(sceneId: String): String? = activeCustomShaders[sceneId]
 
     /** Thread-safe: the scene queues the path and loads it on the GL thread. */
@@ -836,13 +807,12 @@ class VisualizerRenderer(
         scenes.clear()
         fboA.release()
         fboB.release()
-        // Trail buffer names belong to the OLD context; without this reset
-        // ensureTrailBuffer() keeps blitting into a dead framebuffer after
-        // the app resumes (trail warp renders black until a resize).
-        trailFbo = 0
-        trailTex = 0
-        trailW = 0
-        trailH = 0
+        // forget(), not release(): the trail buffer's names belong to the OLD
+        // context, and by now they may have been reissued to somebody else's
+        // object - deleting them would destroy live state. Without dropping
+        // them the trail keeps blitting into a dead framebuffer after the app
+        // resumes (trail warp renders black until a resize).
+        trail.forget()
         // Same story for the shared textures: their names belong to the old
         // context. Zeroed BEFORE the registry is rebuilt, so [wireScene] hands
         // a freshly built scene "no LUT yet" instead of a dead texture name.
@@ -1115,8 +1085,30 @@ class VisualizerRenderer(
             }
             ripple.step(dt)
         }
-        fboA.ensure(renderWidth, renderHeight)
-        fboB.ensure(renderWidth, renderHeight)
+        if (!fboA.ensure(renderWidth, renderHeight)) {
+            // The active scene has nowhere to render. Drawing it straight to the
+            // default framebuffer instead would skip the composite pass - and
+            // with it the strobe and flash ceilings VisualSafety enforces there
+            // - so a black frame is the only safe degradation. ensure() is
+            // idempotent and retries next frame.
+            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
+            GLES30.glViewport(0, 0, width, height)
+            GLES30.glClearColor(0f, 0f, 0f, 1f)
+            GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+            return
+        }
+        // FBO B is optional - it carries a layer, or a transition's outgoing
+        // scene - so if it cannot be built both are dropped for this frame
+        // rather than binding framebuffer 0 and compositing texture 0.
+        if (!fboB.ensure(renderWidth, renderHeight)) {
+            // Cleared on the FIELDS, not on locals: the composite reads
+            // layerScene for uStyle and uGateB, and the transition's own
+            // progress >= 1 reset below only runs while an outgoing scene is
+            // still being rendered, so a local null would strand it forever.
+            layerScene = null
+            outgoingScene = null
+            outgoingParams = null
+        }
 
         var progress = 1f
         val outgoing = outgoingScene
@@ -1535,13 +1527,14 @@ class VisualizerRenderer(
         timeSeconds: Float,
         dt: Float,
     ) {
-        ensureTrailBuffer()
-        if (trailFbo == 0) {
+        if (!trail.ensure(renderWidth, renderHeight)) {
+            // No usable feedback target: fall back to the plain fade rather
+            // than losing the trail entirely.
             drawFadeQuad(1f - (retention * 0.97f).pow(dt * 60f))
             return
         }
         GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, fboA.fbo)
-        GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, trailFbo)
+        GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, trail.fbo)
         GLES30.glBlitFramebuffer(
             0,
             0,
@@ -1559,7 +1552,7 @@ class VisualizerRenderer(
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glUseProgram(trailWarpProgram)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, trailTex)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, trail.tex)
 
         fun tLoc(n: String) = trailUniforms.loc(n)
         GLES30.glUniform1i(tLoc("uPrev"), 0)
@@ -1576,50 +1569,6 @@ class VisualizerRenderer(
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)
     }
-
-    private fun ensureTrailBuffer() {
-        if (trailTex != 0 && trailW == renderWidth && trailH == renderHeight) return
-        if (trailTex != 0) {
-            GLES30.glDeleteTextures(1, intArrayOf(trailTex), 0)
-            GLES30.glDeleteFramebuffers(1, intArrayOf(trailFbo), 0)
-            trailTex = 0
-            trailFbo = 0
-        }
-        val ids = IntArray(1)
-        GLES30.glGenTextures(1, ids, 0)
-        trailTex = ids[0]
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, trailTex)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
-        GLES30.glTexImage2D(
-            GLES30.GL_TEXTURE_2D,
-            0,
-            GLES30.GL_RGBA8,
-            renderWidth,
-            renderHeight,
-            0,
-            GLES30.GL_RGBA,
-            GLES30.GL_UNSIGNED_BYTE,
-            null,
-        )
-        GLES30.glGenFramebuffers(1, ids, 0)
-        trailFbo = ids[0]
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, trailFbo)
-        GLES30.glFramebufferTexture2D(GLES30.GL_FRAMEBUFFER, GLES30.GL_COLOR_ATTACHMENT0, GLES30.GL_TEXTURE_2D, trailTex, 0)
-        if (GLES30.glCheckFramebufferStatus(GLES30.GL_FRAMEBUFFER) != GLES30.GL_FRAMEBUFFER_COMPLETE) {
-            GLES30.glDeleteTextures(1, intArrayOf(trailTex), 0)
-            GLES30.glDeleteFramebuffers(1, intArrayOf(trailFbo), 0)
-            trailTex = 0
-            trailFbo = 0
-        }
-        trailW = renderWidth
-        trailH = renderHeight
-    }
-
-    private var trailW = 0
-    private var trailH = 0
 
     private fun drawFadeQuad(alpha: Float) {
         GLES30.glEnable(GLES30.GL_BLEND)
