@@ -185,15 +185,6 @@ data class QueueUiState(
 )
 
 /**
- * Graded beat impulse a "switch on a musical moment" decision (intelligent
- * visual playlist, Random mode's switch-on-beat) treats as strong enough to
- * act on. Track-relative by construction - [AudioFeatures.beatImpulse] folds
- * in the macro-energy envelope - so this is "one of this song's bigger hits",
- * not an absolute loudness that quiet masters never reach.
- */
-private const val STRONG_MOMENT_IMPULSE = 0.6f
-
-/**
  * Longest edge the artwork is decoded to before its hues are counted. A hue
  * histogram is stable far below this; decoding a full-size sleeve to build one
  * would cost tens of megabytes for no extra precision.
@@ -1064,57 +1055,47 @@ class PlayerViewModel(
     /** One-shot preset-morph fade (seconds) for the renderer; never persisted. */
     val morphFade: SharedFlow<Float> = _morphFade
 
-    private var lastVizSwitchMs = 0L
-    private var vizPlaylistIndex = 0
+    private val autoVisuals =
+        AutoVisualsController(
+            autoVisualsPrefsStore,
+            object : AutoVisualsController.Host {
+                override val vizState: StateFlow<VizUiState> get() = _vizState
 
-    /**
-     * Adds an entry to the visual playlist, deduplicated: a preset already in
-     * the list (by [VizPlaylistEntry.presetName]) or an identical entry is
-     * not appended again. The heart in Visuals › Presets is a membership
-     * toggle, but a playlist that could accumulate silent duplicates from any
-     * OTHER caller would drain one copy per un-heart while looking removed.
-     * The list is persisted (see [AutoVisualsPrefsStore]) so the entries the
-     * standing `vizPlaylistEnabled` instruction rotates survive a restart
-     * with it.
-     */
-    fun addToVizPlaylist(entry: VizPlaylistEntry) {
-        val s = _vizState.value
-        val duplicate =
-            s.vizPlaylist.any {
-                it == entry || (entry.presetName != null && it.presetName == entry.presetName)
-            }
-        if (duplicate) return
-        _vizState.value = s.copy(vizPlaylist = s.vizPlaylist + entry)
-        persistAutoVisuals()
-    }
+                override fun updateViz(transform: (VizUiState) -> VizUiState) = _vizState.update(transform)
 
-    fun removeVizPlaylistAt(index: Int) {
-        val s = _vizState.value
-        if (index in s.vizPlaylist.indices) {
-            _vizState.value = s.copy(vizPlaylist = s.vizPlaylist.filterIndexed { i, _ -> i != index })
-            persistAutoVisuals()
-        }
-    }
+                override val isPlaying: Boolean get() = _uiState.value.isPlaying
+                override val positionMs: Long get() = _uiState.value.positionMs
 
-    fun setVizPlaylistEnabled(enabled: Boolean) {
-        _vizState.value =
-            _vizState.value.copy(
-                vizPlaylistEnabled = enabled,
-                randomEnabled = if (enabled) false else _vizState.value.randomEnabled,
-            )
-        lastVizSwitchMs = android.os.SystemClock.elapsedRealtime()
-        persistAutoVisuals()
-    }
+                override fun features() = engine.features.value
 
-    fun setVizPlaylistIntelligent(enabled: Boolean) {
-        _vizState.update { it.copy(vizPlaylistIntelligent = enabled) }
-        persistAutoVisuals()
-    }
+                override val presetLocked: Boolean get() = _presetLocked.value
 
-    fun setVizPlaylistInterval(seconds: Int) {
-        _vizState.update { it.copy(vizPlaylistIntervalSec = seconds.coerceIn(AutoVisualsPrefsStore.INTERVAL_SEC)) }
-        persistAutoVisuals()
-    }
+                override fun selectScene(sceneId: String) = this@PlayerViewModel.selectScene(sceneId)
+
+                override fun applyPreset(preset: Preset) = this@PlayerViewModel.applyPreset(preset)
+
+                override fun applyMilk(
+                    path: String,
+                    sceneId: String,
+                ) {
+                    _vizApply.tryEmit(VizApply(milkPath = path, sceneId = sceneId))
+                }
+
+                override fun analyzeCurrentTrack() = this@PlayerViewModel.analyzeCurrentTrack()
+
+                override fun milkFilesAsync(onDone: (List<MilkFile>) -> Unit) = milkPresetFilesAsync(onDone)
+            },
+        )
+
+    fun addToVizPlaylist(entry: VizPlaylistEntry) = autoVisuals.addToVizPlaylist(entry)
+
+    fun removeVizPlaylistAt(index: Int) = autoVisuals.removeVizPlaylistAt(index)
+
+    fun setVizPlaylistEnabled(enabled: Boolean) = autoVisuals.setVizPlaylistEnabled(enabled)
+
+    fun setVizPlaylistIntelligent(enabled: Boolean) = autoVisuals.setVizPlaylistIntelligent(enabled)
+
+    fun setVizPlaylistInterval(seconds: Int) = autoVisuals.setVizPlaylistInterval(seconds)
 
     /**
      * Applies user GLSL to the current shader scene: stored in state (so
@@ -1149,232 +1130,29 @@ class PlayerViewModel(
         _vizState.update { it.copy(transitionDurationSec = seconds.coerceIn(0.3f, 5f)) }
     }
 
-    private fun advanceVizPlaylist() {
-        val s = _vizState.value
-        if (!s.vizPlaylistEnabled || s.vizPlaylist.size < 2 || !_uiState.value.isPlaying) return
-        val now = android.os.SystemClock.elapsedRealtime()
-        val elapsed = now - lastVizSwitchMs
-        val intervalMs = s.vizPlaylistIntervalSec * 1000L
-        val due =
-            if (s.vizPlaylistIntelligent) {
-                // Intelligent: after a minimum dwell, switch on a strong
-                // musical moment; force a switch at 2x interval so quiet
-                // passages still rotate. "Strong" is the tracker's graded beat
-                // impulse, which is TRACK-RELATIVE (it folds in the macro-
-                // energy envelope) - the absolute rms gate this replaced never
-                // opened on a quietly mastered track, so intelligent mode
-                // silently degraded into the plain 2x-interval timer there.
-                val f = engine.features.value
-                val minDwell = maxOf(8_000L, intervalMs / 2)
-                (elapsed >= minDwell && f.beatImpulse >= STRONG_MOMENT_IMPULSE) || elapsed >= intervalMs * 2
-            } else {
-                elapsed >= intervalMs
-            }
-        if (!due) return
-        lastVizSwitchMs = now
-        vizPlaylistIndex = (vizPlaylistIndex + 1) % s.vizPlaylist.size
-        applyVizEntry(s.vizPlaylist[vizPlaylistIndex])
-    }
+    // ---- Random mode + section staging (machinery lives in AutoVisualsController) ----
 
-    // ---- Random mode ----
+    fun setRandomEnabled(enabled: Boolean) = autoVisuals.setRandomEnabled(enabled)
 
-    private var lastRandomSwitchMs = 0L
-    private val randomRng = kotlin.random.Random(android.os.SystemClock.elapsedRealtime())
+    fun setRandomInterval(seconds: Int) = autoVisuals.setRandomInterval(seconds)
 
-    /** Cached .milk files so random picks don't touch disk on the tick loop. */
-    private var cachedMilkFiles: List<MilkFile> = emptyList()
+    fun setRandomOnBeat(enabled: Boolean) = autoVisuals.setRandomOnBeat(enabled)
 
-    fun setRandomEnabled(enabled: Boolean) {
-        _vizState.value =
-            _vizState.value.copy(
-                randomEnabled = enabled,
-                vizPlaylistEnabled = if (enabled) false else _vizState.value.vizPlaylistEnabled,
-            )
-        lastRandomSwitchMs = android.os.SystemClock.elapsedRealtime()
-        if (enabled && _vizState.value.randomIncludeMilk) refreshMilkCache()
-        if (enabled) randomStepNow()
-        // randomEnabled itself is session-only, but turning Random on clears
-        // the PERSISTED vizPlaylistEnabled, and that clear must stick.
-        persistAutoVisuals()
-    }
+    fun setRandomIncludeStyles(enabled: Boolean) = autoVisuals.setRandomIncludeStyles(enabled)
 
-    fun setRandomInterval(seconds: Int) {
-        _vizState.update { it.copy(randomIntervalSec = seconds.coerceIn(AutoVisualsPrefsStore.INTERVAL_SEC)) }
-        persistAutoVisuals()
-    }
+    fun setRandomIncludePresets(enabled: Boolean) = autoVisuals.setRandomIncludePresets(enabled)
 
-    fun setRandomOnBeat(enabled: Boolean) {
-        _vizState.update { it.copy(randomOnBeat = enabled) }
-        persistAutoVisuals()
-    }
+    fun setRandomIncludeMilk(enabled: Boolean) = autoVisuals.setRandomIncludeMilk(enabled)
 
-    fun setRandomIncludeStyles(enabled: Boolean) {
-        _vizState.update { it.copy(randomIncludeStyles = enabled) }
-        persistAutoVisuals()
-    }
+    fun setRandomizeColors(enabled: Boolean) = autoVisuals.setRandomizeColors(enabled)
 
-    fun setRandomIncludePresets(enabled: Boolean) {
-        _vizState.update { it.copy(randomIncludePresets = enabled) }
-        persistAutoVisuals()
-    }
-
-    fun setRandomIncludeMilk(enabled: Boolean) {
-        _vizState.update { it.copy(randomIncludeMilk = enabled) }
-        if (enabled) refreshMilkCache()
-        persistAutoVisuals()
-    }
-
-    fun setRandomizeColors(enabled: Boolean) {
-        _vizState.update { it.copy(randomizeColors = enabled) }
-        persistAutoVisuals()
-    }
-
-    /**
-     * Saves the auto-visuals knobs after every setter above - the same
-     * write-on-set pattern [setGuiPrefs]/[setPlayerPrefs] use, small enough
-     * (nine primitives) not to need the live state's coalescing window.
-     */
-    private fun persistAutoVisuals() {
-        autoVisualsPrefsStore.save(_vizState.value)
-    }
-
-    private fun refreshMilkCache() {
-        milkPresetFilesAsync { cachedMilkFiles = it }
-    }
-
-    /** Section the playhead is inside, from the offline analysis boundaries. */
-    private fun currentSectionIndex(): Int {
-        val sections = _vizState.value.sections
-        if (sections.isEmpty()) return 0
-        val pos = _uiState.value.positionMs
-        var idx = 0
-        for (boundary in sections) {
-            if (boundary <= pos) idx++ else break
-        }
-        return idx
-    }
-
-    /** Section last staged, so a look is applied once per section, not per tick. */
-    private var lastStagedSection = -1
-
-    /**
-     * Applies a look when the playhead crosses into a new section.
-     *
-     * Deterministic by section INDEX rather than "next in the list": the point
-     * is that a chorus looks like the chorus every time, so the third section
-     * of a track must get the same look on every play - and on the export.
-     * Falls back to the current style's presets when no visual playlist has
-     * been built, so the mode works without any setup at all.
-     */
-    private fun advanceSectionStaging() {
-        val s = _vizState.value
-        if (!s.sectionStaging || !_uiState.value.isPlaying) return
-        val index = currentSectionIndex()
-        if (index == lastStagedSection) return
-        lastStagedSection = index
-        if (s.vizPlaylist.isNotEmpty()) {
-            applyVizEntry(s.vizPlaylist[index % s.vizPlaylist.size])
-            return
-        }
-        val pool = s.presets.filter { it.sceneId == s.sceneId }
-        if (pool.isNotEmpty()) applyPreset(pool[index % pool.size])
-    }
-
-    /**
-     * Turns section staging on or off.
-     *
-     * Switching it on kicks off the offline analysis when it has not run:
-     * sections come from that pass, and a mode whose input is missing would
-     * otherwise just sit there doing nothing with no way to tell why.
-     */
-    fun setSectionStaging(enabled: Boolean) {
-        _vizState.update { it.copy(sectionStaging = enabled) }
-        lastStagedSection = -1
-        if (enabled && _vizState.value.sections.isEmpty()) analyzeCurrentTrack()
-    }
-
-    private fun advanceRandomMode() {
-        val s = _vizState.value
-        if (!s.randomEnabled || !_uiState.value.isPlaying) return
-        val now = android.os.SystemClock.elapsedRealtime()
-        val elapsed = now - lastRandomSwitchMs
-        val intervalMs = s.randomIntervalSec * 1000L
-        val due =
-            if (s.randomOnBeat) {
-                // Switch on a strong musical moment after a minimum dwell;
-                // force a switch at 2x interval so quiet passages still move.
-                // Graded and track-relative, as in advanceVizPlaylist().
-                val f = engine.features.value
-                val minDwell = maxOf(6_000L, intervalMs / 2)
-                (elapsed >= minDwell && f.beatImpulse >= STRONG_MOMENT_IMPULSE) || elapsed >= intervalMs * 2
-            } else {
-                elapsed >= intervalMs
-            }
-        if (!due) return
-        randomStepNow()
-    }
+    fun setSectionStaging(enabled: Boolean) = autoVisuals.setSectionStaging(enabled)
 
     /** Jumps to a random style/preset immediately (also used on enable). */
-    fun randomStepNow() {
-        if (_presetLocked.value) return
-        val s = _vizState.value
-        lastRandomSwitchMs = android.os.SystemClock.elapsedRealtime()
-        val choices = mutableListOf<VizPlaylistEntry>()
-        val sceneIds =
-            dev.musicviz.render.VisualizerRenderer.PARTICLE_SCENES +
-                dev.musicviz.render.VisualizerRenderer.SHADER_SCENES.keys
-        if (s.randomIncludeStyles) sceneIds.forEach { choices += VizPlaylistEntry(sceneId = it, label = it) }
-        if (s.randomIncludePresets) {
-            s.presets.forEach { choices += VizPlaylistEntry(sceneId = it.sceneId, presetName = it.name, label = it.name) }
-        }
-        if (s.randomIncludeMilk && dev.musicviz.render.scene.PMBridge.available) {
-            cachedMilkFiles.forEach {
-                choices += VizPlaylistEntry(sceneId = SceneIds.MILKDROP, milkPath = it.path, label = it.name)
-            }
-        }
-        if (choices.isEmpty()) return
-        var pick = choices[randomRng.nextInt(choices.size)]
-        // One retry to avoid landing on the scene already showing.
-        if (choices.size > 1 && pick.sceneId == s.sceneId && pick.presetName == null && pick.milkPath == null) {
-            pick = choices[randomRng.nextInt(choices.size)]
-        }
-        applyVizEntry(pick)
-        if (s.randomizeColors) {
-            // The roll is drawn out here, once: update re-runs its block on a
-            // losing compare-and-set, and drawing inside it would give the
-            // retry different colours from the ones this step decided on.
-            val palette = randomRng.nextInt(SceneParams.PALETTES.size)
-            val palette2 = randomRng.nextInt(SceneParams.PALETTES.size)
-            val paletteMix = if (randomRng.nextBoolean()) randomRng.nextFloat() * 0.6f else 0f
-            val colorShift = randomRng.nextFloat()
-            _vizState.update { cur ->
-                val rolled =
-                    cur.params.copy(
-                        palette = palette,
-                        palette2 = palette2,
-                        paletteMix = paletteMix,
-                        colorShift = colorShift,
-                    )
-                // A custom-palette override outranks the PALETTES lookup, so the
-                // new indices stay invisible unless both slots are cleared too.
-                cur.copy(params = PaletteStore.clear(PaletteStore.clear(rolled), second = true))
-            }
-        }
-    }
+    fun randomStepNow() = autoVisuals.randomStepNow()
 
-    /** Applies a playlist entry: scene, saved preset params and side effects.
-     *  The preset's custom shader (if any) is emitted by [applyPreset]. */
-    fun applyVizEntry(entry: VizPlaylistEntry) {
-        selectScene(entry.sceneId)
-        if (entry.presetName != null) {
-            _vizState.value.presets
-                .firstOrNull { it.name == entry.presetName && it.sceneId == entry.sceneId }
-                ?.let { applyPreset(it) }
-        }
-        if (entry.milkPath != null) {
-            _vizApply.tryEmit(VizApply(milkPath = entry.milkPath, sceneId = entry.sceneId))
-        }
-    }
+    /** Applies a playlist entry: scene, saved preset params and side effects. */
+    fun applyVizEntry(entry: VizPlaylistEntry) = autoVisuals.applyVizEntry(entry)
 
     // ---- Music library & playlists ----
 
@@ -2357,9 +2135,7 @@ class PlayerViewModel(
         // Before anything else: the live analyzer's beat grid, energy envelope
         // and flux history all describe the track that just ended.
         engine.reset()
-        // A new track has a new structure; section 2 of this one is not
-        // section 2 of the last.
-        lastStagedSection = -1
+        autoVisuals.onTrackChanged()
         timeline = null
         clearAbLoop()
         loadLyricsFor(currentUri)
@@ -3081,9 +2857,9 @@ class PlayerViewModel(
                 captureController.refreshExternalAudio()
                 captureController.refreshMicState()
                 applyIntelligence()
-                advanceVizPlaylist()
-                advanceRandomMode()
-                advanceSectionStaging()
+                autoVisuals.advanceVizPlaylist()
+                autoVisuals.advanceRandomMode()
+                autoVisuals.advanceSectionStaging()
                 delay(500)
             }
         }

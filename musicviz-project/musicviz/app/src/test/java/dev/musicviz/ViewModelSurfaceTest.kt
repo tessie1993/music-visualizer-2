@@ -124,12 +124,14 @@ class ViewModelSurfaceTest {
         // range now has one home - AutoVisualsPrefsStore.INTERVAL_SEC, which
         // persistence also coerces to on load - so what is pinned is that the
         // setters clamp THROUGH it and the sliders derive their range FROM it.
-        val vm = source("ui/PlayerViewModel.kt")
+        // The clamps live with the setters' bodies in AutoVisualsController
+        // since the ViewModel decomposition.
+        val controller = source("ui/AutoVisualsController.kt")
         listOf("setRandomInterval", "setVizPlaylistInterval").forEach { setter ->
             assertTrue(
                 "$setter must clamp to AutoVisualsPrefsStore.INTERVAL_SEC, the range's one home",
                 Regex("fun $setter\\([^)]*\\)\\s*\\{[^}]*coerceIn\\(AutoVisualsPrefsStore\\.INTERVAL_SEC\\)")
-                    .containsMatchIn(vm),
+                    .containsMatchIn(controller),
             )
         }
         assertEquals(
@@ -152,13 +154,23 @@ class ViewModelSurfaceTest {
             .toList()
     }
 
-    /** Every `ui/` source except the view model itself, concatenated. */
+    /**
+     * Every `ui/` source except the view model itself - and except its
+     * extracted controllers, which are the view model's own machinery split
+     * into files (they declare and relay these very setters) rather than
+     * anything a user can touch. Counting them as controls would blind this
+     * test to an orphaned setting.
+     */
     private val uiSources: String by lazy {
         val dir = File(ParamSurface.moduleRoot, "app/src/main/java/dev/musicviz/ui")
         val text =
             dir
-                .listFiles { f -> f.isFile && f.extension == "kt" && f.name != "PlayerViewModel.kt" }
-                .orEmpty()
+                .listFiles { f ->
+                    f.isFile &&
+                        f.extension == "kt" &&
+                        f.name != "PlayerViewModel.kt" &&
+                        !f.name.endsWith("Controller.kt")
+                }.orEmpty()
                 .joinToString("\n") { it.readText() }
         assertTrue("no ui/ sources found under ${dir.absolutePath}", text.isNotEmpty())
         text
