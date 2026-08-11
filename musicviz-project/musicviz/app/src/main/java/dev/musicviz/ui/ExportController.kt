@@ -90,6 +90,7 @@ internal fun exportSceneIdFor(
  * dependency surface is a named contract instead of a reach into the
  * ViewModel's internals.
  */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class ExportController(
     private val application: Application,
     private val scope: CoroutineScope,
