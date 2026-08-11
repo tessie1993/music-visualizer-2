@@ -13,9 +13,30 @@ package dev.musicviz.ui.theme
 
 /** Every icon the crystal packs ship, named as the packs name their SVG files. */
 enum class StoneIcon {
-    ADD, CHECK, CLOSE, DELETE, EDIT, FAVORITE, FILE, FOLDER, FULLSCREEN, LIBRARY,
-    LYRICS, MICROPHONE, NEXT, PAUSE, PLAY, PREVIOUS, QUEUE, REPEAT, SEARCH,
-    SETTINGS, SHARE, SHUFFLE, STUDIO, VISUALIZER,
+    ADD,
+    CHECK,
+    CLOSE,
+    DELETE,
+    EDIT,
+    FAVORITE,
+    FILE,
+    FOLDER,
+    FULLSCREEN,
+    LIBRARY,
+    LYRICS,
+    MICROPHONE,
+    NEXT,
+    PAUSE,
+    PLAY,
+    PREVIOUS,
+    QUEUE,
+    REPEAT,
+    SEARCH,
+    SETTINGS,
+    SHARE,
+    SHUFFLE,
+    STUDIO,
+    VISUALIZER,
 }
 
 /**
@@ -156,7 +177,8 @@ internal val StoneIconGeometry: Map<StoneIcon, StoneIconGlyph> =
             StoneIconGlyph(
                 stroked =
                     listOf(
-                        "M25 40 C30 27 44 24 60 27 L74 31 M74 31 L67 23 M74 31 L65 37 M79 64 C73 77 58 80 43 77 L29 73 M29 73 L36 81 M29 73 L38 67",
+                        "M25 40 C30 27 44 24 60 27 L74 31 M74 31 L67 23 M74 31 L65 37 " +
+                            "M79 64 C73 77 58 80 43 77 L29 73 M29 73 L36 81 M29 73 L38 67",
                     ),
             ),
         StoneIcon.SEARCH to
@@ -189,7 +211,8 @@ internal val StoneIconGeometry: Map<StoneIcon, StoneIconGlyph> =
             StoneIconGlyph(
                 stroked =
                     listOf(
-                        "M20 34 H34 C48 34 54 70 70 70 H82 M70 70 L76 64 M70 70 L76 76 M20 70 H34 C45 70 54 34 70 34 H82 M70 34 L76 28 M70 34 L76 40",
+                        "M20 34 H34 C48 34 54 70 70 70 H82 M70 70 L76 64 M70 70 L76 76 " +
+                            "M20 70 H34 C45 70 54 34 70 34 H82 M70 34 L76 28 M70 34 L76 40",
                     ),
             ),
         StoneIcon.STUDIO to

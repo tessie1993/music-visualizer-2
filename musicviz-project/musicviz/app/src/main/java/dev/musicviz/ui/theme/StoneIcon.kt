@@ -116,6 +116,7 @@ private class ParsedGlyph(
 
 private fun parseGlyph(icon: StoneIcon): ParsedGlyph {
     val art = requireNotNull(StoneIconGeometry[icon]) { "no shipped geometry for icon $icon" }
+
     fun parse(data: List<String>) = data.map { PathParser().parsePathString(it).toPath() }
     return ParsedGlyph(stroked = parse(art.stroked), filled = parse(art.filled))
 }

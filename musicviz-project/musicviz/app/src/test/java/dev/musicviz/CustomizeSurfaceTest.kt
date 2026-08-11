@@ -103,7 +103,11 @@ class CustomizeSurfaceTest {
         // derived, so the fix is never anything but "take the new one".
         val doc = File(ParamSurface.moduleRoot, "docs/PARAM_MATRIX.md")
         val generated = ParamMatrix.render()
-        if (!doc.isFile || doc.readText() != generated) {
+        // A checkout with core.autocrlf=true hands back CRLF while the
+        // renderer emits LF, so comparing raw text fails on every Windows
+        // machine no matter how current the document is. Compare normalized.
+        val current = doc.takeIf { it.isFile }?.readText()?.replace("\r\n", "\n")
+        if (current != generated) {
             doc.parentFile?.mkdirs()
             doc.writeText(generated)
             throw AssertionError(
