@@ -7,9 +7,9 @@ package dev.musicviz.ui
  *
  * The Settings picker renders [CHOICES] and writes the picked [argb] via
  * `viewModel.setGuiPrefs(gui.copy(fontColorArgb = choice.argb))`. Whether a
- * swatch actually takes effect on the current theme is
- * [AppTheme.fontColorActive] - light themes ignore swatches that cannot be
- * read on their surfaces, and the picker can grey those out.
+ * swatch actually takes effect on the current pack is [fontColorActive] -
+ * light packs ignore swatches that cannot be read on the surfaces they are
+ * painting, and the picker can grey those out.
  */
 data class FontColorChoice(
     val label: String,

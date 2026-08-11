@@ -11,9 +11,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
-import dev.musicviz.ui.AppTheme
 import dev.musicviz.ui.CrystalMaterialTheme
 import dev.musicviz.ui.GuiPrefs
+import dev.musicviz.ui.theme.ThemePack
+import dev.musicviz.ui.theme.ThemePackCatalog
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -40,11 +41,11 @@ import org.robolectric.annotation.GraphicsMode
  * backdrop shows through the glass, and Transparent matches no colour role -
  * `contentColorFor` falls straight through to `LocalContentColor.current`.
  *
- * With nothing providing it, that was black: on Lapis (the default theme,
- * background #050A1E) the Player's title, the clocks, the up-next rows and
+ * With nothing providing it, that was black: on a dark pack (Sugilite,
+ * background #120A1A) the Player's title, the clocks, the up-next rows and
  * every transport icon button painted black on near-black. So
  * [CrystalMaterialTheme] provides it, and this holds that in place - for the
- * theme AND for the derivation the Scaffold actually performs.
+ * pack AND for the derivation the Scaffold actually performs.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -78,18 +79,21 @@ class ShellContentColorTest {
     )
 
     private fun inside(
-        theme: AppTheme,
+        pack: ThemePack,
         gui: GuiPrefs,
     ): Inherited {
         lateinit var seen: Inherited
         compose.setContent {
-            CrystalMaterialTheme(appTheme = theme, gui = gui) {
+            CrystalMaterialTheme(pack = pack, gui = gui) {
                 seen = read()
             }
         }
         compose.waitForIdle()
         return seen
     }
+
+    /** The pack the app opens on, and the one the single-pack cases use. */
+    private val defaultPack = ThemePackCatalog.all.first()
 
     @Composable
     private fun read(): Inherited =
@@ -114,8 +118,8 @@ class ShellContentColorTest {
     }
 
     @Test
-    fun `the crystal theme hands every uncoloured composable the theme's own text colour`() {
-        val seen = inside(AppTheme.LAPIS, GuiPrefs())
+    fun `the crystal theme hands every uncoloured composable the pack's own text colour`() {
+        val seen = inside(defaultPack, GuiPrefs())
         assertEquals(seen.onBackground, seen.content)
         assertEquals(
             "Scaffold(containerColor = Transparent) derives its content colour from the local",
@@ -125,25 +129,25 @@ class ShellContentColorTest {
     }
 
     @Test
-    fun `the inherited colour is readable on the background it is painted on, on every theme`() {
-        // The failure was black on #050A1E. Any theme where the inherited
+    fun `the inherited colour is readable on the background it is painted on, on every pack`() {
+        // The failure was black on #120A1A. Any pack where the inherited
         // writing cannot be told apart from its own background is the same
-        // bug wearing different anchors. One setContent (the rule allows a
-        // single one per test), every theme composed side by side.
-        val seen = mutableMapOf<AppTheme, Inherited>()
+        // bug wearing different stone. One setContent (the rule allows a
+        // single one per test), every pack composed side by side.
+        val seen = mutableMapOf<String, Inherited>()
         compose.setContent {
-            for (theme in AppTheme.entries) {
-                CrystalMaterialTheme(appTheme = theme, gui = GuiPrefs()) {
-                    seen[theme] = read()
+            for (pack in ThemePackCatalog.all) {
+                CrystalMaterialTheme(pack = pack, gui = GuiPrefs()) {
+                    seen[pack.slug] = read()
                 }
             }
         }
         compose.waitForIdle()
-        assertEquals(AppTheme.entries.size, seen.size)
-        for ((theme, v) in seen) {
+        assertEquals(ThemePackCatalog.all.size, seen.size)
+        for ((slug, v) in seen) {
             val contrast = kotlin.math.abs(v.content.luminance() - v.background.luminance())
             assertTrue(
-                "${theme.name}: inherited content colour ${v.content} on background ${v.background}",
+                "$slug: inherited content colour ${v.content} on background ${v.background}",
                 contrast >= 0.25f,
             )
         }
@@ -153,9 +157,11 @@ class ShellContentColorTest {
     fun `a font-colour override reaches the uncoloured composables too`() {
         // onBackground is one of the roles the override repaints, so the
         // inherited colour has to follow it rather than being pinned to the
-        // theme's automatic value.
+        // pack's automatic value. A DARK pack, because the light-pack gate
+        // would (correctly) reject white before it ever reached the scheme.
         val white = dev.musicviz.ui.FontColorChoice.WHITE_ARGB
-        val seen = inside(AppTheme.LAPIS, GuiPrefs(fontColorArgb = white))
+        val darkPack = ThemePackCatalog.all.first { !it.isLight }
+        val seen = inside(darkPack, GuiPrefs(fontColorArgb = white))
         assertEquals(Color(white), seen.content)
     }
 }

@@ -62,10 +62,21 @@ class PlaybackService : MediaSessionService() {
     private class ResumptionCallback(
         private val context: Context,
     ) : MediaSession.Callback {
+        /**
+         * [isForPlayback] distinguishes the two things the system asks for
+         * here: `true` is "prepare and play this", `false` is System UI
+         * wanting only the metadata of the item that WOULD resume, so it can
+         * draw its resumption notification (typically just after a reboot).
+         * Both are answered with the same value on purpose -
+         * [lastPlayedResumption] returns a single item carrying title and
+         * artist at position 0, which is exactly the one-item-with-metadata
+         * shape the metadata-only case documents.
+         */
         @OptIn(UnstableApi::class)
         override fun onPlaybackResumption(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
+            isForPlayback: Boolean,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
             val resumption =
                 lastPlayedResumption(context)
