@@ -17,8 +17,8 @@ import dev.musicviz.render.scene.GlUtil
  * audio, no UI. Callers queue [Splat]s, then [step]; [dyeTex]/[velocityTex]
  * expose the fields. All methods run on the GL thread.
  *
- * The force and dye injection passes are EXTENSION POINTS (FLUID_SIM v2
- * section 13): [setInjectionShaders] installs user fragment sources in place
+ * The force and dye injection passes are EXTENSION POINTS:
+ * [setInjectionShaders] installs user fragment sources in place
  * of the built-in capsule splat; a failed compile keeps the last good
  * program and reports through [onShaderError].
  */
@@ -70,7 +70,7 @@ internal class FluidSim(
     var dyeCeiling = 0f
 
     /**
-     * Chromatic aging (v2 spec 6.3): spreads the per-channel dye decay so
+     * Chromatic aging: spreads the per-channel dye decay so
      * fading ink drifts in hue (G fades fastest -> warm splats cool toward
      * magenta/blue). 0 = identical rates (pure fade, opt-in).
      */
@@ -93,7 +93,7 @@ internal class FluidSim(
 
     // Grid scale: dx is the physical (sim-space) width of one velocity-grid
     // cell - domain height is 2 sim units, so dx = 2/gridHeight. Deriving it
-    // from the allocated grid (v2 spec 6.4, alpha = -dx^2) is what decouples
+    // from the allocated grid (alpha = -dx^2) is what decouples
     // sim resolution from visual character.
     private var cellSize = 2f / 128f
     private var rdx = 1f / cellSize

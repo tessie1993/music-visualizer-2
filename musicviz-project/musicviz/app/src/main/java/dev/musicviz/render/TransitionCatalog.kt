@@ -14,7 +14,7 @@ import org.json.JSONObject
  * A scene switch is the most-viewed animation in the app - random mode, the
  * visual playlist, the intelligence suggester and every manual pick route
  * through it - and it had five looks, one of which is a cut. gl-transitions is
- * 123 more, MIT/BSD licensed, and already written against the exact contract
+ * 122 more, MIT/BSD licensed, and already written against the exact contract
  * `composite_frag.glsl` implements: `vec4 transition(vec2 uv)` reading
  * `progress`, `ratio`, `getFromColor()` and `getToColor()`.
  *
@@ -24,8 +24,8 @@ import org.json.JSONObject
  * audits the licences and applies the two GLSL ES 3.00 fixes the WebGL-era
  * sources need). At selection time [spliceInto] pastes the chosen transition
  * into a copy of the composite shader and the renderer links that variant,
- * caching it. There is deliberately no attempt to compile all 123 up front:
- * that would be 123 programs of driver compile time at startup for a feature
+ * caching it. There is deliberately no attempt to compile all 122 up front:
+ * that would be 122 programs of driver compile time at startup for a feature
  * where exactly one is in use at a time.
  *
  * ### Identity
@@ -85,7 +85,7 @@ internal object TransitionCatalog {
 
     /**
      * [library] keyed by name. [definition] runs on the GL thread once per
-     * frame while a corpus transition is selected, and a 123-entry linear
+     * frame while a corpus transition is selected, and a 122-entry linear
      * scan per frame is a cost paid for nothing when the list never changes.
      * Written BEFORE [library], so a reader that sees the list also sees the
      * index.
@@ -133,10 +133,9 @@ internal object TransitionCatalog {
      * shader's `#ifdef` blocks come alive, and the transition's own source in
      * place of the marker.
      *
-     * Mirrored by `scratchpad/splice-check.js`, which compiles every corpus
-     * entry through this same transformation in a real GLSL ES 3.00 compiler -
-     * the only way to know a shader written for WebGL 1 links here without
-     * putting it on a device.
+     * Whether an entry actually LINKS after this transformation can only be
+     * proved by a real GLSL ES 3.00 compiler, outside the JVM; no in-repo
+     * harness runs that check today.
      */
     fun spliceInto(
         base: String,

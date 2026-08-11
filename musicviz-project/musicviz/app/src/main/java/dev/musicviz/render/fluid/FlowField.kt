@@ -8,7 +8,7 @@ import dev.musicviz.render.scene.GlUtil
 import dev.musicviz.render.scene.SceneParams
 
 /**
- * F7 FlowField service per FLUID_SIM v2 section 12: a stripped, velocity-only
+ * F7 FlowField service: a stripped, velocity-only
  * fluid simulation (64 grid, 12 Jacobi iterations, no dye, no look chain)
  * run as a shared service so fluid motion can drive ANY style:
  *

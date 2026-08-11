@@ -23,7 +23,7 @@ data class SceneParams(
     val density: Float = 1f,
     val trails: Boolean = false,
     val trailLength: Float = 0.5f,
-    // Feedback-trail motion (docs/ORGANIC_MOTION.md): per-frame zoom of the
+    // Feedback-trail motion: per-frame zoom of the
     // echo (+in/-out) and sine warp of the resample - the liquid-echo look.
     val trailZoom: Float = 0f,
     val trailWarp: Float = 0f,
@@ -326,7 +326,7 @@ data class SceneParams(
     val beamIntensity: Float = 1f,
     // how far the trace fades toward its oldest sample, 0..1
     val beamTail: Float = 0.35f,
-    // Ripple overlay (all styles; consumed by follow-up unit F2)
+    // Ripple overlay (all styles; the F2 RippleSim overlay driven by VisualizerRenderer)
     val rippleOverlayEnabled: Boolean = false,
     val rippleOverlayStrength: Float = 0.4f,
     val rippleOverlaySpecular: Float = 0.3f,

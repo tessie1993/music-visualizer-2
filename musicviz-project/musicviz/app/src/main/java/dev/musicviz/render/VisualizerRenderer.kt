@@ -501,7 +501,7 @@ class VisualizerRenderer(
      * Linked composite variants by transition id, most-recently-used last.
      *
      * Bounded: each variant is a full copy of a 400-line shader, and a user
-     * browsing the picker would otherwise leave 123 programs resident. Four is
+     * browsing the picker would otherwise leave 122 programs resident. Four is
      * enough that flipping between a couple of favourites never recompiles.
      */
     private val transitionPrograms = LinkedHashMap<String, CompositeProgram>()
@@ -524,7 +524,7 @@ class VisualizerRenderer(
      * lazily linked spliced variant for a corpus transition.
      *
      * Compiling here means the first frame of a newly picked transition pays a
-     * driver compile. That is deliberate over compiling all 123 at startup, and
+     * driver compile. That is deliberate over compiling all 122 at startup, and
      * it is why the renderer warms the program the moment the user picks one
      * rather than waiting for a scene switch to need it. A variant that fails
      * to link falls back to the base program: a transition that will not

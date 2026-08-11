@@ -11,12 +11,13 @@ import dev.musicviz.render.scene.SceneParams
  * without the user doing anything unusual:
  *
  *  - `strobe` runs a **9 Hz** square wave over the whole frame at up to 85%
- *    depth (`composite_frag.glsl`: `step(0.5, fract(uTime * 9.0))`). The rate
- *    was hard-coded, so no user control could reach it.
+ *    depth (`composite_frag.glsl`: `step(0.5, fract(uTime * max(uStrobeHz, 0.1)))`,
+ *    with 9.0 the default upload). The rate used to be a hard-coded 9.0,
+ *    so no user control could reach it.
  *  - `flash` adds a beat-triggered white wash, so its rate is the track's -
  *    a 200 BPM track flashes at 3.3 Hz, faster on double-time material.
  *  - An LFO can target `BRIGHTNESS` or `INTENSITY` at up to **30 Hz**
- *    ([Lfo] clamps `rate` to `0.01f..30f`), and `ParamRandomizer` can roll
+ *    ([LfoEngine] clamps `rate` to `0.01f..30f`), and `ParamRandomizer` can roll
  *    one. That is a full-screen luminance oscillation deep in the hazardous
  *    band, produced by pressing the randomize button.
  *
@@ -78,7 +79,7 @@ object VisualSafety {
      * everyone's work would be a surprising change of behaviour on upgrade.
      * Whether it should instead default ON, or be asked about during
      * first-run onboarding (which does not exist yet), is a product decision
-     * recorded in todo.md - not one to make silently inside a clamp function.
+     * flagged (HIGH) in docs/quality/PRODUCT_REVIEW.md - not one to make silently inside a clamp function.
      */
     data class SafetyConfig(
         /** Master "Safe visuals" switch: caps flash rate and depth. */
@@ -294,7 +295,7 @@ object VisualSafety {
      * The same substitution over transition IDs, which is what the renderer
      * takes now that the library sits alongside the five built-in styles.
      * Only a cut is replaced: every gl-transition ramps by construction, so
-     * none of the 123 is a single-frame full-screen change.
+     * none of the 122 is a single-frame full-screen change.
      */
     fun transitionId(
         requested: String,

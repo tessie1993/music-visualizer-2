@@ -1,7 +1,7 @@
 package dev.musicviz.render.fluid
 
 /**
- * F6 quality tiers per FLUID_SIM v2 section 10: one enum-like index sets all
+ * F6 quality tiers: one enum-like index sets all
  * quality axes at once (fluid grid, dye grid, particle count, solver
  * iterations) so the app reasons about a single value. The grid-scale-correct
  * Jacobi (alpha = -dx^2) is what makes tier changes alter fidelity, not the

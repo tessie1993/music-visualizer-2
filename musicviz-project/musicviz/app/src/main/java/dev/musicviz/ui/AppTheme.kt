@@ -453,11 +453,11 @@ data class GuiPrefs(
     /** Visuals hub renders as a text-only clear overlay on the live canvas,
      *  so adjustments are visible on the visuals while being adjusted. */
     val clearVisualsMenu: Boolean = false,
-    /** LEGACY "White font" switch. Superseded by [fontColorArgb]; still a
-     *  constructor field so the old Appearance switch keeps compiling until
-     *  the font-colour picker replaces it. True behaves like a white
-     *  [fontColorArgb] (see [fontColorOverride]); it is no longer persisted
-     *  under its own key. */
+    /** LEGACY "White font" switch, superseded by [fontColorArgb] — the
+     *  font-colour picker replaced the old Appearance switch. Kept as a
+     *  field so [fontColorOverride] can still map a legacy true to a white
+     *  override during migration ([ThemeStore.saveGui] then retires the old
+     *  key); it is no longer persisted under its own key. */
     val whiteFont: Boolean = false,
     /** App-wide font colour override (ARGB), or null for automatic
      *  theme-derived text colors. Applied through

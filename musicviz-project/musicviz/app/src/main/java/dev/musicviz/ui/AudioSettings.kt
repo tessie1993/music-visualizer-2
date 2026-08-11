@@ -123,8 +123,7 @@ private fun AnalysisGroup(viewModel: PlayerViewModel) {
  * "Live input": drive the visuals from the microphone with nothing playing.
  * The permission is requested at the moment the switch is used, never at
  * launch, and a denial is reported in place rather than leaving a switch
- * that silently springs back. The touch gestures that used to share this
- * section live in Settings › Behavior now.
+ * that silently springs back.
  */
 @Composable
 private fun LiveInputGroup(viewModel: PlayerViewModel) {

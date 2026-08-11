@@ -4,7 +4,7 @@ import android.opengl.GLES30
 import kotlin.math.roundToInt
 
 /**
- * GL buffer plumbing for the fluid simulation, per FLUID_SIM v2 section 5:
+ * GL buffer plumbing for the fluid simulation:
  * an empirical half-float renderability probe with the R16F -> RG16F ->
  * RGBA16F fallback cascade, single and ping-pong FBOs with copy-preserving
  * resize, and the aspect-correct grid resolution helper.
@@ -21,7 +21,7 @@ internal object FluidBuffers {
         val rg: TexFormat,
         val rgba: TexFormat,
         /** Renderable full-float RGBA, or null: used for particle state so
-         *  positions don't quantise into visible clustering (spec 5.2). */
+         *  positions don't quantise into visible clustering. */
         val rgba32: TexFormat?,
         val ok: Boolean,
     )

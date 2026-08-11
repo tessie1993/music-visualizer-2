@@ -63,7 +63,7 @@ class ExportAspect(
             var longSide = (short.toLong() * maxOf(ratio.wRatio, ratio.hRatio) / minOf(ratio.wRatio, ratio.hRatio)).toInt()
             var shortSide = short
             // Hardware AVC encoders top out at 4096 px per dimension on most
-            // devices (e.g. 4K x 21:9 would ask for 5376 wide and fail to
+            // devices (e.g. 4K x 21:9 would ask for 5040 wide and fail to
             // configure). Clamp the long side and scale the short side to
             // preserve the aspect ratio.
             if (longSide > MAX_AVC_DIM) {
