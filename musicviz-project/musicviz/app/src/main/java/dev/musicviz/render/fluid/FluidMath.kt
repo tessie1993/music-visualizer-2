@@ -5,7 +5,7 @@ import kotlin.math.sqrt
 
 /**
  * Pure-Kotlin mirrors of the fluid GLSL math, kept in lockstep with the
- * shaders so the headless gate can validate them (FLUID_SIM v2 section 15).
+ * shaders so the headless gate can validate them.
  * If a formula changes in a shader, change it here too.
  */
 internal object FluidMath {

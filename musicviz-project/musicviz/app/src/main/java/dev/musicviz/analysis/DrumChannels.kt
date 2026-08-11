@@ -197,8 +197,9 @@ class DrumChannels(
             // wallpaper eventually overflows to negative, after which
             // `sinceHit > refractoryFrames` is false forever and the channel
             // is silently dead until something calls reset(). The ceiling is
-            // far above any reachable refractory (72 frames at the slowest
-            // setting), so nothing below it changes.
+            // far above any reachable refractory (about 7 frames -
+            // 110 ms at 60 Hz - and none of the three is tunable), so
+            // nothing below it changes.
             sinceHit = if (hit) 0 else minOf(sinceHit + 1, REFRACTORY_IDLE)
             if (!hit) return 0f
             val t = ((z - SIGMA) / STRENGTH_SPAN_SIGMA).coerceIn(0f, 1f)

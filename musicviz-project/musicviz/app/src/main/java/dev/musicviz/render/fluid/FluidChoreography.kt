@@ -28,8 +28,7 @@ import kotlin.math.sqrt
  *     successive golden-angle florets rather than on top of each other.
  *
  * Everything is rate-limited: anchors chase their targets with a critically
- * damped follow, so progression NEVER teleports (organic-motion property #2,
- * docs/ORGANIC_MOTION.md) - section jumps read as a purposeful glide.
+ * damped follow, so progression NEVER teleports - section jumps read as a purposeful glide.
  *
  * Pure Kotlin, deterministic per (inputs, dt) - the headless gate tests
  * continuity, progression and domain bounds directly

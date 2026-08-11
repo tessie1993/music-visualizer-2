@@ -1482,8 +1482,7 @@ class PlayerViewModel(
     /**
      * Applies user GLSL to the current shader scene: stored in state (so
      * presets capture it) and emitted through vizApply so the shell-level
-     * engine bindings push it to the renderer from ANY screen - the GLSL
-     * editor no longer depends on the deleted expanded-screen plumbing.
+     * engine bindings push it to the renderer from ANY screen.
      */
     fun applyCustomShader(source: String) {
         val sceneId = _vizState.value.sceneId
@@ -1497,7 +1496,7 @@ class PlayerViewModel(
 
     /**
      * Picks a transition by id - a built-in style name or a gl-transitions
-     * corpus name. Keeps [VizState.transitionStyle] in step for the built-ins
+     * corpus name. Keeps [VizUiState.transitionStyle] in step for the built-ins
      * so the two never disagree about which one is selected.
      */
     fun setTransitionId(id: String) {
@@ -2178,7 +2177,7 @@ class PlayerViewModel(
         playFrom(tracks, uris[startIndex.coerceIn(0, uris.size - 1)])
     }
 
-    // ---- Navigation v2 additions ----
+    // ---- History & current track ----
 
     fun recentlyPlayed() = historyStore.recentlyPlayed()
 

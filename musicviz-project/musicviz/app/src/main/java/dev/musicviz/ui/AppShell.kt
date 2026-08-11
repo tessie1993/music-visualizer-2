@@ -60,8 +60,7 @@ import kotlinx.coroutines.withContext
 private const val CRASH_REPORT_MAX_BYTES = 64 * 1024
 
 /**
- * Navigation-v2 app shell: bottom nav (Player / Library / Visuals / Studio /
- * Settings)
+ * App shell: bottom nav (Player / Library / Visuals / Studio / Settings)
  * with a mini-player docked above it on every tab except the Player tab
  * (which IS the player), and the fullscreen visualizer (Now Playing) as an
  * overlay expanded from the mini-player.

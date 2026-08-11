@@ -1417,9 +1417,9 @@ private val ShaderDraftSaver =
     )
 
 /**
- * Shader-scene GLSL editor, restored after the navigation refactor: seeds
- * from the scene's current custom shader, applies through the ViewModel so
- * the shell-level engine bindings reach the renderer from any screen.
+ * Shader-scene GLSL editor: seeds from the scene's current custom shader,
+ * applies through the ViewModel so the shell-level engine bindings reach
+ * the renderer from any screen.
  */
 @Composable
 private fun GlslHubTab(

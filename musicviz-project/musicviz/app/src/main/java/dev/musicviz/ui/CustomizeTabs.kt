@@ -52,10 +52,8 @@ import dev.musicviz.render.scene.VisualStyleCatalog
 
 /*
  * The scene customization panel's TABS. They are hosted by
- * `VisualsHub.CustomizeHubTab` (Visuals > Customize), which owns the tab row,
- * the Randomize button and the lock set; the dialog wrapper that used to live
- * here was orphaned by the navigation refactor and has been deleted rather
- * than left as a second, Fluid-less copy of the same panel.
+ * `VisualsHub.CustomizePanel` (Visuals > Customize), which owns the tab row,
+ * the Randomize button and the lock set.
  *
  * The tabs themselves are `render.scene.CustomizeTab` - the hub builds its tab
  * row from that enum and `ParamRandomizer` keys its roll by the same entries,

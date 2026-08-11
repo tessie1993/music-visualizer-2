@@ -23,7 +23,7 @@ import kotlin.math.sqrt
  *
  * RippleMath/WaterMath convention: the maths lives here, headless and
  * testable, and the GL code in [CymaticsScene] only wires it up. Every
- * formula below has a twin in `cymatics_plate_vert.glsl`; if one changes, the
+ * formula below has a twin in `cymatics_field_frag.glsl`; if one changes, the
  * other has to change with it, and [dev.musicviz.CymaticsMathTest] pins them
  * against each other.
  *

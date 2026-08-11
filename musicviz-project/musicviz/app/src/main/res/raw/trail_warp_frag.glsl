@@ -1,5 +1,5 @@
 #version 300 es
-// Feedback-trail warp (docs/ORGANIC_MOTION.md quick-win 1): resample the
+// Feedback-trail warp: resample the
 // previous frame slightly zoomed + sine-warped and decayed - the MilkDrop
 // "warp shader has a memory" liquid-echo effect. Runs with blending OFF:
 // this pass IS the new frame base; the scene draws on top.

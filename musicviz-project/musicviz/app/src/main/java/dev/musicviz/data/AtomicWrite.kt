@@ -23,9 +23,6 @@ import java.io.OutputStream
  * the previous one exactly where it was. Losing one write is recoverable;
  * losing the document is not.
  *
- * [TrackLibrary] once open-coded this same temp-file-plus-rename without the
- * fsync; it now writes through this object like every other store.
- *
  * Kept free of Android so the headless suite can exercise it, including the
  * case that matters and is otherwise unreachable: an interrupted write
  * leaving the previous contents intact.

@@ -52,9 +52,9 @@ import androidx.media3.common.Player
 import kotlinx.coroutines.delay
 
 /**
- * Player: dest 0 is the now-playing screen itself. The old dashboard Home
- * (greeting, shelves, listening stats) is gone - the first thing the app
- * shows is the thing it is for: what is making sound right now, and the
+ * Player: dest 0 is the now-playing screen itself. Deliberately not a
+ * dashboard: the first thing the app shows is the thing it is for - what
+ * is making sound right now, and the
  * controls for it. The fullscreen visualizer stays one tap away (the hero,
  * the queue preview), and the mini-player is not shown on this tab because
  * this tab IS the player.

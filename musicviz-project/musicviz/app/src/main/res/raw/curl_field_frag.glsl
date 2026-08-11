@@ -2,7 +2,7 @@
 // Curl-noise velocity field per Bridson et al. "Curl-Noise for Procedural
 // Fluid Flow" (SIGGRAPH 2007): v = (dPsi/dy, -dPsi/dx) of a noise potential -
 // divergence-free by construction, so particles stream and swirl without
-// clumping (docs/ORGANIC_MOTION.md quick-win 2).
+// clumping.
 //
 // The potential is psrdnoise (MIT, Gustavson & McEwan - see
 // THIRD_PARTY_NOTICES), which returns its own ANALYTIC gradient. That is the

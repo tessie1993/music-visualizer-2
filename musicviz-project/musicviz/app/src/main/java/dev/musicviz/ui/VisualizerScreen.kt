@@ -54,9 +54,8 @@ import dev.musicviz.render.scene.TouchTransform
  * Now Playing: the fullscreen visualizer canvas with the app shell's design
  * language - one Material3 card of transport controls, a collapse chip, and
  * a shortcut into the Visuals hub. All visual configuration lives in the hub
- * (AppShell tab), so this screen is deliberately minimal; the old
- * TopPlayBar/QuickBar navigation is gone. Tap the canvas to hide or show
- * the controls.
+ * (AppShell tab), so this screen is deliberately minimal. Tap the canvas to
+ * hide or show the controls.
  */
 @Composable
 fun VisualizerScreen(
