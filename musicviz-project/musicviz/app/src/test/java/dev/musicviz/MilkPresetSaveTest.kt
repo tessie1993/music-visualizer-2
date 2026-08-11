@@ -76,6 +76,7 @@ class MilkPresetSaveTest {
         v.selectScene(SceneIds.MILKDROP)
         v.noteMilkPreset(importedMilk().absolutePath)
         v.savePreset("Neon set", null)
+        v.awaitStoreWrites()
 
         // A NEW ViewModel = a fresh app process: the preset is re-read from
         // disk, which is where the "M" bug used to become visible.
@@ -90,6 +91,7 @@ class MilkPresetSaveTest {
         v.selectScene(SceneIds.MILKDROP)
         v.noteMilkPreset(importedMilk().absolutePath)
         v.savePreset("Neon set", null)
+        v.awaitStoreWrites()
 
         val second = vm()
         val path = second.milkPresetPathFor(presetNamed(second, "Neon set"))
@@ -134,6 +136,7 @@ class MilkPresetSaveTest {
         v.selectScene(SceneIds.FLUID)
         v.noteMilkPreset(importedMilk().absolutePath)
         v.savePreset("Fluid look", null)
+        v.awaitStoreWrites()
 
         val preset = presetNamed(vm(), "Fluid look")
         assertNull("a non-MilkDrop preset captured a .milk", preset.milkPreset)
@@ -149,6 +152,7 @@ class MilkPresetSaveTest {
         v.selectScene(SceneIds.MILKDROP)
         v.noteMilkPreset(importedMilk().absolutePath)
         v.savePreset("Live / set", null)
+        v.awaitStoreWrites()
 
         val second = vm()
         val preset = presetNamed(second, "Live / set")

@@ -1,6 +1,5 @@
 package dev.musicviz.ui
 
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -69,10 +68,7 @@ private const val CRASH_REPORT_MAX_BYTES = 64 * 1024
  * path rebuilds GL state.
  */
 @Composable
-fun AppRoot(
-    viewModel: PlayerViewModel,
-    onPersistUri: (Uri) -> Unit,
-) {
+fun AppRoot(viewModel: PlayerViewModel) {
     val context = LocalContext.current
     val visualizerView = remember { VisualizerView(context) }
     val appTheme by viewModel.theme.collectAsState()
@@ -217,7 +213,7 @@ fun AppRoot(
                                 onExpand = { expanded = true },
                                 onOpenLibrary = { dest = 1 },
                             )
-                        1 -> LibraryScreen(viewModel, onPersistUri, onOpenSearch = { searching = true })
+                        1 -> LibraryScreen(viewModel, onOpenSearch = { searching = true })
                         2 ->
                             VisualsHub(
                                 viewModel,

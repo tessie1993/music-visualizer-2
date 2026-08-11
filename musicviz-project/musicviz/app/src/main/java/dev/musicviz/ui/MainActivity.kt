@@ -47,20 +47,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            AppRoot(
-                viewModel = viewModel,
-                onPersistUri = { uri ->
-                    // Not every provider grants persistable permissions;
-                    // playback still works for the session either way.
-                    runCatching {
-                        contentResolver.takePersistableUriPermission(
-                            uri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                        )
-                    }
-                },
-            )
+            AppRoot(viewModel = viewModel)
         }
-        importSharedPreset(intent)
+        // Only a fresh launch imports the intent's link: a recreation after
+        // process death (opening the task from recents) redelivers the
+        // original intent, and the in-memory "consumed" mark in
+        // importSharedPreset does not survive to block the re-import.
+        if (savedInstanceState == null) importSharedPreset(intent)
     }
 }

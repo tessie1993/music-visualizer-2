@@ -54,4 +54,29 @@ object AudioBus {
         latest = null
         latestAtMs = 0L
     }
+
+    // ---- Consumer interest ----------------------------------------------
+    //
+    // The analysis worker costs ~62 wakeups a second, so it runs only while
+    // someone is actually watching: the app's screen (the ViewModel holds a
+    // count for its whole life) or a visible wallpaper (its feeder holds one
+    // while it runs). PlaybackSession registers [onInterestChanged] and
+    // starts/stops the analyzer on the edges.
+
+    private val consumers = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** Fires on every 0->1 and 1->0 interest edge; set by the analysis owner. */
+    @Volatile
+    var onInterestChanged: (() -> Unit)? = null
+
+    /** True while anything wants live features. */
+    val hasConsumers: Boolean get() = consumers.get() > 0
+
+    fun addConsumer() {
+        if (consumers.incrementAndGet() == 1) onInterestChanged?.invoke()
+    }
+
+    fun removeConsumer() {
+        if (consumers.decrementAndGet() == 0) onInterestChanged?.invoke()
+    }
 }

@@ -265,9 +265,9 @@ private fun PresetsTreeTab(
     val presetFilePicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
-                importNote =
-                    viewModel.importPresetFile(uri)?.let { "Imported \"$it\"." }
-                        ?: "That file is not a MusicViz preset."
+                viewModel.importPresetFile(uri) { name ->
+                    importNote = name?.let { "Imported \"$it\"." } ?: "That file is not a MusicViz preset."
+                }
             }
         }
 

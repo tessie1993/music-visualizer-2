@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -39,6 +40,26 @@ class PlaybackCaptureServiceTest {
             MediaProjectionHolder.startFailures.value,
         )
         assertNull("no projection may be published for a failed start", MediaProjectionHolder.projection.value)
+        controller.destroy()
+    }
+
+    @Test
+    fun `even a doomed start enters the foreground before stopping`() {
+        // Started via startForegroundService(), a service that reaches
+        // stopSelf() without ever calling startForeground() dies with
+        // RemoteServiceException - so promotion must precede every early
+        // return, the malformed-intent one included.
+        val controller =
+            Robolectric.buildService(
+                PlaybackCaptureService::class.java,
+                Intent(ctx, PlaybackCaptureService::class.java),
+            )
+        controller.create().startCommand(0, 1)
+        val shadow = org.robolectric.Shadows.shadowOf(controller.get() as android.app.Service)
+        assertTrue(
+            "a doomed start must still call startForeground() before stopSelf()",
+            shadow.lastForegroundNotificationId != 0,
+        )
         controller.destroy()
     }
 

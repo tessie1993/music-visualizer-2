@@ -6,6 +6,18 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ktlint)
+    alias(libs.plugins.detekt)
+}
+
+// Static analysis tuned for this codebase: MagicNumber is graphics tuning
+// here (thousands of shader/scene constants), Compose functions are
+// PascalCase by convention, and the bug-finding rule sets stay on. Current
+// findings are baselined; new SwallowedException/UnusedParameter-class bugs
+// fail the build from now on.
+detekt {
+    config.setFrom(rootProject.file("config/detekt/detekt.yml"))
+    baseline = file("detekt-baseline.xml")
+    buildUponDefaultConfig = true
 }
 
 // Upload-key material for the Play Store build. Resolved from (in order):

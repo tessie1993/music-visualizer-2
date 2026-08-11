@@ -2,6 +2,7 @@ package dev.musicviz.audio
 
 import android.media.AudioFormat
 import android.media.AudioRecord
+import androidx.annotation.AnyThread
 import kotlin.concurrent.thread
 
 /**
@@ -76,7 +77,14 @@ abstract class AudioCapturePump(
      * so it runs here, before the caller is told this worked. Started on the
      * worker instead, its failure could only be logged, and the caller
      * latched "on" over a recorder that never ran.
+     *
+     * Synchronized on the pump (as are [stop] and the subclasses' `start`):
+     * callers are main-thread by convention, but the convention was the only
+     * thing keeping two racing starts from opening two recorders, and the
+     * generation fence guards the ring, not the recorder handle.
      */
+    @AnyThread
+    @Synchronized
     protected fun startPump(
         rec: AudioRecord,
         channels: Int,
@@ -148,6 +156,8 @@ abstract class AudioCapturePump(
     }
 
     /** Closes the capture. Safe to call when already stopped. */
+    @AnyThread
+    @Synchronized
     fun stop() {
         running = false
         // The worker's read() is blocking (READ_BLOCKING / the default

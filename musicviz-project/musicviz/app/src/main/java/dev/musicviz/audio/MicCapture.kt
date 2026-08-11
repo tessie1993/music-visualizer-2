@@ -81,6 +81,7 @@ class MicCapture(
      * [onSampleRate] fires on the caller's thread with the rate the device
      * granted, which is not always the one requested.
      */
+    @Synchronized
     fun start(onSampleRate: (Int) -> Unit = {}): Failure? {
         if (active) return null
         if (!hasPermission()) return Failure.PERMISSION

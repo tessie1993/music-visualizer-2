@@ -142,6 +142,10 @@ class VisualizerWallpaperService : WallpaperService() {
          */
         private fun startFeeding(engine: VisualizerRenderer) {
             if (feeder != null) return
+            // A visible wallpaper is a consumer: the app's analyzer runs (and
+            // feeds the bus) even with every Activity gone, as long as the
+            // service is playing and this engine is on screen.
+            AudioBus.addConsumer()
             running = true
             lastFrameMs = android.os.SystemClock.elapsedRealtime()
             feeder =
@@ -171,6 +175,8 @@ class VisualizerWallpaperService : WallpaperService() {
          * thread from holding up the main thread on the way out.
          */
         private fun stopFeeding() {
+            if (feeder == null) return
+            AudioBus.removeConsumer()
             running = false
             runCatching { feeder?.join(FEEDER_JOIN_MS) }
             feeder = null

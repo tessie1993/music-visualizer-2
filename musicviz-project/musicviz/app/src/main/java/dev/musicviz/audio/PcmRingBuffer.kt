@@ -59,6 +59,13 @@ class PcmRingBuffer(
         frameCount: Int,
         channelCount: Int,
     ) {
+        // Caller bugs, not data conditions: zero channels divides by zero
+        // below (NaN into every consumer) and an overlong window walks off
+        // the array. Two comparisons per ~23 ms call - fail fast, loudly.
+        require(channelCount > 0) { "channelCount must be positive, was $channelCount" }
+        require(frameCount * channelCount <= samples.size) {
+            "$frameCount frames x $channelCount channels exceeds buffer of ${samples.size}"
+        }
         var w = writeIndex
         var s = 0
         val stereo = channelCount >= 2
@@ -137,6 +144,10 @@ class PcmRingBuffer(
         src: FloatArray,
         out: FloatArray,
     ): Boolean {
+        // A window wider than the ring would wrap past the write head and
+        // come back scrambled; there is no coherent answer, so refuse it the
+        // same way "not enough data yet" is refused.
+        if (out.size > src.size) return false
         val w = writeIndex
         if (w < out.size) return false
         var r = w - out.size

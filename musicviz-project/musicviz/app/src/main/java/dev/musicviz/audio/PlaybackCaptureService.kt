@@ -59,6 +59,15 @@ class PlaybackCaptureService : Service() {
         flags: Int,
         startId: Int,
     ): Int {
+        // Promotion first, before ANY branch that can stopSelf(): started via
+        // startForegroundService(), a service that stops without ever reaching
+        // startForeground() dies with RemoteServiceException - so a malformed
+        // start intent was a crash, not a clean refusal. On the normal stop
+        // path the service is already foreground and re-posting the same
+        // notification is a no-op; a promotion that itself throws falls
+        // through to getMediaProjection, whose failure funnel below already
+        // ends in noteStartFailure + stopSelf.
+        runCatching { startForegroundNotification() }
         if (intent?.action == ACTION_STOP) {
             stopSelf()
             return START_NOT_STICKY
@@ -70,7 +79,6 @@ class PlaybackCaptureService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        startForegroundNotification()
         val manager = getSystemService(MediaProjectionManager::class.java)
         val mp =
             runCatching { manager.getMediaProjection(resultCode, data) }.getOrNull()
@@ -119,10 +127,10 @@ class PlaybackCaptureService : Service() {
             manager.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_ID,
-                    "Visualizing other apps",
+                    getString(dev.musicviz.R.string.capture_channel_name),
                     NotificationManager.IMPORTANCE_LOW,
                 ).apply {
-                    description = "Shown while MusicViz is reading the audio another app is playing."
+                    description = getString(dev.musicviz.R.string.capture_channel_description)
                     setShowBadge(false)
                 },
             )
@@ -144,13 +152,16 @@ class PlaybackCaptureService : Service() {
         val notification =
             Notification
                 .Builder(this, CHANNEL_ID)
-                .setContentTitle("Visualizing other apps")
-                .setContentText("MusicViz is reading the audio playing on this device.")
-                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setContentTitle(getString(dev.musicviz.R.string.capture_notification_title))
+                .setContentText(getString(dev.musicviz.R.string.capture_notification_text))
+                .setSmallIcon(dev.musicviz.R.drawable.ic_stat_capture)
                 .setOngoing(true)
                 .setContentIntent(open)
-                .addAction(Notification.Action.Builder(null, "Stop", stop).build())
-                .build()
+                .addAction(
+                    Notification.Action
+                        .Builder(null, getString(dev.musicviz.R.string.capture_notification_stop), stop)
+                        .build(),
+                ).build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
         } else {

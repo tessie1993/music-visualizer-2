@@ -10,6 +10,7 @@ coroutines = "1.10.2"
 junit = "4.13.2"
 robolectric = "4.14.1"
 ktlint = "12.3.0"
+detekt = "1.23.8"
 
 [libraries]
 core-splashscreen = { module = "androidx.core:core-splashscreen", version = "1.0.1" }
@@ -43,3 +44,4 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }
+detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }

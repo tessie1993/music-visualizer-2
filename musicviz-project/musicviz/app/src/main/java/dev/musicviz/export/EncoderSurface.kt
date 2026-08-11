@@ -71,7 +71,13 @@ class EncoderSurface(
             EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
             EGL14.eglDestroySurface(display, eglSurface)
             EGL14.eglDestroyContext(display, context)
-            EGL14.eglTerminate(display)
+            // Deliberately NOT eglTerminate: the default display is process-
+            // global and unrefcounted, and the live GLSurfaceView renderer
+            // (and a wallpaper engine in the same process) share it -
+            // terminating it here is the canonical "visualizer black after
+            // export" on strict drivers. The display is process-lifetime;
+            // only what this object created is destroyed.
+            EGL14.eglReleaseThread()
         }
         display = EGL14.EGL_NO_DISPLAY
         context = EGL14.EGL_NO_CONTEXT

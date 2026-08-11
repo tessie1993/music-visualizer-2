@@ -70,7 +70,6 @@ import kotlin.math.roundToInt
 @Composable
 fun LibraryScreen(
     viewModel: PlayerViewModel,
-    onPersistUri: (Uri) -> Unit,
     onOpenSearch: () -> Unit,
 ) {
     val context = LocalContext.current

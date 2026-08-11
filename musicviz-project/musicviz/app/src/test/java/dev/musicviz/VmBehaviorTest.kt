@@ -135,6 +135,7 @@ class VmBehaviorTest {
         v.addPresetFolder("Chill")
         assertTrue("Chill" in v.presetFolders())
         v.savePreset("My Test · Preset", null, folder = "Chill")
+        v.awaitStoreWrites()
         // " · " sanitized so the preset stays deletable (built-in marker).
         val saved =
             v.vizState.value.presets
@@ -160,6 +161,7 @@ class VmBehaviorTest {
         v.savePreset("Dusk", null, folder = "Chill")
         v.savePreset("Dawn", null, folder = "Chill")
         v.savePreset("Riot", null, folder = "Loud")
+        v.awaitStoreWrites()
         v.renamePresetFolder("Chill", "Ambient")
         assertEquals("Ambient", v.presetFolderOf("Dusk"))
         assertEquals("Ambient", v.presetFolderOf("Dawn"))
@@ -178,6 +180,7 @@ class VmBehaviorTest {
         v.addPresetFolder("Loud")
         v.savePreset("Dusk", null, folder = "Chill")
         v.savePreset("Riot", null, folder = "Loud")
+        v.awaitStoreWrites()
         v.renamePresetFolder("Chill", "")
         assertEquals("Chill", v.presetFolderOf("Dusk"))
         v.renamePresetFolder("Chill", "Loud")
@@ -194,6 +197,7 @@ class VmBehaviorTest {
         v.savePreset("Dusk", null, folder = "Chill")
         v.savePreset("Dawn", null, folder = "Chill")
         v.movePresetToFolder("Dusk", "Loud")
+        v.awaitStoreWrites()
         assertEquals("Loud", v.presetFolderOf("Dusk"))
         assertEquals("Chill", v.presetFolderOf("Dawn"))
         // The move is a file rename, not a re-save: the preset itself has to
@@ -212,6 +216,7 @@ class VmBehaviorTest {
         v.addPresetFolder("Chill")
         v.savePreset("Dusk", null, folder = "Chill")
         v.movePresetToFolder("Dusk", "")
+        v.awaitStoreWrites()
         assertEquals("", v.presetFolderOf("Dusk"))
     }
 

@@ -513,7 +513,9 @@ internal class FluidEmitters(
         val ay = anchorY
         for (i in 0 until 6) {
             val a = i / 6f * 2f * PI.toFloat()
-            hsv((baseHue + palettePhase) % 1f, 0.95f, 1f, splatRgb)
+            // Spokes sweep the user's hue span like the beat splats do; a
+            // fixed base hue ignored the Hue span control on this emitter.
+            hsv((baseHue + palettePhase + i * hueSpan / 6f) % 1f, 0.95f, 1f, splatRgb)
             val cr = splatRgb[0]
             val cg = splatRgb[1]
             val cb = splatRgb[2]

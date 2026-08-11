@@ -71,8 +71,8 @@ private fun PresetFolderGroup(
                 // i.e. a crash. The mirror is a convenience; a folder whose
                 // permission cannot outlive this process is not one to record,
                 // so the preference is only written when the grant was taken.
-                // Same guard as the three sibling call sites (MainActivity's
-                // onPersistUri, importTracks, importFolder).
+                // Same guard as the sibling call sites (importTracks,
+                // importFolder).
                 val persisted =
                     runCatching {
                         ctx.contentResolver.takePersistableUriPermission(

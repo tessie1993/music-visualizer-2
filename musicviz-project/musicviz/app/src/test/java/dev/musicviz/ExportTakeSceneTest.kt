@@ -63,10 +63,11 @@ class ExportTakeSceneTest {
         // if the export path actually consults it, and only the code records
         // that. Robolectric cannot run MediaCodec, so the wiring is pinned
         // where it lives.
-        val viewModel = ParamSurface.source("ui/PlayerViewModel.kt")
+        // startExport lives in ExportController since the ViewModel decomposition.
+        val controller = ParamSurface.source("ui/ExportController.kt")
         assertTrue(
             "startExport no longer resolves the take's scene through exportSceneIdFor",
-            viewModel.contains("sceneFactoryFor(exportSceneIdFor(exportTake"),
+            controller.contains("sceneFactoryFor(exportSceneIdFor(exportTake"),
         )
         val host = ParamSurface.source("ui/ExportHost.kt")
         assertTrue(

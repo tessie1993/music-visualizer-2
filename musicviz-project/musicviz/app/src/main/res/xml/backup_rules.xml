@@ -12,4 +12,15 @@
     <exclude
         domain="file"
         path="milk/generated" />
+    <!-- User-imported texture images are large and re-importable; left in,
+         they push the total past Auto Backup's ~25 MB quota and backup of
+         EVERYTHING (presets, playlists, history) silently stops. -->
+    <exclude
+        domain="file"
+        path="milk/textures" />
+    <!-- Takes are megabytes of JSON per long performance: same quota
+         arithmetic as the textures above. -->
+    <exclude
+        domain="file"
+        path="takes" />
 </full-backup-content>

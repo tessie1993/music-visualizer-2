@@ -6,9 +6,11 @@ name: Rebuild native libs (16 KB aligned)
 # libprojectM and the JNI bridge with NDK r28 (16 KB is its default) plus the
 # explicit max-page-size linker flag.
 #
-# Run this manually, download the artifact, drop both .so into
-# app/src/main/jniLibs/arm64-v8a/ and commit. The alignment guard in
-# android.yml then verifies every push.
+# Run this manually, download the artifact, drop both .so AND the SHA256SUMS
+# file into app/src/main/jniLibs/arm64-v8a/ and commit them together: the
+# SHA256SUMS carries the run URL and source SHA that let the repo prove the
+# committed blobs match tools/pm_jni.c and the projectM tag. android.yml
+# verifies the hashes on every pull request.
 
 on:
   workflow_dispatch:
@@ -102,9 +104,27 @@ jobs:
           [ "$fail" -eq 0 ] && echo "All LOAD segments are 16 KB aligned."
           exit "$fail"
 
+      - name: Record provenance checksums
+        run: |
+          set -euo pipefail
+          cd out
+          {
+            echo "# Provenance of the prebuilt libraries committed in this directory."
+            echo "#"
+            echo "# Built by native-libs.yml run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "# projectM ${{ inputs.projectm_tag }} + tools/projectm-v417-render-fbo-backport.patch;"
+            echo "# JNI bridge tools/pm_jni.c at ${GITHUB_SHA}."
+            echo "# Commit this file alongside the .so files it describes;"
+            echo "# android.yml verifies the hashes on every pull request."
+            sha256sum *.so
+          } > SHA256SUMS
+          cat SHA256SUMS
+
       - name: Upload native libs
         uses: actions/upload-artifact@v4
         with:
           name: jniLibs-arm64-v8a-16k
-          path: out/*.so
+          path: |
+            out/*.so
+            out/SHA256SUMS
           retention-days: 30

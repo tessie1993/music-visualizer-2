@@ -1,6 +1,7 @@
 package dev.musicviz.data
 
 import android.content.Context
+import androidx.annotation.WorkerThread
 import java.io.File
 
 /** A saved performance take, as the Takes list shows it. */
@@ -61,6 +62,7 @@ class TakeStore(
     private fun fileOf(name: String): File = File(dir, PresetStore.safeFileName(name) + ".json")
 
     /** Saved takes, newest first. Unreadable files are skipped, not fatal. */
+    @WorkerThread
     fun list(): List<TakeInfo> =
         dir
             .listFiles { f -> f.isFile && f.extension == "json" }
@@ -74,7 +76,11 @@ class TakeStore(
             }
 
     /** Reads a take back for replay, or null when it is gone or corrupt. */
-    fun load(name: String): PerformanceTake.Timeline? = runCatching { PerformanceTake.Timeline(fileOf(name).readText()) }.getOrNull()
+    @WorkerThread
+    fun load(name: String): PerformanceTake.Timeline? =
+        runCatching { PerformanceTake.Timeline(fileOf(name).readText()) }
+            .onFailure { dev.musicviz.RingLog.note("TakeStore", "take failed to load: $name", it) }
+            .getOrNull()
 
     /**
      * Writes [json] under [name], returning the name actually used.
@@ -83,6 +89,7 @@ class TakeStore(
      * performance that cannot be repeated, so silently replacing one because
      * two carry the same default name would destroy work with no undo.
      */
+    @WorkerThread
     fun save(
         name: String,
         json: String,
@@ -112,6 +119,7 @@ class TakeStore(
         return candidate
     }
 
+    @WorkerThread
     fun delete(name: String) {
         fileOf(name).delete()
     }
