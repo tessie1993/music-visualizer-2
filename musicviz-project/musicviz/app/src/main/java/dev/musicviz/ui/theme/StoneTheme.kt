@@ -6,12 +6,15 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import dev.musicviz.R
+import dev.musicviz.ui.ThemeContrast.BODY_CONTRAST_MIN
+import dev.musicviz.ui.ThemeContrast.HINT_CONTRAST_MIN
 
 /**
  * The active crystal pack. Provided by `CrystalMaterialTheme` at the app
@@ -100,6 +103,16 @@ fun ThemePack.colorScheme(
     val secondary = p.secondary.intensity()
     val background = p.background.dimmed()
     val surface = p.surface.dimmed()
+    val surfaceHigh = p.surfaceHigh.dimmed()
+    // Background dim darkens the surfaces under the authored writing colours.
+    // A light pack crosses from light to dark partway up the slider, and its
+    // authored near-black ink would then sit on a near-black panel - so every
+    // writing role is re-anchored against the surface it actually paints on.
+    // Undimmed (and on dark packs, where dim only widens the gap) the authored
+    // colour already clears the bar and passes through untouched.
+    val onBackground = readableOn(p.onBackground, background, BODY_CONTRAST_MIN)
+    val onSurface = readableOn(p.onSurface, surface, BODY_CONTRAST_MIN)
+    val onSurfaceVariant = readableOn(p.muted, surfaceHigh, HINT_CONTRAST_MIN)
     val base =
         if (isLight) {
             lightColorScheme(
@@ -108,17 +121,17 @@ fun ThemePack.colorScheme(
                 secondary = secondary,
                 tertiary = p.accent.intensity(),
                 background = background,
-                onBackground = p.onBackground,
+                onBackground = onBackground,
                 surface = surface,
-                onSurface = p.onSurface,
-                surfaceVariant = p.surfaceHigh.dimmed(),
-                onSurfaceVariant = p.muted,
+                onSurface = onSurface,
+                surfaceVariant = surfaceHigh,
+                onSurfaceVariant = onSurfaceVariant,
                 surfaceContainer = surface,
-                surfaceContainerHigh = p.surfaceHigh.dimmed(),
-                primaryContainer = p.surfaceHigh.dimmed(),
-                onPrimaryContainer = p.accent,
-                secondaryContainer = p.surfaceHigh.dimmed(),
-                onSecondaryContainer = p.onSurface,
+                surfaceContainerHigh = surfaceHigh,
+                primaryContainer = surfaceHigh,
+                onPrimaryContainer = readableOn(p.accent, surfaceHigh, HINT_CONTRAST_MIN),
+                secondaryContainer = surfaceHigh,
+                onSecondaryContainer = onSurface,
                 outline = p.outline,
                 error = p.danger,
             )
@@ -129,17 +142,17 @@ fun ThemePack.colorScheme(
                 secondary = secondary,
                 tertiary = p.accent.intensity(),
                 background = background,
-                onBackground = p.onBackground,
+                onBackground = onBackground,
                 surface = surface,
-                onSurface = p.onSurface,
-                surfaceVariant = p.surfaceHigh.dimmed(),
-                onSurfaceVariant = p.muted,
+                onSurface = onSurface,
+                surfaceVariant = surfaceHigh,
+                onSurfaceVariant = onSurfaceVariant,
                 surfaceContainer = surface,
-                surfaceContainerHigh = p.surfaceHigh.dimmed(),
-                primaryContainer = p.surfaceHigh.dimmed(),
-                onPrimaryContainer = p.accent,
-                secondaryContainer = p.surfaceHigh.dimmed(),
-                onSecondaryContainer = p.onSurface,
+                surfaceContainerHigh = surfaceHigh,
+                primaryContainer = surfaceHigh,
+                onPrimaryContainer = readableOn(p.accent, surfaceHigh, HINT_CONTRAST_MIN),
+                secondaryContainer = surfaceHigh,
+                onSecondaryContainer = onSurface,
                 outline = p.outline,
                 error = p.danger,
             )
@@ -158,6 +171,49 @@ fun ThemePack.colorScheme(
         base
     }
 }
+
+/** WCAG contrast ratio between two opaque colours. */
+private fun contrast(
+    a: Color,
+    b: Color,
+): Float {
+    val hi = maxOf(a.luminance(), b.luminance())
+    val lo = minOf(a.luminance(), b.luminance())
+    return (hi + 0.05f) / (lo + 0.05f)
+}
+
+/**
+ * [authored] if it already clears [minRatio] against [surface]; otherwise the
+ * authored colour pulled toward whichever pole (white or black) opposes the
+ * surface, by the smallest step that clears the bar. This is what flips a
+ * light pack's ink pale once background dim has pushed its panels dark.
+ */
+private fun readableOn(
+    authored: Color,
+    surface: Color,
+    minRatio: Float,
+): Color {
+    if (contrast(authored, surface) >= minRatio) return authored
+    val pole = if (surface.luminance() < 0.5f) Color.White else Color.Black
+    var t = 0.1f
+    while (t < 1f) {
+        val candidate = lerp(authored, pole, t)
+        if (contrast(candidate, surface) >= minRatio) return candidate
+        t += 0.1f
+    }
+    return pole
+}
+
+private fun lerp(
+    a: Color,
+    b: Color,
+    t: Float,
+): Color =
+    Color(
+        red = a.red + (b.red - a.red) * t,
+        green = a.green + (b.green - a.green) * t,
+        blue = a.blue + (b.blue - a.blue) * t,
+    )
 
 private fun Color.toArgbInt(): Int =
     ((alpha * 255f + 0.5f).toInt() shl 24) or
