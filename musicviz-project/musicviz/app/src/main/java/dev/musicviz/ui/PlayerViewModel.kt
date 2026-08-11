@@ -12,7 +12,6 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
-import dev.musicviz.analysis.AnalysisEngine
 import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.analysis.FeatureTimeline
 import dev.musicviz.analysis.IntelligenceMode
@@ -256,7 +255,13 @@ class PlayerViewModel(
     private val playback = PlaybackEngine.acquireForUi(application)
 
     private val ring = playback.ring
-    private val engine = AnalysisEngine(ring)
+
+    /**
+     * The session's analyzer (it outlives this screen; the wallpaper reads
+     * it through AudioBus). This ViewModel holds one consumer count for its
+     * whole life, so the worker runs whenever the app's UI is up.
+     */
+    private val engine = playback.analysis
 
     /**
      * "Live input": the microphone as a second producer for the SAME ring
@@ -3117,11 +3122,12 @@ class PlayerViewModel(
         // Same for the playback capture, which additionally holds a
         // foreground service and its "this app can hear you" notification.
         if (_externalAudio.value.active) stopExternalAudio()
-        // Stop feeding the wallpaper, so it falls back to its own idle motion
-        // instead of holding the last frame this session produced.
+        // The screen's interest in live analysis ends here. The analyzer
+        // itself belongs to the session now and keeps running if a visible
+        // wallpaper still wants it - that is the whole feature - and the
+        // bus's stale timeout idles the wallpaper when it stops.
         dev.musicviz.audio.AudioBus
-            .clear()
-        engine.stop()
+            .removeConsumer()
         // Both hooks into the player have to come off it by hand now that the
         // player outlives this object, or a ViewModel nobody can see goes on
         // writing history and retuning an analyzer that has stopped.
@@ -3160,7 +3166,8 @@ class PlayerViewModel(
     // InitOrderTest scans the source and fails the build on any property
     // declared after this block.
     init {
-        engine.start(viewModelScope)
+        dev.musicviz.audio.AudioBus
+            .addConsumer()
         refreshNumericTitles()
         takeController.refresh()
         // Everything startup reads off disk that is not needed to draw the

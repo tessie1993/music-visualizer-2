@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * One player and everything welded to it: the PCM tap that feeds the
@@ -49,7 +50,16 @@ class PlaybackSession internal constructor(
 
     private val sink =
         PcmTapSink(ring) { rate, channels, encoding ->
-            onAudioFormat?.invoke(rate, channels, encoding)
+            val hook = onAudioFormat
+            if (hook != null) {
+                hook(rate, channels, encoding)
+            } else {
+                // No screen attached: nobody else can retune the analyzer to
+                // the sink's new rate (live-input rate ownership is a screen
+                // concern), so the session does it - the wallpaper's feed
+                // must stay in tune with the music the service is playing.
+                analysis.sampleRateHz = rate
+            }
         }
 
     /**
@@ -115,6 +125,35 @@ class PlaybackSession internal constructor(
     val sleepTimer = SleepTimer(player, scope)
 
     /**
+     * Live analysis of [ring], HERE rather than on the ViewModel for the same
+     * reason the ring is: the wallpaper reads its output through
+     * [dev.musicviz.audio.AudioBus] and outlives every Activity, so an
+     * analyzer scoped to a screen went idle the moment the app was swiped
+     * away while [PlaybackService] kept the music going. The worker is
+     * demand-gated - it runs only while the bus has a consumer (the app's
+     * screen, or a visible wallpaper) - so the 62 Hz loop never spins for
+     * nobody.
+     */
+    val analysis = dev.musicviz.analysis.AnalysisEngine(ring)
+
+    private val interestHook: () -> Unit = { syncAnalysis() }
+
+    init {
+        dev.musicviz.audio.AudioBus.onInterestChanged = interestHook
+        syncAnalysis()
+        scope.launch {
+            // The one publisher: raw frames straight off the analyzer. The
+            // stale timeout on the bus turns a stopped analyzer into the
+            // wallpaper's idle motion with no explicit clear needed.
+            analysis.features.collect { dev.musicviz.audio.AudioBus.publish(it) }
+        }
+    }
+
+    private fun syncAnalysis() {
+        if (dev.musicviz.audio.AudioBus.hasConsumers) analysis.start(scope) else analysis.stop()
+    }
+
+    /**
      * True while the player intends to make sound, including while it is
      * buffering and while the system has suppressed it (a transient focus
      * loss). Deliberately weaker than [ExoPlayer.isPlaying], which is false in
@@ -128,6 +167,10 @@ class PlaybackSession internal constructor(
                 player.playbackState != Player.STATE_ENDED
 
     internal fun release() {
+        analysis.stop()
+        if (dev.musicviz.audio.AudioBus.onInterestChanged === interestHook) {
+            dev.musicviz.audio.AudioBus.onInterestChanged = null
+        }
         scope.cancel()
         onAudioFormat = null
         audioFx.release()

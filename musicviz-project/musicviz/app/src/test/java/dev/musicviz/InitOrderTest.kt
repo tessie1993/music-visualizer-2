@@ -44,8 +44,8 @@ class InitOrderTest {
         // the block this rule exists for, so it must be the one at the end.
         val tail = afterFinalInit()
         assertTrue(
-            "the main init block (engine.start + housekeeping loop) is no longer the final one",
-            tail.contains("engine.start(viewModelScope)") && tail.contains("delay(500)"),
+            "the main init block (AudioBus consumer + housekeeping loop) is no longer the final one",
+            tail.contains(".addConsumer()") && tail.contains("delay(500)"),
         )
     }
 
