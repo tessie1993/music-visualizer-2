@@ -102,6 +102,7 @@ class PlaybackCapture(
      * granted, which is not always the one requested.
      */
     @RequiresApi(Build.VERSION_CODES.Q)
+    @Synchronized
     fun start(
         projection: MediaProjection,
         onSampleRate: (Int) -> Unit = {},
@@ -135,8 +136,13 @@ class PlaybackCapture(
         if (peak > SILENCE_EPSILON) {
             lastAudibleAtMs = now
             blockedLikely = false
-        } else if (lastAudibleAtMs == 0L && now - startedAtMs > SILENCE_GRACE_MS) {
-            blockedLikely = true
+        } else {
+            // Like MicCapture's flag, this one can flip mid-run: switching to
+            // an app that forbids capture (Spotify after YouTube) is exactly
+            // the case the hint exists for, so the clock restarts from the
+            // last audible sample, not only from the start of the run.
+            val quietSince = if (lastAudibleAtMs == 0L) startedAtMs else lastAudibleAtMs
+            if (now - quietSince > SILENCE_GRACE_MS) blockedLikely = true
         }
     }
 
