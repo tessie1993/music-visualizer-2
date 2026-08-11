@@ -2840,12 +2840,33 @@ class PlayerViewModel(
         }
     }
 
+    /**
+     * The (timeline, section) the last AUTO suggestion was computed for.
+     * AUTO re-decides only when it changes: a drop or breakdown (a section
+     * boundary) switches the look, while mid-section energy wobble no longer
+     * flaps the scene every 500 ms poll.
+     */
+    private var autoSuggestKey: Long = Long.MIN_VALUE
+
     private fun applyIntelligence() {
         if (_presetLocked.value) return
         if (_vizState.value.intelligenceMode != IntelligenceMode.AUTO) return
         val t = timeline ?: return
-        val f = t.featuresAt(player.currentPosition)
-        val suggestion = SceneSuggester.suggest(t.bpm, f.rms, f.centroid)
+        val pos = player.currentPosition
+        val section = _vizState.value.sections.count { it <= pos }
+        val key = (System.identityHashCode(t).toLong() shl 16) or (section.toLong() and 0xFFFF)
+        if (key == autoSuggestKey) return
+        autoSuggestKey = key
+        val f = t.featuresAt(pos)
+        val suggestion =
+            SceneSuggester.suggest(
+                t.bpm,
+                f.rms,
+                f.centroid,
+                f.pulseConfidence,
+                f.chromaConfidence,
+                f.stereoWidth,
+            )
         // The window between reading the state and writing it back spans
         // featuresAt and suggest, and analysis finishing on Dispatchers.Default
         // publishes into the same flow. A read-then-write here would put a

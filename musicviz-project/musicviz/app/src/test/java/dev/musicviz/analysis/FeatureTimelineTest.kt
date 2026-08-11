@@ -255,11 +255,46 @@ class FeatureTimelineTest {
     }
 
     @Test
-    fun `suggester maps characteristics to scenes`() {
-        assertEquals(SceneSuggester.SCENE_BURSTS, SceneSuggester.suggest(bpm = 140f, energy = 0.4f, centroid = 0.3f))
-        assertEquals(SceneSuggester.SCENE_NEBULA, SceneSuggester.suggest(bpm = 80f, energy = 0.05f, centroid = 0.2f))
-        assertEquals(SceneSuggester.SCENE_TUNNEL, SceneSuggester.suggest(bpm = 100f, energy = 0.3f, centroid = 0.6f))
-        assertEquals(SceneSuggester.SCENE_JULIA, SceneSuggester.suggest(bpm = 100f, energy = 0.2f, centroid = 0.3f))
+    fun `suggester maps characteristics to scene CATEGORIES`() {
+        // v2 scores an affinity table instead of four rules, so these pin the
+        // intent (fast+loud lands percussive, quiet+dark lands ambient, ...)
+        // rather than one exact id - retuning a profile inside the same
+        // character must not fail the build; changing the character must.
+        val percussive = setOf(dev.musicviz.render.scene.SceneIds.BURSTS, dev.musicviz.render.scene.SceneIds.STORM)
+        val ambient =
+            setOf(
+                dev.musicviz.render.scene.SceneIds.NEBULA,
+                dev.musicviz.render.scene.SceneIds.AURORA,
+                dev.musicviz.render.scene.SceneIds.GALAXY,
+                dev.musicviz.render.scene.SceneIds.WATER,
+            )
+        val bright = setOf(dev.musicviz.render.scene.SceneIds.TUNNEL, dev.musicviz.render.scene.SceneIds.HYPERSPACE)
+        assertTrue(
+            SceneSuggester.suggest(bpm = 140f, energy = 0.4f, centroid = 0.3f, pulseConfidence = 0.8f) in percussive,
+        )
+        assertTrue(SceneSuggester.suggest(bpm = 80f, energy = 0.05f, centroid = 0.2f) in ambient)
+        assertTrue(SceneSuggester.suggest(bpm = 120f, energy = 0.3f, centroid = 0.7f) in bright)
+        // Harmonic material with a confident chroma should not land on a
+        // percussive scene, whatever else it lands on.
+        assertTrue(
+            SceneSuggester.suggest(bpm = 100f, energy = 0.2f, centroid = 0.3f, chromaConfidence = 0.9f) !in percussive,
+        )
+    }
+
+    @Test
+    fun `suggester scores every declared affinity and fit falls off outside the range`() {
+        // Every candidate must be reachable in principle: its own centre
+        // scores it at least as well as any single fixed input could.
+        for (a in SceneSuggester.AFFINITIES) {
+            val centreBpm = (a.tempoBpm.start + a.tempoBpm.endInclusive) / 2f
+            val centreEnergy = (a.energy.start + a.energy.endInclusive) / 2f
+            val centreBright = (a.brightness.start + a.brightness.endInclusive) / 2f
+            val self = SceneSuggester.score(a, centreBpm, centreEnergy, centreBright, 0f, 0f, 0f)
+            assertTrue("affinity for ${a.sceneId} scores itself $self at its own centre", self >= 3f)
+        }
+        assertEquals(1f, SceneSuggester.fit(0.5f, 0f..1f), 1e-6f)
+        assertEquals(0f, SceneSuggester.fit(2.5f, 0f..1f), 1e-6f)
+        assertTrue(SceneSuggester.fit(1.2f, 0f..1f) in 0.7f..0.9f)
     }
 
     // ---- drum-channel replay ----------------------------------------------
