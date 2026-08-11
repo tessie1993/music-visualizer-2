@@ -17,8 +17,10 @@ import java.io.File
  * correcting line references in it).
  *
  * So the matrix is derived instead of maintained. This object parses the four
- * sources of truth; `CustomizeSurfaceTest` turns them into build gates and
- * regenerates the document from them.
+ * sources of truth. (The `CustomizeSurfaceTest` gate suite that turned them
+ * into build gates and regenerated `docs/PARAM_MATRIX.md` was removed
+ * 2026-08-11; that document is now a static snapshot. This object remains as
+ * the source-access helper for the surviving source-reading tests.)
  *
  * Parsing source rather than using reflection is deliberate and follows
  * `ParamRandomizerFluidTest`: the questions here are about the CODE - which

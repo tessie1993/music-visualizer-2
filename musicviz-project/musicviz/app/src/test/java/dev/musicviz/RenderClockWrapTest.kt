@@ -19,7 +19,7 @@ import kotlin.math.roundToLong
  * (the composite pass' Shake) exceeds the per-frame phase advance, and the
  * jitter degenerates into a stutter and then freezes.
  *
- * Source-level, like [RendererWiringTest]: the property is private state on a
+ * Source-level: the property is private state on a
  * class that needs a GL thread, but the wrap PERIOD is a fact about the
  * shaders that read the uniform, and that is checkable here - which is the
  * point, because a wrap that is not a whole number of cycles for one of those

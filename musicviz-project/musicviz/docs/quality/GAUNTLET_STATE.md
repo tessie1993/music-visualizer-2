@@ -21,31 +21,28 @@ research dossiers in the session scratchpad.
   skills 282→12, rules→kotlin only, plugin plumbing/manifesto files deleted) plus
   a new real root CLAUDE.md. Full ECC remains installed at user level.
 
-## Paused clusters and how to resume
+## Paused clusters and how to resume (updated at second pause)
 
-| Cluster | Run ID | State when stopped | Resume note |
+All agents stopped on request. Resume any run with Workflow({scriptPath, resumeFromRunId})
+— scripts under the session dir workflows/scripts/, cached agents replay instantly.
+
+| Cluster | Run ID | State when stopped | Next on resume |
 |---|---|---|---|
-| vm-architecture-design | wf_1c9f715b-def | Research phase 3/3 done (dossiers: state-frameworks, realtime-boundary, vm-coupling — in scratchpad); 2 of 3 competing designs were in flight, judges + synthesis not started | Resume replays research from cache; designs re-run. Output goal: docs/quality/ARCHITECTURE_VM.md |
-| fix-brainstorm | wf_30c4e433-4d1 | 2 of 12 fix designers started, none finished | Effectively restarts from cache-empty; output goal: docs/quality/FIX_PLAN.md |
-| bug-hunt | wf_a83189fd-35c | Find phase: 2 of 6 finders returned (results cached in journal) | Resume replays the 2 finished finders; then verify → fix → green gate |
-| instruction-purge | wf_da36b295-410 | Purge agent DONE (committed here); comment auditors incomplete | Only the 3 read-only comment auditors need re-running; their output feeds a later apply round |
+| gate-test-removal | wf_7671b448-79b | Classification done; 19 layout-pinning tests deleted & pushed (088a972); remover's CLAUDE.md update + lost-invariant backlog notes and the green verification NOT yet run | Verify suite green, finish CLAUDE.md/backlog updates, final commit |
+| deep-bug-scan | wf_9bdebca6-b6c | 2/12 lenses done (static-tools: 6 findings incl. arm64-only; type-design: 4 findings incl. 2 HIGH serializer/take bugs); 10 lenses + synthesis pending | Remaining lenses replay/run, then BUG_SCAN.md synthesis |
+| rewrite-council | wf_15d91ba2-e8e | 4 domain architects mid-work, nothing returned yet | Domains re-run, chief architect writes REWRITE_BLUEPRINT.md + rewrite-vs-evolve verdict |
+| vm-architecture | wf_1c9f715b-def | COMPLETE — ARCHITECTURE_VM.md committed (07c7c58): Container+Holders+Controller won 3-0, 13-step green migration plan | Nothing; feed into rebuild plan |
+| fix-brainstorm | wf_30c4e433-4d1 | Never completed a designer; FIX_PLAN.md still pending | Full re-run when resumed |
 
-## Standing plan when resumed
+## Completed since first pause
 
-1. Finish fix-brainstorm → FIX_PLAN.md; finish architecture → ARCHITECTURE_VM.md.
-2. Round 2: safety CRITICAL (safe-visuals default + first-run moment) + quick
-   user-value wins (playback errors, lock-screen artwork, session restore,
-   Favourites/Listening screens).
-3. ViewModel migration per ARCHITECTURE_VM.md, step-by-step green.
-4. Bug-hunt completion; comment-rot fixes applied after its green gate.
-5. Previews / MilkDrop content / export rework; parity + l10n/a11y; detekt gate.
-6. Every round: verify green → commit → push → PR; 10-lens ECC critic panel +
-   skeptic after each user-facing round, until unanimously wowed.
+- Purge fully shipped & verified green (PR #86 merged): 990 instruction files removed,
+  42 comment corrections, real CLAUDE.md. Post-merge verification: full suite green.
+- ARCHITECTURE_VM.md committed (07c7c58).
+- 19 layout-pinning gate tests removed (088a972) — verification pending on resume.
 
-## Key references
+## Standing user orders (unchanged)
 
-- Quality bar: docs/quality/QUALITY_BAR.md (+ three bar-*.md research files)
-- Backlog: docs/quality/GAUNTLET_BACKLOG.md
-- Product findings: docs/quality/PRODUCT_REVIEW.md
-- Deep-read dossiers (scratchpad): auxio, projectm, nia, state-frameworks,
-  realtime-boundary, vm-coupling
+1. Finish clusters in order: gate-removal green -> bug scan -> rewrite council.
+2. Then REBUILD_PLAN.md from all blueprints; then execute the full app rebuild
+   phase-by-phase, every phase green; PR per green milestone; loop until critics wowed.

@@ -36,8 +36,8 @@ import java.io.File
  *    on Hyperspace - and one that drops `view()`/`grade()` gets no zoom, no
  *    rotation and no grade from anywhere at all.
  *
- * Source-level, like [ParticleStyleTest] and [RendererWiringTest]: unit tests
- * have no GL context, and every property here is a property of the code.
+ * Source-level, like [ParticleStyleTest]: unit tests have no GL context, and
+ * every property here is a property of the code.
  */
 class RecoveredShaderStylesTest {
     private companion object {

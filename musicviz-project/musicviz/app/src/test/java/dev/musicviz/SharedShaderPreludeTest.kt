@@ -200,9 +200,9 @@ class SharedShaderPreludeTest {
             "uTime must stay integrated, or reading uSpeed becomes the only way to honour Speed",
             ParamSurface
                 .source("render/scene/ShaderScene.kt")
-                // Integrated AND wrapped: the wrap (TIME_WRAP convention, see
-                // RenderAccumulatorWrapTest) changes nothing about the speed
-                // integration this test exists to protect.
+                // Integrated AND wrapped: the wrap (TIME_WRAP convention)
+                // changes nothing about the speed integration this test
+                // exists to protect.
                 .contains("shaderTime = (shaderTime + p.speed * dt) % TIME_WRAP_SECONDS"),
         )
     }
