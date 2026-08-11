@@ -1,9 +1,7 @@
 package dev.musicviz.ui
 
 import android.app.Application
-import android.content.ContentUris
 import android.net.Uri
-import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -25,8 +23,6 @@ import dev.musicviz.data.FavouritesStore
 import dev.musicviz.data.HistoryStore
 import dev.musicviz.data.LfoStore
 import dev.musicviz.data.MilkTexture
-import dev.musicviz.data.MusicPlaylist
-import dev.musicviz.data.MusicPlaylistStore
 import dev.musicviz.data.PaletteStore
 import dev.musicviz.data.PlayerPrefs
 import dev.musicviz.data.PlayerPrefsStore
@@ -49,10 +45,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -155,28 +149,6 @@ data class QueueTrack(
     val title: String = "",
     val artist: String = "",
 )
-
-/** One row of the device music index (MediaStore). */
-data class DeviceTrack(
-    val uri: String,
-    val title: String,
-    val artist: String,
-    val album: String,
-    val folder: String,
-    val durationMs: Long,
-    /** MediaStore DATE_ADDED, in SECONDS since the epoch; 0 when unknown. */
-    val addedSec: Long = 0L,
-)
-
-/** Music library + playlists + batch-analysis progress. */
-data class LibraryState(
-    val tracks: List<LibraryTrack> = emptyList(),
-    val playlists: List<MusicPlaylist> = emptyList(),
-    val analyzing: Boolean = false,
-    val analyzeProgress: Float = 0f,
-)
-
-private val AUDIO_EXTS = setOf("mp3", "wav", "flac", "ogg", "m4a", "aac", "opus", "wma", "aiff")
 
 /** The player's queue as the Now Playing queue tab reads it. */
 data class QueueUiState(
@@ -312,7 +284,6 @@ class PlayerViewModel(
                 override val activeMilkPath: String? get() = _activeMilkPath.value
             },
         )
-    private val trackLibrary = TrackLibrary(application)
     private val themeStore = ThemeStore(application)
     private val playerPrefsStore = PlayerPrefsStore(application)
 
@@ -323,7 +294,6 @@ class PlayerViewModel(
      */
     private val autoVisualsPrefsStore = AutoVisualsPrefsStore(application)
     private val lfoStore = LfoStore(application)
-    private val musicPlaylists = MusicPlaylistStore(application)
     private val audioFxController = playback.audioFx
 
     val player: ExoPlayer = playback.player
@@ -414,47 +384,13 @@ class PlayerViewModel(
 
     val exportState: StateFlow<ExportUiState> get() = exportController.exportState
 
-    /**
-     * Starts empty and is filled by [refreshLibrary]: the library file is one
-     * JSON document covering every imported track and the playlists are a file
-     * each, which is not work to make the first frame wait for. Every screen
-     * that reads this already renders an empty list as "nothing here yet" for
-     * the seconds before a device scan returns.
-     */
-    private val _library = MutableStateFlow(LibraryState())
-    val library: StateFlow<LibraryState> = _library
+    private val musicLibrary = MusicLibraryController(application, viewModelScope)
 
-    /**
-     * Reads the imported-track library and the playlists off the main thread,
-     * once, to fill the initial value. Skips if anything has published a list
-     * meanwhile - an import or a playlist edit re-lists synchronously, and this
-     * listing may have begun before it.
-     */
-    private fun refreshLibrary() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val tracks = trackLibrary.list()
-            val playlists = musicPlaylists.list()
-            withContext(Dispatchers.Main) {
-                _library.update {
-                    if (it.tracks.isNotEmpty() || it.playlists.isNotEmpty()) it else it.copy(tracks = tracks, playlists = playlists)
-                }
-            }
-        }
-    }
+    /** Imported tracks, playlists and scan state (see MusicLibraryController). */
+    val library: StateFlow<LibraryState> get() = musicLibrary.library
 
-    /**
-     * App-side metadata overrides keyed by uri, derived from [library].
-     * Screens (and search) join device/MediaStore rows against this map;
-     * every [saveTrackInfo]/import/analysis pass bumps it.
-     */
-    val trackOverrides: StateFlow<Map<String, LibraryTrack>> =
-        _library
-            .map { st -> st.tracks.associateBy { it.uri } }
-            .stateIn(
-                viewModelScope,
-                SharingStarted.Eagerly,
-                _library.value.tracks.associateBy { it.uri },
-            )
+    /** App-side metadata overrides keyed by uri, derived from [library]. */
+    val trackOverrides: StateFlow<Map<String, LibraryTrack>> get() = musicLibrary.trackOverrides
 
     private val _theme = MutableStateFlow(themeStore.load())
     val theme: StateFlow<AppTheme> = _theme
@@ -1154,238 +1090,24 @@ class PlayerViewModel(
     /** Applies a playlist entry: scene, saved preset params and side effects. */
     fun applyVizEntry(entry: VizPlaylistEntry) = autoVisuals.applyVizEntry(entry)
 
-    // ---- Music library & playlists ----
-
-    /**
-     * Embedded-tag metadata read from a file; fields blank/zero when absent.
-     * [fileName]/[sizeBytes] are not tags but the provider's view of the file
-     * itself, carried here because they are what identifies it in the library.
-     */
-    private data class FileMeta(
-        val title: String,
-        val artist: String = "",
-        val album: String = "",
-        val genre: String = "",
-        val year: Int = 0,
-        val trackNo: Int = 0,
-        val fileName: String = "",
-        val sizeBytes: Long = 0L,
-    )
-
-    private val _deviceTracks = MutableStateFlow<List<DeviceTrack>>(emptyList())
+    // ---- Music library & playlists (machinery lives in MusicLibraryController) ----
 
     /** Device music index (MediaStore); refreshed on demand from the UI. */
-    val deviceTracks: StateFlow<List<DeviceTrack>> = _deviceTracks
+    val deviceTracks: StateFlow<List<DeviceTrack>> get() = musicLibrary.deviceTracks
 
-    /**
-     * Re-queries the MediaStore device index on IO. Safe to call from any
-     * screen: without the audio permission it just publishes an empty list.
-     * (The query used to run synchronously inside LibraryScreen composition,
-     * janking the first frame of the Library tab on large collections.)
-     */
-    fun refreshDeviceTracks() {
-        viewModelScope.launch(Dispatchers.IO) {
-            _deviceTracks.value = queryDeviceTracksBlocking()
-        }
-    }
+    /** Persistent library folders (SAF tree URIs); rescanned on demand. */
+    val mediaRoots: StateFlow<Set<String>> get() = musicLibrary.mediaRoots
 
-    /** Full MediaStore music query; call on Dispatchers.IO. */
-    private fun queryDeviceTracksBlocking(): List<DeviceTrack> {
-        val app = getApplication<Application>()
-        val permission =
-            if (android.os.Build.VERSION.SDK_INT >= 33) {
-                android.Manifest.permission.READ_MEDIA_AUDIO
-            } else {
-                android.Manifest.permission.READ_EXTERNAL_STORAGE
-            }
-        val granted =
-            androidx.core.content.ContextCompat
-                .checkSelfPermission(app, permission) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (!granted) return emptyList()
-        val out = mutableListOf<DeviceTrack>()
-        val proj =
-            arrayOf(
-                MediaStore.Audio.Media._ID,
-                MediaStore.Audio.Media.TITLE,
-                MediaStore.Audio.Media.ARTIST,
-                MediaStore.Audio.Media.ALBUM,
-                MediaStore.Audio.Media.DURATION,
-                MediaStore.Audio.Media.DATA,
-                MediaStore.Audio.Media.DATE_ADDED,
-            )
-        runCatching {
-            app.contentResolver
-                .query(
-                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                    proj,
-                    "${MediaStore.Audio.Media.IS_MUSIC} != 0",
-                    null,
-                    "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC",
-                )?.use { c ->
-                    val id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-                    val ti = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-                    val ar = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-                    val al = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-                    val du = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-                    val da = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
-                    val ad = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
-                    while (c.moveToNext()) {
-                        val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, c.getLong(id))
-                        val path = c.getString(da).orEmpty()
-                        out +=
-                            DeviceTrack(
-                                uri = uri.toString(),
-                                title = c.getString(ti) ?: "Unknown",
-                                artist = c.getString(ar) ?: "Unknown artist",
-                                album = c.getString(al) ?: "Unknown album",
-                                folder = path.substringBeforeLast('/', ""),
-                                durationMs = c.getLong(du),
-                                addedSec = c.getLong(ad),
-                            )
-                    }
-                }
-        }
-        return out
-    }
+    val libraryScanning: StateFlow<Boolean> get() = musicLibrary.libraryScanning
 
-    /**
-     * Resolves tag metadata the way real media players do: embedded tags
-     * first (MediaMetadataRetriever), then the provider's display name, and
-     * only then the URI path - so content URIs never surface as bare
-     * document numbers. Call on Dispatchers.IO; the retriever hits disk.
-     */
-    private fun metadataFor(uri: Uri): FileMeta {
-        val app = getApplication<Application>()
-        var title: String? = null
-        var artist: String? = null
-        var album = ""
-        var genre = ""
-        var year = 0
-        var trackNo = 0
-        runCatching {
-            val r = android.media.MediaMetadataRetriever()
-            try {
-                r.setDataSource(app, uri)
+    fun refreshDeviceTracks() = musicLibrary.refreshDeviceTracks()
 
-                fun tag(key: Int): String? = r.extractMetadata(key)?.trim()?.ifBlank { null }
-                title = tag(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE)
-                artist = tag(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                album = tag(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: ""
-                genre = tag(android.media.MediaMetadataRetriever.METADATA_KEY_GENRE) ?: ""
-                // Year tags arrive as "1997" or full dates; track numbers as "3" or "3/12".
-                year =
-                    tag(android.media.MediaMetadataRetriever.METADATA_KEY_YEAR)
-                        ?.filter { it.isDigit() }
-                        ?.take(4)
-                        ?.toIntOrNull() ?: 0
-                trackNo =
-                    tag(android.media.MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
-                        ?.substringBefore('/')
-                        ?.trim()
-                        ?.toIntOrNull() ?: 0
-            } finally {
-                runCatching { r.release() }
-            }
-        }
-        val openable = openableInfoFor(uri)
-        if (title == null) title = openable.first.ifBlank { null }?.substringBeforeLast('.')
-        return FileMeta(
-            title = title ?: uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Track",
-            artist = artist ?: "",
-            album = album,
-            genre = genre,
-            year = year,
-            trackNo = trackNo,
-            fileName = openable.first,
-            sizeBytes = openable.second,
-        )
-    }
+    fun importTracks(uris: List<Uri>) = musicLibrary.importTracks(uris)
 
-    /**
-     * The provider's display name and byte size for [uri], blank/zero when it
-     * reports neither. This is the library's dedup identity (see
-     * [LibraryTrack.fileName]), so it is queried for every file rather than
-     * only as a title fallback: SAF and MediaStore hand out different uris
-     * for the same file but the same DISPLAY_NAME/SIZE. One cursor next to
-     * the retriever above, whose disk I/O dwarfs it.
-     */
-    private fun openableInfoFor(uri: Uri): Pair<String, Long> =
-        runCatching {
-            val cols = arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE)
-            getApplication<Application>()
-                .contentResolver
-                .query(uri, cols, null, null, null)
-                ?.use { c ->
-                    if (!c.moveToFirst()) return@use null
-                    val ni = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    val si = c.getColumnIndex(android.provider.OpenableColumns.SIZE)
-                    val name = if (ni >= 0 && !c.isNull(ni)) c.getString(ni).orEmpty() else ""
-                    val size = if (si >= 0 && !c.isNull(si)) c.getLong(si) else 0L
-                    name to size
-                }
-        }.getOrNull() ?: ("" to 0L)
+    fun trackOverride(uri: String): LibraryTrack? = musicLibrary.trackOverride(uri)
 
-    private fun libraryTrackFor(
-        uriStr: String,
-        m: FileMeta,
-    ): LibraryTrack =
-        LibraryTrack(
-            uri = uriStr,
-            title = m.title,
-            artist = m.artist,
-            album = m.album,
-            genre = m.genre,
-            year = m.year,
-            trackNo = m.trackNo,
-            fileName = m.fileName,
-            sizeBytes = m.sizeBytes,
-        )
+    suspend fun trackInfoFor(uriStr: String): LibraryTrack = musicLibrary.trackInfoFor(uriStr)
 
-    private fun titleFor(uri: Uri): String = metadataFor(uri).title
-
-    /** Imports picked audio files into the library (persist read permission first). */
-    fun importTracks(uris: List<Uri>) {
-        if (uris.isEmpty()) return
-        // titleFor() runs a content-resolver metadata query per file; a large
-        // multi-select would jank/ANR the main thread, so do it on IO.
-        viewModelScope.launch(Dispatchers.IO) {
-            val app = getApplication<Application>()
-            val tracks =
-                uris.map { uri ->
-                    runCatching {
-                        app.contentResolver.takePersistableUriPermission(
-                            uri,
-                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                        )
-                    }
-                    libraryTrackFor(uri.toString(), metadataFor(uri))
-                }
-            // A null result means the store was unreadable and nothing was
-            // written, so leave the on-screen list exactly as it is rather
-            // than publishing a list that does not reflect the disk.
-            trackLibrary.addAll(tracks)?.let { merged -> _library.update { it.copy(tracks = merged) } }
-        }
-    }
-
-    /** The stored library/override entry for [uri], if any (imported or user-edited). */
-    fun trackOverride(uri: String): LibraryTrack? = _library.value.tracks.firstOrNull { it.uri == uri }
-
-    /**
-     * Track-info-editor prefill: the stored override when one exists, else
-     * the file's embedded tags (retriever runs on IO).
-     */
-    suspend fun trackInfoFor(uriStr: String): LibraryTrack =
-        trackOverride(uriStr) ?: withContext(Dispatchers.IO) {
-            libraryTrackFor(uriStr, metadataFor(Uri.parse(uriStr)))
-        }
-
-    /**
-     * Saves user-edited track info into the app-side store. Upserts, so it
-     * works for MediaStore tracks that were never imported; the audio file
-     * itself is never modified. Publishing through [_library] (and thus
-     * [trackOverrides]) is what refreshes every observing screen.
-     */
     fun saveTrackInfo(
         uri: String,
         title: String,
@@ -1395,12 +1117,38 @@ class PlayerViewModel(
         year: Int,
         trackNo: Int,
         comment: String,
-    ) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val merged = trackLibrary.updateMetadata(uri, title, artist, album, genre, year, trackNo, comment)
-            merged?.let { withContext(Dispatchers.Main) { _library.update { s -> s.copy(tracks = it) } } }
-        }
-    }
+    ) = musicLibrary.saveTrackInfo(uri, title, artist, album, genre, year, trackNo, comment)
+
+    fun importFolder(treeUri: Uri) = musicLibrary.importFolder(treeUri)
+
+    fun removeMediaRoot(uriStr: String) = musicLibrary.removeMediaRoot(uriStr)
+
+    fun rescanMediaRoots() = musicLibrary.rescanMediaRoots()
+
+    fun createMusicPlaylist(name: String) = musicLibrary.createMusicPlaylist(name)
+
+    fun renameMusicPlaylist(
+        oldName: String,
+        newName: String,
+    ): Boolean = musicLibrary.renameMusicPlaylist(oldName, newName)
+
+    fun moveMusicPlaylistTrack(
+        name: String,
+        from: Int,
+        to: Int,
+    ) = musicLibrary.moveMusicPlaylistTrack(name, from, to)
+
+    fun deleteMusicPlaylist(name: String) = musicLibrary.deleteMusicPlaylist(name)
+
+    fun addTrackToPlaylist(
+        playlist: String,
+        uri: String,
+    ) = musicLibrary.addTrackToPlaylist(playlist, uri)
+
+    fun removeTrackFromPlaylist(
+        playlist: String,
+        uri: String,
+    ) = musicLibrary.removeTrackFromPlaylist(playlist, uri)
 
     /**
      * Analysis with the persistent cache: a hit skips the whole offline
@@ -1431,155 +1179,13 @@ class PlayerViewModel(
             }
     }
 
-    private fun libraryPrefs(): android.content.SharedPreferences =
-        getApplication<Application>().getSharedPreferences("musicviz-library", android.content.Context.MODE_PRIVATE)
-
-    private val _mediaRoots =
-        MutableStateFlow<Set<String>>(libraryPrefs().getStringSet("roots", emptySet()) ?: emptySet())
-
-    /** Persistent library folders (SAF tree URIs); rescanned on demand. */
-    val mediaRoots: StateFlow<Set<String>> = _mediaRoots
-
-    private val _libraryScanning = MutableStateFlow(false)
-    val libraryScanning: StateFlow<Boolean> = _libraryScanning
-
-    fun importFolder(treeUri: Uri) {
-        val app = getApplication<Application>()
-        runCatching {
-            app.contentResolver.takePersistableUriPermission(
-                treeUri,
-                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
-        }
-        _mediaRoots.update { it + treeUri.toString() }
-        libraryPrefs().edit().putStringSet("roots", _mediaRoots.value).apply()
-        viewModelScope.launch(Dispatchers.IO) {
-            _libraryScanning.value = true
-            try {
-                scanTreeBlocking(treeUri)
-            } finally {
-                _libraryScanning.value = false
-            }
-        }
-    }
-
-    fun removeMediaRoot(uriStr: String) {
-        _mediaRoots.update { it - uriStr }
-        libraryPrefs().edit().putStringSet("roots", _mediaRoots.value).apply()
-    }
-
-    /** Re-walks every registered folder; existing entries keep their analysis. */
-    fun rescanMediaRoots() {
-        if (_libraryScanning.value) return
-        viewModelScope.launch(Dispatchers.IO) {
-            _libraryScanning.value = true
-            try {
-                for (root in _mediaRoots.value) {
-                    scanTreeBlocking(Uri.parse(root))
-                }
-            } finally {
-                _libraryScanning.value = false
-            }
-        }
-    }
-
-    /** Recursive SAF walk (VLC-mirror: full tree, hidden dirs skipped). */
-    private suspend fun scanTreeBlocking(treeUri: Uri) {
-        val app = getApplication<Application>()
-        val found = mutableListOf<LibraryTrack>()
-        runCatching {
-            val root =
-                androidx.documentfile.provider.DocumentFile
-                    .fromTreeUri(app, treeUri) ?: return@runCatching
-
-            fun walk(
-                dir: androidx.documentfile.provider.DocumentFile,
-                depth: Int,
-            ) {
-                if (depth > 8) return
-                dir.listFiles().forEach { f ->
-                    val name = f.name ?: return@forEach
-                    if (name.startsWith(".")) return@forEach
-                    if (f.isDirectory) {
-                        walk(f, depth + 1)
-                    } else {
-                        val isAudio =
-                            f.type?.startsWith("audio/") == true ||
-                                name.substringAfterLast('.', "").lowercase() in AUDIO_EXTS
-                        if (isAudio) {
-                            found += libraryTrackFor(f.uri.toString(), metadataFor(f.uri))
-                        }
-                    }
-                }
-            }
-            walk(root, 0)
-        }
-        if (found.isNotEmpty()) {
-            val merged = trackLibrary.addAll(found)
-            merged?.let { withContext(Dispatchers.Main) { _library.update { s -> s.copy(tracks = it) } } }
-        }
-    }
-
-    fun createMusicPlaylist(name: String) {
-        if (name.isBlank()) return
-        musicPlaylists.save(MusicPlaylist(name.trim()))
-        _library.update { it.copy(playlists = musicPlaylists.list()) }
-    }
-
-    /**
-     * Renames a music playlist, surfacing [MusicPlaylistStore.rename]'s
-     * answer instead of dropping it - a caller that cannot see a false here
-     * closes over a rename that never happened (see [renameTake], which this
-     * mirrors).
-     */
-    fun renameMusicPlaylist(
-        oldName: String,
-        newName: String,
-    ): Boolean {
-        val renamed = musicPlaylists.rename(oldName, newName.trim())
-        if (renamed) {
-            _library.update { it.copy(playlists = musicPlaylists.list()) }
-        }
-        return renamed
-    }
-
-    fun moveMusicPlaylistTrack(
-        name: String,
-        from: Int,
-        to: Int,
-    ) {
-        musicPlaylists.move(name, from, to)
-        _library.update { it.copy(playlists = musicPlaylists.list()) }
-    }
-
-    fun deleteMusicPlaylist(name: String) {
-        musicPlaylists.delete(name)
-        _library.update { it.copy(playlists = musicPlaylists.list()) }
-    }
-
-    fun addTrackToPlaylist(
-        playlist: String,
-        uri: String,
-    ) {
-        musicPlaylists.addTrack(playlist, uri)
-        _library.update { it.copy(playlists = musicPlaylists.list()) }
-    }
-
-    fun removeTrackFromPlaylist(
-        playlist: String,
-        uri: String,
-    ) {
-        musicPlaylists.removeTrack(playlist, uri)
-        _library.update { it.copy(playlists = musicPlaylists.list()) }
-    }
-
     /** Plays a music playlist from the given start index. */
     fun playPlaylist(
         playlist: String,
         startIndex: Int = 0,
     ) {
         val uris =
-            _library.value.playlists
+            library.value.playlists
                 .firstOrNull { it.name == playlist }
                 ?.trackUris
                 .orEmpty()
@@ -1587,7 +1193,7 @@ class PlayerViewModel(
         // Through the same funnel as every other list, so a later single-track
         // play of one of these rejoins the playlist instead of truncating the
         // queue to it (and so the titles come from the library, not a query).
-        val byUri = _library.value.tracks.associateBy { it.uri }
+        val byUri = library.value.tracks.associateBy { it.uri }
         val tracks = uris.map { u -> byUri[u]?.let(PlaybackQueue::queueTrack) ?: QueueTrack(u) }
         playFrom(tracks, uris[startIndex.coerceIn(0, uris.size - 1)])
     }
@@ -1918,7 +1524,7 @@ class PlayerViewModel(
      * device index or the imported library), so the transport behaves the way
      * it does in any other music player.
      */
-    fun playTrack(uri: String) = playFrom(PlaybackQueue.contextFor(uri, lastBrowseContext, _deviceTracks.value, _library.value.tracks), uri)
+    fun playTrack(uri: String) = playFrom(PlaybackQueue.contextFor(uri, lastBrowseContext, deviceTracks.value, library.value.tracks), uri)
 
     /**
      * Opens [tracks] as the queue and starts at [startUri]. The one path a
@@ -1965,7 +1571,7 @@ class PlayerViewModel(
     /** Builds a MediaItem carrying library/tag metadata so the player state
      *  (and lockscreen) shows real titles, never document-id numbers. */
     private fun mediaItemFor(uri: Uri): MediaItem {
-        val known = _library.value.tracks.firstOrNull { it.uri == uri.toString() }
+        val known = library.value.tracks.firstOrNull { it.uri == uri.toString() }
         val (t, a) = if (known != null) known.title to known.artist else metadataQuick(uri)
         return MediaItem
             .Builder()
@@ -2009,30 +1615,6 @@ class PlayerViewModel(
                     ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
             }.getOrNull()?.substringBeforeLast('.')
         return (name ?: "Track") to ""
-    }
-
-    /**
-     * One-shot repair for library entries imported before tag reading:
-     * anything titled like a bare document number gets re-resolved from
-     * its embedded tags / display name.
-     */
-    private fun refreshNumericTitles() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val bad =
-                _library.value.tracks.filter {
-                    it.title.matches(Regex("^[0-9:%A-F]{4,}$")) || it.artist.isEmpty() && it.title.matches(Regex("^\\d+$"))
-                }
-            var latest: List<LibraryTrack>? = null
-            for (t in bad) {
-                runCatching {
-                    val (title, artist) = metadataFor(Uri.parse(t.uri))
-                    if (title != t.title || artist != t.artist) {
-                        trackLibrary.updateMetadata(t.uri, title, artist)?.let { latest = it }
-                    }
-                }
-            }
-            latest?.let { l -> withContext(Dispatchers.Main) { _library.update { it.copy(tracks = l) } } }
-        }
     }
 
     fun open(uris: List<Uri>) {
@@ -2204,7 +1786,7 @@ class PlayerViewModel(
     /** The current track's detected key, from the library cache; "" if none. */
     fun currentTrackKey(): String? {
         val uri = currentUri?.toString() ?: return null
-        return _library.value.tracks
+        return library.value.tracks
             .firstOrNull { it.uri == uri }
             ?.key
             ?.takeIf { it.isNotBlank() }
@@ -2312,9 +1894,7 @@ class PlayerViewModel(
                     analyzeCached(uri) { p ->
                         _vizState.update { it.copy(analysisProgress = p) }
                     }
-                trackLibrary
-                    .updateAnalysis(uri.toString(), titleFor(uri), t.durationMs, t.bpm, t.key)
-                    ?.let { merged -> _library.update { it.copy(tracks = merged) } }
+                musicLibrary.noteAnalysis(uri, t)
                 if (currentUri == uri) {
                     withContext(Dispatchers.Main) { applyKeyColor(t.key) }
                     timeline = t
@@ -2719,13 +2299,13 @@ class PlayerViewModel(
     init {
         dev.musicviz.audio.AudioBus
             .addConsumer()
-        refreshNumericTitles()
+        musicLibrary.refreshNumericTitles()
         takeController.refresh()
         // Everything startup reads off disk that is not needed to draw the
         // first frame. See each function for what it costs and why waiting for
         // it shows nothing wrong in the meantime.
         presetLibrary.refreshInitial()
-        refreshLibrary()
+        musicLibrary.refresh()
         textureController.refresh()
         // Restore persisted playback options onto the player. Auto-resume runs
         // BEFORE the listener registers so the startup preparation never

@@ -3,9 +3,9 @@
   <ManuallySuppressedIssues/>
   <CurrentIssues>
     <ID>ComplexCondition:Adsr.kt$AdsrEngine$features.beat &amp;&amp; (c.retrigger || stage[i] == 0 || stage[i] == 4)</ID>
+    <ID>ComplexCondition:AutoVisualsController.kt$AutoVisualsController$choices.size &gt; 1 &amp;&amp; pick.sceneId == s.sceneId &amp;&amp; pick.presetName == null &amp;&amp; pick.milkPath == null</ID>
     <ID>ComplexCondition:FeatureTimeline.kt$FeatureTimeline$beat == f.beat &amp;&amp; onset == f.onset &amp;&amp; flux == f.flux &amp;&amp; strength == f.beatStrength &amp;&amp; transient == f.transient</ID>
     <ID>ComplexCondition:NebulaScene.kt$NebulaScene$px[i] &lt; -1.3f || px[i] &gt; 1.3f || py[i] &lt; -1.3f || py[i] &gt; 1.3f</ID>
-    <ID>ComplexCondition:PlayerViewModel.kt$PlayerViewModel$choices.size &gt; 1 &amp;&amp; pick.sceneId == s.sceneId &amp;&amp; pick.presetName == null &amp;&amp; pick.milkPath == null</ID>
     <ID>ComplexCondition:TextureStore.kt$TextureStore$bytes.size &gt;= 4 &amp;&amp; bytes[0] == 'D'.code.toByte() &amp;&amp; bytes[1] == 'D'.code.toByte() &amp;&amp; bytes[2] == 'S'.code.toByte() &amp;&amp; bytes[3] == ' '.code.toByte()</ID>
     <ID>ComplexCondition:VideoExporter.kt$VideoExporter$(p.flowEnabled || sceneNeedsFlow) &amp;&amp; flowField != null &amp;&amp; flowField.available</ID>
     <ID>ComplexCondition:VisualizerRenderer.kt$VisualizerRenderer$(p.flowEnabled || sceneNeedsFlow || layerNeedsFlow) &amp;&amp; ff != null &amp;&amp; ff.available &amp;&amp; !fluidActive</ID>
@@ -51,8 +51,10 @@
     <ID>ReturnCount:AppTheme.kt$AppTheme$fun resolvedFontColor( fontColorArgb: Int?, backgroundDim: Float = 0f, ): Int?</ID>
     <ID>ReturnCount:ArtPalette.kt$ArtPalette$fun extract(pixels: IntArray): Extracted?</ID>
     <ID>ReturnCount:AudioTranscoder.kt$AudioTranscoder$fun feedEncoder(): Boolean</ID>
+    <ID>ReturnCount:AutoVisualsController.kt$AutoVisualsController$fun advanceSectionStaging()</ID>
     <ID>ReturnCount:BarTrim.kt$BarTrim$fun trimToBars( durationUs: Long, bpm: Float, ): Long</ID>
     <ID>ReturnCount:BlueNoise.kt$BlueNoise$fun createTexture(context: Context): Int</ID>
+    <ID>ReturnCount:CaptureController.kt$CaptureController$fun setMicEnabled(enabled: Boolean): MicCapture.Failure?</ID>
     <ID>ReturnCount:Chromagram.kt$Chromagram$private fun peakToMedian(): Float</ID>
     <ID>ReturnCount:Crystal.kt$internal fun onyxBandRhythm( seed: Float, span: Float, minDim: Float, units: Int, ): List&lt;OnyxBand&gt;</ID>
     <ID>ReturnCount:CyclicPalettes.kt$CyclicPalettes$fun createTexture(context: Context): Int</ID>
@@ -82,8 +84,6 @@
     <ID>ReturnCount:PlaybackCaptureService.kt$PlaybackCaptureService$override fun onStartCommand( intent: Intent?, flags: Int, startId: Int, ): Int</ID>
     <ID>ReturnCount:PlaybackQueue.kt$PlaybackQueue$fun contextFor( uri: String, browse: List&lt;QueueTrack&gt;, deviceTracks: List&lt;DeviceTrack&gt;, libraryTracks: List&lt;LibraryTrack&gt;, ): List&lt;QueueTrack&gt;</ID>
     <ID>ReturnCount:PlaybackQueue.kt$PlaybackQueue$fun window( tracks: List&lt;QueueTrack&gt;, startUri: String, ): Window</ID>
-    <ID>ReturnCount:PlayerViewModel.kt$PlayerViewModel$fun setMicEnabled(enabled: Boolean): MicCapture.Failure?</ID>
-    <ID>ReturnCount:PlayerViewModel.kt$PlayerViewModel$private fun advanceSectionStaging()</ID>
     <ID>ReturnCount:PlayerViewModel.kt$PlayerViewModel$private fun applyIntelligence()</ID>
     <ID>ReturnCount:PlayerViewModel.kt$PlayerViewModel$private fun waveformOf(timeline: FeatureTimeline): FloatArray?</ID>
     <ID>ReturnCount:PresetLibraryController.kt$PresetLibraryController$fun importPresetLink(text: String): String?</ID>
