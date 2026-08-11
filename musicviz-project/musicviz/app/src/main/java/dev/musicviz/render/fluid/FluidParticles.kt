@@ -62,7 +62,7 @@ internal class FluidParticles(
         release()
         side = FluidMath.stateSide(particleCount)
         count = side * side
-        // Positions in 16F quantise as particles cluster (spec 5.2): use
+        // Positions in 16F quantise as particles cluster: use
         // full-float state when the device can render to it. The meta
         // attachment needs it too: age accumulates dt every frame, and at
         // age >= 16 s a half-float ULP (15.6 ms) exceeds a 144 Hz frame -

@@ -133,8 +133,8 @@ class MicCapture(
     /**
      * Builds an AudioRecord, trying float PCM first (the tap's own format, so
      * the ring buffer sees the same numbers playback would produce) and
-     * falling back to 16-bit, then to a smaller rate. Returns null when the
-     * device grants none of them.
+     * falling back to 16-bit, then to the other rates (48 kHz, then
+     * 22.05 kHz). Returns null when the device grants none of them.
      */
     private fun openRecord(): AudioRecord? {
         val source = preferredSource()

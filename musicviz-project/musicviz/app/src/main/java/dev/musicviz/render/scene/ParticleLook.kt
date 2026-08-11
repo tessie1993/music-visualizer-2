@@ -9,9 +9,8 @@ package dev.musicviz.render.scene
  * depending on which style was on screen.
  *
  * [dpiScale] is the exception: the fluid scenes compute the same factor
- * inline, and they are left alone deliberately. Rewriting two working lines in
- * files this branch has no other business in would buy nothing but a merge
- * conflict for whoever touches them next.
+ * inline, and they are left alone deliberately: duplicating two working
+ * lines would buy nothing.
  *
  * Pure Kotlin, no GL: the headless tests pin it directly.
  */

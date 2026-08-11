@@ -233,11 +233,11 @@ internal class FxCompositor(
     }
 
     /**
-     * Fades the scene FBO toward black instead of clearing it, so particle
-     * trails render in exports exactly like the live view (which fades FBO A
-     * Warp-aware trail fade for export parity with the live renderer: when
-     * trailZoom/trailWarp are set, the persisted frame is copied aside and
-     * redrawn zoomed/warped/decayed; otherwise the plain alpha fade runs.
+     * Warp-aware trail fade for export parity with the live renderer: fades
+     * the scene FBO toward black instead of clearing it, so particle trails
+     * render in exports exactly like the live view. When trailZoom/trailWarp
+     * are set, the persisted frame is copied aside and redrawn
+     * zoomed/warped/decayed; otherwise the plain alpha fade runs.
      * [sceneFbo]/[w]/[h] describe the scene target currently being faded.
      */
     fun fadeSceneTargetWarp(

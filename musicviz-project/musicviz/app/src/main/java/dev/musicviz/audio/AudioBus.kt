@@ -17,8 +17,8 @@ import dev.musicviz.analysis.AudioFeatures
  * a backlog, and a dropped update is the correct behaviour rather than a lost
  * event.
  *
- * [features] falls back to silence when nothing has published recently, which
- * is what makes the wallpaper's idle path kick in when the app is gone.
+ * [features] returns null when nothing has published recently, which is what
+ * makes the wallpaper's idle path kick in when the app is gone.
  */
 object AudioBus {
     /** After this long with no publish, the app is treated as not running. */
