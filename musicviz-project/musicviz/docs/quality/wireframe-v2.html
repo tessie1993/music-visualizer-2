@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Music Visualizer — clean-room application wireframe</title>
+  <style>
+    :root {
+      --paper: #f4f4f1;
+      --surface: #ffffff;
+      --ink: #171717;
+      --muted: #666663;
+      --line: #c9c9c4;
+      --line-dark: #8e8e89;
+      --fill: #e8e8e3;
+      --fill-2: #d8d8d2;
+      --strong: #262626;
+      --danger: #7c7c78;
+      --radius: 10px;
+      --phone-w: 330px;
+      --phone-h: 704px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+    .document { width: min(100%, 1580px); margin: 0 auto; padding: 28px; }
+    .doc-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 28px;
+      align-items: end;
+      padding: 22px 0 28px;
+      border-bottom: 2px solid var(--ink);
+    }
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    h1 { margin: 0; max-width: 900px; font-size: clamp(30px, 5vw, 58px); line-height: 1; letter-spacing: -.045em; }
+    .lede { max-width: 850px; margin: 16px 0 0; font-size: 16px; color: var(--muted); }
+    .statbox { min-width: 260px; border: 1px solid var(--ink); background: var(--surface); padding: 16px; }
+    .statbox strong { display: block; font-size: 30px; line-height: 1; }
+    .statbox span { display: block; margin-top: 5px; color: var(--muted); }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin: 0 -28px;
+      padding: 12px 28px;
+      background: rgba(244, 244, 241, .96);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(10px);
+    }
+    .tool-btn, .jump-select {
+      min-height: 36px;
+      border: 1px solid var(--line-dark);
+      border-radius: 6px;
+      background: var(--surface);
+      padding: 7px 11px;
+      cursor: pointer;
+    }
+    .tool-btn[aria-pressed="true"] { background: var(--strong); color: #fff; border-color: var(--strong); }
+    .jump-select { margin-left: auto; max-width: 280px; }
+
+    .section { padding: 46px 0 12px; }
+    .section-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 520px); gap: 28px; align-items: end; margin-bottom: 22px; }
+    h2 { margin: 0; font-size: 28px; line-height: 1.1; letter-spacing: -.025em; }
+    h3 { margin: 0; font-size: 17px; }
+    .section-head p, .muted { color: var(--muted); }
+    .section-head p { margin: 0; }
+
+    .decision-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .decision { min-height: 132px; padding: 16px; border: 1px solid var(--line); background: var(--surface); }
+    .decision b { display: inline-grid; place-items: center; width: 27px; height: 27px; margin-bottom: 16px; border: 1px solid var(--ink); border-radius: 50%; }
+    .decision p { margin: 7px 0 0; color: var(--muted); }
+
+    .journey {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(120px, 1fr));
+      gap: 20px;
+      align-items: stretch;
+      margin: 18px 0 26px;
+    }
+    .journey-step { position: relative; min-height: 96px; padding: 14px; border: 1px solid var(--ink); background: var(--surface); }
+    .journey-step:not(:last-child)::after { content: "→"; position: absolute; right: -18px; top: 34px; font-size: 22px; font-weight: 700; }
+    .journey-step small { display: block; margin-top: 8px; color: var(--muted); }
+
+    table { width: 100%; border-collapse: collapse; background: var(--surface); }
+    th, td { padding: 11px 12px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: var(--fill); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+
+    .catalog-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+    .catalog-summary span { padding: 5px 8px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+    .frame-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 22px; align-items: start; }
+    .frame-card { min-width: 0; border-top: 3px solid var(--ink); padding-top: 10px; }
+    .frame-card[hidden] { display: none; }
+    .frame-meta { min-height: 72px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; }
+    .frame-id { display: inline-grid; place-items: center; min-width: 42px; height: 30px; padding: 0 8px; border: 1px solid var(--ink); background: var(--surface); font-weight: 800; }
+    .frame-meta h3 { margin: 1px 0 3px; }
+    .route { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+    .phone-wrap { display: grid; place-items: start center; padding: 8px 0 14px; }
+    .phone {
+      position: relative;
+      width: min(var(--phone-w), 100%);
+      height: var(--phone-h);
+      overflow: hidden;
+      border: 2px solid var(--ink);
+      border-radius: 26px;
+      background: var(--surface);
+      box-shadow: 0 8px 0 rgba(0,0,0,.06);
+    }
+    .statusbar { height: 25px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid var(--line); font-size: 10px; font-weight: 700; }
+    .appbar { min-height: 58px; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: #fff; }
+    .appbar .titles { min-width: 0; flex: 1; }
+    .appbar .over { font-size: 9px; color: var(--muted); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+    .appbar .title { font-size: 19px; line-height: 1.1; font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .iconbtn { display: inline-grid; place-items: center; width: 34px; height: 34px; flex: 0 0 auto; border: 1px solid var(--line-dark); border-radius: 50%; background: #fff; }
+    .top-tabs, .sub-tabs { display: flex; gap: 0; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--line); background: #fff; }
+    .top-tabs::-webkit-scrollbar, .sub-tabs::-webkit-scrollbar { display: none; }
+    .top-tabs span, .sub-tabs span { flex: 0 0 auto; padding: 9px 11px 8px; color: var(--muted); font-size: 10px; white-space: nowrap; border-bottom: 2px solid transparent; }
+    .top-tabs span.on, .sub-tabs span.on { color: var(--ink); border-bottom-color: var(--ink); font-weight: 800; }
+    .screen-body { position: absolute; inset: 83px 0 61px; overflow: auto; padding: 12px; scrollbar-width: thin; }
+    .phone.has-tabs .screen-body { top: 119px; }
+    .phone.has-mini .screen-body { bottom: 111px; }
+    .phone.no-nav .screen-body { bottom: 0; }
+    .phone.fullscreen .screen-body { inset: 25px 0 0; padding: 0; }
+    .phone.fullscreen .appbar, .phone.fullscreen .bottom-nav, .phone.fullscreen .statusbar + .appbar { display: none; }
+
+    .bottom-nav { position: absolute; left: 0; right: 0; bottom: 0; height: 61px; display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid var(--line-dark); background: #fff; }
+    .bottom-nav div { display: grid; place-items: center; align-content: center; gap: 2px; color: var(--muted); font-size: 8px; }
+    .bottom-nav div::before { content: ""; width: 17px; height: 14px; border: 1px solid currentColor; border-radius: 3px; }
+    .bottom-nav div.on { color: var(--ink); font-weight: 800; background: var(--fill); }
+    .mini-player { position: absolute; left: 0; right: 0; bottom: 61px; height: 50px; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 7px 10px; border-top: 1px solid var(--line-dark); background: #fff; }
+    .mini-art { width: 30px; height: 30px; border: 1px solid var(--ink); background: var(--fill); }
+    .mini-title { min-width: 0; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mini-controls { font-size: 14px; letter-spacing: 3px; }
+
+    .stack { display: grid; gap: 9px; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .row.wrap { flex-wrap: wrap; }
+    .row.spread { justify-content: space-between; }
+    .grow { min-width: 0; flex: 1; }
+    .wire-card { padding: 11px; border: 1px solid var(--line-dark); border-radius: var(--radius); background: #fff; }
+    .wire-card.dashed { border-style: dashed; }
+    .section-label { margin-bottom: 8px; font-size: 9px; color: var(--muted); font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+    .preview {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 185px;
+      border: 1px solid var(--ink);
+      background: repeating-linear-gradient(135deg, #f5f5f2 0, #f5f5f2 11px, #e7e7e2 11px, #e7e7e2 12px);
+      color: var(--muted);
+      text-align: center;
+      font-size: 11px;
+    }
+    .preview.small { min-height: 110px; }
+    .art { width: 44px; height: 44px; flex: 0 0 auto; border: 1px solid var(--ink); background: var(--fill); }
+    .art.wide { width: 76px; height: 48px; }
+    .list { border: 1px solid var(--line); background: #fff; }
+    .list-row { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px; border-bottom: 1px solid var(--line); }
+    .list-row:last-child { border-bottom: 0; }
+    .primary { font-size: 11px; font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .secondary { margin-top: 2px; color: var(--muted); font-size: 9px; line-height: 1.3; }
+    .chev { color: var(--muted); font-size: 16px; }
+    .badge { flex: 0 0 auto; padding: 2px 5px; border: 1px solid var(--line-dark); border-radius: 10px; font-size: 8px; }
+    .btn { display: inline-flex; min-height: 31px; align-items: center; justify-content: center; gap: 5px; padding: 6px 9px; border: 1px solid var(--ink); border-radius: 6px; background: #fff; font-size: 10px; font-weight: 700; cursor: pointer; }
+    .btn.filled { background: var(--strong); color: #fff; }
+    .btn.subtle { border-color: var(--line); color: var(--muted); }
+    .btn.block { width: 100%; }
+    .chip { display: inline-flex; align-items: center; min-height: 25px; padding: 3px 8px; border: 1px solid var(--line-dark); border-radius: 14px; background: #fff; font-size: 9px; white-space: nowrap; }
+    .chip.on { background: var(--strong); color: #fff; }
+    .field { min-height: 40px; display: flex; align-items: center; padding: 8px 9px; border: 1px solid var(--line-dark); border-radius: 5px; background: #fff; color: var(--muted); font-size: 10px; }
+    .field.multiline { min-height: 74px; align-items: flex-start; }
+    .control { padding: 5px 0; }
+    .control-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 5px; font-size: 10px; }
+    .slider { position: relative; height: 4px; border-radius: 2px; background: var(--fill-2); }
+    .slider::before { content: ""; display: block; width: 58%; height: 100%; background: var(--strong); }
+    .slider::after { content: ""; position: absolute; left: 56%; top: 50%; width: 11px; height: 11px; transform: translate(-50%, -50%); border: 1px solid var(--ink); border-radius: 50%; background: #fff; }
+    .toggle { width: 31px; height: 17px; flex: 0 0 auto; padding: 2px; border: 1px solid var(--line-dark); border-radius: 10px; background: var(--fill); }
+    .toggle::after { content: ""; display: block; width: 11px; height: 11px; border-radius: 50%; border: 1px solid var(--line-dark); background: #fff; }
+    .toggle.on { background: var(--strong); }
+    .toggle.on::after { margin-left: 13px; }
+    .wave { height: 34px; border: 1px solid var(--line); background: repeating-linear-gradient(90deg, transparent 0 5px, var(--line-dark) 5px 7px, transparent 7px 10px); }
+    .transport { display: grid; grid-template-columns: repeat(5, 1fr); align-items: center; text-align: center; font-size: 16px; }
+    .transport b { display: grid; place-items: center; width: 42px; height: 42px; margin: auto; border: 1px solid var(--ink); border-radius: 50%; }
+    .spectrum { height: 36px; background: linear-gradient(to top, var(--fill-2), transparent), repeating-linear-gradient(90deg, var(--strong) 0 3px, transparent 3px 8px); clip-path: polygon(0 90%,4% 30%,8% 75%,12% 10%,16% 60%,20% 20%,24% 85%,28% 35%,32% 65%,36% 5%,40% 50%,44% 20%,48% 80%,52% 30%,56% 60%,60% 10%,64% 75%,68% 25%,72% 90%,76% 40%,80% 70%,84% 15%,88% 55%,92% 25%,96% 82%,100% 45%,100% 100%,0 100%); }
+    .empty { padding: 20px 12px; border: 1px dashed var(--line-dark); text-align: center; color: var(--muted); font-size: 10px; }
+    .note { padding: 8px; border-left: 3px solid var(--line-dark); background: var(--fill); color: var(--muted); font-size: 9px; }
+    .error { padding: 8px; border: 2px solid var(--line-dark); background: #fff; font-size: 9px; }
+    .accordion { border: 1px solid var(--line); background: #fff; }
+    .accordion-head { display: flex; justify-content: space-between; padding: 9px; border-bottom: 1px solid var(--line); font-size: 10px; font-weight: 800; }
+    .accordion-body { padding: 8px; }
+    .accordion.closed .accordion-head { border-bottom: 0; }
+    .accordion.closed .accordion-body { display: none; }
+    .scrim { position: absolute; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(0,0,0,.28); }
+    .modal { width: 100%; max-height: 580px; overflow: auto; padding: 14px; border: 2px solid var(--ink); border-radius: 12px; background: #fff; }
+    .sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 74%; overflow: auto; padding: 14px; border-top: 2px solid var(--ink); background: #fff; }
+    .immersive-canvas { position: absolute; inset: 0; background: repeating-linear-gradient(45deg, #efefeb 0, #efefeb 17px, #dadad5 17px, #dadad5 18px); }
+    .overlay-top { position: absolute; left: 10px; right: 10px; top: 38px; display: flex; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--ink); background: #fff; }
+    .overlay-panel { position: absolute; left: 10px; right: 10px; top: 105px; bottom: 180px; overflow: auto; padding: 10px; border: 1px solid var(--ink); background: rgba(255,255,255,.96); }
+    .overlay-transport { position: absolute; left: 10px; right: 10px; bottom: 12px; padding: 10px; border: 1px solid var(--ink); background: #fff; }
+    .lyric { padding: 8px 0; color: var(--muted); font-size: 11px; }
+    .lyric.on { color: var(--ink); font-size: 15px; font-weight: 800; }
+    .frame-notes { min-height: 92px; padding: 10px 4px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+    .frame-notes b { color: var(--ink); }
+    .flowline { display: grid; grid-template-columns: 48px 1fr; gap: 8px; margin-top: 5px; }
+    .flowline span:first-child { color: var(--ink); font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+    .coverage td:first-child { width: 26%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+    .footer { margin-top: 48px; padding: 22px 0; border-top: 2px solid var(--ink); color: var(--muted); }
+
+    @media (max-width: 980px) {
+      .doc-head, .section-head { grid-template-columns: 1fr; }
+      .statbox { min-width: 0; }
+      .decision-grid { grid-template-columns: 1fr 1fr; }
+      .journey { grid-template-columns: repeat(3, 1fr); }
+      .journey-step:nth-child(3)::after { display: none; }
+    }
+    @media (max-width: 620px) {
+      .document { padding: 16px; }
+      .toolbar { margin: 0 -16px; padding: 10px 16px; }
+      .jump-select { width: 100%; max-width: none; margin-left: 0; }
+      .decision-grid, .journey { grid-template-columns: 1fr; }
+      .journey-step::after { display: none; }
+      .frame-grid { grid-template-columns: minmax(0, 1fr); }
+      .phone { transform-origin: top center; }
+    }
+    @media print {
+      body { background: #fff; }
+      .document { width: 100%; padding: 12mm; }
+      .toolbar { display: none; }
+      .doc-head { page-break-after: always; }
+      .frame-card { break-inside: avoid; page-break-inside: avoid; }
+      .frame-card[hidden] { display: block; }
+      .frame-grid { grid-template-columns: repeat(2, 1fr); gap: 12mm 8mm; }
+      .phone { box-shadow: none; transform: scale(.88); transform-origin: top center; margin-bottom: -78px; }
+      .section { break-before: page; }
+    }
+  </style>
+</head>
+<body>
+  <main class="document">
+    <header class="doc-head">
+      <div>
+        <p class="eyebrow">Music Visualizer · source scan v1.7.0</p>
+        <h1>Clean-room application wireframe</h1>
+        <p class="lede">A complete structural reconstruction of the Android app. The existing crystal styling, shapes, fonts, glow, color system, spacing, and screen composition were deliberately discarded. Only product capabilities, data, states, and user intent survive into this wireframe.</p>
+      </div>
+      <aside class="statbox">
+        <strong id="frame-count">57</strong>
+        <span>documented application frames</span>
+        <span>5 destinations · 3 audio sources · 2 export workflows</span>
+      </aside>
+    </header>
+
+    <div class="toolbar" aria-label="Wireframe filters">
+      <button class="tool-btn" data-filter="all" aria-pressed="true">All frames</button>
+      <button class="tool-btn" data-filter="Core" aria-pressed="false">Core</button>
+      <button class="tool-btn" data-filter="Immersive" aria-pressed="false">Immersive</button>
+      <button class="tool-btn" data-filter="Library" aria-pressed="false">Library</button>
+      <button class="tool-btn" data-filter="Visuals" aria-pressed="false">Visuals</button>
+      <button class="tool-btn" data-filter="Studio" aria-pressed="false">Studio</button>
+      <button class="tool-btn" data-filter="Settings" aria-pressed="false">Settings</button>
+      <button class="tool-btn" data-filter="System" aria-pressed="false">System</button>
+      <select class="jump-select" id="jump" aria-label="Jump to a frame"><option value="">Jump to a frame…</option></select>
+    </div>
+
+    <section class="section" id="architecture">
+      <div class="section-head">
+        <div><p class="eyebrow">Proposed information architecture</p><h2>Organized around what the person is trying to do</h2></div>
+        <p>The five destinations remain because each serves a distinct job. The internal organization changes where the current app hides a frequent action or overloads a single horizontal tab row.</p>
+      </div>
+
+      <div class="journey" aria-label="Primary user journey">
+        <div class="journey-step"><b>1 · Choose sound</b><small>Device track, microphone, or another app.</small></div>
+        <div class="journey-step"><b>2 · Play</b><small>Transport, waveform, queue, lyrics, sleep and repeat.</small></div>
+        <div class="journey-step"><b>3 · Choose visuals</b><small>Preset, style family, MilkDrop file, or suggested look.</small></div>
+        <div class="journey-step"><b>4 · Shape the look</b><small>Parameters, palette, automation, layers, textures and shaders.</small></div>
+        <div class="journey-step"><b>5 · Perform / render</b><small>Record a take or render the current visual.</small></div>
+        <div class="journey-step"><b>6 · Edit / share</b><small>Trim, grade, reframe, caption and use the system share sheet.</small></div>
+      </div>
+
+      <table aria-label="Navigation destinations">
+        <thead><tr><th>Destination</th><th>Owns</th><th>Persistent cross-links</th></tr></thead>
+        <tbody>
+          <tr><td><b>Now</b></td><td>Audio-source choice, current media, playback, quick input controls and entry to immersive visuals.</td><td>Global search, Library, Visuals, Queue.</td></tr>
+          <tr><td><b>Library</b></td><td>Tracks, albums, artists, playlists, folders and track metadata.</td><td>Play starts a queue; mini-player persists.</td></tr>
+          <tr><td><b>Visuals</b></td><td>Presets, style selection, editing, textures, MilkDrop assets and takes.</td><td>Live preview, record take, open immersive player.</td></tr>
+          <tr><td><b>Studio</b></td><td>New visual renders plus the rendered-video clip library and editor.</td><td>Render result to share sheet; export defaults in Settings.</td></tr>
+          <tr><td><b>Settings</b></td><td>Appearance, audio, storage, behavior, accessibility/safety, defaults and legal information.</td><td>Drill-down index replaces six compressed tabs.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section" id="decisions">
+      <div class="section-head">
+        <div><p class="eyebrow">Clean-room decisions</p><h2>What changed before visual design begins</h2></div>
+        <p>These are structural hypotheses, not a final visual direction. They can be revised without losing the source-derived feature inventory below.</p>
+      </div>
+      <div class="decision-grid">
+        <article class="decision"><b>1</b><h3>Sound source is explicit</h3><p>Local track, microphone, and other-app capture are peers at the top of Now instead of being scattered between quick actions and Settings.</p></article>
+        <article class="decision"><b>2</b><h3>Rendering belongs to Studio</h3><p>“New render” is a primary Studio action. Settings stores defaults only; it no longer hides the main door into export.</p></article>
+        <article class="decision"><b>3</b><h3>Settings uses drill-down pages</h3><p>An index scales better than six horizontally scrolling tabs and gives each long settings domain a stable back destination.</p></article>
+        <article class="decision"><b>4</b><h3>Visual controls are grouped</h3><p>Long parameter pages use named expandable groups. The full control set remains present without presenting every slider as one unbroken wall.</p></article>
+        <article class="decision"><b>5</b><h3>Search is global</h3><p>Because it already returns tracks, playlists and presets, Search is treated as an app-level overlay rather than as a Library-only utility.</p></article>
+        <article class="decision"><b>6</b><h3>System UI stays visibly external</h3><p>Permissions, file pickers, capture consent, wallpaper setup and share sheets are shown as Android handoffs rather than falsely designed as app screens.</p></article>
+      </div>
+    </section>
+
+    <section class="section" id="catalog">
+      <div class="section-head">
+        <div><p class="eyebrow">Complete screen catalog</p><h2>Reachable screens, variants, overlays and system boundaries</h2></div>
+        <p>Every frame is grayscale and intentionally generic. Scroll inside a phone to inspect long screens. Buttons with destinations jump to the related frame.</p>
+      </div>
+      <div class="catalog-summary" id="catalog-summary"></div>
+      <div class="frame-grid" id="frames"></div>
+    </section>
+
+    <section class="section" id="coverage">
+      <div class="section-head">
+        <div><p class="eyebrow">Source coverage</p><h2>How the app scan maps to the wireframe</h2></div>
+        <p>The map begins at <code>AppRoot</code> and follows every reachable Compose child, modal, activity-result launcher and system handoff. Rendering-engine internals are excluded unless they create a user-facing control.</p>
+      </div>
+      <table class="coverage">
+        <thead><tr><th>Source surface</th><th>Wireframe coverage</th></tr></thead>
+        <tbody>
+          <tr><td>AppShell.kt / BootIntro.kt</td><td>C01–C06, X01; shell, boot, bottom navigation, mini-player, search and crash report.</td></tr>
+          <tr><td>PlayerScreen.kt / VisualizerScreen.kt / PlayerPanels.kt</td><td>C02–C05, I01–I04; three audio-source modes, transport, waveform, spectrum, A–B, auto modes, lyrics and queue.</td></tr>
+          <tr><td>LibraryScreen.kt / TrackInfoEditor.kt</td><td>L01–L10; permission, tracks, groups, playlists, folders, row actions and metadata editing.</td></tr>
+          <tr><td>VisualsHub.kt / CustomizeTabs.kt / PaletteMaker.kt</td><td>V01–V17; presets, folders, styles, MilkDrop, every parameter family, shaders, textures and takes.</td></tr>
+          <tr><td>StudioScreen.kt</td><td>S01, S04–S07; clip library, trim, looks, framing, caption, render and share result.</td></tr>
+          <tr><td>ExportHost.kt / SettingsDialog.kt / ExportSettings.kt</td><td>S02–S03, T05; export defaults, render setup, take choice, progress, result and destination selection.</td></tr>
+          <tr><td>AppSettingsTab.kt and per-domain settings files</td><td>T01–T09; appearance, playback, EQ, analysis, inputs, storage, interaction, displays, safety, auto visuals, wallpaper and about.</td></tr>
+          <tr><td>Activity-result launchers / Android intents</td><td>X03; media permission, mic permission, playback-capture consent, notification access, file/folder pickers, wallpaper and share sheet.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer class="footer">Structure reference only. No current styling, visual hierarchy, component silhouette, motion language, typography, crystal material, glow behavior or theme artwork is carried into this file.</footer>
+  </main>
+
+  <script>
+    const navItems = ["Now", "Library", "Visuals", "Studio", "Settings"];
+    const groups = ["Core", "Immersive", "Library", "Visuals", "Studio", "Settings", "System"];
+    const icons = { search: "⌕", back: "‹", more: "⋮", close: "×", record: "●", layers: "▱", live: "▣", edit: "✎", share: "↗", heart: "♡", delete: "×", add: "+" };
+
+    function chips(items, active = 0) {
+      return `<div class="row wrap">${items.map((x, i) => `<span class="chip ${i === active ? "on" : ""}">${x}</span>`).join("")}</div>`;
+    }
+    function tabs(items, active = 0, cls = "top-tabs") {
+      return `<div class="${cls}">${items.map((x, i) => `<span class="${i === active ? "on" : ""}">${x}</span>`).join("")}</div>`;
+    }
+    function btn(label, goto = "", kind = "") {
+      return `<button class="btn ${kind}"${goto ? ` data-goto="${goto}"` : ""}>${label}</button>`;
+    }
+    function field(label, multiline = false) { return `<div class="field ${multiline ? "multiline" : ""}">${label}</div>`; }
+    function slider(label, value = "") {
+      return `<div class="control"><div class="control-head"><span>${label}</span><span>${value}</span></div><div class="slider"></div></div>`;
+    }
+    function toggle(label, on = false, meta = "") {
+      return `<div class="row spread control"><div><div class="primary">${label}</div>${meta ? `<div class="secondary">${meta}</div>` : ""}</div><span class="toggle ${on ? "on" : ""}"></span></div>`;
+    }
+    function listRow(title, subtitle = "", right = "›", art = false, badge = "") {
+      return `<div class="list-row">${art ? '<span class="art"></span>' : ""}<div class="grow"><div class="primary">${title}</div>${subtitle ? `<div class="secondary">${subtitle}</div>` : ""}</div>${badge ? `<span class="badge">${badge}</span>` : ""}<span class="chev">${right}</span></div>`;
+    }
+    function card(title, body, extra = "") {
+      return `<section class="wire-card ${extra}"><div class="section-label">${title}</div>${body}</section>`;
+    }
+    function accordion(title, body = "", open = false) {
+      return `<section class="accordion ${open ? "" : "closed"}"><div class="accordion-head"><span>${title}</span><span>${open ? "−" : "+"}</span></div><div class="accordion-body">${body}</div></section>`;
+    }
+    function transport() {
+      return `<div class="transport"><span>↝</span><span>◀</span><b>▶</b><span>▶</span><span>↻</span></div>`;
+    }
+    function preview(label = "LIVE VISUAL / ARTWORK PREVIEW", small = false) {
+      return `<div class="preview ${small ? "small" : ""}"><span>${label}</span></div>`;
+    }
+    function miniPlayer() {
+      return `<div class="mini-player"><span class="mini-art"></span><span class="mini-title"><b>Current track</b><br>Artist · 2:16 / 5:08</span><span class="mini-controls">◀ ▶</span></div>`;
+    }
+    function bottomNav(active) {
+      return `<div class="bottom-nav">${navItems.map(x => `<div class="${x === active ? "on" : ""}">${x}</div>`).join("")}</div>`;
+    }
+    function appbar(title, over = "Music Visualizer", actions = "") {
+      return `<div class="appbar"><div class="titles"><div class="over">${over}</div><div class="title">${title}</div></div>${actions}</div>`;
+    }
+    function phone(frame) {
+      if (frame.immersive) {
+        return `<div class="phone fullscreen no-nav"><div class="statusbar"><span>9:41</span><span>signal · battery</span></div><div class="screen-body">${frame.body}</div></div>`;
+      }
+      const hasTabs = Boolean(frame.tabs);
+      const hasMini = Boolean(frame.mini);
+      const noNav = Boolean(frame.noNav);
+      return `<div class="phone ${hasTabs ? "has-tabs" : ""} ${hasMini ? "has-mini" : ""} ${noNav ? "no-nav" : ""}">
+        <div class="statusbar"><span>9:41</span><span>signal · battery</span></div>
+        ${appbar(frame.appTitle || frame.title, frame.over || "Music Visualizer", frame.actions || "")}
+        ${frame.tabs || ""}
+        <div class="screen-body">${frame.body}</div>
+        ${hasMini ? miniPlayer() : ""}
+        ${noNav ? "" : bottomNav(frame.destination || "Now")}
+      </div>`;
+    }
+
+    const playerControls = `${card("Track position", `<div class="row"><small>1:42</small><div class="grow wave"></div><small>5:08</small></div>${transport()}${chips(["A–B", "Auto: off", "Queue · 8"], 2)}`)}`;
+    const controlHeader = `${chips(["Randomize tab", "Reset", "12 changed"], 0)}`;
+    const editTabs = active => tabs(["Motion", "Shape", "Behavior", "Color", "FX", "Fluid", "Special"], active, "sub-tabs");
+
+    const frames = [
+      {
+        id: "C01", group: "Core", title: "Launch and optional intro", path: "launch → boot intro → Now", noNav: true,
+        body: `<div class="stack" style="height:100%;align-content:center;text-align:center"><div class="preview small" style="min-height:220px"><b>APP MARK / WORDMARK</b><br><span>optional motion area</span></div><h3>Music Visualizer</h3><div class="secondary">Short product promise</div>${btn("Skip", "C02", "subtle")}</div>`,
+        purpose: "One-process intro that can be skipped and disabled. The system splash precedes it.", entry: "Fresh process start.", exit: "Automatic completion or tap → C02."
+      },
+      {
+        id: "C02", group: "Core", title: "Now · no active source", path: "Now / empty", destination: "Now", actions: `<button class="iconbtn" data-goto="C06">${icons.search}</button>`,
+        body: `<div class="stack">${card("Sound source", chips(["My music", "Microphone", "Other apps"], 0))}${preview("NO SOUND SOURCE", true)}${card("Nothing playing", `<div class="primary">Choose something to play</div><div class="secondary">Your library, listening history, or the room.</div><div class="row wrap" style="margin-top:10px">${btn("Resume last played", "C03", "filled")}${btn("Open library", "L02")}</div>`)}${card("Playback", `${transport()}<div class="note">Controls remain visible but disabled until media exists.</div>`)}${card("Quick start", chips(["Live input", "Other apps", "Sleep 30m", "Shuffle all"]))}</div>`,
+        purpose: "First-use and no-media state. It still reads as a player and exposes every path into sound.", entry: "App opens with no resumable media.", exit: "Library, resume, mic, other-app capture or Search."
+      },
+      {
+        id: "C03", group: "Core", title: "Now · local track", path: "Now / local media", destination: "Now", actions: `<button class="iconbtn" data-goto="C06">${icons.search}</button>`,
+        body: `<div class="stack">${card("Sound source", chips(["My music", "Microphone", "Other apps"], 0))}<div data-goto="I01">${preview("ARTWORK OR LIVE VISUAL — TAP TO EXPAND")}</div>${card("Now playing", `<div class="row"><div class="grow"><div class="primary">Track title</div><div class="secondary">Artist · Album</div></div><span class="iconbtn">♡</span></div><div class="row spread" style="margin-top:8px"><span class="chip">Current style</span>${btn("Open visual", "I01")}</div>`)}${playerControls}<div class="spectrum" aria-label="Live spectrum"></div>${card("Up next", `<div class="list">${listRow("Next track", "Artist")}${listRow("Another track", "Artist")}${listRow("Third track", "Artist")}</div>${btn("Open full queue", "I03", "block")}`)}${card("Quick actions", chips(["Live input", "Other apps", "Sleep 30m", "Shuffle all"]))}</div>`,
+        purpose: "Primary playback state with an obvious door into immersive visuals.", entry: "Play any local track or resume history.", exit: "Visualizer, queue, search, source switch or another destination."
+      },
+      {
+        id: "C04", group: "Core", title: "Now · microphone input", path: "Now / source: microphone", destination: "Now", actions: `<button class="iconbtn" data-goto="C06">${icons.search}</button>`,
+        body: `<div class="stack">${card("Sound source", chips(["My music", "Microphone", "Other apps"], 1))}${preview("LIVE VISUAL — REACTING TO ROOM")}${card("Live input", `<div class="row spread"><div><div class="primary">The room</div><div class="secondary">Whatever the microphone hears</div></div>${btn("Stop")}</div><div class="note" style="margin-top:8px">Audio is analyzed live. It is not recorded or sent.</div>`)}<div class="spectrum"></div>${card("Input profile", chips(["Speech", "Acoustic", "Club", "Ambient"], 1))}${card("Permission / unavailable variants", `<div class="error">Microphone permission is off.</div><div class="error" style="margin-top:6px">Microphone is busy in another app.</div>`)}</div>`,
+        purpose: "Makes live input a primary source rather than a hidden setting.", entry: "Choose Microphone from the source selector or quick action.", exit: "Stop, switch source, or open immersive visualizer."
+      },
+      {
+        id: "C05", group: "Core", title: "Now · another app’s audio", path: "Now / source: playback capture", destination: "Now", actions: `<button class="iconbtn" data-goto="C06">${icons.search}</button>`,
+        body: `<div class="stack">${card("Sound source", chips(["My music", "Microphone", "Other apps"], 2))}${preview("LIVE VISUAL — DEVICE AUDIO")}${card("Captured audio", `<div class="row spread"><div><div class="primary">Foreign track title</div><div class="secondary">Artist · Source app</div></div>${btn("Stop capture")}</div>`)}${card("Optional metadata access", `${toggle("Show track and artist", false, "Requires Android notification/media-session access.")}${btn("Open Android access screen")}`)}${card("App refuses capture", `<div class="error"><b>Digital silence</b><br>This app does not permit playback capture.</div><div class="secondary" style="margin:8px 0">The microphone can still hear the speaker.</div>${btn("Use microphone instead", "C04", "filled")}`)}</div>`,
+        purpose: "Covers active capture, optional now-playing metadata and the known refusal case.", entry: "Choose Other apps and accept Android capture consent.", exit: "Stop, fall back to microphone, or open visualizer."
+      },
+      {
+        id: "C06", group: "Core", title: "Global search", path: "overlay / search", noNav: true, actions: `<button class="iconbtn">${icons.close}</button>`,
+        body: `<div class="stack">${field("Search tracks, playlists & presets")}${card("Tracks · 12", `<div class="list">${listRow("Track title", "Artist · Album", "+", true)}${listRow("Second result", "Artist · Album", "+", true)}</div>`)}${card("Playlists · 2", `<div class="list">${listRow("Late night", "19 tracks")}${listRow("Favourites", "34 tracks")}</div>`)}${card("Presets · 3", `<div class="list">${listRow("Fluid bloom")}${listRow("Hyperspace · Molten")}${listRow("Cymatics · Fine sand")}</div>`)}<div class="empty">Variants: type-to-search · no results · search field cleared</div></div>`,
+        purpose: "One overlay because the actual search already spans three product domains.", entry: "Search action from Now or Library; proposed globally in app bars.", exit: "Play/enqueue track, play playlist, apply preset, or close."
+      },
+
+      {
+        id: "I01", group: "Immersive", title: "Fullscreen visualizer · transport", path: "overlay / immersive / Now", immersive: true,
+        body: `<div class="immersive-canvas"></div><div class="overlay-top"><span class="iconbtn" data-goto="C03">⌄</span><div class="grow"><div class="primary">Track title</div><div class="secondary">Artist</div></div><span class="iconbtn">♡</span></div><div class="overlay-transport"><div class="row"><small>1:42</small><div class="grow wave"></div><small>5:08</small></div>${transport()}<div class="row spread">${btn("Visuals", "V01")}${btn("Auto: off")}</div>${chips(["Now", "Lyrics", "Queue", "A–B"], 0)}</div>`,
+        purpose: "Visuals dominate; playback chrome can be hidden with a canvas tap.", entry: "Tap preview/mini-player or View live.", exit: "Collapse, open Visuals, Lyrics or Queue."
+      },
+      {
+        id: "I02", group: "Immersive", title: "Fullscreen visualizer · lyrics", path: "overlay / immersive / Lyrics", immersive: true,
+        body: `<div class="immersive-canvas"></div><div class="overlay-top"><span class="iconbtn" data-goto="C03">⌄</span><div class="grow"><div class="primary">Track title</div><div class="secondary">Timed lyrics</div></div></div><div class="overlay-panel"><div class="lyric">A line that has already passed</div><div class="lyric">Another earlier line</div><div class="lyric on">The current lyric is emphasized</div><div class="lyric">The next line can be read ahead</div><div class="lyric">Tap any timed line to seek</div><div class="note">No-lyrics variant explains .lrc and embedded-tag support; nothing is fetched.</div></div><div class="overlay-transport">${chips(["Now", "Lyrics", "Queue", "A–B"], 1)}</div>`,
+        purpose: "Timed or untimed lyrics float over the live canvas and follow playback.", entry: "Lyrics chip in I01.", exit: "Tap line to seek, switch panel, or collapse."
+      },
+      {
+        id: "I03", group: "Immersive", title: "Fullscreen visualizer · editable queue", path: "overlay / immersive / Queue", immersive: true,
+        body: `<div class="immersive-canvas"></div><div class="overlay-top"><span class="iconbtn" data-goto="C03">⌄</span><div class="grow"><div class="primary">Queue</div><div class="secondary">8 tracks</div></div>${btn("Save as playlist", "L09")}</div><div class="overlay-panel"><div class="list">${listRow("Playing now", "Artist · ★", "↑ ×", true)}${listRow("Next track", "Artist", "↑ ×", true)}${listRow("Third track", "Artist", "↑ ×", true)}${listRow("Fourth track", "Artist", "↑ ×", true)}${listRow("Fifth track", "Artist", "↑ ×", true)}</div></div><div class="overlay-transport">${chips(["Now", "Lyrics", "Queue", "A–B"], 2)}</div>`,
+        purpose: "Jump, pull forward, remove and save the queue as a playlist without leaving the visualizer.", entry: "Queue chip or Now queue preview.", exit: "Play row, save playlist, switch panel or collapse."
+      },
+      {
+        id: "I04", group: "Immersive", title: "External display control surface", path: "immersive / second screen", immersive: true,
+        body: `<div class="immersive-canvas"></div><div class="overlay-top"><span class="iconbtn">⌄</span><div class="grow"><div class="primary">Showing on Living Room TV</div><div class="secondary">This phone remains the control surface.</div></div></div><div class="overlay-panel" style="top:190px;bottom:250px;text-align:center"><h3>Visuals moved to the connected display</h3><p class="secondary">The canvas is not mirrored. All controls here still affect the external view.</p>${btn("Open display settings", "T07")}</div><div class="overlay-transport">${transport()}${chips(["Now", "Lyrics", "Queue", "A–B"], 0)}</div>`,
+        purpose: "Explains the otherwise blank phone canvas when the single renderer moves to another display.", entry: "Connected-display setting enabled with an available display.", exit: "Control playback, disable second screen, or collapse."
+      },
+
+      {
+        id: "L01", group: "Library", title: "Library · media access", path: "Library / permission", destination: "Library", actions: `<button class="iconbtn" data-goto="C06">${icons.search}</button>`,
+        body: `<div class="stack">${card("Music access", `<div class="empty">Device music is hidden until Android grants media access.</div><div class="row wrap" style="margin-top:10px">${btn("Allow music access", "L02", "filled")}${btn("Not now", "C02")}</div>`)}${card("What this enables", `<div class="secondary">Tracks · albums · artists · device folders · artwork · embedded metadata</div>`)}</div>`,
+        purpose: "App-side explanation before or after the Android permission prompt.", entry: "Library opened without media permission.", exit: "Android permission handoff or return."
+      },
+      {
+        id: "L02", group: "Library", title: "Library · tracks", path: "Library / Tracks", destination: "Library", mini: true, actions: `<button class="iconbtn" data-goto="C06">${icons.search}</button>`, tabs: tabs(["Tracks", "Albums", "Artists", "Playlists", "Folders"], 0),
+        body: `<div class="list">${listRow("Track title", "Artist · Album · Key", "⋮", true, "128 BPM")}${listRow("Another track", "Artist · Genre", "⋮", true, "Analysed")}${listRow("Unanalysed track", "Artist · Album", "⋮", true)}${listRow("Long title truncates safely", "Artist · Album · Genre · Key", "⋮", true, "142 BPM")}${listRow("Fifth track", "Unknown artist", "⋮", true)}</div><div class="note" style="margin-top:8px">Tapping a row plays from the visible list, which becomes the queue.</div>`,
+        purpose: "Flat device track index with analysis state and row actions.", entry: "Library bottom destination.", exit: "Play row, open actions, search, or switch category."
+      },
+      {
+        id: "L03", group: "Library", title: "Track actions", path: "Library / track / actions sheet", noNav: true,
+        body: `<div class="list" style="opacity:.5">${listRow("Track title", "Artist · Album", "⋮", true)}${listRow("Another track", "Artist", "⋮", true)}${listRow("Third track", "Artist", "⋮", true)}</div><div class="sheet"><div class="section-label">Track title</div><div class="list">${listRow("Play next", "", "")}${listRow("Add to queue", "", "")}${listRow("Add to playlist", "", "›")}${listRow("Add to library list", "", "")}${listRow("Edit track info", "", "›")}</div></div>`,
+        purpose: "Consolidates the five existing per-track commands in one reachable surface.", entry: "Overflow on L02 or group track row.", exit: "Action, playlist picker, metadata editor or dismiss."
+      },
+      {
+        id: "L04", group: "Library", title: "Track information editor", path: "Library / track / edit", noNav: true,
+        body: `<div class="scrim"><div class="modal stack"><h3>Track info</h3>${field("Title")}${field("Artist")}${field("Album")}${field("Genre")}${chips(["Electronic", "Rock", "Pop", "Hip-Hop", "Jazz", "Classical", "Ambient", "Other"], 0)}<div class="row"><div class="grow">${field("Year")}</div><div class="grow">${field("Track #")}</div></div>${field("Comment / info", true)}<div class="note">Edits are stored in the app only; the audio file is not modified.</div><div class="row spread">${btn("Cancel")}${btn("Save", "L02", "filled")}</div></div></div>`,
+        purpose: "App-side metadata overrides for title, artist, album, genre, year, number and comment.", entry: "Edit track info from L03.", exit: "Save or cancel."
+      },
+      {
+        id: "L05", group: "Library", title: "Albums and artists", path: "Library / Albums or Artists", destination: "Library", mini: true, actions: `<button class="iconbtn" data-goto="C06">${icons.search}</button>`, tabs: tabs(["Tracks", "Albums", "Artists", "Playlists", "Folders"], 1),
+        body: `<div class="list">${listRow("Album or artist name", "12 tracks", "›", true)}${listRow("Second group", "8 tracks", "›", true)}${listRow("No-name group", "3 tracks", "›", true)}${listRow("Fourth group", "16 tracks", "›", true)}</div><div class="note" style="margin-top:8px">The same group-list pattern serves Albums, Artists and device folder drill-ins.</div>`,
+        purpose: "Grouped browse view with a shared two-level navigation pattern.", entry: "Albums or Artists category.", exit: "Open group detail or switch category."
+      },
+      {
+        id: "L06", group: "Library", title: "Album / artist / folder detail", path: "Library / group / tracks", destination: "Library", mini: true, actions: `<button class="iconbtn">${icons.search}</button>`,
+        body: `<div class="stack"><div class="row"><button class="btn" data-goto="L05">‹ Back</button><div class="grow"><div class="primary">Group name</div><div class="secondary">12 tracks</div></div></div><div class="row">${btn("Play all", "C03", "filled")}${btn("Shuffle", "C03")}</div><div class="list">${listRow("Track one", "Album", "⋮", true)}${listRow("Track two", "Album", "⋮", true)}${listRow("Track three", "Album", "⋮", true)}${listRow("Track four", "Album", "⋮", true)}</div></div>`,
+        purpose: "Shared drill-in with Play all, Shuffle and a queue based on the visible group.", entry: "Open a row in L05 or a folder group.", exit: "Back, play, shuffle or row actions."
+      },
+      {
+        id: "L07", group: "Library", title: "Playlists", path: "Library / Playlists", destination: "Library", mini: true, tabs: tabs(["Tracks", "Albums", "Artists", "Playlists", "Folders"], 3),
+        body: `<div class="stack">${btn("+ New playlist", "L09")}<div class="list">${listRow("Morning motion", "18 tracks", "✎  ▶  ×")}${listRow("Deep focus", "34 tracks", "✎  ▶  ×")}${listRow("Favourite set", "8 tracks", "✎  ▶  ×")}</div><div class="empty">Empty state explains New playlist, Save queue and Add to playlist.</div></div>`,
+        purpose: "Create, expand, rename, play and delete playlists.", entry: "Playlists category.", exit: "New, play, rename/delete confirmation or expand."
+      },
+      {
+        id: "L08", group: "Library", title: "Expanded playlist and reorder", path: "Library / Playlists / expanded", destination: "Library", mini: true, tabs: tabs(["Tracks", "Albums", "Artists", "Playlists", "Folders"], 3),
+        body: `<div class="stack">${card("Morning motion · 5 tracks", `<div class="row spread">${btn("Play", "C03", "filled")}${btn("Rename")}${btn("Delete")}</div>`)}<div class="list">${listRow("≡  Track one", "Long-press row to drag", "↑ ↓ ×", true)}${listRow("≡  Track two", "Accessible button reorder remains", "↑ ↓ ×", true)}${listRow("≡  Track three", "", "↑ ↓ ×", true)}${listRow("≡  Track four", "", "↑ ↓ ×", true)}</div><div class="note">Drag is local to the visible list; buttons provide one-hand and assistive access.</div></div>`,
+        purpose: "Playlist order is editable by long-press drag and explicit move buttons.", entry: "Expand playlist in L07.", exit: "Play, reorder, remove, collapse, rename or delete."
+      },
+      {
+        id: "L09", group: "Library", title: "Add, create or save playlist", path: "modal / playlist naming", noNav: true,
+        body: `<div class="scrim"><div class="modal stack"><h3>Add to playlist</h3><div class="list">${listRow("Morning motion", "18 tracks", "")}${listRow("Deep focus", "34 tracks", "")}${listRow("Favourite set", "8 tracks", "")}${listRow("New playlist…", "", "+")}</div><hr style="border:0;border-top:1px solid var(--line);width:100%"><h3>New playlist</h3>${field("Playlist name")}<div class="error">Validation: blank or already-used names keep Confirm disabled.</div><div class="row spread">${btn("Cancel")}${btn("Create / Save", "L07", "filled")}</div></div></div>`,
+        purpose: "One naming pattern serves new playlists, queue save and per-track Add to playlist.", entry: "Track action, Playlists tab, or queue Save as playlist.", exit: "Choose existing, create new or cancel."
+      },
+      {
+        id: "L10", group: "Library", title: "Folders", path: "Library / Folders", destination: "Library", mini: true, tabs: tabs(["Tracks", "Albums", "Artists", "Playlists", "Folders"], 4),
+        body: `<div class="stack">${card("Library folders", `<div class="list">${listRow("Music", "Imported root", "×")}${listRow("Downloads", "Imported root", "×")}</div><div class="row" style="margin-top:8px">${btn("Add folder")}${btn("Rescan")}</div>`)}${card("Device folders", `<div class="list">${listRow("Albums", "126 tracks")}${listRow("Recordings", "18 tracks")}${listRow("DJ sets", "42 tracks")}</div>`)}<div class="note">Cloud sources are not shown: the app intentionally has no network permission.</div></div>`,
+        purpose: "Manages persistent roots and drills into MediaStore folder groups.", entry: "Folders category.", exit: "System folder picker, rescan, remove or open group detail."
+      },
+
+      {
+        id: "V01", group: "Visuals", title: "Visuals · presets hub", path: "Visuals / Presets", destination: "Visuals", mini: true,
+        actions: `<button class="iconbtn">${icons.record}</button><button class="iconbtn">${icons.layers}</button>${btn("View live", "I01")}`,
+        tabs: tabs(["Presets", "Styles", "Edit", "Textures", "Takes"], 0),
+        body: `<div class="stack"><div class="row wrap">${btn("Paste shared preset")}${btn("Open preset file")}</div>${field("New folder name")}${btn("Add folder")}${card("Presets", `<div class="list">${listRow("Fluid bloom", "Root", "▶ ↗ ♡ ⇢ ×")}${listRow("Calm water", "Root", "▶ ↗ ♥ ⇢ ×")}</div>`)}${card("📁 Live set", `<div class="list">${listRow("Opening", "Saved look", "▶ ↗ ♡ ⇢ ×")}${listRow("Peak", "Saved look", "▶ ↗ ♥ ⇢ ×")}</div>`)}${card("Built-in for active style", `<div class="list">${listRow("Built-in look one", "", "▶")}${listRow("Built-in look two", "", "▶")}</div>`)}${card("Save current", `${field("Preset name")}${chips(["root", "Live set", "Calm"], 0)}${btn("Save", "V03", "filled")}`)}</div>`,
+        purpose: "Apply, share, playlist-heart, file, delete and save looks without mixing them with style selection.", entry: "Visuals destination.", exit: "Apply, file actions, Style, Edit, Texture, Take or live view."
+      },
+      {
+        id: "V02", group: "Visuals", title: "Preset folder and file actions", path: "Visuals / Presets / actions", noNav: true,
+        body: `<div class="scrim"><div class="modal stack"><h3>Move “Fluid bloom”</h3><div class="section-label">Destination</div>${chips(["root", "Live set", "Calm", "Experiments"], 1)}<div class="row spread">${btn("Close")}${btn("Move", "V01", "filled")}</div><hr style="border:0;border-top:1px solid var(--line);width:100%"><h3>Rename folder</h3>${field("Live set")}<div class="error">Collision and blank-name validation appears inline.</div><div class="row spread">${btn("Cancel")}${btn("Rename", "V01")}</div></div></div>`,
+        purpose: "Folder rename and preset move share one explicit destination vocabulary including root.", entry: "Folder pencil or move action in V01.", exit: "Commit or dismiss."
+      },
+      {
+        id: "V03", group: "Visuals", title: "Save, replace or delete preset", path: "Visuals / Presets / destructive confirm", noNav: true,
+        body: `<div class="scrim"><div class="modal stack"><h3>Replace “Fluid bloom”?</h3><p class="secondary">A preset with this name already exists. Replacing its look has no undo.</p><div class="row spread">${btn("Cancel")}${btn("Replace", "V01", "filled")}</div><hr style="border:0;border-top:1px solid var(--line);width:100%"><h3>Delete preset?</h3><p class="secondary">The saved file is removed. Share it first if it may be needed later.</p><div class="row spread">${btn("Cancel")}${btn("Delete", "V01")}</div></div></div>`,
+        purpose: "Makes overwriting and deletion explicit because both discard user-authored work.", entry: "Save duplicate name or delete action.", exit: "Confirm or cancel."
+      },
+      {
+        id: "V04", group: "Visuals", title: "Styles · family chooser", path: "Visuals / Styles", destination: "Visuals", mini: true, actions: `<button class="iconbtn">${icons.record}</button>${btn("View live", "I01")}`,
+        tabs: tabs(["Presets", "Styles", "Edit", "Textures", "Takes"], 1),
+        body: `<div class="stack">${card("Suggested for this track", `${btn("Cymatics · Drumhead", "V05")}`)}${card("Style families", `<div class="list">${listRow("Particles", "9 styles", "›")}${listRow("Shaders", "22 styles", "›")}${listRow("Fluid", "Fluid · Curl Flow · Water", "›")}${listRow("Cymatics", "11 authored variants", "›")}${listRow("Hyperspace", "11 authored variants", "›")}${listRow("Beam", "Oscilloscope trace", "›")}${listRow("MilkDrop", "Imported .milk presets", "›")}</div>`)}<div class="note">Family selection replaces a seven-item compressed sub-tab row and leaves room for future families.</div></div>`,
+        purpose: "A scalable first level for seven visual families and track suggestions.", entry: "Styles tab.", exit: "Open family list or apply suggestion."
+      },
+      {
+        id: "V05", group: "Visuals", title: "Styles · family list", path: "Visuals / Styles / family", destination: "Visuals", mini: true, actions: `<button class="iconbtn">‹</button>${btn("View live", "I01")}`,
+        body: `<div class="stack">${card("Hyperspace · 11", `<div class="list">${listRow("Original · Living Fractals", "", "○")}${listRow("Polytope", "", "●")}${listRow("Liquid Warp", "", "○")}${listRow("Caduceus", "", "○")}${listRow("Cortex", "", "○")}${listRow("Reliquary", "", "○")}${listRow("Moiré", "", "○")}${listRow("Foam", "", "○")}${listRow("Dustskin", "", "○")}${listRow("Plume", "", "○")}${listRow("Resonant Wormhole", "", "○")}</div>`)}<div class="note">Equivalent lists exist for Particles (9), Shaders (22), Fluid (3), Cymatics (11), Beam (1) and MilkDrop.</div></div>`,
+        purpose: "Shows every selectable style in a family and the current selection.", entry: "Choose a family in V04.", exit: "Apply style, back to families, edit parameters or live view."
+      },
+      {
+        id: "V06", group: "Visuals", title: "MilkDrop presets", path: "Visuals / Styles / MilkDrop", destination: "Visuals", mini: true,
+        body: `<div class="stack"><div class="row">${btn("Load .milk file")}${btn("Textures", "V16")}</div>${card("Your .milk presets", `<div class="list">${listRow("Preset one", "Imported", "●")}${listRow("Preset two", "Imported", "○")}${listRow("Preset three", "Imported", "○")}</div>`)}<div class="error">Parse, missing-texture or engine-unavailable errors appear where the file was chosen.</div><div class="empty">None yet — load a .milk file or save one from the MilkDrop scene.</div></div>`,
+        purpose: "File import, current preset, engine availability and linked texture access.", entry: "MilkDrop family from V04.", exit: "Pick file, apply preset, open Textures or back."
+      },
+      {
+        id: "V07", group: "Visuals", title: "Edit · motion", path: "Visuals / Edit / Motion", destination: "Visuals", mini: true, tabs: tabs(["Presets", "Styles", "Edit", "Textures", "Takes"], 2),
+        body: `<div class="stack">${editTabs(0)}${controlHeader}${accordion("Movement", `${slider("Speed", "1.00")}${slider("Zoom", "1.00")}${slider("Rotation", "0.00")}${slider("Sway", "0.25")}`, true)}${accordion("Drift", `${slider("Drift X", "0.00")}${slider("Drift Y", "0.00")}`)}${accordion("Beat motion", `${slider("Beat pulse", "0.40")}${slider("Beat shake", "0.10")}`)}${accordion("Endless zoom", `${toggle("Endless zoom", false)}${slider("Dive speed", "0.30")}`)}</div>`,
+        purpose: "Movement controls grouped by effect; per-parameter lock affordances are implied on expanded controls.", entry: "Edit tab.", exit: "Adjust, randomize this tab, reset all, or switch parameter family."
+      },
+      {
+        id: "V08", group: "Visuals", title: "Edit · shape", path: "Visuals / Edit / Shape", destination: "Visuals", mini: true, tabs: tabs(["Presets", "Styles", "Edit", "Textures", "Takes"], 2),
+        body: `<div class="stack">${editTabs(1)}${controlHeader}${accordion("Beam · when active", `${toggle("XY plot", false)}${slider("Beam width", "1.0")}${slider("Beam brightness", "1.2")}${slider("Beam tail", ".7")}`)}${accordion("Distortion", `${slider("Domain warp", ".3")}${slider("Ripple", ".2")}${slider("Morph · shader styles", ".0")}${slider("Twist", ".0")}`, true)}${accordion("Symmetry & tiling", `${toggle("Kaleidoscope", true)}${chips(["2", "3", "4", "6", "8", "12"], 3)}${slider("Tile", "1")}`)}${accordion("Stylize", `${slider("Pixelate", "0")}${slider("Posterize", "0")}`)}${accordion("Particles · when available", `${chips(["Round", "Square", "Spark", "Ring"], 0)}${slider("Particle size", "1.0")}`)}</div>`,
+        purpose: "Conditionally exposes controls only to style families that can read them.", entry: "Shape subpage.", exit: "Adjust, randomize, reset or switch subpage."
+      },
+      {
+        id: "V09", group: "Visuals", title: "Edit · behavior and response", path: "Visuals / Edit / Behavior", destination: "Visuals", mini: true, tabs: tabs(["Presets", "Styles", "Edit", "Textures", "Takes"], 2),
+        body: `<div class="stack">${editTabs(2)}${controlHeader}${accordion("Scene transition", `${chips(["crossfade", "wipe", "fade color"], 0)}${field("Search 123 transition definitions")}${slider("Duration", "0.8s")}`)}${accordion("Audio response", `${slider("Audio drive", "1.0")}${slider("Beat response", "1.0")}${slider("Beat flash", ".2")}`, true)}${accordion("Band balance", `${slider("Bass gain", "1.0")}${slider("Mid gain", "1.0")}${slider("Treble gain", "1.0")}`)}${accordion("Texture & motion", `${slider("Turbulence", ".4")}${slider("Density", ".8")}${toggle("Mirror", false)}${toggle("Trails · particles", true)}${slider("Trail length", ".7")}${slider("Trail zoom", "0")}${slider("Trail warp", ".2")}`)}${accordion("Reactivity envelope", `${slider("Attack", ".2")}${slider("Decay", ".3")}`)}${accordion("Scene intelligence", chips(["manual", "suggest", "auto"], 0))}</div>`,
+        purpose: "Transitions, audio mapping, trails and analysis intelligence stay distinct from global Settings behavior.", entry: "Behavior subpage.", exit: "Adjust, search transition library or switch subpage."
+      },
+      {
+        id: "V10", group: "Visuals", title: "Edit · color and palette", path: "Visuals / Edit / Color", destination: "Visuals", mini: true, tabs: tabs(["Presets", "Styles", "Edit", "Textures", "Takes"], 2),
+        body: `<div class="stack">${editTabs(3)}${controlHeader}${accordion("Palettes", `${btn("Take colors from artwork")}${chips(["Neon", "Sunset", "Ocean", "Forest", "Custom 1"], 0)}${slider("Palette blend", ".0")}${slider("MilkDrop palette tint", ".0")}`, true)}${accordion("Gradient maker", `<div class="preview small" style="min-height:30px">GRADIENT SWATCH</div>${slider("Base hue", ".15")}${slider("Hue span", ".65")}<div class="row">${btn("Apply gradient")}${btn("From current")}</div>${field("Palette name")}${btn("Save palette")}`)}${accordion("Hue", `${slider("Hue shift", ".0")}${slider("Hue range", "1.0")}${toggle("Color cycle", false)}${slider("Cycle speed", ".1")}`)}${accordion("Grading", `${slider("Saturation", "1")}${slider("Brightness", "1")}${slider("Contrast", "1")}${slider("Gamma", "1")}${slider("Intensity", "1")}${slider("Temperature", "0")}`)}${accordion("Effects", `${slider("Bloom", ".2")}${toggle("Duotone · shader", false)}${toggle("Solarize", false)}${toggle("Invert", false)}`)}</div>`,
+        purpose: "Built-ins, artwork extraction, custom gradients, saved palettes and grading live in one coherent color workspace.", entry: "Color subpage.", exit: "Apply/save palette, delete saved palette or switch subpage."
+      },
+      {
+        id: "V11", group: "Visuals", title: "Edit · FX, layers and automation", path: "Visuals / Edit / FX", destination: "Visuals", mini: true, tabs: tabs(["Presets", "Styles", "Edit", "Textures", "Takes"], 2),
+        body: `<div class="stack">${editTabs(4)}${controlHeader}${accordion("Settings fade", slider("Fade time", "0s"))}${accordion("Screen FX", `${slider("Chromatic aberration", "0")}${slider("Vignette", ".2")}${slider("Scanlines", "0")}${slider("Film grain", ".1")}${slider("Glitch", "0")}${slider("Fisheye", "0")}${slider("Strobe", "0")}`, true)}${accordion("Layers · second style", `${toggle("Layers enabled", true)}${field("Layer style: Water")}${chips(["screen", "add", "multiply", "difference", "overlay"], 0)}${slider("Layer mix", ".35")}`)}${accordion("ADSR envelopes · 2", `${toggle("Envelope 1 on", true)}${chips(["Brightness", "Bloom", "+"], 0)}${slider("Attack", ".1")}${slider("Decay", ".3")}${slider("Sustain", ".5")}${slider("Release", ".6")}${slider("Amount", ".8")}${chips(["Bass", "Mid", "Treble", "Level"], 0)}${slider("Gate", ".25")}`)}${accordion("LFO automations · 3", `${toggle("LFO 1", true)}${field("Target: Rotation")}${chips(["Sin", "Tri", "Saw", "Sqr", "S&H"], 0)}${toggle("Sync to BPM", true)}${chips(["1/16", "1/8", "1 beat", "2", "4", "8"], 2)}${slider("Depth", ".5")}`)}</div>`,
+        purpose: "Screen effects, second-style compositing, two ADSRs and three chainable LFOs.", entry: "FX subpage.", exit: "Configure layer/targets, adjust effects or switch subpage."
+      },
+      {
+        id: "V12", group: "Visuals", title: "Edit · fluid systems", path: "Visuals / Edit / Fluid", destination: "Visuals", mini: true, tabs: tabs(["Presets", "Styles", "Edit", "Textures", "Takes"], 2),
+        body: `<div class="stack">${editTabs(5)}${controlHeader}${accordion("Water · conditional", `${slider("Wave speed", "1.0")}${slider("Damping", ".98")}${slider("Ripple strength", "1")}${slider("Depth", ".5")}${slider("Specular", ".6")}${slider("Flow drift", ".3")}${slider("Liquid", ".7")}`)}${accordion("Journey · spawn & catch", `${chips(["Line", "Circle", "Spiral", "Random"], 1)}${slider("Spawn points", "4")}${slider("Progression", ".4")}${slider("Catch points", "2")}${slider("Catch pull", "1.2")}${slider("Catch radius", ".1")}`, true)}${accordion("Quality", `${chips(["Low", "Medium", "High", "Ultra"], 1)}${toggle("Auto quality", true)}${slider("Solver iterations", "20")}`)}${accordion("Character and emitters", `${slider("Fluid curl", "20")}${slider("Motion fade", "1")}${slider("Fluid fade", "1")}${slider("Pressure", ".8")}${chips(["Pulse", "Ring", "Arc", "Scatter"], 0)}${slider("Beat splats", "4")}${slider("Stirrers", "2")}${slider("Splat radius", ".1")}${slider("Splat force", "1.3")}`)}${accordion("Particles, ink and look", `${toggle("Particle layer", true)}${slider("Particle drag", ".2")}${slider("Particle life", "8s")}${toggle("Ink layer", true)}${toggle("Shading", true)}${toggle("Glow", true)}${toggle("Sunrays", false)}`)}${accordion("FlowField · all styles", `${toggle("FlowField enabled", false)}${slider("Strength", ".4")}${slider("Force", "1")}${slider("Curl", "10")}${toggle("Particles ride field", true)}`)}${accordion("Water ripples · all styles", `${toggle("Water ripples enabled", false)}${slider("Overlay strength", ".5")}${slider("Ripple glint", ".3")}`)}${accordion("Injection shaders · advanced", `${field("Force shader source", true)}${field("Dye shader source", true)}<div class="row">${btn("Apply shaders")}${btn("Reset built-in")}</div>`)}</div>`,
+        purpose: "All conditional fluid, water, overlay, particle and advanced injection controls are accounted for.", entry: "Fluid subpage.", exit: "Adjust expanded group, edit shaders or switch subpage."
+      },
+      {
+        id: "V13", group: "Visuals", title: "Edit · Cymatics", path: "Visuals / Edit / Cymatics", destination: "Visuals", mini: true, tabs: tabs(["Presets", "Styles", "Edit", "Textures", "Takes"], 2),
+        body: `<div class="stack">${tabs(["Motion", "Shape", "Behavior", "Color", "FX", "Fluid", "Cymatics"], 6, "sub-tabs")}${controlHeader}${accordion("Wave", `${chips(["Water dish", "Chladni plate"], 0)}${slider("Fundamental", "55 Hz")}${slider("Standing waves", "8")}${slider("Tonal focus", ".5")}${slider("Plate ring", ".6")}`, true)}${accordion("Field", `${slider("Field scale", "2.0")}${slider("Wave flow", ".3")}${slider("Field swirl", "0")}`)}${accordion("Look", `${slider("Fill", ".7")}${slider("Nodal lines", "1")}${slider("Nodal glow", ".8")}${slider("Iridescence", ".5")}${slider("Caustic sheen", ".6")}`)}<div class="note">A style may pin Geometry; when it does, the selected geometry is stated instead of showing dead chips.</div></div>`,
+        purpose: "Style-specific controls only appear while a Cymatics variant is active.", entry: "Edit while Cymatics is selected.", exit: "Adjust or switch style/subpage."
+      },
+      {
+        id: "V14", group: "Visuals", title: "Edit · Hyperspace", path: "Visuals / Edit / Hyperspace", destination: "Visuals", mini: true, tabs: tabs(["Presets", "Styles", "Edit", "Textures", "Takes"], 2),
+        body: `<div class="stack">${tabs(["Motion", "Shape", "Behavior", "Color", "FX", "Fluid", "Hyperspace"], 6, "sub-tabs")}${controlHeader}${accordion("Journey", `${chips(["Music", "Hold", "Cycle"], 0)}${chips(["Threshold", "Chrysanthemum", "Magic eye", "Waiting room", "Breakthrough"], 0)}${slider("Act length", "45s")}`, true)}${accordion("Life", `${chips(["Mixed", "Gasket", "Temple", "Jewel", "Coral", "Bulb"], 0)}${slider("Bodies", "1")}${slider("Body life", "18s")}${slider("Body spin", ".7")}${slider("Orbit drift", ".5")}${slider("Camera drift", ".4")}${slider("Fold", ".5")}`)}${accordion("Look", `${slider("Body glow", "1")}${slider("Neon rim", "1")}${slider("Filigree", "1")}${slider("Haze", ".5")}${slider("Colour banding", ".7")}${slider("Mirror folds", "6")}`)}${accordion("Melt", `${slider("Melt", "1")}${slider("Ink stain", ".6")}${slider("Liquid light", ".7")}${slider("Ridges", ".4")}${slider("Stir", "1")}${slider("Vorticity", "20")}${slider("Flow fade", "1")}`)}${accordion("Quality", slider("Detail", "1.0"))}</div>`,
+        purpose: "Journey, living fractal bodies, look, melt medium and quality for Hyperspace variants.", entry: "Edit while Hyperspace is selected.", exit: "Adjust or switch style/subpage."
+      },
+      {
+        id: "V15", group: "Visuals", title: "Edit · GLSL", path: "Visuals / Edit / GLSL", destination: "Visuals", mini: true, tabs: tabs(["Presets", "Styles", "Edit", "Textures", "Takes"], 2),
+        body: `<div class="stack">${tabs(["Motion", "Shape", "Behavior", "Color", "FX", "Fluid", "GLSL"], 6, "sub-tabs")}<div class="note">Fragment source for the active shader style. Audio and FlowField uniforms are available.</div><div class="field multiline" style="min-height:330px;font-family:monospace;white-space:pre">vec3 view(vec2 uv) {\n  // shader draft\n  return pal(...);\n}</div><div class="error">Compiler errors appear here; the last valid program remains active.</div><div class="row">${btn("Apply shader", "I01", "filled")}${btn("Revert")}</div></div>`,
+        purpose: "Advanced source editor with bounded saved draft, compile feedback and revert.", entry: "Edit while a shader-family style is active.", exit: "Apply, revert or switch subpage."
+      },
+      {
+        id: "V16", group: "Visuals", title: "Textures", path: "Visuals / Textures", destination: "Visuals", mini: true, tabs: tabs(["Presets", "Styles", "Edit", "Textures", "Takes"], 3),
+        body: `<div class="stack">${btn("Import images")}${card("Imported textures", `<div class="list">${listRow("liquid-01.png", "Imported image", "Use  ×", true)}${listRow("forest.jpg", "Imported image", "Use  ×", true)}${listRow("noise-map.png", "Imported image", "Use  ×", true)}</div>`)}<div class="empty">No textures imported yet.</div><div class="error">Delete warns that MilkDrop presets referencing the file may show noise or black.</div></div>`,
+        purpose: "Multiple-image import, use in MilkDrop and destructive delete with dependency warning.", entry: "Textures tab or MilkDrop shortcut.", exit: "Import, use, delete or switch Visuals tab."
+      },
+      {
+        id: "V17", group: "Visuals", title: "Takes · record, replay and export choice", path: "Visuals / Takes", destination: "Visuals", mini: true, actions: `<button class="iconbtn">${icons.record}</button>${btn("View live", "I01")}`, tabs: tabs(["Presets", "Styles", "Edit", "Textures", "Takes"], 4),
+        body: `<div class="stack"><div class="note"><b>Recording state:</b> the record control remains in the Visuals header while a person performs in Styles or Edit. Header shows elapsed time and keyframe count.</div>${card("Saved performances", `<div class="list">${listRow("Take 01", "02:14 · 184 keyframes · 42 KB", "▶ ♥ ✎ ×")}${listRow("Peak set", "06:48 · 522 keyframes · 118 KB · exports this", "■ ♥ ✎ ×")}${listRow("Slow build", "03:05 · 230 keyframes · 59 KB", "▶ ♡ ✎ ×")}</div>`)}${card("Replay", `<div class="primary">Peak set · 01:34 / 06:48</div><div class="slider" style="margin-top:8px"></div>`)}<div class="empty">No takes recorded yet.</div></div>`,
+        purpose: "A take stores parameter/style performance over time rather than video pixels.", entry: "Takes tab; recording starts from any Visuals subpage.", exit: "Replay/stop, mark for export, rename, delete or record."
+      },
+
+      {
+        id: "S01", group: "Studio", title: "Studio · render and clip library", path: "Studio / library", destination: "Studio", mini: true, actions: `<button class="iconbtn">${icons.add}</button>`,
+        body: `<div class="stack">${card("Create", `<div class="row wrap">${btn("New visual render", "S02", "filled")}${btn("Open a video")}</div>`)}${card("Rendered clips", `<div class="list">${listRow("musicviz_001.mp4", "0:31 · 1080p · 9:16", "Send", true)}${listRow("musicviz_002.mp4", "1:04 · 4K · 16:9", "Send", true)}${listRow("imported-video.mp4", "0:42 · 1080p", "Send", true)}</div>`)}<div class="empty"><b>Nothing rendered yet</b><br>New renders appear here ready to cut, grade and send.</div></div>`,
+        purpose: "Studio now owns both new visual renders and post-render clip editing.", entry: "Studio destination.", exit: "New render, open system video picker, edit clip or share."
+      },
+      {
+        id: "S02", group: "Studio", title: "New visual render setup", path: "Studio / New render", destination: "Studio",
+        body: `<div class="stack">${card("Quality", chips(["720p", "1080p", "4K"], 1))}${card("Frame rate", chips(["30 fps", "60 fps"], 1))}${card("Aspect ratio", chips(["16:9", "9:16", "1:1", "4:5", "4:3", "21:9"], 1))}${card("Loop", `${chips(["Full length", "Loop-safe"], 0)}<div class="secondary" style="margin-top:7px">Loop-safe is available when BPM is detected and may trim up to one bar.</div>`)}${card("Performance", `${chips(["Live settings", "Take 01", "Peak set"], 0)}<div class="secondary" style="margin-top:7px">A selected take replays parameter automation during the render.</div>`)}${card("Destination", `${chips(["Movies/MusicViz", "Choose folder…"], 0)}`)}${btn("Render 1080p · 9:16 · 60fps", "S03", "filled block")}</div>`,
+        purpose: "Primary export configuration moved from a Settings modal into Studio.", entry: "New visual render from S01.", exit: "Start render, choose Android destination, or back."
+      },
+      {
+        id: "S03", group: "Studio", title: "Visual render · progress, result and error", path: "Studio / render state", destination: "Studio",
+        body: `<div class="stack">${card("Rendering offline", `<div class="primary">62%</div><div class="slider" style="margin:8px 0"></div>${btn("Cancel render")}`)}${card("Completed", `<div class="primary">Saved to Movies/MusicViz.</div><div class="row wrap" style="margin-top:8px">${btn("Share", "X03", "filled")}${btn("Open in clip editor", "S04")}${btn("Close", "S01")}</div>`)}${card("Chosen destination", `<div class="primary">Saved to your chosen folder.</div>${btn("Share", "X03")}`)}<div class="error"><b>Failed:</b> encoder or destination error text. Retry returns to S02.</div></div>`,
+        purpose: "All export outcomes remain on one stable route instead of swapping modal shapes.", entry: "Start in S02.", exit: "Cancel, edit result, share, close or retry."
+      },
+      {
+        id: "S04", group: "Studio", title: "Clip editor · cut and look", path: "Studio / clip / Cut + Look", destination: "Studio",
+        body: `<div class="stack"><div class="row"><button class="btn" data-goto="S01">‹ Back</button><div class="grow"><div class="primary">musicviz_001.mp4</div><div class="secondary">0:31 · 1080p · 9:16</div></div></div>${card("Cut", `<div class="row">${[1,2,3,4,5,6].map(() => '<span class="art wide" style="width:42px;height:36px"></span>').join("")}</div><div class="wave" style="margin-top:7px"></div>${slider("In / Out", "0:03 → 0:26 · keeps 0:23")}`)}${card("Look", `${chips(["As shot", "Punch", "Bleach", "Neon", "Night", "Mono", "Invert"], 0)}${slider("Brightness", "0")}${slider("Contrast", "0")}${slider("Saturation", "0%")}${slider("Hue shift", "0°")}`)}${btn("Continue to frame & sound", "S05", "filled block")}</div>`,
+        purpose: "Filmstrip trim and seven reversible look presets that write ordinary grade sliders.", entry: "Open any rendered or imported clip.", exit: "Back, continue editing, or later render."
+      },
+      {
+        id: "S05", group: "Studio", title: "Clip editor · frame, sound and caption", path: "Studio / clip / Frame + Sound", destination: "Studio",
+        body: `<div class="stack">${card("Frame", `${slider("Speed", "1.00×")}${slider("Rotate", "0°")}<div class="section-label" style="margin-top:8px">Reframe</div>${chips(["As shot", "16:9", "9:16", "1:1", "4:5", "4:3", "21:9"], 0)}${chips(["720p", "1080p", "2160p"], 1)}<div class="note">Reframing crops; it never pillarboxes.</div>`)}${card("Sound & caption", `${toggle("Mute", false)}${field("Burnt-in caption")}<div class="secondary">Caption is drawn after grading/cropping.</div>`)}${card("Review", `<div class="row spread">${btn("Reset all")}${btn("Render new file", "S06", "filled")}</div><div class="secondary" style="margin-top:8px">The original is never overwritten.</div>`)}</div>`,
+        purpose: "Speed, rotation, six ratios, output quality, mute and burned-in caption.", entry: "Continue from S04 or scroll within clip editor.", exit: "Reset, back or render new file."
+      },
+      {
+        id: "S06", group: "Studio", title: "Clip editor · render progress", path: "Studio / clip / rendering", destination: "Studio",
+        body: `<div class="stack">${preview("SOURCE CLIP FRAME", true)}${card("Rendering edited clip", `<div class="primary">43%</div><div class="slider" style="margin:9px 0"></div><div class="secondary">Trim · crop · grade · caption · audio</div><div style="margin-top:9px">${btn("Cancel")}</div>`)}<div class="note">Trim-only edits may use a lossless container rewrite; other changes are re-encoded.</div></div>`,
+        purpose: "Progress and cancellation for Media3 Transformer output.", entry: "Render from S05.", exit: "Cancel or complete to S07."
+      },
+      {
+        id: "S07", group: "Studio", title: "Clip editor · saved result", path: "Studio / clip / result", destination: "Studio",
+        body: `<div class="stack">${preview("RESULT PREVIEW", true)}${card("Saved to Movies/MusicViz", `<div class="row wrap">${btn("Send…", "X03", "filled")}${btn("Play")}${btn("Edit again", "S04")}</div><div class="secondary" style="margin-top:9px">Send uses the phone’s installed apps and signed-in accounts.</div>`)}${card("Files", `<div class="list">${listRow("Original", "unchanged", "")}${listRow("musicviz_edit_001.mp4", "new file", "")}</div>`)}</div>`,
+        purpose: "Clear result state and explicit confirmation that a new file was created.", entry: "S06 completes.", exit: "Share, play, edit again or Studio library."
+      },
+
+      {
+        id: "T01", group: "Settings", title: "Settings index", path: "Settings / index", destination: "Settings", mini: true,
+        body: `<div class="list">${listRow("Appearance", "Theme, text and shell layout", "›")}${listRow("Playback & equalizer", "Speed, pitch, fade, sleep and effects", "›")}${listRow("Analysis & audio sources", "Beat detection, mic and other apps", "›")}${listRow("Export defaults", "Quality, frame rate, ratio and loop", "›")}${listRow("Storage & folders", "Presets, music roots, cache and destinations", "›")}${listRow("Interaction & displays", "Touch, connected display and wallpaper", "›")}${listRow("Safety & auto visuals", "Flash/motion limits and timed look changes", "›")}${listRow("About", "Version, privacy and licenses", "›")}</div><div class="note" style="margin-top:8px">Each row drills into a stable page. This replaces six compressed horizontal tabs.</div>`,
+        purpose: "Conventional settings hierarchy that can grow without fighting phone width.", entry: "Settings destination.", exit: "Open category or another destination."
+      },
+      {
+        id: "T02", group: "Settings", title: "Appearance", path: "Settings / Appearance", destination: "Settings", mini: true, actions: `<button class="iconbtn" data-goto="T01">‹</button>`,
+        body: `<div class="stack">${accordion("Theme", `${chips(["Theme 1", "Theme 2", "Theme 3", "Theme 4", "…"], 0)}${slider("Accent intensity", "100%")}${slider("Background dim", "20%")}${toggle("Follow system light / dark", true)}`, true)}${accordion("Text", `${chips(["Auto", "White", "Warm", "Green", "Blue"], 0)}${slider("Text size", "100%")}<div class="note">Unusable color choices are disabled on light surfaces.</div>`)}${accordion("Shell layout", `${slider("Bar opacity", "80%")}${chips(["Player top", "Player bottom"], 1)}${chips(["Sharp", "Rounded", "Pill"], 1)}${toggle("Compact mini-player", false)}${toggle("Live visuals behind Visuals menu", false)}${toggle("Boot animation", true)}`)}</div>`,
+        purpose: "All app-presentation preferences remain functional but are represented without inheriting their current look.", entry: "Appearance from T01.", exit: "Back or change live preference."
+      },
+      {
+        id: "T03", group: "Settings", title: "Playback and equalizer", path: "Settings / Playback & EQ", destination: "Settings", mini: true, actions: `<button class="iconbtn" data-goto="T01">‹</button>`,
+        body: `<div class="stack">${accordion("Playback", `${slider("Speed", "1.00×")}${slider("Pitch", "0 st")}${slider("Fade on pause / resume / skip", "0.5s")}${toggle("Skip silence", false)}${toggle("Pause when unplugged", true)}${toggle("Keep screen on", false)}${toggle("Auto-resume last track", true)}<div class="section-label" style="margin-top:8px">Sleep timer</div>${chips(["Off", "15 min", "30 min", "45 min", "60 min"], 0)}${toggle("Let the track finish", false)}`, true)}${accordion("Equalizer", `${toggle("Equalizer chain", true)}${chips(["Flat", "Dance", "Rock", "Classical", "Custom"], 0)}${slider("60 Hz", "+2 dB")}${slider("230 Hz", "0 dB")}${slider("910 Hz", "−1 dB")}${slider("3.6 kHz", "+1 dB")}${slider("14 kHz", "+2 dB")}${slider("Bass boost", "20%")}${slider("Loudness", "+3 dB")}<div class="note">Cold-start variant asks the user to play something first; unsupported effects explain their state.</div>`)}</div>`,
+        purpose: "Playback shaping and device audio effects in one page with honest availability states.", entry: "Playback & equalizer from T01.", exit: "Back or adjust live audio preferences."
+      },
+      {
+        id: "T04", group: "Settings", title: "Analysis and audio sources", path: "Settings / Analysis & sources", destination: "Settings", mini: true, actions: `<button class="iconbtn" data-goto="T01">‹</button>`,
+        body: `<div class="stack">${accordion("Analysis", `${slider("Beat sensitivity", "2.0σ")}${slider("Minimum beat gap", "220 ms")}${chips(["Slow track", "Default"], 1)}${slider("Preset morph", "4 beats")}${toggle("Color from musical key", false)}`, true)}${accordion("Microphone", `${toggle("React to microphone", false)}${chips(["Speech", "Acoustic", "Club", "Ambient"], 1)}<div class="note">Profile writes beat threshold, response envelope and band balance.</div><div class="error">Permission denied / microphone unavailable variants.</div>`)}${accordion("Other apps", `${toggle("Visualize other apps", false)}<div class="secondary">Android 10+ · ongoing capture notification · sound is never saved.</div>${toggle("Read now-playing metadata", false)}${btn("Open Android notification access")}<div class="error">App refuses capture → offer microphone fallback.</div>`)}</div>`,
+        purpose: "Concentrates what the analyzer hears and how it interprets that signal.", entry: "Analysis & audio sources from T01.", exit: "Android consent/settings handoff, source activation or back."
+      },
+      {
+        id: "T05", group: "Settings", title: "Export defaults", path: "Settings / Export defaults", destination: "Settings", mini: true, actions: `<button class="iconbtn" data-goto="T01">‹</button>`,
+        body: `<div class="stack">${accordion("Default render settings", `<div class="section-label">Quality</div>${chips(["720p", "1080p", "4K"], 1)}<div class="section-label" style="margin-top:9px">Frame rate</div>${chips(["30 fps", "60 fps"], 1)}<div class="section-label" style="margin-top:9px">Aspect ratio</div>${chips(["16:9", "9:16", "1:1", "4:5", "4:3", "21:9"], 0)}${toggle("Loop-safe by default", false)}`, true)}${card("Render", `${btn("Open Studio new render", "S02", "filled")}<div class="secondary" style="margin-top:8px">The primary rendering workflow lives in Studio; this page only defines its starting values.</div>`)}</div>`,
+        purpose: "Stores standing export choices without making Settings the only place to begin a render.", entry: "Export defaults from T01.", exit: "Back or open Studio render setup."
+      },
+      {
+        id: "T06", group: "Settings", title: "Storage and folders", path: "Settings / Storage", destination: "Settings", mini: true, actions: `<button class="iconbtn" data-goto="T01">‹</button>`,
+        body: `<div class="stack">${accordion("Preset mirror folder", `<div class="primary">Internal only</div><div class="row" style="margin-top:8px">${btn("Choose folder")}${btn("Clear")}</div><div class="secondary">Presets always save internally; an optional folder receives mirror copies.</div>`, true)}${accordion("Music folders", `<div class="list">${listRow("Music", "Imported root", "×")}${listRow("DJ Sets", "Imported root", "×")}</div><div class="row" style="margin-top:8px">${btn("Add folder")}${btn("Rescan")}</div>`)}${accordion("Analysis cache", `<div class="row spread"><div><div class="primary">126 tracks · 48.2 MB</div><div class="secondary">Clearing forces re-analysis next time.</div></div>${btn("Clear")}</div>`)}${accordion("Export destination", `<div class="secondary">Movies/MusicViz by default; a different folder is picked per render.</div>`)}</div>`,
+        purpose: "Every read/write location, including the same music roots shown in Library.", entry: "Storage & folders from T01.", exit: "System folder picker, clear/rescan or back."
+      },
+      {
+        id: "T07", group: "Settings", title: "Interaction and displays", path: "Settings / Interaction & displays", destination: "Settings", mini: true, actions: `<button class="iconbtn" data-goto="T01">‹</button>`,
+        body: `<div class="stack">${accordion("Touch", `${toggle("Smear visuals with one finger", true)}${slider("Smear strength", "100%")}<div class="secondary">Drag pushes the composite; Water stirs its own simulation.</div>${toggle("Pinch and twist canvas", true)}<div class="secondary">Updates the same Zoom and Rotation parameters saved in presets and takes.</div>`, true)}${accordion("Connected display", `${toggle("Use connected display", false)}<div class="primary">Living Room TV available</div><div class="secondary">Visuals move there; the phone stays a control surface.</div>`)}${accordion("Live wallpaper", `<div class="secondary">Uses the last style and settings, idles gently, and stops drawing behind foreground apps.</div>${btn("Set as live wallpaper", "X03")}`)}</div>`,
+        purpose: "Canvas gestures, second-screen behavior and Android wallpaper handoff.", entry: "Interaction & displays from T01.", exit: "Adjust, system wallpaper screen or back."
+      },
+      {
+        id: "T08", group: "Settings", title: "Safety and auto visuals", path: "Settings / Safety & automation", destination: "Settings", mini: true, actions: `<button class="iconbtn" data-goto="T01">‹</button>`,
+        body: `<div class="stack">${accordion("Visual safety", `${toggle("Safe visuals", true)}${slider("Maximum flashes per second", "3.0 Hz")}${slider("Maximum flash strength", "35%")} ${toggle("Allow invert and solarize", false)}${toggle("Reduced motion", false)}<div class="note">Safety and reduced motion apply to exports as well as the screen.</div>`, true)}${accordion("Random looks", `<div class="primary">Random is off</div>${slider("Switch interval", "30s")}${toggle("Switch on a strong beat", true)}<div class="section-label" style="margin-top:8px">Pick from</div>${toggle("Styles", true)}${toggle("Saved presets", true)}${toggle("MilkDrop presets", false)}${toggle("Roll colors too", false)}`)}${accordion("Visual playlist", `${toggle("Play visual playlist", false)}<div class="secondary">4 hearted looks; enabling this stops Random.</div>${slider("Switch interval", "45s")}${toggle("Wait for a strong moment", true)}`)}</div>`,
+        purpose: "Photosensitivity, motion comfort and two mutually exclusive look-rotation systems.", entry: "Safety & auto visuals from T01.", exit: "Adjust rules or back."
+      },
+      {
+        id: "T09", group: "Settings", title: "About, privacy and licenses", path: "Settings / About", destination: "Settings", mini: true, actions: `<button class="iconbtn" data-goto="T01">‹</button>`,
+        body: `<div class="stack">${card("About", `<h3>Music Visualizer</h3><div class="secondary">Version 1.7.0 (31)</div><p class="secondary">Plays device music and renders it. No account, ads or analytics; nothing leaves the phone unless a video or preset is shared.</p><div class="row wrap">${btn("Open-source licenses")}${btn("Privacy policy")}</div>`)}${card("Licenses dialog", `<div class="field multiline" style="font-family:monospace;min-height:190px">Scrollable third-party notices…<br><br>libprojectM · licenses · attributions</div>${btn("Close")}`)}</div>`,
+        purpose: "Version, plain-language privacy statement, web policy and legally required notices.", entry: "About from T01.", exit: "Close licenses, open browser policy or back."
+      },
+
+      {
+        id: "X01", group: "System", title: "Previous crash report", path: "global modal / crash report", noNav: true,
+        body: `<div class="scrim"><div class="modal stack"><h3>Previous crash captured</h3><div class="field multiline" style="font-family:monospace;min-height:260px">The last run crashed. Copy the report to share it…\n\n[first 600 characters shown]</div><div class="row spread">${btn("Dismiss")}${btn("Copy", "", "filled")}</div></div></div>`,
+        purpose: "Non-dismissed-on-back recovery surface for a locally captured crash report.", entry: "A capped crash-latest file exists after startup.", exit: "Copy to clipboard or delete report and dismiss."
+      },
+      {
+        id: "X02", group: "System", title: "Naming and destructive confirmations", path: "shared modal patterns", noNav: true,
+        body: `<div class="stack">${card("Validated naming", `${field("Name")}<div class="error">Blank or duplicate names disable Confirm and explain why.</div><div class="row spread">${btn("Cancel")}${btn("Create / Rename")}</div>`)}${card("Destructive confirmation", `<div class="primary">Delete this user-created item?</div><div class="secondary">States what is removed, what remains and that there is no undo.</div><div class="row spread" style="margin-top:9px">${btn("Cancel")}${btn("Delete", "", "filled")}</div>`)}${card("Reset confirmation", `<div class="primary">Reset 12 changed controls?</div><div class="secondary">Resets every parameter tab; saved presets remain untouched.</div><div class="row spread" style="margin-top:9px">${btn("Cancel")}${btn("Reset")}</div>`)}</div>`,
+        purpose: "Shared behavioral contract for playlist/preset/take/texture deletion, naming and global customization reset.", entry: "Any destructive or collision-prone action.", exit: "Confirm or cancel."
+      },
+      {
+        id: "X03", group: "System", title: "Android handoffs", path: "outside application chrome", noNav: true,
+        body: `<div class="stack">${card("Permissions", `<div class="list">${listRow("Music access", "Android media permission", "SYSTEM")}${listRow("Microphone", "Record-audio permission", "SYSTEM")}${listRow("Other-app audio", "MediaProjection capture consent", "SYSTEM")}${listRow("Now-playing metadata", "Notification access settings", "SYSTEM")}</div>`)}${card("Files and folders", `<div class="list">${listRow("Open audio / video / preset / .milk", "System document picker", "SYSTEM")}${listRow("Import textures", "Multiple-image picker", "SYSTEM")}${listRow("Choose music / preset folder", "Document-tree picker", "SYSTEM")}${listRow("Render to chosen destination", "Create MP4 document", "SYSTEM")}</div>`)}${card("Destinations", `<div class="list">${listRow("Share preset or video", "Android share sheet", "SYSTEM")}${listRow("View rendered video", "Installed video player", "SYSTEM")}${listRow("Set live wallpaper", "Android wallpaper preview", "SYSTEM")}${listRow("Privacy policy", "External browser", "SYSTEM")}</div>`)}</div>`,
+        purpose: "Defines where app responsibility ends and Android/provider UI begins.", entry: "Permission, file, share, wallpaper or external-link action.", exit: "Result callback returns to originating app frame."
+      },
+      {
+        id: "X04", group: "System", title: "Empty, unavailable and failure-state matrix", path: "cross-application state reference", noNav: true,
+        body: `<div class="stack">${card("Empty", `<div class="list">${listRow("No media", "Choose Library, history, mic or other apps", "")}${listRow("No device tracks", "No music found", "")}${listRow("No playlists", "Create, save queue or add a track", "")}${listRow("No presets / MilkDrop / textures / takes", "Domain-specific creation path", "")}${listRow("No rendered clips", "New render or open a video", "")}${listRow("No lyrics", ".lrc / embedded-tag explanation", "")}</div>`)}${card("Unavailable", `<div class="list">${listRow("Other-app capture unsupported", "Android older than 10", "")}${listRow("MilkDrop unavailable", "Engine missing on device", "")}${listRow("Equalizer unattached", "Play audio first", "")}${listRow("No connected display", "Connect HDMI or Cast", "")}</div>`)}${card("Failure", `<div class="list">${listRow("Permission denied", "Explain Android recovery path", "")}${listRow("Capture refused by source app", "Offer microphone", "")}${listRow("Shader / .milk compile or parse", "Keep last good visual", "")}${listRow("Export / clip render failed", "Preserve setup and offer retry", "")}</div>`)}</div>`,
+        purpose: "A parity checklist ensuring the redesign does not only cover ideal populated screens.", entry: "Any domain-specific state condition.", exit: "Recovery action stated in each row."
+      }
+    ];
+
+    function renderFrames() {
+      const host = document.getElementById("frames");
+      host.innerHTML = frames.map(frame => `
+        <article class="frame-card" id="frame-${frame.id}" data-group="${frame.group}">
+          <header class="frame-meta">
+            <span class="frame-id">${frame.id}</span>
+            <div><h3>${frame.title}</h3><div class="route">${frame.path}</div></div>
+          </header>
+          <div class="phone-wrap">${phone(frame)}</div>
+          <div class="frame-notes">
+            <div><b>${frame.purpose}</b></div>
+            <div class="flowline"><span>Entry</span><span>${frame.entry}</span></div>
+            <div class="flowline"><span>Exit</span><span>${frame.exit}</span></div>
+          </div>
+        </article>`).join("");
+
+      document.getElementById("frame-count").textContent = frames.length;
+      const summary = document.getElementById("catalog-summary");
+      summary.innerHTML = groups.map(group => `<span>${group} · ${frames.filter(f => f.group === group).length}</span>`).join("");
+      const jump = document.getElementById("jump");
+      jump.innerHTML += frames.map(f => `<option value="${f.id}">${f.id} · ${f.title}</option>`).join("");
+    }
+
+    function applyFilter(group) {
+      document.querySelectorAll(".frame-card").forEach(card => { card.hidden = group !== "all" && card.dataset.group !== group; });
+      document.querySelectorAll("[data-filter]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.filter === group)));
+      document.getElementById("catalog").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    renderFrames();
+
+    document.addEventListener("click", event => {
+      const filter = event.target.closest("[data-filter]");
+      if (filter) applyFilter(filter.dataset.filter);
+      const goto = event.target.closest("[data-goto]");
+      if (goto && goto.dataset.goto) {
+        const target = document.getElementById(`frame-${goto.dataset.goto}`);
+        if (target) {
+          if (target.hidden) applyFilter("all");
+          target.scrollIntoView({ behavior: "smooth", block: "start" });
+          target.animate([{ backgroundColor: "#d8d8d2" }, { backgroundColor: "transparent" }], { duration: 900 });
+        }
+      }
+    });
+
+    document.getElementById("jump").addEventListener("change", event => {
+      const id = event.target.value;
+      if (!id) return;
+      const target = document.getElementById(`frame-${id}`);
+      if (target) {
+        if (target.hidden) applyFilter("all");
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+  </script>
+</body>
+</html>
