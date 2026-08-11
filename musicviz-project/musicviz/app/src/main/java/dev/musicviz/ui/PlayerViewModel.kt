@@ -29,13 +29,10 @@ import dev.musicviz.data.MilkTexture
 import dev.musicviz.data.MusicPlaylist
 import dev.musicviz.data.MusicPlaylistStore
 import dev.musicviz.data.PaletteStore
-import dev.musicviz.data.PerformanceTake
 import dev.musicviz.data.PlayerPrefs
 import dev.musicviz.data.PlayerPrefsStore
 import dev.musicviz.data.Preset
 import dev.musicviz.data.PresetStore
-import dev.musicviz.data.TakeInfo
-import dev.musicviz.data.TakeStore
 import dev.musicviz.data.TextureStore
 import dev.musicviz.export.ExportAspect
 import dev.musicviz.export.VideoExporter
@@ -184,41 +181,6 @@ data class LibraryState(
 
 private val AUDIO_EXTS = setOf("mp3", "wav", "flac", "ogg", "m4a", "aac", "opus", "wma", "aiff")
 
-/**
- * Performance-take state: what is being recorded, what is being replayed, and
- * the saved takes list.
- */
-data class TakeUiState(
-    val takes: List<TakeInfo> = emptyList(),
-    val recording: Boolean = false,
-    val recordedEvents: Int = 0,
-    val recordedMs: Long = 0L,
-    /** Name of the take currently replaying, or null. */
-    val replaying: String? = null,
-    val replayMs: Long = 0L,
-    val replayEndMs: Long = 0L,
-    /**
-     * Take the next video export replays, or null for the live settings.
-     *
-     * PARAMETER AUTOMATION ONLY, with one honest exception: the export scene
-     * is built from the take's FIRST scene event (see [exportSceneIdFor]), so
-     * a take performed on another style at least renders on the style it was
-     * recorded on. A style SWITCH inside a take still cannot be reproduced
-     * offline without teaching the exporter to create, swap and release
-     * scenes mid-render. Everything else a take holds - every slider, colour,
-     * FX and fluid setting, moving exactly as it was performed - does reach
-     * the file. The export dialog says so where the take is chosen.
-     */
-    val exportTake: String? = null,
-    /**
-     * Transient user-facing note about the last recording action - set when a
-     * stop discarded a single-keyframe take, cleared automatically a few
-     * seconds later and on the next recording. Without it a discard was
-     * indistinguishable from a successful save.
-     */
-    val note: String? = null,
-)
-
 /** Live-input state for the Settings switch: running, plus why it is not. */
 data class MicState(
     val active: Boolean = false,
@@ -266,14 +228,6 @@ data class QueueUiState(
  * not an absolute loudness that quiet masters never reach.
  */
 private const val STRONG_MOMENT_IMPULSE = 0.6f
-
-/**
- * Replay tick rate for performance takes. Keyframes land no closer than
- * [PerformanceTake.MIN_KEYFRAME_GAP_MS] apart, so this is comfortably finer
- * than the recording it reads - a slower clock would turn a swept slider back
- * into a staircase.
- */
-private const val TAKE_REPLAY_HZ = 30L
 
 /**
  * Longest edge the artwork is decoded to before its hues are counted. A hue
@@ -652,7 +606,7 @@ class PlayerViewModel(
      * Coalesced onto a background thread rather than written where it is
      * called. [setSceneParams] is the funnel for every Customize slider, for
      * [nudgeTransform] (once per pinch/twist touch-move EVENT) and for take
-     * replay at [TAKE_REPLAY_HZ], and one write here is a 171-field
+     * replay at its 30 Hz tick, and one write here is a 171-field
      * serialization plus a rewrite of the whole prefs file - so a gesture used
      * to produce tens of both per second on the main thread, with apply()'s
      * queue then drained synchronously in Activity.onPause, turning the
@@ -1153,11 +1107,31 @@ class PlayerViewModel(
     private val _historyTick = MutableStateFlow(0)
     val historyTick: StateFlow<Int> = _historyTick
 
-    private val takeStore = TakeStore(application)
-    private val _takeState = MutableStateFlow(TakeUiState())
+    private val takeController =
+        TakeController(
+            application,
+            viewModelScope,
+            storeWriter,
+            object : TakeController.Host {
+                override val vizState: StateFlow<VizUiState> get() = _vizState
+                override val activeMilkPath: String? get() = _activeMilkPath.value
+                override val trackUri: String? get() = currentUri?.toString()
+
+                override fun selectScene(sceneId: String) = this@PlayerViewModel.selectScene(sceneId)
+
+                override fun setSceneParams(params: SceneParams) = this@PlayerViewModel.setSceneParams(params)
+
+                override fun applyMilk(
+                    path: String,
+                    sceneId: String,
+                ) {
+                    _vizApply.tryEmit(VizApply(milkPath = path, sceneId = sceneId))
+                }
+            },
+        )
 
     /** Recording/replay state for the Takes tab. */
-    val takeState: StateFlow<TakeUiState> = _takeState
+    val takeState: StateFlow<TakeUiState> get() = takeController.state
 
     /** Keep the current preset: auto/random switching skips while locked. */
     private val _presetLocked = MutableStateFlow(false)
@@ -2906,206 +2880,24 @@ class PlayerViewModel(
         _vizState.update { if (it.sceneId == suggestion) it else it.copy(sceneId = suggestion) }
     }
 
-    // ---- Performance takes: record the performance, not the render ----
+    // ---- Performance takes (state and machinery live in TakeController) ----
 
-    private var recorder: PerformanceTake.Recorder? = null
-    private var recordStartMs = 0L
-    private var recordJob: Job? = null
-    private var recordTickJob: Job? = null
-    private var replayJob: Job? = null
+    fun startRecording() = takeController.startRecording()
 
-    /**
-     * Starts recording the live visual state.
-     *
-     * Driven from [vizState] rather than from each control, so anything that
-     * moves the visuals is captured by construction - sliders, presets,
-     * Randomize, style switches, the auto-switcher - and a control added later
-     * is recorded without being told to.
-     */
-    fun startRecording() {
-        if (_takeState.value.recording) return
-        stopReplay()
-        val s = _vizState.value
-        recorder = PerformanceTake.Recorder(s.sceneId, s.params, _activeMilkPath.value)
-        recordStartMs = android.os.SystemClock.elapsedRealtime()
-        _takeState.update { it.copy(recording = true, recordedEvents = 1, recordedMs = 0L, note = null) }
-        recordJob =
-            viewModelScope.launch {
-                // One collector on the state flow, not a polling loop: a
-                // keyframe exists because something changed, and the recorder
-                // throttles the burst a slider drag produces.
-                _vizState.collect { live ->
-                    val rec = recorder ?: return@collect
-                    val at = android.os.SystemClock.elapsedRealtime() - recordStartMs
-                    rec.append(at, live.sceneId, live.params, _activeMilkPath.value)
-                    _takeState.update { it.copy(recordedEvents = rec.size, recordedMs = at) }
-                    if (!rec.hasRoom) stopRecording()
-                }
-            }
-        // The clock is a clock, not a change counter: the collector above only
-        // fires on param traffic, so an untouched recording read "0:00" for
-        // its whole length. One tick a second is plenty for a wall clock.
-        recordTickJob =
-            viewModelScope.launch {
-                while (true) {
-                    delay(1_000L)
-                    val at = android.os.SystemClock.elapsedRealtime() - recordStartMs
-                    _takeState.update { if (it.recording) it.copy(recordedMs = at) else it }
-                }
-            }
-    }
+    fun stopRecording(name: String? = null) = takeController.stopRecording(name)
 
-    /**
-     * Stops recording and saves the take.
-     *
-     * A take with a single keyframe is discarded: it is a still, and offering
-     * to replay one would be offering to replay nothing.
-     *
-     * The naming and the save go to IO and the name is not returned, because
-     * both halves are disk work: [defaultTakeName] reads and fully parses every
-     * saved take to find the lowest free number, and the save writes the whole
-     * take document - a long performance is megabytes of JSON. The Takes list
-     * is where the saved name shows up, and [refreshTakes] republishes it when
-     * the write lands.
-     */
-    fun stopRecording(name: String? = null) {
-        val rec = recorder ?: return
-        recordJob?.cancel()
-        recordJob = null
-        recordTickJob?.cancel()
-        recordTickJob = null
-        recorder = null
-        val durationMs = android.os.SystemClock.elapsedRealtime() - recordStartMs
-        _takeState.update { it.copy(recording = false, recordedEvents = 0, recordedMs = 0L) }
-        if (rec.size <= 1) {
-            // Discarding is right - a one-keyframe take is a still - but
-            // doing it SILENTLY made "stop" and "save" look identical. The
-            // note is transient: it clears itself, and the next recording
-            // clears it early.
-            _takeState.update { it.copy(note = TAKE_DISCARDED_NOTE) }
-            viewModelScope.launch {
-                delay(TAKE_NOTE_MS)
-                _takeState.update { if (it.note == TAKE_DISCARDED_NOTE) it.copy(note = null) else it }
-            }
-            refreshTakes()
-            return
-        }
-        // Off the recorder before the hop: it is the ViewModel's only reference
-        // and startRecording() may replace it before the IO thread gets there.
-        val trackUri = currentUri?.toString()
-        val requested = name?.takeIf { it.isNotBlank() }
-        viewModelScope.launch(Dispatchers.IO) {
-            val label = requested ?: defaultTakeName()
-            takeStore.save(label, rec.finish(label, trackUri, durationMs))
-            refreshTakes()
-        }
-    }
+    fun playTake(name: String) = takeController.playTake(name)
 
-    /** "Take 3" — the lowest number not already on disk. Reads every take; IO only. */
-    private fun defaultTakeName(): String {
-        val taken = takeStore.list().map { it.name }.toSet()
-        var n = 1
-        while ("Take $n" in taken) n++
-        return "Take $n"
-    }
+    fun stopReplay() = takeController.stopReplay()
 
-    /**
-     * Replays a take over the live visuals.
-     *
-     * Ticks at [TAKE_REPLAY_HZ] rather than riding the 500 ms housekeeping
-     * loop: a take's keyframes are 80 ms apart, so a coarser clock would turn
-     * a swept slider into a staircase. The take drives the same
-     * [setSceneParams] / [selectScene] funnels a hand does, which is why the
-     * renderer's settings fade smooths between keyframes for free.
-     */
-    fun playTake(name: String) {
-        if (_takeState.value.recording) stopRecording()
-        stopReplay()
-        replayJob =
-            viewModelScope.launch {
-                // Reading the take back is a whole document parsed - the same
-                // work refreshTakes goes to IO for, times one take rather than
-                // divided across the list.
-                val timeline = withContext(Dispatchers.IO) { takeStore.load(name) } ?: return@launch
-                if (timeline.isEmpty) return@launch
-                val endMs = maxOf(timeline.lastEventMs(), timeline.durationMs)
-                _takeState.update { it.copy(replaying = name, replayMs = 0L, replayEndMs = endMs) }
-                val startedAt = android.os.SystemClock.elapsedRealtime()
-                while (true) {
-                    val at = android.os.SystemClock.elapsedRealtime() - startedAt
-                    timeline.stateAt(at)?.let { state ->
-                        if (state.sceneId.isNotEmpty() && state.sceneId != _vizState.value.sceneId) {
-                            selectScene(state.sceneId)
-                        }
-                        if (state.params != _vizState.value.params) setSceneParams(state.params)
-                        state.milkPath?.takeIf { it != _activeMilkPath.value }?.let { path ->
-                            _vizApply.tryEmit(VizApply(milkPath = path, sceneId = state.sceneId))
-                        }
-                    }
-                    _takeState.update { it.copy(replayMs = at) }
-                    if (at >= endMs) break
-                    delay(1000L / TAKE_REPLAY_HZ)
-                }
-                _takeState.update { it.copy(replaying = null, replayMs = 0L, replayEndMs = 0L) }
-            }
-    }
+    fun deleteTake(name: String) = takeController.deleteTake(name)
 
-    /** Stops a replay, leaving the visuals wherever the take had reached. */
-    fun stopReplay() {
-        replayJob?.cancel()
-        replayJob = null
-        _takeState.update { it.copy(replaying = null, replayMs = 0L, replayEndMs = 0L) }
-    }
-
-    fun deleteTake(name: String) {
-        if (_takeState.value.replaying == name) stopReplay()
-        storeWriter.execute {
-            takeStore.delete(name)
-            val listed = takeStore.list()
-            _takeState.update { it.copy(takes = listed) }
-        }
-    }
-
-    /**
-     * Renames a take, surfacing [TakeStore.rename]'s answer instead of
-     * dropping it: the dialog already refuses blank and duplicate names up
-     * front, so a false here is the disk disagreeing with the screen (a file
-     * created between the check and the click, an unwritable store) - and a
-     * caller that cannot see it closes over a rename that never happened.
-     */
     fun renameTake(
         from: String,
         to: String,
-    ): Boolean {
-        val renamed = takeStore.rename(from, to)
-        if (renamed) {
-            if (_takeState.value.replaying == from) stopReplay()
-            refreshTakes()
-        }
-        return renamed
-    }
+    ): Boolean = takeController.renameTake(from, to)
 
-    /**
-     * Re-reads the takes list off the main thread.
-     *
-     * Listing means parsing each take's JSON for its header, and a set of long
-     * takes is megabytes of it - cheap in absolute terms, but not something to
-     * do on the main thread at launch, which is one of the callers.
-     */
-    private fun refreshTakes() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val listed = takeStore.list()
-            withContext(Dispatchers.Main) { _takeState.update { it.copy(takes = listed) } }
-        }
-    }
-
-    /**
-     * The take the video export should replay, or null for "render the live
-     * settings". Parameter automation only - see [TakeUiState.exportTake].
-     */
-    fun setExportTake(name: String?) {
-        _takeState.update { it.copy(exportTake = name) }
-    }
+    fun setExportTake(name: String?) = takeController.setExportTake(name)
 
     // ---- Visual settings ----
 
@@ -3490,10 +3282,7 @@ class PlayerViewModel(
 
                 override fun adsrConfigs() = _adsrs.value
 
-                override fun loadExportTake() =
-                    _takeState.value.exportTake
-                        ?.let { takeStore.load(it) }
-                        ?.takeUnless { it.isEmpty }
+                override fun loadExportTake() = takeController.loadExportTake()
 
                 override fun publishSections(
                     uri: Uri,
@@ -3611,7 +3400,7 @@ class PlayerViewModel(
     init {
         engine.start(viewModelScope)
         refreshNumericTitles()
-        refreshTakes()
+        takeController.refresh()
         // Everything startup reads off disk that is not needed to draw the
         // first frame. See each function for what it costs and why waiting for
         // it shows nothing wrong in the meantime.
@@ -3830,11 +3619,5 @@ class PlayerViewModel(
          * user let go still comes back to what they left.
          */
         const val VIZ_PERSIST_WINDOW_MS = 400L
-
-        /** What the Takes tab shows when a stop discarded a one-keyframe take. */
-        const val TAKE_DISCARDED_NOTE = "Nothing changed — take not saved"
-
-        /** How long [TakeUiState.note] stays up before clearing itself. */
-        const val TAKE_NOTE_MS = 4_000L
     }
 }
