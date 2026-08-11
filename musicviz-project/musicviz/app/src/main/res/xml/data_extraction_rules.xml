@@ -13,6 +13,12 @@
         <exclude
             domain="file"
             path="milk/generated" />
+        <!-- User-imported texture images are large and re-importable; left
+             in, they push the total past the cloud quota and backup of
+             EVERYTHING (presets, playlists, history) silently stops. -->
+        <exclude
+            domain="file"
+            path="milk/textures" />
     </cloud-backup>
     <device-transfer>
         <exclude
