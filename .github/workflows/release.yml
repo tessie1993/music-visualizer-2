@@ -27,16 +27,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Set up Gradle (with caching)
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       # A release that fails Play's 16 KB page-size requirement is rejected at
       # upload, so fail here instead of after a review cycle.
@@ -86,7 +86,7 @@ jobs:
           ls -l "$aab"
 
       - name: Upload AAB and R8 mapping
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: musicviz-release-bundle
           # The mapping file must be uploaded to Play Console alongside the
