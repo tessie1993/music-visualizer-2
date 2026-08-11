@@ -219,24 +219,6 @@ data class TakeUiState(
     val note: String? = null,
 )
 
-/**
- * The scene the video export should build when it replays [take]: the take's
- * first scene event, falling back to [liveSceneId] when the take is missing,
- * empty, or carries no scene. Top-level so the headless suite can pin it
- * without an export pipeline. Calling [PerformanceTake.Timeline.stateAt] at 0
- * leaves the take's forward-walking cursor at the start, where the export's
- * ascending per-frame reads expect it.
- */
-internal fun exportSceneIdFor(
-    take: PerformanceTake.Timeline?,
-    liveSceneId: String,
-): String =
-    take
-        ?.stateAt(0L)
-        ?.sceneId
-        ?.takeIf { it.isNotEmpty() }
-        ?: liveSceneId
-
 /** Live-input state for the Settings switch: running, plus why it is not. */
 data class MicState(
     val active: Boolean = false,
@@ -270,60 +252,11 @@ data class ExternalAudioState(
     val refusingApp: String? get() = if (refusedByApp) nowPlaying?.appLabel else null
 }
 
-/** Clip list and export progress behind the Studio tab. */
-data class StudioUiState(
-    val clips: List<dev.musicviz.export.StudioClip> = emptyList(),
-    val loading: Boolean = false,
-    val running: Boolean = false,
-    val progress: Float = 0f,
-    /** Where the finished file landed, for the Share and Open actions. */
-    val resultUri: Uri? = null,
-    val error: String? = null,
-)
-
 /** The player's queue as the Now Playing queue tab reads it. */
 data class QueueUiState(
     val tracks: List<QueueTrack> = emptyList(),
     val index: Int = 0,
 )
-
-data class ExportUiState(
-    val running: Boolean = false,
-    /** True when the user picked the output location via the file picker. */
-    val customDestination: Boolean = false,
-    val progress: Float = 0f,
-    val resultUri: Uri? = null,
-    val error: String? = null,
-)
-
-/**
- * The dialog state an export outcome produces.
- *
- * Lifted out of [PlayerViewModel.startExport] because this mapping is the only
- * part of the failure path a unit test can reach - the export itself needs a
- * hardware encoder and an EGL context - and it is the part that was wrong: a
- * refusal to write used to arrive as a plain null and was published as
- * running=false, progress=1, no uri, no error, which the dialog reads as
- * neither a success nor a failure and drops back to the options form. The
- * three outcomes must stay tellable apart from each other here.
- */
-internal fun exportUiStateFor(
-    result: VideoExporter.Result,
-    customDestination: Boolean,
-): ExportUiState =
-    when (result) {
-        is VideoExporter.Result.Saved ->
-            ExportUiState(
-                running = false,
-                progress = 1f,
-                resultUri = result.uri,
-                customDestination = customDestination,
-            )
-        is VideoExporter.Result.Failed -> ExportUiState(running = false, error = result.message)
-        // A cancel is the user's own decision: it says nothing and goes back to
-        // the options, which is what an empty state renders as.
-        VideoExporter.Result.Cancelled -> ExportUiState(running = false)
-    }
 
 /**
  * Graded beat impulse a "switch on a musical moment" decision (intelligent
@@ -647,7 +580,6 @@ class PlayerViewModel(
     private val textureStore = TextureStore(application)
     private val lfoStore = LfoStore(application)
     private val musicPlaylists = MusicPlaylistStore(application)
-    private val exporter = VideoExporter(application)
     private val audioFxController = playback.audioFx
 
     val player: ExoPlayer = playback.player
@@ -762,8 +694,7 @@ class PlayerViewModel(
 
     private val vizPersistScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    private val _exportState = MutableStateFlow(ExportUiState())
-    val exportState: StateFlow<ExportUiState> = _exportState
+    val exportState: StateFlow<ExportUiState> get() = exportController.exportState
 
     /**
      * Starts empty and is filled by [refreshLibrary]: the library file is one
@@ -1216,11 +1147,7 @@ class PlayerViewModel(
             _waveform.value = value?.let(::waveformOf)
         }
     private var currentUri: Uri? = null
-    private var exportJob: Job? = null
     private var beatRedecideJob: Job? = null
-
-    @Volatile
-    private var exportCancelled = false
 
     private val historyStore = HistoryStore(application)
     private val _historyTick = MutableStateFlow(0)
@@ -3536,202 +3463,80 @@ class PlayerViewModel(
         }
     }
 
-    // ---- Export ----
+    // ---- Export (state and pipeline live in ExportController) ----
+
+    private val exportController =
+        ExportController(
+            application,
+            viewModelScope,
+            object : ExportController.Host {
+                override val exportUri: Uri? get() = currentUri
+                override var cachedTimeline: dev.musicviz.analysis.FeatureTimeline?
+                    get() = timeline
+                    set(value) {
+                        timeline = value
+                    }
+
+                override suspend fun analyze(
+                    uri: Uri,
+                    onProgress: (Float) -> Unit,
+                ): dev.musicviz.analysis.FeatureTimeline = analyzeCached(uri, onProgress)
+
+                override val guiPrefs: GuiPrefs get() = _guiPrefs.value
+                override val sceneId: String get() = _vizState.value.sceneId
+                override val sceneParams get() = _vizState.value.params
+
+                override fun lfoConfigs() = _lfos.value
+
+                override fun adsrConfigs() = _adsrs.value
+
+                override fun loadExportTake() =
+                    _takeState.value.exportTake
+                        ?.let { takeStore.load(it) }
+                        ?.takeUnless { it.isEmpty }
+
+                override fun publishSections(
+                    uri: Uri,
+                    timeline: dev.musicviz.analysis.FeatureTimeline,
+                ) {
+                    if (currentUri == uri && _vizState.value.sections.isEmpty()) {
+                        _vizState.update { it.copy(bpm = timeline.bpm, sections = timeline.detectSections()) }
+                    }
+                }
+            },
+        )
+
+    /** Clip list and export progress for the Studio tab. */
+    val studio: StateFlow<StudioUiState> get() = exportController.studio
 
     fun startExport(
         aspect: ExportAspect,
         fps: Int,
         sceneFactory: VideoExporter.SceneFactory,
         destination: Uri? = null,
-        /** Trim to whole bars so the clip loops without a stumble. */
         loopSafe: Boolean = false,
-        /**
-         * Builds a factory for an arbitrary scene id, so a chosen export take
-         * renders on the style it was RECORDED on ([exportSceneIdFor]) rather
-         * than whatever style happens to be live when Export is pressed.
-         * Null (or no take) keeps [sceneFactory]. The take's scene id has to
-         * be read off disk, which is why this is a resolver and not a value.
-         */
         sceneFactoryFor: ((String) -> VideoExporter.SceneFactory)? = null,
-    ) {
-        val uri = currentUri ?: return
-        if (_exportState.value.running) return
-        exportCancelled = false
-        _exportState.value = ExportUiState(running = true, customDestination = destination != null)
-        exportJob =
-            viewModelScope.launch(Dispatchers.Default) {
-                try {
-                    val analysed =
-                        timeline ?: analyzeCached(uri) { p ->
-                            _exportState.update { it.copy(progress = p * 0.2f) }
-                        }.also { if (currentUri == uri) timeline = it }
-                    // Always re-decide the beats from the stored onset curve
-                    // at the sensitivity in force right now: the in-memory
-                    // timeline may have been analysed (or last re-decided)
-                    // under other settings, and a video that flashes
-                    // differently from the playback the user just watched is
-                    // the whole bug this guards against.
-                    val gui = _guiPrefs.value
-                    val t =
-                        analysed.withBeatSensitivity(
-                            gui.beatThresholdSigma,
-                            // Same floor the live engine runs under, or an
-                            // export would flash faster than the screen did.
-                            gui.effectiveBeatMinIntervalMs,
-                        )
-                    // Publish the section context the exporter is about to
-                    // journey through, so live playback of the same track
-                    // re-seats identically from now on (journey parity even
-                    // in MANUAL mode, where onTrackChanged only reads cache).
-                    if (currentUri == uri && _vizState.value.sections.isEmpty()) {
-                        _vizState.update { it.copy(bpm = t.bpm, sections = t.detectSections()) }
-                    }
-                    val name = "musicviz_${System.currentTimeMillis()}.mp4"
-                    // A chosen take renders the performance instead of the
-                    // live settings. Loaded once, outside the frame loop: the
-                    // Timeline is a stateful cursor, and the export coroutine
-                    // is its only reader.
-                    val exportTake =
-                        _takeState.value.exportTake
-                            ?.let { takeStore.load(it) }
-                            ?.takeUnless { it.isEmpty }
-                    // Take export honesty, first half: the scene comes from
-                    // the take's own first scene event, not from whatever the
-                    // user was looking at. Mid-take scene switches still do
-                    // not render (see TakeUiState.exportTake).
-                    val factory =
-                        if (exportTake != null && sceneFactoryFor != null) {
-                            sceneFactoryFor(exportSceneIdFor(exportTake, _vizState.value.sceneId))
-                        } else {
-                            sceneFactory
-                        }
-                    val result =
-                        exporter.export(
-                            audioUri = uri,
-                            timeline = t,
-                            sceneFactory = factory,
-                            aspect = aspect,
-                            fileName = name,
-                            sceneParams = _vizState.value.params,
-                            lfoConfigs = _lfos.value,
-                            adsrConfigs = _adsrs.value,
-                            safety = gui.safety,
-                            requestedFps = fps,
-                            paramsAt =
-                                exportTake
-                                    ?.let { take -> { ms: Long -> take.stateAt(ms)?.params ?: _vizState.value.params } },
-                            loopSafe = loopSafe,
-                            destination = destination,
-                            onProgress = { p ->
-                                _exportState.update { it.copy(progress = 0.2f + p * 0.8f) }
-                            },
-                            isCancelled = { exportCancelled },
-                        )
-                    _exportState.value = exportUiStateFor(result, customDestination = destination != null)
-                } catch (t: Throwable) {
-                    if (exportCancelled) {
-                        // User-initiated cancel (can surface as our own
-                        // CancellationException from the transcoder): not an
-                        // error, just reset the state.
-                        _exportState.value = ExportUiState(running = false)
-                    } else if (t is kotlinx.coroutines.CancellationException) {
-                        _exportState.value = ExportUiState(running = false)
-                        throw t
-                    } else {
-                        val detail = "${t.javaClass.simpleName}: ${t.message ?: "no message"}"
-                        _exportState.value = ExportUiState(running = false, error = detail)
-                    }
-                }
-            }
-    }
+    ) = exportController.startExport(aspect, fps, sceneFactory, destination, loopSafe, sceneFactoryFor)
 
-    fun cancelExport() {
-        exportCancelled = true
-    }
+    fun cancelExport() = exportController.cancelExport()
 
-    /** Clears a finished export's result/error so the next dialog open shows the options again. */
-    fun resetExportState() {
-        if (!_exportState.value.running) _exportState.value = ExportUiState()
-    }
+    fun resetExportState() = exportController.resetExportState()
 
-    // ---- Export Studio ----
+    fun refreshStudioClips() = exportController.refreshStudioClips()
 
-    private val studioExporter = dev.musicviz.export.StudioExporter(application)
-
-    private val _studio = MutableStateFlow(StudioUiState())
-
-    /** Clip list and export progress for the Studio tab. */
-    val studio: StateFlow<StudioUiState> = _studio
-
-    private var studioJob: Job? = null
-
-    /** Re-reads Movies/MusicViz. Cheap enough to run on every tab entry. */
-    fun refreshStudioClips() {
-        viewModelScope.launch {
-            _studio.update { it.copy(loading = true) }
-            val clips = withContext(Dispatchers.IO) { dev.musicviz.export.StudioClips.list(getApplication()) }
-            _studio.update { it.copy(clips = clips, loading = false) }
-        }
-    }
-
-    /** Describes a clip the user picked through the system file picker. */
     fun describeStudioClip(
         uri: Uri,
         onReady: (dev.musicviz.export.StudioClip) -> Unit,
-    ) {
-        viewModelScope.launch {
-            val clip = withContext(Dispatchers.IO) { dev.musicviz.export.StudioClips.describe(getApplication(), uri) }
-            onReady(clip)
-        }
-    }
+    ) = exportController.describeStudioClip(uri, onReady)
 
-    /**
-     * Renders an edit to a new file in Movies/MusicViz.
-     *
-     * Always a new file: an edit that overwrote its source would make the one
-     * irreversible action in the app the DEFAULT one, and the original render
-     * can be minutes of GPU time.
-     */
     fun startStudioExport(
         clip: dev.musicviz.export.StudioClip,
         edit: dev.musicviz.export.ClipEdit,
-    ) {
-        if (_studio.value.running) return
-        _studio.update { it.copy(running = true, progress = 0f, resultUri = null, error = null) }
-        studioJob =
-            viewModelScope.launch {
-                val name = "musicviz_studio_${System.currentTimeMillis()}.mp4"
-                val result =
-                    studioExporter.export(
-                        source = Uri.parse(clip.uri),
-                        sourceDurationMs = clip.durationMs,
-                        edit = edit,
-                        displayName = name,
-                    ) { p -> _studio.update { it.copy(progress = p.coerceIn(0f, 1f)) } }
-                when (result) {
-                    is dev.musicviz.export.StudioExporter.Result.Saved ->
-                        _studio.update { it.copy(running = false, progress = 1f, resultUri = result.uri) }
-                    is dev.musicviz.export.StudioExporter.Result.Failed ->
-                        _studio.update { it.copy(running = false, error = result.message) }
-                    dev.musicviz.export.StudioExporter.Result.Cancelled ->
-                        _studio.update { it.copy(running = false, progress = 0f) }
-                }
-                refreshStudioClips()
-                studioJob = null
-            }
-    }
+    ) = exportController.startStudioExport(clip, edit)
 
-    fun cancelStudioExport() {
-        studioExporter.cancel()
-        studioJob?.cancel()
-        studioJob = null
-        _studio.update { it.copy(running = false, progress = 0f) }
-    }
+    fun cancelStudioExport() = exportController.cancelStudioExport()
 
-    /** Clears a finished Studio export so the editor shows its controls again. */
-    fun clearStudioResult() {
-        _studio.update { it.copy(resultUri = null, error = null, progress = 0f) }
-    }
+    fun clearStudioResult() = exportController.clearStudioResult()
 
     override fun onCleared() {
         // Whatever was playing when the process went away still counts, and it
@@ -3754,7 +3559,6 @@ class PlayerViewModel(
         // first still holds. The flag is also what makes the exporter delete
         // its half-written file, exactly as a user-cancel does.
         cancelExport()
-        exportJob = null
         // The microphone goes first: an open AudioRecord outliving the
         // ViewModel would keep the recording indicator up with nothing left
         // to read it.
