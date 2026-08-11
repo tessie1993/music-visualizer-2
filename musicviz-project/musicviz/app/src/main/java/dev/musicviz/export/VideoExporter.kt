@@ -95,11 +95,11 @@ class VideoExporter(
 
         /**
          * TRY_AGAIN rounds tolerated in the post-EOS drain before the encoder
-         * is declared stalled: x [TIMEOUT_US] = 6 s of no output at all, far
+         * is declared stalled: x [TIMEOUT_US] = 10 s of no output at all, far
          * past any healthy flush, but enough headroom that a slow 4K encoder
          * is not mistaken for a wedged one.
          */
-        private const val FLUSH_ATTEMPT_LIMIT = 600
+        private const val FLUSH_ATTEMPT_LIMIT = 1_000
 
         /** Ripple overlay grid short side - matches the live renderer's. */
         private const val RIPPLE_OVERLAY_RES = 256
