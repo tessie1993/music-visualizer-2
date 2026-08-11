@@ -31,6 +31,8 @@ Conventional commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
 ## Coding Rules
 
 - `.claude/rules/ecc/kotlin/` applies to all `**/*.kt` files.
+- `.claude/rules/matt-pocock-methods.md` — workflow rules (plan → vertical
+  slices → TDD → review) for all Claude coding sessions in this repo.
 - Immutability by default: prefer `val`, data classes, and copies over
   in-place mutation — EXCEPT in the real-time render/audio hot paths,
   which deliberately reuse preallocated mutable buffers to avoid
