@@ -95,7 +95,7 @@ class OfflineAnalyzer(
                 if (!inputDone) {
                     val inIndex = codec.dequeueInputBuffer(10_000)
                     if (inIndex >= 0) {
-                        val buf = codec.getInputBuffer(inIndex)!!
+                        val buf = checkNotNull(codec.getInputBuffer(inIndex)) { "decoder input buffer null (codec error state)" }
                         val size = extractor.readSampleData(buf, 0)
                         if (size < 0) {
                             codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
@@ -119,7 +119,7 @@ class OfflineAnalyzer(
                         val outFormat = codec.outputFormat
                         val sampleRate = outFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
                         val channels = outFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-                        val buf = codec.getOutputBuffer(outIndex)!!
+                        val buf = checkNotNull(codec.getOutputBuffer(outIndex)) { "decoder output buffer null (codec error state)" }
                         buf.position(info.offset)
                         buf.limit(info.offset + info.size)
                         val pcmEncoding =
