@@ -30,6 +30,28 @@ class PresetShareImportTest {
 
     private val milk = "MILKDROP_PRESET_VERSION=201\n[preset00]\nfDecay=0.97\n"
 
+    /** Drives the async file import to completion and returns its result. */
+    private fun importFile(
+        v: PlayerViewModel,
+        uri: Uri,
+    ): String? {
+        var result: String? = null
+        var done = false
+        v.importPresetFile(uri) {
+            result = it
+            done = true
+        }
+        val deadline = System.currentTimeMillis() + 10_000L
+        while (!done && System.currentTimeMillis() < deadline) {
+            org.robolectric.Shadows
+                .shadowOf(android.os.Looper.getMainLooper())
+                .idle()
+            Thread.sleep(5)
+        }
+        v.awaitStoreWrites()
+        return result
+    }
+
     @Test
     fun a_shared_preset_file_imports_with_its_milk_source() {
         val app = ApplicationProvider.getApplicationContext<Application>()
@@ -37,6 +59,7 @@ class PresetShareImportTest {
         v.selectScene(SceneIds.MILKDROP)
         v.noteMilkPreset(File(File(app.filesDir, "milk").apply { mkdirs() }, "src.milk").apply { writeText(milk) }.absolutePath)
         v.savePreset("Shared look", null)
+        v.awaitStoreWrites()
 
         // What Share hands to the other app.
         val shared = v.presetFile("Shared look")
@@ -44,7 +67,7 @@ class PresetShareImportTest {
 
         // Importing it back names it around the existing one rather than
         // overwriting the preset already saved under that name.
-        val name = v.importPresetFile(Uri.fromFile(shared))
+        val name = importFile(v, Uri.fromFile(shared))
         assertEquals("Shared look 2", name)
 
         val imported = v.vizState.value.presets.first { it.name == name }
@@ -56,7 +79,7 @@ class PresetShareImportTest {
     fun a_file_that_is_not_a_preset_imports_as_nothing() {
         val junk = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "junk.json")
         junk.writeText("{\"not\":\"a preset\"}")
-        assertNull(vm().importPresetFile(Uri.fromFile(junk)))
+        assertNull(importFile(vm(), Uri.fromFile(junk)))
     }
 
     @Test
@@ -65,6 +88,7 @@ class PresetShareImportTest {
         v.selectScene(SceneIds.PLASMA)
         v.setSceneParams(v.vizState.value.params.copy(speed = 1.63f))
         v.savePreset("Link look", null)
+        v.awaitStoreWrites()
 
         val link = v.presetShareLink("Link look")
         assertNotNull("a plain preset must still fit in a link", link)

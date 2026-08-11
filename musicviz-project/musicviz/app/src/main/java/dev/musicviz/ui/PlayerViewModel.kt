@@ -702,7 +702,7 @@ class PlayerViewModel(
             val listed = presetStore.list()
             withContext(Dispatchers.Main) {
                 // Fills the initial value only. Saving, deleting or moving a
-                // preset re-lists synchronously on the main thread, and a
+                // preset re-lists on the store writer (relistPresets), and a
                 // listing that began before one of those must not land on top
                 // of it - the untouched built-ins are still the same list
                 // instance restoreVizState started from, which is exactly the
@@ -2488,12 +2488,14 @@ class PlayerViewModel(
         name: String,
         folder: String,
     ) {
-        presetStore.moveToFolder(name, folder)
-        // The mirror tracks every write path, not just savePreset: a move
-        // that skipped it left the mirrored copy wherever the preset used to
-        // be, drifting from the store it exists to reflect.
-        mirrorPresetToChosenFolder(name)
-        _vizState.update { it.copy(presets = BuiltInPresets.ALL + presetStore.list()) }
+        storeWriter.execute {
+            presetStore.moveToFolder(name, folder)
+            // The mirror tracks every write path, not just savePreset: a move
+            // that skipped it left the mirrored copy wherever the preset used to
+            // be, drifting from the store it exists to reflect.
+            mirrorPresetToChosenFolder(name)
+            relistPresets()
+        }
     }
 
     /** User .milk files (imports + saves), newest first. Built-ins removed. */
@@ -3130,8 +3132,11 @@ class PlayerViewModel(
 
     fun deleteTake(name: String) {
         if (_takeState.value.replaying == name) stopReplay()
-        takeStore.delete(name)
-        refreshTakes()
+        storeWriter.execute {
+            takeStore.delete(name)
+            val listed = takeStore.list()
+            _takeState.update { it.copy(takes = listed) }
+        }
     }
 
     /**
@@ -3232,6 +3237,22 @@ class PlayerViewModel(
         _vizState.update { it.copy(shaderError = error) }
     }
 
+    /**
+     * Blocks until every queued preset/take mutation has reached the disk.
+     * For teardown - the last moment the process is guaranteed alive - and
+     * for tests that assert on the files a mutation produces. Same contract
+     * as [HistoryStore.awaitWrites].
+     */
+    internal fun awaitStoreWrites() {
+        runCatching { storeWriter.submit {}.get(2_000, java.util.concurrent.TimeUnit.MILLISECONDS) }
+    }
+
+    /** Re-reads the preset list from disk; runs on [storeWriter] after a mutation. */
+    private fun relistPresets() {
+        val listed = BuiltInPresets.ALL + presetStore.list()
+        _vizState.update { it.copy(presets = listed) }
+    }
+
     fun savePreset(
         name: String,
         customShader: String?,
@@ -3241,24 +3262,31 @@ class PlayerViewModel(
         // a user preset containing it would be undeletable in the browser.
         @Suppress("NAME_SHADOWING")
         val name = name.replace(" · ", " - ").trim().ifEmpty { "Preset" }
+        // Captured on the caller so the preset is what the user saw when they
+        // pressed Save; everything after is disk - a .milk read, two fsync'd
+        // writes, a full re-list - and runs on the store writer, off the main
+        // thread, where an fsync on busy flash was a jank/ANR risk.
         val s = _vizState.value
-        // On the milkdrop scene the parameters are only half the look: the
-        // .milk preset paints the picture they post-process. Its SOURCE goes
-        // into the preset itself so the saved state is the whole visual - a
-        // preset that carries only the params reloads as projectM's idle "M"
-        // logo, which is the bug this closes - and a copy is materialized in
-        // the user's milk dir so the file is reachable from the MilkDrop tab
-        // like any other .milk they loaded.
-        val milkSource =
-            if (s.sceneId == SceneIds.MILKDROP) {
-                _activeMilkPath.value?.let { src -> runCatching { java.io.File(src).readText() }.getOrNull() }
-            } else {
-                null
-            }
-        milkSource?.let { source -> presetStore.materializeMilk(name, source) }
-        presetStore.save(Preset(name, s.sceneId, s.attack, s.decay, customShader, s.params, milkSource), folder)
-        mirrorPresetToChosenFolder(name)
-        _vizState.value = s.copy(presets = BuiltInPresets.ALL + presetStore.list())
+        val milkPath = _activeMilkPath.value
+        storeWriter.execute {
+            // On the milkdrop scene the parameters are only half the look: the
+            // .milk preset paints the picture they post-process. Its SOURCE goes
+            // into the preset itself so the saved state is the whole visual - a
+            // preset that carries only the params reloads as projectM's idle "M"
+            // logo, which is the bug this closes - and a copy is materialized in
+            // the user's milk dir so the file is reachable from the MilkDrop tab
+            // like any other .milk they loaded.
+            val milkSource =
+                if (s.sceneId == SceneIds.MILKDROP) {
+                    milkPath?.let { src -> runCatching { java.io.File(src).readText() }.getOrNull() }
+                } else {
+                    null
+                }
+            milkSource?.let { source -> presetStore.materializeMilk(name, source) }
+            presetStore.save(Preset(name, s.sceneId, s.attack, s.decay, customShader, s.params, milkSource), folder)
+            mirrorPresetToChosenFolder(name)
+            relistPresets()
+        }
     }
 
     /**
@@ -3417,14 +3445,27 @@ class PlayerViewModel(
      * carry their .milk source. Without a way back IN, that branch of Share
      * produced a file the receiving app could do nothing with.
      */
-    fun importPresetFile(uri: Uri): String? =
-        runCatching {
-            getApplication<Application>()
-                .contentResolver
-                .openInputStream(uri)
-                ?.bufferedReader()
-                ?.use { it.readText() }
-        }.getOrNull()?.let { importPresetJson(it) }
+    fun importPresetFile(
+        uri: Uri,
+        onResult: (String?) -> Unit,
+    ) {
+        viewModelScope.launch {
+            // A SAF read can block on the provider (a cloud file is fetched on
+            // demand), so it happens off the main thread; the decode-and-save
+            // tail then runs back here, where the state lives.
+            val json =
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        getApplication<Application>()
+                            .contentResolver
+                            .openInputStream(uri)
+                            ?.bufferedReader()
+                            ?.use { it.readText() }
+                    }.getOrNull()
+                }
+            onResult(json?.let { importPresetJson(it) })
+        }
+    }
 
     /** Saves an incoming preset document; the shared tail of both imports. */
     private fun importPresetJson(json: String): String? {
@@ -3445,8 +3486,17 @@ class PlayerViewModel(
             name = "$base $n"
             n++
         }
-        presetStore.save(incoming.copy(name = name))
-        _vizState.update { it.copy(presets = BuiltInPresets.ALL + presetStore.list()) }
+        val preset = incoming.copy(name = name)
+        // Into the state right away - back-to-back imports must see each other
+        // for the numeric suffix to hold - and onto the disk via the writer,
+        // off the caller's thread: this runs from onCreate on a deep link,
+        // where the fsync'd save plus a full re-list was an ANR risk at the
+        // worst possible moment, app launch.
+        _vizState.update { it.copy(presets = it.presets + preset) }
+        storeWriter.execute {
+            presetStore.save(preset)
+            relistPresets()
+        }
         return name
     }
 
@@ -3455,13 +3505,17 @@ class PlayerViewModel(
 
     fun deletePreset(name: String) {
         if (BuiltInPresets.isBuiltIn(name)) return
-        // The mirror follows the store both ways. Save-only sync meant every
-        // deleted preset lived on in the user's chosen folder, so the mirror
-        // slowly became a directory of ghosts. File names are captured BEFORE
-        // the delete - fileOf resolves through the disk.
-        removeMirroredPreset(presetStore.fileOf(name)?.name, milkFileFor(name).name)
-        presetStore.delete(name)
-        _vizState.update { it.copy(presets = BuiltInPresets.ALL + presetStore.list()) }
+        // Gone from the list immediately; the disk catches up on the writer.
+        _vizState.update { st -> st.copy(presets = st.presets.filterNot { it.name == name }) }
+        storeWriter.execute {
+            // The mirror follows the store both ways. Save-only sync meant every
+            // deleted preset lived on in the user's chosen folder, so the mirror
+            // slowly became a directory of ghosts. File names are captured BEFORE
+            // the delete - fileOf resolves through the disk.
+            removeMirroredPreset(presetStore.fileOf(name)?.name, milkFileFor(name).name)
+            presetStore.delete(name)
+            relistPresets()
+        }
     }
 
     /** Best-effort removal of a deleted preset's mirrored files (see [mirrorPresetToChosenFolder]). */
@@ -3685,6 +3739,8 @@ class PlayerViewModel(
         // no later moment to land in.
         flushListenTime()
         historyStore.awaitWrites()
+        // Same rule for a preset or take mutation still queued on the writer.
+        awaitStoreWrites()
         // The debounced live-state write rides viewModelScope, which is
         // cancelled BEFORE onCleared runs, so the last slider the user touched
         // is only on disk if it is written here.
@@ -3934,6 +3990,19 @@ class PlayerViewModel(
     }
 
     private companion object {
+        /**
+         * One writer thread for preset and take mutations - fsync'd saves,
+         * deletes and the re-list that follows them - so they stay ordered
+         * and off the main thread. [HistoryStore]'s design, static for the
+         * same reason: a process with several ViewModels alive (tests build
+         * one per case) must not accumulate threads. Daemon: a pending write
+         * must never be what keeps the JVM up.
+         */
+        val storeWriter: java.util.concurrent.ExecutorService =
+            java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+                Thread(r, "musicviz-stores").apply { isDaemon = true }
+            }
+
         /**
          * Longest gap the listening accrual will believe. The poll runs every
          * 500 ms, so anything past a few seconds is a suspended process rather
