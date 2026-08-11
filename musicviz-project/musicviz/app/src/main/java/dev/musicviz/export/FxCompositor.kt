@@ -157,16 +157,20 @@ internal class FxCompositor(
     private val program = GlUtil.buildProgram(loadRaw(context, R.raw.fade_vert), loadRaw(context, R.raw.composite_frag))
     private val fadeProgram = GlUtil.buildProgram(loadRaw(context, R.raw.fade_vert), loadRaw(context, R.raw.fade_frag))
     private val trailWarpProgram = GlUtil.buildProgram(loadRaw(context, R.raw.fade_vert), loadRaw(context, R.raw.trail_warp_frag))
-    private var trailTex = 0
-    private var trailFbo = 0
-    private var trailW = 0
-    private var trailH = 0
+
+    /** Feedback buffer for the warp trail; see the live renderer's `trail`. */
+    private val trail = dev.musicviz.render.RenderTarget("exportTrail")
 
     /** Blue-noise dither mask, so an exported frame is dithered like the screen. */
     private val noiseTex: Int = dev.musicviz.render.BlueNoise.createTexture(context)
     private val vao: Int
+
+    /** The target the scene renders into, before the composite pass. */
+    private val sceneTarget = dev.musicviz.render.RenderTarget("exportScene")
+
+    /** The scene target's framebuffer, for the exporter to bind. */
     val sceneFbo: Int
-    private val sceneTex: Int
+        get() = sceneTarget.fbo
     private val emptyTex: Int
 
     /** Integrated rotation angle / colour-cycle phase for the grade block. */
@@ -177,36 +181,10 @@ internal class FxCompositor(
         GLES30.glGenVertexArrays(1, ids, 0)
         vao = ids[0]
 
-        // Colour texture the scene renders into.
-        GLES30.glGenTextures(1, ids, 0)
-        sceneTex = ids[0]
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, sceneTex)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
-        GLES30.glTexImage2D(
-            GLES30.GL_TEXTURE_2D,
-            0,
-            GLES30.GL_RGBA8,
-            width,
-            height,
-            0,
-            GLES30.GL_RGBA,
-            GLES30.GL_UNSIGNED_BYTE,
-            null,
-        )
-        GLES30.glGenFramebuffers(1, ids, 0)
-        sceneFbo = ids[0]
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, sceneFbo)
-        GLES30.glFramebufferTexture2D(
-            GLES30.GL_FRAMEBUFFER,
-            GLES30.GL_COLOR_ATTACHMENT0,
-            GLES30.GL_TEXTURE_2D,
-            sceneTex,
-            0,
-        )
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
+        // Colour texture the scene renders into. Same shared target type the
+        // live renderer uses, so both paths get the completeness check and the
+        // initial clear rather than two of the four sites having them.
+        sceneTarget.ensure(width, height)
 
         // A 1x1 texture for the unused second (transition) sampler. Explicitly
         // zero-filled, like the live renderer's zeroTex: passing null leaves the
@@ -258,20 +236,19 @@ internal class FxCompositor(
             fadeSceneTarget(params.trailLength, dtSeconds)
             return
         }
-        ensureTrailBuffer(w, h)
-        if (trailFbo == 0) {
+        if (!trail.ensure(w, h)) {
             fadeSceneTarget(params.trailLength, dtSeconds)
             return
         }
         GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, sceneFbo)
-        GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, trailFbo)
+        GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, trail.fbo)
         GLES30.glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GLES30.GL_COLOR_BUFFER_BIT, GLES30.GL_NEAREST)
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, sceneFbo)
         GLES30.glViewport(0, 0, w, h)
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glUseProgram(trailWarpProgram)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, trailTex)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, trail.tex)
         GLES30.glUniform1i(GLES30.glGetUniformLocation(trailWarpProgram, "uPrev"), 0)
         // Same shared decay as the live renderer's drawTrailWarp: the caller
         // (VideoExporter) hands in trailLength already remapped for styles
@@ -286,39 +263,6 @@ internal class FxCompositor(
         GLES30.glBindVertexArray(vao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)
-    }
-
-    private fun ensureTrailBuffer(
-        w: Int,
-        h: Int,
-    ) {
-        if (trailTex != 0 && trailW == w && trailH == h) return
-        releaseTrailBuffer()
-        val ids = IntArray(1)
-        GLES30.glGenTextures(1, ids, 0)
-        trailTex = ids[0]
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, trailTex)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
-        GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA8, w, h, 0, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null)
-        GLES30.glGenFramebuffers(1, ids, 0)
-        trailFbo = ids[0]
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, trailFbo)
-        GLES30.glFramebufferTexture2D(GLES30.GL_FRAMEBUFFER, GLES30.GL_COLOR_ATTACHMENT0, GLES30.GL_TEXTURE_2D, trailTex, 0)
-        if (GLES30.glCheckFramebufferStatus(GLES30.GL_FRAMEBUFFER) != GLES30.GL_FRAMEBUFFER_COMPLETE) {
-            releaseTrailBuffer()
-        }
-        trailW = w
-        trailH = h
-    }
-
-    private fun releaseTrailBuffer() {
-        if (trailTex != 0) GLES30.glDeleteTextures(1, intArrayOf(trailTex), 0)
-        if (trailFbo != 0) GLES30.glDeleteFramebuffers(1, intArrayOf(trailFbo), 0)
-        trailTex = 0
-        trailFbo = 0
     }
 
     fun fadeSceneTarget(
@@ -391,7 +335,7 @@ internal class FxCompositor(
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glUseProgram(program)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, sceneTex)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, sceneTarget.tex)
         GLES30.glUniform1i(loc("uTexA"), 0)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, emptyTex)
@@ -491,14 +435,16 @@ internal class FxCompositor(
     }
 
     fun release() {
-        val ids = intArrayOf(sceneTex, emptyTex, noiseTex)
-        GLES30.glDeleteTextures(3, ids, 0)
-        GLES30.glDeleteFramebuffers(1, intArrayOf(sceneFbo), 0)
+        // Count must match the array: the scene texture moved into sceneTarget,
+        // so this is two, not three.
+        val ids = intArrayOf(emptyTex, noiseTex)
+        GLES30.glDeleteTextures(ids.size, ids, 0)
+        sceneTarget.release()
         GLES30.glDeleteVertexArrays(1, intArrayOf(vao), 0)
         GLES30.glDeleteProgram(program)
         GLES30.glDeleteProgram(fadeProgram)
         GLES30.glDeleteProgram(trailWarpProgram)
-        releaseTrailBuffer()
+        trail.release()
     }
 
     private val uniformLocs = HashMap<String, Int>()
