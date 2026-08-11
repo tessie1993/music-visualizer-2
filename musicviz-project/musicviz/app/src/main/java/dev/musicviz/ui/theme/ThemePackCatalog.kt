@@ -44,6 +44,7 @@ object ThemePackCatalog {
             material =
                 StoneMaterial(
                     tile = R.drawable.tp_lapis_lazuli_material_tile,
+                    master = R.drawable.tp_lapis_lazuli_material_master,
                     glowOverlay = R.drawable.tp_lapis_lazuli_glow_overlay,
                     refractionOverlay = R.drawable.tp_lapis_lazuli_refraction_overlay,
                     ambientPortrait = R.drawable.tp_lapis_lazuli_ambient_portrait,
@@ -244,6 +245,7 @@ object ThemePackCatalog {
             material =
                 StoneMaterial(
                     tile = R.drawable.tp_sugilite_material_tile,
+                    master = R.drawable.tp_sugilite_material_master,
                     glowOverlay = R.drawable.tp_sugilite_glow_overlay,
                     refractionOverlay = R.drawable.tp_sugilite_refraction_overlay,
                     ambientPortrait = R.drawable.tp_sugilite_ambient_portrait,
@@ -444,6 +446,7 @@ object ThemePackCatalog {
             material =
                 StoneMaterial(
                     tile = R.drawable.tp_amethyst_material_tile,
+                    master = R.drawable.tp_amethyst_material_master,
                     glowOverlay = R.drawable.tp_amethyst_glow_overlay,
                     refractionOverlay = R.drawable.tp_amethyst_refraction_overlay,
                     ambientPortrait = R.drawable.tp_amethyst_ambient_portrait,
@@ -644,6 +647,7 @@ object ThemePackCatalog {
             material =
                 StoneMaterial(
                     tile = R.drawable.tp_clear_quartz_material_tile,
+                    master = R.drawable.tp_clear_quartz_material_master,
                     glowOverlay = R.drawable.tp_clear_quartz_glow_overlay,
                     refractionOverlay = R.drawable.tp_clear_quartz_refraction_overlay,
                     ambientPortrait = R.drawable.tp_clear_quartz_ambient_portrait,
@@ -844,6 +848,7 @@ object ThemePackCatalog {
             material =
                 StoneMaterial(
                     tile = R.drawable.tp_azurite_material_tile,
+                    master = R.drawable.tp_azurite_material_master,
                     glowOverlay = R.drawable.tp_azurite_glow_overlay,
                     refractionOverlay = R.drawable.tp_azurite_refraction_overlay,
                     ambientPortrait = R.drawable.tp_azurite_ambient_portrait,
@@ -1044,6 +1049,7 @@ object ThemePackCatalog {
             material =
                 StoneMaterial(
                     tile = R.drawable.tp_firestone_material_tile,
+                    master = R.drawable.tp_firestone_material_master,
                     glowOverlay = R.drawable.tp_firestone_glow_overlay,
                     refractionOverlay = R.drawable.tp_firestone_refraction_overlay,
                     ambientPortrait = R.drawable.tp_firestone_ambient_portrait,
@@ -1244,6 +1250,7 @@ object ThemePackCatalog {
             material =
                 StoneMaterial(
                     tile = R.drawable.tp_kyanite_material_tile,
+                    master = R.drawable.tp_kyanite_material_master,
                     glowOverlay = R.drawable.tp_kyanite_glow_overlay,
                     refractionOverlay = R.drawable.tp_kyanite_refraction_overlay,
                     ambientPortrait = R.drawable.tp_kyanite_ambient_portrait,
@@ -1444,6 +1451,7 @@ object ThemePackCatalog {
             material =
                 StoneMaterial(
                     tile = R.drawable.tp_malachite_material_tile,
+                    master = R.drawable.tp_malachite_material_master,
                     glowOverlay = R.drawable.tp_malachite_glow_overlay,
                     refractionOverlay = R.drawable.tp_malachite_refraction_overlay,
                     ambientPortrait = R.drawable.tp_malachite_ambient_portrait,
@@ -1644,6 +1652,7 @@ object ThemePackCatalog {
             material =
                 StoneMaterial(
                     tile = R.drawable.tp_mookaite_material_tile,
+                    master = R.drawable.tp_mookaite_material_master,
                     glowOverlay = R.drawable.tp_mookaite_glow_overlay,
                     refractionOverlay = R.drawable.tp_mookaite_refraction_overlay,
                     ambientPortrait = R.drawable.tp_mookaite_ambient_portrait,
@@ -1844,6 +1853,7 @@ object ThemePackCatalog {
             material =
                 StoneMaterial(
                     tile = R.drawable.tp_onyx_material_tile,
+                    master = R.drawable.tp_onyx_material_master,
                     glowOverlay = R.drawable.tp_onyx_glow_overlay,
                     refractionOverlay = R.drawable.tp_onyx_refraction_overlay,
                     ambientPortrait = R.drawable.tp_onyx_ambient_portrait,

@@ -20,16 +20,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Casino
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.LayersClear
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material3.Icon
@@ -63,6 +58,8 @@ import dev.musicviz.render.VisualizerView
 import dev.musicviz.render.scene.CustomizeTab
 import dev.musicviz.render.scene.SceneIds
 import dev.musicviz.render.scene.VisualStyleCatalog
+import dev.musicviz.ui.theme.StoneIcon
+import dev.musicviz.ui.theme.StoneIconArt
 
 /**
  * The Visuals nav destination: everything visual in one hub. Style/Customize
@@ -339,7 +336,7 @@ private fun PresetsTreeTab(
                             IconButton(onClick = {
                                 renamingFolder = folder
                                 folderRenameText = folder
-                            }) { Icon(Icons.Filled.Edit, "Rename this folder") }
+                            }) { StoneIconArt(StoneIcon.EDIT, "Rename this folder") }
                         }
                     }
                 }
@@ -348,10 +345,10 @@ private fun PresetsTreeTab(
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(p.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     IconButton(onClick = { applyPresetLive(viewModel, visualizerView, p) }) {
-                        Icon(Icons.Filled.PlayArrow, "Apply", tint = MaterialTheme.colorScheme.primary)
+                        StoneIconArt(StoneIcon.PLAY, "Apply", tint = MaterialTheme.colorScheme.primary)
                     }
                     IconButton(onClick = { sharePreset(context, viewModel, p.name) }) {
-                        Icon(Icons.Filled.Share, "Share this preset")
+                        StoneIconArt(StoneIcon.SHARE, "Share this preset")
                     }
                     // Membership toggle, not an append: the heart reads back
                     // whether the preset is in the visual playlist (tint) and a
@@ -373,17 +370,17 @@ private fun PresetsTreeTab(
                             }
                         },
                     ) {
-                        Icon(
-                            Icons.Filled.Favorite,
+                        StoneIconArt(
+                            StoneIcon.FAVORITE,
                             if (inPlaylist) "Remove from visual playlist" else "Add to visual playlist",
                             tint = if (inPlaylist) MaterialTheme.colorScheme.primary else LocalContentColor.current,
                         )
                     }
                     IconButton(onClick = { movingPreset = p.name }) {
-                        Icon(Icons.AutoMirrored.Filled.DriveFileMove, "Move to another folder")
+                        StoneIconArt(StoneIcon.FOLDER, "Move to another folder")
                     }
                     IconButton(onClick = { deletingPreset = p.name }) {
-                        Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error)
+                        StoneIconArt(StoneIcon.DELETE, "Remove", tint = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -403,7 +400,7 @@ private fun PresetsTreeTab(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(p.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 IconButton(onClick = { applyPresetLive(viewModel, visualizerView, p) }) {
-                    Icon(Icons.Filled.PlayArrow, "Apply", tint = MaterialTheme.colorScheme.primary)
+                    StoneIconArt(StoneIcon.PLAY, "Apply", tint = MaterialTheme.colorScheme.primary)
                 }
             }
         }
@@ -1250,17 +1247,20 @@ private fun TakesTab(viewModel: PlayerViewModel) {
                 IconButton(onClick = {
                     if (playing) viewModel.stopReplay() else viewModel.playTake(take.name)
                 }) {
-                    Icon(
-                        if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
-                        if (playing) "Stop replay" else "Replay this take",
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
+                    // Stop is one of the few affordances the packs ship no icon
+                    // for, so the two states are drawn from different sets
+                    // rather than pinning replay to a Material glyph as well.
+                    if (playing) {
+                        Icon(Icons.Filled.Stop, "Stop replay", tint = MaterialTheme.colorScheme.primary)
+                    } else {
+                        StoneIconArt(StoneIcon.PLAY, "Replay this take", tint = MaterialTheme.colorScheme.primary)
+                    }
                 }
                 IconButton(onClick = {
                     viewModel.setExportTake(if (takes.exportTake == take.name) null else take.name)
                 }) {
-                    Icon(
-                        Icons.Filled.Favorite,
+                    StoneIconArt(
+                        StoneIcon.FAVORITE,
                         "Render this take on the next export",
                         tint =
                             if (takes.exportTake == take.name) {
@@ -1273,9 +1273,9 @@ private fun TakesTab(viewModel: PlayerViewModel) {
                 IconButton(onClick = {
                     renaming = take.name
                     renameText = take.name
-                }) { Icon(Icons.Filled.Edit, "Rename") }
+                }) { StoneIconArt(StoneIcon.EDIT, "Rename") }
                 IconButton(onClick = { deleting = take.name }) {
-                    Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                    StoneIconArt(StoneIcon.DELETE, "Delete", tint = MaterialTheme.colorScheme.error)
                 }
             }
         }
@@ -1366,7 +1366,7 @@ private fun TexturesHubTab(
                     viewModel.useTexture(tex.name) { path -> selectMilk(viewModel, visualizerView, path) }
                 }) { Text("Use") }
                 IconButton(onClick = { deletingTexture = tex.name }) {
-                    Icon(Icons.Filled.Delete, "Delete this texture", tint = MaterialTheme.colorScheme.error)
+                    StoneIconArt(StoneIcon.DELETE, "Delete this texture", tint = MaterialTheme.colorScheme.error)
                 }
             }
         }

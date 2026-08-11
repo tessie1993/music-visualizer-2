@@ -13,10 +13,13 @@
 # `materials/material-master.png` are documentation and deliberately not
 # shipped.
 #
-# Component surfaces and material overlays are transcoded PNG -> WebP (quality
-# 88, alpha preserved). This is a container change only - no artwork is
-# redrawn, resampled or recoloured - and it takes a pack from ~28 MB to ~4 MB,
-# which is what makes one-pack-per-crystal fit in a single APK.
+# Every raster asset is copied byte-for-byte as the pack ships it. The PNGs go
+# in as PNGs - untranscoded, unresampled, unrecoloured - and the four assets
+# the packs already ship as WebP are copied in that form. Nothing here
+# re-encodes or regenerates artwork.
+#
+# That fidelity costs about 33 MB of PNG per crystal, so a build offering many
+# packs at once is large; import only the packs that build should ship.
 #
 # Fonts are byte-identical across every pack, so they are written once.
 # Icon path geometry is also pack-invariant and lives in Kotlin
@@ -29,8 +32,6 @@ if [ $# -lt 1 ]; then
     exit 2
 fi
 
-command -v ffmpeg >/dev/null || { echo "ffmpeg is required (libwebp encoder)" >&2; exit 1; }
-
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 RES="$SCRIPT_DIR/../app/src/main/res"
 DRAWABLE="$RES/drawable-nodpi"
@@ -38,17 +39,14 @@ RAW="$RES/raw"
 FONT="$RES/font"
 mkdir -p "$DRAWABLE" "$RAW" "$FONT"
 
-WEBP_QUALITY=88
-
 # 18 component families x 5 interaction states, exactly as the packs ship them.
 STATES="default focused pressed selected disabled"
 FAMILIES="album-tile bottom-sheet card chip compact-button dialog icon-button \
 knob list-row mini-player navigation-bar primary-button progress-ring \
 secondary-button slider-thumb slider-track text-field toggle"
 
-to_webp() { # <src> <dest-basename>
-    ffmpeg -y -loglevel error -i "$1" -c:v libwebp \
-        -quality "$WEBP_QUALITY" -compression_level 6 "$DRAWABLE/$2.webp"
+put_png() { # <src> <dest-basename>
+    cp "$1" "$DRAWABLE/$2.png"
 }
 
 # CATALOG_ONLY=1 skips the asset encode and only regenerates the Kotlin
@@ -67,12 +65,15 @@ for PACK in "$@"; do
         for s in $STATES; do
             src="$PACK/components/individual/$f--$s.png"
             [ -f "$src" ] || { echo "missing $src" >&2; exit 1; }
-            to_webp "$src" "tp_${RS}_${f//-/_}_${s}"
+            put_png "$src" "tp_${RS}_${f//-/_}_${s}"
         done
     done
 
-    to_webp "$PACK/materials/glow-overlay.png"       "tp_${RS}_glow_overlay"
-    to_webp "$PACK/materials/refraction-overlay.png" "tp_${RS}_refraction_overlay"
+    put_png "$PACK/materials/glow-overlay.png"       "tp_${RS}_glow_overlay"
+    put_png "$PACK/materials/refraction-overlay.png" "tp_${RS}_refraction_overlay"
+    # The tokens name this one `material.texture`: the uncropped mineral master
+    # the mirrored tile is cut from, for surfaces big enough to show the seam.
+    put_png "$PACK/materials/material-master.png"    "tp_${RS}_material_master"
 
     # Already WebP in the pack - copied verbatim, no re-encode.
     cp "$PACK/materials/material-tile.webp"        "$DRAWABLE/tp_${RS}_material_tile.webp"
@@ -175,6 +176,7 @@ HEADER
             material =
                 StoneMaterial(
                     tile = R.drawable.tp_${RS}_material_tile,
+                    master = R.drawable.tp_${RS}_material_master,
                     glowOverlay = R.drawable.tp_${RS}_glow_overlay,
                     refractionOverlay = R.drawable.tp_${RS}_refraction_overlay,
                     ambientPortrait = R.drawable.tp_${RS}_ambient_portrait,

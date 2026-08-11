@@ -93,6 +93,12 @@ data class StoneMotion(
 /** Material layers and the texture strengths the pack allows them at. */
 data class StoneMaterial(
     @param:DrawableRes val tile: Int,
+    /**
+     * The uncropped mineral master the mirrored [tile] is cut from, which the
+     * packs' tokens name `material.texture`. Surfaces large enough to show the
+     * tile's repeat draw this instead.
+     */
+    @param:DrawableRes val master: Int,
     @param:DrawableRes val glowOverlay: Int,
     @param:DrawableRes val refractionOverlay: Int,
     @param:DrawableRes val ambientPortrait: Int,

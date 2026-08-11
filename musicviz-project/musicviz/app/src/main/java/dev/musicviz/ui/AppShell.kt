@@ -17,17 +17,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -51,6 +41,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.musicviz.analysis.SearchMatcher
 import dev.musicviz.render.VisualizerView
+import dev.musicviz.ui.theme.StoneIcon
+import dev.musicviz.ui.theme.StoneIconArt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -197,11 +189,11 @@ fun AppRoot(viewModel: PlayerViewModel) {
                         CrystalNavBar(
                             items =
                                 listOf(
-                                    CrystalNavItem("Player", Icons.Filled.PlayCircle),
-                                    CrystalNavItem("Library", Icons.Filled.LibraryMusic),
-                                    CrystalNavItem("Visuals", Icons.Filled.MusicNote),
-                                    CrystalNavItem("Studio", Icons.Filled.Movie),
-                                    CrystalNavItem("Settings", Icons.Filled.Settings),
+                                    CrystalNavItem("Player", StoneIcon.PLAY),
+                                    CrystalNavItem("Library", StoneIcon.LIBRARY),
+                                    CrystalNavItem("Visuals", StoneIcon.VISUALIZER),
+                                    CrystalNavItem("Studio", StoneIcon.STUDIO),
+                                    CrystalNavItem("Settings", StoneIcon.SETTINGS),
                                 ),
                             selected = dest,
                             onSelect = { dest = it },
@@ -332,11 +324,11 @@ private fun MiniPlayer(
             // Previous sits next to Next here too: with the queue now built
             // from the list a track was played from, both directions mean
             // something from the mini-player, not only in Now Playing.
-            IconButton(onClick = onPrevious) { Icon(Icons.Filled.SkipPrevious, "Previous") }
+            IconButton(onClick = onPrevious) { StoneIconArt(StoneIcon.PREVIOUS, "Previous") }
             IconButton(onClick = onPlayPause) {
-                Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play/Pause")
+                StoneIconArt(if (isPlaying) StoneIcon.PAUSE else StoneIcon.PLAY, "Play/Pause")
             }
-            IconButton(onClick = onNext) { Icon(Icons.Filled.SkipNext, "Next") }
+            IconButton(onClick = onNext) { StoneIconArt(StoneIcon.NEXT, "Next") }
         }
         LinearProgressIndicator(
             progress = { progress.coerceIn(0f, 1f) },
@@ -468,7 +460,7 @@ fun SearchScreen(
                     singleLine = true,
                     shape = crystalShardShape(14.dp, 5.dp),
                 )
-                IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "Close search") }
+                IconButton(onClick = onClose) { StoneIconArt(StoneIcon.CLOSE, "Close search") }
             }
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (terms.isEmpty()) {
@@ -510,7 +502,7 @@ fun SearchScreen(
                                     }
                                 }
                                 IconButton(onClick = { viewModel.enqueue(t.uri) }) {
-                                    Icon(Icons.AutoMirrored.Filled.QueueMusic, "Add to queue")
+                                    StoneIconArt(StoneIcon.QUEUE, "Add to queue")
                                 }
                             }
                         }
