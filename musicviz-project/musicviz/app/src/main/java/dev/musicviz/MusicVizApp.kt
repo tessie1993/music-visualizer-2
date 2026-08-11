@@ -15,8 +15,11 @@ class MusicVizApp : Application() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             runCatching {
+                // BuildConfig, not PackageManager: the version is compiled in,
+                // and a binder call into a process that is mid-crash is one
+                // more thing that can fail before the trace reaches the disk.
                 File(filesDir, "crash-latest.txt").writeText(
-                    "MusicViz ${packageManager.getPackageInfo(packageName, 0).versionName}\n" +
+                    "MusicViz ${BuildConfig.VERSION_NAME}\n" +
                         "Thread: ${thread.name}\n\n" +
                         android.util.Log.getStackTraceString(throwable),
                 )
