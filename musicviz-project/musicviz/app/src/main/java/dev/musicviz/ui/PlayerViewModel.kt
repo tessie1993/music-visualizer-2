@@ -1006,6 +1006,7 @@ class PlayerViewModel(
                         .map { MilkFile(it.nameWithoutExtension, it.absolutePath) }
                         .sortedBy { it.name }
                 } catch (t: Throwable) {
+                    dev.musicviz.RingLog.note("MilkFiles", "milk list failed", t)
                     emptyList()
                 }
             withContext(Dispatchers.Main) { onDone(files) }
@@ -1052,6 +1053,7 @@ class PlayerViewModel(
                 } ?: false
             if (written) file.absolutePath else null
         } catch (t: Throwable) {
+            dev.musicviz.RingLog.note("MilkImport", "milk import failed", t)
             null
         }
 

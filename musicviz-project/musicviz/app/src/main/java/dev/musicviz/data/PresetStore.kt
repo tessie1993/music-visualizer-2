@@ -1,6 +1,7 @@
 package dev.musicviz.data
 
 import android.content.Context
+import androidx.annotation.WorkerThread
 import dev.musicviz.render.scene.SceneParams
 import org.json.JSONObject
 import java.io.File
@@ -81,6 +82,7 @@ class PresetStore(
             .orEmpty()
     }
 
+    @WorkerThread
     fun folders(): List<String> =
         dir
             .walkTopDown()
@@ -121,6 +123,7 @@ class PresetStore(
         return f.deleteRecursively()
     }
 
+    @WorkerThread
     fun moveToFolder(
         name: String,
         folder: String,
@@ -160,6 +163,7 @@ class PresetStore(
      * which projectM answers with its idle "M" logo. An interrupted write
      * leaves the previous .milk whole instead.
      */
+    @WorkerThread
     fun materializeMilk(
         presetName: String,
         source: String?,
@@ -175,14 +179,20 @@ class PresetStore(
     private fun findFile(name: String): File? =
         dir.walkTopDown().firstOrNull { it.isFile && it.extension == "json" && it.nameWithoutExtension == safeFileName(name) }
 
+    @WorkerThread
     fun list(): List<Preset> =
         dir
             .walkTopDown()
             .filter { it.isFile && it.extension == "json" }
-            .mapNotNull { runCatching { fromJson(it.readText()) }.getOrNull() }
+            .mapNotNull { f ->
+                runCatching { fromJson(f.readText()) }
+                    .onFailure { dev.musicviz.RingLog.note("PresetStore", "unreadable preset skipped: ${f.name}", it) }
+                    .getOrNull()
+            }
             .sortedBy { it.name }
             .toList()
 
+    @WorkerThread
     fun save(
         preset: Preset,
         folder: String = "",
@@ -196,6 +206,7 @@ class PresetStore(
         if (AtomicWrite.text(dest, toJson(preset))) previous?.delete()
     }
 
+    @WorkerThread
     fun delete(name: String) {
         findFile(name)?.delete()
     }

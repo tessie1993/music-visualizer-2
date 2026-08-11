@@ -97,7 +97,10 @@ object AtomicWrite {
             // Clearing up matters as much as the write: a temp file left behind
             // by a crash is stale content that the next write must be free to
             // overwrite, and it must never accumulate in a listed directory.
-            if (!ok) runCatching { temp.delete() }
+            if (!ok) {
+                runCatching { temp.delete() }
+                dev.musicviz.RingLog.note("AtomicWrite", "write failed, previous content kept: ${file.name}")
+            }
             return ok
         }
     }
@@ -112,5 +115,8 @@ object AtomicWrite {
      * start fresh rather than failing forever, without destroying what it
      * could not read. Returns whether the file was moved.
      */
-    fun quarantine(file: File): Boolean = runCatching { file.renameTo(File(file.absolutePath + CORRUPT_SUFFIX)) }.getOrDefault(false)
+    fun quarantine(file: File): Boolean =
+        runCatching { file.renameTo(File(file.absolutePath + CORRUPT_SUFFIX)) }
+            .getOrDefault(false)
+            .also { moved -> if (moved) dev.musicviz.RingLog.note("AtomicWrite", "unparseable content quarantined: ${file.name}") }
 }
