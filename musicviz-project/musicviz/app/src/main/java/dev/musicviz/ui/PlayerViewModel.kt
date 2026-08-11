@@ -520,7 +520,22 @@ class PlayerViewModel(
     }
 
     private val offlineAnalyzer = OfflineAnalyzer(application)
-    private val presetStore = PresetStore(application)
+    private val presetLibrary =
+        PresetLibraryController(
+            application,
+            viewModelScope,
+            storeWriter,
+            object : PresetLibraryController.Host {
+                override val vizState: StateFlow<VizUiState> get() = _vizState
+
+                override fun updatePresets(transform: (List<Preset>) -> List<Preset>) {
+                    _vizState.update { it.copy(presets = transform(it.presets)) }
+                }
+
+                override val presetMirrorUri: String? get() = _guiPrefs.value.presetMirrorUri
+                override val activeMilkPath: String? get() = _activeMilkPath.value
+            },
+        )
     private val trackLibrary = TrackLibrary(application)
     private val themeStore = ThemeStore(application)
     private val playerPrefsStore = PlayerPrefsStore(application)
@@ -559,7 +574,8 @@ class PlayerViewModel(
      * one JSON parse, and deferring it would draw the default style with every
      * slider at its default and then snap to the user's - the flash the live
      * state exists to prevent. The saved-preset list, which costs a directory
-     * walk plus a parse per file, is what [refreshPresets] takes off this path.
+     * walk plus a parse per file, is what [PresetLibraryController.refreshInitial]
+     * takes off this path.
      */
     private fun restoreVizState(): VizUiState {
         // The auto-visuals knobs persist separately from the live scene state:
@@ -571,33 +587,6 @@ class PlayerViewModel(
             val p = PresetStore.fromJson(json)
             base.copy(sceneId = p.sceneId, attack = p.attack, decay = p.decay, params = p.params)
         }.getOrDefault(base)
-    }
-
-    /**
-     * Re-reads the saved presets off the main thread.
-     *
-     * [PresetStore.list] walks the preset directory and parses every file in
-     * it, so a user with a couple of hundred presets was blocking their own
-     * first frame on a couple of hundred reads. The built-ins are in
-     * [restoreVizState]'s initial value, so the browser is populated from the
-     * start and the user's own presets join the list a moment later rather than
-     * replacing something wrong.
-     */
-    private fun refreshPresets() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val listed = presetStore.list()
-            withContext(Dispatchers.Main) {
-                // Fills the initial value only. Saving, deleting or moving a
-                // preset re-lists on the store writer (relistPresets), and a
-                // listing that began before one of those must not land on top
-                // of it - the untouched built-ins are still the same list
-                // instance restoreVizState started from, which is exactly the
-                // question "has anything published a list yet".
-                _vizState.update {
-                    if (it.presets !== BuiltInPresets.ALL) it else it.copy(presets = BuiltInPresets.ALL + listed)
-                }
-            }
-        }
     }
 
     /**
@@ -2373,40 +2362,25 @@ class PlayerViewModel(
         playAll(historyStore.recentlyPlayed(100).map { QueueTrack(it.uri, it.title) }, shuffled = true)
     }
 
-    // Preset folder tree
-    fun presetFolders(): List<String> = presetStore.folders()
+    // Preset folder tree (library lives in PresetLibraryController)
+    fun presetFolders(): List<String> = presetLibrary.presetFolders()
 
-    fun presetFolderOf(name: String): String = presetStore.folderOf(name)
+    fun presetFolderOf(name: String): String = presetLibrary.presetFolderOf(name)
 
-    fun addPresetFolder(path: String) = presetStore.addFolder(path)
+    fun addPresetFolder(path: String) = presetLibrary.addPresetFolder(path)
 
     fun renamePresetFolder(
         from: String,
         to: String,
-    ) = presetStore.renameFolder(from, to)
+    ) = presetLibrary.renamePresetFolder(from, to)
 
     fun movePresetToFolder(
         name: String,
         folder: String,
-    ) {
-        storeWriter.execute {
-            presetStore.moveToFolder(name, folder)
-            // The mirror tracks every write path, not just savePreset: a move
-            // that skipped it left the mirrored copy wherever the preset used to
-            // be, drifting from the store it exists to reflect.
-            mirrorPresetToChosenFolder(name)
-            relistPresets()
-        }
-    }
+    ) = presetLibrary.movePresetToFolder(name, folder)
 
     /** User .milk files (imports + saves), newest first. Built-ins removed. */
-    fun userMilkPresets(): List<java.io.File> {
-        val dir = java.io.File(getApplication<Application>().filesDir, "milk")
-        return dir
-            .listFiles { f -> f.isFile && f.extension == "milk" }
-            ?.sortedByDescending { it.lastModified() }
-            .orEmpty()
-    }
+    fun userMilkPresets(): List<java.io.File> = presetLibrary.userMilkPresets()
 
     /**
      * Plays [uri], with the list it belongs to as the queue.
@@ -2966,105 +2940,14 @@ class PlayerViewModel(
         runCatching { storeWriter.submit {}.get(2_000, java.util.concurrent.TimeUnit.MILLISECONDS) }
     }
 
-    /** Re-reads the preset list from disk; runs on [storeWriter] after a mutation. */
-    private fun relistPresets() {
-        val listed = BuiltInPresets.ALL + presetStore.list()
-        _vizState.update { it.copy(presets = listed) }
-    }
-
     fun savePreset(
         name: String,
         customShader: String?,
         folder: String = "",
-    ) {
-        // " · " is reserved for built-in presets (isBuiltIn matches on it);
-        // a user preset containing it would be undeletable in the browser.
-        @Suppress("NAME_SHADOWING")
-        val name = name.replace(" · ", " - ").trim().ifEmpty { "Preset" }
-        // Captured on the caller so the preset is what the user saw when they
-        // pressed Save; everything after is disk - a .milk read, two fsync'd
-        // writes, a full re-list - and runs on the store writer, off the main
-        // thread, where an fsync on busy flash was a jank/ANR risk.
-        val s = _vizState.value
-        val milkPath = _activeMilkPath.value
-        storeWriter.execute {
-            // On the milkdrop scene the parameters are only half the look: the
-            // .milk preset paints the picture they post-process. Its SOURCE goes
-            // into the preset itself so the saved state is the whole visual - a
-            // preset that carries only the params reloads as projectM's idle "M"
-            // logo, which is the bug this closes - and a copy is materialized in
-            // the user's milk dir so the file is reachable from the MilkDrop tab
-            // like any other .milk they loaded.
-            val milkSource =
-                if (s.sceneId == SceneIds.MILKDROP) {
-                    milkPath?.let { src -> runCatching { java.io.File(src).readText() }.getOrNull() }
-                } else {
-                    null
-                }
-            milkSource?.let { source -> presetStore.materializeMilk(name, source) }
-            presetStore.save(Preset(name, s.sceneId, s.attack, s.decay, customShader, s.params, milkSource), folder)
-            mirrorPresetToChosenFolder(name)
-            relistPresets()
-        }
-    }
+    ) = presetLibrary.savePreset(name, customShader, folder)
 
-    /**
-     * Mirrors the just-saved preset JSON (and paired .milk on the milkdrop
-     * scene) into the user's chosen preset folder (Settings > Paths) so their
-     * own file-manager sorting stays in sync. Internal storage remains the
-     * working store; mirroring is best-effort.
-     */
-    private fun mirrorPresetToChosenFolder(name: String) {
-        val uriStr = _guiPrefs.value.presetMirrorUri ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                val app = getApplication<Application>()
-                val tree =
-                    androidx.documentfile.provider.DocumentFile
-                        .fromTreeUri(app, Uri.parse(uriStr))
-                        ?: return@runCatching
-
-                fun copyInto(
-                    src: java.io.File,
-                    mime: String,
-                ) {
-                    if (!src.exists()) return
-                    tree.findFile(src.name)?.delete()
-                    val dest = tree.createFile(mime, src.name) ?: return
-                    app.contentResolver.openOutputStream(dest.uri)?.use { out ->
-                        src.inputStream().use { it.copyTo(out) }
-                    }
-                }
-                presetStore.fileOf(name)?.let { copyInto(it, "application/json") }
-                // Same sanitized base name the .json got (PresetStore.milkFileName):
-                // the raw name was a different file for anything with a slash or
-                // a colon in it, so the mirror silently skipped the .milk.
-                milkFileFor(name).let { copyInto(it, "text/plain") }
-            }
-        }
-    }
-
-    /**
-     * The .milk file a preset named [presetName] owns, whether or not it
-     * exists yet. Named through [PresetStore.milkFileName] so a preset's
-     * .milk and its .json always share one sanitized base name.
-     */
-    private fun milkFileFor(presetName: String): java.io.File =
-        java.io.File(
-            java.io.File(getApplication<Application>().filesDir, "milk").apply { mkdirs() },
-            PresetStore.milkFileName(presetName),
-        )
-
-    /**
-     * The .milk file [preset] should render, materializing its carried source
-     * on the way, or null when it has none. The two-era resolution (and the
-     * atomic write under the engine's feet) lives in
-     * [PresetStore.materializeMilk]; this only adds the scene gate.
-     */
-    internal fun milkPresetPathFor(preset: Preset): String? {
-        if (preset.sceneId != SceneIds.MILKDROP) return null
-        return presetStore.materializeMilk(preset.name, preset.milkPreset)
-    }
+    /** The .milk file [preset] should render, or null when it has none (see PresetLibraryController). */
+    internal fun milkPresetPathFor(preset: Preset): String? = presetLibrary.milkPresetPathFor(preset)
 
     /**
      * The .milk preset the engine is showing, or null on a style that is not
@@ -3134,126 +3017,23 @@ class PlayerViewModel(
 
     /**
      * A shareable link for [name], or null when it is too long to survive a
-     * chat app (a preset carrying a custom shader) - the caller then offers
-     * the file instead.
+     * chat app - the caller then offers the file instead.
      */
-    fun presetShareLink(name: String): String? {
-        val preset = _vizState.value.presets.firstOrNull { it.name == name } ?: return null
-        val link = PresetLink.encode(PresetStore.toJson(preset))
-        return link.takeIf { it.length <= PresetLink.MAX_LINK_LENGTH }
-    }
+    fun presetShareLink(name: String): String? = presetLibrary.presetShareLink(name)
 
-    /**
-     * Imports a preset from a link (or from text containing one). Returns the
-     * name it was saved under, or null when the text holds no readable preset.
-     *
-     * Imported under its own name with a numeric suffix on collision, like a
-     * take: overwriting a preset the user built because a stranger's happens
-     * to share its name would be destroying work to save a rename.
-     */
-    fun importPresetLink(text: String): String? {
-        val link = PresetLink.findIn(text) ?: return null
-        return importPresetJson(PresetLink.decode(link) ?: return null)
-    }
+    /** Imports a preset from a link (or from text containing one); returns its saved name. */
+    fun importPresetLink(text: String): String? = presetLibrary.importPresetLink(text)
 
-    /**
-     * Imports a preset from a picked `.json` file - the other half of sharing.
-     *
-     * A preset too long to survive a chat message goes out as its file
-     * instead ([presetFile]), and MilkDrop presets always do now that they
-     * carry their .milk source. Without a way back IN, that branch of Share
-     * produced a file the receiving app could do nothing with.
-     */
+    /** Imports a preset from a picked `.json` file - the other half of sharing. */
     fun importPresetFile(
         uri: Uri,
         onResult: (String?) -> Unit,
-    ) {
-        viewModelScope.launch {
-            // A SAF read can block on the provider (a cloud file is fetched on
-            // demand), so it happens off the main thread; the decode-and-save
-            // tail then runs back here, where the state lives.
-            val json =
-                withContext(Dispatchers.IO) {
-                    runCatching {
-                        getApplication<Application>()
-                            .contentResolver
-                            .openInputStream(uri)
-                            ?.bufferedReader()
-                            ?.use { it.readText() }
-                    }.getOrNull()
-                }
-            onResult(json?.let { importPresetJson(it) })
-        }
-    }
-
-    /** Saves an incoming preset document; the shared tail of both imports. */
-    private fun importPresetJson(json: String): String? {
-        val incoming = runCatching { PresetStore.fromJson(json) }.getOrNull() ?: return null
-        val existing = _vizState.value.presets.map { it.name }.toSet()
-        // The same laundering savePreset applies: " · " is reserved for
-        // built-in presets (isBuiltIn matches on it), so an imported name
-        // carrying it was classified built-in - hidden from the user's list
-        // and undeletable in the browser.
-        val base =
-            incoming.name
-                .replace(" · ", " - ")
-                .trim()
-                .ifBlank { "Shared preset" }
-        var name = base
-        var n = 2
-        while (name in existing) {
-            name = "$base $n"
-            n++
-        }
-        val preset = incoming.copy(name = name)
-        // Into the state right away - back-to-back imports must see each other
-        // for the numeric suffix to hold - and onto the disk via the writer,
-        // off the caller's thread: this runs from onCreate on a deep link,
-        // where the fsync'd save plus a full re-list was an ANR risk at the
-        // worst possible moment, app launch.
-        _vizState.update { it.copy(presets = it.presets + preset) }
-        storeWriter.execute {
-            presetStore.save(preset)
-            relistPresets()
-        }
-        return name
-    }
+    ) = presetLibrary.importPresetFile(uri, onResult)
 
     /** On-disk file for a preset, for sharing one too big to be a link. */
-    fun presetFile(name: String): java.io.File? = presetStore.fileOf(name)
+    fun presetFile(name: String): java.io.File? = presetLibrary.presetFile(name)
 
-    fun deletePreset(name: String) {
-        if (BuiltInPresets.isBuiltIn(name)) return
-        // Gone from the list immediately; the disk catches up on the writer.
-        _vizState.update { st -> st.copy(presets = st.presets.filterNot { it.name == name }) }
-        storeWriter.execute {
-            // The mirror follows the store both ways. Save-only sync meant every
-            // deleted preset lived on in the user's chosen folder, so the mirror
-            // slowly became a directory of ghosts. File names are captured BEFORE
-            // the delete - fileOf resolves through the disk.
-            removeMirroredPreset(presetStore.fileOf(name)?.name, milkFileFor(name).name)
-            presetStore.delete(name)
-            relistPresets()
-        }
-    }
-
-    /** Best-effort removal of a deleted preset's mirrored files (see [mirrorPresetToChosenFolder]). */
-    private fun removeMirroredPreset(
-        jsonName: String?,
-        milkName: String?,
-    ) {
-        val uriStr = _guiPrefs.value.presetMirrorUri ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                val tree =
-                    androidx.documentfile.provider.DocumentFile
-                        .fromTreeUri(getApplication(), Uri.parse(uriStr))
-                        ?: return@runCatching
-                jsonName?.let { tree.findFile(it)?.delete() }
-                milkName?.let { tree.findFile(it)?.delete() }
-            }
-        }
-    }
+    fun deletePreset(name: String) = presetLibrary.deletePreset(name)
 
     // ---- Export (state and pipeline live in ExportController) ----
 
@@ -3404,7 +3184,7 @@ class PlayerViewModel(
         // Everything startup reads off disk that is not needed to draw the
         // first frame. See each function for what it costs and why waiting for
         // it shows nothing wrong in the meantime.
-        refreshPresets()
+        presetLibrary.refreshInitial()
         refreshLibrary()
         refreshTextures()
         // Restore persisted playback options onto the player. Auto-resume runs

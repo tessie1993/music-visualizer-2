@@ -19,12 +19,13 @@ import org.junit.Test
  * removal relies on are behaviour-tested in SafeFileNameTest.
  */
 class PresetMirrorSyncTest {
-    private val source = ParamSurface.source("ui/PlayerViewModel.kt")
+    // The library lives in PresetLibraryController since the ViewModel decomposition.
+    private val source = ParamSurface.source("ui/PresetLibraryController.kt")
 
     /** The body of `fun name(` up to the next function declaration. */
     private fun functionBody(name: String): String {
         val start = source.indexOf("fun $name(")
-        assertTrue("PlayerViewModel no longer declares $name", start >= 0)
+        assertTrue("PresetLibraryController no longer declares $name", start >= 0)
         val next = source.indexOf("\n    fun ", start)
         val nextPrivate = source.indexOf("\n    private fun ", start)
         val end =
@@ -60,7 +61,7 @@ class PresetMirrorSyncTest {
         // it returns null and the mirror is never cleaned. Order is the bug.
         val body = functionBody("deletePreset")
         val capture = body.indexOf("removeMirroredPreset(")
-        val delete = body.indexOf("presetStore.delete(")
+        val delete = body.indexOf("store.delete(")
         assertTrue("deletePreset lost either the capture or the delete", capture >= 0 && delete >= 0)
         assertTrue("mirror names are captured AFTER the file is deleted, so they resolve to null", capture < delete)
     }
