@@ -4,11 +4,26 @@
 
 - Master plan: `docs/v2/MASTER_PLAN.md`
 - Starting SHA: `05aca01` (plan audit baseline) → actual start `5ceef8f`
-- Current SHA: `b4a2fb1`
+- Current SHA: `b038d03` + `origin/main` merged (PR #96, `54630a8`)
 - Branch: `claude/audio-visualizer-research-d8d92d-ifayw9` (PR #97)
 - Worktree at start: clean
 - Last updated: 2026-08-13
-- Current phase/slice: **0.2 PARTIAL — engine core landed; debug selector outstanding**
+- Current phase/slice: **0.2 COMPLETE → 0.3 is next and unlocked**
+
+## PR #96 merged into this branch
+
+`main` gained four commits from the sibling branch while slice 0.2 was in
+flight. Merged cleanly (disjoint paths). It brought a parallel v2 doc tree at
+`docs/visualizer-v2/`:
+
+| File | Disposition |
+|---|---|
+| `ENGINE_V2_PLAN.md` | **Superseded as a work order** — `docs/v2/MASTER_PLAN.md` is authoritative, confirmed by the operator. Header added; retained as design evidence. Whether to delete it per Appendix E is an **open operator question** — it is freshly merged work and was not removed unilaterally. |
+| `provenance.json` | **Adopted as the authoritative provenance record.** Pinned commits and licence files outrank recollection. |
+| `SOURCE_ARCHIVE.md`, `BASELINE.md` | Measured evidence; retained. |
+| `.claude/settings.json` | Benign — allowlists read-only verification commands. Retained. |
+
+**It also proved ADR-0002 wrong** — see the divergences section.
 
 ## Baseline
 
@@ -32,43 +47,41 @@ that is now resolved — `tools/setup-android-sdk.sh` works in this container.
 |---|---|---|---|---|---|
 | 0.0 Purge competing instructions | `COMPLETE` | `faafe8f` | No-production-change gate verified; E.4 searches clean; tooling claims checked against Gradle before deleting | 25 agent/command files, 11 skills, 3 unusable rule files, 9 quality-corpus docs | 0.1 |
 | 0.1 Create v2 control documents | `COMPLETE` | `1999abe` | Baseline recorded from a real run; inventory and ledger derived from source | — | 0.2 |
-| 0.2 Engine generation + diagnostics | **`PARTIAL`** | `b4a2fb1` | Behavioural red → green; 1,198 tests / 0 failures; ktlint, lint, assemble all pass | — | 0.2b |
-| 0.2b Debug-only generation selector in settings | `SPECIFIED` | — | — | — | 0.3 |
-| 0.3 Photosensitivity safety as explicit v2 choice | `LOCKED` | — | — | — | — |
+| 0.2 Engine generation + diagnostics | `COMPLETE` | `b4a2fb1` | Behavioural red → green; 1,198 tests / 0 failures; ktlint, lint, assemble all pass | — | 0.2b |
+| 0.2b Debug-only generation selector in settings | `COMPLETE` | `b038d03` | Behavioural red on both settings assertions → green; full matrix `BUILD SUCCESSFUL in 2m 3s` | — | 0.3 |
+| 0.3 Photosensitivity safety as explicit v2 choice | `LOCKED` → **ready to start** | — | — | — | — |
 | Phase 1 onward | `LOCKED` | — | — | — | — |
 
 ## Current slice
 
-**0.2 landed its engine core. 0.2b — the debug-only selector — is next.**
+**0.2 and 0.2b are complete. 0.3 — the photosensitivity P0 — is next.**
 
-What landed in `b4a2fb1`:
+Slice 0.2b landed the debug-only selector in Settings > About, gated by
+`engineControlsVisible(BuildConfig.DEBUG)`. `v2Available` is hard-coded `false`
+until Render Core V2 exists, so choosing V2 today exercises the visible-fallback
+path rather than a black screen.
 
-- `engine/EngineGeneration.kt` — `LEGACY`/`V2`, `DEFAULT = LEGACY`,
-  `EngineGenerationStore` (unknown stored value falls back rather than throwing),
-  and `resolve()` returning a sealed `EngineSelection` so a capability fallback
-  carries its reason and cannot be silently ignored.
-- `engine/EngineDiagnostics.kt` — primitive atomics only, detached snapshots,
-  and a `report()` that formats on user action, never per frame.
-- 13 tests across the two classes.
+### Next: slice 0.3 — safe visuals as an explicit v2 choice
 
-The `engine` package imports **no** legacy implementation — verified by grep, and
-the property the Phase 0 architecture gates will later enforce mechanically.
-
-### Next: slice 0.2b
-
-- Problem: the generation switch has no user-reachable control, and the plan
-  requires release builds to be unable to expose one.
-- Chosen boundary: a debug-only section in the settings surface that selects the
-  generation and shows `EngineDiagnostics.report()`.
-- Expected files: one of `ui/AppSettingsTab.kt` / `SettingsDialog.kt` /
-  `AboutSettings.kt`, plus **`app/src/test/java/dev/musicviz/AppSettingsTabSplitTest.kt`**
-  — a source-text gate that pins the settings tab structure and will need
-  updating in the same commit.
-- Red test: the selector is absent from a release configuration, and selecting an
-  unavailable V2 surfaces the fallback reason in the UI.
-- Risk: this is the first slice to touch the existing UI surface. Keep it out of
-  `PlayerViewModel` (2,518 lines) — read the store directly at the settings
-  boundary rather than adding another ViewModel domain.
+- Problem: `GuiPrefs.safeVisuals` defaults to `false` (`ui/AppTheme.kt:188`), so
+  a 9 Hz full-frame strobe is reachable today with no informed choice. This is
+  the P0 the plan opens with.
+- Chosen boundary: a versioned `safetyChoiceVersion` preference. Absent = the
+  user has never made the v2 choice. Default safe visuals **on** in that state
+  and show a blocking-before-visuals explanation with "Keep safer visuals" as
+  the primary action and a clearly warned opt-out.
+- Expected files: `ui/AppTheme.kt` (the `GuiPrefs` default), a migration in the
+  prefs store, onboarding/shell code, plus `render/VisualSafety.kt` where the
+  clamp already lives. Randomization must not be able to build an unsafe route
+  while safety is on.
+- Red test: an upgraded install with no v2 choice cannot reach a 9 Hz
+  full-screen strobe before seeing the choice; and the old persisted `false`
+  must **not** be read as informed consent.
+- Risk: this changes a user-visible default. The plan requires the opt-out to
+  survive and to be recorded as `SafetyPolicy.UnrestrictedByUserChoice` so
+  exports and takes stay truthful.
+- Gate: existing `VisualSafetyTest` coverage must be preserved or strengthened,
+  never weakened to pass.
 
 ## Verification report
 
@@ -128,11 +141,19 @@ the property the Phase 0 architecture gates will later enforce mechanically.
 
 Recorded rather than silently followed, per H0.3.
 
-- **ADR-0002** strikes `Fosfora` and `Colourful Attraction` from §11.3's
-  reference table — neither project could be located. This also removes the
-  stated external model for the audio-frame contract, so Phase 3 designs it from
-  the in-tree `AudioFeatures` plus verified references. ENTHEA (AGPL-3.0) and
-  BoomingMusic (GPL-3.0) are added to the prohibited list.
+- **ADR-0002 was wrong and is superseded by ADR-0003.** It struck `Fosfora` and
+  `Colourful Attraction` from §11.3 as non-existent. Both exist:
+  `kevinraymond/fosfora` (MIT or Apache-2.0) and `QC20/Colourful-Attraction`
+  (MIT), resolved from PR #96's `provenance.json` and then fetched. `RDPE`
+  (`sqrew/rdpe`, MIT) is real too; `ORPHIC` (`adityarajashekaran/orphic`) is
+  real and **AGPL-3.0**, so prohibited.
+  **§11.3 needed no amendment — the plan was right.** The audio-frame contract
+  regains its external model, so Phase 3 may study Fosfora directly.
+  Cause: keyword searches were treated as proof of non-existence. Binding rule
+  now — *no reference may be recorded as non-existent without a fetch against a
+  concrete URL; absent a URL the status is `UNVERIFIED`.*
+  ADR-0002's addition of ENTHEA (AGPL-3.0) and BoomingMusic (GPL-3.0) to the
+  prohibited list was correct and is carried forward.
 - Three audit-table figures are stale (see `INVENTORY.md`). Shape of each claim
   holds; no decision depends on the numbers.
 - `CLAUDE.md` keeps one line beyond Appendix F — the SDK-setup pointer — because

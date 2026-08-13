@@ -1,6 +1,24 @@
 # Engine V2 — a new audio and visual engine
 
-Status: plan. No code written. Baseline is PR #95 (`05aca01`).
+> **SUPERSEDED as a work order (2026-08-13).** The authoritative implementation
+> work order is `../v2/MASTER_PLAN.md`, confirmed by the operator. Two plans
+> cannot both be executable — that ambiguity is the failure the master plan's
+> Phase 0 purge exists to remove.
+>
+> This document remains as **design evidence**, not an executable queue. Do not
+> resume its milestones, and do not follow a cross-reference out of it unless
+> `MASTER_PLAN.md` or the current slice allowlists the target.
+>
+> Its companions in this directory are a different matter and are **actively
+> relied upon**: `provenance.json` is the authoritative provenance record (it
+> corrected a wrong call in `../v2/decisions/ADR-0002` — see ADR-0003), and
+> `SOURCE_ARCHIVE.md` and `BASELINE.md` are measured evidence.
+>
+> Whether this file should be deleted outright, per the master plan's
+> Appendix E rule for competing prompt surfaces, is an open question for the
+> operator — it is freshly merged work (PR #96) and was not deleted unilaterally.
+
+Status: superseded plan, retained as design evidence. Baseline is PR #95 (`05aca01`).
 
 This supersedes the earlier "Audio Visualizer V2" draft where they disagree. The two
 substantive changes are recorded in §1.

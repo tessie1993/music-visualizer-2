@@ -1,6 +1,19 @@
 # ADR-0002: Correct the master plan's reference policy table
 
-- Status: Accepted
+> **SUPERSEDED by ADR-0003 (2026-08-13). Do not act on this document.**
+>
+> Its central claim — that Fosfora and Colourful Attraction do not exist — is
+> **false**. Both resolve from `docs/visualizer-v2/provenance.json`:
+> `kevinraymond/fosfora` (MIT or Apache-2.0) and `QC20/Colourful-Attraction`
+> (MIT). The finding rested on keyword searches rather than a fetch against a
+> concrete URL.
+>
+> What survives: adding ENTHEA (AGPL-3.0) and BoomingMusic (GPL-3.0) to the
+> prohibited-from-shipping list. ADR-0003 carries that forward and adds ORPHIC.
+>
+> Retained unedited below as the record of a wrong call.
+
+- Status: **Superseded**
 - Date: 2026-08-13
 - Deciders: Repository operator, implementing agent
 - Related phase/slice: Phase 0.1 (blocks Phase 11.3)

@@ -1,6 +1,22 @@
 # Audio & visualizer overhaul — source audit
 
-Status: **verification pass complete; synthesis not started.**
+> **CORRECTION (2026-08-13).** The "Not found — treat as fabricated" section
+> below was **wrong about four projects**. Fosfora, Colourful Attraction, RDPE
+> and ORPHIC all exist; they resolve from
+> `docs/visualizer-v2/provenance.json`, which carries exact owner/repo pairs and
+> pinned commits. See ADR-0003.
+>
+> The error: this audit searched by name and description keyword. Those searches
+> failed, and "not found" was written up as "fabricated". The closing
+> *Verification method* note below already said absence of a search result is
+> weaker evidence than a fetched licence — that caveat was correct and was not
+> heeded.
+>
+> **A failed keyword search is not evidence of non-existence.** Only a fetch
+> against a concrete URL settles it. The confirmed-and-licensed tables below
+> were each verified by fetch and stand.
+
+Status: **verification pass complete; four findings corrected — see above.**
 
 Three earlier research rounds proposed an overhaul of the audio and visual
 architecture and named roughly sixty external projects as references. None of
@@ -61,27 +77,37 @@ vendored code, and not as copied shader source.
 Reading these for ideas is fine. Copying from them is not, and the earlier
 rounds listed Baryon and ENTHEA without flagging either licence.
 
-## Not found — treat as fabricated
+## Resolved by URL — the "fabricated" verdict was wrong
 
-Each of these was searched by name and by description. None resolved to a
-real project.
+Four of the projects this audit could not find by keyword **do exist**, and
+resolve from `docs/visualizer-v2/provenance.json` (PR #96), which supplies
+owner/repo pairs and pinned commits. Each was then fetched directly:
+
+| Reference | Repository | Pinned | Licence | Status |
+|---|---|---|---|---|
+| **Fosfora** | `kevinraymond/fosfora` | `09132c01` | MIT **or** Apache-2.0 | Usable. Rust/wgpu VJ engine: 55 audio-reactive effects, runtime-editable WGSL, 8-layer compositing, MIDI/OSC. Materially what Round 2 described. |
+| **Colourful Attraction** | `QC20/Colourful-Attraction` | `6e502d36` | MIT | Usable. 100k GPU particles across 12 strange attractors, WebGL2. |
+| **RDPE** | `sqrew/rdpe` | `28db17f8` | MIT (declared in `Cargo.toml`) | Usable. GPU particle framework, 100+ physics/flocking/fluid rules. |
+| **ORPHIC** | `adityarajashekaran/orphic` | — | **AGPL-3.0** (dual; commercial on request) | **Prohibited from shipping.** 17 GPU pattern sims. |
+
+The audio-frame consequence is reversed: Fosfora is real and permissively
+licensed, so the earlier "Fosfora-style normalized audio frame"
+recommendation is back on the table, and Phase 3 may study its lock-free
+audio delivery and multi-resolution analysis directly — with the notice
+obligations in `docs/v2/LICENSE_LEDGER.md`.
+
+## Unverified — no URL available
+
+Keyword searches did not locate these, and no manifest supplies a URL. Given
+the correction above, they are recorded as **unverified**, not fabricated.
+They may not justify a decision while in this state; a concrete URL would
+settle each in one fetch.
 
 | Named reference | Claimed role in earlier rounds |
 |---|---|
-| **Fosfora** | Round 2's **top reference**: "49 effects, 139 WGSL shaders, audio intelligence", and the stated basis for the normalized `AudioFrame` contract. |
 | **Velo Visualiser** | Round 1's top reference. |
-| **Colourful Attraction** | Round 1 top-tier particle reference. |
-| **RDPE** | Round 2's proposed "rule system" model. |
-| **ORPHIC** | Listed as an audio-reactive reference. |
 | **Musicya** | Listed as a player reference. |
 | **Kiln** | Listed as a "clean-room" player reference. |
-
-The Fosfora entry matters most. The earlier implementation-stack
-recommendation — "Media3 + Oboe, JTransforms FFT, custom AudioProcessor,
-**Fosfora-style normalized audio frame**" — cited it as the model for the
-audio frame contract. That model does not exist, so the audio-frame spec has
-no external basis and must be designed from the codebase's own
-`AudioFeatures` plus the verified references above.
 
 ## Corrections to earlier rounds
 

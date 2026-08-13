@@ -162,3 +162,90 @@ requires an explicit `@Config(sdk = [34])` or `[35]`; 33 existing tests use 34.
 Phase 0.2 also lists. There is no existing debug settings section, and
 `AppSettingsTabSplitTest` pins the tab structure, so it is tracked as slice 0.2b
 rather than bundled here.
+
+---
+
+## 2026-08-13 — Slice 0.2b, debug-only engine selector
+
+**Commit:** `b038d03` — `feat(ui): add the debug-only engine generation selector`.
+
+**Red proof (behavioural).** With `engineControlsVisible` defined but the
+settings section not yet written, both settings-gate assertions failed for their
+intended reason:
+
+```
+AppSettingsTabSplitTest > theEngineSelectorCannotReachAReleaseBuild FAILED
+    java.lang.AssertionError: the engine section must be gated by engineControlsVisible(BuildConfig.DEBUG)
+AppSettingsTabSplitTest > theWholeSettingsCatalogMovedAndNoneStayedBehind FAILED
+    java.lang.AssertionError: "Engine generation" must appear in exactly one settings file (AboutSettings.kt), found in: [] expected:<[AboutSettings.kt]> but was:<[]>
+10 tests completed, 2 failed
+```
+
+`EngineDebugPolicyTest` passed at this point, isolating the failure to the
+missing UI.
+
+**Two defects in my own new test, found and fixed before green** — recorded
+because the fixes tightened the gate rather than weakening it:
+
+1. First assertion used `Regex("EngineDebugSection\\(\\s*\\)")` to prove the
+   section was not shown unconditionally. That regex matches the legitimate call
+   site regardless of any guard, so it could never pass. Replaced with a
+   structural check: exactly one call site, positioned after the guard.
+2. That replacement then failed `expected:<1> but was:<2>` — the regex also
+   matched the *declaration* `fun EngineDebugSection()`. Fixed with a
+   `(?<!fun )` lookbehind.
+
+Neither fix relaxed an existing gate; the primary assertion (guard present) was
+unchanged throughout.
+
+**Green.**
+
+| Gate | Result |
+|---|---|
+| Focused (`AppSettingsTabSplitTest`, `engine.*`) | PASS — 23 tests |
+| `:app:testDebugUnitTest` | PASS |
+| `:app:ktlintCheck` | PASS |
+| `:app:lintDebug` | PASS |
+| `:app:assembleDebug` | PASS |
+| Whole matrix | `BUILD SUCCESSFUL in 2m 3s` |
+
+**Coverage strengthened:** two catalog entries added to
+`AppSettingsTabSplitTest`, so the new controls are now covered by the
+appears-in-exactly-one-file check, plus one new test pinning the release guard.
+
+---
+
+## 2026-08-13 — PR #96 merge and the ADR-0002 correction
+
+**Merge:** `origin/main` (`54630a8`, PR #96) merged into this branch. Clean —
+disjoint paths, no conflicts.
+
+**Material finding: ADR-0002 was wrong.** It asserted that Fosfora and Colourful
+Attraction do not exist. PR #96's `docs/visualizer-v2/provenance.json` supplies
+concrete owner/repo pairs and pinned commits; fetching each URL directly
+resolves all four questioned projects:
+
+| Project | Repository | Licence | Verified by |
+|---|---|---|---|
+| Fosfora | `kevinraymond/fosfora` @ `09132c01` | MIT or Apache-2.0 | direct fetch |
+| Colourful Attraction | `QC20/Colourful-Attraction` @ `6e502d36` | MIT | direct fetch |
+| RDPE | `sqrew/rdpe` @ `28db17f8` | MIT (`Cargo.toml`; no LICENSE file) | direct fetch |
+| ORPHIC | `adityarajashekaran/orphic` | AGPL-3.0 (dual) | direct fetch |
+
+**Root cause:** the earlier audit searched by name and description keyword, and
+treated the failed searches as proof of non-existence. `RESEARCH_AUDIT.md`
+carried the correct caveat and it was not heeded.
+
+**Binding rule adopted (ADR-0003):** no reference may be recorded as
+non-existent without a fetch against a concrete URL. Absent a URL, the status is
+`UNVERIFIED` — never "fabricated".
+
+**Corrections applied in the same change:** ADR-0003 written and ADR-0002
+marked superseded (retained unedited as the record of a wrong call);
+`docs/RESEARCH_AUDIT.md` corrected; `LICENSE_LEDGER.md` now defers to
+`provenance.json` and carries the three MIT/Apache rows plus ORPHIC as
+prohibited. `Velo Visualiser`, `Musicya` and `Kiln` are relabelled `UNVERIFIED`.
+
+**Consequence for Phase 3:** the audio-frame contract regains its external
+model. Fosfora is MIT/Apache-2.0 and may be studied, and its source adapted
+under notice obligations.
