@@ -1,49 +1,39 @@
----
-paths:
-  - "**/*.kt"
-  - "**/*.kts"
----
 # Kotlin Coding Style
 
-> This file extends [common/coding-style.md](../common/coding-style.md) with Kotlin-specific content.
+Applies to `**/*.kt`. Subordinate to
+`musicviz-project/musicviz/docs/v2/MASTER_PLAN.md`; where they conflict, the
+master plan wins.
 
 ## Formatting
 
-- **ktlint** or **Detekt** for style enforcement
-- Official Kotlin code style (`kotlin.code.style=official` in `gradle.properties`)
+- **ktlint** and **detekt** are configured in Gradle and enforced in CI.
+- Official Kotlin code style (`kotlin.code.style=official`).
 
-## Immutability
+## Immutability — and its one exception
 
-- Prefer `val` over `var` — default to `val` and only use `var` when mutation is required
-- Use `data class` for value types; use immutable collections (`List`, `Map`, `Set`) in public APIs
-- Copy-on-write for state updates: `state.copy(field = newValue)`
+- Prefer `val`; use `data class` value types and copy-on-write state updates
+  (`state.copy(field = newValue)`); expose immutable collections in public APIs.
+- **Exception:** real-time audio, analysis, simulation and render hot paths
+  deliberately reuse preallocated mutable buffers to avoid per-frame
+  allocation. Do not "fix" these into immutable style — the master plan's
+  performance gates require zero steady-state allocation after warm-up.
 
 ## Naming
 
-Follow Kotlin conventions:
-- `camelCase` for functions and properties
-- `PascalCase` for classes, interfaces, objects, and type aliases
-- `SCREAMING_SNAKE_CASE` for constants (`const val` or `@JvmStatic`)
-- Prefix interfaces with behavior, not `I`: `Clickable` not `IClickable`
+- `camelCase` functions/properties, `PascalCase` types, `SCREAMING_SNAKE_CASE`
+  constants.
+- Name interfaces for behavior (`Clickable`), never `IClickable`.
 
-## Null Safety
+## Null safety
 
-- Never use `!!` — prefer `?.`, `?:`, `requireNotNull()`, or `checkNotNull()`
-- Use `?.let {}` for scoped null-safe operations
-- Return nullable types from functions that can legitimately have no result
+- Never `!!` — prefer `?.`, `?:`, `requireNotNull()`, or `checkNotNull()`.
+- Return nullable types from functions that legitimately have no result.
 
-```kotlin
-// BAD
-val name = user!!.name
+## Sealed types
 
-// GOOD
-val name = user?.name ?: "Unknown"
-val name = requireNotNull(user) { "User must be set before accessing name" }.name
-```
-
-## Sealed Types
-
-Use sealed classes/interfaces to model closed state hierarchies:
+Model closed state spaces as `sealed interface`/`sealed class` with exhaustive
+`when` and **no `else` branch**, so a new variant fails compilation rather than
+at runtime.
 
 ```kotlin
 sealed interface UiState<out T> {
@@ -53,34 +43,18 @@ sealed interface UiState<out T> {
 }
 ```
 
-Always use exhaustive `when` with sealed types — no `else` branch.
+If two fields can contradict each other (`isLoading` + `error` + `data` all
+nullable), replace them with one sealed state.
 
-## Extension Functions
+## Error handling
 
-Use extension functions for utility operations, but keep them discoverable:
-- Place in a file named after the receiver type (`StringExt.kt`, `FlowExt.kt`)
-- Keep scope limited — don't add extensions to `Any` or overly generic types
+- Expected failures are values: return `Result<T>` or a sealed result type.
+  Reserve thrown exceptions for bugs.
+- Never catch `CancellationException` — always rethrow it.
+- No `Any` in public signatures, no unchecked casts, no warning suppressions to
+  get code past the compiler.
 
-## Scope Functions
+## Scope functions
 
-Use the right scope function:
-- `let` — null check + transform: `user?.let { greet(it) }`
-- `run` — compute a result using receiver: `service.run { fetch(config) }`
-- `apply` — configure an object: `builder.apply { timeout = 30 }`
-- `also` — side effects: `result.also { log(it) }`
-- Avoid deep nesting of scope functions (max 2 levels)
-
-## Error Handling
-
-- Use `Result<T>` or custom sealed types
-- Use `runCatching {}` for wrapping throwable code
-- Never catch `CancellationException` — always rethrow it
-- Avoid `try-catch` for control flow
-
-```kotlin
-// BAD — using exceptions for control flow
-val user = try { repository.getUser(id) } catch (e: NotFoundException) { null }
-
-// GOOD — nullable return
-val user: User? = repository.findUser(id)
-```
+`let` for null-check-and-transform, `run` to compute from a receiver, `apply` to
+configure, `also` for side effects. Avoid nesting beyond two levels.
