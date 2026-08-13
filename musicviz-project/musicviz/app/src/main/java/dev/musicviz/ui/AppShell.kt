@@ -230,6 +230,23 @@ fun AppRoot(viewModel: PlayerViewModel) {
             if (searching) {
                 SearchScreen(viewModel, onClose = { searching = false })
             }
+            // Photosensitivity choice, before any visuals the user has not
+            // consented to. Safe visuals are already ON while this is pending
+            // (see SafetyChoice), so this prompt is what makes the OPT-OUT
+            // informed - it is not the thing keeping the user safe.
+            var safetyPending by rememberSaveable { mutableStateOf(viewModel.safetyChoicePending()) }
+            if (safetyPending) {
+                SafetyChoicePrompt(
+                    onKeepSafe = {
+                        viewModel.answerSafetyChoice(keepSafeVisuals = true)
+                        safetyPending = false
+                    },
+                    onTurnOff = {
+                        viewModel.answerSafetyChoice(keepSafeVisuals = false)
+                        safetyPending = false
+                    },
+                )
+            }
             crashText?.let { text ->
                 androidx.compose.material3.AlertDialog(
                     onDismissRequest = {},
@@ -554,4 +571,43 @@ fun SearchScreen(
             }
         }
     }
+}
+
+/**
+ * The MusicViz 2.0 photosensitivity choice, shown once before any visuals the
+ * user has not consented to.
+ *
+ * Not dismissible: a tap outside is not an answer, and until one is given the
+ * app stays on safe visuals. "Keep safer visuals" is the confirm action; the
+ * opt-out is the dismiss slot and carries its warning inline rather than
+ * hiding it behind another screen, because an opt-out nobody read is not
+ * informed consent.
+ *
+ * This deliberately does NOT claim medical safety. It describes what the
+ * setting does - caps how fast and how deeply the whole frame may flash - and
+ * leaves the judgement to the user.
+ */
+@Composable
+private fun SafetyChoicePrompt(
+    onKeepSafe: () -> Unit,
+    onTurnOff: () -> Unit,
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = {},
+        title = { Text("Flashing visuals") },
+        text = {
+            Text(
+                "MusicViz draws full-screen brightness changes in time with the music. " +
+                    "Some patterns can trigger seizures in people with photosensitive epilepsy.\n\n" +
+                    "Safer visuals are on: they cap how fast and how deeply the whole frame " +
+                    "may flash. You can change this any time in Settings › Behavior.",
+            )
+        },
+        confirmButton = {
+            CrystalButton(onClick = onKeepSafe) { Text("Keep safer visuals") }
+        },
+        dismissButton = {
+            CrystalButton(filled = false, onClick = onTurnOff) { Text("Turn off (may flash)") }
+        },
+    )
 }

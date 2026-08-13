@@ -300,3 +300,70 @@ applying the choice across wallpaper/export/take-replay. Tracked as slice 0.3b.
 | `gl_transitions.json` licensing `UNKNOWN` | **RESOLVED — and it was never a real problem.** The vendored JSON carries per-entry `license`/`author`. Independent tally of all 122: **120 MIT, 1 BSD-3-Clause (`InvertedPageCurl`, Hewlett-Packard), 1 BSD-2-Clause (`StereoViewer`, Ted Schundler)**. All permissive. `THIRD_PARTY_NOTICES` already documents exactly this split with full licence texts, so the app is compliant today. Upstream `gl-transitions` is MIT with per-file headers taking precedence. |
 | projectM `.so` predates hardened `pm_jni.c` | **ACTIONED.** Dispatched `native-libs.yml` on `main` with `projectm_tag=v4.1.7` → run `31707150435`, in progress. It builds and uploads an artifact only; nothing is released. Landing the result still needs the artifact downloaded and committed with its `SHA256SUMS`. |
 | No device / emulator | **CONFIRMED UNFIXABLE HERE, not merely unattempted.** `/dev/kvm` does not exist, so no hardware-accelerated emulator is possible, and the SDK has no `emulator` package. The app is `arm64-v8a` only, so even a working x86_64 emulator could not run it. Every device, GL, performance, thermal and A/V gate stays `BLOCKED_ENVIRONMENT`. |
+
+---
+
+## 2026-08-13 — Slice 0.3b, prompt, output coverage and exporter hardening
+
+**Red proof (behavioural), two rounds.**
+
+Round 1, `SafetyAcrossOutputsTest` — one assertion failed on a real hazard:
+
+```
+SafetyAcrossOutputsTest > the exporter has no unsafe default for its safety argument FAILED
+    java.lang.AssertionError: VideoExporter must not default its safety argument to OFF
+5 tests completed, 1 failed
+```
+
+Round 2, `SafetyPromptTest` — five of five failed before the prompt existed
+(`AppShell must host a SafetyChoicePrompt`, `the view model must persist the
+answer with choiceMade = true`, …).
+
+**Findings.**
+
+1. **`VideoExporter.export` defaulted `safety` to `SafetyConfig.OFF`.** A caller
+   that omitted the argument would have written an unclamped video — the worst
+   place for a silent unsafe fallback, since nobody watches export frames as
+   they are produced. The default is removed, so omission is now a compile
+   error. **No caller broke**, which means the default was dead code and pure
+   hazard.
+2. **Randomization was already safe, and this now proves it.** 500 seeds through
+   the real `ParamRandomizer` and the real `VisualSafety.apply` under the
+   pending-choice config: no roll exceeds the flash-depth budget for `strobe` or
+   `flash`. A guard test asserts the config is not neutral first, so the 500
+   assertions cannot pass vacuously.
+3. **Wallpaper** derives safety from `ThemeStore.loadGui().safety`, so it
+   inherited the 0.3 fix; pinned by test so it cannot regress to a local config.
+
+**The prompt.** `SafetyChoicePrompt` in `AppShell.kt`, non-dismissible
+(`onDismissRequest = {}`, matching the existing crash-dialog precedent).
+"Keep safer visuals" is the confirm action; the opt-out is the dismiss slot and
+carries its warning inline. It does **not** claim medical safety — it states
+what the setting does. Safe visuals are already ON while the prompt is pending,
+so the prompt makes the *opt-out* informed rather than being what protects the
+user.
+
+`answerSafetyChoice()` is the only path that stamps the choice version;
+`setGuiPrefs` does not, pinned by test.
+
+**One over-specific assertion of my own, corrected:** `the prompt is shown from
+the stored choice` originally required the literal token `mustPrompt` in
+`AppShell.kt`. The shell calls `viewModel.safetyChoicePending()`, which *is* the
+persisted read. Rewritten to assert the call plus that `safetyChoicePending()`
+derives from `themeStore.safetyChoice().mustPrompt` — testing the intent instead
+of an implementation token, and covering both files rather than one.
+
+**Green.** 1,226 tests / 0 failures / 0 errors / 0 skipped (1,216 → +10).
+`testDebugUnitTest`, `ktlintCheck`, `lintDebug`, `assembleDebug` all pass.
+`BUILD SUCCESSFUL in 1m 28s`. `VisualSafetyTest`'s 347 lines are untouched and
+still pass — coverage strengthened, never weakened.
+
+**Deferred from 0.3, honestly:** seeding `reducedMotion` from the system
+accessibility setting (plan 0.3 action 4). It needs a platform read this
+container cannot exercise, and the plan requires the detection not be persisted
+as a user choice — worth doing properly with a device rather than blind.
+
+**Phase 0 exit:** the P0 is closed. A fresh install and an upgraded install with
+no v2 choice both run with safe visuals ON and cannot reach a 9 Hz full-frame
+strobe before answering. Device-dependent Phase 0 evidence remains
+`BLOCKED_ENVIRONMENT`.

@@ -408,6 +408,26 @@ class PlayerViewModel(
 
     val guiPrefs: StateFlow<GuiPrefs> = _guiPrefs
 
+    /**
+     * Whether the photosensitivity prompt is still owed. Read from disk, not
+     * from session state, so it survives process death and cannot be cleared
+     * by anything except an actual answer.
+     */
+    fun safetyChoicePending(): Boolean = themeStore.safetyChoice().mustPrompt
+
+    /**
+     * Records the user's answer to the photosensitivity prompt.
+     *
+     * This is the ONLY path that stamps the choice version; [setGuiPrefs] must
+     * not, or changing an unrelated setting would silently answer a question
+     * the user was never shown.
+     */
+    fun answerSafetyChoice(keepSafeVisuals: Boolean) {
+        val next = _guiPrefs.value.copy(safeVisuals = keepSafeVisuals)
+        themeStore.saveGui(next, choiceMade = true)
+        _guiPrefs.value = next
+    }
+
     fun setGuiPrefs(prefs: GuiPrefs) {
         val previous = _guiPrefs.value
         themeStore.saveGui(prefs)

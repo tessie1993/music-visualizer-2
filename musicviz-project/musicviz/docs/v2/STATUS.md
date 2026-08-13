@@ -8,7 +8,7 @@
 - Branch: `claude/audio-visualizer-research-d8d92d-ifayw9` (PR #97)
 - Worktree at start: clean
 - Last updated: 2026-08-13
-- Current phase/slice: **0.2 COMPLETE → 0.3 is next and unlocked**
+- Current phase/slice: **0.3 COMPLETE → Phase 0 done; Phase 1 unlocked**
 
 ## PR #96 merged into this branch
 
@@ -49,7 +49,9 @@ that is now resolved — `tools/setup-android-sdk.sh` works in this container.
 | 0.1 Create v2 control documents | `COMPLETE` | `1999abe` | Baseline recorded from a real run; inventory and ledger derived from source | — | 0.2 |
 | 0.2 Engine generation + diagnostics | `COMPLETE` | `b4a2fb1` | Behavioural red → green; 1,198 tests / 0 failures; ktlint, lint, assemble all pass | — | 0.2b |
 | 0.2b Debug-only generation selector in settings | `COMPLETE` | `b038d03` | Behavioural red on both settings assertions → green; full matrix `BUILD SUCCESSFUL in 2m 3s` | — | 0.3 |
-| 0.3 Photosensitivity safety as explicit v2 choice | `LOCKED` → **ready to start** | — | — | — | — |
+| 0.3 Photosensitivity safety as explicit v2 choice | `COMPLETE` | `2e861f8` | Choice model + migration; 1,216 tests / 0 failures | — | 0.3b |
+| 0.3b Prompt, output coverage, exporter hardening | `COMPLETE` | this commit | Behavioural red ×6 → green; 1,226 tests / 0 failures; full matrix `BUILD SUCCESSFUL in 1m 28s` | `VideoExporter`'s unsafe `safety = OFF` default | **Phase 1** |
+| **Phase 0** | **COMPLETE** | — | Baseline green; safety P0 closed | — | Phase 1.1 |
 | Phase 1 onward | `LOCKED` | — | — | — | — |
 
 ## Current slice

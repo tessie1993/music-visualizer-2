@@ -195,9 +195,16 @@ class VideoExporter(
         sceneParams: SceneParams,
         lfoConfigs: List<dev.musicviz.render.LfoConfig> = emptyList(),
         adsrConfigs: List<dev.musicviz.render.AdsrConfig> = emptyList(),
-        /** Photosensitivity limits, mirroring the live renderer's clamp. */
-        safety: dev.musicviz.render.VisualSafety.SafetyConfig =
-            dev.musicviz.render.VisualSafety.SafetyConfig.OFF,
+        /**
+         * Photosensitivity limits, mirroring the live renderer's clamp.
+         *
+         * Deliberately has NO default. It used to default to `SafetyConfig.OFF`,
+         * so a caller that simply omitted it exported an unclamped video - a
+         * silent unsafe fallback, and the export path is exactly where one
+         * would go unnoticed, since nobody is watching the frames as they are
+         * written. Requiring the argument makes forgetting it a compile error.
+         */
+        safety: dev.musicviz.render.VisualSafety.SafetyConfig,
         requestedFps: Int = FPS,
         /**
          * Per-frame parameter override: a recorded performance take, sampled
