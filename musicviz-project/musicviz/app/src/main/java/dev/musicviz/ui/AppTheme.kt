@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import dev.musicviz.analysis.FeatureExtractor
+import dev.musicviz.engine.SafetyChoice
 import dev.musicviz.ui.theme.ThemePack
 import dev.musicviz.ui.theme.ThemePackCatalog
 
@@ -285,6 +286,25 @@ class ThemeStore(
             else -> raw
         }
 
+    /**
+     * The user's photosensitivity choice, or [SafetyChoice.NotChosen].
+     *
+     * Before 2.0 `safeVisuals` defaulted to false and nobody was asked, so the
+     * stored Boolean cannot be read on its own: a false with no recorded choice
+     * version is an unanswered question, not an opt-out. [loadGui] resolves
+     * `safeVisuals` through this, which is what protects an upgrading user.
+     */
+    fun safetyChoice(): SafetyChoice =
+        SafetyChoice.resolve(
+            storedVersion =
+                if (prefs.contains(KEY_SAFETY_CHOICE_VERSION)) {
+                    prefs.getInt(KEY_SAFETY_CHOICE_VERSION, 0)
+                } else {
+                    null
+                },
+            storedSafeVisuals = prefs.getBoolean(KEY_SAFE_VISUALS, false),
+        )
+
     fun loadGui(): GuiPrefs {
         // Font colour, with one-time migration off the legacy white-font
         // Boolean: an absent new key plus legacy true loads as a white
@@ -331,7 +351,9 @@ class ThemeStore(
                 prefs
                     .getFloat(KEY_TEXT_SCALE, 1f)
                     .coerceIn(GuiPrefs.TEXT_SCALE_MIN, GuiPrefs.TEXT_SCALE_MAX),
-            safeVisuals = prefs.getBoolean(KEY_SAFE_VISUALS, false),
+            // NOT the raw stored Boolean: an upgrading user's stored false was
+            // a default nobody chose. See [safetyChoice].
+            safeVisuals = safetyChoice().safeVisuals,
             // Coerced on read for the same reason as the beat settings above:
             // a stored value outside the slider's range would leave the thumb
             // and the number disagreeing with what the renderer is using.
@@ -352,8 +374,23 @@ class ThemeStore(
         )
     }
 
-    fun saveGui(gui: GuiPrefs) {
+    /**
+     * Persists [gui].
+     *
+     * [choiceMade] must be true ONLY when the user has just answered the
+     * photosensitivity prompt. It stamps [KEY_SAFETY_CHOICE_VERSION], which is
+     * what stops the prompt being asked again - so an ordinary settings save
+     * must not set it, or toggling an unrelated switch would silently answer a
+     * question the user was never shown.
+     */
+    fun saveGui(
+        gui: GuiPrefs,
+        choiceMade: Boolean = false,
+    ) {
         val fontColor = gui.fontColorOverride
+        if (choiceMade) {
+            prefs.edit().putInt(KEY_SAFETY_CHOICE_VERSION, SafetyChoice.CURRENT_VERSION).apply()
+        }
         prefs
             .edit()
             .putString(KEY_POS, gui.playerPosition.name)
@@ -406,6 +443,12 @@ class ThemeStore(
         const val KEY_TEXT_SCALE = "gui_text_scale"
         const val KEY_BEAT_INTERVAL = "beat_min_interval_ms"
         const val KEY_SAFE_VISUALS = "gui_safe_visuals"
+
+        /**
+         * Which generation of the photosensitivity choice the user answered.
+         * Absent means never answered - see [ThemeStore.safetyChoice].
+         */
+        const val KEY_SAFETY_CHOICE_VERSION = "gui_safety_choice_version"
         const val KEY_MAX_FLASH_HZ = "gui_max_flash_hz"
         const val KEY_MAX_FLASH_DEPTH = "gui_max_flash_depth"
         const val KEY_ALLOW_INVERSION = "gui_allow_inversion"

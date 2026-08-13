@@ -249,3 +249,54 @@ prohibited. `Velo Visualiser`, `Musicya` and `Kiln` are relabelled `UNVERIFIED`.
 **Consequence for Phase 3:** the audio-frame contract regains its external
 model. Fosfora is MIT/Apache-2.0 and may be studied, and its source adapted
 under notice obligations.
+
+---
+
+## 2026-08-13 — Slice 0.3 (part 1), the safety-choice model and migration
+
+**Red proof (behavioural).** `SafetyChoiceMigrationTest` was written against a
+`ThemeStore` that read the stored Boolean directly. Before wiring, the
+integration assertions failed for the intended reason — `loadGui()` returned
+`safeVisuals=false` for an install that had never been asked. The unit-level
+`SafetyChoiceTest` went straight to green (the model was correct first time);
+the behavioural red is the integration half, which is where the defect lived.
+
+**Change.** `GuiPrefs.safeVisuals` is no longer the raw stored Boolean. It
+resolves through `SafetyChoice.resolve(storedVersion, storedSafeVisuals)`:
+
+- no `gui_safety_choice_version` key → `NotChosen` → **safe visuals ON**, prompt owed;
+- version present → the stored Boolean is a real choice and is honoured, including an opt-out;
+- a version below `CURRENT_VERSION` re-asks; a version above it is respected, not downgraded.
+
+`saveGui(gui, choiceMade = false)` gained an explicit flag. Only a real answer
+to the prompt stamps the version, so toggling an unrelated setting cannot
+silently dismiss the question.
+
+`SafetyPolicy` distinguishes `Clamped`, `ClampedPendingChoice` and
+`UnrestrictedByUserChoice`, so exports, takes and diagnostics can report *why*
+a frame was or was not clamped.
+
+**Green.** 1,216 tests / 0 failures / 0 errors / 0 skipped (1,198 → +18).
+`testDebugUnitTest`, `ktlintCheck`, `lintDebug`, `assembleDebug` — all pass.
+`BUILD SUCCESSFUL in 1m 13s`.
+
+Notably the existing suite passed **unchanged** despite flipping a user-visible
+default, so no existing test depended on the unsafe default. No gate was
+weakened, deleted or widened.
+
+**Interim ktlint failure, fixed not suppressed:** two test-local properties were
+UPPER_CASE (`KEY_SAFE_VISUALS`), which ktlint rejects for properties. Renamed to
+camelCase.
+
+**Still outstanding in 0.3:** the blocking-before-visuals onboarding prompt, and
+applying the choice across wallpaper/export/take-replay. Tracked as slice 0.3b.
+
+---
+
+## 2026-08-13 — Unblocking pass
+
+| Blocker | Outcome |
+|---|---|
+| `gl_transitions.json` licensing `UNKNOWN` | **RESOLVED — and it was never a real problem.** The vendored JSON carries per-entry `license`/`author`. Independent tally of all 122: **120 MIT, 1 BSD-3-Clause (`InvertedPageCurl`, Hewlett-Packard), 1 BSD-2-Clause (`StereoViewer`, Ted Schundler)**. All permissive. `THIRD_PARTY_NOTICES` already documents exactly this split with full licence texts, so the app is compliant today. Upstream `gl-transitions` is MIT with per-file headers taking precedence. |
+| projectM `.so` predates hardened `pm_jni.c` | **ACTIONED.** Dispatched `native-libs.yml` on `main` with `projectm_tag=v4.1.7` → run `31707150435`, in progress. It builds and uploads an artifact only; nothing is released. Landing the result still needs the artifact downloaded and committed with its `SHA256SUMS`. |
+| No device / emulator | **CONFIRMED UNFIXABLE HERE, not merely unattempted.** `/dev/kvm` does not exist, so no hardware-accelerated emulator is possible, and the SDK has no `emulator` package. The app is `arm64-v8a` only, so even a working x86_64 emulator could not run it. Every device, GL, performance, thermal and A/V gate stays `BLOCKED_ENVIRONMENT`. |
