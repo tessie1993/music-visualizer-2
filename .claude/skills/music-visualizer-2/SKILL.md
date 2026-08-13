@@ -1,130 +1,27 @@
 ---
-name: music-visualizer-2-conventions
-description: Development conventions and patterns for music-visualizer-2. Kotlin Android app with conventional commits.
+name: music-visualizer-2
+description: Repository facts and entrypoint for the strict MusicViz 2.0 harness.
 ---
 
-# Music Visualizer 2 Conventions
+# MusicViz repository entrypoint
 
-> Generated from [tessie1993/music-visualizer-2](https://github.com/tessie1993/music-visualizer-2) on 2026-08-09; corrected by hand on 2026-08-10. The original auto-analysis misdetected the stack (it claimed a Python project with camelCase files and `*.test.ts` tests — none of that is true).
+Read `musicviz-project/musicviz/docs/v2/MASTER_PLAN.md` completely before
+acting. That file owns scope, architecture, sequencing, retirement, testing and
+release gates. This skill does not define a separate plan.
 
-## Overview
+Verified baseline facts:
 
-This skill teaches Claude the development patterns and conventions used in music-visualizer-2 (MusicViz): a native Android music player and real-time GPU music visualizer.
+- Android/Kotlin/Jetpack Compose application.
+- Gradle root: `musicviz-project/musicviz`; app module: `:app`.
+- Main package: `dev.musicviz`; JDK 17+; compileSdk 36 at the audit baseline.
+- GLES 3.0 baseline with optional GLES 3.1 paths.
+- JUnit/Robolectric/Compose tests under `app/src/test`; ktlint, Android lint and
+  detekt are configured in Gradle.
+- Main-source paths and identifiers are parsed by source-text tests. Search the
+  test tree before a move/rename and replace weak gates with behavioral or
+  architecture tests only through the master plan.
+- Mutable preallocated buffers are intentional in real-time audio/render paths.
 
-## Tech Stack
-
-- **Primary Language**: Kotlin (Jetpack Compose UI, OpenGL ES 3.0 rendering, a thin C/JNI layer for libprojectM)
-- **Build**: Gradle, single module `:app`, package `dev.musicviz`, compileSdk 36, JDK 17+
-- **Project Root**: `musicviz-project/musicviz/` (run all Gradle commands from there)
-- **Test Location**: `app/src/test/java/dev/musicviz/` (headless JUnit, some Robolectric)
-
-## When to Use This Skill
-
-Activate this skill when:
-- Making changes to this repository
-- Adding new features following established patterns
-- Writing tests that match project conventions
-- Creating commits with proper message format
-
-## Build & Test Commands
-
-```bash
-./gradlew assembleDebug           # build the debug APK
-./gradlew :app:testDebugUnitTest  # unit tests
-./gradlew lintDebug               # Android lint
-./gradlew ktlintCheck             # style (CI-enforced)
-```
-
-No Android SDK on the machine? `tools/setup-android-sdk.sh` installs it and writes `local.properties` (needs `dl.google.com` and `maven.google.com` reachable).
-
-## Commit Conventions
-
-Conventional commits:
-
-```text
-<type>: <description>
-```
-
-Types: feat, fix, refactor, docs, test, chore, perf, ci. Imperative mood, concise first line.
-
-*Commit message examples*
-
-```text
-fix: restart beat tracking between tracks and on seeks
-```
-
-```text
-feat: visualize other apps' audio via playback capture
-```
-
-## Architecture
-
-Source layout under `app/src/main/java/dev/musicviz/`:
-
-| Package | Contents |
-|---------|----------|
-| `ui/` | Compose app shell, player, library, customize surfaces, settings |
-| `audio/` | ExoPlayer PCM tap, AIFF reading, mic input, playback capture |
-| `analysis/` | FFT bands, beat/BPM/key/section extraction, analysis cache |
-| `render/` | GL ES 3.0 renderer, scenes, fluid sim, composite/FX, visual safety |
-| `playback/` | Playback service, queue operations, sleep timer |
-| `export/` | Deterministic video export and the Export Studio editor |
-| `data/` | JSON-on-disk stores (presets, palettes, favourites, history) |
-| `wallpaper/` | Live-wallpaper service |
-
-Dependency direction is one-way: `ui` depends on the engine packages, never the reverse.
-
-## Code Style
-
-### Language: Kotlin
-
-**ktlint** (official Kotlin style, `kotlin.code.style=official`) is CI-enforced — run `./gradlew ktlintCheck` before committing.
-
-### Naming Conventions
-
-| Element | Convention |
-|---------|------------|
-| Files | PascalCase (`FeatureExtractor.kt`, named after the primary type) |
-| Functions | camelCase |
-| Classes | PascalCase |
-| Constants | SCREAMING_SNAKE_CASE |
-
-Comments are sparse and only where the code cannot say it.
-
-## Testing
-
-### Test Framework
-
-JUnit, run headless on the JVM (`./gradlew :app:testDebugUnitTest`); some suites use Robolectric/Compose UI testing.
-
-### File Pattern: `*Test.kt`
-
-Tests live flat under `app/src/test/java/dev/musicviz/`.
-
-### CRITICAL: Source-Text Test Gates
-
-Many test files assert on **main source text** — they read `.kt` files under `app/src/main` as strings (e.g. `ParamSurface.kt`/`CustomizeSurfaceTest` regenerate `docs/PARAM_MATRIX.md` from the sources and fail until the committed copy matches). Renaming an identifier or moving a file can fail a gate even when the code still compiles.
-
-Before editing any main source file: grep `app/src/test` for its filename and for the identifiers you are changing, read any gating test, and update it faithfully in the same change.
-
-### Test Types
-
-- **Unit tests**: math/shader logic gets a CPU mirror pinned by a headless test; behavior contracts (export parity, preset roundtrips) are tested the same way.
-
-## Best Practices
-
-### Do
-
-- Follow the `*Test.kt` naming pattern under `app/src/test`
-- Use PascalCase file names matching the primary declared type
-- Keep changes ktlint-clean
-- Grep the test tree before renaming or moving anything under `app/src/main`
-
-### Don't
-
-- Don't skip tests for new features
-- Don't deviate from established patterns without discussion
-
----
-
-*Originally auto-generated by [ECC Tools](https://ecc.tools); corrected by hand to match the actual repository.*
+Do not use generic KMP, npm, TypeScript, Python, Kotest, MockK, Kover, browser,
+GAN-harness, SaaS, or autonomous-loop instructions in this repository unless a
+future accepted ADR deliberately adds the relevant tool.

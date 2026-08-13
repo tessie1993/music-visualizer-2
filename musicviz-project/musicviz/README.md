@@ -99,8 +99,10 @@ reconstruction; see the note at its top.
 - [docs/VISUAL_STYLE_RESEARCH.md](docs/VISUAL_STYLE_RESEARCH.md) — design
   rationale, open-source references and the style catalogue for the composite
   visual families.
-- [docs/quality/QUALITY_BAR.md](docs/quality/QUALITY_BAR.md) — the quality
-  bar this project is held to.
+- [docs/v2/MASTER_PLAN.md](docs/v2/MASTER_PLAN.md) — the MusicViz 2.0 work
+  order: scope, architecture, sequencing and release gates.
+- [docs/v2/QUALITY_GATES.md](docs/v2/QUALITY_GATES.md) — externally-sourced
+  measurable criteria the engine is held to.
 - [docs/DEVICE_CHECKS.md](docs/DEVICE_CHECKS.md) — numbered on-device
   checklist (reconstructed).
 - [docs/wireframe.html](docs/wireframe.html) — full-app wireframe.

@@ -53,7 +53,9 @@ The old UI used one general glass/nebula treatment with different accent colors.
 - Kyanite: directional bladed striations.
 - Onyx: restrained parallel banding and polished depth.
 
-These are deterministic vector/procedural marks. No crystal photographs or generated texture assets are shipped, which keeps the UI sharp at every resolution and avoids a generic image-overlay appearance.
+These began as deterministic vector/procedural marks.
+
+**Superseded:** this section previously stated that no texture assets were shipped. That stopped being true when the packs' own PNGs landed. At the Phase 0 baseline `app/src/main/res` carries **930 PNGs totalling ~290 MB** (`tp_<mineral>_*` tiles, sheets and masters), which dominate artifact size. Recorded in `docs/v2/INVENTORY.md`; the size consequence is tracked for the 2.0 release review rather than assumed acceptable.
 
 Material cues were checked against gemological and museum references rather than generated-art conventions: [GIA on cloudy fibrous rose quartz](https://www.gia.edu/rose-quartz-quality-factors), [GIA on angular amethyst zoning](https://www.gia.edu/amethyst-description), [GIA on lapis lazuli's lazurite/calcite/pyrite aggregate](https://www.gia.edu/lapis-lazuli-description-v1), [the British Museum's description of banded malachite](https://www.britishmuseum.org/collection/term/x11179), [USGS imagery of bladed kyanite](https://www.usgs.gov/media/images/kyanite-specimen), [CAMEO on parallel-banded onyx](https://cameo.mfa.org/wiki/Onyx), and [GIA research on purple sugilite](https://www.gia.edu/gems-gemology/summer-1987-sugilite-wessels-shigley).
 
