@@ -134,6 +134,9 @@ class AppSettingsTabSplitTest {
             // ABOUT - the rest of old "Export & About".
             "Open source licenses" to "AboutSettings.kt",
             "Privacy policy" to "AboutSettings.kt",
+            // ABOUT - the debug-only engine controls (MusicViz 2.0, slice 0.2b).
+            "Engine generation" to "AboutSettings.kt",
+            "Copy diagnostics" to "AboutSettings.kt",
         )
 
     /**
@@ -208,6 +211,33 @@ class AppSettingsTabSplitTest {
                 holders,
             )
         }
+    }
+
+    @Test
+    fun theEngineSelectorCannotReachAReleaseBuild() {
+        // MusicViz 2.0 slice 0.2b. The selector can put the app on an engine
+        // that is not the shipped one, so its visibility must be decided by
+        // engineControlsVisible(BuildConfig.DEBUG) - not by an inline `if`
+        // that a later edit could quietly widen, and not by no guard at all.
+        // The rule itself is behaviourally tested in EngineDebugPolicyTest;
+        // this pins the call site, which a unit test cannot observe because
+        // tests always run against the debug variant.
+        val about = sourceOf("AboutSettings.kt")
+        val guard = about.indexOf("if (engineControlsVisible(BuildConfig.DEBUG))")
+        assertTrue(
+            "the engine section must be gated by if (engineControlsVisible(BuildConfig.DEBUG))",
+            guard >= 0,
+        )
+        // Exactly one call site, and it comes after the guard. Two call sites,
+        // or one before the guard, would mean an ungated path back in.
+        // Lookbehind excludes the declaration `fun EngineDebugSection()`.
+        val callSites =
+            Regex("""(?<!fun )EngineDebugSection\(\s*\)""").findAll(about).map { it.range.first }.toList()
+        assertEquals("the engine section must have exactly one call site", 1, callSites.size)
+        assertTrue(
+            "the engine section is called outside its guard",
+            callSites.single() > guard,
+        )
     }
 
     @Test

@@ -24,6 +24,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.musicviz.BuildConfig
+import dev.musicviz.engine.EngineDiagnostics
+import dev.musicviz.engine.EngineGeneration
+import dev.musicviz.engine.EngineGenerationStore
+import dev.musicviz.engine.EngineSelection
+import dev.musicviz.engine.engineControlsVisible
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -35,6 +40,71 @@ const val PRIVACY_POLICY_URL = "https://tessie1993.github.io/music-visualizer-2/
 internal fun AboutSettingsTab() {
     SettingsTabColumn {
         item { SettingsGroup("About") { AboutSection() } }
+        // MusicViz 2.0 slice 0.2b. Debug builds only - the selector can put the
+        // app on an engine that is not the shipped one. The guard is a function
+        // of the build flag so the release case stays testable; see
+        // engineControlsVisible and AppSettingsTabSplitTest.
+        if (engineControlsVisible(BuildConfig.DEBUG)) {
+            item { SettingsGroup("Engine (debug)") { EngineDebugSection() } }
+        }
+    }
+}
+
+/**
+ * Debug-only engine controls: which generation to run, and the diagnostics
+ * report.
+ *
+ * The selection is a REQUEST, not a guarantee - V2 availability depends on GPU
+ * capability probes that can fail on a given driver. So the row below shows
+ * what actually resolved, and when that differs from the request it says why.
+ * A silent black frame is the outcome this whole switch exists to prevent.
+ *
+ * `v2Available` is hard-coded false until Render Core V2 lands (Phase 4); the
+ * probe replaces this constant then. It is deliberately not `true` - claiming
+ * availability the engine cannot deliver is exactly the lie the fallback path
+ * is here to make impossible.
+ */
+@Composable
+internal fun EngineDebugSection() {
+    val context = LocalContext.current
+    val store = remember { EngineGenerationStore(context) }
+    var requested by remember { mutableStateOf(store.load()) }
+    val v2Available = false
+    val selection = EngineGeneration.resolve(requested, v2Available)
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Engine generation", style = MaterialTheme.typography.titleSmall)
+        CrystalSegmented(
+            options = EngineGeneration.entries.map { it.name },
+            selected = EngineGeneration.entries.indexOf(requested),
+            onSelect = { i ->
+                val picked = EngineGeneration.entries[i]
+                requested = picked
+                store.save(picked)
+            },
+        )
+        Text("Running: ${selection.active}", style = MaterialTheme.typography.bodySmall)
+        when (selection) {
+            is EngineSelection.Active -> Unit
+            is EngineSelection.FellBack ->
+                Text(
+                    selection.reason,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = {
+                val report = EngineDiagnostics().report(selection)
+                runCatching {
+                    context
+                        .getSystemService(android.content.ClipboardManager::class.java)
+                        .setPrimaryClip(
+                            android.content.ClipData.newPlainText("MusicViz diagnostics", report),
+                        )
+                }
+            }) { Text("Copy diagnostics") }
+        }
     }
 }
 

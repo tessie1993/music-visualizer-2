@@ -91,6 +91,17 @@ sealed interface EngineSelection {
 }
 
 /**
+ * Whether the engine-generation controls may be shown.
+ *
+ * The selector can put the app on an engine that is not the shipped one, so it
+ * must never reach a release build. This is a function taking the build flag
+ * rather than a bare `if (BuildConfig.DEBUG)` at the call site so the release
+ * case is testable at all: unit tests run against the debug variant, where
+ * `BuildConfig.DEBUG` is always true.
+ */
+fun engineControlsVisible(isDebugBuild: Boolean): Boolean = isDebugBuild
+
+/**
  * Persists the requested [EngineGeneration] (same shared-preferences pattern as
  * [dev.musicviz.data.ExportPrefsStore]).
  *
