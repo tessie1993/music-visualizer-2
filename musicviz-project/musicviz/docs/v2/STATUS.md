@@ -4,11 +4,11 @@
 
 - Master plan: `docs/v2/MASTER_PLAN.md`
 - Starting SHA: `05aca01` (plan audit baseline) → actual start `5ceef8f`
-- Current SHA: `faafe8f` + this slice's commit
+- Current SHA: `b4a2fb1`
 - Branch: `claude/audio-visualizer-research-d8d92d-ifayw9` (PR #97)
 - Worktree at start: clean
 - Last updated: 2026-08-13
-- Current phase/slice: **0.1 COMPLETE → 0.2 is next and unlocked**
+- Current phase/slice: **0.2 PARTIAL — engine core landed; debug selector outstanding**
 
 ## Baseline
 
@@ -31,42 +31,67 @@ that is now resolved — `tools/setup-android-sdk.sh` works in this container.
 | Slice | State | Commit | Evidence | Legacy removed | Next |
 |---|---|---|---|---|---|
 | 0.0 Purge competing instructions | `COMPLETE` | `faafe8f` | No-production-change gate verified; E.4 searches clean; tooling claims checked against Gradle before deleting | 25 agent/command files, 11 skills, 3 unusable rule files, 9 quality-corpus docs | 0.1 |
-| 0.1 Create v2 control documents | `COMPLETE` | this commit | Baseline recorded from a real run; inventory and ledger derived from source | — | 0.2 |
-| 0.2 Engine generation + diagnostics | `LOCKED` → **ready to start** | — | — | — | — |
+| 0.1 Create v2 control documents | `COMPLETE` | `1999abe` | Baseline recorded from a real run; inventory and ledger derived from source | — | 0.2 |
+| 0.2 Engine generation + diagnostics | **`PARTIAL`** | `b4a2fb1` | Behavioural red → green; 1,198 tests / 0 failures; ktlint, lint, assemble all pass | — | 0.2b |
+| 0.2b Debug-only generation selector in settings | `SPECIFIED` | — | — | — | 0.3 |
 | 0.3 Photosensitivity safety as explicit v2 choice | `LOCKED` | — | — | — | — |
 | Phase 1 onward | `LOCKED` | — | — | — | — |
 
 ## Current slice
 
-Slice 0.1 is complete. **Next slice is 0.2 — engine generation and diagnostics
-scaffolding.**
+**0.2 landed its engine core. 0.2b — the debug-only selector — is next.**
 
-- Problem: there is no way to run a V2 path alongside legacy, and no counters to
-  prove lease/cursor/frame behavior later.
-- Chosen boundary: `dev.musicviz.engine.EngineGeneration` (`LEGACY` | `V2`) plus
-  `EngineDiagnostics` as a bounded in-memory snapshot. Production default stays
-  `LEGACY` until Phase 4 passes.
-- Expected files: new `engine/EngineGeneration.kt`, `engine/EngineDiagnostics.kt`;
-  a debug-only selector in existing settings; new tests.
-- Red test: persisted/default generation selection, and that selecting an
-  unavailable V2 engine falls back **visibly** with a recorded reason rather
-  than rendering black.
-- Acceptance: release builds cannot expose the unsafe debug selector; exactly
-  one generation is active at a time.
-- Risks: this is the first production-code slice. It must not touch any frozen
-  legacy surface listed in H0.5.
+What landed in `b4a2fb1`:
 
-## Verification report (slice 0.1)
+- `engine/EngineGeneration.kt` — `LEGACY`/`V2`, `DEFAULT = LEGACY`,
+  `EngineGenerationStore` (unknown stored value falls back rather than throwing),
+  and `resolve()` returning a sealed `EngineSelection` so a capability fallback
+  carries its reason and cannot be silently ignored.
+- `engine/EngineDiagnostics.kt` — primitive atomics only, detached snapshots,
+  and a `report()` that formats on user action, never per frame.
+- 13 tests across the two classes.
+
+The `engine` package imports **no** legacy implementation — verified by grep, and
+the property the Phase 0 architecture gates will later enforce mechanically.
+
+### Next: slice 0.2b
+
+- Problem: the generation switch has no user-reachable control, and the plan
+  requires release builds to be unable to expose one.
+- Chosen boundary: a debug-only section in the settings surface that selects the
+  generation and shows `EngineDiagnostics.report()`.
+- Expected files: one of `ui/AppSettingsTab.kt` / `SettingsDialog.kt` /
+  `AboutSettings.kt`, plus **`app/src/test/java/dev/musicviz/AppSettingsTabSplitTest.kt`**
+  — a source-text gate that pins the settings tab structure and will need
+  updating in the same commit.
+- Red test: the selector is absent from a release configuration, and selecting an
+  unavailable V2 surfaces the fallback reason in the UI.
+- Risk: this is the first slice to touch the existing UI surface. Keep it out of
+  `PlayerViewModel` (2,518 lines) — read the store directly at the settings
+  boundary rather than adding another ViewModel domain.
+
+## Verification report
+
+### Slice 0.1 (docs)
 
 - Focused tests: n/a — documentation only.
-- Full unit tests: PASS at `faafe8f` (1,185/0/0/0).
-- Ktlint: PASS. Lint: PASS. Assemble: PASS.
-- Instrumentation/device: `BLOCKED_ENVIRONMENT`.
-- Performance/allocations: `BLOCKED_ENVIRONMENT`.
-- Visual/golden comparison: `NOT RUN` — no device.
-- Not run and why: `bundleRelease` (no release signing);
-  `connectedDebugAndroidTest` (no device, and the arm64-only build rules out an
-  x86_64 emulator); second-clean-checkout baseline reproduction.
+- Full unit tests: PASS at `faafe8f` (1,185/0/0/0). Ktlint, lint, assemble: PASS.
+
+### Slice 0.2 (`b4a2fb1`)
+
+- Red proof: `resolve()` first returned `Active(requested)` unconditionally;
+  `requesting an unavailable V2 falls back visibly and keeps the reason` failed
+  with `expected a FellBack selection, got Active(active=V2)` while the other six
+  tests passed. A compile-only failure was **not** accepted as red (H0.2 rule 5).
+- Full unit tests: **PASS — 1,198 tests, 0 failures, 0 errors, 0 skipped**
+  (1,185 baseline + 13 new).
+- Ktlint: PASS. Lint: PASS. Assemble: PASS. `BUILD SUCCESSFUL in 2m 8s`.
+- Legacy-growth search: `engine/*.kt` imports no `dev.musicviz` legacy type.
+- Source-text gates: unaffected — full suite green with the new main-source files
+  present.
+- Instrumentation/device/performance/visual: `BLOCKED_ENVIRONMENT` — no device.
+- Not run: `bundleRelease` (no release signing); `connectedDebugAndroidTest`;
+  second-clean-checkout baseline reproduction.
 
 ## Open decisions/blockers
 
@@ -115,12 +140,14 @@ Recorded rather than silently followed, per H0.3.
 
 ## Resume instructions
 
-1. Read `MASTER_PLAN.md` H0 (harness rules) and §6 Phase 0.2.
+1. Read `MASTER_PLAN.md` H0 (harness rules) and §6 Phase 0.2–0.3.
 2. Read ADR-0001 and ADR-0002.
-3. Inspect `git status`, current diff, and the last two commits.
-4. Re-run the baseline: `./gradlew :app:testDebugUnitTest :app:ktlintCheck
-   :app:lintDebug :app:assembleDebug` from `musicviz-project/musicviz`
-   (~9 min cold, needs `tools/setup-android-sdk.sh` first on a fresh container).
-5. Continue with **slice 0.2**: write the failing test for engine-generation
-   persistence and visible-fallback behavior *before* adding
-   `EngineGeneration`.
+3. Inspect `git status`, current diff, and the last two commits (`b4a2fb1`,
+   `1999abe`).
+4. On a fresh container run `bash musicviz-project/musicviz/tools/setup-android-sdk.sh`
+   first, then re-establish the gate from `musicviz-project/musicviz`:
+   `./gradlew :app:testDebugUnitTest :app:ktlintCheck :app:lintDebug :app:assembleDebug`
+   (~9 min cold, ~2 min warm). Expect 1,198 tests, 0 failures.
+5. Continue with **slice 0.2b**: write the failing test asserting the debug
+   selector is absent in a release configuration *before* adding the UI, and
+   update `AppSettingsTabSplitTest` in the same commit.

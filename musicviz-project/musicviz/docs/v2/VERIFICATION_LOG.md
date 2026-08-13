@@ -111,3 +111,54 @@ environment. Re-running it costs ~9 minutes and should be done before Phase 1.
    they predate provenance tracking and that `tools/pm_jni.c` has been hardened
    since — so the shipped binary does not match current JNI source.
    Release-blocking; tracked in `RETIREMENT_LEDGER.md`.
+
+---
+
+## 2026-08-13 — Slice 0.2, engine generation and diagnostics
+
+**Commit:** `b4a2fb1` — `feat(engine): add the generation switch and local diagnostics`.
+
+**Red proof (behavioural, not compile-only).** `EngineGeneration.resolve()` was
+first written to return `EngineSelection.Active(requested)` unconditionally.
+Result:
+
+```
+EngineGenerationTest > requesting an unavailable V2 falls back visibly and keeps the reason FAILED
+    java.lang.AssertionError: expected a FellBack selection, got Active(active=V2)
+7 tests completed, 1 failed
+```
+
+The other six tests passed, so the failure isolates the intended defect — the
+silent fallback. An earlier compile-error state was **not** accepted as red,
+per H0.2 rule 5.
+
+A second, unrelated red was hit and fixed first: `initializationError` —
+`Package targetSdkVersion=36 > maxSdkVersion=35`. Robolectric in this project
+requires an explicit `@Config(sdk = [34])` or `[35]`; 33 existing tests use 34.
+
+**Green.** After implementing the `when`-based resolve with no `else` branch:
+
+| Gate | Command | Result |
+|---|---|---|
+| Focused | `--tests 'dev.musicviz.engine.*'` | PASS |
+| Full unit | `:app:testDebugUnitTest` | **PASS — 1,198 / 0 failures / 0 errors / 0 skipped** (1,185 baseline + 13) |
+| Ktlint | `:app:ktlintCheck` | PASS |
+| Lint | `:app:lintDebug` | PASS |
+| Assemble | `:app:assembleDebug` | PASS |
+| Whole matrix | one invocation | `BUILD SUCCESSFUL in 2m 8s` |
+
+**Review searches.**
+
+- Legacy growth: `grep -n "import dev.musicviz" app/src/main/java/dev/musicviz/engine/*.kt`
+  returns nothing — the new package imports no legacy implementation.
+- Source-text gates: unaffected. The full suite passes with two new main-source
+  files present, so no `ParamSurface`/`ParamMatrix` path assumption broke.
+- Diff reviewed: 4 files, +455 lines, no production file modified.
+
+**Not run:** device, GL, performance, allocation and visual gates —
+`BLOCKED_ENVIRONMENT`. `bundleRelease` — `NOT RUN` (no release signing).
+
+**Deliberately deferred:** the debug-only generation selector in settings, which
+Phase 0.2 also lists. There is no existing debug settings section, and
+`AppSettingsTabSplitTest` pins the tab structure, so it is tracked as slice 0.2b
+rather than bundled here.
