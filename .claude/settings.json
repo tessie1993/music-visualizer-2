@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew :app:compileDebugKotlin)",
+      "Bash(./gradlew :app:testDebugUnitTest)",
+      "Bash(./gradlew :app:lintDebug)",
+      "Bash(./gradlew :app:ktlintCheck)",
+      "Bash(./gradlew :app:detekt)",
+      "Bash(ffprobe *)",
+      "mcp__Claude_Browser__read_console_messages",
+      "mcp__Claude_Browser__read_page",
+      "mcp__Claude_Browser__get_page_text",
+      "mcp__ccd_session_mgmt__list_sessions",
+      "mcp__ccd_session_mgmt__list_events",
+      "mcp__36395157-aec5-4485-9dec-4e91ebb38795__search_files"
+    ]
+  }
+}
