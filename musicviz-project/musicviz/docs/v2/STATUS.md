@@ -4,7 +4,7 @@
 
 - Master plan: `docs/v2/MASTER_PLAN.md`
 - Starting SHA: `05aca01` (plan audit baseline) → actual start `5ceef8f`
-- Current SHA: `b038d03` + `origin/main` merged (PR #96, `54630a8`)
+- Current SHA: `2a4c562` (PR #96 merged in)
 - Branch: `claude/audio-visualizer-research-d8d92d-ifayw9` (PR #97)
 - Worktree at start: clean
 - Last updated: 2026-08-13
@@ -56,34 +56,25 @@ that is now resolved — `tools/setup-android-sdk.sh` works in this container.
 
 ## Current slice
 
-**0.2 and 0.2b are complete. 0.3 — the photosensitivity P0 — is next.**
+**Phase 0 is COMPLETE.** Baseline green, harness authority established, engine
+generation switch in place, and the photosensitivity P0 closed.
 
-Slice 0.2b landed the debug-only selector in Settings > About, gated by
-`engineControlsVisible(BuildConfig.DEBUG)`. `v2Available` is hard-coded `false`
-until Render Core V2 exists, so choosing V2 today exercises the visible-fallback
-path rather than a black screen.
+### Next: Phase 1.1 — introduce `MusicVizGraph` and `EngineHost`
 
-### Next: slice 0.3 — safe visuals as an explicit v2 choice
-
-- Problem: `GuiPrefs.safeVisuals` defaults to `false` (`ui/AppTheme.kt:188`), so
-  a 9 Hz full-frame strobe is reachable today with no informed choice. This is
-  the P0 the plan opens with.
-- Chosen boundary: a versioned `safetyChoiceVersion` preference. Absent = the
-  user has never made the v2 choice. Default safe visuals **on** in that state
-  and show a blocking-before-visuals explanation with "Keep safer visuals" as
-  the primary action and a clearly warned opt-out.
-- Expected files: `ui/AppTheme.kt` (the `GuiPrefs` default), a migration in the
-  prefs store, onboarding/shell code, plus `render/VisualSafety.kt` where the
-  clamp already lives. Randomization must not be able to build an unsafe route
-  while safety is on.
-- Red test: an upgraded install with no v2 choice cannot reach a 9 Hz
-  full-screen strobe before seeing the choice; and the old persisted `false`
-  must **not** be read as informed consent.
-- Risk: this changes a user-visible default. The plan requires the opt-out to
-  survive and to be recorded as `SafetyPolicy.UnrestrictedByUserChoice` so
-  exports and takes stay truthful.
-- Gate: existing `VisualSafetyTest` coverage must be preserved or strengthened,
-  never weakened to pass.
+- Problem: `PlaybackSession` is process-wide but ownership is spread across
+  `PlayerViewModel` (2,518 lines), which also owns capture sessions, export and
+  preset mutation. Nothing can outlive the ViewModel cleanly.
+- Chosen boundary: a **hand-written** app graph in `MusicVizApp` — ADR-0001
+  forbids adding Hilt/Koin during the migration. Android components become thin
+  adapters that obtain graph services.
+- Explicit non-goal: do **not** move an EGL context or surface into the graph.
+  Each output owns its context; the graph owns engine-neutral state/factories.
+- Red tests: Activity recreation returns the same process engine host and player
+  session; destroying the ViewModel does not cancel an independently-owned
+  wallpaper or export job; a fresh process constructs each singleton once.
+- Risk: this touches playback ownership, the app's most load-bearing path.
+  Extract one domain per slice; `PlayerViewModel` stays a façade until consumers
+  migrate. No big-bang rewrite.
 
 ## Verification report
 
@@ -113,17 +104,20 @@ path rather than a black screen.
 1. **No device in this environment.** Hard-blocks the Phase 4 exit gate and
    everything after it. Phases 0–3 are JVM-testable and can proceed. Needs the
    operator to provide a device or CI runner. — `BLOCKED_ENVIRONMENT`
-2. **projectM binaries do not match current JNI source.** `SHA256SUMS` verifies
-   the blobs are unmodified but records that they predate provenance tracking
-   and that `tools/pm_jni.c` has been hardened since. Fix is to dispatch
-   `.github/workflows/native-libs.yml` and commit the rebuilt pair. Release
-   blocking; needs operator action (workflow dispatch). — **P1**
+2. **projectM binaries do not match current JNI source.** — **P1, IN PROGRESS.**
+   `native-libs.yml` was dispatched on `main` with `projectm_tag=v4.1.7`
+   (run `31707150435`). Landing it still needs the artifact downloaded and its
+   two `.so` files committed **together with the run's `SHA256SUMS`**, which
+   carries the run URL and source SHA. `android.yml` verifies the hashes on
+   every PR.
 3. **App is `arm64-v8a` only, app-wide.** Costs emulator support and device-free
    CI visual checks. Changing supported ABI is a listed user-decision boundary —
    **not** changing it unilaterally. Needs an operator decision before Phase 11.
-4. **`gl_transitions.json` licensing is unverified.** A vendored shader
-   collection where individual entries may carry individual terms. Blocks
-   Phase 11.3. — `UNKNOWN`
+4. ~~`gl_transitions.json` licensing~~ — **RESOLVED, and it was never a real
+   problem.** All 122 entries carry per-entry `license`/`author`: **120 MIT,
+   1 BSD-3-Clause** (`InvertedPageCurl`, Hewlett-Packard), **1 BSD-2-Clause**
+   (`StereoViewer`, Ted Schundler). `THIRD_PARTY_NOTICES` already documents
+   exactly that split with full licence texts. No action needed.
 5. **~290 MB of PNG theme assets.** Release-size impact unmeasured
    (`bundleRelease` NOT RUN). Crystal-pack identity is a protected product
    promise, so this is a format/size question, not a deletion proposal.
@@ -135,7 +129,7 @@ path rather than a black screen.
 
 | Severity | Defect | Reproduction | Owner/target |
 |---|---|---|---|
-| P0 | Safe visuals default `false`; a 9 Hz full-frame strobe is reachable with no informed choice | `ui/AppTheme.kt:188` | Slice 0.3 |
+| ~~P0~~ | ~~Safe visuals default `false`~~ — **CLOSED** in `2e861f8`/`2a4c562`. Absence of a choice is no longer read as consent. | `engine/SafetyChoice.kt` | Done |
 | P1 | Shipped projectM `.so` predates the hardening of `tools/pm_jni.c` | `jniLibs/arm64-v8a/SHA256SUMS` header | Operator: dispatch `native-libs.yml` |
 | P2 | Debug artifact 331 MiB; 290 MB of it source PNGs | `assembleDebug` | Measure `bundleRelease` before Phase 11 |
 
