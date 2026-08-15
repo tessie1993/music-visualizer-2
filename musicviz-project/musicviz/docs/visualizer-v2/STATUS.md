@@ -14,6 +14,116 @@ Newest slice first.
 
 ---
 
+## V2-0-02a: make visual safety a versioned choice
+
+State: COMPLETE
+
+Goal: stop one boolean answering two different questions. "Off by default" meant both *this
+person wants the strobe* and *nobody has ever been asked*, and the app could not tell them
+apart. Flash safety is now a four-valued, versioned choice whose unknown state runs safe.
+
+User-visible effect: **an install that has never chosen runs with flash limiting on.** The
+9 Hz strobe, the beat flash and a randomized 30 Hz luminance LFO are all bounded until the
+user says otherwise, and the settings screen says so in words rather than leaving them to
+wonder why the strobe looks tame. Anyone who wants the unlimited behaviour picks Custom.
+
+In scope: `VisualSafetyChoice` and `VisualSafety.resolve`; `GuiPrefs.safetyChoice` and the
+resolution of `GuiPrefs.safety` through it; versioned persistence and the legacy migration;
+the settings UI replacing the switch with the choice.
+
+Out of scope: the temporary global flash limiter §11.2 asks for, and the audit that projectM,
+user shaders and legacy bridges also traverse it — both moved to **V2-0-02b**. Also the
+separate reduced-motion, brightness, transition and chromatic controls of §11.3;
+`REDUCED_MOTION` covers the motion half today and the rest is a later slice.
+
+Files expected to change: `app/src/main/java/dev/musicviz/render/VisualSafety.kt`,
+`app/src/main/java/dev/musicviz/ui/{AppTheme,BehaviorSettings}.kt`,
+`app/src/test/java/dev/musicviz/{VisualSafetyChoiceTest,AppSettingsTabSplitTest}.kt`.
+
+Compatibility contract: no preset key, scene ID or audio semantic changes. `gui_safe_visuals`
+is still written and still read, so a downgrade to a build without the choice finds the
+prefs file it expects. Presets are untouched: safety clamps final params, it does not
+rewrite stored ones.
+
+External source/provenance entries: none.
+
+Tests written first: `VisualSafetyChoiceTest`, twelve assertions, run red as a compile
+failure (`Unresolved reference 'VisualSafetyChoice'`) before any of it existed. They pin both
+directions of the migration, the version gate, the unreadable-name case, and the property the
+whole slice exists for — that only CUSTOM can reach `enabled = false`.
+
+Benchmark or visual evidence: none. The resolution is pure and the clamp it feeds already had
+its own tests.
+
+Rollback: revert the one commit. Stored `gui_safety_choice` keys become inert; the legacy
+boolean the old build reads was never stopped being written.
+
+Risks: this changes what existing users see on upgrade, which is the intended behaviour of
+§11.1 and still worth stating plainly. Someone who had the strobe and never touched the
+switch will find it limited until they pick Custom. The alternative — treating an untouched
+default as consent to a 9 Hz full-frame strobe — is the thing the plan forbids.
+
+Commands and results: below.
+
+Review findings: three, all from re-reading rather than from a failing test.
+
+1. `AppSettingsTabSplitTest` pins the Safe-visuals control to `BehaviorSettings.kt` by
+   searching for the literal `"Safe visuals"`. After the rewrite that control no longer
+   exists, and the gate still passed — on two passing mentions of the phrase in unrelated
+   body text. Exactly the vacuous-gate failure §18.3 asks about. The gate now names the
+   labels the controls actually carry.
+2. The standalone "Reduced motion" switch would have become a control that does nothing
+   under SAFE, since the choice resolves motion scaling itself. It moved inside CUSTOM,
+   where it is a parameter rather than a contradiction.
+3. `SafetyConfig`'s doc said the false default was a deliberate product position and pointed
+   at an open question in `PRODUCT_REVIEW.md`. That question is now answered, so the comment
+   would have argued against the code. Rewritten to say what the defaults are actually for —
+   keeping `OFF` an exact no-op for export byte-parity.
+
+Commit: `feat(safety): make flash safety a versioned choice that defaults to safe`
+
+Next slice: **V2-0-02b — global flash limiter and the paths that bypass the clamp.**
+
+### Why the boolean could not answer this
+
+`saveGui` writes every key on every save. So the first time a user changes any unrelated
+setting, `gui_safe_visuals=false` is written for them — an untouched switch and a deliberately
+disabled one are byte-identical in the prefs file. There is no way to read consent out of it,
+which is why §11.1 says not to try.
+
+The migration therefore runs one way only:
+
+| Stored | Resolves to | Why |
+|---|---|---|
+| nothing | UNKNOWN → safe | fresh install, or one that predates the choice |
+| `gui_safe_visuals=false` | UNKNOWN → safe | proves nothing; written by any other settings change |
+| `gui_safe_visuals=true` | SAFE | false was the default, so true was deliberate |
+| a choice at the current version | that choice | the explicit answer wins over the legacy key |
+| a choice at an older version | UNKNOWN → safe | consent was to behaviours that have since changed |
+| an unknown name | UNKNOWN → safe | downgrade or corruption; never a guess |
+
+Resolution happens in exactly one function, and all four outputs — live renderer, transition
+picker, exporter and wallpaper — already read `GuiPrefs.safety`, so none of them can disagree
+about what was chosen.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:app:compileDebugUnitTestKotlin`, before the implementation | 12 unresolved references — the intended red |
+| `:app:testDebugUnitTest --tests '*VisualSafetyChoiceTest*'` | 12 passed |
+| `:app:testDebugUnitTest` | **1,223 tests, 0 failures** (1,211 before this slice) |
+| `:app:ktlintCheck` | BUILD SUCCESSFUL, after `ktlintFormat` fixed import order |
+| `:app:lintDebug` | BUILD SUCCESSFUL |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+
+Not verified here, and left open: how the choice reads on a device with TalkBack.
+`CrystalSegmented` carries `Role.RadioButton` on a `selectable`, which is the right
+semantics for a three-way choice and better than the switch it replaces, but that is a
+code-level claim rather than a tested one.
+
+---
+
 ## V2-0-01: fix the first shared-player acquisition hold
 
 State: COMPLETE

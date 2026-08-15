@@ -118,11 +118,12 @@ class AppSettingsTabSplitTest {
             "Pinch and twist the canvas" to "BehaviorSettings.kt",
             "Use a connected display" to "BehaviorSettings.kt",
             // BEHAVIOR - old "Visual safety" section.
-            "Safe visuals" to "BehaviorSettings.kt",
+            "Flashing and motion" to "BehaviorSettings.kt",
+            "Limit flashing" to "BehaviorSettings.kt",
             "Maximum flashes per second" to "BehaviorSettings.kt",
             "Maximum flash strength" to "BehaviorSettings.kt",
             "Allow invert and solarize" to "BehaviorSettings.kt",
-            "Reduced motion" to "BehaviorSettings.kt",
+            "Slow the motion down" to "BehaviorSettings.kt",
             // BEHAVIOR - old "Auto visuals" section (via AutoVisualsSettings.kt).
             "Switch on a strong beat" to "AutoVisualsSettings.kt",
             "MilkDrop presets" to "AutoVisualsSettings.kt",
