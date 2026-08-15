@@ -1,8 +1,16 @@
 # Engine V2 — a new audio and visual engine
 
-Status: plan. No code written. Baseline is PR #95 (`05aca01`).
+**Document status:** superseded by [MASTER_PLAN.md](MASTER_PLAN.md)
 
-This supersedes the earlier "Audio Visualizer V2" draft where they disagree. The two
+> **Historical.** This was the working plan up to `54630a8`; `MASTER_PLAN.md` is now the
+> execution authority and wins wherever the two disagree. Kept because its module-boundary
+> reasoning (§1) and its measured argument for extracting Gradle modules are the evidence
+> behind `MASTER_PLAN.md` §4.1, and that argument is not repeated there. Do not resume
+> work from this file, and do not use it to reverse a decision made in the master plan.
+
+Baseline is PR #95 (`05aca01`).
+
+This superseded the earlier "Audio Visualizer V2" draft where they disagree. The two
 substantive changes are recorded in §1.
 
 ---

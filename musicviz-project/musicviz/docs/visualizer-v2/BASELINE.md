@@ -1,6 +1,8 @@
 # Milestone 0 — frozen baseline
 
-Plan §10 Milestone 0 requires the baseline to be captured before any V2 work starts:
+[ENGINE_V2_PLAN.md](ENGINE_V2_PLAN.md) §10 Milestone 0 required the baseline to be captured
+before any V2 work starts — section numbers here are that document's, not
+[MASTER_PLAN.md](MASTER_PLAN.md)'s. The measurements below stand either way:
 the repository commit, bundled presets, shader inventory, and a catalogue of the
 source-text tests and identifiers that need temporary compatibility.
 

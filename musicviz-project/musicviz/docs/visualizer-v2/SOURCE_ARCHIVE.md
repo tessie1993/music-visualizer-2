@@ -119,6 +119,8 @@ battle-tested.
 
 **Known gap:** `checkThirdPartyNotices` is registered in `app/build.gradle.kts` and wired
 into `:app:check`. It is `:app`-scoped. Anything adapted into a new engine package is
-covered only while the engine lives inside `:app` — which under plan §9 it does. **If the
-engine is ever extracted into its own Gradle module, that task must move into a convention
-plugin in the same commit, or Apache-2.0 attribution silently stops being enforced.**
+covered only while the engine lives inside `:app`. [MASTER_PLAN.md](MASTER_PLAN.md) §4.1
+extracts six engine modules at V2-1-02, so this gap stops being hypothetical then: **the
+notice task must move into the convention plugin in that same commit, or Apache-2.0
+attribution silently stops being enforced.** §3.3 says the same about
+`checkEngineProvenance` — it scans every module, not only `:app`.

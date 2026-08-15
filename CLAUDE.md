@@ -42,6 +42,9 @@ Conventional commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
 
 ## Key Docs
 
+- `musicviz-project/musicviz/docs/visualizer-v2/MASTER_PLAN.md` — the Visualizer
+  2.0 overhaul's execution authority; `STATUS.md` beside it is the slice log and
+  says which slice is active. Read both before touching engine code.
 - `musicviz-project/musicviz/docs/AUDIO_CHAIN.md` — audio chain order, the
   tap-first invariant, and why DSP never moves the visuals
 - `musicviz-project/musicviz/docs/quality/QUALITY_BAR.md` — quality bar
