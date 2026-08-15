@@ -14,6 +14,99 @@ Newest slice first.
 
 ---
 
+## V2-0-01: fix the first shared-player acquisition hold
+
+State: COMPLETE
+
+Goal: make the first hold of the process survive the binding that creates the player, so no
+release from a second owner can free a player somebody is still using.
+
+User-visible effect: **background playback stops dying when the screen closes.** The service
+starts playback, a screen opens over it, the user leaves the screen — before this the music
+stopped and every later call the service made on that ExoPlayer threw.
+
+In scope: the two `PlaybackEngine.acquireFor*` methods and four tests.
+
+Out of scope: everything else in `PlaybackEngine`. The reference-counting design, the
+deliberate drop-without-release in `rebindTo` and the `PlaybackSession` lifetime are all
+correct and untouched. No new API, no debug accessor — the tests observe the defect through
+the same surface a caller uses.
+
+Files expected to change: `app/src/main/java/dev/musicviz/playback/PlaybackEngine.kt`,
+`app/src/test/java/dev/musicviz/playback/PlaybackEngineTest.kt`.
+
+Compatibility contract: unchanged. `acquireForUi`/`acquireForService`/`releaseUi`/
+`releaseService` keep their signatures and their meaning; only the order of two statements
+inside the acquire methods moves.
+
+External source/provenance entries: none.
+
+Tests written first: three added to `PlaybackEngineTest`, run red before the fix. Two failed
+(the two orderings that reach a user) and the third passed, which is what made it worth
+writing — it pins the other half of the invariant, that the player is still released once
+both owners let go, so the fix cannot turn a lost hold into a leaked player.
+
+Benchmark or visual evidence: not applicable; this is a lifecycle defect, not a render path.
+
+Rollback: revert the one commit. The two methods return to their previous bodies.
+
+Risks: the opposite failure — a player that never goes away — is the thing a fix like this
+causes, and it is covered by the third test. Not covered here: the wallpaper's relationship
+to the player hold, which `MASTER_PLAN.md` §10.4 owns and V2-8-02 verifies on a device.
+
+Commands and results: below.
+
+Review findings: both production acquire sites were re-read — `PlayerViewModel:184` and
+`PlaybackService:48` — and each takes exactly one hold that is given back in `onCleared` and
+`onDestroy` respectively. No third acquirer exists. The rebind path itself is exercised only
+implicitly, by Robolectric handing each test method a fresh Application; asserting it
+directly would need two live Applications in one method, which Robolectric does not give,
+so it stays an implicit guarantee rather than a claimed one.
+
+Commit: `fix(playback): keep the first hold taken on the shared player`
+
+Next slice: **V2-0-02 — make visual safety a versioned choice.**
+
+### The defect
+
+`acquireForUi` counted the hold and then asked for the session:
+
+```kotlin
+uiHolds++
+return sessionFor(context)      // -> rebindTo(context) -> uiHolds = 0
+```
+
+`rebindTo` clears both counters whenever the Application it is bound to changes, which is
+right: holds taken against a dead Application are worthless. But on the **first** acquire of
+the process, `app` is null, so the change fires — and the counter the caller had just taken
+went `0 → 1 → 0`. The caller walked away holding nothing.
+
+Nothing looked wrong until a second owner appeared. The two paths that reach a user:
+
+| Order | What used to happen |
+|---|---|
+| screen opens, second screen opens, second closes | first screen's hold was never counted, so one release dropped the count to zero and released the player it was still driving |
+| service starts playback, screen opens, screen closes | the **service's** hold was the lost one, so closing the screen released the player the notification was playing through |
+
+The fix is the statement order: bind first, count second.
+
+```kotlin
+fun acquireForUi(context: Context): PlaybackSession = sessionFor(context).also { uiHolds++ }
+```
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:app:testDebugUnitTest --tests '*PlaybackEngineTest*'`, before the fix | 11 tests, **2 failed** — the two user-visible orderings |
+| `:app:testDebugUnitTest --tests '*PlaybackEngineTest*' --tests '*PlaybackResumptionTest*' --tests '*SleepTimerDelegationTest*'` | all passed |
+| `:app:testDebugUnitTest` | **1,211 tests, 0 failures** (1,208 before this slice) |
+| `:app:ktlintCheck` | BUILD SUCCESSFUL |
+| `:app:lintDebug` | BUILD SUCCESSFUL |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+
+---
+
 ## V2-A-02b: enumerate every researched effect in the coverage ledger
 
 State: COMPLETE

@@ -246,12 +246,15 @@ object PlaybackEngine {
     /**
      * The player, plus a hold that keeps it alive for as long as a screen is
      * pointing at it. Every caller must give the hold back with [releaseUi].
+     *
+     * The hold is counted *after* the session exists, and that order is the
+     * whole point: [rebindTo] clears both counters, so counting first meant the
+     * very first acquire of the process went 0 → 1 → 0 and handed back a
+     * session nobody was recorded as holding. The next release from anyone
+     * else then freed a player that was still in use.
      */
     @Synchronized
-    fun acquireForUi(context: Context): PlaybackSession {
-        uiHolds++
-        return sessionFor(context)
-    }
+    fun acquireForUi(context: Context): PlaybackSession = sessionFor(context).also { uiHolds++ }
 
     /** Gives back a hold taken by [acquireForUi]. Never stops playback itself. */
     @Synchronized
@@ -262,10 +265,7 @@ object PlaybackEngine {
 
     /** The same player for [PlaybackService], with the service's own hold. */
     @Synchronized
-    fun acquireForService(context: Context): PlaybackSession {
-        serviceHolds++
-        return sessionFor(context)
-    }
+    fun acquireForService(context: Context): PlaybackSession = sessionFor(context).also { serviceHolds++ }
 
     /** Gives back the hold taken by [acquireForService]. */
     @Synchronized

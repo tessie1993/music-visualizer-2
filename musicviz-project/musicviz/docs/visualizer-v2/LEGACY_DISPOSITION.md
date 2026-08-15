@@ -14,7 +14,7 @@ session (§12).
 |---|---|---|---|---|
 | Player / library / Media3 workflow | `playback/`, `data/`, `ui/` | KEEP | only narrow engine ports change | not started |
 | PCM tap placement | `audio/TapRenderersFactory.kt`, `audio/PcmTapSink.kt` | KEEP semantic order, MOVE to `:engine:audio-android` | runtime stage-order assertion, waveform fixtures, route tests | not started |
-| `PlaybackSession` process lifetime | `playback/PlaybackEngine.kt` (283 lines) | KEEP / REFACTOR | first-acquire hold fixed; lifecycle and multi-consumer tests | V2-0-01 |
+| `PlaybackSession` process lifetime | `playback/PlaybackEngine.kt` | KEEP / REFACTOR | first-acquire hold fixed; lifecycle and multi-consumer tests | **hold fixed, V2-0-01** |
 | `PcmRingBuffer` | `audio/PcmRingBuffer.kt` (170) | REPLACE contract incrementally | `Ok`/`Gap`/`NotYetAvailable`, wrap and competing-reader tests | not started |
 | `AnalysisEngine` | `analysis/AnalysisEngine.kt` (147) | REPLACE after V2 graph parity | corpus features, CPU/allocation, live/export parity | not started |
 | `AudioBus` / `BandSmoother` latest-state transport | `audio/AudioBus.kt` (82), `analysis/BandSmoother.kt` | BRIDGE then DELETE | time-addressed ring serves every consumer | not started |

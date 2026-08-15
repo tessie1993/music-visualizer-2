@@ -9,6 +9,7 @@ import dev.musicviz.ui.PlayerViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -69,6 +70,63 @@ class PlaybackEngineTest {
         val chunk = viewModel.latestPcm()
         assertNotNull("the scenes read a different ring buffer from the one the player fills", chunk)
         assertEquals("the 512 interleaved samples are 256 mono frames", 256, chunk?.count)
+    }
+
+    /**
+     * The first hold anyone takes is taken while the player is still being
+     * built, and it used to be thrown away by the act of building it.
+     *
+     * `acquireFor*` counted the hold and then asked for the session; creating
+     * the session binds to the Application, and binding resets both counters
+     * because a player left over from a different Application is worthless.
+     * On the first acquire of the process those are the same call, so the
+     * counter went 0 → 1 → 0 and the caller walked away holding nothing. The
+     * next release from anyone else dropped the count to zero and released a
+     * player somebody was still using.
+     *
+     * The two tests below are the two orderings that reach a user.
+     */
+    @Test
+    fun `a second screen closing does not release the player the first still holds`() {
+        val first = PlaybackEngine.acquireForUi(ctx)
+        PlaybackEngine.acquireForUi(ctx)
+        PlaybackEngine.releaseUi()
+        assertSame(
+            "the first screen's hold was lost while the player was being built",
+            first,
+            PlaybackEngine.acquireForUi(ctx),
+        )
+    }
+
+    @Test
+    fun `closing the screen does not release the player the service is playing through`() {
+        // The worst ordering: the service starts playback, a screen opens over
+        // it and then goes away. Releasing here kills the music the
+        // notification is still driving, and every later call the service
+        // makes on that ExoPlayer throws.
+        val forService = PlaybackEngine.acquireForService(ctx)
+        PlaybackEngine.acquireForUi(ctx)
+        PlaybackEngine.releaseUi()
+        assertSame(
+            "background playback lost its player when the screen closed",
+            forService,
+            PlaybackEngine.acquireForService(ctx),
+        )
+    }
+
+    @Test
+    fun `the player is released once both owners have let go`() {
+        // The other half of the invariant: fixing the lost hold must not turn
+        // into a player that never goes away.
+        val first = PlaybackEngine.acquireForUi(ctx)
+        PlaybackEngine.acquireForService(ctx)
+        PlaybackEngine.releaseUi()
+        PlaybackEngine.releaseService()
+        assertNotSame(
+            "nobody holds the player any more, so the next caller gets a fresh one",
+            first,
+            PlaybackEngine.acquireForUi(ctx),
+        )
     }
 
     @Test
