@@ -23,11 +23,14 @@ object ProvenanceRegistry {
         setOf("ADAPT", "REIMPLEMENT", "ORACLE", "BENCHMARK", "RETAIN", "STUDY", "EXCLUDE")
 
     /**
-     * Tiers under which no upstream code, shader text or constant table may
-     * enter the tree - so a non-empty `importedFiles` is a contradiction the
-     * registry has to reject rather than record.
+     * Tiers under which no upstream file may enter the tree, so a non-empty
+     * `importedFiles` is a contradiction the registry rejects rather than
+     * records. That is every tier except the two that may carry upstream text:
+     * ADAPT, which adapts files under attribution, and RETAIN, which is code
+     * already shipped. REIMPLEMENT belongs here - §3 permits the algorithm and
+     * forbids the code, shader text, constant tables, names and layout.
      */
-    val NO_CODE_TIERS: Set<String> = setOf("ORACLE", "BENCHMARK", "STUDY", "EXCLUDE")
+    val NO_CODE_TIERS: Set<String> = TIERS - setOf("ADAPT", "RETAIN")
 
     private val EVIDENCE_STATES = setOf("verified", "none-published", "unresolved")
 

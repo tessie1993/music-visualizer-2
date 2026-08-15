@@ -14,6 +14,95 @@ Newest slice first.
 
 ---
 
+## V2-A-02b: enumerate every researched effect in the coverage ledger
+
+State: COMPLETE
+
+Goal: turn "did we already look at that?" into a question with an answer — every effect
+`MASTER_PLAN.md` §8.1 names, the V2 family that owns it, and what is being done with it —
+so the same source is not re-researched and the catalogue does not fill with four
+near-duplicates of one idea found in four repositories.
+
+User-visible effect: none. A data file, a generated document, and two test-source files.
+
+In scope: `reference-coverage.json` with 162 rows across the five catalogued sources;
+`REFERENCE_COVERAGE.md` regenerated from it; `ReferenceCoverage` renderer and
+`ReferenceCoverageTest`; one correctness fix to `ProvenanceRegistry.NO_CODE_TIERS`.
+
+Out of scope: characterising the opaque Fosfora codenames — that needs the upstream looks,
+which this container cannot render. They are DEFER rows with the reason stated, not guesses.
+Recipe IDs, tests, captures and shipped versions stay empty until the owning family's slice
+fills them.
+
+Files expected to change: `docs/visualizer-v2/{reference-coverage.json,REFERENCE_COVERAGE.md,STATUS.md}`,
+`app/src/test/java/dev/musicviz/{ReferenceCoverage,ReferenceCoverageTest,ProvenanceRegistry}.kt`.
+
+Compatibility contract: untouched. No production source file is involved.
+
+External source/provenance entries: every row names one, and the ledger is rejected if a row
+cites a source the registry does not hold or disagrees with it about the licence tier.
+
+Tests written first: `ReferenceCoverageTest` — six assertions, the load-bearing one being
+that every name §8.1 lists has a row, parsed out of the plan text itself rather than a
+hand-kept copy. Run red with the ledger moved out of the tree: six tests, six failures. Two
+more reds followed on the real data — a rationale too short to be reasoning on nine rows, and
+the generated document out of date — and both were fixed rather than relaxed.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: two of the six assertions are tripwires that pass vacuously today — nothing is ported
+out of a no-code source yet, and no forbidden origin is cited in the tree. They are worth
+keeping because the day they stop being vacuous is exactly the day a mistake would otherwise
+ship silently. The ledger's family assignments are also judgements, not facts; each row's
+rationale cites the §7 recipe list or §8.2 rule it came from so a later session can disagree
+with the reasoning rather than the conclusion.
+
+Commands and results: below.
+
+Review findings: `NO_CODE_TIERS` listed ORACLE, BENCHMARK, STUDY and EXCLUDE but not
+REIMPLEMENT — so the registry would have accepted a REIMPLEMENT source declaring adopted
+files, which §3 forbids ("do not copy code, shader text, constant tables, names or layout").
+It is now defined as every tier except ADAPT and RETAIN, the two that may legitimately carry
+upstream text. Found by asking why a coverage assertion passed vacuously.
+
+Commit: `docs(visualizer-v2): enumerate every researched effect in the coverage ledger`
+
+Next slice: **V2-0-01 — fix the first shared-player acquisition hold.**
+
+### What the ledger says
+
+| | Rows |
+|---|---:|
+| MERGE — folds into a family as a recipe, mode, field or post node | 123 |
+| DEFER — catalogued, not this wave | 30 |
+| PORT — becomes its own engine or kernel | 9 |
+| **Total** | **162** |
+
+Nine PORT rows for 162 catalogued effects is the plan's §8.2 consolidation rule turned into
+numbers: four upstream projects each having a tunnel is one family with four recipes, not
+four engines. Nine rows cover seven distinct kernels — Particle Life, Particle Lenia,
+Physarum, Gray–Scott, Firefly Sync, the attractor field library and the strobe-safe post
+node — because SwissGL and Threelab each name Physarum and reaction-diffusion, and one
+kernel serves both rows.
+
+Twenty of the thirty DEFER rows are Fosfora codenames — Protea, Cleave, Vessel and the
+rest. Nothing in §8.1 or §7 says what they look like, so a family assignment would be
+invention; they are recorded as open with that reason, which is the honest form of coverage.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:app:testDebugUnitTest --tests '*ReferenceCoverageTest*'`, ledger absent | 6 tests, 6 failed — the intended red |
+| `:app:testDebugUnitTest --tests '*ReferenceCoverageTest*' --tests '*EngineProvenanceRegistryTest*'` | 17 passed |
+| `:app:testDebugUnitTest` | **1,208 tests, 0 failures** (1,202 before this slice) |
+| `:app:ktlintCheck` | BUILD SUCCESSFUL, after one blank-line fix it caught in `ReferenceCoverage.kt` |
+| `:app:lintDebug` | BUILD SUCCESSFUL |
+
+---
+
 ## V2-A-02a: pin and hash every source in the provenance registry
 
 State: COMPLETE
