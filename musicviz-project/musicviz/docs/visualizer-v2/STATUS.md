@@ -14,6 +14,98 @@ Newest slice first.
 
 ---
 
+## V2-1-04b: validate the shader include manifest offline
+
+State: COMPLETE
+
+Goal: move the include contract's failures from the GL thread on a device to the build.
+
+User-visible effect: none today; the tree is already clean. What changes is when a future
+mistake surfaces — at `check` instead of as a blank visual on whichever device first selects
+that scene.
+
+In scope: `ShaderIncludeManifestTest` — six assertions over the 65 shaders in
+`app/src/main/res/raw` and the include registry in `GlUtil.kt`.
+
+Out of scope: compiling the shaders. There is no `glslangValidator` or `glslc` in this
+container, and a real syntax check needs one — brace balance is the only structural fixture
+available without it, and it is described as exactly that rather than as syntax validation.
+Also out of scope: making this a cross-module Gradle task. Unlike provenance, which applies to
+all source, the include registry is one loader's implementation detail and lives only in
+`:app` today; generalising it now would be shape guessed against a module with no shaders in
+it.
+
+Files expected to change: `app/src/test/java/dev/musicviz/ShaderIncludeManifestTest.kt`,
+`docs/visualizer-v2/LEGACY_DISPOSITION.md`.
+
+Compatibility contract: untouched. No production file changes; every shader is byte-identical
+to `HEAD` after the fault injection below.
+
+External source/provenance entries: none.
+
+Tests written first: this slice is only tests, so "first" is meaningless — the discipline
+that replaces it is fault injection. Each assertion was proved by planting the fault it
+claims to catch and watching it name the file. A green run on a clean tree is not evidence.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: the brace check strips comments before counting, and if GLSL ever grew string literals
+that stripping would be wrong. It has none, and the assertion says so where a reader will
+look.
+
+Review findings: **I reported a bug that did not exist, and caught it before it reached this
+document.** A `grep` for the substring `//#include` said `lib_particle_common.glsl` nested an
+include — which, with a one-level resolver, would have been a real defect. It does not:
+line 2 is prose describing how the library is used, and `GlUtil.INCLUDE_PATTERN` is anchored
+to line start *and* end, so it never matched. Re-probing with the resolver's exact pattern
+showed zero nested directives.
+
+That near-miss became the design. A checker looser than the resolver invents faults; one
+stricter misses real ones. The test therefore uses the identical anchored pattern, and its
+first assertion pins the regex literal in `GlUtil.kt` so the two cannot drift apart silently.
+
+One assertion was also dropped after checking it: "every registered library exists as a file"
+is redundant, because the registry maps to `R.raw.lib_palette` and `R` is generated from
+`res/raw` — delete the file and the map stops compiling.
+
+Commands and results: below.
+
+Commit: `test(shaders): check the include manifest at build time, not on the GL thread`
+
+Next slice: **V2-2-01 — specify the PCM and presentation-clock ABIs.**
+
+### What the six assertions cover
+
+| Assertion | The failure it moves off the device |
+|---|---|
+| the pattern matches the resolver's | the whole test measuring something the loader does not do |
+| every include is registered | `resolveIncludes` throwing on the GL thread the first time a scene is picked |
+| no library nests an include | a leftover `//#include` reads as a GLSL comment, so the shader compiles and the function it needed is simply absent |
+| every registered library is used | dead weight in the APK |
+| no real `#include` | GLSL ES 3.0 has no preprocessor include; it fails at driver compile |
+| braces balance | a merge resolution that truncates or doubles a block |
+
+### Verification
+
+Every assertion proved by injecting its fault, then restored:
+
+| Injected | Result |
+|---|---|
+| `//#include lib_paletee` in `aurora_frag.glsl` | FAILED — `aurora_frag.glsl: lib_paletee` |
+| `//#include lib_psrdnoise2` inside `lib_palette.glsl` | FAILED — `lib_palette.glsl: lib_psrdnoise2` |
+| an unclosed `{` in `aurora_frag.glsl` | FAILED — `aurora_frag.glsl: 1` |
+| all reverted | `git status` clean; BUILD SUCCESSFUL |
+
+| Command | Result |
+|---|---|
+| `checkAll` | BUILD SUCCESSFUL, after `ktlintFormat` on the new file |
+| `:app:testDebugUnitTest` | **1,247 tests, 0 failures** (1,241 before this slice) |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+
+---
+
 ## V2-1-04a: make the provenance gate a build task that scans every module
 
 State: COMPLETE
