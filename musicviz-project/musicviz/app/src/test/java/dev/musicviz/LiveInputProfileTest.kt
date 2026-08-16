@@ -3,7 +3,7 @@ package dev.musicviz
 import dev.musicviz.analysis.AnalysisEngine
 import dev.musicviz.analysis.FeatureExtractor
 import dev.musicviz.analysis.LiveInputProfile
-import dev.musicviz.audio.PcmRingBuffer
+import dev.musicviz.engine.audio.SampleRing
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,7 +43,7 @@ class LiveInputProfileTest {
         // The acceptance criterion itself: what a profile writes is what the
         // engine runs, so Settings can never display a value the engine isn't
         // using.
-        val engine = AnalysisEngine(PcmRingBuffer())
+        val engine = AnalysisEngine(SampleRing(1 shl 16, 2))
         for (profile in LiveInputProfile.entries) {
             engine.beatThresholdSigma = profile.beatSigma
             assertEquals("$profile beatSigma", profile.beatSigma, engine.beatThresholdSigma, 0f)

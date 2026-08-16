@@ -45,6 +45,19 @@ class SampleRing(
     /** Increments whenever sample numbering restarts. */
     val epoch: Int get() = epochValue
 
+    @Volatile
+    private var sourceChannels: Int = 0
+
+    /**
+     * Channels the source actually had, which is not [channelCount].
+     *
+     * A mono source fills channel 0 and leaves channel 1 silent, so a reader
+     * deriving a mono downmix as `(ch0 + ch1) / 2` would halve it. The count is
+     * constant within an epoch - a format change ends the numbering - so the
+     * last write's value describes the whole span. Zero before the first write.
+     */
+    val sourceChannelCount: Int get() = sourceChannels
+
     /**
      * Oldest frame a reader can still trust.
      *
@@ -99,6 +112,7 @@ class SampleRing(
         require(frameCount <= maxWriteFrames) {
             "$frameCount frames exceeds maxWriteFrames of $maxWriteFrames"
         }
+        sourceChannels = sourceChannelCount
         var w = written
         var read = 0
         repeat(frameCount) {
@@ -110,6 +124,35 @@ class SampleRing(
             w++
         }
         written = w
+    }
+
+    /**
+     * Copies the newest `out[0].size` frames into [out], planar. False when
+     * fewer than that many frames exist, or when the window is wider than the
+     * ring - a window past the write head would wrap and come back scrambled,
+     * and there is no coherent answer to give.
+     *
+     * The legacy shape, kept for the bridge that serves today's analyzer. It
+     * carries the tearing the old buffer always accepted: the writer may
+     * advance mid-copy, which at a 2,048-frame window changes no statistic
+     * computed over it. Readers that need to know what they missed use
+     * [RingReader] instead - this one cannot tell.
+     */
+    fun snapshotLatest(out: Array<FloatArray>): Boolean {
+        val frames = out.minOf { it.size }
+        if (frames > capacityFrames) return false
+        val w = written
+        if (w < frames) return false
+        for (c in out.indices.take(channelCount)) {
+            val src = channels[c]
+            val dst = out[c]
+            var r = w - frames
+            for (i in 0 until frames) {
+                dst[i] = src[(r and mask).toInt()]
+                r++
+            }
+        }
+        return true
     }
 
     /** Copies [count] frames from [firstSample] into [out], one array per channel. */

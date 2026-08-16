@@ -143,6 +143,80 @@ class PlaybackEngineTest {
     }
 
     @Test
+    fun `live input reaches both rings, not only the legacy one`() {
+        // The microphone and the playback capture write through this sink, not
+        // through the tap. If it fed only the legacy buffer, the app's own
+        // playback would look right and a live mic would drive nothing once
+        // the readers move - with no error and no failing test.
+        val session = PlaybackEngine.acquireForUi(ctx)
+        val viewModel = PlayerViewModel(ctx)
+        session.captureSink.write(FloatArray(512) { 0.5f }, 256, 2)
+
+        assertEquals(256L, session.sampleRing.writtenFrames)
+        assertEquals("the legacy ring stopped receiving live input", 256, viewModel.latestPcm()?.count)
+    }
+
+    @Test
+    fun `the capture controller is handed the session's own sink`() {
+        // A source scan, and it is the weaker kind of test - but the
+        // alternative is test-only API on PlayerViewModel to expose a
+        // constructor argument, and CaptureController holds it privately. The
+        // behavioural half is covered above; this pins only that the ViewModel
+        // does not build a second sink of its own, which would write one ring
+        // and look entirely correct.
+        val source =
+            java.io.File(dev.musicviz.ParamSurface.moduleRoot, "app/src/main/java/dev/musicviz/ui/PlayerViewModel.kt")
+                .readText()
+        assertTrue(
+            "PlayerViewModel no longer hands CaptureController the session's capture sink",
+            source.contains("playback.captureSink"),
+        )
+    }
+
+    @Test
+    fun `the session's analyzer reads the ring the session actually fills`() {
+        // The join the whole reader migration rests on. Point the analyzer at
+        // any other SampleRing and every band, beat and waveform silently
+        // stays at zero while playback continues - which is what the app looks
+        // like when it is "working" and the visuals are dead.
+        val session = PlaybackEngine.acquireForUi(ctx)
+        session.analysis.sampleRateHz = 48_000
+        val frames = 4096
+        val block = FloatArray(frames * 2)
+        for (i in 0 until frames) {
+            val v = kotlin.math.sin(2.0 * Math.PI * 440.0 * i / 48_000).toFloat() * 0.5f
+            block[i * 2] = v
+            block[i * 2 + 1] = v
+        }
+        session.captureSink.write(block, frames, 2)
+
+        assertTrue("the analyzer found no window in the session's ring", session.analysis.Pass().tick())
+        assertTrue("a 440 Hz tone moved no band", session.analysis.features.value.bands.any { it > 0.2f })
+    }
+
+    @Test
+    fun `switching audio source ends the ring's numbering`() {
+        // The tap breaks the epoch on seeks and track changes because media3
+        // flushes it. A capture switch produces no flush at all, so without
+        // this the ring would claim the microphone continues the numbering of
+        // the track that was playing - which is the one thing an epoch exists
+        // to deny. Latent today, since nothing reads by cursor yet; wrong
+        // whether or not anything is looking.
+        val session = PlaybackEngine.acquireForUi(ctx)
+        val viewModel = PlayerViewModel(ctx)
+        session.captureSink.write(FloatArray(512) { 0.1f }, 256, 2)
+        val before = session.sampleRing.epoch
+        assertEquals(256L, session.sampleRing.writtenFrames)
+
+        // Turning the mic off is a source change back to playback, and it
+        // needs no permission or device, so it is the reachable one here.
+        viewModel.setMicEnabled(false)
+
+        assertEquals("a source change must end the numbering", before + 1, session.sampleRing.epoch)
+        assertEquals(0L, session.sampleRing.writtenFrames)
+    }
+
+    @Test
     fun `the ring's numbering and the clock's are the same number`() {
         // Two counters that agree by habit would diverge the first time one of
         // them missed a boundary, and a sample index means nothing without the

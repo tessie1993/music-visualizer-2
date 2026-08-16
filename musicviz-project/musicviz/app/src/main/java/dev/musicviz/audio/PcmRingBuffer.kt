@@ -26,7 +26,18 @@ package dev.musicviz.audio
  */
 class PcmRingBuffer(
     capacity: Int = 1 shl 16,
-) {
+) : dev.musicviz.engine.audio.PcmSink {
+    /**
+     * The V2 name for [writeInterleaved], so a producer can be handed a
+     * destination rather than this class. That is what lets one capture feed
+     * both rings while the readers migrate one at a time.
+     */
+    override fun write(
+        interleaved: FloatArray,
+        frameCount: Int,
+        sourceChannelCount: Int,
+    ) = writeInterleaved(interleaved, frameCount, sourceChannelCount)
+
     private val data: FloatArray = FloatArray(capacity)
 
     /**

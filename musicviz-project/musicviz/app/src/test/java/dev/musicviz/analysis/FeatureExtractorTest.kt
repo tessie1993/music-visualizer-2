@@ -1,6 +1,6 @@
 package dev.musicviz.analysis
 
-import dev.musicviz.audio.PcmRingBuffer
+import dev.musicviz.engine.audio.SampleRing
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -183,7 +183,7 @@ class FeatureExtractorTest {
         // AppSettingsTab's sliders use these same constants as their valueRange, so
         // proving the engine clamps to them proves the slider cannot saturate
         // against a tighter clamp.
-        val engine = AnalysisEngine(PcmRingBuffer())
+        val engine = AnalysisEngine(SampleRing(1 shl 16, 2))
 
         engine.beatThresholdSigma = 99f
         assertEquals(FeatureExtractor.SIGMA_MAX, engine.beatThresholdSigma, 1e-6f)

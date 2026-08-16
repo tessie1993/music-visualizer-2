@@ -4,7 +4,6 @@ import android.app.Application
 import dev.musicviz.audio.CaptureFailure
 import dev.musicviz.audio.MicCapture
 import dev.musicviz.audio.NowPlayingBridge
-import dev.musicviz.audio.PcmRingBuffer
 import dev.musicviz.audio.PlaybackCapture
 import dev.musicviz.audio.PlaybackCaptureService
 import dev.musicviz.audio.playbackCaptureSupported
@@ -58,7 +57,7 @@ data class ExternalAudioState(
 internal class CaptureController(
     private val application: Application,
     scope: CoroutineScope,
-    ring: PcmRingBuffer,
+    capture: dev.musicviz.engine.audio.PcmSink,
     private val host: Host,
 ) {
     /** What a source switch touches outside the captures themselves. */
@@ -81,7 +80,7 @@ internal class CaptureController(
      * buffer the playback tap writes into, so every consumer downstream is
      * unchanged. Nothing is stored or transmitted - see [MicCapture].
      */
-    private val micCapture = MicCapture(application, ring)
+    private val micCapture = MicCapture(application, capture)
 
     private val _micState = MutableStateFlow(MicState())
 
@@ -94,7 +93,7 @@ internal class CaptureController(
      * and that gate lives in [startPlaybackCapture] where the reason for it
      * can be turned into something the user reads.
      */
-    private val playbackCapture = PlaybackCapture(ring)
+    private val playbackCapture = PlaybackCapture(capture)
 
     private val nowPlayingBridge = NowPlayingBridge(application)
 

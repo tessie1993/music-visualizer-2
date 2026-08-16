@@ -14,6 +14,489 @@ Newest slice first.
 
 ---
 
+## V2-3-03a: levels and spectral descriptors, checked frame by frame
+
+State: COMPLETE
+
+Goal: V2-3-03's first bullet — level, centroid, rolloff, flatness, bandwidth, ZCR and flux —
+each validated against the oracle rather than against itself.
+
+User-visible effect: none. New nodes in `audio-core` with no production consumer; the legacy
+`FftProcessor` still drives every visual.
+
+In scope: `SpectralDescriptors`, `FrameLevels`, `SpectralFlux`; per-frame expectations in the
+corpus (generator version 2); `DescriptorOracleTest` and `SpectralDescriptorsTest`.
+
+Out of scope: log/semitone bands and the normalization and validity/silence semantics of the
+second bullet — **V2-3-03b**. BS.1770 loudness: it is a K-weighted, gated, multi-block
+measurement with its own oracle (libebur128) and its own slice; calling an RMS "loudness" is how
+a meter ends up disagreeing with every other one.
+
+Files expected to change: `engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/{SpectralDescriptors,FrameLevels,SpectralFlux}.kt`,
+their tests, `tools/oracle/generate_corpus.py`, `app/src/test/resources/corpus/manifest.json`,
+`app/src/test/java/dev/musicviz/analysis/{Corpus,DescriptorOracleTest}.kt`.
+
+Compatibility contract: nothing existing changes.
+
+External source/provenance entries: none new; both sources were already in the registry.
+**Meyda** (REIMPLEMENT, MIT) and **Clubber** (REIMPLEMENT, MIT) were cloned at their pinned
+commits and read in full. Per §3's REIMPLEMENT tier, no code, naming, layout or constant table is
+taken from either — what was taken is the published formulas, which were then validated against
+**librosa** (ORACLE) before being written down.
+
+Tests written first: the formulas were validated in Python against librosa *before* being ported,
+so what landed in Kotlin was already known-correct arithmetic. Six fault injections are the
+evidence that the tests can tell.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: the descriptors have no production consumer yet, so their cost is unmeasured in situ.
+Cheap by construction — one pass each over 513 bins — but that is an argument, not a measurement,
+and the slice that wires them owes the benchmark.
+
+Commands and results: below.
+
+Review findings: three.
+
+**Reading Meyda changed what I wrote, twice.** Its `spectralFlux` iterates from a *negative*
+index, reads an undeclared variable, and carries its own `@ts-nocheck` with a comment saying the
+file has major issues — so it is not a reference for flux, and the corpus recomputes that
+definition independently in numpy instead. Its centroid and spread are in **bin-index** units
+where librosa's and ours are in Hz, and its flatness is magnitude-based where librosa's is
+power-based with a floor. Following it would have produced three quietly different quantities.
+
+**librosa's ZCR has a phantom crossing.** `zero_crossing_rate` forces index 0 to count as a
+crossing whatever the sample's sign, then divides by `frame_length` rather than `frame_length - 1`
+— confirmed algebraically, `phantom_rate * n − 1 == honest_count`. That is an API convention, not
+a definition, so the corpus records the honest figure and `FrameLevels` implements it. Comparing
+against librosa directly would have forced the quirk into the engine.
+
+**My first key names did not match my own generator.** The manifest emitted `rms`/`peak` inside
+the per-frame block while the tolerances and the test asked for `frameRms`/`framePeak`, so two
+tests failed with "not found" rather than with a number. Renamed in the generator, since the
+fixture-level block already has a whole-signal `rms` and the collision was the reason for the
+confusion.
+
+Commit: `feat(audio-core): spectral descriptors, validated frame by frame against librosa`
+
+Next slice: V2-3-03b — log/semitone bands, normalization, validity and silence semantics.
+
+### A tolerance that had to be measured, not guessed
+
+Bandwidth failed at 1e-4 by a factor of two. The first hypothesis — float noise amplified by the
+`(f − c)²` lever — was **wrong**: a 1e-7 *relative* perturbation moves it by only 8e-7. Two FFT
+implementations differ *absolutely*, though, and modelling that properly explains it:
+
+| Perturbation at float32 epsilon × the frame's largest bin | relative error |
+|---|---|
+| centroid | 4.0e-5 |
+| bandwidth | **5.5e-3** — 135× more sensitive |
+
+Because for the AM fixture, **bins above 5 kHz carry 86.6% of the second moment while holding
+0.0168% of the magnitude.** The lever arm puts nearly all the weight on the near-zero bins, which
+are exactly where two FFT implementations disagree most in relative terms. Tolerance set to 1e-2,
+above the measured sensitivity and still two orders below what any wrong formula produces.
+
+### Verification
+
+| Fault injected | Result |
+|---|---|
+| centroid returns bin index instead of Hz (Meyda's unit) | FAILED (2 tests) |
+| bandwidth forgets the square root | FAILED |
+| flatness over magnitude instead of power (Meyda's form) | FAILED |
+| ZCR divides by count instead of intervals | FAILED |
+| flux counts falls as well as rises | FAILED |
+| rolloff uses a strict threshold | **passed** — no real spectrum lands exactly on it; caught after adding the `fraction = 1.0` boundary test |
+
+| Command | Result |
+|---|---|
+| `DescriptorOracleTest` | 11 tests, ~1,700 frame comparisons, 0 failures |
+| `SpectralDescriptorsTest` | 10 tests, the degenerate inputs the corpus cannot reach |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+---
+
+## V2-3-02: the FFT/window graph, aligned by centre sample
+
+State: COMPLETE
+
+Goal: the reusable window/FFT/spectrum nodes §5.3 asks for, and a proof that all four branches
+of the analysis stack share one centre-sample coordinate.
+
+User-visible effect: none. New nodes in `audio-core` with no production consumer; the legacy
+`FftProcessor` is untouched and still drives every visual.
+
+In scope: `AnalysisBranch`, `FrameGrid`, `WindowTable`, `Spectrum`; the alignment proof; the
+incumbent-FFT benchmark; one oracle cross-check tying the new spectrum to librosa's centroid.
+
+Out of scope: PFFFT or any alternative FFT — the bullet says benchmark, **do not add yet**, and
+the benchmark says why not. Descriptors (centroid, rolloff, flatness, ZCR, flux) are V2-3-03.
+Repointing the analyzer at these nodes: that is a behaviour change to every visual and belongs
+with the descriptors it would be computing.
+
+Files expected to change: `engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/{AnalysisBranch,FrameGrid,WindowTable,Spectrum}.kt`,
+their tests, `engine/audio-core/build.gradle.kts`, and one test added to `CorpusOracleTest`.
+
+Compatibility contract: nothing existing changes.
+
+External source/provenance entries: none new. `JTransforms` moves from an `:app` dependency to
+also being an `audio-core` one — same library, same version, already shipped, so no new licence
+obligation and no new APK content. It is pure JVM, so `audio-core` stays Android-free.
+
+Tests written first: no. Five fault injections are the evidence, and the alignment test was
+written to measure the plan's claim rather than repeat it.
+
+Benchmark or visual evidence: below. Not a §2.1 rule 8 device benchmark — it measures algorithmic
+cost on the JVM, and says so rather than dressing itself up as hardware evidence.
+
+Rollback: revert the one commit. No production consumer.
+
+Risks: `WindowTable` uses the **periodic** Hann while `:app`'s `FftProcessor` uses the
+**symmetric** one, so the two will not agree to the last bin. Deliberate — periodic is what makes
+overlapping frames sum to a constant, which is the property an STFT needs, and it is what the
+oracle uses. The legacy path is untouched, so nothing changes today; a later slice repointing it
+must expect small band differences and treat them as expected rather than as a regression.
+
+Commands and results: below.
+
+Review findings: none. The nodes are 4 files averaging 60 lines; `audio-core` is now 12 files and
+about 1,000 lines, still the smallest module in the tree.
+
+Commit: `feat(audio-core): window, FFT and spectrum nodes on a centre-sample grid`
+
+Next slice: V2-3-03 — levels, bands and spectral descriptors.
+
+### The alignment claim, measured rather than quoted
+
+§5.3: *"A 1024/4096/8192 stack otherwise introduces roughly 75 ms of relative misalignment at
+48 kHz and turns one musical event into four apparent times."*
+
+A streaming analyzer stamps a frame with the last sample it saw, which puts the centre at
+`k*hop + window/2` — an offset that differs per branch. `right-edge alignment costs the 75 ms the
+plan names` computes it:
+
+| | value |
+|---|---|
+| harmony (8192) vs general (1024), right-edge | **3,584 samples** = `(8192 − 1024) / 2` |
+| the same, in time at 48 kHz | **74.67 ms** |
+| centre-aligned, same two branches | **0 samples** |
+
+### The incumbent FFT, per hop
+
+All four branches share a 512-sample hop, so the whole stack must fit inside 10.67 ms at 48 kHz.
+
+| Branch | Window | ms/frame |
+|---|---:|---:|
+| transient | 512 | 0.0052 |
+| general | 1024 | 0.0099 |
+| pitch | 4096 | 0.0286 |
+| harmony | 8192 | 0.1134 |
+| **stack total** | | **0.157 ms/hop** |
+
+**1.5% of the hop budget on one JVM core.** That is the answer to "benchmark versus alternatives":
+the incumbent is nowhere near the constraint, so adding PFFFT would buy nothing and cost a native
+dependency — which is what the plan already suspected in saying not to add it yet. Measured on
+this CI container; the figure to beat is recorded here rather than asserted tightly in a test that
+would flake on a different machine.
+
+### Verification
+
+| Fault injected | Failing test |
+|---|---|
+| frames aligned by right edge, not centre | 4 tests, including the 75 ms measurement |
+| symmetric Hann instead of periodic | overlap-add sums to a constant; the two forms differ |
+| Nyquist bin dropped, as the legacy path does | spectrum spans DC to Nyquist |
+| DC bin zeroed, as the legacy path does | spectrum spans DC to Nyquist; Parseval |
+| out-of-range window reads wrap instead of reading silence | a window reads zero outside the source |
+
+| Command | Result |
+|---|---|
+| `:engine:audio-core:test` | 44 tests, 0 failures, 0 skipped |
+| new spectrum vs the corpus oracle | peak bin within one bin (5.4 Hz) of 440 Hz |
+| `Spectrum.compute` allocation | 0 bytes per frame |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+---
+
+## V2-3-01: fixture corpus and oracle generator
+
+State: COMPLETE
+
+Goal: Phase 3's foundation — generated PCM fixtures with expected values from an external
+oracle, so later analysis work is measured against something other than itself.
+
+User-visible effect: none. Test infrastructure. What it changes is that `StereoField`'s
+correctness is now checked against a computation the app does not own.
+
+In scope: `tools/oracle/generate_corpus.py`; 11 fixtures and a manifest under
+`app/src/test/resources/corpus/`; `Corpus` and `CorpusOracleTest`.
+
+Out of scope: libebur128 loudness reference values — a second oracle and its own slice. Real
+music excerpts: none are available here, and a corpus that claimed them without shipping them
+would be worse than the gap. Both recorded in the manifest's `notCovered`.
+
+Files expected to change: `tools/oracle/generate_corpus.py`,
+`app/src/test/resources/corpus/*`, `app/src/test/java/dev/musicviz/analysis/{Corpus,CorpusOracleTest}.kt`.
+
+Compatibility contract: no production code changes.
+
+External source/provenance entries: **librosa** (ISC) and **libebur128** (MIT) were already in
+`provenance.json` at ORACLE tier with verified licence evidence and pinned commits, so §2.1
+rule 9 was satisfied before this slice began — checked rather than assumed. librosa runs at
+fixture-generation time only and never enters the APK; the manifest says so and the generator's
+module docstring says so.
+
+Tests written first: not applicable — the deliverable is the oracle. Six fault injections are
+the evidence.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit. Nothing in production depends on the corpus.
+
+Risks: 904 KiB of binary fixtures in the repository, and a regenerated corpus is a full rewrite
+of those bytes. Mitigated by keeping fixtures short and int16 rather than float32, and by
+`generatorVersion`, which makes a stale corpus a visible mismatch. Regenerating without
+regenerating the expectations fails the checksum test rather than silently comparing against the
+wrong numbers.
+
+Commands and results: below.
+
+Review findings: two, both mine.
+
+**My oracle computed a different quantity than the app.** For `stereoWidth` I wrote
+`sqrt(ss)/sqrt(mm)`, while `StereoField` defines it as `s / (m + s)` over RMS magnitudes. On the
+anti-phase fixture — no mid at all — my version divided by zero and reported the **widest
+possible signal as width 0**, and the guard I had written made that look deliberate. Caught by
+reading the generated manifest instead of trusting that a green generator meant correct values.
+Correlation is now computed the textbook way from L and R, which makes it a genuine independent
+check of the mid/side identities `StereoField` uses; width mirrors the app's own definition,
+because it is not a standard quantity, and the manifest says which is which.
+
+**A fault injection silently did not inject.** My `sed` pattern did not match the real source
+(`((mm - ss) / denom).coerceIn(...)`, not `(mm - ss) / denom`), and `sed` exits 0 when it matches
+nothing, so the `||` fallback never ran and the run reported nothing at all. Noticed because the
+output was empty rather than a failure. Re-run with an assertion that the pattern exists and a
+checksum that the file changed — the correlation algebra then failed three separate ways.
+
+Commit: `test(analysis): a fixture corpus with expected values from an external oracle`
+
+Next slice: V2-3-02 — the FFT/window graph with center-aligned hops.
+
+### What the oracle catches
+
+Six faults injected, all caught:
+
+| Fault | Failing test |
+|---|---|
+| one corrupted byte in a fixture | corpus matches its manifest |
+| correlation: mid/side sign flipped | correlation agrees with the oracle (+ anti-phase collapse) |
+| correlation: cross term dropped | correlation agrees with the oracle |
+| correlation: side energy omitted | correlation agrees with the oracle (+ anti-phase collapse) |
+| width normalised by the wrong total | width agrees, including where mid is zero |
+| band table starting an octave and a half too high | a pure tone lands in the band that contains it |
+
+### The corpus
+
+11 fixtures, 904 KiB, 22,050 Hz, raw interleaved int16 — the format the tap itself delivers, so
+both sides dequantise identically by `x / 32768`.
+
+silence · impulse · tone_440 · sweep · am_4hz · clicks_120bpm · tempo_ramp · stereo_antiphase ·
+stereo_wide · stereo_identical · discontinuity
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `librosa` install into a venv | 0.11.0, with numpy 2.4.6 / scipy 1.17.1 / soundfile 0.14.0 |
+| librosa smoke test (RMS, centroid, beat track) | real values, not stubs |
+| `CorpusOracleTest` | 9 tests, 0 failures, 0 skipped |
+| corpus checksums against the manifest | 11/11 match |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+---
+
+## V2-2-05c: serve the analyzer from the V2 ring — the Phase 2 gate
+
+State: COMPLETE
+
+Goal: close the Phase 2 gate — "the legacy analyzer can consume the new ring through a bridge
+with no feature or playback regression; callback allocation benchmark is clean."
+
+User-visible effect: none intended, and one deliberate change (below). Every band, beat, chroma
+and stereo reading now comes from `SampleRing` through `MidSideWindow` instead of from
+`PcmRingBuffer`'s capture-time downmix. V2-2-05b measured the two at a delta of exactly zero for
+mono and stereo, which is why this is a wiring change rather than a rewrite.
+
+In scope: `AnalysisEngine` taking a `SampleRing` and reading through `MidSideWindow`; extracting
+its per-hop work into `AnalysisEngine.Pass`; `PlaybackSession` handing it `sampleRing`.
+
+Out of scope: `PlayerViewModel.latestPcm`, which feeds projectM through a *cursor* read rather
+than a latest-window one and therefore needs a different bridge — its own slice. Deleting
+`PcmRingBuffer`, which still has that reader, per §12.
+
+Files expected to change: `app/src/main/java/dev/musicviz/analysis/AnalysisEngine.kt`,
+`app/src/main/java/dev/musicviz/playback/PlaybackEngine.kt`, plus two test call sites.
+
+Compatibility contract: feature values unchanged for mono and stereo. Surround differs, per
+`adr/0003`.
+
+External source/provenance entries: none. Checked rather than assumed: §3.1's ledger has nothing
+that applies to this step. `librosa` and `libebur128` enter at V2-3-01 as **ORACLE** tier —
+fixture generation outside the runtime, never linked.
+
+Tests written first: no, and the fault injections are why that mattered. See below.
+
+Benchmark or visual evidence: not applicable; nothing new runs on the callback.
+
+Rollback: revert the one commit.
+
+Risks: below.
+
+Commands and results: below.
+
+Review findings: **the analyzer's core loop had no test at all, and I only found that by
+injecting faults into it.** Hard-wiring the stereo reading to `MONO`, and building the waveform
+out of the side channel instead of the mid, both left the entire suite green — 1,290 tests, no
+failures. The FFT could have been fed the wrong signal and nothing would have said so.
+
+The cause was structural, not an oversight in coverage: the work lived inside a `while (true)`
+loop on `Dispatchers.Default` behind a wall-clock deadline, so no test could step it. Extracted
+into `AnalysisEngine.Pass`, which owns the window and the per-hop buffers and does one tick per
+call. The loop is now six lines and the work is reachable.
+
+`AnalysisPassTest` covers it: a tone raises the bands it occupies and not all of them, the
+waveform matches the mid-only signal rather than a side-contaminated one, wide content reads
+wider than narrow, and a mono source reads correlation 1 rather than decorrelated.
+
+Commit: `refactor(analysis): serve the analyzer from the V2 ring, and make its hop testable`
+
+Next slice: Phase 3 — V2-3-01, the fixture corpus and oracle generator.
+
+### The one behaviour that changes
+
+`PcmRingBuffer`'s write index was monotonic for the life of the process, so after a seek it kept
+serving a window that still held pre-seek audio. `SampleRing` restarts its numbering at each
+epoch, so for one window after a seek or format change — about **43 ms** at 48 kHz — there is
+nothing to read and the analyzer publishes nothing. The visuals hold their last frame instead of
+briefly showing the previous track's audio.
+
+Asserted rather than left to be discovered: `a new epoch withholds the window until it has
+refilled`.
+
+### Verification
+
+| Fault injected | Before `Pass` | After |
+|---|---|---|
+| stereo field hard-wired to `MONO` | **passed** | FAILED |
+| waveform built from the side channel | **passed** | FAILED |
+| FFT fed the side channel | not tried | FAILED |
+| analyzer pointed at a ring nothing writes | **passed** | FAILED |
+
+| Command | Result |
+|---|---|
+| `AnalysisPassTest` | 5 tests, 0 failures |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+| `// FAULT` scan of engine and app sources | clean |
+
+### Phase 2 gate
+
+| Requirement | State |
+|---|---|
+| legacy analyzer consumes the new ring through a bridge | **done** — `MidSideWindow` |
+| no feature regression | mono and stereo bit-identical; surround per `adr/0003` |
+| no playback regression | capture path unchanged; every producer feeds both rings |
+| callback allocation benchmark clean | 0 bytes/callback for tap and ring write |
+
+---
+
+## V2-2-05b: make the V2 ring servable, and prove it against the legacy one
+
+State: COMPLETE
+
+Goal: everything the reader migration needs, minus the migration. The V2 ring must receive audio
+from **every** producer, and must be able to hand back the exact pair today's analyzer reads.
+
+User-visible effect: none. No reader has moved. What changed is that live input — microphone and
+playback capture — now reaches the V2 ring as well, and there is a proof that the two rings
+produce identical numbers.
+
+In scope: `SampleRing.sourceChannelCount` and `snapshotLatest`; `MidSideWindow` in `audio-core`;
+`PcmRingBuffer` implementing `PcmSink`; `AudioCapturePump`/`MicCapture`/`PlaybackCapture`/
+`CaptureController` taking a sink rather than a buffer; `PlaybackSession.captureSink` as the one
+definition of where captured audio goes; `adr/0003`.
+
+Out of scope: repointing `AnalysisEngine` and `PlayerViewModel` — V2-2-05c, which closes the
+Phase 2 gate. Deleting `PcmRingBuffer` is later still, per §12.
+
+Files expected to change: `engine/audio-core/…/{SampleRing,MidSideWindow}.kt`,
+`app/src/main/java/dev/musicviz/audio/{PcmRingBuffer,AudioCapturePump,MicCapture,PlaybackCapture}.kt`,
+`app/src/main/java/dev/musicviz/ui/{CaptureController,PlayerViewModel}.kt`,
+`app/src/main/java/dev/musicviz/playback/PlaybackEngine.kt`, `docs/visualizer-v2/adr/0003-*.md`.
+
+Compatibility contract: every reader still reads `PcmRingBuffer`, unchanged. `PcmRingBuffer`
+gains a `write` alias so producers can be handed a destination; nothing else about it moves.
+
+External source/provenance entries: none. No external repository is involved at this step —
+`librosa` and `libebur128` enter at V2-3-01 as **ORACLE** tier, generating fixtures outside the
+runtime, never linked.
+
+Tests written first: no. The parity proof is the deliverable, and it had to be written against
+the implementation to mean anything. Four fault injections stand in, and the fourth found a real
+hole.
+
+Benchmark or visual evidence: not applicable — no new work on the callback beyond V2-2-05a's,
+already measured at 0 bytes.
+
+Rollback: revert the one commit.
+
+Risks: the mono downmix for **surround** sources changes when the readers move. Legacy folds all
+decoded channels; the V2 ring keeps the front pair by the design §5.1 asks for, so its mid is the
+mean of two. Measured, not assumed — bit-identical for mono and stereo, differing on more than
+half the samples of a five-channel fixture. `adr/0003` records the decision and why the front
+pair is the more faithful answer on a two-speaker device.
+
+Commands and results: below.
+
+Review findings: two, both mine, both found by injecting faults rather than by re-reading.
+
+**A mono source would have been halved, silently.** `SampleRing` keeps two channels and a mono
+source leaves the second at zero, so a bridge averaging the ring's channels returns exactly half
+amplitude — right shape, right length, no error. The ring now records the *source's* channel
+count, and `mono is not halved by the silent second channel` fails without it.
+
+**I wrote the dual-write lambda twice** — once for the tap, once for the capture controller —
+which is precisely how two producers end up disagreeing about where audio goes. Collapsed into
+`PlaybackSession.captureSink`, one definition for all three producers. The fault "capture feeds
+only the legacy ring" passed every test until that test existed.
+
+Commit: `feat(audio): make the V2 ring servable, and prove it against the legacy one`
+
+Next slice: V2-2-05c — repoint `AnalysisEngine` and `PlayerViewModel`, closing the Phase 2 gate.
+
+### Parity, measured
+
+| Source | Result |
+|---|---|
+| stereo 16-bit | mid and side **bit-identical**, delta 0 |
+| stereo float | mid and side **bit-identical**, delta 0 |
+| mono | **bit-identical**; side identically zero |
+| five-channel | differs on >½ of samples — the `adr/0003` divergence, pinned so it cannot widen unnoticed |
+
+### Verification
+
+| Command | Result |
+|---|---|
+| fault: mid averages the ring's channels, not the source's | FAILED (2 tests) |
+| fault: side is the difference rather than half of it | FAILED (2 tests) |
+| fault: the ring never records the source channel count | FAILED (3 tests) |
+| fault: capture feeds only the legacy ring | **passed at first** — nothing covered the capture wiring; FAILED after `live input reaches both rings` |
+| `PlaybackCaptureContractTest` source gate | caught the `ring.writeInterleaved` → `sink.write` rename and was updated in the same change, per `CLAUDE.md` |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+---
+
 ## V2-2-05a: write the V2 ring in production, on the tap's own numbering
 
 State: COMPLETE

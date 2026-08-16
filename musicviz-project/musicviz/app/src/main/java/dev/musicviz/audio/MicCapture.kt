@@ -28,10 +28,10 @@ import kotlin.math.abs
  */
 class MicCapture(
     private val context: Context,
-    ring: PcmRingBuffer,
+    sink: dev.musicviz.engine.audio.PcmSink,
     /** Injectable for tests; production uses the monotonic elapsed clock. */
     nowMs: () -> Long = { android.os.SystemClock.elapsedRealtime() },
-) : AudioCapturePump(ring, DEFAULT_RATE, nowMs) {
+) : AudioCapturePump(sink, DEFAULT_RATE, nowMs) {
     /** Why a start attempt failed, for a message the user can act on. */
     enum class Failure {
         /** RECORD_AUDIO has not been granted. */

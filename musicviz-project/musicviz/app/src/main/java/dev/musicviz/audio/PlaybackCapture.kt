@@ -71,8 +71,8 @@ val playbackCaptureSupported: Boolean get() = Build.VERSION.SDK_INT >= Build.VER
  * place that actually touches the new API.
  */
 class PlaybackCapture(
-    ring: PcmRingBuffer,
-) : AudioCapturePump(ring, DEFAULT_RATE) {
+    sink: dev.musicviz.engine.audio.PcmSink,
+) : AudioCapturePump(sink, DEFAULT_RATE) {
     /**
      * True once the capture has run for [SILENCE_GRACE_MS] without a single
      * non-zero sample.

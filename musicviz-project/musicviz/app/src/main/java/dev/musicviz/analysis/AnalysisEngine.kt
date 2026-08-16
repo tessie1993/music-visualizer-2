@@ -1,6 +1,7 @@
 package dev.musicviz.analysis
 
-import dev.musicviz.audio.PcmRingBuffer
+import dev.musicviz.engine.audio.MidSideWindow
+import dev.musicviz.engine.audio.SampleRing
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -13,9 +14,25 @@ import kotlinx.coroutines.launch
  * Pulls the newest PCM window from [ring] at ~60 Hz, runs FFT + smoothing +
  * feature extraction on Dispatchers.Default (never the main or audio thread)
  * and publishes [AudioFeatures].
+ *
+ * Reads the V2 [SampleRing] through [MidSideWindow], which derives the mono
+ * downmix and the side channel on read rather than at capture. The numbers are
+ * the same - `MidSideParityTest` compares them against the buffer this
+ * replaced with a delta of exactly zero - and one thing improves: mid and side
+ * now come from a single snapshot. Taken separately, as they were, the write
+ * head could advance between them and the correlation was computed across two
+ * slightly different windows.
+ *
+ * One behaviour genuinely differs. The V2 ring restarts its numbering at a
+ * seek or a format change, so for one window after each (~43 ms at 48 kHz)
+ * there is nothing to read and this publishes nothing - the visuals hold their
+ * last frame. `PcmRingBuffer` counted forever, so it kept serving a window
+ * that still contained pre-seek audio. Holding a frame is the better of the
+ * two, and it is a test rather than a hope: `a new epoch withholds the window
+ * until it has refilled`.
  */
 class AnalysisEngine(
-    private val ring: PcmRingBuffer,
+    private val ring: SampleRing,
     private val processor: FftProcessor = FftProcessor(),
     val smoother: BandSmoother = BandSmoother(processor.bandCount),
 ) {
@@ -74,53 +91,79 @@ class AnalysisEngine(
         _features.value = AudioFeatures.empty(processor.bandCount)
     }
 
+    /**
+     * One hop's worth of work, and the buffers it reuses.
+     *
+     * Separate from the worker loop so it can be driven a tick at a time. The
+     * loop runs on `Dispatchers.Default` behind a wall-clock deadline, which no
+     * test can step; left inline, everything this does - the FFT input, the
+     * waveform decimation, the stereo reading - is unreachable, and fault
+     * injection proved it: hard-wiring the stereo field to `MONO`, or building
+     * the waveform from the side channel, broke nothing.
+     *
+     * Confined to one thread, like the extractor and smoother it drives.
+     */
+    internal inner class Pass {
+        // Owns both windows and fills them from one snapshot. Full length: the
+        // stereo measurements are taken over the side window, not over the
+        // decimated `waveform` below.
+        private val window = MidSideWindow(ring, processor.fftSize)
+        private val raw = FloatArray(processor.bandCount)
+        private val smoothed = FloatArray(processor.bandCount)
+        private val waveform = FloatArray(WAVEFORM_POINTS)
+
+        // Same hop rate as the extractor: the chroma's decay math ran ~4% fast
+        // at an assumed 60 Hz while the loop ticks at 62.5.
+        private val chroma = Chromagram(hopRateHz = HOP_RATE_HZ)
+
+        /** Drops the per-track state this pass owns. */
+        fun reset() {
+            extractor.reset()
+            smoother.reset()
+            chroma.reset()
+        }
+
+        /** Publishes one frame, or returns false when the ring has no window yet. */
+        fun tick(): Boolean {
+            if (!window.refresh()) return false
+            processor.process(window.mid, sampleRateHz, raw)
+            processor.updateChroma(chroma, sampleRateHz)
+            smoother.apply(raw, smoothed)
+            // Box-average each span rather than point-sampling it: one sample
+            // in ~16 aliases hi-hats into shimmer on the scope scene; the mean
+            // over the span does not.
+            val step = processor.fftSize / waveform.size
+            for (i in waveform.indices) {
+                var acc = 0f
+                val base = i * step
+                for (j in 0 until step) acc += window.mid[base + j]
+                waveform[i] = acc / step
+            }
+            // Unconditional where it used to fall back to MONO: a mono source
+            // now yields an all-zero side window, and `of` over that returns
+            // width 0 and correlation 1 - which is what MONO is. The branch
+            // could only ever have fired on a buffer-size mismatch that the
+            // shared window makes impossible.
+            val stereo = StereoField.of(window.mid, window.side)
+            _features.value = extractor.extract(smoothed, waveform, sampleRateHz, stereo, chroma)
+            return true
+        }
+    }
+
     private var job: Job? = null
 
     fun start(scope: CoroutineScope) {
         if (job?.isActive == true) return
         job =
             scope.launch(Dispatchers.Default) {
-                val windowBuf = FloatArray(processor.fftSize)
-                val raw = FloatArray(processor.bandCount)
-                val smoothed = FloatArray(processor.bandCount)
-                val waveform = FloatArray(128)
-                // The side window, snapshotted alongside the mid one. Full
-                // length: the stereo measurements are taken over this, not
-                // over the decimated `waveform` below.
-                val sideBuf = FloatArray(processor.fftSize)
-                // Same hop rate as the extractor: the chroma's decay math ran
-                // ~4% fast at an assumed 60 Hz while the loop ticks at 62.5.
-                val chroma = Chromagram(hopRateHz = HOP_RATE_HZ)
+                val pass = Pass()
                 var deadlineNs = System.nanoTime()
                 while (true) {
                     if (resetPending) {
                         resetPending = false
-                        extractor.reset()
-                        smoother.reset()
-                        chroma.reset()
+                        pass.reset()
                     }
-                    if (ring.snapshotLatest(windowBuf)) {
-                        processor.process(windowBuf, sampleRateHz, raw)
-                        processor.updateChroma(chroma, sampleRateHz)
-                        smoother.apply(raw, smoothed)
-                        // Box-average each span rather than point-sampling it:
-                        // one sample in ~16 aliases hi-hats into shimmer on
-                        // the scope scene; the mean over the span does not.
-                        val step = processor.fftSize / waveform.size
-                        for (i in waveform.indices) {
-                            var acc = 0f
-                            val base = i * step
-                            for (j in 0 until step) acc += windowBuf[base + j]
-                            waveform[i] = acc / step
-                        }
-                        val stereo =
-                            if (ring.snapshotLatestSide(sideBuf)) {
-                                StereoField.of(windowBuf, sideBuf)
-                            } else {
-                                StereoField.MONO
-                            }
-                        _features.value = extractor.extract(smoothed, waveform, sampleRateHz, stereo, chroma)
-                    }
+                    pass.tick()
                     // Drift-corrected: a plain delay(16) sleeps 16 ms AFTER
                     // each tick's work, so the real hop rate sagged under
                     // load and the extractor's fixed-rate beat/BPM math
@@ -142,6 +185,9 @@ class AnalysisEngine(
     companion object {
         /** One tick per 16 ms deadline = 62.5 Hz, shared by the extractor and the chroma. */
         private const val TICK_NS = 16_000_000L
+
+        /** Points in the waveform a scene is handed, decimated from the analysis window. */
+        internal const val WAVEFORM_POINTS = 128
         internal const val HOP_RATE_HZ = 1000f / 16f
     }
 }

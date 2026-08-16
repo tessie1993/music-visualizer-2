@@ -11,6 +11,7 @@ import dev.musicviz.audio.AudioFxController
 import dev.musicviz.audio.PcmRingBuffer
 import dev.musicviz.audio.TapRenderersFactory
 import dev.musicviz.engine.audio.AudioPresentationClock
+import dev.musicviz.engine.audio.PcmSink
 import dev.musicviz.engine.audio.SampleRing
 import dev.musicviz.engine.audioandroid.PcmTap
 import dev.musicviz.engine.audioandroid.SinkClockDriver
@@ -87,22 +88,33 @@ class PlaybackSession internal constructor(
     internal val clockDriver = SinkClockDriver(presentationClock)
 
     /**
-     * The capture end of the pipeline, in `:engine:audio-android` per §4.1.
-     * It knows a [dev.musicviz.engine.audio.PcmSink], not this class's buffer,
-     * which is what lets the same tap feed the V2 ring later without touching
-     * the capture path.
+     * Where captured audio goes, whatever captured it.
      *
-     * `internal` so a test can push audio through the real tap and watch it
-     * arrive in [ring]. That one lambda is the whole join between the capture
-     * path and everything that draws, and wiring it to the wrong buffer is
-     * silent - a visualizer that sits still over playing music, which is the
-     * failure this class's own documentation says it exists to prevent.
+     * One definition for all three producers - the playback tap, the
+     * microphone and the playback capture - because "which rings receive live
+     * input" is one fact, and stating it three times is how two of them end up
+     * disagreeing. The failure would be silent: visuals that work over the
+     * app's own playback and sit still over a live mic.
      */
-    internal val tap =
-        PcmTap({ samples, frames, channels ->
+    internal val captureSink =
+        PcmSink { samples, frames, channels ->
             ring.writeInterleaved(samples, frames, channels)
             sampleRing.write(samples, frames, channels)
-        }) { format ->
+        }
+
+    /**
+     * The capture end of the pipeline, in `:engine:audio-android` per §4.1.
+     * It knows a [captureSink], not this class's buffers, which is what lets
+     * the destination change without touching the capture path.
+     *
+     * `internal` so a test can push audio through the real tap and watch it
+     * arrive. The join between the capture path and everything that draws is
+     * one reference wide, and wiring it wrongly is silent - a visualizer that
+     * sits still over playing music, which is the failure this class's own
+     * documentation says it exists to prevent.
+     */
+    internal val tap =
+        PcmTap(captureSink) { format ->
             val hook = onAudioFormat
             if (hook != null) {
                 hook(format.sampleRateHz, format.channelCount, format.encoding)
@@ -197,7 +209,7 @@ class PlaybackSession internal constructor(
      * screen, or a visible wallpaper) - so the 62 Hz loop never spins for
      * nobody.
      */
-    val analysis = dev.musicviz.analysis.AnalysisEngine(ring)
+    val analysis = dev.musicviz.analysis.AnalysisEngine(sampleRing)
 
     private val interestHook: () -> Unit = { syncAnalysis() }
 
