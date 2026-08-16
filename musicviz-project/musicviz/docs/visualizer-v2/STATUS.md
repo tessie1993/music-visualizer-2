@@ -14,6 +14,104 @@ Newest slice first.
 
 ---
 
+## V2-0-02b: bound how often the beat flash may fire
+
+State: COMPLETE
+
+Goal: close the one full-frame luminance event whose *rate* nothing downstream controls.
+`VisualSafety` bounds how big a flash may be and `strobeHz` bounds the strobe's oscillator,
+but the beat flash fires at the track's rate, and the only lever on that sits upstream in the
+analyzer where four things can still change the answer.
+
+User-visible effect: at high beat rates the flash is held to three per second and the excess
+rolls off instead of firing. Nothing changes below that rate, or for a Custom opt-out.
+
+In scope: `FlashBudget`; `VisualSafety.flashImpulse`; the gain applied at the two `uPostFlash`
+upload sites, live and export; ADR 0001 for the deviation from §11.2.
+
+Out of scope: measuring the frame. §11.2's limiter is defined over measured luminance and
+saturated-red change, which needs a downsampled target, an async PBO readback and a device to
+prove the readback does not stall — none of which exist here. That is **V2-0-02c**, and
+until it lands a projectM preset, a Shader Studio shader or a scene's own internal brightness
+can still flash without the budget seeing it, because none of those passes through
+`uPostFlash`. The `alternating stripes` and `red transition` vectors §11.2 names are part of
+that slice for the same reason: both are frame-content tests.
+
+Files expected to change: `app/src/main/java/dev/musicviz/render/{FlashBudget,VisualSafety,VisualizerRenderer}.kt`,
+`app/src/main/java/dev/musicviz/export/{FxCompositor,VideoExporter}.kt`,
+`app/src/test/java/dev/musicviz/FlashBudgetTest.kt`,
+`docs/visualizer-v2/{DECISIONS.md,adr/0001-flash-budget-follows-the-safety-choice.md}`.
+
+Compatibility contract: no uniform is added or renamed, so `CompositeUniformParityTest` still
+compares the same two sets. `SafetyConfig.OFF` stays an exact no-op, which is what the export
+byte-parity tests rest on. No preset key, scene ID or audio semantic moves.
+
+External source/provenance entries: none. The three-per-second figure is WCAG 2.3.1, already
+cited by `VisualSafety` and already in the tree.
+
+Tests written first: `FlashBudgetTest`, eleven assertions. Ten are behavioural vectors on the
+pure limiter; the eleventh is the bypass gate, and it was proved non-vacuous by stripping the
+gain from the renderer and watching it name the exact offending line.
+
+Benchmark or visual evidence: none, and none is claimed. The limiter is arithmetic on a
+16-entry ring with no allocation; what it needs is a device, and that belongs to V2-0-02c.
+
+Rollback: revert the one commit. Both upload sites return to the raw parameter.
+
+Risks: the estimate is `flash × beat × 0.6`, the product the shader is about to apply — a
+real quantity, but a parameter estimate rather than a measurement, so `RISK_THRESHOLD` is set
+below WCAG's 10% of full scale deliberately. If it turns out to suppress flashes a viewer
+would not have perceived, the threshold moves by evidence and an ADR, never by editing a test
+until it passes.
+
+Commands and results: below.
+
+Review findings: three.
+
+1. The first draft had the budget observe `fx.flash` alone. The shader applies
+   `uPostFlash × uBeat × 0.6`, so a flash of 1.0 on a frame with no beat under it changes
+   nothing — and would have spent budget on a non-event. It now judges the product, and
+   `flashImpulse` lives in `VisualSafety` because that is where the shader's coefficients are
+   already documented.
+2. A stateful per-frame call is only correct if it runs once per frame, so both call sites
+   were traced rather than assumed: the renderer's upload is inline in `onDrawFrame`, and
+   `FxCompositor.composite` is called once per exported frame. Had either sat inside the
+   transition or layer path it would have double-counted every edge.
+3. The `FxCompositor` doc first claimed live and export "arrive at the same gains". They
+   arrive at the same *rule*; identical gains need the sample-locked clock §10.3 is working
+   toward, because live advances on a jittering wall clock. Corrected rather than left as a
+   claim the code does not support.
+
+Commit: `feat(safety): hold the beat flash to three per second`
+
+Next slice: **V2-0-03 — verify and gate 16 KB native libraries.**
+
+### What the budget counts
+
+Rising edges past a risk threshold, inside a rolling second — not frames. The distinction is
+the whole design:
+
+| Input | Treated as | Why |
+|---|---|---|
+| impulse rises past the threshold | one flash, budget spent | this is the event WCAG counts |
+| impulse held high for 60 frames | one flash | a bright scene is not a strobe |
+| impulse below the threshold | not a flash | too small to be the hazard |
+| the 4th rise in one second | rolled off below the threshold | not cut to zero: a cut to black is itself a full-frame change |
+| the clock stepping backwards | a new session | `uTime` wraps at `TIME_WRAP_SEC`, so this is normal, not exceptional |
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:app:testDebugUnitTest --tests '*FlashBudgetTest*'`, gain stripped from the renderer | 11 tests, 1 failed, naming the exact bypassed line |
+| `:app:testDebugUnitTest --tests '*FlashBudgetTest*'` | 11 passed |
+| `:app:testDebugUnitTest` | **1,234 tests, 0 failures** (1,223 before this slice) |
+| `:app:ktlintCheck` | BUILD SUCCESSFUL |
+| `:app:lintDebug` | BUILD SUCCESSFUL |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+
+---
+
 ## V2-0-02a: make visual safety a versioned choice
 
 State: COMPLETE

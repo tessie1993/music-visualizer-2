@@ -11,7 +11,7 @@ DI framework; §5.3 and §14 before a benchmarked number moves.
 
 | ADR | Title | Status | Slice |
 |---|---|---|---|
-| — | none yet | — | — |
+| [0001](adr/0001-flash-budget-follows-the-safety-choice.md) | The temporary flash budget follows the safety choice instead of running unconditionally | accepted | V2-0-02b |
 
 ## Decisions the plan already made
 

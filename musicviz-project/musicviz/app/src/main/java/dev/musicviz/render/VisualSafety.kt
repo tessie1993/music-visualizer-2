@@ -241,6 +241,19 @@ object VisualSafety {
     }
 
     /**
+     * The full-frame luminance swing `uPostFlash` will produce this frame.
+     *
+     * The shader adds `uPostFlash * uBeat * FLASH_SHADER_DEPTH`, so this is
+     * that product and not the slider value: a flash of 1.0 on a frame with no
+     * beat under it changes nothing, and [FlashBudget] must not spend its
+     * budget on it.
+     */
+    fun flashImpulse(
+        flash: Float,
+        beatImpulse: Float,
+    ): Float = flash * beatImpulse * FLASH_SHADER_DEPTH
+
+    /**
      * The value to upload as `uStrobeHz`. The strobe's rate used to be a
      * literal in the shader, so this is the whole reason the uniform exists:
      * clamping the strobe AMOUNT only dims a 9 Hz flicker, it does not slow it

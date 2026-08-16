@@ -240,6 +240,22 @@ class VisualizerRenderer(
     @Volatile
     var safety: VisualSafety.SafetyConfig = VisualSafety.SafetyConfig.OFF
 
+    /**
+     * How much of this frame's beat flash the rolling one-second budget allows.
+     *
+     * Always measured, so the history stays coherent across a mid-session
+     * change, but only applied while limiting is on - with a user's explicit
+     * Custom opt-out, `SafetyConfig.OFF` stays an exact no-op, which is what
+     * the export byte-parity tests rest on. See adr/0001.
+     */
+    private fun flashGain(
+        fx: SceneParams,
+        beatImpulse: Float,
+    ): Float {
+        val gain = flashBudget.gainFor(timeSeconds, VisualSafety.flashImpulse(fx.flash, beatImpulse))
+        return if (safety.enabled) gain else 1f
+    }
+
     /** Smoothed params actually shown; fades toward [sceneParams] over paramFadeSec. */
     private var displayedParams: SceneParams = SceneParams.DEFAULT
 
@@ -480,6 +496,9 @@ class VisualizerRenderer(
 
     /** Visible-time clock uploaded as `uTime`; wrapped, see [TIME_WRAP_SEC]. */
     private var timeSeconds = 0f
+
+    /** Rate limit on the beat flash; see [FlashBudget]. */
+    private val flashBudget = FlashBudget()
     private var fadeProgram = 0
     private var trailWarpProgram = 0
 
@@ -1342,7 +1361,7 @@ class VisualizerRenderer(
         GLES30.glUniform1f(cLoc("uPostDriftY"), fx.driftY)
         GLES30.glUniform1f(cLoc("uPostSway"), fx.sway)
         GLES30.glUniform1f(cLoc("uPostShake"), fx.shake)
-        GLES30.glUniform1f(cLoc("uPostFlash"), fx.flash)
+        GLES30.glUniform1f(cLoc("uPostFlash"), fx.flash * flashGain(fx, features.beatImpulse))
         GLES30.glUniform1f(cLoc("uPostTemp"), fx.temperature)
         GLES30.glUniform1f(cLoc("uPostSolarize"), if (fx.solarize) 1f else 0f)
         // Mirror/invert: shader scenes AND the milkdrop post pass handle these
