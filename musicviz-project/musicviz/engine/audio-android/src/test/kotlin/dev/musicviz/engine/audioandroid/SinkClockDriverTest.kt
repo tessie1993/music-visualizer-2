@@ -154,6 +154,23 @@ class SinkClockDriverTest {
     }
 
     @Test
+    fun `the speed verdict recovers when the chain regains authority`() {
+        // The refusal is a verdict on the CURRENT configuration, not a
+        // permanent one. Offload and tunneling end; a sink that stopped
+        // telling the chain about speed can start again, and a driver that
+        // latched "not authoritative" for good would leave the clock frozen
+        // for the rest of the process with every counter looking healthy.
+        val rig = started()
+        rig.driver.onSkipSilenceApplied(false)
+        rig.driver.onTapBoundary(format(1), rate.toLong(), format(2))
+        assertEquals(1L, rig.driver.diagnostics.refusedSpeedNotAuthoritative)
+
+        rig.parameterChange(1f, ended = format(2), endedFrames = rate.toLong(), begun = format(3))
+        assertEquals("the driver never recovered", 2, rig.clock.current.segments.size)
+        assertEquals(3, rig.clock.current.epoch)
+    }
+
+    @Test
     fun `a seek does not disturb the speed verdict`() {
         // A seek raises neither hook, which is indistinguishable from the
         // AudioTrack case if the verdict were recomputed from absence. It must
@@ -162,6 +179,10 @@ class SinkClockDriverTest {
         repeat(3) { rig.unhookedFlush(format(it + 1), endedFrames = rate.toLong(), begun = format(it + 2)) }
         assertEquals(4, rig.clock.current.segments.size)
         assertEquals(0L, rig.driver.diagnostics.refusedSpeedNotAuthoritative)
+        // A seek is an unhooked boundary. If that stopped being true the
+        // detector above would be reading a different signal than it thinks.
+        assertEquals("only the first, hooked, boundary carried media3's parameter hooks", 1L, rig.driver.diagnostics.hookedBoundaries)
+        assertEquals(4L, rig.driver.diagnostics.boundaries)
     }
 
     @Test

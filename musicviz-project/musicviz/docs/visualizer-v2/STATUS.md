@@ -118,9 +118,22 @@ folded into the next anchor and every segment carries `skippedInputSamples = 0`:
 
 | Property | Value |
 |---|---|
-| Segment anchors | exact, factor 1 |
+| Segment anchors, skip-silence off | exact |
+| Segment anchors, skip-silence on | ahead by under 100 ms of input per drain boundary — see below |
 | Segment interiors, skip-silence on | late by (silence removed so far within the segment) / slope; corrected at the next boundary |
 | Segment interiors, skip-silence off | identically zero — and it is off by default |
+
+The anchor caveat was **missed on the first pass and is a correction to this entry**: the
+original said "anchors exact, factor 1". `skippedFrames` is written only inside
+`outputShortenedSilenceBuffer`, which `onQueueEndOfStream` also calls; media3 cascades
+`queueEndOfStream` in ascending pipeline order, so the tap at index 0 reads the counter before
+the stage at index 1 adds the tail it still holds, and the next flush zeroes it. Verified by
+listing every write to that field (two in `outputShortenedSilenceBuffer`, one zeroing in
+`onFlush`). The driver under-counts removed silence, so the anchor runs ahead, bounded by one
+`minimumSilenceDurationUs` of input and zero with skip-silence off.
+
+The mistake is the same one this session has now made three times: a mechanism that is right,
+described more confidently than the evidence supports.
 
 `PresentationTime.Skipped` is therefore **unreachable in production**: a §5.2 field and a whole
 sealed-interface case ship dead. Saying so plainly rather than reporting five of five triggers

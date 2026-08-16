@@ -24,11 +24,19 @@ import kotlin.math.roundToLong
  * *Where* silence was removed. Media3 announces the skip-silence **toggle**,
  * never a skip event; the frames vanish inside the stage with no callback. So
  * every segment carries `skippedInputSamples = 0` and the removed frames are
- * folded into the next anchor instead. Anchors are therefore exact and
- * segment interiors run late by the silence removed so far within them —
- * corrected at the next boundary, zero when skip-silence is off, and the
- * reason [dev.musicviz.engine.audio.PresentationTime.Skipped] is unreachable
- * in production until the slice that locates the spans.
+ * folded into the next anchor instead. Segment interiors therefore run late by
+ * the silence removed so far within them — corrected at the next boundary,
+ * zero when skip-silence is off, and the reason
+ * [dev.musicviz.engine.audio.PresentationTime.Skipped] is unreachable in
+ * production until the slice that locates the spans.
+ *
+ * Anchors are exact with one named exception: on a reconfiguration media3
+ * cascades `queueEndOfStream` in ascending pipeline order, so this reads the
+ * counter before the silence-skipping stage adds the tail it is still holding,
+ * and the next flush zeroes it. The anchor runs ahead by under one
+ * `minimumSilenceDurationUs` of input (100 ms by default) per drain boundary,
+ * and by nothing at all with skip-silence off. Documented in
+ * `AUDIO_FEATURE_ABI.md` §2.2 rather than absorbed as rounding.
  */
 class SinkClockDriver(
     private val clock: AudioPresentationClock,

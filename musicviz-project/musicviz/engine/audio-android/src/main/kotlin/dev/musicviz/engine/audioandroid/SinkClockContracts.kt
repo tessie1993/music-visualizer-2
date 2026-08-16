@@ -36,6 +36,11 @@ fun interface SkippedFrameSource {
 interface SinkClockHooks {
     fun onSpeedApplied(speed: Float)
 
+    /**
+     * [enabled] is deliberately unused by the driver: the toggle says silence
+     * *may* be removed from here on, not that any was. Only the counter knows
+     * that. The hook's arrival is what carries information — see above.
+     */
     fun onSkipSilenceApplied(enabled: Boolean)
 
     /** Called once per chain construction with the stage owning the skip counter. */

@@ -119,9 +119,23 @@ exactly:
 
 | Property | Value |
 |---|---|
-| Segment **anchors** | exact — every `presentationUsStart` accounts for all silence removed up to it, at a conversion factor of exactly 1 |
+| Segment **anchors**, skip-silence off | exact |
+| Segment **anchors**, skip-silence on | exact to within the stage's *pending* silence buffer at a drain boundary — see below |
 | Segment **interiors**, skip-silence on | run late by (silence removed so far within that segment) / slope; corrected at the next boundary |
 | Segment interiors, skip-silence off | identically zero — and it is off by default |
+
+The anchor caveat is not a rounding term, so it is named rather than averaged away.
+`skippedFrames` is written only inside `outputShortenedSilenceBuffer`, and
+`SilenceSkippingAudioProcessor.onQueueEndOfStream` calls it to drain whatever silence the stage
+is still holding. On a reconfiguration, media3 cascades `queueEndOfStream` through the pipeline
+in ascending order — so the tap, at index 0, reads the counter *before* the stage at index 1 has
+added that tail, and the next `onFlush` then zeroes it. The frames are lost to the driver.
+
+Direction and bound: the driver under-counts removed silence, so `heard = captured − skipped` is
+too large and the anchor runs **ahead**. The loss per drain boundary is under one
+`minimumSilenceDurationUs` of input (100 ms by default) — a longer run would already have been
+recognised as silence and output shortened. It does not accumulate within a generation, only
+once per drain boundary, and it is identically zero with skip-silence off.
 
 Because the *placement* of removed spans is unknown, every segment carries
 `skippedInputSamples = 0` and `PresentationTime.Skipped` is unreachable in production. A §5.2
