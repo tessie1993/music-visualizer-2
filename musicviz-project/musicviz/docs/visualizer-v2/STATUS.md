@@ -14,6 +14,118 @@ Newest slice first.
 
 ---
 
+## V2-AUDIT-01: re-audit the completed slices against the plan
+
+State: COMPLETE
+
+Goal: read `MASTER_PLAN.md` against what was actually built and find the places where a slice
+was recorded COMPLETE while something it owed was skipped.
+
+User-visible effect: none. One new test and one document; no production change.
+
+In scope: a line-by-line pass over §2.1–§2.4, §3.3, §4.1, §11 and the §13 slice bullets for
+every slice from V2-A-01 to V2-1-04b; `SAFETY_MODEL.md`; `SafeByDefaultTest`; this record.
+
+Out of scope: reopening COMPLETE slices whose gaps are recorded and assigned. A finding with a
+named owner is tracked, not a defect.
+
+Files expected to change: `docs/visualizer-v2/{SAFETY_MODEL.md,STATUS.md}`,
+`app/src/test/java/dev/musicviz/SafeByDefaultTest.kt`.
+
+Compatibility contract: untouched.
+
+External source/provenance entries: none.
+
+Tests written first: `SafeByDefaultTest` was written against behaviour that already existed,
+so it could not be red first. What replaces that discipline is its second assertion — the same
+hostile input through an explicit opt-out must come back *unchanged*, which fails if the clamp
+ever becomes unconditional and the first assertion starts passing for the wrong reason.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: an audit that finds only small things may not have looked hard enough. Two of the four
+findings below are real omissions against commitments this log itself recorded, which is the
+kind an audit is for; the plan's own §2.2 file list is what surfaced them.
+
+Commands and results: below.
+
+Review findings: the four findings are the content of this slice — see the table.
+
+Commit: `test(safety): prove the safe default end to end, and write the model it implements`
+
+Next slice: **V2-2-01 — specify the PCM and presentation-clock ABIs.**
+
+### Findings
+
+**1. `SAFETY_MODEL.md` was owed and skipped.** V2-A-01 recorded that §2.2's safety document
+belonged to V2-0-02. Both halves of that slice were then completed without it. Written now,
+covering the choice model, where each limit is applied, the test vectors, and — the part worth
+having in one place — what is *not* covered: no frame is measured, so projectM, Shader Studio
+and a scene's own internal brightness still reach the screen outside every limit.
+
+**2. The randomizer taming was claimed but never tested.** V2-0-02's bullet says "disable or
+tame Strobe and randomizer paths under safe/reduced settings". It is mechanically true —
+`VisualSafety.apply` runs last, after `LfoEngine` and `AdsrEngine`, verified by reading
+`VisualizerRenderer:1053-1059` — but nothing proved it, and "the clamp is in the right place"
+is a claim about a call order a refactor can silently break. `SafeByDefaultTest` now drives the
+worst parameters anything upstream could produce through the choice a fresh install resolves
+to. Worst-case rather than a random roll, because `ParamRandomizer` is random and sampling it
+proves only what it drew.
+
+**3. Rule 7 was bent in V2-1-04a.** §2.1 rule 7: never delete a legacy seam in the slice that
+first introduces its replacement. That commit added `checkEngineProvenance` *and* removed the
+two assertions it supersedes from `EngineProvenanceRegistryTest`. Judged and accepted rather
+than hidden: reverting that single commit restores both the assertions and removes the task,
+so the coverage rule 7 protects is never lost in a rollback — which is the property it exists
+for. Recorded so the precedent is visible rather than quietly set.
+
+**4. V2-0-03 delivered its gate but not its CI half.** The bullet asks to "add CI packaging
+verification and record NDK/linker provenance". The Gradle gate runs wherever
+`assembleRelease` runs, including CI, so packaging *is* verified — but no workflow file was
+touched and no NDK/linker provenance was recorded. Assigned to the rebuild slice that has to
+run `native-libs.yml` anyway, since that is where the NDK version and linker flags are
+actually determined.
+
+### Checked and correct
+
+| Checked | Result |
+|---|---|
+| `MASTER_PLAN.md` against the uploaded plan | byte-identical, sha256 `46d0f44c…` |
+| §2.1 rule 3 — one semantic slice, one commit | holds for all twelve commits |
+| §2.4 verification order | followed; detekt was missing until V2-1-01 caught it, already recorded |
+| §4.1 module graph and forbidden edges | asserted by `EngineModuleBoundaryTest` |
+| §2.2 required files | seven present; five correctly assigned to unbuilt slices; one was owed — finding 1 |
+| god classes in code written here | largest is `ProvenanceRules.kt` at 133 lines; nothing above 140 |
+
+### On the god classes that already exist
+
+`PlayerViewModel` is 2,518 lines, `ThemePackCatalog` 2,026, `VisualizerRenderer` 1,670. They
+are real, and §12 is explicit about the first: **DECOMPOSE only at proven seams — behaviour
+tests; no speculative rewrite.** §16 lists "giant rewrite branch becomes unreviewable" as a
+named risk.
+
+So decomposing them is not deferred out of caution but because the plan forbids doing it
+*this* way. It needs its own slice, behaviour tests written first against the seams being cut,
+and ideally a device to confirm nothing moved. Doing it inside an audit, with no device, would
+be the exact failure §16 names.
+
+`VisualizerRenderer` grew by 19 lines here (V2-0-02b's flash gain). Worth noting because §12
+marks it BRIDGE then DELETE: adding to it is acceptable while it remains the only renderer,
+and every addition is one more thing the eventual `FrameRunner` must carry.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:app:testDebugUnitTest --tests '*SafeByDefaultTest*'` | 5 passed |
+| `checkAll` | BUILD SUCCESSFUL, after `ktlintFormat` |
+| `:app:testDebugUnitTest` | **1,252 tests, 0 failures** (1,247 before) |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+
+---
+
 ## V2-1-04b: validate the shader include manifest offline
 
 State: COMPLETE
