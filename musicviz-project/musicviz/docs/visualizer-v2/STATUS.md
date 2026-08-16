@@ -14,6 +14,75 @@ Newest slice first.
 
 ---
 
+## V2-2-05a: write the V2 ring in production, on the tap's own numbering
+
+State: COMPLETE
+
+Goal: the first half of the Phase 2 gate. `SampleRing`, `RingReader` and `beginEpoch` have
+existed since V2-2-02 with no production caller — a ring nothing writes proves nothing about a
+ring. This gives it a writer, and joins its epoch to the tap's generation so a frame index and a
+clock segment mean the same thing.
+
+User-visible effect: none, deliberately. Every consumer still reads `PcmRingBuffer`; both rings
+are fed. Switching the readers is V2-2-05b, and it has to be provable against captured features
+rather than bundled into the write path.
+
+In scope: `PlaybackSession.sampleRing`, the tap's `PcmSink` writing to both, the boundary
+listener fanning out to the ring and the clock, and the callback-allocation benchmark V2-2-02
+called for and never wrote.
+
+Out of scope: repointing `AnalysisEngine` and `PlayerViewModel` at the new ring; the
+latest-window read `RingReader` still lacks; the mid/side derivation moving to the reader; the
+`AudioCapturePump` second-writer question. All V2-2-05b. Deleting `PcmRingBuffer` is later
+still, per §12.
+
+Files expected to change: `app/src/main/java/dev/musicviz/playback/PlaybackEngine.kt`,
+`app/src/test/java/dev/musicviz/playback/PlaybackEngineTest.kt`,
+`engine/audio-android/src/test/kotlin/dev/musicviz/engine/audioandroid/PcmTapTest.kt`.
+
+Compatibility contract: `PcmRingBuffer` and every reader are untouched. One extra write per
+callback, measured.
+
+External source/provenance entries: none.
+
+Tests written first: no — the shape was known, the hazard was not. Four fault injections are the
+evidence, and one of them is the hazard below.
+
+Benchmark or visual evidence: `SampleRing.write` through the real tap — **0 bytes per callback**.
+
+Rollback: revert the one commit.
+
+Risks: the capacity choice is load-bearing and its failure mode is severe. `SampleRing.write`
+**requires** each write to fit inside the reader runway and throws if it does not — on the
+playback thread, inside `AudioProcessor.flush`, which stops playback. The tap delivers at most
+one staging chunk (4,096 frames) per write, so the runway must exceed it; at 65,536 frames of
+capacity the default quarter-runway is 16,384. Pinned behaviourally rather than by reading the
+constants: `a decoder buffer far larger than the tap's staging window still fits the ring`
+pushes 40,000 frames through the real tap, and fails if either constant moves.
+
+Commands and results: below.
+
+Review findings: none new. This slice came out of an adversarial review of V2-2-04b, which
+identified it as the true next step by checking the tree rather than the slice log — the Phase 2
+gate names "the legacy analyzer can consume the new ring through a bridge", and the ring had no
+producer at all.
+
+Commit: `feat(audio): write the V2 ring in production, on the tap's own numbering`
+
+Next slice: V2-2-05b — serve the legacy analyzer from the ring, which closes the Phase 2 gate.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| fault: the V2 ring is never written | FAILED (2 tests) |
+| fault: the ring never starts a new epoch | FAILED (2 tests) |
+| fault: capacity too small for the tap's staging chunk | FAILED |
+| `SampleRing.write` allocation through the tap | 0 bytes/callback |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+---
+
 ## V2-2-04b: drive the presentation clock from the audio sink
 
 State: COMPLETE

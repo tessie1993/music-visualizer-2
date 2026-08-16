@@ -11,8 +11,10 @@ import dev.musicviz.audio.AudioFxController
 import dev.musicviz.audio.PcmRingBuffer
 import dev.musicviz.audio.TapRenderersFactory
 import dev.musicviz.engine.audio.AudioPresentationClock
+import dev.musicviz.engine.audio.SampleRing
 import dev.musicviz.engine.audioandroid.PcmTap
 import dev.musicviz.engine.audioandroid.SinkClockDriver
+import dev.musicviz.engine.audioandroid.TapBoundaryListener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,6 +38,26 @@ class PlaybackSession internal constructor(
 ) {
     /** PCM captured off the audio sink, read by the renderer and the analyzer. */
     val ring = PcmRingBuffer()
+
+    /**
+     * The V2 ring, written in parallel with [ring] and read by nothing yet.
+     *
+     * Both are fed so the switch of readers is its own slice: §2.1 rule 7
+     * forbids removing a legacy seam in the slice that introduces its
+     * replacement, and here that is worth more than the rule — every scene,
+     * the beat tracker, the exporter and the wallpaper read [ring], and moving
+     * them is a change that has to be provable against captured features
+     * rather than bundled into the write path.
+     *
+     * The capacity is not arbitrary. `SampleRing.write` **requires** each write
+     * to fit inside the reader runway, and it throws on the playback thread if
+     * it does not - which would stop the music. The tap delivers at most one
+     * staging chunk per write, so the runway (a quarter of capacity by default)
+     * has to exceed that; at 65,536 frames it is 16,384, four times the chunk.
+     * `a decoder buffer far larger than the tap's staging window still fits`
+     * is the test that holds this true if either constant moves.
+     */
+    internal val sampleRing = SampleRing(capacityFrames = 1 shl 16, channelCount = 2)
 
     /**
      * Decoded-output format, delivered on the playback thread every time the
@@ -77,7 +99,10 @@ class PlaybackSession internal constructor(
      * failure this class's own documentation says it exists to prevent.
      */
     internal val tap =
-        PcmTap({ samples, frames, channels -> ring.writeInterleaved(samples, frames, channels) }) { format ->
+        PcmTap({ samples, frames, channels ->
+            ring.writeInterleaved(samples, frames, channels)
+            sampleRing.write(samples, frames, channels)
+        }) { format ->
             val hook = onAudioFormat
             if (hook != null) {
                 hook(format.sampleRateHz, format.channelCount, format.encoding)
@@ -88,7 +113,17 @@ class PlaybackSession internal constructor(
                 // must stay in tune with the music the service is playing.
                 analysis.sampleRateHz = format.sampleRateHz
             }
-        }.apply { boundaryListener = clockDriver }
+        }.apply {
+            // Both subscribers, in one place, so the ring's numbering and the
+            // clock's are the same number rather than two counters that agree
+            // by habit: the tap's generation drives both. Ring first, so a
+            // segment is never opened for a generation the ring has not begun.
+            boundaryListener =
+                TapBoundaryListener { ended, endedFrames, begun ->
+                    sampleRing.beginEpoch()
+                    clockDriver.onTapBoundary(ended, endedFrames, begun)
+                }
+        }
 
     /**
      * The player itself. Public because a MediaSession has to be handed the

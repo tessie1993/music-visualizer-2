@@ -234,6 +234,21 @@ class PcmTapTest {
     }
 
     @Test
+    fun `writing into the sample ring allocates nothing on the callback`() {
+        // The benchmark V2-2-02 called for and never wrote: SampleRing.write
+        // under callback-size loads. Measured through the tap rather than in
+        // isolation, because that is the path that runs on the audio thread -
+        // a ring that allocates nothing when driven directly would still prove
+        // nothing about the two together.
+        val ring = SampleRing(capacityFrames = 1 shl 16, channelCount = 2)
+        val tap = tapInto(ring)
+        val buffer = pcm16(ShortArray(2048) { it.toShort() })
+        val perCallback = AllocationMeter.perRun(RUNS) { tap.handleBuffer(buffer) }
+        assertTrue("writing to the ring allocated $perCallback bytes per callback", perCallback < BUDGET_BYTES)
+        assertTrue("nothing was written, so nothing was measured", ring.writtenFrames > 0)
+    }
+
+    @Test
     fun `frames reach the sample ring in order and read back contiguous`() {
         // The point of the whole slice: the tap that feeds :app's legacy buffer
         // can feed V2's ring with no adapter, because both are a PcmSink.
