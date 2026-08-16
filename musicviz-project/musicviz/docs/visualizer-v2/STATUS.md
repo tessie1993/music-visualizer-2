@@ -14,6 +14,164 @@ Newest slice first.
 
 ---
 
+## V2-3-03b: semitone bands, and the three normalization modes
+
+State: COMPLETE
+
+Goal: V2-3-03's second bullet — log/semitone bands plus §5.5's adaptive, fixed and centered
+normalization with validity and silence semantics.
+
+User-visible effect: none. New nodes in `audio-core` with no production consumer; `FftProcessor`
+and `BandSmoother` still drive every visual. The phase gate in §Phase 3 is what moves consumers.
+
+In scope: `SemitoneBands`; `FeatureValidity`; `FrameActivity` and `SilenceGate`; the sealed
+`Normalizer` and its three modes `FixedRange`, `AdaptiveRange`, `CenteredRange`; six test classes.
+
+Out of scope: wiring any of it to a feature frame — that is V2-3-07, and the ABI it writes into is
+§5.4's, not this slice's. Chroma folding over the semitone grid is V2-3-05. BS.1770 loudness stays
+where V2-3-03a left it, in its own slice with its own oracle.
+
+Files expected to change: seven new files under
+`engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/` and six new test classes beside
+them. No existing file changes.
+
+Compatibility contract: nothing existing changes. No new dependency, permission or ABI.
+
+External source/provenance entries: none new. **Clubber** (REIMPLEMENT, MIT, already registered)
+is where the semitone-band idea comes from; per §3's REIMPLEMENT tier none of its code, constants
+or interpolation behaviour is taken — the layout is written from the published MIDI mapping, and
+the one place Clubber's design was deliberately *not* followed is recorded below. **librosa**
+(ORACLE) was used to cross-check that mapping outside the runtime.
+
+Tests written first: the properties were derived and simulated in Python before any Kotlin was
+written, so the numbers the tests assert were measured rather than predicted. Sixteen fault
+injections are the evidence the tests can tell.
+
+Benchmark or visual evidence: allocation, measured with `JvmAllocationMeter`. `SemitoneBands.fill`
+over 2,049 bins, `SilenceGate.update` and all three normalizers each come in under 1 byte per
+call against a 1-byte assertion floor — §14's "zero per hop after warmup" line. No CPU benchmark:
+each is one pass over its input and the slice that wires them owes the in-situ measurement.
+
+Rollback: revert the one commit. Nothing depends on these files.
+
+Risks: seven files with no production consumer. Their cost and their behaviour on real material
+are argued rather than observed, and V2-3-07 owes both. The normalizer defaults
+(`ADAPT_SECONDS`, `TAIL_FRACTION`, `WARMUP_SECONDS`, the gate's two thresholds) are reasoned from
+the format and the failure modes, not tuned against a listener; they are starting values.
+
+Commands and results: below.
+
+Review findings: five.
+
+**The bin assignment was off by half a bin.** The first draft used
+`ceil(low / binHz - 0.5)`, which assigns a bin by its *upper edge* rather than its centre and so
+pushes bins up a note. Corrected to bin-centre-inside-the-span, which also makes the layout a
+strict partition — every bin in exactly one note, note *i*'s exclusive end equal to note *i+1*'s
+inclusive start by construction. `every bin belongs to exactly one note` is that invariant.
+
+**The resolution table I wrote from arithmetic was wrong; the measured one is different.**
+Predicted `transient 92..123`; measured `87..127`. Two errors: the crossover is a sufficient
+condition, not a description — alignment resolves several notes below it — and 123 came from
+carrying the wrong Nyquist. Every figure in the class KDoc is now a measurement locked by
+`the resolved run is where the branch stack comes from`.
+
+**`CenteredRange` read full scale on the first frame after a reset.** The mean was seeded after
+the error was taken, so the first frame of a session measured itself against a mean of zero and
+saturated — every modulation bound to a centered feature would have fired on the first frame of
+every track. Found by working the test through by hand before running it; the seed now happens
+first, and `the first frame has nothing to be above or below` pins it.
+
+**Two KDoc claims outran their evidence.** `AdaptiveRange` said `PulseTracker.EnergyFollower`
+decays through silence "by design", which is intent I cannot verify — now stated as observed
+behaviour only. And `ADAPT_SECONDS` was documented as the traversal time when the rise weight is
+0.95 of that. Both corrected in the same pass, not after a reviewer asked.
+
+**The planned checked-in note-grid oracle was dropped as redundant, deliberately.** librosa
+confirmed `midi_to_hz(0)` is bit-identical to `NOTE_ZERO_HZ` and that the mapping agrees to
+**6.9e-16 relative across MIDI 0..127**. Shipping 128 generated values would then protect against
+nothing the three published anchors in `note centres agree with the published MIDI anchors`
+(A0 = 27.5, C4 = 261.6255653005986, A4 = 440) do not already catch: a geometric mapping correct
+at three points four octaves apart is correct everywhere. Recorded here rather than dropped
+silently.
+
+Commit: `feat(audio-core): semitone bands and the three normalization modes`
+
+Next slice: V2-3-04 — rhythm and event graph.
+
+### Why unresolved, where Clubber interpolates
+
+A semitone's span is `0.0578 f` wide and narrows as pitch falls, while FFT bins do not. Measured
+at 48 kHz, with `fullyResolved` being the run every note of which has at least one bin:
+
+| Branch | bin | crossover | fully resolved | from |
+|---|---:|---:|---|---:|
+| transient, 512 | 93.75 Hz | 1623 Hz | 87..127 | 1244 Hz |
+| general, 1024 | 46.88 Hz | 811 Hz | 75..127 | 622 Hz |
+| pitch, 4096 | 11.72 Hz | 203 Hz | 51..127 | 156 Hz |
+| harmony, 8192 | 5.86 Hz | 101 Hz | 39..127 | 78 Hz |
+
+Which is the measured reason §5.3 runs a long window at all — the transient branch has no bass
+register whatsoever. Below each run the notes are a **patchwork**: on the harmony branch, notes
+21..38 come out `.R..R..R.R.R.R.RR.`, so a bass guitar's open E at 41 Hz resolves and its open A
+at 55 Hz does not.
+
+Clubber fills those holes by interpolating from the notes that did get bins. This reports
+`isResolved == false` and zero instead. Interpolated bass would draw a line moving smoothly
+through both notes, which is a confident invented value of exactly the kind §5.5's validity
+semantics exist to prevent — and the caller that sees the gap can reach for the longer window,
+which the caller that sees a plausible number cannot.
+
+### Robust, as a measured property rather than an adjective
+
+`AdaptiveRange` tracks the 5th and 95th percentiles by online quantile estimation rather than
+following the running min and max. The step depends on the range already tracked, never on how
+far away the new value is, so influence is bounded by construction:
+
+| Measured on uniform material, 86 Hz hop | Result |
+|---|---|
+| tracked floor / ceiling after 40,000 frames of uniform `[0,1)` | 0.05 / 0.95, the true quantiles |
+| one frame at 1000 — about 1,600× the material's range | ceiling moved **one step**, ratio 1.0000 |
+| the same frame under a max-follower | ceiling at 1000; every later frame reads ~0 until release |
+| recovery after that frame | back within 0.02 in under a second |
+| 4,000 silent frames after 2,000 sounding ones | floor and ceiling **bit-identical**; the probe frame reads the same before and after |
+| a signal with no dynamics at all | rests below 0.007 rather than swinging the full range |
+
+The asymmetry §5.5 asks for is not tuned separately: a bound rises with weight `1 - tailFraction`
+and falls with weight `tailFraction`, so 19:1 attack to release comes out of which quantile is
+being tracked.
+
+### Verification
+
+| Fault injected | Result |
+|---|---|
+| bin assignment off by half a bin (the bug above) | FAILED |
+| `fill` takes the mean instead of the peak | FAILED |
+| unresolved notes interpolate from the note below (Clubber's behaviour) | FAILED |
+| crossover uses the interval to the next note, not the note's own span | **passed** — both bounds land inside the resolved run; caught after pinning the definition itself |
+| `AdaptiveRange` trains on silence | FAILED |
+| `AdaptiveRange` follows the min and max instead of the quantiles | FAILED |
+| `AdaptiveRange` drops the `minimumSpan` guard | FAILED |
+| `AdaptiveRange` skips warmup | FAILED |
+| `CenteredRange` trains on silence | FAILED |
+| `CenteredRange` takes the error against the mean it already moved | **passed** — a 0.4% effect at the default time constant; caught after pinning it at a fast one |
+| `CenteredRange` stops clamping to `-1..1` | FAILED |
+| `CenteredRange` loses the first-frame seed | FAILED |
+| `FixedRange` extrapolates instead of clamping | FAILED |
+| `FixedRange` forgets to mark a silent frame | FAILED |
+| `SilenceGate` loses its hysteresis | FAILED |
+| `SilenceGate` loses its hold | FAILED |
+
+Both survivors were closed by a test that pins the definition rather than a consequence of it, and
+re-injected: 16 of 16 now caught.
+
+| Command | Result |
+|---|---|
+| `:engine:audio-core:test --tests '*SemitoneBandsTest*'` | 14 tests, 0 failures |
+| `:engine:audio-core:test` (the five normalization classes) | 47 tests, 0 failures |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects; 1,355 app tests and 128 JVM-module tests, 0 failures, 0 skipped |
+
+---
+
 ## V2-3-03a: levels and spectral descriptors, checked frame by frame
 
 State: COMPLETE
