@@ -3,7 +3,6 @@ package dev.musicviz
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 
 /**
  * What the provenance registry is for, and why it is a build gate.
@@ -15,11 +14,15 @@ import java.io.File
  * checked. MASTER_PLAN §2.1 rule 9 states the contract: a source must be in the
  * registry before adapted code enters production.
  *
- * These tests hold four lines. The registry matches the plan's ledger in both
- * directions, so neither can drift alone. Every licence claim is a hash of a
- * file read at a named commit, not a badge. A source nobody may copy from
- * cannot claim adopted files. And no forbidden repository is named as an origin
- * anywhere in the shipped tree.
+ * These tests ask whether the REGISTRY is sound: it matches the plan's ledger
+ * in both directions so neither can drift alone, every licence claim is a hash
+ * of a file read at a named commit rather than a badge, and a source nobody may
+ * copy from cannot claim adopted files.
+ *
+ * Whether the SOURCE TREE obeys it is the other half, and it moved to the
+ * `checkEngineProvenance` Gradle task in V2-1-04 - because the checks here
+ * scanned a hardcoded `app/src/main` and would have gone on passing while
+ * covering none of the engine modules.
  */
 class EngineProvenanceRegistryTest {
     private val valid: ProvenanceCheck.Valid
@@ -77,35 +80,6 @@ class EngineProvenanceRegistryTest {
             emptyList<String>(),
             valid.sources.filter { it.tier in ProvenanceRegistry.NO_CODE_TIERS && it.importedFiles.isNotEmpty() }.map { it.id },
         )
-    }
-
-    @Test
-    fun `every adopted file is covered by the shipped notices`() {
-        val notices = File(ParamSurface.moduleRoot, "THIRD_PARTY_NOTICES").readText()
-        val uncovered =
-            valid.sources
-                .filter { it.importedFiles.isNotEmpty() }
-                .filterNot { source -> source.url?.let { notices.contains(it) } == true }
-                .map { it.id }
-        assertEquals("adopted code with no shipped notice", emptyList<String>(), uncovered)
-    }
-
-    @Test
-    fun `no forbidden repository is named as an origin in the shipped tree`() {
-        val forbidden =
-            valid.sources
-                .filter { it.tier in ProvenanceRegistry.NO_CODE_TIERS }
-                .mapNotNull { source -> source.url?.substringAfter("://")?.trimEnd('/')?.let { source.id to it } }
-        val main = File(ParamSurface.moduleRoot, "app/src/main")
-        val offenders =
-            main
-                .walkTopDown()
-                .filter { it.isFile && it.extension in setOf("kt", "glsl", "c", "h", "cpp") }
-                .flatMap { file ->
-                    val text = file.readText()
-                    forbidden.filter { (_, slug) -> text.contains(slug) }.map { (id, _) -> "${file.name} cites $id" }
-                }.toList()
-        assertEquals("MASTER_PLAN §3.3: a no-code source may not appear as an origin", emptyList<String>(), offenders)
     }
 
     @Test

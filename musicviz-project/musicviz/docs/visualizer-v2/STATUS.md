@@ -14,6 +14,109 @@ Newest slice first.
 
 ---
 
+## V2-1-04a: make the provenance gate a build task that scans every module
+
+State: COMPLETE
+
+Goal: move the provenance rules out of one module's unit test and into `check`, in every
+module, and add the two §3.3 rules that did not exist at all.
+
+User-visible effect: none. Build verification only.
+
+In scope: `ProvenanceRules`, a pure Kotlin rules engine in `build-logic`;
+`readProvenanceRegistry`; the `musicviz.provenance` convention plugin registering
+`checkEngineProvenance` and wiring it to `check`; thirteen fixtures; removal of the two checks
+it supersedes from `EngineProvenanceRegistryTest`.
+
+Out of scope: shader asset enumeration and include validation, and the capability report —
+split off as **V2-1-04b** and **V2-1-04c**. The capability report describes what a device's GL
+driver supports, and the probes that populate it are V2-4-01 — defining the type now, with no
+producer and no device, would be a shape guessed against imagined needs.
+
+Files expected to change: `build-logic/src/main/kotlin/{ProvenanceRules,ProvenanceRegistryReader}.kt`,
+`build-logic/src/main/kotlin/musicviz.{provenance,kotlin-common}.gradle.kts`,
+`build-logic/src/test/kotlin/ProvenanceRulesTest.kt`, `build-logic/build.gradle.kts`,
+`app/src/test/java/dev/musicviz/EngineProvenanceRegistryTest.kt`.
+
+Compatibility contract: untouched. No production source file changes; the gate only reads.
+
+External source/provenance entries: none. This slice is the machinery, not an adoption.
+
+Tests written first: thirteen fixtures in `build-logic`, each tripping one rule. They are the
+whole evidence base — a provenance gate on a tree with no adapted code passes trivially, and
+would go on passing if it checked nothing at all.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit. The two superseded assertions return with it.
+
+Risks: the mention rule is a substring match on a repository URL, so a file legitimately
+discussing a forbidden source in prose would fail. That is the intended trade — §3.3 says a
+STUDY or EXCLUDE source must not appear as an origin in shipped source, and the escape hatch
+is to put the discussion in `docs/`, which is not scanned.
+
+Commands and results: below.
+
+Review findings: two, both from re-reading rather than a failing run.
+
+1. **A hole in the rule engine.** `checkFile` ran the mention scan only when a file had *no*
+   `Origin:` marker, so one correct attribution hid every other source named in the same
+   file — a properly cited SwissGL kernel would have excused a GPL repository mentioned three
+   lines below it. Both now run, with marker-reached sources excluded from the mention list so
+   each is reported once, as the more specific violation. Two regression fixtures added.
+2. `readProvenanceRegistry` cast the parsed root unchecked, so a malformed registry threw
+   `ClassCastException` out of a Gradle task rather than being reported. It now returns no
+   records and leaves the diagnosis to `EngineProvenanceRegistryTest`, which exists to say
+   *why* a registry is malformed. Two things failing the same way for different reasons makes
+   the second report useless.
+
+Commit: `build: check provenance markers on every module, not one module's tests`
+
+Next slice: **V2-1-04b — shader asset enumeration and include validation.**
+
+### What was wrong with the old gate
+
+`EngineProvenanceRegistryTest` scanned `File(moduleRoot, "app/src/main")` — a hardcoded path,
+written when `:app` was the only module. Two of its rules were therefore about to become
+decorative, and the two §3.3 rules that matter most for adopted code did not exist at all:
+
+| §3.3 requirement | Before | Now |
+|---|---|---|
+| scan every module | `app/src/main` only | per-module task, applied through the shared convention |
+| wired to `check` | `:app:test` only | `check` in all seven projects |
+| SPDX marker on an adapted file | **not checked** | `OriginWithoutSpdx` |
+| cited origin exists in the registry | **not checked** | `UnknownOrigin` |
+| cited commit is the pinned one | **not checked** | `OriginCommitMismatch` |
+| declared licence matches the registry | **not checked** | `LicenceMismatch` |
+| no STUDY/EXCLUDE source as an origin | `app/src/main` only | every module, marker or bare mention |
+| adopted files carry a shipped notice | in the unit test | `MissingNotice` |
+
+The demonstration is the point. A file citing Velo Visualiser — GPL-3.0, STUDY tier — planted
+in `engine/scenes/src/main/kotlin`:
+
+```
+> provenance check failed in :engine:scenes
+    …/Bad.kt: ForbiddenTier(id=velo-visualiser, tier=STUDY)
+    …/Bad.kt: OriginWithoutSpdx
+```
+
+The same file, against the old test: **BUILD SUCCESSFUL**. That is the gap, measured rather
+than argued.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `-p build-logic test` | **13 tests, 0 failures**, `--rerun-tasks` to confirm they executed |
+| `:engine:scenes:checkEngineProvenance`, GPL citation planted | **FAILED**, two violations named |
+| `:app:testDebugUnitTest --tests '*EngineProvenanceRegistryTest*'`, same file planted | BUILD SUCCESSFUL — the old blind spot |
+| `checkEngineProvenance` present in | all seven projects |
+| `checkAll` | BUILD SUCCESSFUL |
+| `:app:testDebugUnitTest` | **1,241 tests, 0 failures** (1,243 before; two moved to `build-logic`) |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+
+---
+
 ## V2-1-03: establish manual composition and lifetime contracts
 
 State: COMPLETE
