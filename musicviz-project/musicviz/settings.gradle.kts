@@ -1,4 +1,8 @@
 pluginManagement {
+    // Convention plugins live in an included build so they are compiled and
+    // type-checked, not copied between module scripts.
+    includeBuild("build-logic")
+
     repositories {
         google()
         mavenCentral()

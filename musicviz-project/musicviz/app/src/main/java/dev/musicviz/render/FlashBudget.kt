@@ -55,13 +55,13 @@ class FlashBudget(
         val rising = risky && !above
         above = risky
         dropOlderThan(timeSeconds - WINDOW_SECONDS)
-        if (!risky) return 1f
-        if (rising && count < maxPerSecond) {
-            record(timeSeconds)
-            return 1f
+        return when {
+            // Covers both a sub-threshold impulse and a level already held
+            // high: neither is a new flash.
+            !rising -> 1f
+            count < maxPerSecond -> 1f.also { record(timeSeconds) }
+            else -> (RISK_THRESHOLD * SUPPRESSED_SCALE / impulse).coerceIn(MIN_GAIN, 1f)
         }
-        if (!rising) return 1f
-        return (RISK_THRESHOLD * SUPPRESSED_SCALE / impulse).coerceIn(MIN_GAIN, 1f)
     }
 
     private fun dropOlderThan(cutoff: Float) {

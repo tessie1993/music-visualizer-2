@@ -8,7 +8,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ktlint)
+    id("musicviz.kotlin-common")
     alias(libs.plugins.detekt)
 }
 
@@ -226,12 +226,6 @@ fun maxLoadAlignment(bytes: ByteArray): Long {
 
 listOf("assembleRelease", "bundleRelease").forEach { name ->
     tasks.matching { it.name == name }.configureEach { finalizedBy(checkNativePageAlignment) }
-}
-
-kotlin {
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-    }
 }
 
 // --- Robolectric runtime jars, resolved by Gradle instead of at test time ----

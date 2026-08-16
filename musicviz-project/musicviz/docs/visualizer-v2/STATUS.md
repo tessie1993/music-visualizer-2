@@ -14,6 +14,74 @@ Newest slice first.
 
 ---
 
+## V2-1-01: add build conventions and whole-project gates
+
+State: COMPLETE
+
+Goal: give the module split somewhere to put shared configuration, and one command that
+covers every module including the ones that do not exist yet.
+
+User-visible effect: none. Build configuration only.
+
+In scope: a `build-logic` included build; the `musicviz.kotlin-common` convention plugin
+carrying the JDK target and ktlint; `:app` adopting it; a root `checkAll` declared over
+`subprojects` so a new module is covered the day it appears.
+
+Out of scope: extracting the rest of `app/build.gradle.kts`. Signing, packaging, Robolectric
+jar resolution and the Compose setup belong to the application module and to nothing else —
+there is no second consumer to share them with, and a convention plugin with one caller is
+indirection rather than convention. What the engine modules need gets extracted when they
+exist, in V2-1-02.
+
+Files expected to change: `settings.gradle.kts`, `build.gradle.kts`, `app/build.gradle.kts`,
+`gradle/libs.versions.toml`, `build-logic/`.
+
+Compatibility contract: unchanged. The convention plugin sets the same JVM target and the same
+ktlint configuration `:app` already resolved to, so no source file is formatted differently.
+
+External source/provenance entries: none.
+
+Tests written first: none, and the exception is worth stating rather than glossing. A Gradle
+convention plugin has no unit-test seam here — what it does is observable only as build
+behaviour, so the proof is that `checkAll` covers `:app`, that the suite and lint are
+unchanged, and that removing the plugin breaks compilation. A test-fixture abstraction over
+`repoFile`, which §V2-1-01 also mentions, is deliberately left to the slice that first moves
+a file — writing it before then would be a helper with nothing to help.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit. `:app` returns to declaring ktlint and its JVM target inline.
+
+Risks: an included build is a real change to how the build resolves plugins, and it runs
+before everything. Mitigated by keeping the plugin to two settings and by running the full
+suite, lint, ktlint and detekt afterwards.
+
+Commands and results: below.
+
+Review findings: **`checkAll` failed on its first run**, and not on anything this slice wrote.
+`detekt` reported `FlashBudget.gainFor` with four returns against a limit of two — code from
+V2-0-02b. It passed that slice's gates because §2.4's verification order lists unit tests,
+ktlint, lint and assemble, and **detekt is in none of them**; `:app:check` was the only path
+that ran it, and no slice had been running `check`. That is precisely the gap this slice
+exists to close, found by the thing built to find it. `gainFor` is now a single `when` with
+one return — the same four branches, better shape — and detekt joins the per-slice list.
+
+Commit: `build: add convention plugins and a check that covers every module`
+
+Next slice: **V2-1-02 — create the six engine modules.**
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `checkAll`, first run | **FAILED** on `detekt`: `FlashBudget.gainFor` ReturnCount 4 > 2 |
+| `checkAll`, after the fix | BUILD SUCCESSFUL, 93 tasks |
+| `:app:testDebugUnitTest` | **1,237 tests, 0 failures** — unchanged by this slice |
+| `:app:ktlintCheck` | BUILD SUCCESSFUL through the convention plugin |
+| `:app:detekt` | BUILD SUCCESSFUL |
+
+---
+
 ## V2-0-04: collect runtime baseline
 
 State: LOCKED
