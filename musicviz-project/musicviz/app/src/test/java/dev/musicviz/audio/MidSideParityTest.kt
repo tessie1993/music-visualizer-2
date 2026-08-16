@@ -112,6 +112,31 @@ class MidSideParityTest {
     }
 
     @Test
+    fun `a new epoch withholds the window until it has refilled`() {
+        // A real behaviour change, so it is asserted rather than discovered.
+        // PcmRingBuffer's write index was monotonic for the life of the
+        // process, so after a seek it kept handing back a window that still
+        // held pre-seek audio. The V2 ring restarts its numbering, so the
+        // analyzer gets nothing until a full window of the NEW audio exists -
+        // about 43 ms at 48 kHz and a 2,048-frame window.
+        //
+        // The analyzer publishes only on a successful read, so the visuals
+        // hold their last frame for that span rather than blanking. Showing
+        // the previous track's audio for the same 43 ms is the alternative.
+        val rig = Rig(2, C.ENCODING_PCM_16BIT)
+        rig.tap.handleBuffer(buffer(4096 * 2 * Short.SIZE_BYTES) { repeat(4096 * 2) { putShort(4_096) } })
+        val bridge = MidSideWindow(rig.v2, window)
+        assertTrue(bridge.refresh())
+
+        rig.v2.beginEpoch()
+        assertTrue("a fresh epoch must not serve the previous one's audio", !bridge.refresh())
+
+        rig.tap.handleBuffer(buffer(window * 2 * Short.SIZE_BYTES) { repeat(window * 2) { putShort(8_192) } })
+        assertTrue("the window never refilled", bridge.refresh())
+        assertEquals("the refilled window is the new audio", 0.25f, bridge.mid[0], 0f)
+    }
+
+    @Test
     fun `a window wider than the ring is refused rather than wrapped`() {
         val rig = Rig(2, C.ENCODING_PCM_16BIT)
         val small = SampleRing(capacityFrames = 64, channelCount = 2, maxWriteFrames = 16)

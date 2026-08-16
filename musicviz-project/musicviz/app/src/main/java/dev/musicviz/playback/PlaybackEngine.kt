@@ -209,7 +209,7 @@ class PlaybackSession internal constructor(
      * screen, or a visible wallpaper) - so the 62 Hz loop never spins for
      * nobody.
      */
-    val analysis = dev.musicviz.analysis.AnalysisEngine(ring)
+    val analysis = dev.musicviz.analysis.AnalysisEngine(sampleRing)
 
     private val interestHook: () -> Unit = { syncAnalysis() }
 

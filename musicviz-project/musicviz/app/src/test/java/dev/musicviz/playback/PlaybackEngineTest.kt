@@ -174,6 +174,27 @@ class PlaybackEngineTest {
     }
 
     @Test
+    fun `the session's analyzer reads the ring the session actually fills`() {
+        // The join the whole reader migration rests on. Point the analyzer at
+        // any other SampleRing and every band, beat and waveform silently
+        // stays at zero while playback continues - which is what the app looks
+        // like when it is "working" and the visuals are dead.
+        val session = PlaybackEngine.acquireForUi(ctx)
+        session.analysis.sampleRateHz = 48_000
+        val frames = 4096
+        val block = FloatArray(frames * 2)
+        for (i in 0 until frames) {
+            val v = kotlin.math.sin(2.0 * Math.PI * 440.0 * i / 48_000).toFloat() * 0.5f
+            block[i * 2] = v
+            block[i * 2 + 1] = v
+        }
+        session.captureSink.write(block, frames, 2)
+
+        assertTrue("the analyzer found no window in the session's ring", session.analysis.Pass().tick())
+        assertTrue("a 440 Hz tone moved no band", session.analysis.features.value.bands.any { it > 0.2f })
+    }
+
+    @Test
     fun `the ring's numbering and the clock's are the same number`() {
         // Two counters that agree by habit would diverge the first time one of
         // them missed a boundary, and a sample index means nothing without the

@@ -14,6 +14,100 @@ Newest slice first.
 
 ---
 
+## V2-2-05c: serve the analyzer from the V2 ring — the Phase 2 gate
+
+State: COMPLETE
+
+Goal: close the Phase 2 gate — "the legacy analyzer can consume the new ring through a bridge
+with no feature or playback regression; callback allocation benchmark is clean."
+
+User-visible effect: none intended, and one deliberate change (below). Every band, beat, chroma
+and stereo reading now comes from `SampleRing` through `MidSideWindow` instead of from
+`PcmRingBuffer`'s capture-time downmix. V2-2-05b measured the two at a delta of exactly zero for
+mono and stereo, which is why this is a wiring change rather than a rewrite.
+
+In scope: `AnalysisEngine` taking a `SampleRing` and reading through `MidSideWindow`; extracting
+its per-hop work into `AnalysisEngine.Pass`; `PlaybackSession` handing it `sampleRing`.
+
+Out of scope: `PlayerViewModel.latestPcm`, which feeds projectM through a *cursor* read rather
+than a latest-window one and therefore needs a different bridge — its own slice. Deleting
+`PcmRingBuffer`, which still has that reader, per §12.
+
+Files expected to change: `app/src/main/java/dev/musicviz/analysis/AnalysisEngine.kt`,
+`app/src/main/java/dev/musicviz/playback/PlaybackEngine.kt`, plus two test call sites.
+
+Compatibility contract: feature values unchanged for mono and stereo. Surround differs, per
+`adr/0003`.
+
+External source/provenance entries: none. Checked rather than assumed: §3.1's ledger has nothing
+that applies to this step. `librosa` and `libebur128` enter at V2-3-01 as **ORACLE** tier —
+fixture generation outside the runtime, never linked.
+
+Tests written first: no, and the fault injections are why that mattered. See below.
+
+Benchmark or visual evidence: not applicable; nothing new runs on the callback.
+
+Rollback: revert the one commit.
+
+Risks: below.
+
+Commands and results: below.
+
+Review findings: **the analyzer's core loop had no test at all, and I only found that by
+injecting faults into it.** Hard-wiring the stereo reading to `MONO`, and building the waveform
+out of the side channel instead of the mid, both left the entire suite green — 1,290 tests, no
+failures. The FFT could have been fed the wrong signal and nothing would have said so.
+
+The cause was structural, not an oversight in coverage: the work lived inside a `while (true)`
+loop on `Dispatchers.Default` behind a wall-clock deadline, so no test could step it. Extracted
+into `AnalysisEngine.Pass`, which owns the window and the per-hop buffers and does one tick per
+call. The loop is now six lines and the work is reachable.
+
+`AnalysisPassTest` covers it: a tone raises the bands it occupies and not all of them, the
+waveform matches the mid-only signal rather than a side-contaminated one, wide content reads
+wider than narrow, and a mono source reads correlation 1 rather than decorrelated.
+
+Commit: `refactor(analysis): serve the analyzer from the V2 ring, and make its hop testable`
+
+Next slice: Phase 3 — V2-3-01, the fixture corpus and oracle generator.
+
+### The one behaviour that changes
+
+`PcmRingBuffer`'s write index was monotonic for the life of the process, so after a seek it kept
+serving a window that still held pre-seek audio. `SampleRing` restarts its numbering at each
+epoch, so for one window after a seek or format change — about **43 ms** at 48 kHz — there is
+nothing to read and the analyzer publishes nothing. The visuals hold their last frame instead of
+briefly showing the previous track's audio.
+
+Asserted rather than left to be discovered: `a new epoch withholds the window until it has
+refilled`.
+
+### Verification
+
+| Fault injected | Before `Pass` | After |
+|---|---|---|
+| stereo field hard-wired to `MONO` | **passed** | FAILED |
+| waveform built from the side channel | **passed** | FAILED |
+| FFT fed the side channel | not tried | FAILED |
+| analyzer pointed at a ring nothing writes | **passed** | FAILED |
+
+| Command | Result |
+|---|---|
+| `AnalysisPassTest` | 5 tests, 0 failures |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+| `// FAULT` scan of engine and app sources | clean |
+
+### Phase 2 gate
+
+| Requirement | State |
+|---|---|
+| legacy analyzer consumes the new ring through a bridge | **done** — `MidSideWindow` |
+| no feature regression | mono and stereo bit-identical; surround per `adr/0003` |
+| no playback regression | capture path unchanged; every producer feeds both rings |
+| callback allocation benchmark clean | 0 bytes/callback for tap and ring write |
+
+---
+
 ## V2-2-05b: make the V2 ring servable, and prove it against the legacy one
 
 State: COMPLETE
