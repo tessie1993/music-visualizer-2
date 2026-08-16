@@ -124,6 +124,25 @@ class CorpusOracleTest {
     }
 
     @Test
+    fun `the V2 spectrum node puts the tone where the oracle hears it`() {
+        // Ties the new engine nodes to the external oracle rather than to the
+        // legacy FftProcessor. A bin index is a much sharper claim than a band
+        // index: at 22,050 Hz and a 4,096-point transform each bin is 5.4 Hz,
+        // so a framing or windowing mistake moves the peak visibly.
+        val fixture = Corpus.named("tone_440")
+        val spectrum = dev.musicviz.engine.audio.Spectrum(4096)
+        val windowed = FloatArray(4096)
+        dev.musicviz.engine.audio.WindowTable(4096).applyInto(fixture.mono(), 0, windowed)
+        spectrum.compute(windowed)
+
+        val peakHz = spectrum.peakBin() * spectrum.binHz(fixture.sampleRateHz)
+        assertEquals("the peak bin is not the tone", 440.0, peakHz, spectrum.binHz(fixture.sampleRateHz))
+        // The oracle's centroid sits a little above the tone because a real
+        // spectrum has skirts; the peak must still be the tone itself.
+        assertTrue("the oracle's centroid disagrees with the peak", abs(fixture.expected("spectralCentroidHz") - peakHz) < 50.0)
+    }
+
+    @Test
     fun `the mono downmix of every fixture matches the oracle's RMS`() {
         // Cheap, and it catches the whole class of interleaving mistakes: a
         // channel-stride error turns stereo into noise at exactly the right

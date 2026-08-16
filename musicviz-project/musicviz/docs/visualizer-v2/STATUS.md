@@ -14,6 +14,108 @@ Newest slice first.
 
 ---
 
+## V2-3-02: the FFT/window graph, aligned by centre sample
+
+State: COMPLETE
+
+Goal: the reusable window/FFT/spectrum nodes §5.3 asks for, and a proof that all four branches
+of the analysis stack share one centre-sample coordinate.
+
+User-visible effect: none. New nodes in `audio-core` with no production consumer; the legacy
+`FftProcessor` is untouched and still drives every visual.
+
+In scope: `AnalysisBranch`, `FrameGrid`, `WindowTable`, `Spectrum`; the alignment proof; the
+incumbent-FFT benchmark; one oracle cross-check tying the new spectrum to librosa's centroid.
+
+Out of scope: PFFFT or any alternative FFT — the bullet says benchmark, **do not add yet**, and
+the benchmark says why not. Descriptors (centroid, rolloff, flatness, ZCR, flux) are V2-3-03.
+Repointing the analyzer at these nodes: that is a behaviour change to every visual and belongs
+with the descriptors it would be computing.
+
+Files expected to change: `engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/{AnalysisBranch,FrameGrid,WindowTable,Spectrum}.kt`,
+their tests, `engine/audio-core/build.gradle.kts`, and one test added to `CorpusOracleTest`.
+
+Compatibility contract: nothing existing changes.
+
+External source/provenance entries: none new. `JTransforms` moves from an `:app` dependency to
+also being an `audio-core` one — same library, same version, already shipped, so no new licence
+obligation and no new APK content. It is pure JVM, so `audio-core` stays Android-free.
+
+Tests written first: no. Five fault injections are the evidence, and the alignment test was
+written to measure the plan's claim rather than repeat it.
+
+Benchmark or visual evidence: below. Not a §2.1 rule 8 device benchmark — it measures algorithmic
+cost on the JVM, and says so rather than dressing itself up as hardware evidence.
+
+Rollback: revert the one commit. No production consumer.
+
+Risks: `WindowTable` uses the **periodic** Hann while `:app`'s `FftProcessor` uses the
+**symmetric** one, so the two will not agree to the last bin. Deliberate — periodic is what makes
+overlapping frames sum to a constant, which is the property an STFT needs, and it is what the
+oracle uses. The legacy path is untouched, so nothing changes today; a later slice repointing it
+must expect small band differences and treat them as expected rather than as a regression.
+
+Commands and results: below.
+
+Review findings: none. The nodes are 4 files averaging 60 lines; `audio-core` is now 12 files and
+about 1,000 lines, still the smallest module in the tree.
+
+Commit: `feat(audio-core): window, FFT and spectrum nodes on a centre-sample grid`
+
+Next slice: V2-3-03 — levels, bands and spectral descriptors.
+
+### The alignment claim, measured rather than quoted
+
+§5.3: *"A 1024/4096/8192 stack otherwise introduces roughly 75 ms of relative misalignment at
+48 kHz and turns one musical event into four apparent times."*
+
+A streaming analyzer stamps a frame with the last sample it saw, which puts the centre at
+`k*hop + window/2` — an offset that differs per branch. `right-edge alignment costs the 75 ms the
+plan names` computes it:
+
+| | value |
+|---|---|
+| harmony (8192) vs general (1024), right-edge | **3,584 samples** = `(8192 − 1024) / 2` |
+| the same, in time at 48 kHz | **74.67 ms** |
+| centre-aligned, same two branches | **0 samples** |
+
+### The incumbent FFT, per hop
+
+All four branches share a 512-sample hop, so the whole stack must fit inside 10.67 ms at 48 kHz.
+
+| Branch | Window | ms/frame |
+|---|---:|---:|
+| transient | 512 | 0.0052 |
+| general | 1024 | 0.0099 |
+| pitch | 4096 | 0.0286 |
+| harmony | 8192 | 0.1134 |
+| **stack total** | | **0.157 ms/hop** |
+
+**1.5% of the hop budget on one JVM core.** That is the answer to "benchmark versus alternatives":
+the incumbent is nowhere near the constraint, so adding PFFFT would buy nothing and cost a native
+dependency — which is what the plan already suspected in saying not to add it yet. Measured on
+this CI container; the figure to beat is recorded here rather than asserted tightly in a test that
+would flake on a different machine.
+
+### Verification
+
+| Fault injected | Failing test |
+|---|---|
+| frames aligned by right edge, not centre | 4 tests, including the 75 ms measurement |
+| symmetric Hann instead of periodic | overlap-add sums to a constant; the two forms differ |
+| Nyquist bin dropped, as the legacy path does | spectrum spans DC to Nyquist |
+| DC bin zeroed, as the legacy path does | spectrum spans DC to Nyquist; Parseval |
+| out-of-range window reads wrap instead of reading silence | a window reads zero outside the source |
+
+| Command | Result |
+|---|---|
+| `:engine:audio-core:test` | 44 tests, 0 failures, 0 skipped |
+| new spectrum vs the corpus oracle | peak bin within one bin (5.4 Hz) of 440 Hz |
+| `Spectrum.compute` allocation | 0 bytes per frame |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+---
+
 ## V2-3-01: fixture corpus and oracle generator
 
 State: COMPLETE
