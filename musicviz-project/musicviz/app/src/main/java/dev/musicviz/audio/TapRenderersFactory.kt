@@ -8,6 +8,7 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import dev.musicviz.audio.dsp.MvzAudioProcessorChain
+import dev.musicviz.engine.audioandroid.SinkClockHooks
 
 /**
  * [DefaultRenderersFactory] whose audio sink tees PCM into [sink] before it
@@ -17,6 +18,7 @@ import dev.musicviz.audio.dsp.MvzAudioProcessorChain
 class TapRenderersFactory(
     context: Context,
     private val sink: TeeAudioProcessor.AudioBufferSink,
+    private val hooks: SinkClockHooks = SinkClockHooks.None,
 ) : DefaultRenderersFactory(context) {
     /**
      * The chain [buildAudioSink] installs.
@@ -27,7 +29,8 @@ class TapRenderersFactory(
      * which MASTER_PLAN §12 schedules - and it stops loudly enough that
      * nobody notices.
      */
-    internal fun audioProcessorChain(): MvzAudioProcessorChain = MvzAudioProcessorChain(TeeAudioProcessor(sink))
+    internal fun audioProcessorChain(): MvzAudioProcessorChain =
+        MvzAudioProcessorChain(TeeAudioProcessor(sink), hooks = hooks).also(hooks::attachSkippedFrames)
 
     override fun buildAudioSink(
         context: Context,

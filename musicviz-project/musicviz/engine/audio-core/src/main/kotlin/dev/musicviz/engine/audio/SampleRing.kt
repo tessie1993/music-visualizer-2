@@ -18,12 +18,16 @@ package dev.musicviz.engine.audio
 class SampleRing(
     val capacityFrames: Int,
     val channelCount: Int,
+    val maxWriteFrames: Int = capacityFrames / DEFAULT_RUNWAY_DIVISOR,
 ) : PcmSink {
     init {
         require(capacityFrames > 0 && capacityFrames and (capacityFrames - 1) == 0) {
             "capacityFrames must be a power of two, was $capacityFrames"
         }
         require(channelCount > 0) { "channelCount must be positive, was $channelCount" }
+        require(maxWriteFrames in 1..capacityFrames) {
+            "maxWriteFrames must be between 1 and $capacityFrames, was $maxWriteFrames"
+        }
     }
 
     private val channels: Array<FloatArray> = Array(channelCount) { FloatArray(capacityFrames) }
@@ -41,8 +45,22 @@ class SampleRing(
     /** Increments whenever sample numbering restarts. */
     val epoch: Int get() = epochValue
 
-    /** Oldest frame still readable; below this the data has been overwritten. */
-    val oldestAvailable: Long get() = maxOf(0L, written - capacityFrames)
+    /**
+     * Oldest frame a reader can still trust.
+     *
+     * Not `written - capacityFrames`, and the difference is the bug that
+     * version had. [written] is published *after* the slot stores of a write,
+     * so between the two a reader sees a frame count that understates how far
+     * the writer has already reached into the ring - by up to [maxWriteFrames].
+     * A reader whose window starts inside that span reads slots the writer is
+     * overwriting and gets audio that passes every check: the frame count says
+     * it is intact, and the samples are real samples, from a lap later.
+     *
+     * Found by `SampleRingConcurrencyTest`, which returned frame 46400 where it
+     * asked for 45376 - exactly one lap of a 1024-frame ring. Costing the
+     * writer's runway is what makes the answer sound rather than usually right.
+     */
+    val oldestAvailable: Long get() = maxOf(0L, written + maxWriteFrames - capacityFrames)
 
     /**
      * Ends the current numbering and starts a new one at frame 0.
@@ -75,6 +93,12 @@ class SampleRing(
         require(frameCount.toLong() * sourceChannelCount <= interleaved.size) {
             "$frameCount frames x $sourceChannelCount channels exceeds ${interleaved.size}"
         }
+        // The bound readers reserve as the writer's runway. A write longer than
+        // this reaches past what any reader believes is safe, which is the one
+        // way [oldestAvailable] can be wrong.
+        require(frameCount <= maxWriteFrames) {
+            "$frameCount frames exceeds maxWriteFrames of $maxWriteFrames"
+        }
         var w = written
         var read = 0
         repeat(frameCount) {
@@ -89,6 +113,15 @@ class SampleRing(
     }
 
     /** Copies [count] frames from [firstSample] into [out], one array per channel. */
+    companion object {
+        /**
+         * A quarter of the ring is the writer's runway by default: enough for
+         * any decoder buffer at the capacities this is used at, and the same
+         * proportional headroom `PcmRingBuffer` reserved for the same reason.
+         */
+        const val DEFAULT_RUNWAY_DIVISOR = 4
+    }
+
     internal fun copyInto(
         firstSample: Long,
         count: Int,

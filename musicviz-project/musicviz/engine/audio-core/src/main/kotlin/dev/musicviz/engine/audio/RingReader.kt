@@ -53,8 +53,14 @@ class RingReader(
         // have the frames it is copying overwritten underneath it, and the
         // copy would then look like ordinary audio. Re-checking afterwards
         // turns that into the Gap it actually is, at the cost of one wasted
-        // copy on the rare occasion it happens - which beats reserving a
-        // fraction of the ring against a case that mostly does not occur.
+        // copy on the rare occasion it happens.
+        //
+        // The re-check alone is NOT enough, and an earlier version of this
+        // comment claimed it was: it argued the check beat reserving a
+        // fraction of the ring. It does not, because the frame count it reads
+        // is published after the slot stores it is meant to detect. Both are
+        // needed - `oldestAvailable` reserves the writer's runway, and this
+        // catches the writer advancing during the copy.
         val oldestNow = ring.oldestAvailable
         if (oldestNow > first) return RingReadResult.Gap(first, oldestNow)
 

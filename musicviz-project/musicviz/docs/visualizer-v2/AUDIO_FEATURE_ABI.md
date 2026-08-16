@@ -51,6 +51,12 @@ indices across epochs is the bug the field exists to prevent.
 The discontinuity generation increments on every epoch change so a consumer holding a stale
 index can tell that it is stale rather than reading plausible nonsense.
 
+In the implementation the tap's generation is a **superset** of §5.1's set, not an exact match:
+media3 flushes the processor chain for speed changes, the skip-silence toggle, discontinuity
+resync and end of stream as well as for seek and source change. Conservative in the safe
+direction — it can report a discontinuity where sample numbering would in fact have continued,
+never the reverse.
+
 ### 1.3 Channels
 
 Stereo is preserved to the analysis boundary; downmixing happens per-feature, not at capture.
@@ -79,6 +85,85 @@ A segment is appended on seek, speed change, silence-skip discontinuity, route r
 source replacement. The render thread reads an atomic immutable snapshot; the audio callback
 never allocates a segment. The mapping runs both directions where possible and surfaces
 unmappable gaps rather than interpolating across them.
+
+### 2.1 Which clock "presentation" names
+
+The **output** timeline — the one the listener hears on — not `Player.currentPosition`. The
+difference is exactly `speed`: at 2x, one second of presentation consumes two seconds of input,
+while media position advances at 2x wall clock. Were presentation media position, `speed` and a
+variable slope would both be dead fields in §5.2's own list.
+
+That timeline never runs backwards. A seek does not rewind it — it changes which input frames
+land there — so `presentationUsStart` is non-decreasing across every segment while
+`inputSampleStart` restarts with each epoch.
+
+Two things the implementation does **not** claim, recorded here rather than discovered later:
+
+- **The absolute offset is unmeasured.** Anchors are relative to the first segment, so audio is
+  placed correctly with respect to other audio but carries no term for the sink's own output
+  latency. A consumer syncing visuals to what is heard needs that term; it is device work.
+- **The timeline counts frames the sink may discard.** A seek reaches the tap through
+  `DefaultAudioSink.flush()`, which throws away whatever the output still held. Frames captured
+  into the ended generation but never actually heard still advance the anchor, so the clock runs
+  slightly ahead across a seek, by the sink's buffered lead.
+
+### 2.2 Silence-skip discontinuity is not an event
+
+§5.2 lists it as an append trigger. **Media3 raises no such event**, and this is a correction
+rather than an omission: `SilenceSkippingAudioProcessor` accumulates removed frames inside its
+own buffer handling with no callback, and `AudioProcessorChain.applySkipSilenceEnabled` is the
+user's *toggle*, not a discontinuity.
+
+So the driver samples the stage's counter at each boundary instead. The consequence is stated
+exactly:
+
+| Property | Value |
+|---|---|
+| Segment **anchors**, skip-silence off | exact |
+| Segment **anchors**, skip-silence on | exact to within the stage's *pending* silence buffer at a drain boundary — see below |
+| Segment **interiors**, skip-silence on | run late by (silence removed so far within that segment) / slope; corrected at the next boundary |
+| Segment interiors, skip-silence off | identically zero — and it is off by default |
+
+The anchor caveat is not a rounding term, so it is named rather than averaged away.
+`skippedFrames` is written only inside `outputShortenedSilenceBuffer`, and
+`SilenceSkippingAudioProcessor.onQueueEndOfStream` calls it to drain whatever silence the stage
+is still holding. On a reconfiguration, media3 cascades `queueEndOfStream` through the pipeline
+in ascending order — so the tap, at index 0, reads the counter *before* the stage at index 1 has
+added that tail, and the next `onFlush` then zeroes it. The frames are lost to the driver.
+
+Direction and bound: the driver under-counts removed silence, so `heard = captured − skipped` is
+too large and the anchor runs **ahead**. The loss per drain boundary is under one
+`minimumSilenceDurationUs` of input (100 ms by default) — a longer run would already have been
+recognised as silence and output shortened. It does not accumulate within a generation, only
+once per drain boundary, and it is identically zero with skip-silence off.
+
+Because the *placement* of removed spans is unknown, every segment carries
+`skippedInputSamples = 0` and `PresentationTime.Skipped` is unreachable in production. A §5.2
+field and a sealed-interface case ship dead. Locating the spans needs a probe stage between
+silence skipping and Sonic, which is its own slice.
+
+The conversion factor being exactly 1 is structural, not luck:
+`SilenceSkippingAudioProcessor` counts against its **own** input format,
+`TeeAudioProcessor.onConfigure` returns its input format unchanged, and the two stages are
+adjacent. `AudioChainOrderRuntimeTest` pins that adjacency, because a resampling stage inserted
+between them would corrupt every skip count with no other symptom.
+
+### 2.3 Where the segments come from
+
+Not `Player.Listener`. Those callbacks arrive on the application looper at a time unordered
+with respect to the tap's frame counter, so they can say *that* speed changed but not *at which
+frame* — and they die with the screen while `PlaybackService` keeps playing.
+
+The driver hangs off the audio sink's own flush points instead, all on the playback thread and
+all in one call stack: `MvzAudioProcessorChain.applyPlaybackParameters` /
+`applySkipSilenceEnabled` for the parameter, and `PcmTap.flush` for the boundary, which is the
+last moment the ended generation's frame count and the skip counter both still exist.
+
+One media3 behaviour is load-bearing and worth naming: `DefaultAudioSink` calls the chain's
+`applyPlaybackParameters` **only** when it is not applying playback parameters at the
+`AudioTrack`. So a boundary carrying the skip hook but not the speed hook proves Sonic is not
+the stage changing speed, and the driver refuses to append rather than model a slope it does
+not own.
 
 ## 3. Tap stage order
 

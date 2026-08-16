@@ -157,6 +157,57 @@ class PcmTapTest {
     }
 
     @Test
+    fun `a boundary listener sees the ended count while the tap already reads the new generation`() {
+        // The ordering that stops this becoming the SampleRing bug again
+        // (STATUS.md V2-2-02a): a frontier published out of step with the data
+        // it describes, failing as confident output rather than as an error.
+        //
+        // If the listener ran before the resets, it would open a segment for
+        // generation N+1 while `framesWritten` still held N's total - and a
+        // consumer reading the clock then the tap would map that count into
+        // the new segment and get a presentation time an entire track away.
+        // Reading in either order must now yield the ended pair or the begun
+        // pair, never a mixture.
+        val tap = tapInto(Recorder())
+        tap.handleBuffer(pcm16(ShortArray(8)))
+        var seen: Triple<Int?, Long, Int>? = null
+        var publishedFormat: PcmTapFormat? = null
+        var publishedFrames = -1L
+        tap.boundaryListener =
+            TapBoundaryListener { ended, endedFrames, begun ->
+                seen = Triple(ended?.generation, endedFrames, begun.generation)
+                // Recorded, not asserted here: flush guards this call, so an
+                // AssertionError raised inside it could be swallowed and the
+                // test would pass whatever the ordering was.
+                publishedFormat = tap.format
+                publishedFrames = tap.framesWritten
+            }
+        tap.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+        assertEquals("the ended generation's count survives only as an argument", Triple(1, 4L, 2), seen)
+        assertEquals("the tap must already read the new generation", tap.format, publishedFormat)
+        assertEquals("the tap's counter must already be reset", 0L, publishedFrames)
+        assertEquals(0L, tap.boundaryFailures)
+    }
+
+    @Test
+    fun `a boundary listener that throws cannot stop capture`() {
+        // flush() runs inside AudioProcessor.flush on the playback thread. An
+        // exception escaping here propagates into the renderer and stops the
+        // music - and would take the format callback with it, which is what
+        // retunes the live analyzer and the wallpaper's feed.
+        val recorder = Recorder()
+        val formats = mutableListOf<PcmTapFormat>()
+        val tap = PcmTap(recorder) { formats += it }
+        tap.boundaryListener = TapBoundaryListener { _, _, _ -> error("a clock bug") }
+        tap.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+        assertEquals(1, formats.size)
+        assertEquals(PcmTapFormat(48_000, 2, C.ENCODING_PCM_16BIT, 1), tap.format)
+        tap.handleBuffer(pcm16(shortArrayOf(1, 2)))
+        assertEquals("capture must continue", 1L, tap.framesWritten)
+        assertEquals("a swallowed fault must still be countable", 1L, tap.boundaryFailures)
+    }
+
+    @Test
     fun `the format is published for a consumer that attaches late`() {
         val seen = mutableListOf<PcmTapFormat>()
         val tap = PcmTap(Recorder()) { seen += it }
@@ -180,6 +231,21 @@ class PcmTapTest {
         // callback on this meter; one small array per run is less than that.
         val control = AllocationMeter.perRun(RUNS) { delivered += FloatArray(1).size }
         assertTrue("the meter reads $control bytes for a loop that allocates; it sees nothing", control > BUDGET_BYTES)
+    }
+
+    @Test
+    fun `writing into the sample ring allocates nothing on the callback`() {
+        // The benchmark V2-2-02 called for and never wrote: SampleRing.write
+        // under callback-size loads. Measured through the tap rather than in
+        // isolation, because that is the path that runs on the audio thread -
+        // a ring that allocates nothing when driven directly would still prove
+        // nothing about the two together.
+        val ring = SampleRing(capacityFrames = 1 shl 16, channelCount = 2)
+        val tap = tapInto(ring)
+        val buffer = pcm16(ShortArray(2048) { it.toShort() })
+        val perCallback = AllocationMeter.perRun(RUNS) { tap.handleBuffer(buffer) }
+        assertTrue("writing to the ring allocated $perCallback bytes per callback", perCallback < BUDGET_BYTES)
+        assertTrue("nothing was written, so nothing was measured", ring.writtenFrames > 0)
     }
 
     @Test

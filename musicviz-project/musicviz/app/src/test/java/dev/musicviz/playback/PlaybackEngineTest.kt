@@ -4,7 +4,11 @@ import android.app.Application
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import androidx.media3.common.C
 import androidx.test.core.app.ApplicationProvider
+import dev.musicviz.engine.audio.PresentationTime
+import dev.musicviz.engine.audio.RingReadResult
+import dev.musicviz.engine.audio.RingReader
 import dev.musicviz.ui.PlayerViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,6 +21,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /**
  * The one invariant background playback rests on: there is exactly one player
@@ -63,13 +69,114 @@ class PlaybackEngineTest {
         val session = PlaybackEngine.acquireForUi(ctx)
         val viewModel = PlayerViewModel(ctx)
         assertNull("nothing has been decoded yet", viewModel.latestPcm())
-        // Stands in for the tap sink, which only runs inside a real audio
-        // pipeline. What is being asserted is the wiring either side of it: the
-        // buffer the player writes into is the buffer the scenes read from.
         session.ring.writeInterleaved(FloatArray(512) { 0.25f }, 256, 2)
         val chunk = viewModel.latestPcm()
         assertNotNull("the scenes read a different ring buffer from the one the player fills", chunk)
         assertEquals("the 512 interleaved samples are 256 mono frames", 256, chunk?.count)
+    }
+
+    @Test
+    fun `PCM handed to the session's own tap arrives in that ring`() {
+        // The test above writes to the ring directly, so it proves the read
+        // side and assumes the write side. This drives the real tap, which is
+        // the half that moved module in V2-2-03 and is one lambda wide: point
+        // it at a different buffer and every scene sits still over playing
+        // music, with nothing failing to compile and no crash to notice.
+        val session = PlaybackEngine.acquireForUi(ctx)
+        val viewModel = PlayerViewModel(ctx)
+        session.tap.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+
+        val pcm = ByteBuffer.allocate(512 * Short.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(512) { pcm.putShort(8192) }
+        session.tap.handleBuffer(pcm.flip() as ByteBuffer)
+
+        val chunk = viewModel.latestPcm()
+        assertNotNull("the tap writes into a buffer nothing reads", chunk)
+        assertEquals(256, chunk?.count)
+        assertEquals("8192 of 32768 full scale is 0.25", 0.25f, chunk?.data?.get(0) ?: 0f, 0f)
+        assertEquals(256L, session.tap.framesWritten)
+    }
+
+    @Test
+    fun `the session's presentation clock is driven by the session's own audio chain`() {
+        // Three objects have to be the same three: the chain the factory built
+        // for THIS player raises the hooks, the tap that feeds THIS ring
+        // reports the boundary, and the clock THIS session publishes receives
+        // the segment. Any one of them wired to a different instance leaves a
+        // clock that stays empty forever, with nothing failing.
+        val session = PlaybackEngine.acquireForUi(ctx)
+        assertNotNull("the tap reports boundaries to nobody", session.tap.boundaryListener)
+        assertTrue(
+            "the player's audio chain never handed the driver its skip counter, so the factory " +
+                "was built without it and no speed change will ever reach the clock",
+            session.clockDriver.diagnostics.skippedFramesAttached,
+        )
+        assertEquals("nothing has been decoded yet", 0, session.presentationClock.current.segments.size)
+
+        session.clockDriver.onSpeedApplied(2f)
+        session.clockDriver.onSkipSilenceApplied(false)
+        session.tap.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+
+        val snapshot = session.presentationClock.current
+        assertEquals(1, snapshot.segments.size)
+        assertEquals(2f, snapshot.segments.single().speed, 0f)
+        assertEquals("48000 frames at 2x are heard in half a second", PresentationTime.At(500_000), snapshot.presentationTimeOf(48_000, 1))
+    }
+
+    @Test
+    fun `the V2 ring receives the same audio as the legacy one`() {
+        // Both are fed from the one PcmSink lambda. If the second write were
+        // dropped or given the wrong frame count, nothing would fail - the app
+        // reads only the legacy buffer today, so the V2 ring would simply be
+        // empty when the slice that switches readers arrives.
+        val session = PlaybackEngine.acquireForUi(ctx)
+        session.tap.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+        val pcm = ByteBuffer.allocate(512 * Short.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(256) { pcm.putShort(8192).putShort(-8192) }
+        session.tap.handleBuffer(pcm.flip() as ByteBuffer)
+
+        assertEquals(256L, session.sampleRing.writtenFrames)
+        val out = arrayOf(FloatArray(256), FloatArray(256))
+        assertEquals(RingReadResult.Ok(0, 256, 1), RingReader(session.sampleRing).read(out))
+        assertEquals("left is planar, not folded", 0.25f, out[0][0], 0f)
+        assertEquals("right keeps its own sign", -0.25f, out[1][0], 0f)
+    }
+
+    @Test
+    fun `the ring's numbering and the clock's are the same number`() {
+        // Two counters that agree by habit would diverge the first time one of
+        // them missed a boundary, and a sample index means nothing without the
+        // epoch it belongs to. Both are driven from the tap's generation.
+        val session = PlaybackEngine.acquireForUi(ctx)
+        session.clockDriver.onSpeedApplied(1f)
+        session.clockDriver.onSkipSilenceApplied(false)
+        session.tap.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+        assertEquals(1, session.sampleRing.epoch)
+        assertEquals(1, session.presentationClock.current.epoch)
+        assertEquals(session.tap.format?.generation, session.sampleRing.epoch)
+
+        session.clockDriver.onSpeedApplied(1f)
+        session.clockDriver.onSkipSilenceApplied(false)
+        session.tap.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+        assertEquals(2, session.sampleRing.epoch)
+        assertEquals(2, session.presentationClock.current.epoch)
+        assertEquals(0L, session.sampleRing.writtenFrames)
+    }
+
+    @Test
+    fun `a decoder buffer far larger than the tap's staging window still fits the ring`() {
+        // SampleRing.write REQUIRES each write to fit the reader runway and
+        // throws if it does not - on the playback thread, inside
+        // AudioProcessor.flush, which stops the music. The tap chunks a large
+        // buffer to its staging size, so the ring's capacity has to leave a
+        // runway bigger than that chunk. This fails if either constant moves.
+        val session = PlaybackEngine.acquireForUi(ctx)
+        session.tap.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+        val frames = 40_000
+        val pcm = ByteBuffer.allocate(frames * 2 * Short.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(frames) { pcm.putShort(1).putShort(-1) }
+        session.tap.handleBuffer(pcm.flip() as ByteBuffer)
+        assertEquals(frames.toLong(), session.sampleRing.writtenFrames)
     }
 
     /**

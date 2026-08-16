@@ -13,7 +13,7 @@ session (§12).
 | Subsystem | Where it lives now | Decision | Proof required before the legacy code moves or dies | Status |
 |---|---|---|---|---|
 | Player / library / Media3 workflow | `playback/`, `data/`, `ui/` | KEEP | only narrow engine ports change | not started |
-| PCM tap placement | `engine/audio-android/…/PcmTap.kt`; `audio/TapRenderersFactory.kt` stays | KEEP semantic order, MOVE to `:engine:audio-android` | runtime stage-order assertion, waveform fixtures, route tests | **tap moved, V2-2-03**; `PcmTapSink` awaits its deletion slice |
+| PCM tap placement | `engine/audio-android/…/PcmTap.kt`; `audio/TapRenderersFactory.kt` stays | KEEP semantic order, MOVE to `:engine:audio-android` | runtime stage-order assertion, waveform fixtures, route tests | **tap moved, V2-2-03**; `PcmTapSink` awaits its deletion slice; route tests **synthesized only** — no real route change has been exercised |
 | `PlaybackSession` process lifetime | `playback/PlaybackEngine.kt` | KEEP / REFACTOR | first-acquire hold fixed; lifecycle and multi-consumer tests | **hold fixed, V2-0-01** |
 | `PcmRingBuffer` | `audio/PcmRingBuffer.kt` (170) | REPLACE contract incrementally | `Ok`/`Gap`/`NotYetAvailable`, wrap and competing-reader tests | not started |
 | `AnalysisEngine` | `analysis/AnalysisEngine.kt` (147) | REPLACE after V2 graph parity | corpus features, CPU/allocation, live/export parity | not started |

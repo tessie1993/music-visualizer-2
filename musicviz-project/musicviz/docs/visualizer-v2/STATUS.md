@@ -14,6 +14,448 @@ Newest slice first.
 
 ---
 
+## V2-2-05a: write the V2 ring in production, on the tap's own numbering
+
+State: COMPLETE
+
+Goal: the first half of the Phase 2 gate. `SampleRing`, `RingReader` and `beginEpoch` have
+existed since V2-2-02 with no production caller — a ring nothing writes proves nothing about a
+ring. This gives it a writer, and joins its epoch to the tap's generation so a frame index and a
+clock segment mean the same thing.
+
+User-visible effect: none, deliberately. Every consumer still reads `PcmRingBuffer`; both rings
+are fed. Switching the readers is V2-2-05b, and it has to be provable against captured features
+rather than bundled into the write path.
+
+In scope: `PlaybackSession.sampleRing`, the tap's `PcmSink` writing to both, the boundary
+listener fanning out to the ring and the clock, and the callback-allocation benchmark V2-2-02
+called for and never wrote.
+
+Out of scope: repointing `AnalysisEngine` and `PlayerViewModel` at the new ring; the
+latest-window read `RingReader` still lacks; the mid/side derivation moving to the reader; the
+`AudioCapturePump` second-writer question. All V2-2-05b. Deleting `PcmRingBuffer` is later
+still, per §12.
+
+Files expected to change: `app/src/main/java/dev/musicviz/playback/PlaybackEngine.kt`,
+`app/src/test/java/dev/musicviz/playback/PlaybackEngineTest.kt`,
+`engine/audio-android/src/test/kotlin/dev/musicviz/engine/audioandroid/PcmTapTest.kt`.
+
+Compatibility contract: `PcmRingBuffer` and every reader are untouched. One extra write per
+callback, measured.
+
+External source/provenance entries: none.
+
+Tests written first: no — the shape was known, the hazard was not. Four fault injections are the
+evidence, and one of them is the hazard below.
+
+Benchmark or visual evidence: `SampleRing.write` through the real tap — **0 bytes per callback**.
+
+Rollback: revert the one commit.
+
+Risks: the capacity choice is load-bearing and its failure mode is severe. `SampleRing.write`
+**requires** each write to fit inside the reader runway and throws if it does not — on the
+playback thread, inside `AudioProcessor.flush`, which stops playback. The tap delivers at most
+one staging chunk (4,096 frames) per write, so the runway must exceed it; at 65,536 frames of
+capacity the default quarter-runway is 16,384. Pinned behaviourally rather than by reading the
+constants: `a decoder buffer far larger than the tap's staging window still fits the ring`
+pushes 40,000 frames through the real tap, and fails if either constant moves.
+
+Commands and results: below.
+
+Review findings: none new. This slice came out of an adversarial review of V2-2-04b, which
+identified it as the true next step by checking the tree rather than the slice log — the Phase 2
+gate names "the legacy analyzer can consume the new ring through a bridge", and the ring had no
+producer at all.
+
+Commit: `feat(audio): write the V2 ring in production, on the tap's own numbering`
+
+Next slice: V2-2-05b — serve the legacy analyzer from the ring, which closes the Phase 2 gate.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| fault: the V2 ring is never written | FAILED (2 tests) |
+| fault: the ring never starts a new epoch | FAILED (2 tests) |
+| fault: capacity too small for the tap's staging chunk | FAILED |
+| `SampleRing.write` allocation through the tap | 0 bytes/callback |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+---
+
+## V2-2-04b: drive the presentation clock from the audio sink
+
+State: COMPLETE
+
+Goal: make V2-2-04a's clock live. Something has to observe speed changes, seeks, source
+changes and skipped silence and append a segment at the right input frame.
+
+User-visible effect: none. Nothing consumes `presentationClock` yet — the bridge to `SampleRing`
+is the Phase 2 gate slice — so this adds a producer with no consumer, deliberately, in that
+order. What changes is that the mapping is now fed by the pipeline that actually applies speed
+and removes silence, rather than by nothing.
+
+In scope: `SinkClockContracts.kt` and `SinkClockDriver.kt` in `:engine:audio-android`;
+`PcmTap.boundaryListener`; `MvzAudioProcessorChain` raising the hooks and exposing its skip
+counter; a defaulted `hooks` parameter on `TapRenderersFactory`; `PlaybackSession` owning the
+clock and driver.
+
+Out of scope: V2-2-04's third bullet, "compare predicted versus presented position" — that is
+device work and is named **V2-2-04c** below. Locating skipped-silence spans (**V2-2-04d**).
+Wiring the tap to `SampleRing`. Deleting `PcmTapSink`.
+
+Files expected to change: `engine/audio-android/src/main/kotlin/dev/musicviz/engine/audioandroid/{SinkClockContracts,SinkClockDriver,PcmTap}.kt`,
+`engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/AudioPresentationClock.kt`,
+`app/src/main/java/dev/musicviz/audio/{TapRenderersFactory,dsp/MvzAudioProcessorChain}.kt`,
+`app/src/main/java/dev/musicviz/playback/PlaybackEngine.kt`, and the docs below.
+
+Compatibility contract: every new constructor parameter is defaulted, so no existing call site
+changes. `TapRenderersFactory` is edited in place and `buildAudioSink`'s body is untouched, so
+both source-text gates that read it still read what they read before. `handleBuffer` is not
+touched, so V2-2-03's zero-allocation gate stands unmodified.
+
+External source/provenance entries: none. No new dependency; media3 was already on this module.
+
+Tests written first: no — this is a driver for behaviour that only exists inside media3, so the
+red step was establishing what media3 actually does, from bytecode, before any code was written.
+Recorded as a §2.1 rule 1 testability exception. Nine fault injections are the substitute
+evidence, and two of them found real defects (below).
+
+Benchmark or visual evidence: allocation per boundary, measured — 368 bytes.
+
+Rollback: revert the one commit.
+
+Risks: below the verification table.
+
+Commands and results: below.
+
+Review findings: three, two of them mine and one a design defect caught before it was written.
+
+Commit: `feat(audio): drive the presentation clock from the sink's own flush points`
+
+Next slice: V2-2-04c — the device comparison, or the Phase 2 bridge.
+
+### Why the sink and not `Player.Listener`
+
+`Player.Listener` was the obvious answer and is the wrong one. Its callbacks arrive on the
+application looper, unordered with respect to the tap's frame counter, so they can say *that*
+speed changed but not *at which frame* — and they die with the screen while `PlaybackService`
+keeps playing.
+
+The chain's own `applyPlaybackParameters` runs on the playback thread at the stream position
+where the parameter takes effect, and `PcmTap.flush` is the last instant at which the ended
+generation's frame count and the silence-skipping counter both still exist. One call stack, one
+thread, every number simultaneously live.
+
+Verified from the media3 1.10.0 bytecode rather than assumed, because three of the load-bearing
+facts are undocumented:
+
+| Question | Answer, from `javap` |
+|---|---|
+| Does enabling AudioTrack playback parameters skip the chain's speed hook? | **Yes** — `applyAudioProcessorPlaybackParametersAndSkipSilence` returns before the chain call when `useAudioOutputPlaybackParams()` is true. Not enabled in this app; now guarded by a test and used as a detector. |
+| Is `getSkippedFrames` output frames below Sonic? | **No** — input frames of its own stage, which the pass-through tap makes identical to tap frames. The conversion is the identity, not an approximation. |
+| Does `skippedFrames` survive a flush? | **No** — `onFlush` zeroes it, *after* the tap's flush in the same pipeline pass. That ordering is why the counter can be read at all. |
+
+I had recorded the third as the opposite, from misreading `onReset` as `onFlush`. It was caught
+by re-deriving it instead of trusting the note.
+
+### Review findings
+
+**1. The design reproduced V2-2-02a's bug, and its own test would have pinned it.** The first
+draft called the boundary listener *before* resetting the tap's counters, so the clock's newest
+epoch became N+1 while `framesWritten` still held N's total. A consumer reading the clock then
+the tap maps that count into the new segment and gets a confident presentation time an entire
+track away — the same shape as `SampleRing` publishing its frame count after its slot stores:
+a frontier out of step with the data it describes, failing as plausible output. The listener now
+runs after both stores, with the ended values passed as arguments.
+
+**2. The test for that was vacuous, because of the guard added for a different reason.** The
+listener call is wrapped so a clock fault cannot stop playback. The first version used
+`runCatching`, which catches `Throwable` — including the `AssertionError` from the assertions
+made inside the listener. The fault injection passed. Narrowed to `RuntimeException`, which
+still catches every realistic driver bug and lets a test failure through; the assertions moved
+outside the callback as well, and a `boundaryFailures` counter makes a swallowed fault countable.
+
+**3. `append` copied the segment list twice.** Found by the allocation budget failing at 944
+bytes: `(segments + segment).takeLast(cap)` builds the whole list, then builds it again. One
+pass instead — 368 bytes, on the playback thread, where the second copy was least welcome.
+
+### What this cannot know
+
+*Where* silence was removed. Media3 announces the toggle, never a skip event. So the total is
+folded into the next anchor and every segment carries `skippedInputSamples = 0`:
+
+| Property | Value |
+|---|---|
+| Segment anchors, skip-silence off | exact |
+| Segment anchors, skip-silence on | ahead by under 100 ms of input per drain boundary — see below |
+| Segment interiors, skip-silence on | late by (silence removed so far within the segment) / slope; corrected at the next boundary |
+| Segment interiors, skip-silence off | identically zero — and it is off by default |
+
+The anchor caveat was **missed on the first pass and is a correction to this entry**: the
+original said "anchors exact, factor 1". `skippedFrames` is written only inside
+`outputShortenedSilenceBuffer`, which `onQueueEndOfStream` also calls; media3 cascades
+`queueEndOfStream` in ascending pipeline order, so the tap at index 0 reads the counter before
+the stage at index 1 adds the tail it still holds, and the next flush zeroes it. Verified by
+listing every write to that field (two in `outputShortenedSilenceBuffer`, one zeroing in
+`onFlush`). The driver under-counts removed silence, so the anchor runs ahead, bounded by one
+`minimumSilenceDurationUs` of input and zero with skip-silence off.
+
+The mistake is the same one this session has now made three times: a mechanism that is right,
+described more confidently than the evidence supports.
+
+### Second correction: three defects found by an adversarial review of this slice
+
+**A refused boundary froze the anchor but not the timeline.** `openSlope = 0.0` runs before both
+refusal returns, so the next boundary cannot advance `anchorUs` — but real presentation time did
+advance. The driver then *resumed* when the hooks came back, appending at an anchor short by the
+whole refused span, and every later mapping returned a confident `At` that was early by it.
+Reachable: `useAudioOutputPlaybackParams()` is read per output configuration, so a route change
+can flip it and flip it back.
+
+The first fix I wrote made it worse — a test named "the speed verdict recovers when the chain
+regains authority", asserting exactly the behaviour that produces the wrong answer. Recovery is
+not achievable: the missed span is frames times a slope that was by definition unknown. So the
+driver now latches `anchorTrusted = false` and stops appending for good, which leaves consumers
+with `StaleEpoch` — "I do not have that" — instead of a plausible number. The old test is
+deleted rather than adjusted; it encoded the wrong answer.
+
+**`ClockSegment.fromFormat` sat outside the `try` whose comment claimed it kept exceptions out
+of `AudioProcessor.flush`.** All three of its `require`s throw, so the real net was `PcmTap`'s
+catch one frame up the stack — which would have swallowed the fault without
+`refusedByClockInvariant` ever seeing it, defeating the test that asserts that counter stays 0.
+Moved inside. And `speed <= 0f` is **false for NaN**, so a NaN speed passed the guard and threw
+from `fromFormat`; it is now `!(speed > 0f)`.
+
+**The test rig modelled a shape the sink never emits.** `parameterChange` raised both hooks *and*
+carried the frame count in one boundary. Media3 always produces two: an unhooked drain carrying
+the whole ended generation, then a hooked flush carrying zero. Added `speedChange`, which drives
+the real pair, and the speed test now asserts three segments where it asserted two.
+
+Also taken from the same review: `clampedSkipExceedingFrames` renamed to
+`discardedSkipExceedingFrames` (the code discards, the name claimed the behaviour the slice
+deliberately rejected), `unmeasuredBoundaries` gated on `endedFrames > 0` (it fired on every
+playback start, reporting a hole where nothing was lost), and two comments that contradicted
+each other about which flush carries the frames.
+
+| Fault re-injected | Result |
+|---|---|
+| anchor stays trusted after an unmodelled span | FAILED |
+| untrusted anchor still appends | FAILED |
+| `speed <= 0f` instead of `!(speed > 0f)` | FAILED |
+
+`PresentationTime.Skipped` is therefore **unreachable in production**: a §5.2 field and a whole
+sealed-interface case ship dead. Saying so plainly rather than reporting five of five triggers
+implemented — silence-skip discontinuity is not implementable, because no such media3 event
+exists. Recorded in `AUDIO_FEATURE_ABI.md` §2.2, not just here.
+
+Also absent: any absolute offset for output latency, and the sink's buffered lead discarded at a
+seek, which the anchor still counts. Both are V2-2-04c.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:engine:audio-android:testDebugUnitTest` | 29 tests, 0 failures, 0 skipped |
+| fault: listener notified before the counters are reset | **passed at first** — the vacuous test above; FAILED after narrowing the catch |
+| fault: listener call not guarded | FAILED |
+| fault: skip counter read on every boundary | FAILED |
+| fault: speed always treated as authoritative | FAILED (2 tests) |
+| fault: speed verdict recomputed on unhooked boundaries | FAILED (5 tests) |
+| fault: `append` builds the kept list twice | FAILED (the allocation budget) |
+| fault: factory builds a chain without the hooks | FAILED |
+| fault: tap never told which listener to report to | FAILED |
+| fault: session builds its factory without the driver | **passed at first** — the session test drove the driver directly; FAILED after asserting the chain attached its counter |
+| boundary allocation | 368 bytes, budget 600 |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+### Risks
+
+1. **The anchor counts frames the sink discards at a seek.** Bounded by the sink's buffered
+   lead, unmeasured here. First experiment in V2-2-04c.
+2. **It runs inside `AudioProcessor.flush` on the playback thread**, so a bad number stops the
+   music. Mitigated at both ends: the tap guards the listener call, the driver catches what the
+   clock rejects, and both keep a counter. `the driver never builds a segment the clock rejects`
+   drives 200 boundaries and asserts the net stays dry.
+3. **It rests on media3 internals no API documents.** A version bump can change them silently.
+   The detector for the worst case (speed applied at the AudioTrack) is a test; the others would
+   surface as a clock that stops appending, which the diagnostics counters name.
+
+---
+
+## V2-2-04a: the segmented presentation clock
+
+State: COMPLETE
+
+Goal: build §5.2's piecewise `AudioPresentationClock` — the map between captured input frames
+and the time they are heard — with the properties the plan names: monotonic intervals, round
+trips, and gaps surfaced rather than interpolated across.
+
+User-visible effect: **none today, and it is worth being exact about that.** Nothing maps audio
+time to visual time in this app yet; the live path takes the newest window on a wall-clock timer
+and the offline path is sample-locked, which is the divergence §2 of `ENGINE_V2_PLAN.md`
+catalogues. There is no wrong mapping here to fix, because there is no mapping. What this slice
+does is make the wrong one hard to write later: the correct mapping now exists, typed, so a
+consumer reaching for `sampleTime + offset` has something better to reach for instead.
+
+The subject is real even if the consumer is not. Speed and skip-silence are both live user
+settings (`PlaybackSettings`, `PlayerPrefs.skipSilence`), and both sit **below** the tap — so
+either one in use already breaks the naive mapping today.
+
+In scope: `ClockSegment`, `PresentationTime`/`InputPosition`, `AudioPresentationClock` and its
+immutable `PresentationSnapshot`, in `:engine:audio-core`.
+
+Out of scope: V2-2-04's third bullet, "instrument real Media3 events and compare predicted
+versus presented position". Half of it is wiring — a listener translating
+`onPlaybackParametersChanged`, `onPositionDiscontinuity` and the chain's
+`getSkippedOutputFrameCount` into segments — and half is a device comparison against real
+playback, which is the half that says whether the model is right. Split off as **V2-2-04b**
+rather than landed with an untested other half.
+
+Files expected to change: `engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/{ClockSegment,PresentationMapping,AudioPresentationClock}.kt`.
+
+Compatibility contract: nothing existing changes. New types only.
+
+External source/provenance entries: none.
+
+Tests written first: as properties rather than worked examples — a piecewise linear map is
+exactly the thing that is right at the sample you picked and wrong either side of a seam. Ten
+tests sweep speeds 0.5x–4x and frames 0–1.2M for the round trip, step through 20,000 frames for
+monotonicity, and walk the whole skipped span rather than sampling it.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: the definition of "presentation time" is the whole design, and §5.2 does not spell it
+out. Resolved by reading the field list: if presentation meant `currentPosition`, `speed` and a
+variable slope would both be dead fields, so it is the output timeline — the clock the listener
+hears on. Stated in `ClockSegment`'s KDoc so the next session does not have to re-derive it, and
+it is the thing V2-2-04b's device comparison will confirm or refute.
+
+Commands and results: below.
+
+Review findings: two.
+
+**A fault the tests did not catch.** Of five injected faults, four failed a test and one — the
+reverse lookup taking the *first* matching segment rather than the last — passed everything.
+Every segment before the newest also starts at or before a given presentation time, so that
+version answers from a span that finished playing minutes ago, with an epoch and a frame index
+that both look reasonable. The ten property tests never used more than one segment on the
+reverse path, so the choice was never exercised. `a presentation time inside the newest segment
+is answered from it` closes it, and fails under that fault.
+
+That is the argument for injecting faults rather than counting tests: the suite was green, the
+properties were real, and one branch of the map was unproven.
+
+**A second finding, which cost the files.** Proving the property tests non-vacuous meant
+planting faults in files that were new and untracked, and `git add -N` + `git checkout --`
+restores an intent-to-add path to the **empty** index blob rather than to its content — both
+implementation files were silently truncated to zero bytes. Caught by `wc -l` on the restore,
+not by trusting the trap. V2-1-04d's finding was the same class of mistake by a different
+mechanism; the rule that survives both is that a plant is only safe when the restore is a copy
+of bytes taken beforehand, and it is verified afterwards.
+
+Commit: `feat(audio-core): the piecewise presentation clock, with the gaps visible`
+
+Next slice: V2-2-04b — drive the clock from Media3 events.
+
+### What the naive mapping gets wrong
+
+| Below the tap | Effect on `sampleTime + offset` | Modelled by |
+|---|---|---|
+| Sonic speed | 2x compresses a span into half the presentation time | `inputSamplesPerPresentationUs`, `speed` |
+| silence skipping | removes spans from the timeline entirely | `skippedInputSamples` → `PresentationTime.Skipped` |
+| seek / source change | restarts input numbering under an unchanged output clock | `epoch`, `discontinuityGeneration` → `StaleEpoch` |
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:engine:audio-core:test` | 11 clock tests, 0 failures, 0 skipped |
+| fault: forward map ignores the skipped span | FAILED |
+| fault: epoch check dropped | FAILED |
+| fault: slope ignores speed | FAILED (2 tests) |
+| fault: backwards timeline accepted | FAILED |
+| fault: reverse lookup takes the oldest matching segment | **passed** — the gap above; FAILED after the added test |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+---
+
+## V2-2-02a: reserve the writer's runway in the sample ring
+
+State: COMPLETE
+
+Goal: fix a torn-read hole in V2-2-02's ring, found when its own stress test failed for the
+first time during an unrelated run.
+
+User-visible effect: none yet — nothing reads `SampleRing` in production. What it prevents is
+the failure once something does: a window of audio from one lap later, returned as `Ok`, which
+every consumer would treat as ordinary audio.
+
+In scope: `SampleRing.oldestAvailable`, a `maxWriteFrames` bound enforced in `write`, the
+`RingReader` comment that argued the wrong thing, and the tests that encoded the unsafe
+guarantee.
+
+Out of scope: a claim/commit counter pair, which would keep a full capacity readable at the cost
+of resting on a memory-ordering argument (a release store does not stop later plain stores
+moving before it, so the claim would need a full fence, and `VarHandle` is API 33). Reserving
+the runway needs no such argument.
+
+Files expected to change: `engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/{SampleRing,RingReader}.kt`,
+`engine/audio-core/src/test/kotlin/dev/musicviz/engine/audio/SampleRingTest.kt`.
+
+Compatibility contract: the safe read depth shrinks from `capacity` to `capacity -
+maxWriteFrames`. No production caller exists to notice.
+
+External source/provenance entries: none.
+
+Tests written first: the failing run was the red. `the oldest trusted frame excludes the
+writer's runway` states the invariant deterministically, because the stress test that found the
+bug needs the reader preempted at exactly the wrong moment and has not reproduced on demand
+since — 0 failures in 9 further runs, with the old formula in place.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: the runway costs a quarter of the ring by default. At the capacities this is used at
+that is thousands of frames of headroom for buffers of ~1,000, which is the same trade
+`PcmRingBuffer` already made.
+
+Commands and results: below.
+
+Review findings: the bug is one my own comment argued could not happen. `RingReader` said the
+post-copy re-check "beats reserving a fraction of the ring against a case that mostly does not
+occur". Both halves were wrong: the re-check reads the same lagging counter it is meant to
+outsmart, and the case does occur. The comment is replaced rather than deleted, so the reasoning
+that failed is on the record next to what replaced it.
+
+Commit: `fix(audio-core): reserve the writer's runway so a lapped read is a Gap`
+
+Next slice: V2-2-04a — the presentation clock.
+
+### Why the re-check alone could not work
+
+`write` stores its slots and *then* publishes `written`. So between those two, the writer has
+already reached frames the counter does not admit to:
+
+| | writer's true frontier | published `written` | old `oldestAvailable` | safe? |
+|---|---|---|---|---|
+| mid-write | 46400 | 46400 | 45376 | reader at 45376 passes — and reads frame 46400 |
+| with the runway | 46400 | 46400 | 45632 | reader at 45376 gets `Gap` |
+
+### Verification
+
+| Command | Result |
+|---|---|
+| old formula, 3 deterministic tests | **all 3 FAILED** — runway invariant, gap past safe depth, cursor-after-gap |
+| new formula, whole `audio-core` suite | 26 tests, 0 failures, 5 consecutive clean runs |
+| old formula, stress test alone, 9 runs | 0 failures — which is why it is not the proof |
+| `checkAll` | BUILD SUCCESSFUL |
+
+---
+
 ## V2-2-03: bridge the PCM tap through audio-android
 
 State: COMPLETE
@@ -88,6 +530,17 @@ forbids, three lines under a comment claiming it did not. Encoding is now resolv
 Left dead and unmarked it is a trap for the next session — two tap implementations, one wired.
 Its KDoc now says which one is live, why this one is still here, and which slice removes it.
 
+A third, found on the review pass after the commit: **the one line the slice changed in `:app`
+had no test on it.** `PcmTapParityTest` builds its own tap and its own ring, and
+`PlaybackEngineTest`'s existing wiring test writes to `session.ring` directly with a comment
+saying the tap "only runs inside a real audio pipeline". So both halves were proved and the
+join between them — the `PcmSink` lambda in `PlaybackSession` — was not. `tap` is now `internal`
+and a test pushes PCM through the session's real tap and reads it back out through
+`PlayerViewModel`; pointing the lambda at a different `PcmRingBuffer` fails it.
+
+That is the failure the class exists to prevent, and it would not have crashed, logged, or
+failed to compile.
+
 Commit: `refactor(audio): move the PCM tap into audio-android and off the allocator`
 
 Next slice: V2-2-04 — the segmented presentation clock.
@@ -99,21 +552,36 @@ equal warm-up.
 
 | Path | Bytes per callback |
 |---|---|
-| `PcmTapSink` (before) | **120.0** |
-| `PcmTap` (after) | **0.0** |
-| empty loop — the meter's floor | 0.003 |
+| `PcmTapSink` (before) | **120.003** |
+| `PcmTap` (after) | **0.007** |
+| empty loop — the meter's own floor | 0.002 |
 | a loop allocating one `FloatArray(1)` — the meter's control | > 8 |
 
 The 120 bytes were a `duplicate()`, an `asShortBuffer()` view and, whenever a larger buffer
 arrived, a fresh `FloatArray`. At roughly forty callbacks a second that is ~5 KB/s of garbage
-generated on the thread whose deadline is the audio device's. It is now zero: absolute
-`getShort`/`getFloat` reads need no view object, and a buffer wider than the staging array is
-written as several chunks instead of growing it.
+generated on the thread whose deadline is the audio device's. Afterwards the tap sits within
+0.005 bytes of a loop that does nothing at all — the code has no allocation site left on that
+path: absolute `getShort`/`getFloat` reads need no view object, and a buffer wider than the
+staging array is written as several chunks instead of growing it.
 
-The zero is not a threshold that happens to hold. Tightening the budget to `0.0` fails the test,
-which places the true value at exactly 0. And the meter is proved able to see allocation in the
-same test, by a control loop that allocates — otherwise "zero" and "measuring nothing" are the
-same result.
+`PcmTapTest` asserts a budget of 8 bytes rather than zero, and proves in the same test that the
+meter can see allocation at all, using a control loop that allocates — otherwise "under budget"
+and "measuring nothing" would be the same result.
+
+### Correction
+
+The first version of this entry, and the commit message that went with it, said the new tap
+measures **exactly 0.0** bytes per callback, and offered as proof that the test fails when its
+budget is tightened to `0.0`.
+
+That proof is worthless and the number was wrong. `perCallback < 0.0` is false for *every*
+non-negative measurement, so tightening the budget to zero fails whatever the tap does — it
+distinguishes nothing. Printing the value instead gives **0.0068**, against a floor of 0.0024
+for an empty loop: the residue is the reflective meter's own boxing, not the tap's.
+
+The conclusion the slice rests on is unchanged — 120 bytes to noise — but "exactly 0" was a
+claim built from an experiment that could not have produced it, which is worse than a wrong
+number. Corrected here rather than quietly restated; the commit that carried it is `2ca6be0`.
 
 ### Verification
 
@@ -125,9 +593,10 @@ same result.
 | parity under fault: `32768f` → `32767f` | 4 of 5 FAILED — the float case correctly survives a 16-bit-only fault |
 | parity under fault: one frame dropped per chunk seam | FAILED |
 | parity under fault: big-endian read | FAILED |
-| allocation test with the budget at 0.0 | FAILED — so the measured value is exactly 0 |
+| `PcmTap` allocation, printed | 0.0068 bytes/callback vs a 0.0024 floor |
+| session wiring under fault: tap pointed at another ring | FAILED |
 | `checkAll` | BUILD SUCCESSFUL across all seven projects |
-| whole suite | app 2,532 + engine 62 tests, 0 failures, 0 skipped |
+| whole suite | 1,298 distinct tests (app 1,267, engine 31), 0 failures, 0 skipped — each also re-run in the release variant |
 
 ---
 

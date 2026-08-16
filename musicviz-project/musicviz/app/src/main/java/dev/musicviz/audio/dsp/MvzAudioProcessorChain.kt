@@ -7,6 +7,8 @@ import androidx.media3.common.audio.AudioProcessorChain
 import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
+import dev.musicviz.engine.audioandroid.SinkClockHooks
+import dev.musicviz.engine.audioandroid.SkippedFrameSource
 
 /**
  * The audio sink's processor chain, with the order stated rather than inherited.
@@ -49,7 +51,9 @@ import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 class MvzAudioProcessorChain(
     tap: AudioProcessor,
     dsp: List<AudioProcessor> = emptyList(),
-) : AudioProcessorChain {
+    private val hooks: SinkClockHooks = SinkClockHooks.None,
+) : AudioProcessorChain,
+    SkippedFrameSource {
     private val silenceSkipping = SilenceSkippingAudioProcessor()
     private val sonic = SonicAudioProcessor()
 
@@ -61,15 +65,30 @@ class MvzAudioProcessorChain(
     override fun applyPlaybackParameters(playbackParameters: PlaybackParameters): PlaybackParameters {
         sonic.setSpeed(playbackParameters.speed)
         sonic.setPitch(playbackParameters.pitch)
+        hooks.onSpeedApplied(playbackParameters.speed)
         return playbackParameters
     }
 
     override fun applySkipSilenceEnabled(skipSilenceEnabled: Boolean): Boolean {
         silenceSkipping.setEnabled(skipSilenceEnabled)
+        hooks.onSkipSilenceApplied(skipSilenceEnabled)
         return skipSilenceEnabled
     }
 
     override fun getMediaDuration(playoutDuration: Long): Long = sonic.getMediaDuration(playoutDuration)
 
     override fun getSkippedOutputFrameCount(): Long = silenceSkipping.skippedFrames
+
+    /**
+     * Media3's own name for this number says "output"; for this chain it is
+     * input frames, in the tap's own domain.
+     *
+     * [SilenceSkippingAudioProcessor] counts `(consumed - output) / (channels
+     * * 2)` against its own input format, and it sits directly after a
+     * pass-through tap that neither resamples nor rechannels - so the
+     * conversion is the identity. `AudioChainOrderRuntimeTest` pins the
+     * adjacency, because a resampling stage inserted between them would
+     * corrupt every skip count with no other symptom.
+     */
+    override fun skippedInputFramesSinceFlush(): Long = silenceSkipping.skippedFrames
 }
