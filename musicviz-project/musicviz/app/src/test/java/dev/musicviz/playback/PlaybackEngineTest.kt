@@ -195,6 +195,28 @@ class PlaybackEngineTest {
     }
 
     @Test
+    fun `switching audio source ends the ring's numbering`() {
+        // The tap breaks the epoch on seeks and track changes because media3
+        // flushes it. A capture switch produces no flush at all, so without
+        // this the ring would claim the microphone continues the numbering of
+        // the track that was playing - which is the one thing an epoch exists
+        // to deny. Latent today, since nothing reads by cursor yet; wrong
+        // whether or not anything is looking.
+        val session = PlaybackEngine.acquireForUi(ctx)
+        val viewModel = PlayerViewModel(ctx)
+        session.captureSink.write(FloatArray(512) { 0.1f }, 256, 2)
+        val before = session.sampleRing.epoch
+        assertEquals(256L, session.sampleRing.writtenFrames)
+
+        // Turning the mic off is a source change back to playback, and it
+        // needs no permission or device, so it is the reachable one here.
+        viewModel.setMicEnabled(false)
+
+        assertEquals("a source change must end the numbering", before + 1, session.sampleRing.epoch)
+        assertEquals(0L, session.sampleRing.writtenFrames)
+    }
+
+    @Test
     fun `the ring's numbering and the clock's are the same number`() {
         // Two counters that agree by habit would diverge the first time one of
         // them missed a boundary, and a sample index means nothing without the

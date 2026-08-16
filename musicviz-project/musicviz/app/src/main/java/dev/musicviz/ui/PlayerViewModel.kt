@@ -204,7 +204,19 @@ class PlayerViewModel(
             object : CaptureController.Host {
                 override fun pausePlayback() = player.pause()
 
-                override fun resetAnalysis() = engine.reset()
+                override fun resetAnalysis() {
+                    // A source change ends the ring's numbering too (§5.1).
+                    // The microphone is not a continuation of the track that
+                    // was playing, and a reader carrying its cursor across
+                    // would read one as the other with nothing to say so.
+                    //
+                    // The tap raises this for seeks and track changes, through
+                    // its own flush; a capture switch produces no tap flush, so
+                    // it is raised here - at the one place that already means
+                    // "the audio feeding the ring is now a different piece".
+                    playback.sampleRing.beginEpoch()
+                    engine.reset()
+                }
 
                 override fun setAnalysisRate(rateHz: Int) {
                     engine.sampleRateHz = rateHz
