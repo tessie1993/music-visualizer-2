@@ -14,6 +14,103 @@ Newest slice first.
 
 ---
 
+## V2-3-01: fixture corpus and oracle generator
+
+State: COMPLETE
+
+Goal: Phase 3's foundation — generated PCM fixtures with expected values from an external
+oracle, so later analysis work is measured against something other than itself.
+
+User-visible effect: none. Test infrastructure. What it changes is that `StereoField`'s
+correctness is now checked against a computation the app does not own.
+
+In scope: `tools/oracle/generate_corpus.py`; 11 fixtures and a manifest under
+`app/src/test/resources/corpus/`; `Corpus` and `CorpusOracleTest`.
+
+Out of scope: libebur128 loudness reference values — a second oracle and its own slice. Real
+music excerpts: none are available here, and a corpus that claimed them without shipping them
+would be worse than the gap. Both recorded in the manifest's `notCovered`.
+
+Files expected to change: `tools/oracle/generate_corpus.py`,
+`app/src/test/resources/corpus/*`, `app/src/test/java/dev/musicviz/analysis/{Corpus,CorpusOracleTest}.kt`.
+
+Compatibility contract: no production code changes.
+
+External source/provenance entries: **librosa** (ISC) and **libebur128** (MIT) were already in
+`provenance.json` at ORACLE tier with verified licence evidence and pinned commits, so §2.1
+rule 9 was satisfied before this slice began — checked rather than assumed. librosa runs at
+fixture-generation time only and never enters the APK; the manifest says so and the generator's
+module docstring says so.
+
+Tests written first: not applicable — the deliverable is the oracle. Six fault injections are
+the evidence.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit. Nothing in production depends on the corpus.
+
+Risks: 904 KiB of binary fixtures in the repository, and a regenerated corpus is a full rewrite
+of those bytes. Mitigated by keeping fixtures short and int16 rather than float32, and by
+`generatorVersion`, which makes a stale corpus a visible mismatch. Regenerating without
+regenerating the expectations fails the checksum test rather than silently comparing against the
+wrong numbers.
+
+Commands and results: below.
+
+Review findings: two, both mine.
+
+**My oracle computed a different quantity than the app.** For `stereoWidth` I wrote
+`sqrt(ss)/sqrt(mm)`, while `StereoField` defines it as `s / (m + s)` over RMS magnitudes. On the
+anti-phase fixture — no mid at all — my version divided by zero and reported the **widest
+possible signal as width 0**, and the guard I had written made that look deliberate. Caught by
+reading the generated manifest instead of trusting that a green generator meant correct values.
+Correlation is now computed the textbook way from L and R, which makes it a genuine independent
+check of the mid/side identities `StereoField` uses; width mirrors the app's own definition,
+because it is not a standard quantity, and the manifest says which is which.
+
+**A fault injection silently did not inject.** My `sed` pattern did not match the real source
+(`((mm - ss) / denom).coerceIn(...)`, not `(mm - ss) / denom`), and `sed` exits 0 when it matches
+nothing, so the `||` fallback never ran and the run reported nothing at all. Noticed because the
+output was empty rather than a failure. Re-run with an assertion that the pattern exists and a
+checksum that the file changed — the correlation algebra then failed three separate ways.
+
+Commit: `test(analysis): a fixture corpus with expected values from an external oracle`
+
+Next slice: V2-3-02 — the FFT/window graph with center-aligned hops.
+
+### What the oracle catches
+
+Six faults injected, all caught:
+
+| Fault | Failing test |
+|---|---|
+| one corrupted byte in a fixture | corpus matches its manifest |
+| correlation: mid/side sign flipped | correlation agrees with the oracle (+ anti-phase collapse) |
+| correlation: cross term dropped | correlation agrees with the oracle |
+| correlation: side energy omitted | correlation agrees with the oracle (+ anti-phase collapse) |
+| width normalised by the wrong total | width agrees, including where mid is zero |
+| band table starting an octave and a half too high | a pure tone lands in the band that contains it |
+
+### The corpus
+
+11 fixtures, 904 KiB, 22,050 Hz, raw interleaved int16 — the format the tap itself delivers, so
+both sides dequantise identically by `x / 32768`.
+
+silence · impulse · tone_440 · sweep · am_4hz · clicks_120bpm · tempo_ramp · stereo_antiphase ·
+stereo_wide · stereo_identical · discontinuity
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `librosa` install into a venv | 0.11.0, with numpy 2.4.6 / scipy 1.17.1 / soundfile 0.14.0 |
+| librosa smoke test (RMS, centroid, beat track) | real values, not stubs |
+| `CorpusOracleTest` | 9 tests, 0 failures, 0 skipped |
+| corpus checksums against the manifest | 11/11 match |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+---
+
 ## V2-2-05c: serve the analyzer from the V2 ring — the Phase 2 gate
 
 State: COMPLETE
