@@ -70,6 +70,9 @@ object Corpus {
 
         fun expected(feature: String): Double = json.getJSONObject("expected").getDouble(feature)
 
+        /** Per-frame descriptor expectations, and the STFT they were computed over. */
+        fun perFrame(): JSONObject = json.getJSONObject("perFrame")
+
         fun has(feature: String): Boolean = json.getJSONObject("expected").has(feature)
 
         /** The file's digest against the manifest's, and its length against the frame count. */

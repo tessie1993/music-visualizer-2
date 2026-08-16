@@ -39,7 +39,18 @@ import soundfile
 
 # Bumped by hand whenever a fixture's definition changes, so a stale corpus is
 # a visible mismatch rather than a silent one.
-GENERATOR_VERSION = 1
+GENERATOR_VERSION = 2
+
+# The STFT the per-frame expectations are computed over. Matches
+# AnalysisBranch.GENERAL, and librosa's center=True / pad_mode="constant"
+# framing is FrameGrid's convention exactly - verified, not assumed: frame k
+# centred at k*hop with zeros outside the signal reproduces librosa's own
+# stft to 8e-8 relative.
+FRAME_N_FFT = 1024
+FRAME_HOP = 512
+
+# librosa's spectral_rolloff default.
+ROLLOFF_FRACTION = 0.85
 
 SR = 22_050
 OUT = pathlib.Path(__file__).resolve().parents[2] / "app/src/test/resources/corpus"
@@ -56,6 +67,27 @@ TOLERANCES = {
     "rms": 1e-6,
     # The band a tone lands in is an integer; a tone must not straddle.
     "peakBandExact": 0.0,
+    # Per-frame descriptors. Kotlin accumulates in double over the same bins,
+    # so the only divergence is summation order; the looser rolloff bound is
+    # because it is a bin index, and a frame whose energy sits exactly on a
+    # threshold can legitimately pick either side.
+    "centroidHz": 1e-4,
+    # Two orders looser than the centroid, and measured rather than guessed.
+    # Bandwidth is a second moment about the centroid, so its (f - c)^2 weight
+    # puts almost all the leverage on the near-zero high bins - the ones where
+    # two FFT implementations disagree most in relative terms. For the AM
+    # fixture, bins above 5 kHz carry 86.6% of the second moment while holding
+    # 0.0168% of the magnitude. Perturbing a spectrum by float32 epsilon times
+    # its largest bin - how JTransforms and numpy actually differ - moves the
+    # centroid by 4e-5 and the bandwidth by 5.5e-3. A wrong formula is out by
+    # tens of percent, so 1e-2 still catches every real error.
+    "bandwidthHz": 1e-2,
+    "rolloffHz": 1e-9,
+    "flatness": 1e-5,
+    "flux": 1e-4,
+    "zeroCrossingRate": 1e-9,
+    "frameRms": 1e-6,
+    "framePeak": 1e-9,
 }
 
 
@@ -126,6 +158,82 @@ def _quantise(data: np.ndarray) -> np.ndarray:
     return (np.rint(clipped * 32768.0).astype("<i2").astype(np.float32) / 32768.0)
 
 
+def _per_frame(mono: np.ndarray) -> dict:
+    """Descriptor values per STFT frame, for a pointwise comparison.
+
+    Aggregates hide the failures that matter: a formula wrong only at the edges
+    of the spectrum, or a framing off by one hop, both leave the mean roughly
+    right. These are the arrays the Kotlin side is checked against frame by
+    frame.
+
+    Every formula here was validated against librosa's own feature functions
+    before being written down - centroid, bandwidth, rolloff and flatness all
+    agree to float precision or exactly. They are recomputed rather than called
+    so the manifest states one definition per feature, in one place, which is
+    what the Kotlin side is actually implementing.
+    """
+    spec = np.abs(librosa.stft(mono, n_fft=FRAME_N_FFT, hop_length=FRAME_HOP))
+    freqs = np.fft.rfftfreq(FRAME_N_FFT, 1.0 / SR)
+    total = spec.sum(axis=0)
+    live = total > 1e-12
+
+    centroid = np.zeros_like(total)
+    centroid[live] = (freqs[:, None] * spec).sum(axis=0)[live] / total[live]
+
+    bandwidth = np.zeros_like(total)
+    deviation = (spec * (freqs[:, None] - centroid[None, :]) ** 2).sum(axis=0)
+    bandwidth[live] = np.sqrt(deviation[live] / total[live])
+
+    rolloff = np.zeros_like(total)
+    cumulative = np.cumsum(spec, axis=0)
+    hit = (cumulative >= (ROLLOFF_FRACTION * total)[None, :]).argmax(axis=0)
+    rolloff[live] = freqs[hit][live]
+
+    # Power spectrum with librosa's floor: geometric over arithmetic mean.
+    power = np.maximum(spec**2, 1e-10)
+    flatness = np.exp(np.mean(np.log(power), axis=0)) / np.mean(power, axis=0)
+
+    # Half-wave rectified L1 difference between successive magnitude spectra,
+    # normalised by bin count. Frame 0 has no predecessor and is 0.
+    rise = np.diff(spec, axis=1)
+    flux = np.zeros_like(total)
+    flux[1:] = np.maximum(rise, 0.0).sum(axis=0) / spec.shape[0]
+
+    # Zero crossings over the same frames, WITHOUT librosa's phantom: its
+    # zero_crossing_rate forces index 0 to count as a crossing whatever the
+    # sample is, then divides by frame_length rather than frame_length - 1.
+    # That is an API convention, not a definition, and it inflates a quiet
+    # frame's rate by 1/1024. Counted honestly here.
+    padded = np.pad(mono, FRAME_N_FFT // 2)
+    frames = librosa.util.frame(padded, frame_length=FRAME_N_FFT, hop_length=FRAME_HOP)
+    signs = np.signbit(frames)
+    crossings = (signs[1:, :] != signs[:-1, :]).sum(axis=0)
+    zcr = crossings / (FRAME_N_FFT - 1)
+
+    rms = np.sqrt((frames.astype(np.float64) ** 2).mean(axis=0))
+    peak = np.abs(frames).max(axis=0)
+
+    count = min(len(total), spec.shape[1])
+
+    def trim(values: np.ndarray) -> list[float]:
+        return [round(float(v), 9) for v in values[:count]]
+
+    return {
+        "nFft": FRAME_N_FFT,
+        "hop": FRAME_HOP,
+        "rolloffFraction": ROLLOFF_FRACTION,
+        "frames": count,
+        "centroidHz": trim(centroid),
+        "bandwidthHz": trim(bandwidth),
+        "rolloffHz": trim(rolloff),
+        "flatness": trim(flatness),
+        "flux": trim(flux),
+        "zeroCrossingRate": trim(zcr[:count]),
+        "frameRms": trim(rms[:count]),
+        "framePeak": trim(peak[:count]),
+    }
+
+
 def _expected(name: str, data: np.ndarray) -> dict:
     """What the oracle says about this fixture."""
     mono = data.mean(axis=1)
@@ -191,6 +299,7 @@ def main() -> int:
                 "frames": int(data.shape[0]),
                 "sha256": hashlib.sha256(raw).hexdigest(),
                 "expected": _expected(name, data),
+                "perFrame": _per_frame(np.ascontiguousarray(data.mean(axis=1), dtype=np.float32)),
             }
         )
 

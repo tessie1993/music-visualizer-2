@@ -14,6 +14,110 @@ Newest slice first.
 
 ---
 
+## V2-3-03a: levels and spectral descriptors, checked frame by frame
+
+State: COMPLETE
+
+Goal: V2-3-03's first bullet — level, centroid, rolloff, flatness, bandwidth, ZCR and flux —
+each validated against the oracle rather than against itself.
+
+User-visible effect: none. New nodes in `audio-core` with no production consumer; the legacy
+`FftProcessor` still drives every visual.
+
+In scope: `SpectralDescriptors`, `FrameLevels`, `SpectralFlux`; per-frame expectations in the
+corpus (generator version 2); `DescriptorOracleTest` and `SpectralDescriptorsTest`.
+
+Out of scope: log/semitone bands and the normalization and validity/silence semantics of the
+second bullet — **V2-3-03b**. BS.1770 loudness: it is a K-weighted, gated, multi-block
+measurement with its own oracle (libebur128) and its own slice; calling an RMS "loudness" is how
+a meter ends up disagreeing with every other one.
+
+Files expected to change: `engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/{SpectralDescriptors,FrameLevels,SpectralFlux}.kt`,
+their tests, `tools/oracle/generate_corpus.py`, `app/src/test/resources/corpus/manifest.json`,
+`app/src/test/java/dev/musicviz/analysis/{Corpus,DescriptorOracleTest}.kt`.
+
+Compatibility contract: nothing existing changes.
+
+External source/provenance entries: none new; both sources were already in the registry.
+**Meyda** (REIMPLEMENT, MIT) and **Clubber** (REIMPLEMENT, MIT) were cloned at their pinned
+commits and read in full. Per §3's REIMPLEMENT tier, no code, naming, layout or constant table is
+taken from either — what was taken is the published formulas, which were then validated against
+**librosa** (ORACLE) before being written down.
+
+Tests written first: the formulas were validated in Python against librosa *before* being ported,
+so what landed in Kotlin was already known-correct arithmetic. Six fault injections are the
+evidence that the tests can tell.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: the descriptors have no production consumer yet, so their cost is unmeasured in situ.
+Cheap by construction — one pass each over 513 bins — but that is an argument, not a measurement,
+and the slice that wires them owes the benchmark.
+
+Commands and results: below.
+
+Review findings: three.
+
+**Reading Meyda changed what I wrote, twice.** Its `spectralFlux` iterates from a *negative*
+index, reads an undeclared variable, and carries its own `@ts-nocheck` with a comment saying the
+file has major issues — so it is not a reference for flux, and the corpus recomputes that
+definition independently in numpy instead. Its centroid and spread are in **bin-index** units
+where librosa's and ours are in Hz, and its flatness is magnitude-based where librosa's is
+power-based with a floor. Following it would have produced three quietly different quantities.
+
+**librosa's ZCR has a phantom crossing.** `zero_crossing_rate` forces index 0 to count as a
+crossing whatever the sample's sign, then divides by `frame_length` rather than `frame_length - 1`
+— confirmed algebraically, `phantom_rate * n − 1 == honest_count`. That is an API convention, not
+a definition, so the corpus records the honest figure and `FrameLevels` implements it. Comparing
+against librosa directly would have forced the quirk into the engine.
+
+**My first key names did not match my own generator.** The manifest emitted `rms`/`peak` inside
+the per-frame block while the tolerances and the test asked for `frameRms`/`framePeak`, so two
+tests failed with "not found" rather than with a number. Renamed in the generator, since the
+fixture-level block already has a whole-signal `rms` and the collision was the reason for the
+confusion.
+
+Commit: `feat(audio-core): spectral descriptors, validated frame by frame against librosa`
+
+Next slice: V2-3-03b — log/semitone bands, normalization, validity and silence semantics.
+
+### A tolerance that had to be measured, not guessed
+
+Bandwidth failed at 1e-4 by a factor of two. The first hypothesis — float noise amplified by the
+`(f − c)²` lever — was **wrong**: a 1e-7 *relative* perturbation moves it by only 8e-7. Two FFT
+implementations differ *absolutely*, though, and modelling that properly explains it:
+
+| Perturbation at float32 epsilon × the frame's largest bin | relative error |
+|---|---|
+| centroid | 4.0e-5 |
+| bandwidth | **5.5e-3** — 135× more sensitive |
+
+Because for the AM fixture, **bins above 5 kHz carry 86.6% of the second moment while holding
+0.0168% of the magnitude.** The lever arm puts nearly all the weight on the near-zero bins, which
+are exactly where two FFT implementations disagree most in relative terms. Tolerance set to 1e-2,
+above the measured sensitivity and still two orders below what any wrong formula produces.
+
+### Verification
+
+| Fault injected | Result |
+|---|---|
+| centroid returns bin index instead of Hz (Meyda's unit) | FAILED (2 tests) |
+| bandwidth forgets the square root | FAILED |
+| flatness over magnitude instead of power (Meyda's form) | FAILED |
+| ZCR divides by count instead of intervals | FAILED |
+| flux counts falls as well as rises | FAILED |
+| rolloff uses a strict threshold | **passed** — no real spectrum lands exactly on it; caught after adding the `fraction = 1.0` boundary test |
+
+| Command | Result |
+|---|---|
+| `DescriptorOracleTest` | 11 tests, ~1,700 frame comparisons, 0 failures |
+| `SpectralDescriptorsTest` | 10 tests, the degenerate inputs the corpus cannot reach |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+---
+
 ## V2-3-02: the FFT/window graph, aligned by centre sample
 
 State: COMPLETE
