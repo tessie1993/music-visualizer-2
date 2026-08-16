@@ -14,6 +14,105 @@ Newest slice first.
 
 ---
 
+## V2-2-04a: the segmented presentation clock
+
+State: COMPLETE
+
+Goal: build §5.2's piecewise `AudioPresentationClock` — the map between captured input frames
+and the time they are heard — with the properties the plan names: monotonic intervals, round
+trips, and gaps surfaced rather than interpolated across.
+
+User-visible effect: **none today, and it is worth being exact about that.** Nothing maps audio
+time to visual time in this app yet; the live path takes the newest window on a wall-clock timer
+and the offline path is sample-locked, which is the divergence §2 of `ENGINE_V2_PLAN.md`
+catalogues. There is no wrong mapping here to fix, because there is no mapping. What this slice
+does is make the wrong one hard to write later: the correct mapping now exists, typed, so a
+consumer reaching for `sampleTime + offset` has something better to reach for instead.
+
+The subject is real even if the consumer is not. Speed and skip-silence are both live user
+settings (`PlaybackSettings`, `PlayerPrefs.skipSilence`), and both sit **below** the tap — so
+either one in use already breaks the naive mapping today.
+
+In scope: `ClockSegment`, `PresentationTime`/`InputPosition`, `AudioPresentationClock` and its
+immutable `PresentationSnapshot`, in `:engine:audio-core`.
+
+Out of scope: V2-2-04's third bullet, "instrument real Media3 events and compare predicted
+versus presented position". Half of it is wiring — a listener translating
+`onPlaybackParametersChanged`, `onPositionDiscontinuity` and the chain's
+`getSkippedOutputFrameCount` into segments — and half is a device comparison against real
+playback, which is the half that says whether the model is right. Split off as **V2-2-04b**
+rather than landed with an untested other half.
+
+Files expected to change: `engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/{ClockSegment,PresentationMapping,AudioPresentationClock}.kt`.
+
+Compatibility contract: nothing existing changes. New types only.
+
+External source/provenance entries: none.
+
+Tests written first: as properties rather than worked examples — a piecewise linear map is
+exactly the thing that is right at the sample you picked and wrong either side of a seam. Ten
+tests sweep speeds 0.5x–4x and frames 0–1.2M for the round trip, step through 20,000 frames for
+monotonicity, and walk the whole skipped span rather than sampling it.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: the definition of "presentation time" is the whole design, and §5.2 does not spell it
+out. Resolved by reading the field list: if presentation meant `currentPosition`, `speed` and a
+variable slope would both be dead fields, so it is the output timeline — the clock the listener
+hears on. Stated in `ClockSegment`'s KDoc so the next session does not have to re-derive it, and
+it is the thing V2-2-04b's device comparison will confirm or refute.
+
+Commands and results: below.
+
+Review findings: two.
+
+**A fault the tests did not catch.** Of five injected faults, four failed a test and one — the
+reverse lookup taking the *first* matching segment rather than the last — passed everything.
+Every segment before the newest also starts at or before a given presentation time, so that
+version answers from a span that finished playing minutes ago, with an epoch and a frame index
+that both look reasonable. The ten property tests never used more than one segment on the
+reverse path, so the choice was never exercised. `a presentation time inside the newest segment
+is answered from it` closes it, and fails under that fault.
+
+That is the argument for injecting faults rather than counting tests: the suite was green, the
+properties were real, and one branch of the map was unproven.
+
+**A second finding, which cost the files.** Proving the property tests non-vacuous meant
+planting faults in files that were new and untracked, and `git add -N` + `git checkout --`
+restores an intent-to-add path to the **empty** index blob rather than to its content — both
+implementation files were silently truncated to zero bytes. Caught by `wc -l` on the restore,
+not by trusting the trap. V2-1-04d's finding was the same class of mistake by a different
+mechanism; the rule that survives both is that a plant is only safe when the restore is a copy
+of bytes taken beforehand, and it is verified afterwards.
+
+Commit: `feat(audio-core): the piecewise presentation clock, with the gaps visible`
+
+Next slice: V2-2-04b — drive the clock from Media3 events.
+
+### What the naive mapping gets wrong
+
+| Below the tap | Effect on `sampleTime + offset` | Modelled by |
+|---|---|---|
+| Sonic speed | 2x compresses a span into half the presentation time | `inputSamplesPerPresentationUs`, `speed` |
+| silence skipping | removes spans from the timeline entirely | `skippedInputSamples` → `PresentationTime.Skipped` |
+| seek / source change | restarts input numbering under an unchanged output clock | `epoch`, `discontinuityGeneration` → `StaleEpoch` |
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:engine:audio-core:test` | 11 clock tests, 0 failures, 0 skipped |
+| fault: forward map ignores the skipped span | FAILED |
+| fault: epoch check dropped | FAILED |
+| fault: slope ignores speed | FAILED (2 tests) |
+| fault: backwards timeline accepted | FAILED |
+| fault: reverse lookup takes the oldest matching segment | **passed** — the gap above; FAILED after the added test |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+---
+
 ## V2-2-02a: reserve the writer's runway in the sample ring
 
 State: COMPLETE
