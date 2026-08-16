@@ -1,11 +1,14 @@
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.Properties
+import java.util.zip.ZipFile
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ktlint)
+    id("musicviz.kotlin-common")
     alias(libs.plugins.detekt)
 }
 
@@ -162,10 +165,67 @@ tasks.register("checkThirdPartyNotices") {
 
 tasks.named("check") { dependsOn("checkThirdPartyNotices") }
 
-kotlin {
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+// --- 16 KB page-size gate on the packaged artifact ----------------------------
+//
+// Android 15 ships devices with 16 KB memory pages, and a library laid out for
+// 4 KB pages will not load there. native-libs.yml verifies what it builds; this
+// verifies what actually got packaged, which is the part that ships. Wired to
+// the release outputs rather than to `check`, because a debug build on a 4 KB
+// emulator is still a legitimate thing to produce while the rebuild is pending.
+val checkNativePageAlignment =
+    tasks.register("checkNativePageAlignment") {
+        description = "Fails if a packaged .so is not 16 KB page aligned."
+        val outputs = layout.buildDirectory.dir("outputs")
+        doLast {
+            val archives =
+                outputs
+                    .get()
+                    .asFile
+                    .walkTopDown()
+                    .filter { it.isFile && (it.extension == "apk" || it.extension == "aab") }
+                    .toList()
+            if (archives.isEmpty()) return@doLast
+            val bad = mutableListOf<String>()
+            for (archive in archives) {
+                ZipFile(archive).use { zip ->
+                    zip
+                        .entries()
+                        .asSequence()
+                        .filter { it.name.endsWith(".so") }
+                        .forEach { entry ->
+                            val bytes = zip.getInputStream(entry).use { it.readBytes() }
+                            val align = maxLoadAlignment(bytes)
+                            if (align in 1 until 16384) bad += "${archive.name}!${entry.name} aligned to $align"
+                        }
+                }
+            }
+            if (bad.isNotEmpty()) {
+                throw GradleException(
+                    "16 KB page-size check failed — rebuild through .github/workflows/native-libs.yml:\n" +
+                        bad.joinToString("\n"),
+                )
+            }
+        }
     }
+
+/** Largest `p_align` across the ELF64 PT_LOAD segments, or 0 if not an ELF64. */
+fun maxLoadAlignment(bytes: ByteArray): Long {
+    if (bytes.size < 0x40 || bytes[0] != 0x7F.toByte() || bytes[4].toInt() != 2) return 0
+    val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+    val phoff = buf.getLong(0x20)
+    val phentsize = buf.getShort(0x36).toInt()
+    val phnum = buf.getShort(0x38).toInt()
+    var max = 0L
+    for (i in 0 until phnum) {
+        val at = (phoff + i.toLong() * phentsize).toInt()
+        if (at + 0x38 > bytes.size) return max
+        if (buf.getInt(at) == 1) max = maxOf(max, buf.getLong(at + 0x30))
+    }
+    return max
+}
+
+listOf("assembleRelease", "bundleRelease").forEach { name ->
+    tasks.matching { it.name == name }.configureEach { finalizedBy(checkNativePageAlignment) }
 }
 
 // --- Robolectric runtime jars, resolved by Gradle instead of at test time ----
@@ -238,6 +298,10 @@ tasks.withType<Test>().configureEach {
 }
 
 dependencies {
+    // The only engine edge :app is allowed (§4.1). Empty today; the seams move
+    // across it one slice at a time.
+    implementation(project(":engine:runtime"))
+
     robolectricSdk34(libs.android.all.sdk34)
     robolectricSdk35(libs.android.all.sdk35)
 

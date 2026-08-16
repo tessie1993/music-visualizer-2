@@ -2,6 +2,7 @@ package dev.musicviz.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -11,7 +12,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import dev.musicviz.render.VisualSafety
+import dev.musicviz.render.VisualSafetyChoice
 import kotlin.math.roundToInt
 
 /**
@@ -110,6 +113,18 @@ private fun ConnectedDisplayGroup(
 }
 
 /**
+ * The choices a user can pick, in the order they are offered.
+ * [VisualSafetyChoice.UNKNOWN] is deliberately absent: it is a state the app
+ * can be in, not one anybody selects.
+ */
+private val SAFETY_CHOICES =
+    listOf(
+        VisualSafetyChoice.SAFE to "Safe",
+        VisualSafetyChoice.REDUCED_MOTION to "Reduced motion",
+        VisualSafetyChoice.CUSTOM to "Custom",
+    )
+
+/**
  * Photosensitivity and motion-comfort limits. Kept as its own group, near
  * the top of Behavior, because it is the one settings group a user may be
  * looking for before they let the app draw anything at all.
@@ -120,23 +135,59 @@ private fun VisualSafetyGroup(
     gui: GuiPrefs,
 ) {
     Column {
+        Text("Flashing and motion", style = MaterialTheme.typography.bodyMedium)
+        Text(
+            "Limits how fast and how strongly the whole screen can flash: caps the strobe and " +
+                "beat flash, holds brightness and contrast near neutral, turns hard scene cuts into " +
+                "crossfades, and slows any modulation aimed at brightness.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (gui.safetyChoice == VisualSafetyChoice.UNKNOWN) {
+            // The whole reason the choice has an "unknown" state: until this
+            // is answered the visuals run limited, and the user is told so
+            // rather than left to wonder why the strobe looks tame.
+            Text(
+                "You have not chosen yet, so the visuals are running limited. Pick one — you can " +
+                    "change it whenever you like.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        CrystalSegmented(
+            options = SAFETY_CHOICES.map { it.second },
+            // -1 while the choice is UNKNOWN: nothing is shown selected,
+            // because nothing has been chosen. Presenting Safe as picked
+            // would be the app answering a question asked of the user.
+            selected = SAFETY_CHOICES.indexOfFirst { it.first == gui.safetyChoice },
+            onSelect = { viewModel.setGuiPrefs(gui.copy(safetyChoice = SAFETY_CHOICES[it].first)) },
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        Text(
+            when (gui.safetyChoice) {
+                VisualSafetyChoice.UNKNOWN, VisualSafetyChoice.SAFE ->
+                    "Recommended if you or anyone watching is sensitive to flashing light."
+                VisualSafetyChoice.REDUCED_MOTION ->
+                    "Everything Safe does, plus speed, drift, shake and endless zoom scaled down " +
+                        "for motion comfort. Colour and texture keep reacting to the music."
+                VisualSafetyChoice.CUSTOM ->
+                    "Your own limits, including switching them off entirely. The strobe then runs " +
+                        "at 9 Hz and the beat flash at the track's rate."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    if (gui.safetyChoice == VisualSafetyChoice.CUSTOM) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Safe visuals", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text("Limit flashing", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             Switch(
                 checked = gui.safeVisuals,
                 onCheckedChange = { viewModel.setGuiPrefs(gui.copy(safeVisuals = it)) },
             )
         }
-        Text(
-            "Limits how fast and how strongly the whole screen can flash: caps the strobe and " +
-                "beat flash, holds brightness and contrast near neutral, turns hard scene cuts into " +
-                "crossfades, and slows any modulation aimed at brightness. Recommended if you or " +
-                "anyone watching is sensitive to flashing light.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
-    if (gui.safeVisuals) {
+    if (gui.safetyChoice == VisualSafetyChoice.CUSTOM && gui.safeVisuals) {
         Column {
             Text(
                 "Maximum flashes per second  ${"%.1f".format(gui.maxFlashHz)} Hz" +
@@ -177,26 +228,32 @@ private fun VisualSafetyGroup(
             }
             Text(
                 "These reverse the whole frame at once. Off is safer; on keeps them available if " +
-                    "you turned Safe visuals on for the flash-rate limits alone.",
+                    "you are limiting the flash rate alone.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
-    Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Reduced motion", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-            Switch(
-                checked = gui.reducedMotion,
-                onCheckedChange = { viewModel.setGuiPrefs(gui.copy(reducedMotion = it)) },
+    if (gui.safetyChoice == VisualSafetyChoice.CUSTOM) {
+        // Only under Custom. Safe and Reduced motion already say what happens
+        // to motion, and a switch that silently does nothing under those two
+        // would be worse than no switch at all.
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Slow the motion down", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                Switch(
+                    checked = gui.reducedMotion,
+                    onCheckedChange = { viewModel.setGuiPrefs(gui.copy(reducedMotion = it)) },
+                )
+            }
+            Text(
+                "Slows movement, shake, drift and rotation. Independent of the flash limits above: " +
+                    "this one is about motion comfort rather than seizures, and either can be used " +
+                    "on its own.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Text(
-            "Slows movement, shake, drift and rotation. Separate from Safe visuals: this one is " +
-                "about motion comfort rather than flashing, and either can be used on its own.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
     Text(
         "Both settings apply to exported video as well as the screen.",

@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import dev.musicviz.analysis.FeatureExtractor
+import dev.musicviz.render.VisualSafetyChoice
 import dev.musicviz.ui.theme.ThemePack
 import dev.musicviz.ui.theme.ThemePackCatalog
 
@@ -182,11 +183,19 @@ data class GuiPrefs(
     val fontColorArgb: Int? = null,
     /** Multiplies every font size in the stone typography, 0.85..1.3. */
     val textScale: Float = 1f,
-    /** "Safe visuals": caps how fast and how deeply the whole frame may flash.
-     *  Off by default, like every other optional visual change here, so saved
-     *  presets keep looking the way the user left them. */
+    /** What the user has said about flashing. [VisualSafetyChoice.UNKNOWN] -
+     *  the default, and what an install that has never been asked holds -
+     *  runs safe. This is the field that decides; the four below are the
+     *  parameters of [VisualSafetyChoice.CUSTOM] and are read only then. */
+    val safetyChoice: VisualSafetyChoice = VisualSafetyChoice.UNKNOWN,
+    /** LEGACY "Safe visuals" switch, superseded by [safetyChoice]. Still
+     *  persisted because it is CUSTOM's master switch, and still read at load
+     *  to migrate an explicit true into [VisualSafetyChoice.SAFE]. A stored
+     *  false means nothing: `saveGui` writes every key on every save, so an
+     *  untouched switch is written as false the first time any other setting
+     *  changes. */
     val safeVisuals: Boolean = false,
-    /** Flashes per second ceiling while [safeVisuals] is on. */
+    /** Flashes per second ceiling under [VisualSafetyChoice.CUSTOM]. */
     val maxFlashHz: Float = dev.musicviz.render.VisualSafety.WCAG_FLASHES_PER_SECOND,
     /** Largest full-screen luminance swing a flash may make, 0..1. */
     val maxFlashDepth: Float = 0.25f,
@@ -241,15 +250,26 @@ data class GuiPrefs(
             dev.musicviz.render.VisualSafety
                 .beatMinIntervalMs(beatMinIntervalMs, safety)
 
-    /** The engine-facing view of the safety settings above. */
+    /**
+     * The engine-facing view of the safety settings above, resolved through
+     * [safetyChoice].
+     *
+     * The live renderer, the transition picker, the exporter and the wallpaper
+     * all read this and nothing else, so they cannot disagree about what the
+     * user chose - and a stored switch left permissive cannot reach any of
+     * them unless the choice is CUSTOM.
+     */
     val safety: dev.musicviz.render.VisualSafety.SafetyConfig
         get() =
-            dev.musicviz.render.VisualSafety.SafetyConfig(
-                enabled = safeVisuals,
-                maxFlashHz = maxFlashHz,
-                maxFlashDepth = maxFlashDepth,
-                allowInversion = allowInversion,
-                reducedMotion = reducedMotion,
+            dev.musicviz.render.VisualSafety.resolve(
+                safetyChoice,
+                dev.musicviz.render.VisualSafety.SafetyConfig(
+                    enabled = safeVisuals,
+                    maxFlashHz = maxFlashHz,
+                    maxFlashDepth = maxFlashDepth,
+                    allowInversion = allowInversion,
+                    reducedMotion = reducedMotion,
+                ),
             )
 
     companion object {
@@ -331,6 +351,7 @@ class ThemeStore(
                 prefs
                     .getFloat(KEY_TEXT_SCALE, 1f)
                     .coerceIn(GuiPrefs.TEXT_SCALE_MIN, GuiPrefs.TEXT_SCALE_MAX),
+            safetyChoice = loadSafetyChoice(),
             safeVisuals = prefs.getBoolean(KEY_SAFE_VISUALS, false),
             // Coerced on read for the same reason as the beat settings above:
             // a stored value outside the slider's range would leave the thumb
@@ -350,6 +371,34 @@ class ThemeStore(
             keyColor = prefs.getBoolean(KEY_KEY_COLOR, false),
             secondScreen = prefs.getBoolean(KEY_SECOND_SCREEN, true),
         )
+    }
+
+    /**
+     * The stored flash-safety choice, or [VisualSafetyChoice.UNKNOWN] when
+     * there is nothing that counts as one.
+     *
+     * Three things resolve to UNKNOWN, and each is a case where carrying a
+     * value forward would be inventing consent:
+     *
+     *  - nothing stored - a fresh install, or one that predates the choice;
+     *  - a choice recorded under an older [SAFETY_CHOICE_VERSION] - consent
+     *    was to a set of behaviours that has since changed;
+     *  - a name this build does not know - a downgrade, or a corrupted file.
+     *
+     * The legacy boolean migrates in one direction only. A stored `true` is
+     * something a user did on purpose, because false was the default, so it
+     * becomes [VisualSafetyChoice.SAFE]. A stored `false` proves nothing:
+     * [saveGui] writes every key on every save, so the switch is written as
+     * false the first time any other setting changes.
+     */
+    private fun loadSafetyChoice(): VisualSafetyChoice {
+        val stored =
+            prefs
+                .getString(KEY_SAFETY_CHOICE, null)
+                ?.takeIf { prefs.getInt(KEY_SAFETY_CHOICE_VERSION, 0) == SAFETY_CHOICE_VERSION }
+                ?.let { name -> runCatching { VisualSafetyChoice.valueOf(name) }.getOrNull() }
+        return stored
+            ?: if (prefs.getBoolean(KEY_SAFE_VISUALS, false)) VisualSafetyChoice.SAFE else VisualSafetyChoice.UNKNOWN
     }
 
     fun saveGui(gui: GuiPrefs) {
@@ -376,6 +425,8 @@ class ThemeStore(
             .apply { if (fontColor != null) putInt(KEY_FONT_COLOR, fontColor) else remove(KEY_FONT_COLOR) }
             .remove(KEY_WHITE_FONT)
             .putFloat(KEY_TEXT_SCALE, gui.textScale)
+            .putString(KEY_SAFETY_CHOICE, gui.safetyChoice.name)
+            .putInt(KEY_SAFETY_CHOICE_VERSION, SAFETY_CHOICE_VERSION)
             .putBoolean(KEY_SAFE_VISUALS, gui.safeVisuals)
             .putFloat(KEY_MAX_FLASH_HZ, gui.maxFlashHz)
             .putFloat(KEY_MAX_FLASH_DEPTH, gui.maxFlashDepth)
@@ -389,7 +440,22 @@ class ThemeStore(
             .apply()
     }
 
-    private companion object {
+    /**
+     * `internal` rather than private so the migration tests can write a
+     * legacy prefs file with the same key names the store reads, instead of
+     * hardcoding the strings and quietly passing after a rename.
+     */
+    internal companion object {
+        /**
+         * Bumped whenever the behaviours a [VisualSafetyChoice] covers change.
+         * A choice stored under an older version reads back as
+         * [VisualSafetyChoice.UNKNOWN], so the user is asked again rather than
+         * being held to consent they gave for something else.
+         */
+        const val SAFETY_CHOICE_VERSION = 1
+        const val KEY_SAFETY_CHOICE = "gui_safety_choice"
+        const val KEY_SAFETY_CHOICE_VERSION = "gui_safety_choice_version"
+
         const val KEY = "app_theme"
         const val KEY_POS = "gui_player_pos"
         const val KEY_CORNER = "gui_corner"

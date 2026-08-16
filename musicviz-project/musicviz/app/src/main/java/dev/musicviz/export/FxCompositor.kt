@@ -62,6 +62,7 @@ internal class ExportGradeState {
      * a smaller swell than a drop. [pulseAmount] then SQUARES it.
      */
     var beatPulse: Float = 0f
+
         private set
 
     /** Advances one exported frame; [dtSeconds] is the export's 1/fps.
@@ -160,6 +161,30 @@ internal class FxCompositor(
 
     /** Feedback buffer for the warp trail; see the live renderer's `trail`. */
     private val trail = dev.musicviz.render.RenderTarget("exportTrail")
+
+    /**
+     * The export's own rolling flash budget, driven by the export clock.
+     *
+     * The live renderer keeps a second instance. Both apply the same rule to
+     * the same beat grid, so neither can flash at a rate the other would have
+     * refused. Frame-for-frame identical gains need the sample-locked clock
+     * MASTER_PLAN §10.3 is still working toward - live advances on a jittering
+     * wall clock and an export on an exact one.
+     */
+    private val flashBudget = dev.musicviz.render.FlashBudget()
+
+    private fun flashGain(
+        timeSeconds: Float,
+        params: SceneParams,
+        features: AudioFeatures,
+        limitFlashRate: Boolean,
+    ): Float {
+        val impulse =
+            dev.musicviz.render.VisualSafety
+                .flashImpulse(params.flash, features.beatImpulse)
+        val gain = flashBudget.gainFor(timeSeconds, impulse)
+        return if (limitFlashRate) gain else 1f
+    }
 
     /** Blue-noise dither mask, so an exported frame is dithered like the screen. */
     private val noiseTex: Int = dev.musicviz.render.BlueNoise.createTexture(context)
@@ -321,6 +346,9 @@ internal class FxCompositor(
          *  that used to be a literal in the shader, so an export with safety
          *  off is unchanged. */
         strobeHz: Float = dev.musicviz.render.VisualSafety.DEFAULT_STROBE_HZ,
+        /** Whether the rolling flash budget applies; see `FlashBudget`. False
+         *  keeps this pass an exact no-op for a Custom opt-out. */
+        limitFlashRate: Boolean = false,
     ) {
         // Rotation and the colour cycle are SPEEDS: integrate them on the
         // export's own clock, once per exported frame, exactly as the live
@@ -402,7 +430,7 @@ internal class FxCompositor(
         GLES30.glUniform1f(loc("uPostDriftY"), params.driftY)
         GLES30.glUniform1f(loc("uPostSway"), params.sway)
         GLES30.glUniform1f(loc("uPostShake"), params.shake)
-        GLES30.glUniform1f(loc("uPostFlash"), params.flash)
+        GLES30.glUniform1f(loc("uPostFlash"), params.flash * flashGain(timeSeconds, params, features, limitFlashRate))
         GLES30.glUniform1f(loc("uPostTemp"), params.temperature)
         GLES30.glUniform1f(loc("uPostSolarize"), if (params.solarize) 1f else 0f)
         // Match the live renderer: shader scenes AND the milkdrop post pass

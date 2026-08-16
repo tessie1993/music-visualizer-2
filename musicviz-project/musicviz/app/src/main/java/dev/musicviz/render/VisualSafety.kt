@@ -3,6 +3,36 @@ package dev.musicviz.render
 import dev.musicviz.render.scene.SceneParams
 
 /**
+ * What the user has said about flashing, which is not the same question as
+ * how the limiter is configured.
+ *
+ * A single "Safe visuals" boolean defaulting to false answered both at once,
+ * and the two answers differ: "this person wants the strobe" is a preference,
+ * "nobody has ever been asked" is the absence of one. The paths this governs -
+ * a 9 Hz full-frame strobe, a beat flash running at the track's rate, a
+ * randomizer that can roll a 30 Hz luminance LFO - are the kind where reading
+ * silence as consent is the wrong default.
+ *
+ * [UNKNOWN] is therefore a real state rather than a null, and it resolves to
+ * safe behaviour. Persisted alongside a schema version, so when the set of
+ * behaviours a choice covers changes, the choice is asked for again instead
+ * of being carried forward to something the user never saw.
+ */
+enum class VisualSafetyChoice {
+    /** Never asked, or asked under an older schema. Runs safe. */
+    UNKNOWN,
+
+    /** Flash rate, depth, inversion and hard cuts all limited. */
+    SAFE,
+
+    /** [SAFE] plus vestibular comfort: speed, drift, shake and zoom scaled down. */
+    REDUCED_MOTION,
+
+    /** The stored sliders, verbatim - the only choice that can turn limiting off. */
+    CUSTOM,
+}
+
+/**
  * Photosensitivity safety: one clamp every visual path passes through.
  *
  * This app draws full-screen brightness changes on purpose - that is what a
@@ -73,13 +103,16 @@ object VisualSafety {
      * User-facing safety settings. Persisted in `GuiPrefs`; passed to both the
      * renderer and the exporter so a clip matches the screen.
      *
-     * [enabled] defaults to FALSE deliberately. Every optional visual addition
-     * in this codebase ships as an exact no-op so saved presets keep looking
-     * the way the user left them, and a safety mode that silently retunes
-     * everyone's work would be a surprising change of behaviour on upgrade.
-     * Whether it should instead default ON, or be asked about during
-     * first-run onboarding (which does not exist yet), is a product decision
-     * flagged (HIGH) in docs/quality/PRODUCT_REVIEW.md - not one to make silently inside a clamp function.
+     * This is the RESOLVED configuration, not a preference. It is produced by
+     * [resolve] from a [VisualSafetyChoice], and [enabled] false is reachable
+     * only through [VisualSafetyChoice.CUSTOM] - an explicit decision by
+     * someone who saw what they were turning off.
+     *
+     * The constructor defaults stay off so that [OFF] is an exact no-op, which
+     * is what makes the export byte-parity tests and every saved preset
+     * unaffected by a user who has chosen CUSTOM. Do not read those defaults
+     * as the app's behaviour: an install that has made no choice resolves to
+     * [SAFE_DEFAULTS].
      */
     data class SafetyConfig(
         /** Master "Safe visuals" switch: caps flash rate and depth. */
@@ -100,10 +133,49 @@ object VisualSafety {
         val isNeutral: Boolean get() = !enabled && !reducedMotion
 
         companion object {
-            /** Everything off - the shipped default and an exact no-op. */
+            /** Everything off - an exact no-op, reachable only through [VisualSafetyChoice.CUSTOM]. */
             val OFF = SafetyConfig()
+
+            /**
+             * What [VisualSafetyChoice.UNKNOWN] and [VisualSafetyChoice.SAFE]
+             * resolve to. Fixed rather than read from the stored sliders: the
+             * sliders are CUSTOM's parameters, and a user who has not chosen
+             * has not chosen those either, so honouring a permissive stored
+             * value here would be the same silent inference the choice exists
+             * to remove.
+             */
+            val SAFE_DEFAULTS =
+                SafetyConfig(
+                    enabled = true,
+                    maxFlashHz = WCAG_FLASHES_PER_SECOND,
+                    maxFlashDepth = 0.25f,
+                    allowInversion = false,
+                    reducedMotion = false,
+                )
         }
     }
+
+    /**
+     * The one place a [VisualSafetyChoice] becomes engine settings.
+     *
+     * Every output already reads `GuiPrefs.safety` - the live renderer, the
+     * transition picker, the exporter and the wallpaper - so resolving here
+     * means all four agree by construction, and a fifth cannot be added that
+     * consults the raw switch instead.
+     *
+     * [custom] is only consulted for [VisualSafetyChoice.CUSTOM]; for every
+     * other choice the answer does not depend on it, which is what makes
+     * "unknown runs safe" true regardless of what is stored.
+     */
+    fun resolve(
+        choice: VisualSafetyChoice,
+        custom: SafetyConfig,
+    ): SafetyConfig =
+        when (choice) {
+            VisualSafetyChoice.UNKNOWN, VisualSafetyChoice.SAFE -> SafetyConfig.SAFE_DEFAULTS
+            VisualSafetyChoice.REDUCED_MOTION -> SafetyConfig.SAFE_DEFAULTS.copy(reducedMotion = true)
+            VisualSafetyChoice.CUSTOM -> custom
+        }
 
     /**
      * Clamps [p] to [config]. MUST be called after [LfoEngine.apply] and
@@ -167,6 +239,19 @@ object VisualSafety {
         }
         return out
     }
+
+    /**
+     * The full-frame luminance swing `uPostFlash` will produce this frame.
+     *
+     * The shader adds `uPostFlash * uBeat * FLASH_SHADER_DEPTH`, so this is
+     * that product and not the slider value: a flash of 1.0 on a frame with no
+     * beat under it changes nothing, and [FlashBudget] must not spend its
+     * budget on it.
+     */
+    fun flashImpulse(
+        flash: Float,
+        beatImpulse: Float,
+    ): Float = flash * beatImpulse * FLASH_SHADER_DEPTH
 
     /**
      * The value to upload as `uStrobeHz`. The strobe's rate used to be a

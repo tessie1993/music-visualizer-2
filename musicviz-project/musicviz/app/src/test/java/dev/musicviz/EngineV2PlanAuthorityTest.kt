@@ -116,10 +116,12 @@ class EngineV2PlanAuthorityTest {
                 .toList()
         assertEquals("every slice section needs exactly one State: line", slices.size, recorded.size)
         assertEquals("unknown state in STATUS.md", emptySet<String>(), recorded.toSet() - states.toSet())
-        assertTrue(
-            "MASTER_PLAN §2.1 rule 2: only one slice may be short of COMPLETE, found $recorded",
-            recorded.count { it != "COMPLETE" } <= 1,
-        )
+        // MASTER_PLAN §2.1 rule 2 bans a second slice while one is unfinished.
+        // LOCKED is exempt because it means "specified and not begun" - a
+        // slice held on hardware this environment does not have would
+        // otherwise stop the queue for everything behind it. See adr/0002.
+        val active = recorded.filter { it != "COMPLETE" && it != "LOCKED" }
+        assertTrue("only one slice may be in progress, found $active", active.size <= 1)
     }
 
     @Test

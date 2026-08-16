@@ -715,6 +715,7 @@ class VideoExporter(
                     strobeHz =
                         dev.musicviz.render.VisualSafety
                             .strobeHz(safety),
+                    limitFlashRate = safety.enabled,
                 )
                 egl.setPresentationTimeNs(frame * frameDurationNs)
                 egl.swapBuffers()

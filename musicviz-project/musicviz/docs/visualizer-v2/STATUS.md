@@ -14,6 +14,610 @@ Newest slice first.
 
 ---
 
+## V2-1-03: establish manual composition and lifetime contracts
+
+State: COMPLETE
+
+Goal: write the start/reset/close rule once, with its transitions tested, instead of leaving
+six lifetime owners to each invent it.
+
+User-visible effect: none. `:engine:runtime` gains its first code; no production consumer is
+switched, per §V2-1-03.
+
+In scope: `LifetimeId` and `LifetimePhase` from §4.3; the `EngineLifetime` port;
+`ManagedLifetime`, which owns the transitions so an implementor writes only what it acquires
+and releases; `EngineComposition`, the §4.4 hand-written root.
+
+Out of scope: switching any production consumer, and a DI framework. §4.4 sets the threshold
+for reconsidering the latter — roughly forty independently constructed production objects, or
+a third lifetime needing scoped composition — and a container today would hide the one thing
+that matters here, which is who closes what and in what order.
+
+Files expected to change: `engine/runtime/src/main/kotlin/dev/musicviz/engine/runtime/{EngineLifetime,EngineComposition}.kt`,
+`engine/runtime/src/test/kotlin/dev/musicviz/engine/runtime/EngineLifetimeTest.kt`.
+
+Compatibility contract: untouched. Nothing in `:app` references any of it yet.
+
+External source/provenance entries: none.
+
+Tests written first: `EngineLifetimeTest`, eleven assertions, run red as unresolved references
+before the port existed. The fakes §V2-1-03 asks for are one recording implementation of
+`ManagedLifetime` — the transitions are what needs proving, and a mocking framework would have
+proved the mock instead.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit. Nothing depends on the module's contents.
+
+Risks: a lifetime abstraction written before it has users can be shaped for imagined needs.
+Bounded by keeping it to the three verbs §4.3 names and refusing to add a fourth until a real
+owner asks for one.
+
+Commands and results: below.
+
+Review findings: the asymmetry between `close` and `start` is the design, so it is worth
+saying why rather than leaving it to be read as inconsistency. `close` is idempotent because
+teardown races are ordinary — a surface goes away while an export is finishing — and the
+second close should be boring. `start` after `close` **throws**, because that is a use after
+free, and returning quietly would hand the caller an object that looks alive and owns nothing.
+That is the shape of the bug V2-0-01 fixed, one layer up.
+
+Commit: `feat(runtime): give the engine lifetimes one start, reset and close`
+
+Next slice: **V2-1-04 — add capability and provenance build gates.**
+
+### What the contract fixes
+
+The engine has six lifetimes and, today, no shared rule for any of them. V2-0-01 is the
+concrete cost: a player released while a live consumer still pointed at it, because two owners
+disagreed about who was last. That is not a playback bug, it is a missing lifetime contract,
+and there are five more places to make it.
+
+| Rule | Why it is that way |
+|---|---|
+| `close` twice releases once | teardown races are ordinary; the second close must be boring |
+| `close` before `start` releases nothing | nothing was acquired |
+| `start` after `close` throws | a use after free is a bug, not a restart |
+| `reset` only while running | there is nothing to return to a known state otherwise |
+| the root closes in reverse | the GL context outlives the surfaces drawn on it |
+| one failing teardown does not stop the sweep | a driver throwing must not strand the encoder behind it |
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:engine:runtime:test`, before the port | unresolved references — the intended red |
+| `:engine:runtime:test` | **11 tests, 0 failures**, `--rerun-tasks` to confirm they executed |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+| `:app:testDebugUnitTest` | 1,243 tests, 0 failures — unchanged |
+
+---
+
+## V2-1-02: create the six engine modules
+
+State: COMPLETE
+
+Goal: put the §4.1 dependency graph into the build, so the boundaries the V2 engine depends on
+are enforced by what compiles rather than by what a session remembers.
+
+User-visible effect: none, measured rather than assumed — the debug APK is **byte-identical**
+with and without the modules.
+
+In scope: `:engine:{audio-core,visual-core,gl,scenes,audio-android,runtime}`; the
+`musicviz.jvm-library` and `musicviz.android-library` convention plugins; `:app` depending on
+`:engine:runtime` and on nothing beneath it; `EngineModuleBoundaryTest`.
+
+Out of scope: moving any production code. §V2-1-02 says "no production migration", and the
+modules are empty on purpose — a boundary is worth having before there is code to put behind
+it, because afterwards every move argues with the boundary instead of following it.
+
+Files expected to change: `settings.gradle.kts`, `build.gradle.kts`, `app/build.gradle.kts`,
+`gradle/libs.versions.toml`, `build-logic/src/main/kotlin/musicviz.{jvm,android}-library.gradle.kts`,
+`engine/*/build.gradle.kts`, `app/src/test/java/dev/musicviz/EngineModuleBoundaryTest.kt`.
+
+Compatibility contract: unchanged. No production source file moved, so every source-text gate
+still points at the file it was written against — the failure mode `LEGACY_DISPOSITION.md`
+warns about does not arise until code starts moving.
+
+External source/provenance entries: none.
+
+Tests written first: `EngineModuleBoundaryTest`, six assertions. The interesting half is what
+it does *not* try to check: `audio-core` and `visual-core` cannot import `android.*` because a
+`java-library` module has no Android on its compile classpath, so the test asserts the
+*plugin* rather than the imports. Get the plugin wrong and the forbidden import quietly
+becomes possible again, which an import scan would not notice.
+
+Benchmark or visual evidence: APK size measured on a clean baseline — see below.
+
+Rollback: revert the one commit. The modules are empty, so nothing depends on them.
+
+Risks: six empty modules are ceremony until they carry code, which §16 lists as a named risk.
+The mitigation is the plan's own ordering — the modules exist so V2-2-02 has somewhere to put
+the sample-indexed ring, and nothing else is created until then.
+
+Commands and results: below.
+
+Review findings: two.
+
+1. `checkAll` failed with "Task with path `:engine:check` not found". Gradle creates a
+   container project for the `:engine:*` paths, and it has no build file and no tasks. The
+   aggregation now filters on `buildFile.exists()`, which is also the right rule for any
+   future grouping.
+2. The first APK comparison showed the modules *shrinking* the APK by 1.1 MB, which is not a
+   thing empty modules can do. The "before" number was a stale artifact from an earlier
+   commit. Re-measured against a real baseline — `git stash`, build, restore, build — the
+   delta is **0 bytes**. Worth the second measurement: reporting a 1.1 MB improvement from
+   adding empty modules would have been nonsense with a number attached.
+
+Commit: `build: create the six engine modules and their boundaries`
+
+Next slice: **V2-1-03 — establish manual composition and lifetime contracts.**
+
+### The graph, as built
+
+```text
+audio-core     -> (nothing)
+visual-core    -> audio-core
+gl             -> visual-core
+scenes         -> gl, visual-core, audio-core
+audio-android  -> audio-core
+runtime        -> scenes, audio-android (and their transitive engine modules)
+app            -> runtime
+```
+
+`audio-core` and `visual-core` are `java-library`, which is the boundary doing its own
+enforcement: `ENGINE_V2_PLAN.md` §1 traces the whole module argument to two files in
+`analysis/` that drifted into importing `android.*` under a package convention with no way to
+stop them. Those two modules now cannot.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `projects` | seven projects: `:app` plus the six under `:engine` |
+| `checkAll`, first run | **FAILED** — `:engine:check` not found; container project has no tasks |
+| `checkAll`, after the fix | BUILD SUCCESSFUL across all seven |
+| `:app:testDebugUnitTest` | **1,243 tests, 0 failures** (1,237 before this slice) |
+| debug APK, baseline vs. with modules | 347,220,588 bytes both — **0 byte delta** |
+
+---
+
+## V2-1-01: add build conventions and whole-project gates
+
+State: COMPLETE
+
+Goal: give the module split somewhere to put shared configuration, and one command that
+covers every module including the ones that do not exist yet.
+
+User-visible effect: none. Build configuration only.
+
+In scope: a `build-logic` included build; the `musicviz.kotlin-common` convention plugin
+carrying the JDK target and ktlint; `:app` adopting it; a root `checkAll` declared over
+`subprojects` so a new module is covered the day it appears.
+
+Out of scope: extracting the rest of `app/build.gradle.kts`. Signing, packaging, Robolectric
+jar resolution and the Compose setup belong to the application module and to nothing else —
+there is no second consumer to share them with, and a convention plugin with one caller is
+indirection rather than convention. What the engine modules need gets extracted when they
+exist, in V2-1-02.
+
+Files expected to change: `settings.gradle.kts`, `build.gradle.kts`, `app/build.gradle.kts`,
+`gradle/libs.versions.toml`, `build-logic/`.
+
+Compatibility contract: unchanged. The convention plugin sets the same JVM target and the same
+ktlint configuration `:app` already resolved to, so no source file is formatted differently.
+
+External source/provenance entries: none.
+
+Tests written first: none, and the exception is worth stating rather than glossing. A Gradle
+convention plugin has no unit-test seam here — what it does is observable only as build
+behaviour, so the proof is that `checkAll` covers `:app`, that the suite and lint are
+unchanged, and that removing the plugin breaks compilation. A test-fixture abstraction over
+`repoFile`, which §V2-1-01 also mentions, is deliberately left to the slice that first moves
+a file — writing it before then would be a helper with nothing to help.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit. `:app` returns to declaring ktlint and its JVM target inline.
+
+Risks: an included build is a real change to how the build resolves plugins, and it runs
+before everything. Mitigated by keeping the plugin to two settings and by running the full
+suite, lint, ktlint and detekt afterwards.
+
+Commands and results: below.
+
+Review findings: **`checkAll` failed on its first run**, and not on anything this slice wrote.
+`detekt` reported `FlashBudget.gainFor` with four returns against a limit of two — code from
+V2-0-02b. It passed that slice's gates because §2.4's verification order lists unit tests,
+ktlint, lint and assemble, and **detekt is in none of them**; `:app:check` was the only path
+that ran it, and no slice had been running `check`. That is precisely the gap this slice
+exists to close, found by the thing built to find it. `gainFor` is now a single `when` with
+one return — the same four branches, better shape — and detekt joins the per-slice list.
+
+Commit: `build: add convention plugins and a check that covers every module`
+
+Next slice: **V2-1-02 — create the six engine modules.**
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `checkAll`, first run | **FAILED** on `detekt`: `FlashBudget.gainFor` ReturnCount 4 > 2 |
+| `checkAll`, after the fix | BUILD SUCCESSFUL, 93 tasks |
+| `:app:testDebugUnitTest` | **1,237 tests, 0 failures** — unchanged by this slice |
+| `:app:ktlintCheck` | BUILD SUCCESSFUL through the convention plugin |
+| `:app:detekt` | BUILD SUCCESSFUL |
+
+---
+
+## V2-0-04: collect runtime baseline
+
+State: LOCKED
+
+Goal: measure what the current engine actually does on real hardware, so the V2 budgets in
+§14 and the Lite/Balanced/Ultra tiers in §6.7 are set from evidence rather than from the
+plan's provisional numbers.
+
+User-visible effect: none. Measurement only.
+
+In scope: golden frames for all 38 scene IDs and the 22 named Hyperspace/Cymatics looks;
+cold and warm scene creation; steady-state allocations; CPU and GPU p50/p95; memory;
+context-loss recovery; transition spikes; export and wallpaper timings; scatter/deposit,
+float-target, vertex-fetch and timer-query probes on one current Mali and one current Adreno;
+`PERFORMANCE_BASELINE.md` with raw captures and device metadata.
+
+Out of scope: setting any budget. §6.7's particle counts and grid sizes stay provisional until
+this slice produces the evidence — "do not lock these numbers until scatter/deposit and
+overdraw tests run on a real Mali and Adreno device".
+
+Files expected to change: `docs/visualizer-v2/PERFORMANCE_BASELINE.md`,
+`docs/visualizer-v2/benchmarks/`, `docs/visualizer-v2/captures/`, and a capture harness
+under `app/src/androidTest/`.
+
+Compatibility contract: untouched; nothing here changes behaviour.
+
+External source/provenance entries: none.
+
+Tests written first: not started. The harness is itself the deliverable and cannot be written
+blind — what it captures depends on what the timer queries turn out to report.
+
+Benchmark or visual evidence: **this slice is the evidence.** None of it exists.
+
+Rollback: nothing to roll back.
+
+Risks: the risk is doing it badly rather than not doing it. A benchmark table with no device
+behind it is worse than an empty one, because the next session would build budgets on numbers
+nobody measured. §2.1 rule 8 lists what a benchmark must record — device, OS, GPU, thermal
+state, build variant, scene, quality tier, resolution, sample count, median, p95 and raw
+evidence location — and none of those can be invented.
+
+Commands and results: none run.
+
+Review findings: none yet.
+
+Commit: none.
+
+Next slice: **V2-1-01 — add build conventions and whole-project gates.**
+
+### Why this is parked, and what lifts it
+
+Every deliverable needs a physical device. This session runs headless: no GPU, no
+`adb`-reachable hardware, no thermal envelope. The parts that look software-only are not —
+golden frames need a GL context, and allocation counts need the ART heap the app actually
+runs on.
+
+It lifts when **an Android device is reachable from the session, or a CI job with one is
+wired up**, specifically:
+
+| Needed | Why that one |
+|---|---|
+| a current Mali device | tiler binning and fill rate are where GLES 3.0 scatter/deposit collapses first (§16) |
+| a current Adreno device | the other half of the scatter/deposit matrix; different driver behaviour for float render targets |
+| one lower-tier GLES 3.0 device | sets the Lite tier honestly rather than by scaling down from a flagship |
+
+`adr/0002` records why parking it does not stop the queue: `LOCKED` means specified and not
+begun, so V2-1-01 onward proceed while this stays visibly open.
+
+---
+
+## V2-0-03: verify and gate 16 KB native libraries
+
+State: COMPLETE
+
+Goal: check the binaries that actually ship, not the ones a workflow happens to build.
+
+User-visible effect: none today. **Release builds now fail**, deliberately — see the finding
+below. Debug builds, tests and lint are unaffected.
+
+In scope: `checkNativePageAlignment`, a Gradle task that reads ELF program headers out of the
+`.so` entries inside the packaged APK or AAB and is wired to `assembleRelease`/`bundleRelease`;
+`NativeLibraryAlignmentTest`, which does the same over the checked-in `jniLibs` sources.
+
+Out of scope: rebuilding the libraries. That is NDK r28 plus a full projectM CMake build —
+`.github/workflows/native-libs.yml`, which budgets 90 minutes — and it would produce native
+binaries no device here can load. Also out of scope: the second ABI. `abiFilters` is
+`arm64-v8a` alone, so there is one to check.
+
+Files expected to change: `app/build.gradle.kts`,
+`app/src/test/java/dev/musicviz/NativeLibraryAlignmentTest.kt`.
+
+Compatibility contract: nothing user-facing. No packaging option, ABI or dependency changes;
+the gate only reads what the existing build already produces.
+
+External source/provenance entries: none. The ELF64 layout is the published format; no code
+was taken from anywhere.
+
+Tests written first: three. The load-bearing one is the positive control — it copies a real
+library, rewrites `p_align` to 16384 in every `PT_LOAD` header, and asserts the reader now
+reports 16384. Without it a reader that returned 4096 for everything would pass the main
+assertion for the wrong reason and keep passing after a real rebuild fixed the libraries.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit. The gate is additive.
+
+Risks: the release gate is red until the rebuild lands, which is the intended behaviour and
+still needs saying out loud — anyone cutting a release will hit it. The alternative is
+shipping an app that does not start on a 16 KB-page device.
+
+Commands and results: below.
+
+Review findings: the ELF reader now exists twice, in the Gradle task and in the test. That is
+deliberate for one slice — the task reads a zip entry and the test reads a file — and
+**V2-1-01 collapses it into the build-conventions plugin**, which is the next slice and the
+right home for logic two modules will want.
+
+Commit: `feat(build): gate release artifacts on 16 KB page alignment`
+
+Next slice: **V2-0-04 — collect runtime baseline.**
+
+### The finding
+
+Both shipped libraries are **4 KB aligned**, and the app targets SDK 36:
+
+```
+app-debug.apk!lib/arm64-v8a/libprojectM-4.so   aligned to 4096
+app-debug.apk!lib/arm64-v8a/libprojectmjni.so  aligned to 4096
+```
+
+Android 15 ships devices with 16 KB memory pages, and a library laid out for 4 KB will not
+load on them. `MASTER_PLAN.md` §1.2 listed this as unverified; it is now verified, and it
+fails.
+
+The repository was not unaware of the requirement — `native-libs.yml` is literally titled
+"Rebuild native libs (16 KB aligned)" and verifies alignment on its own output. The gap was
+narrower and easier to miss: **a workflow that checks what it builds says nothing about
+whether that output was ever committed.** The binaries in `jniLibs` predate it.
+
+Fixing it is one run of that workflow followed by committing the artifacts. Until then the
+release path is blocked, which is the correct failure: an unloadable app is worse than an
+unbuilt one.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:app:checkNativePageAlignment` | **FAILED**, naming both libraries and their 4096 alignment — the finding above |
+| `:app:testDebugUnitTest --tests '*NativeLibraryAlignmentTest*'` | 3 passed, including the 16 KB positive control |
+| `:app:testDebugUnitTest` | **1,237 tests, 0 failures** (1,234 before this slice) |
+| `:app:ktlintCheck` | BUILD SUCCESSFUL, after `ktlintFormat` on the buildscript |
+| `:app:lintDebug` | BUILD SUCCESSFUL |
+| `:app:assembleDebug` | BUILD SUCCESSFUL — the gate is on the release outputs only |
+
+`assembleRelease` was not run: it needs signing configuration this container does not have.
+The gate was exercised directly against the debug APK instead, which is the same code path
+over the same kind of archive.
+
+---
+
+## V2-0-02b: bound how often the beat flash may fire
+
+State: COMPLETE
+
+Goal: close the one full-frame luminance event whose *rate* nothing downstream controls.
+`VisualSafety` bounds how big a flash may be and `strobeHz` bounds the strobe's oscillator,
+but the beat flash fires at the track's rate, and the only lever on that sits upstream in the
+analyzer where four things can still change the answer.
+
+User-visible effect: at high beat rates the flash is held to three per second and the excess
+rolls off instead of firing. Nothing changes below that rate, or for a Custom opt-out.
+
+In scope: `FlashBudget`; `VisualSafety.flashImpulse`; the gain applied at the two `uPostFlash`
+upload sites, live and export; ADR 0001 for the deviation from §11.2.
+
+Out of scope: measuring the frame. §11.2's limiter is defined over measured luminance and
+saturated-red change, which needs a downsampled target, an async PBO readback and a device to
+prove the readback does not stall — none of which exist here. That is **V2-0-02c**, and
+until it lands a projectM preset, a Shader Studio shader or a scene's own internal brightness
+can still flash without the budget seeing it, because none of those passes through
+`uPostFlash`. The `alternating stripes` and `red transition` vectors §11.2 names are part of
+that slice for the same reason: both are frame-content tests.
+
+Files expected to change: `app/src/main/java/dev/musicviz/render/{FlashBudget,VisualSafety,VisualizerRenderer}.kt`,
+`app/src/main/java/dev/musicviz/export/{FxCompositor,VideoExporter}.kt`,
+`app/src/test/java/dev/musicviz/FlashBudgetTest.kt`,
+`docs/visualizer-v2/{DECISIONS.md,adr/0001-flash-budget-follows-the-safety-choice.md}`.
+
+Compatibility contract: no uniform is added or renamed, so `CompositeUniformParityTest` still
+compares the same two sets. `SafetyConfig.OFF` stays an exact no-op, which is what the export
+byte-parity tests rest on. No preset key, scene ID or audio semantic moves.
+
+External source/provenance entries: none. The three-per-second figure is WCAG 2.3.1, already
+cited by `VisualSafety` and already in the tree.
+
+Tests written first: `FlashBudgetTest`, eleven assertions. Ten are behavioural vectors on the
+pure limiter; the eleventh is the bypass gate, and it was proved non-vacuous by stripping the
+gain from the renderer and watching it name the exact offending line.
+
+Benchmark or visual evidence: none, and none is claimed. The limiter is arithmetic on a
+16-entry ring with no allocation; what it needs is a device, and that belongs to V2-0-02c.
+
+Rollback: revert the one commit. Both upload sites return to the raw parameter.
+
+Risks: the estimate is `flash × beat × 0.6`, the product the shader is about to apply — a
+real quantity, but a parameter estimate rather than a measurement, so `RISK_THRESHOLD` is set
+below WCAG's 10% of full scale deliberately. If it turns out to suppress flashes a viewer
+would not have perceived, the threshold moves by evidence and an ADR, never by editing a test
+until it passes.
+
+Commands and results: below.
+
+Review findings: three.
+
+1. The first draft had the budget observe `fx.flash` alone. The shader applies
+   `uPostFlash × uBeat × 0.6`, so a flash of 1.0 on a frame with no beat under it changes
+   nothing — and would have spent budget on a non-event. It now judges the product, and
+   `flashImpulse` lives in `VisualSafety` because that is where the shader's coefficients are
+   already documented.
+2. A stateful per-frame call is only correct if it runs once per frame, so both call sites
+   were traced rather than assumed: the renderer's upload is inline in `onDrawFrame`, and
+   `FxCompositor.composite` is called once per exported frame. Had either sat inside the
+   transition or layer path it would have double-counted every edge.
+3. The `FxCompositor` doc first claimed live and export "arrive at the same gains". They
+   arrive at the same *rule*; identical gains need the sample-locked clock §10.3 is working
+   toward, because live advances on a jittering wall clock. Corrected rather than left as a
+   claim the code does not support.
+
+Commit: `feat(safety): hold the beat flash to three per second`
+
+Next slice: **V2-0-03 — verify and gate 16 KB native libraries.**
+
+### What the budget counts
+
+Rising edges past a risk threshold, inside a rolling second — not frames. The distinction is
+the whole design:
+
+| Input | Treated as | Why |
+|---|---|---|
+| impulse rises past the threshold | one flash, budget spent | this is the event WCAG counts |
+| impulse held high for 60 frames | one flash | a bright scene is not a strobe |
+| impulse below the threshold | not a flash | too small to be the hazard |
+| the 4th rise in one second | rolled off below the threshold | not cut to zero: a cut to black is itself a full-frame change |
+| the clock stepping backwards | a new session | `uTime` wraps at `TIME_WRAP_SEC`, so this is normal, not exceptional |
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:app:testDebugUnitTest --tests '*FlashBudgetTest*'`, gain stripped from the renderer | 11 tests, 1 failed, naming the exact bypassed line |
+| `:app:testDebugUnitTest --tests '*FlashBudgetTest*'` | 11 passed |
+| `:app:testDebugUnitTest` | **1,234 tests, 0 failures** (1,223 before this slice) |
+| `:app:ktlintCheck` | BUILD SUCCESSFUL |
+| `:app:lintDebug` | BUILD SUCCESSFUL |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+
+---
+
+## V2-0-02a: make visual safety a versioned choice
+
+State: COMPLETE
+
+Goal: stop one boolean answering two different questions. "Off by default" meant both *this
+person wants the strobe* and *nobody has ever been asked*, and the app could not tell them
+apart. Flash safety is now a four-valued, versioned choice whose unknown state runs safe.
+
+User-visible effect: **an install that has never chosen runs with flash limiting on.** The
+9 Hz strobe, the beat flash and a randomized 30 Hz luminance LFO are all bounded until the
+user says otherwise, and the settings screen says so in words rather than leaving them to
+wonder why the strobe looks tame. Anyone who wants the unlimited behaviour picks Custom.
+
+In scope: `VisualSafetyChoice` and `VisualSafety.resolve`; `GuiPrefs.safetyChoice` and the
+resolution of `GuiPrefs.safety` through it; versioned persistence and the legacy migration;
+the settings UI replacing the switch with the choice.
+
+Out of scope: the temporary global flash limiter §11.2 asks for, and the audit that projectM,
+user shaders and legacy bridges also traverse it — both moved to **V2-0-02b**. Also the
+separate reduced-motion, brightness, transition and chromatic controls of §11.3;
+`REDUCED_MOTION` covers the motion half today and the rest is a later slice.
+
+Files expected to change: `app/src/main/java/dev/musicviz/render/VisualSafety.kt`,
+`app/src/main/java/dev/musicviz/ui/{AppTheme,BehaviorSettings}.kt`,
+`app/src/test/java/dev/musicviz/{VisualSafetyChoiceTest,AppSettingsTabSplitTest}.kt`.
+
+Compatibility contract: no preset key, scene ID or audio semantic changes. `gui_safe_visuals`
+is still written and still read, so a downgrade to a build without the choice finds the
+prefs file it expects. Presets are untouched: safety clamps final params, it does not
+rewrite stored ones.
+
+External source/provenance entries: none.
+
+Tests written first: `VisualSafetyChoiceTest`, twelve assertions, run red as a compile
+failure (`Unresolved reference 'VisualSafetyChoice'`) before any of it existed. They pin both
+directions of the migration, the version gate, the unreadable-name case, and the property the
+whole slice exists for — that only CUSTOM can reach `enabled = false`.
+
+Benchmark or visual evidence: none. The resolution is pure and the clamp it feeds already had
+its own tests.
+
+Rollback: revert the one commit. Stored `gui_safety_choice` keys become inert; the legacy
+boolean the old build reads was never stopped being written.
+
+Risks: this changes what existing users see on upgrade, which is the intended behaviour of
+§11.1 and still worth stating plainly. Someone who had the strobe and never touched the
+switch will find it limited until they pick Custom. The alternative — treating an untouched
+default as consent to a 9 Hz full-frame strobe — is the thing the plan forbids.
+
+Commands and results: below.
+
+Review findings: three, all from re-reading rather than from a failing test.
+
+1. `AppSettingsTabSplitTest` pins the Safe-visuals control to `BehaviorSettings.kt` by
+   searching for the literal `"Safe visuals"`. After the rewrite that control no longer
+   exists, and the gate still passed — on two passing mentions of the phrase in unrelated
+   body text. Exactly the vacuous-gate failure §18.3 asks about. The gate now names the
+   labels the controls actually carry.
+2. The standalone "Reduced motion" switch would have become a control that does nothing
+   under SAFE, since the choice resolves motion scaling itself. It moved inside CUSTOM,
+   where it is a parameter rather than a contradiction.
+3. `SafetyConfig`'s doc said the false default was a deliberate product position and pointed
+   at an open question in `PRODUCT_REVIEW.md`. That question is now answered, so the comment
+   would have argued against the code. Rewritten to say what the defaults are actually for —
+   keeping `OFF` an exact no-op for export byte-parity.
+
+Commit: `feat(safety): make flash safety a versioned choice that defaults to safe`
+
+Next slice: **V2-0-02b — global flash limiter and the paths that bypass the clamp.**
+
+### Why the boolean could not answer this
+
+`saveGui` writes every key on every save. So the first time a user changes any unrelated
+setting, `gui_safe_visuals=false` is written for them — an untouched switch and a deliberately
+disabled one are byte-identical in the prefs file. There is no way to read consent out of it,
+which is why §11.1 says not to try.
+
+The migration therefore runs one way only:
+
+| Stored | Resolves to | Why |
+|---|---|---|
+| nothing | UNKNOWN → safe | fresh install, or one that predates the choice |
+| `gui_safe_visuals=false` | UNKNOWN → safe | proves nothing; written by any other settings change |
+| `gui_safe_visuals=true` | SAFE | false was the default, so true was deliberate |
+| a choice at the current version | that choice | the explicit answer wins over the legacy key |
+| a choice at an older version | UNKNOWN → safe | consent was to behaviours that have since changed |
+| an unknown name | UNKNOWN → safe | downgrade or corruption; never a guess |
+
+Resolution happens in exactly one function, and all four outputs — live renderer, transition
+picker, exporter and wallpaper — already read `GuiPrefs.safety`, so none of them can disagree
+about what was chosen.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:app:compileDebugUnitTestKotlin`, before the implementation | 12 unresolved references — the intended red |
+| `:app:testDebugUnitTest --tests '*VisualSafetyChoiceTest*'` | 12 passed |
+| `:app:testDebugUnitTest` | **1,223 tests, 0 failures** (1,211 before this slice) |
+| `:app:ktlintCheck` | BUILD SUCCESSFUL, after `ktlintFormat` fixed import order |
+| `:app:lintDebug` | BUILD SUCCESSFUL |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+
+Not verified here, and left open: how the choice reads on a device with TalkBack.
+`CrystalSegmented` carries `Role.RadioButton` on a `selectable`, which is the right
+semantics for a three-way choice and better than the switch it replaces, but that is a
+code-level claim rather than a tested one.
+
+---
+
 ## V2-0-01: fix the first shared-player acquisition hold
 
 State: COMPLETE

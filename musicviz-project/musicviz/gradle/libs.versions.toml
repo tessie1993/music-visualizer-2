@@ -39,6 +39,10 @@ androidx-test-core-ktx = { module = "androidx.test:core-ktx", version = "1.6.1" 
 androidx-test-junit-ktx = { module = "androidx.test.ext:junit-ktx", version = "1.2.1" }
 ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 
+ktlint-gradle = { module = "org.jlleitschuh.gradle.ktlint:org.jlleitschuh.gradle.ktlint.gradle.plugin", version.ref = "ktlint" }
+kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
+android-gradle-plugin = { module = "com.android.tools.build:gradle", version.ref = "agp" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
