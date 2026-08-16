@@ -9,8 +9,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import dev.musicviz.audio.AudioFxController
 import dev.musicviz.audio.PcmRingBuffer
-import dev.musicviz.audio.PcmTapSink
 import dev.musicviz.audio.TapRenderersFactory
+import dev.musicviz.engine.audioandroid.PcmTap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -48,17 +48,23 @@ class PlaybackSession internal constructor(
     @Volatile
     var onAudioFormat: ((sampleRateHz: Int, channelCount: Int, encoding: Int) -> Unit)? = null
 
-    private val sink =
-        PcmTapSink(ring) { rate, channels, encoding ->
+    /**
+     * The capture end of the pipeline, in `:engine:audio-android` per §4.1.
+     * It knows a [dev.musicviz.engine.audio.PcmSink], not this class's buffer,
+     * which is what lets the same tap feed the V2 ring later without touching
+     * the capture path.
+     */
+    private val tap =
+        PcmTap({ samples, frames, channels -> ring.writeInterleaved(samples, frames, channels) }) { format ->
             val hook = onAudioFormat
             if (hook != null) {
-                hook(rate, channels, encoding)
+                hook(format.sampleRateHz, format.channelCount, format.encoding)
             } else {
                 // No screen attached: nobody else can retune the analyzer to
                 // the sink's new rate (live-input rate ownership is a screen
                 // concern), so the session does it - the wallpaper's feed
                 // must stay in tune with the music the service is playing.
-                analysis.sampleRateHz = rate
+                analysis.sampleRateHz = format.sampleRateHz
             }
         }
 
@@ -70,7 +76,7 @@ class PlaybackSession internal constructor(
      */
     val player: ExoPlayer =
         ExoPlayer
-            .Builder(context, TapRenderersFactory(context, sink))
+            .Builder(context, TapRenderersFactory(context, tap))
             // AIFF/AIFC support: Media3 ships no AIFF extractor, so ours is
             // appended after the defaults (sniff order keeps defaults first).
             .setMediaSourceFactory(

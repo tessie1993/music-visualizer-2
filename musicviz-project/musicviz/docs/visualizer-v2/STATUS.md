@@ -14,6 +14,298 @@ Newest slice first.
 
 ---
 
+## V2-2-03: bridge the PCM tap through audio-android
+
+State: COMPLETE
+
+Goal: move the tap implementation out of `:app` and into `:engine:audio-android`, the module
+§4.1 names for "Media3/PCM tap, microphone, device format adaptation", and make it allocation-free
+on the audio callback while it goes.
+
+User-visible effect: fewer audio-thread allocations. The tap allocates three objects per buffer
+today — `duplicate()`, `asShortBuffer()` and a `FloatArray` whenever the buffer grows — at roughly
+40 callbacks a second, on the thread whose deadline is the audio device's. That is the "callback
+allocation benchmark is clean" half of the Phase 2 gate.
+
+In scope: `PcmSink` in `audio-core` (the destination the tap writes to, satisfied by `SampleRing`
+already); `PcmTap` and `PcmTapFormat` in `audio-android`; `PlaybackSession` wiring; media3 on
+`:engine:audio-android`.
+
+Out of scope: moving `TapRenderersFactory` — §12 keeps the player and its Media3 workflow in
+`:app`, and only the *tap* is listed as MOVE. Deleting `PcmTapSink` — §2.1 rule 7 forbids
+removing a legacy seam in the slice that introduces its replacement, and here it earns the stay:
+it is the oracle the parity test compares against. Wiring the tap to `SampleRing` in production:
+that is the Phase 2 gate's bridge, after the presentation clock.
+
+Files expected to change: `engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/{PcmSink,SampleRing}.kt`,
+`engine/audio-android/{build.gradle.kts,src/main/kotlin/dev/musicviz/engine/audioandroid/{PcmTap,PcmTapFormat}.kt}`,
+`app/src/main/java/dev/musicviz/playback/PlaybackEngine.kt`.
+
+Compatibility contract: sample values, sample order and the format callback are unchanged.
+`PcmRingBuffer` keeps its contents byte for byte — proved by comparison, not by inspection.
+
+External source/provenance entries: none. `media3-exoplayer` is already an `:app` dependency at
+the same version; this adds an edge §4.1 names explicitly, not a new library.
+
+Tests written first: yes, and the red was a measurement rather than an assertion. A throwaway
+probe put 50,000 buffers through the existing `PcmTapSink` with HotSpot's
+`getThreadAllocatedBytes` either side: **120.0 bytes per callback**, against **0.003** for an
+empty loop on the same meter. That number is the slice.
+
+`PcmTapTest` (13 tests, `:engine:audio-android`) then covers 16-bit and float conversion, order
+across the staging seam, byte order, a non-zero buffer position, a trailing partial frame, an
+unsupported encoding, generation and frame-count reset, and the end-to-end path into
+`SampleRing` read back through `RingReader`. `PcmTapParityTest` (5 tests, `:app`) is §12's
+waveform-fixture proof.
+
+Benchmark or visual evidence: allocation per callback — see the table below. Not a §2.1 rule 8
+device benchmark: it measures allocation, which is deterministic and device-independent, not
+frame time.
+
+Rollback: revert the one commit.
+
+Risks: byte order. The tap is first in the chain, so it receives the decoder's own buffer, whose
+`ByteOrder` is whatever the decoder left — not necessarily native. The old code forced
+`LITTLE_ENDIAN`; so does this one, and a test feeds a big-endian buffer to prove it.
+
+One behaviour genuinely differs: the old tap defaulted to 16-bit stereo and would convert a
+buffer that arrived before any `flush`; this one drops it. Checked rather than assumed — media3's
+`BaseAudioProcessor.flush` runs `onFlush` and `DefaultAudioSink` flushes the chain when it
+configures, so `queueInput` cannot precede it. Unreachable in production, and the safer answer
+where it is not.
+
+Commands and results: below.
+
+Review findings: two, both caught re-reading the diff.
+
+`handleBuffer` was still calling `bytesPerSample(active.encoding)` on every buffer — parsing a
+media3 constant on the audio thread, which is exactly what "adapt formats outside the callback"
+forbids, three lines under a comment claiming it did not. Encoding is now resolved once into
+`PcmTapFormat.sampleWidth`, and the callback's `when` over that enum is exhaustive with no
+`else`, so a third sample width fails compilation instead of falling through to silence.
+
+`PcmTapSink` is unreferenced by production code and §2.1 rule 7 keeps it for one more slice.
+Left dead and unmarked it is a trap for the next session — two tap implementations, one wired.
+Its KDoc now says which one is live, why this one is still here, and which slice removes it.
+
+Commit: `refactor(audio): move the PCM tap into audio-android and off the allocator`
+
+Next slice: V2-2-04 — the segmented presentation clock.
+
+### Allocation on the audio callback
+
+Measured with `com.sun.management.ThreadMXBean.getThreadAllocatedBytes`, 20,000 runs after an
+equal warm-up.
+
+| Path | Bytes per callback |
+|---|---|
+| `PcmTapSink` (before) | **120.0** |
+| `PcmTap` (after) | **0.0** |
+| empty loop — the meter's floor | 0.003 |
+| a loop allocating one `FloatArray(1)` — the meter's control | > 8 |
+
+The 120 bytes were a `duplicate()`, an `asShortBuffer()` view and, whenever a larger buffer
+arrived, a fresh `FloatArray`. At roughly forty callbacks a second that is ~5 KB/s of garbage
+generated on the thread whose deadline is the audio device's. It is now zero: absolute
+`getShort`/`getFloat` reads need no view object, and a buffer wider than the staging array is
+written as several chunks instead of growing it.
+
+The zero is not a threshold that happens to hold. Tightening the budget to `0.0` fails the test,
+which places the true value at exactly 0. And the meter is proved able to see allocation in the
+same test, by a control loop that allocates — otherwise "zero" and "measuring nothing" are the
+same result.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| red probe against `PcmTapSink` | 120.0 bytes/callback — the defect, measured before the fix |
+| `:engine:audio-android:testDebugUnitTest` | 13 tests, 0 failures, **0 skipped** |
+| `PcmTapParityTest` | 5 tests, ring contents bit-identical to the old tap |
+| parity under fault: `32768f` → `32767f` | 4 of 5 FAILED — the float case correctly survives a 16-bit-only fault |
+| parity under fault: one frame dropped per chunk seam | FAILED |
+| parity under fault: big-endian read | FAILED |
+| allocation test with the budget at 0.0 | FAILED — so the measured value is exactly 0 |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+| whole suite | app 2,532 + engine 62 tests, 0 failures, 0 skipped |
+
+---
+
+## V2-1-04d: compile every shader with a real GLSL front-end
+
+State: COMPLETE
+
+Goal: close the bullet V2-1-04b deferred. That slice checked the include manifest and balanced
+braces because no compiler was available; `glslang-tools` is a one-line install, so the excuse
+was the container's, not the problem's.
+
+User-visible effect: none today — all 61 standalone shaders already compile. What changes is
+when the next mistake surfaces: at `check` instead of as a black scene on whichever device
+first selects it.
+
+In scope: `ShaderSources` (one copy of enumeration, include expansion and stage detection);
+`ShaderSyntaxTest`; the CI step installing the compiler; `ShaderIncludeManifestTest` moved onto
+the shared fixture.
+
+Out of scope: linking vertex and fragment stages as a program, and driver-specific acceptance.
+glslang is a front-end — a shader it accepts can still be rejected by a particular driver, and
+only V2-0-04's device matrix answers that.
+
+Files expected to change: `app/src/test/java/dev/musicviz/{ShaderSources,ShaderSyntaxTest,ShaderIncludeManifestTest}.kt`,
+`.github/workflows/android.yml`.
+
+Compatibility contract: untouched. No production file changes.
+
+External source/provenance entries: none. `glslang-tools` is a build-time tool, not a shipped
+dependency, so §2.1 rule 6 does not bite.
+
+Tests written first: not applicable — this is a checker. Fault fixtures replace red-first, and
+they are permanent rather than a one-off: `the compiler harness rejects what it claims to
+catch` compiles four deliberately broken shaders through the same path as the real ones and
+requires each to be rejected, plus the fixture skeleton itself to be accepted.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: the pass is skipped where `glslangValidator` is absent, which could make it vacuous
+everywhere at once. `the CI workflow installs the shader compiler` is the guard — it does not
+skip, and it fails if the install step is dropped.
+
+Commands and results: below.
+
+Review findings: **the earlier approach damaged the tree, and that is why the fixtures are the
+way they are.** Proving V2-1-04b's checks non-vacuous meant planting faults into real shaders
+and restoring them. One of those runs was interrupted between the plant and the restore, and
+`aurora_frag.glsl` sat in the working tree with `main()` truncated and its whole body displaced
+into a `neverCalled()` function — a black Aurora scene, committed had nobody looked.
+
+Found by reading `git status` rather than trusting the session's own account of what it had
+done. Reverted, and re-verified compiling.
+
+The fix is structural, not a resolution to be careful: faults now live in in-test fixture
+strings that go through the same `compileSource` path as the real shaders. Nothing has to be
+put back, so nothing can be left behind. That also makes the proof permanent instead of a
+manual step nobody repeats.
+
+Commit: `test(shaders): compile every shader with glslang, not just balance its braces`
+
+Next slice: **V2-2-03 — bridge the current PCM tap through `audio-android`.**
+
+### What the compiler sees that the manifest cannot
+
+| Fault | Manifest check | glslang |
+|---|---|---|
+| unbalanced brace | caught | caught |
+| unregistered include | caught | caught, as the missing function |
+| undeclared identifier | invisible | `'notDeclaredAnywhere' : undeclared identifier` |
+| type mismatch | invisible | `cannot convert from ' const float' to ' 3-component vector'` |
+| swizzle out of range | invisible | `'z' : vector swizzle selection out of range` |
+| unknown function | invisible | `no matching overloaded function found` |
+
+The fourth row is the one worth noting: an unexpanded `//#include` shows up as the missing
+function it should have provided, so the compile pass independently checks the include system
+that V2-1-04b checks by manifest.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `glslangValidator` over all 61 standalone shaders | **61 clean, 0 rejected** |
+| `:app:testDebugUnitTest --tests '*ShaderSyntaxTest*'` | **4 tests, 0 failures, 0 skipped** — confirmed per-case, since `assumeTrue` could have hidden a skip |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+| whole suite | 0 failures, 0 skipped |
+| `git status` after the restore | clean; `aurora_frag.glsl` compiles |
+
+---
+
+## V2-2-02: build the sample-indexed ring in audio-core
+
+State: COMPLETE
+
+Goal: give the engine a PCM store where "your buffer was full" and "you fell behind and audio
+is gone" are different answers, and where two readers cannot move each other's cursor.
+
+User-visible effect: none. New code in `:engine:audio-core`; no production consumer switched,
+and `PcmRingBuffer` is untouched.
+
+In scope: `SampleRing` (storage and write), `RingReader` (an independent cursor),
+`RingReadResult` (`Ok`/`Gap`/`Discontinuity`/`NotYetAvailable`), and the §5.1 cases.
+
+Out of scope: switching the tap or the analyzer onto it — V2-2-03 bridges the tap, and §12
+holds `PcmRingBuffer` at REPLACE-incrementally until then. Also out of scope: the write-path
+allocation benchmark §V2-2-02 asks for. There is no device and no benchmark harness; the write
+loop creates no objects, which is reviewable but not the measurement the plan wants, so it
+stays open rather than being claimed.
+
+Files expected to change: `engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/{SampleRing,RingReader,RingReadResult}.kt`,
+`engine/audio-core/src/test/kotlin/dev/musicviz/engine/audio/SampleRingTest.kt`.
+
+Compatibility contract: nothing to preserve yet — no caller. The semantics §1.3 pins
+(`stereoCorrelation = 1f` for mono, empty chroma meaning no pitch information) belong to
+feature extraction, not to the store, and are unaffected.
+
+External source/provenance entries: none.
+
+Tests written first: fourteen, covering wrap, exact capacity, one-past-capacity, gap, cursor
+behaviour after a gap, interleaved stereo, mono, epoch, seek recovery, two independent readers,
+construction validation, channel mismatch, and a threaded race.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit. Nothing depends on the module's contents.
+
+Risks: a store built before its consumers can be shaped for imagined needs. Bounded by
+implementing only what §5.1 lists and leaving mid/side conversion out — that is a feature's
+choice of axes, not the store's job.
+
+Review findings: two, and the second is the one worth reading.
+
+1. **The read had a torn-window hole.** `oldestAvailable` is `written - capacity`, so a reader
+   at the tail copies right up to the write head and, with a real audio thread, has its first
+   frames overwritten mid-copy — returned as ordinary `Ok`. The old buffer reserves a quarter
+   of the ring against this; this reserves nothing. Fixed by re-checking after the copy and
+   returning `Gap`, which costs one wasted copy on the rare occasion it happens and wastes no
+   capacity the rest of the time.
+
+2. **The test I wrote for that hole was vacuous.** It passed with the guard removed. Writing
+   past the reader trips the lag check at the *top* of `read` and never reaches the copy, so it
+   was exercising ordinary lag under a name about races. Replaced with a genuine two-thread
+   test over 200,000 frames of self-describing data — frame *i* holds value *i*, so any `Ok`
+   must satisfy `out[k] == first + k` and a torn window cannot pass as audio. It fails with the
+   guard removed and passes with it, which is the proof the first version never gave.
+
+Commands and results: below.
+
+Commit: `feat(audio-core): a sample-indexed ring whose gaps are visible`
+
+Next slice: **V2-2-03 — bridge the current PCM tap through `audio-android`.**
+
+### What the three types replace
+
+| `PcmRingBuffer` today | Why it cannot answer | `SampleRing` |
+|---|---|---|
+| `copyNewSince` returns `Int`, clamped twice | a full buffer and a lapped reader are the same number | `Ok` or `Gap`, and `Gap` names what was missed |
+| `lastCopyEndIndex`, "single-reader only" | a second reader moves the first one's position | the cursor lives in `RingReader`; one per consumer |
+| no epoch anywhere | after a seek a stale index reads new audio as though it continued | `Discontinuity` carries both epochs |
+| clamps a lagging reader into the ring | the buffer decides what the caller loses | the cursor stays put; the caller chooses |
+| mid/side fixed at the store | one pair of axes for every feature | planar channels; axes are the feature's choice |
+
+`Discontinuity` is a fourth case the plan's illustrative snippet does not list. A seek is not a
+gap: the samples are not old, they are from a different timeline, and interpolating across the
+boundary produces features for audio nobody played.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:engine:audio-core:test` | **14 tests, 0 failures**, `--rerun-tasks` to confirm execution |
+| the same, torn-window guard removed | **FAILED** — `torn windows returned as Ok` |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+
+---
+
 ## V2-2-01: specify the PCM and presentation-clock ABIs
 
 State: COMPLETE

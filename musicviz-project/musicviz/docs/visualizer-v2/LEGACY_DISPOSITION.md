@@ -13,7 +13,7 @@ session (§12).
 | Subsystem | Where it lives now | Decision | Proof required before the legacy code moves or dies | Status |
 |---|---|---|---|---|
 | Player / library / Media3 workflow | `playback/`, `data/`, `ui/` | KEEP | only narrow engine ports change | not started |
-| PCM tap placement | `audio/TapRenderersFactory.kt`, `audio/PcmTapSink.kt` | KEEP semantic order, MOVE to `:engine:audio-android` | runtime stage-order assertion, waveform fixtures, route tests | target module exists, V2-1-02 |
+| PCM tap placement | `engine/audio-android/…/PcmTap.kt`; `audio/TapRenderersFactory.kt` stays | KEEP semantic order, MOVE to `:engine:audio-android` | runtime stage-order assertion, waveform fixtures, route tests | **tap moved, V2-2-03**; `PcmTapSink` awaits its deletion slice |
 | `PlaybackSession` process lifetime | `playback/PlaybackEngine.kt` | KEEP / REFACTOR | first-acquire hold fixed; lifecycle and multi-consumer tests | **hold fixed, V2-0-01** |
 | `PcmRingBuffer` | `audio/PcmRingBuffer.kt` (170) | REPLACE contract incrementally | `Ok`/`Gap`/`NotYetAvailable`, wrap and competing-reader tests | not started |
 | `AnalysisEngine` | `analysis/AnalysisEngine.kt` (147) | REPLACE after V2 graph parity | corpus features, CPU/allocation, live/export parity | not started |
@@ -46,7 +46,12 @@ still passes, and it no longer proves anything.
 `AudioChainContractTest` is the sharpest case: it proves the tap's position in the
 processor chain by reading source text, so the moment those stages move it asserts
 nothing. §12 requires the runtime stage-order assertion to land **before** its text target
-changes, not after.
+changes, not after — `AudioChainOrderRuntimeTest` is that assertion, landed in V2-2-01.
+
+It has not retired yet. V2-2-03 moved the tap's *implementation*, not
+`TapRenderersFactory`, which §12 keeps in `:app` along with the rest of the Media3 player
+workflow — so the text target still says what it did. It retires in the slice that moves
+the factory, if one ever does.
 
 ## Hard-delete gates
 
