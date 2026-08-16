@@ -129,5 +129,11 @@ loop body never runs. Both plants below fail the runtime test and pass the text 
 | tap wired to a different sink | FAILED — `does not feed this factory's sink` | — |
 
 `AudioChainContractTest` is left in place: §2.1 rule 7 forbids removing a legacy seam in the
-slice that introduces its replacement. It retires in **V2-2-03**, the slice that moves the tap
-and makes its text target wrong.
+slice that introduces its replacement.
+
+It survives V2-2-03 as well, and the reason is worth stating rather than leaving as a silent
+change of plan. That slice moved the tap's implementation to `PcmTap` in
+`:engine:audio-android`, but §12 keeps `TapRenderersFactory` — and the whole Media3 player
+workflow — in `:app`. The text test reads the factory, and the factory still says what it said,
+so the test still proves the float-output rule it was written for. It retires with the factory,
+not with the tap.

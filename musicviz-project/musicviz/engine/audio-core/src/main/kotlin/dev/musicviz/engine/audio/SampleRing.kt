@@ -18,7 +18,7 @@ package dev.musicviz.engine.audio
 class SampleRing(
     val capacityFrames: Int,
     val channelCount: Int,
-) {
+) : PcmSink {
     init {
         require(capacityFrames > 0 && capacityFrames and (capacityFrames - 1) == 0) {
             "capacityFrames must be a power of two, was $capacityFrames"
@@ -66,7 +66,7 @@ class SampleRing(
      * the image a listener perceives lives; folding the surrounds in would
      * report width no two-speaker playback produces.
      */
-    fun write(
+    override fun write(
         interleaved: FloatArray,
         frameCount: Int,
         sourceChannelCount: Int,

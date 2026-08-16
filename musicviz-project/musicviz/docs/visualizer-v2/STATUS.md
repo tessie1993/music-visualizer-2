@@ -14,6 +14,123 @@ Newest slice first.
 
 ---
 
+## V2-2-03: bridge the PCM tap through audio-android
+
+State: COMPLETE
+
+Goal: move the tap implementation out of `:app` and into `:engine:audio-android`, the module
+§4.1 names for "Media3/PCM tap, microphone, device format adaptation", and make it allocation-free
+on the audio callback while it goes.
+
+User-visible effect: fewer audio-thread allocations. The tap allocates three objects per buffer
+today — `duplicate()`, `asShortBuffer()` and a `FloatArray` whenever the buffer grows — at roughly
+40 callbacks a second, on the thread whose deadline is the audio device's. That is the "callback
+allocation benchmark is clean" half of the Phase 2 gate.
+
+In scope: `PcmSink` in `audio-core` (the destination the tap writes to, satisfied by `SampleRing`
+already); `PcmTap` and `PcmTapFormat` in `audio-android`; `PlaybackSession` wiring; media3 on
+`:engine:audio-android`.
+
+Out of scope: moving `TapRenderersFactory` — §12 keeps the player and its Media3 workflow in
+`:app`, and only the *tap* is listed as MOVE. Deleting `PcmTapSink` — §2.1 rule 7 forbids
+removing a legacy seam in the slice that introduces its replacement, and here it earns the stay:
+it is the oracle the parity test compares against. Wiring the tap to `SampleRing` in production:
+that is the Phase 2 gate's bridge, after the presentation clock.
+
+Files expected to change: `engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/{PcmSink,SampleRing}.kt`,
+`engine/audio-android/{build.gradle.kts,src/main/kotlin/dev/musicviz/engine/audioandroid/{PcmTap,PcmTapFormat}.kt}`,
+`app/src/main/java/dev/musicviz/playback/PlaybackEngine.kt`.
+
+Compatibility contract: sample values, sample order and the format callback are unchanged.
+`PcmRingBuffer` keeps its contents byte for byte — proved by comparison, not by inspection.
+
+External source/provenance entries: none. `media3-exoplayer` is already an `:app` dependency at
+the same version; this adds an edge §4.1 names explicitly, not a new library.
+
+Tests written first: yes, and the red was a measurement rather than an assertion. A throwaway
+probe put 50,000 buffers through the existing `PcmTapSink` with HotSpot's
+`getThreadAllocatedBytes` either side: **120.0 bytes per callback**, against **0.003** for an
+empty loop on the same meter. That number is the slice.
+
+`PcmTapTest` (13 tests, `:engine:audio-android`) then covers 16-bit and float conversion, order
+across the staging seam, byte order, a non-zero buffer position, a trailing partial frame, an
+unsupported encoding, generation and frame-count reset, and the end-to-end path into
+`SampleRing` read back through `RingReader`. `PcmTapParityTest` (5 tests, `:app`) is §12's
+waveform-fixture proof.
+
+Benchmark or visual evidence: allocation per callback — see the table below. Not a §2.1 rule 8
+device benchmark: it measures allocation, which is deterministic and device-independent, not
+frame time.
+
+Rollback: revert the one commit.
+
+Risks: byte order. The tap is first in the chain, so it receives the decoder's own buffer, whose
+`ByteOrder` is whatever the decoder left — not necessarily native. The old code forced
+`LITTLE_ENDIAN`; so does this one, and a test feeds a big-endian buffer to prove it.
+
+One behaviour genuinely differs: the old tap defaulted to 16-bit stereo and would convert a
+buffer that arrived before any `flush`; this one drops it. Checked rather than assumed — media3's
+`BaseAudioProcessor.flush` runs `onFlush` and `DefaultAudioSink` flushes the chain when it
+configures, so `queueInput` cannot precede it. Unreachable in production, and the safer answer
+where it is not.
+
+Commands and results: below.
+
+Review findings: two, both caught re-reading the diff.
+
+`handleBuffer` was still calling `bytesPerSample(active.encoding)` on every buffer — parsing a
+media3 constant on the audio thread, which is exactly what "adapt formats outside the callback"
+forbids, three lines under a comment claiming it did not. Encoding is now resolved once into
+`PcmTapFormat.sampleWidth`, and the callback's `when` over that enum is exhaustive with no
+`else`, so a third sample width fails compilation instead of falling through to silence.
+
+`PcmTapSink` is unreferenced by production code and §2.1 rule 7 keeps it for one more slice.
+Left dead and unmarked it is a trap for the next session — two tap implementations, one wired.
+Its KDoc now says which one is live, why this one is still here, and which slice removes it.
+
+Commit: `refactor(audio): move the PCM tap into audio-android and off the allocator`
+
+Next slice: V2-2-04 — the segmented presentation clock.
+
+### Allocation on the audio callback
+
+Measured with `com.sun.management.ThreadMXBean.getThreadAllocatedBytes`, 20,000 runs after an
+equal warm-up.
+
+| Path | Bytes per callback |
+|---|---|
+| `PcmTapSink` (before) | **120.0** |
+| `PcmTap` (after) | **0.0** |
+| empty loop — the meter's floor | 0.003 |
+| a loop allocating one `FloatArray(1)` — the meter's control | > 8 |
+
+The 120 bytes were a `duplicate()`, an `asShortBuffer()` view and, whenever a larger buffer
+arrived, a fresh `FloatArray`. At roughly forty callbacks a second that is ~5 KB/s of garbage
+generated on the thread whose deadline is the audio device's. It is now zero: absolute
+`getShort`/`getFloat` reads need no view object, and a buffer wider than the staging array is
+written as several chunks instead of growing it.
+
+The zero is not a threshold that happens to hold. Tightening the budget to `0.0` fails the test,
+which places the true value at exactly 0. And the meter is proved able to see allocation in the
+same test, by a control loop that allocates — otherwise "zero" and "measuring nothing" are the
+same result.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| red probe against `PcmTapSink` | 120.0 bytes/callback — the defect, measured before the fix |
+| `:engine:audio-android:testDebugUnitTest` | 13 tests, 0 failures, **0 skipped** |
+| `PcmTapParityTest` | 5 tests, ring contents bit-identical to the old tap |
+| parity under fault: `32768f` → `32767f` | 4 of 5 FAILED — the float case correctly survives a 16-bit-only fault |
+| parity under fault: one frame dropped per chunk seam | FAILED |
+| parity under fault: big-endian read | FAILED |
+| allocation test with the budget at 0.0 | FAILED — so the measured value is exactly 0 |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+| whole suite | app 2,532 + engine 62 tests, 0 failures, 0 skipped |
+
+---
+
 ## V2-1-04d: compile every shader with a real GLSL front-end
 
 State: COMPLETE
