@@ -14,6 +14,76 @@ Newest slice first.
 
 ---
 
+## V2-0-04: collect runtime baseline
+
+State: LOCKED
+
+Goal: measure what the current engine actually does on real hardware, so the V2 budgets in
+§14 and the Lite/Balanced/Ultra tiers in §6.7 are set from evidence rather than from the
+plan's provisional numbers.
+
+User-visible effect: none. Measurement only.
+
+In scope: golden frames for all 38 scene IDs and the 22 named Hyperspace/Cymatics looks;
+cold and warm scene creation; steady-state allocations; CPU and GPU p50/p95; memory;
+context-loss recovery; transition spikes; export and wallpaper timings; scatter/deposit,
+float-target, vertex-fetch and timer-query probes on one current Mali and one current Adreno;
+`PERFORMANCE_BASELINE.md` with raw captures and device metadata.
+
+Out of scope: setting any budget. §6.7's particle counts and grid sizes stay provisional until
+this slice produces the evidence — "do not lock these numbers until scatter/deposit and
+overdraw tests run on a real Mali and Adreno device".
+
+Files expected to change: `docs/visualizer-v2/PERFORMANCE_BASELINE.md`,
+`docs/visualizer-v2/benchmarks/`, `docs/visualizer-v2/captures/`, and a capture harness
+under `app/src/androidTest/`.
+
+Compatibility contract: untouched; nothing here changes behaviour.
+
+External source/provenance entries: none.
+
+Tests written first: not started. The harness is itself the deliverable and cannot be written
+blind — what it captures depends on what the timer queries turn out to report.
+
+Benchmark or visual evidence: **this slice is the evidence.** None of it exists.
+
+Rollback: nothing to roll back.
+
+Risks: the risk is doing it badly rather than not doing it. A benchmark table with no device
+behind it is worse than an empty one, because the next session would build budgets on numbers
+nobody measured. §2.1 rule 8 lists what a benchmark must record — device, OS, GPU, thermal
+state, build variant, scene, quality tier, resolution, sample count, median, p95 and raw
+evidence location — and none of those can be invented.
+
+Commands and results: none run.
+
+Review findings: none yet.
+
+Commit: none.
+
+Next slice: **V2-1-01 — add build conventions and whole-project gates.**
+
+### Why this is parked, and what lifts it
+
+Every deliverable needs a physical device. This session runs headless: no GPU, no
+`adb`-reachable hardware, no thermal envelope. The parts that look software-only are not —
+golden frames need a GL context, and allocation counts need the ART heap the app actually
+runs on.
+
+It lifts when **an Android device is reachable from the session, or a CI job with one is
+wired up**, specifically:
+
+| Needed | Why that one |
+|---|---|
+| a current Mali device | tiler binning and fill rate are where GLES 3.0 scatter/deposit collapses first (§16) |
+| a current Adreno device | the other half of the scatter/deposit matrix; different driver behaviour for float render targets |
+| one lower-tier GLES 3.0 device | sets the Lite tier honestly rather than by scaling down from a flagship |
+
+`adr/0002` records why parking it does not stop the queue: `LOCKED` means specified and not
+begun, so V2-1-01 onward proceed while this stays visibly open.
+
+---
+
 ## V2-0-03: verify and gate 16 KB native libraries
 
 State: COMPLETE

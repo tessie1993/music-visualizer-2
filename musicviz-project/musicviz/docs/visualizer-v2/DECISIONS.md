@@ -12,6 +12,7 @@ DI framework; §5.3 and §14 before a benchmarked number moves.
 | ADR | Title | Status | Slice |
 |---|---|---|---|
 | [0001](adr/0001-flash-budget-follows-the-safety-choice.md) | The temporary flash budget follows the safety choice instead of running unconditionally | accepted | V2-0-02b |
+| [0002](adr/0002-a-blocked-slice-does-not-hold-the-queue.md) | A slice blocked on hardware is recorded as LOCKED and does not hold the queue | accepted | V2-0-04 |
 
 ## Decisions the plan already made
 
