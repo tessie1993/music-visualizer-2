@@ -198,7 +198,9 @@ class PlayerViewModel(
         CaptureController(
             application,
             viewModelScope,
-            ring,
+            // The same destination the playback tap writes to, so a live mic
+            // reaches every ring our own playback does.
+            playback.captureSink,
             object : CaptureController.Host {
                 override fun pausePlayback() = player.pause()
 

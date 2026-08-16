@@ -143,6 +143,37 @@ class PlaybackEngineTest {
     }
 
     @Test
+    fun `live input reaches both rings, not only the legacy one`() {
+        // The microphone and the playback capture write through this sink, not
+        // through the tap. If it fed only the legacy buffer, the app's own
+        // playback would look right and a live mic would drive nothing once
+        // the readers move - with no error and no failing test.
+        val session = PlaybackEngine.acquireForUi(ctx)
+        val viewModel = PlayerViewModel(ctx)
+        session.captureSink.write(FloatArray(512) { 0.5f }, 256, 2)
+
+        assertEquals(256L, session.sampleRing.writtenFrames)
+        assertEquals("the legacy ring stopped receiving live input", 256, viewModel.latestPcm()?.count)
+    }
+
+    @Test
+    fun `the capture controller is handed the session's own sink`() {
+        // A source scan, and it is the weaker kind of test - but the
+        // alternative is test-only API on PlayerViewModel to expose a
+        // constructor argument, and CaptureController holds it privately. The
+        // behavioural half is covered above; this pins only that the ViewModel
+        // does not build a second sink of its own, which would write one ring
+        // and look entirely correct.
+        val source =
+            java.io.File(dev.musicviz.ParamSurface.moduleRoot, "app/src/main/java/dev/musicviz/ui/PlayerViewModel.kt")
+                .readText()
+        assertTrue(
+            "PlayerViewModel no longer hands CaptureController the session's capture sink",
+            source.contains("playback.captureSink"),
+        )
+    }
+
+    @Test
     fun `the ring's numbering and the clock's are the same number`() {
         // Two counters that agree by habit would diverge the first time one of
         // them missed a boundary, and a sample index means nothing without the

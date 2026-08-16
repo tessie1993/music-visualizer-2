@@ -127,11 +127,16 @@ class PlaybackCaptureContractTest {
      */
     @Test
     fun `the shared capture pump meters inside the fence, after the write`() {
+        // The write target moved from `ring.writeInterleaved` to `sink.write`
+        // when the pump started feeding a PcmSink rather than one buffer, so
+        // both rings receive live input. Updated with the rename, per
+        // CLAUDE.md - a gate whose target no longer exists passes vacuously.
         val src = source("AudioCapturePump.kt")
-        val write = src.indexOf("ring.writeInterleaved(")
+        val write = src.indexOf("sink.write(")
         val meter = src.indexOf("noteLevel(floats,")
+        assertTrue("AudioCapturePump.kt: worker never writes its samples", write >= 0)
         assertTrue("AudioCapturePump.kt: worker never meters its samples", meter >= 0)
-        assertTrue("AudioCapturePump.kt: metering must follow the fenced write", meter > write && write >= 0)
+        assertTrue("AudioCapturePump.kt: metering must follow the fenced write", meter > write)
     }
 
     /**

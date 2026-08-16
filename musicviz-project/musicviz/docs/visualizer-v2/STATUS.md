@@ -14,6 +14,92 @@ Newest slice first.
 
 ---
 
+## V2-2-05b: make the V2 ring servable, and prove it against the legacy one
+
+State: COMPLETE
+
+Goal: everything the reader migration needs, minus the migration. The V2 ring must receive audio
+from **every** producer, and must be able to hand back the exact pair today's analyzer reads.
+
+User-visible effect: none. No reader has moved. What changed is that live input — microphone and
+playback capture — now reaches the V2 ring as well, and there is a proof that the two rings
+produce identical numbers.
+
+In scope: `SampleRing.sourceChannelCount` and `snapshotLatest`; `MidSideWindow` in `audio-core`;
+`PcmRingBuffer` implementing `PcmSink`; `AudioCapturePump`/`MicCapture`/`PlaybackCapture`/
+`CaptureController` taking a sink rather than a buffer; `PlaybackSession.captureSink` as the one
+definition of where captured audio goes; `adr/0003`.
+
+Out of scope: repointing `AnalysisEngine` and `PlayerViewModel` — V2-2-05c, which closes the
+Phase 2 gate. Deleting `PcmRingBuffer` is later still, per §12.
+
+Files expected to change: `engine/audio-core/…/{SampleRing,MidSideWindow}.kt`,
+`app/src/main/java/dev/musicviz/audio/{PcmRingBuffer,AudioCapturePump,MicCapture,PlaybackCapture}.kt`,
+`app/src/main/java/dev/musicviz/ui/{CaptureController,PlayerViewModel}.kt`,
+`app/src/main/java/dev/musicviz/playback/PlaybackEngine.kt`, `docs/visualizer-v2/adr/0003-*.md`.
+
+Compatibility contract: every reader still reads `PcmRingBuffer`, unchanged. `PcmRingBuffer`
+gains a `write` alias so producers can be handed a destination; nothing else about it moves.
+
+External source/provenance entries: none. No external repository is involved at this step —
+`librosa` and `libebur128` enter at V2-3-01 as **ORACLE** tier, generating fixtures outside the
+runtime, never linked.
+
+Tests written first: no. The parity proof is the deliverable, and it had to be written against
+the implementation to mean anything. Four fault injections stand in, and the fourth found a real
+hole.
+
+Benchmark or visual evidence: not applicable — no new work on the callback beyond V2-2-05a's,
+already measured at 0 bytes.
+
+Rollback: revert the one commit.
+
+Risks: the mono downmix for **surround** sources changes when the readers move. Legacy folds all
+decoded channels; the V2 ring keeps the front pair by the design §5.1 asks for, so its mid is the
+mean of two. Measured, not assumed — bit-identical for mono and stereo, differing on more than
+half the samples of a five-channel fixture. `adr/0003` records the decision and why the front
+pair is the more faithful answer on a two-speaker device.
+
+Commands and results: below.
+
+Review findings: two, both mine, both found by injecting faults rather than by re-reading.
+
+**A mono source would have been halved, silently.** `SampleRing` keeps two channels and a mono
+source leaves the second at zero, so a bridge averaging the ring's channels returns exactly half
+amplitude — right shape, right length, no error. The ring now records the *source's* channel
+count, and `mono is not halved by the silent second channel` fails without it.
+
+**I wrote the dual-write lambda twice** — once for the tap, once for the capture controller —
+which is precisely how two producers end up disagreeing about where audio goes. Collapsed into
+`PlaybackSession.captureSink`, one definition for all three producers. The fault "capture feeds
+only the legacy ring" passed every test until that test existed.
+
+Commit: `feat(audio): make the V2 ring servable, and prove it against the legacy one`
+
+Next slice: V2-2-05c — repoint `AnalysisEngine` and `PlayerViewModel`, closing the Phase 2 gate.
+
+### Parity, measured
+
+| Source | Result |
+|---|---|
+| stereo 16-bit | mid and side **bit-identical**, delta 0 |
+| stereo float | mid and side **bit-identical**, delta 0 |
+| mono | **bit-identical**; side identically zero |
+| five-channel | differs on >½ of samples — the `adr/0003` divergence, pinned so it cannot widen unnoticed |
+
+### Verification
+
+| Command | Result |
+|---|---|
+| fault: mid averages the ring's channels, not the source's | FAILED (2 tests) |
+| fault: side is the difference rather than half of it | FAILED (2 tests) |
+| fault: the ring never records the source channel count | FAILED (3 tests) |
+| fault: capture feeds only the legacy ring | **passed at first** — nothing covered the capture wiring; FAILED after `live input reaches both rings` |
+| `PlaybackCaptureContractTest` source gate | caught the `ring.writeInterleaved` → `sink.write` rename and was updated in the same change, per `CLAUDE.md` |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+---
+
 ## V2-2-05a: write the V2 ring in production, on the tap's own numbering
 
 State: COMPLETE

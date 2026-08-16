@@ -19,7 +19,7 @@ import kotlin.concurrent.thread
  * apart.
  */
 abstract class AudioCapturePump(
-    private val ring: PcmRingBuffer,
+    private val sink: dev.musicviz.engine.audio.PcmSink,
     defaultRateHz: Int,
     /** Injectable for tests; production uses the monotonic elapsed clock. */
     protected val nowMs: () -> Long = { android.os.SystemClock.elapsedRealtime() },
@@ -133,7 +133,7 @@ abstract class AudioCapturePump(
                     if (n > 0) {
                         val frames = n / channels
                         if (frames > 0) {
-                            ring.writeInterleaved(floats, frames, channels)
+                            sink.write(floats, frames, channels)
                             noteLevel(floats, n, startedAt)
                         }
                     } else if (n < 0) {
