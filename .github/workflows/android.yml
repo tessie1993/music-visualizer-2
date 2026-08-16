@@ -64,6 +64,11 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
+      # The shader compile pass in ShaderSyntaxTest skips without this, and
+      # ShaderSyntaxTest asserts this step exists so it cannot skip unnoticed.
+      - name: Install GLSL compiler
+        run: sudo apt-get update -qq && sudo apt-get install -y glslang-tools
+
       - name: Make Gradle wrapper executable
         working-directory: ${{ env.PROJECT_DIR }}
         run: chmod +x gradlew

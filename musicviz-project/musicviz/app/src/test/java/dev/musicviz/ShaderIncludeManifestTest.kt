@@ -21,28 +21,11 @@ import java.io.File
  * failure mode `BASELINE.md` §3 catalogues.
  */
 class ShaderIncludeManifestTest {
-    private val rawDir = File(ParamSurface.moduleRoot, "app/src/main/res/raw")
-
     private val glUtil = File(ParamSurface.moduleRoot, "app/src/main/java/dev/musicviz/render/scene/GlUtil.kt")
 
-    /**
-     * The resolver's own pattern, character for character.
-     *
-     * Anchored at both ends on purpose, and the anchoring is the whole point:
-     * `lib_particle_common.glsl` documents itself with the words
-     * "pulled in with `//#include lib_particle_common`" in prose, and a
-     * substring search calls that a directive. A checker looser than the
-     * resolver reports faults that do not exist; one stricter misses real ones.
-     */
-    private val includePattern = Regex("^[ \\t]*//#include[ \\t]+(\\w+)[ \\t]*$", RegexOption.MULTILINE)
+    private fun shaders(): List<File> = ShaderSources.all()
 
-    private fun shaders(): List<File> =
-        rawDir
-            .listFiles { f -> f.extension == "glsl" }
-            .orEmpty()
-            .sortedBy { it.name }
-
-    private fun includesIn(file: File): List<String> = includePattern.findAll(file.readText()).map { it.groupValues[1] }.toList()
+    private fun includesIn(file: File): List<String> = ShaderSources.includesIn(file)
 
     /** Library names `GlUtil.INCLUDES` maps, read from its source. */
     private fun registered(): Set<String> =

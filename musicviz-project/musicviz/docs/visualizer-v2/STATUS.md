@@ -14,6 +14,94 @@ Newest slice first.
 
 ---
 
+## V2-1-04d: compile every shader with a real GLSL front-end
+
+State: COMPLETE
+
+Goal: close the bullet V2-1-04b deferred. That slice checked the include manifest and balanced
+braces because no compiler was available; `glslang-tools` is a one-line install, so the excuse
+was the container's, not the problem's.
+
+User-visible effect: none today — all 61 standalone shaders already compile. What changes is
+when the next mistake surfaces: at `check` instead of as a black scene on whichever device
+first selects it.
+
+In scope: `ShaderSources` (one copy of enumeration, include expansion and stage detection);
+`ShaderSyntaxTest`; the CI step installing the compiler; `ShaderIncludeManifestTest` moved onto
+the shared fixture.
+
+Out of scope: linking vertex and fragment stages as a program, and driver-specific acceptance.
+glslang is a front-end — a shader it accepts can still be rejected by a particular driver, and
+only V2-0-04's device matrix answers that.
+
+Files expected to change: `app/src/test/java/dev/musicviz/{ShaderSources,ShaderSyntaxTest,ShaderIncludeManifestTest}.kt`,
+`.github/workflows/android.yml`.
+
+Compatibility contract: untouched. No production file changes.
+
+External source/provenance entries: none. `glslang-tools` is a build-time tool, not a shipped
+dependency, so §2.1 rule 6 does not bite.
+
+Tests written first: not applicable — this is a checker. Fault fixtures replace red-first, and
+they are permanent rather than a one-off: `the compiler harness rejects what it claims to
+catch` compiles four deliberately broken shaders through the same path as the real ones and
+requires each to be rejected, plus the fixture skeleton itself to be accepted.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: the pass is skipped where `glslangValidator` is absent, which could make it vacuous
+everywhere at once. `the CI workflow installs the shader compiler` is the guard — it does not
+skip, and it fails if the install step is dropped.
+
+Commands and results: below.
+
+Review findings: **the earlier approach damaged the tree, and that is why the fixtures are the
+way they are.** Proving V2-1-04b's checks non-vacuous meant planting faults into real shaders
+and restoring them. One of those runs was interrupted between the plant and the restore, and
+`aurora_frag.glsl` sat in the working tree with `main()` truncated and its whole body displaced
+into a `neverCalled()` function — a black Aurora scene, committed had nobody looked.
+
+Found by reading `git status` rather than trusting the session's own account of what it had
+done. Reverted, and re-verified compiling.
+
+The fix is structural, not a resolution to be careful: faults now live in in-test fixture
+strings that go through the same `compileSource` path as the real shaders. Nothing has to be
+put back, so nothing can be left behind. That also makes the proof permanent instead of a
+manual step nobody repeats.
+
+Commit: `test(shaders): compile every shader with glslang, not just balance its braces`
+
+Next slice: **V2-2-03 — bridge the current PCM tap through `audio-android`.**
+
+### What the compiler sees that the manifest cannot
+
+| Fault | Manifest check | glslang |
+|---|---|---|
+| unbalanced brace | caught | caught |
+| unregistered include | caught | caught, as the missing function |
+| undeclared identifier | invisible | `'notDeclaredAnywhere' : undeclared identifier` |
+| type mismatch | invisible | `cannot convert from ' const float' to ' 3-component vector'` |
+| swizzle out of range | invisible | `'z' : vector swizzle selection out of range` |
+| unknown function | invisible | `no matching overloaded function found` |
+
+The fourth row is the one worth noting: an unexpanded `//#include` shows up as the missing
+function it should have provided, so the compile pass independently checks the include system
+that V2-1-04b checks by manifest.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `glslangValidator` over all 61 standalone shaders | **61 clean, 0 rejected** |
+| `:app:testDebugUnitTest --tests '*ShaderSyntaxTest*'` | **4 tests, 0 failures, 0 skipped** — confirmed per-case, since `assumeTrue` could have hidden a skip |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+| whole suite | 0 failures, 0 skipped |
+| `git status` after the restore | clean; `aurora_frag.glsl` compiles |
+
+---
+
 ## V2-2-02: build the sample-indexed ring in audio-core
 
 State: COMPLETE
