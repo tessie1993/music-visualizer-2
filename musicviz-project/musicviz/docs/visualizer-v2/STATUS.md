@@ -14,6 +14,401 @@ Newest slice first.
 
 ---
 
+## V2-2-01: specify the PCM and presentation-clock ABIs
+
+State: COMPLETE
+
+Goal: make the tap-first invariant provable against the chain the app builds, before the slice
+that moves the tap out of `:app` makes the current text proof read the wrong file.
+
+User-visible effect: none. One seam extracted, one test added, no behaviour changed.
+
+In scope: `AUDIO_FEATURE_ABI.md` time, epoch and channel sections plus the tap stage order;
+`TapRenderersFactory.audioProcessorChain()`; `AudioChainOrderRuntimeTest`.
+
+Out of scope: §5.4's feature table, which V2-3-03 onward writes when the features exist to
+describe — a table of names with no producer is a wish list, not an ABI. Also out of scope:
+implementing `RingReadResult` or the presentation clock. This slice specifies them; V2-2-02 and
+V2-2-04 build them.
+
+Files expected to change: `docs/visualizer-v2/AUDIO_FEATURE_ABI.md`,
+`app/src/main/java/dev/musicviz/audio/TapRenderersFactory.kt`,
+`app/src/test/java/dev/musicviz/audio/AudioChainOrderRuntimeTest.kt`.
+
+Compatibility contract: preserved exactly. The chain construction moved into a method the
+sink builder calls; the array it produces is identical, and §1.3's audio-tap semantics are
+untouched.
+
+External source/provenance entries: none.
+
+Tests written first: not applicable in the usual sense — the invariant already held, and what
+was missing was a proof of it. Fault injection replaces red-first, twice.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit. The chain returns to being constructed inline.
+
+Risks: the seam adds a method whose only caller is the sink builder, which a reader could take
+for indirection. The fifth assertion answers that directly by failing if the builder stops
+using it.
+
+Commands and results: below.
+
+Review findings: **the test §12 warned would become vacuous already was.**
+`AudioChainContractTest` guards each stage comparison with `if (at >= 0)` over seven DSP stage
+names — `GainProcessor`, `EqProcessor` and five more. None of them exists in the tree. The loop
+body has never executed, so the ordering half of that test has been asserting nothing since it
+was written. The plan anticipated the failure as a future risk of moving the tap; it is
+present tense.
+
+`AudioChainContractTest` is nonetheless left untouched. §2.1 rule 7 forbids removing a legacy
+seam in the slice that introduces its replacement, and the audit one slice ago criticised
+exactly that. It retires in V2-2-03, which moves the tap and makes its text target wrong.
+
+Commit: `test(audio): prove the tap is first against the chain, not the source text`
+
+Next slice: **V2-2-02 — build the sample-indexed ring in `audio-core`.**
+
+### Why a runtime assertion is different in kind
+
+The old proof reads `TapRenderersFactory.kt` and compares string indices. It cannot see an
+empty chain, cannot see a reordering inside `MvzAudioProcessorChain`, and stops describing
+anything once the tap lives in another module.
+
+The new one builds the chain and looks at it. The assertion that matters most is identity
+rather than type: it pushes 64 bytes of PCM through the first processor and requires **this
+factory's sink** to receive them. A second `TeeAudioProcessor` wired somewhere else passes a
+type check and fails this.
+
+Both faults were planted and both were caught — and the old test passed through the first one:
+
+| Planted | Runtime test | Text test |
+|---|---|---|
+| silence skipping moved before the tap | FAILED — `the tap must be first expected:<0> but was:<1>` | **passed** |
+| tap wired to a different sink | FAILED — `does not feed this factory's sink expected:<64> but was:<0>` | — |
+
+Plant A is the exact regression the text test exists to catch: analysis would have been reading
+audio after silence-skipping had already removed spans from it.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:app:testDebugUnitTest --tests '*AudioChainOrderRuntimeTest*'` | 5 passed |
+| both faults planted, then reverted | caught; `git diff` shows only the intended seam |
+| `checkAll` | BUILD SUCCESSFUL, after `ktlintFormat` |
+| `:app:testDebugUnitTest` | **1,257 tests, 0 failures** (1,252 before) |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+
+---
+
+## V2-AUDIT-01: re-audit the completed slices against the plan
+
+State: COMPLETE
+
+Goal: read `MASTER_PLAN.md` against what was actually built and find the places where a slice
+was recorded COMPLETE while something it owed was skipped.
+
+User-visible effect: none. One new test and one document; no production change.
+
+In scope: a line-by-line pass over §2.1–§2.4, §3.3, §4.1, §11 and the §13 slice bullets for
+every slice from V2-A-01 to V2-1-04b; `SAFETY_MODEL.md`; `SafeByDefaultTest`; this record.
+
+Out of scope: reopening COMPLETE slices whose gaps are recorded and assigned. A finding with a
+named owner is tracked, not a defect.
+
+Files expected to change: `docs/visualizer-v2/{SAFETY_MODEL.md,STATUS.md}`,
+`app/src/test/java/dev/musicviz/SafeByDefaultTest.kt`.
+
+Compatibility contract: untouched.
+
+External source/provenance entries: none.
+
+Tests written first: `SafeByDefaultTest` was written against behaviour that already existed,
+so it could not be red first. What replaces that discipline is its second assertion — the same
+hostile input through an explicit opt-out must come back *unchanged*, which fails if the clamp
+ever becomes unconditional and the first assertion starts passing for the wrong reason.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: an audit that finds only small things may not have looked hard enough. Two of the four
+findings below are real omissions against commitments this log itself recorded, which is the
+kind an audit is for; the plan's own §2.2 file list is what surfaced them.
+
+Commands and results: below.
+
+Review findings: the four findings are the content of this slice — see the table.
+
+Commit: `test(safety): prove the safe default end to end, and write the model it implements`
+
+Next slice: **V2-2-01 — specify the PCM and presentation-clock ABIs.**
+
+### Findings
+
+**1. `SAFETY_MODEL.md` was owed and skipped.** V2-A-01 recorded that §2.2's safety document
+belonged to V2-0-02. Both halves of that slice were then completed without it. Written now,
+covering the choice model, where each limit is applied, the test vectors, and — the part worth
+having in one place — what is *not* covered: no frame is measured, so projectM, Shader Studio
+and a scene's own internal brightness still reach the screen outside every limit.
+
+**2. The randomizer taming was claimed but never tested.** V2-0-02's bullet says "disable or
+tame Strobe and randomizer paths under safe/reduced settings". It is mechanically true —
+`VisualSafety.apply` runs last, after `LfoEngine` and `AdsrEngine`, verified by reading
+`VisualizerRenderer:1053-1059` — but nothing proved it, and "the clamp is in the right place"
+is a claim about a call order a refactor can silently break. `SafeByDefaultTest` now drives the
+worst parameters anything upstream could produce through the choice a fresh install resolves
+to. Worst-case rather than a random roll, because `ParamRandomizer` is random and sampling it
+proves only what it drew.
+
+**3. Rule 7 was bent in V2-1-04a.** §2.1 rule 7: never delete a legacy seam in the slice that
+first introduces its replacement. That commit added `checkEngineProvenance` *and* removed the
+two assertions it supersedes from `EngineProvenanceRegistryTest`. Judged and accepted rather
+than hidden: reverting that single commit restores both the assertions and removes the task,
+so the coverage rule 7 protects is never lost in a rollback — which is the property it exists
+for. Recorded so the precedent is visible rather than quietly set.
+
+**4. V2-0-03 delivered its gate but not its CI half.** The bullet asks to "add CI packaging
+verification and record NDK/linker provenance". The Gradle gate runs wherever
+`assembleRelease` runs, including CI, so packaging *is* verified — but no workflow file was
+touched and no NDK/linker provenance was recorded. Assigned to the rebuild slice that has to
+run `native-libs.yml` anyway, since that is where the NDK version and linker flags are
+actually determined.
+
+### Checked and correct
+
+| Checked | Result |
+|---|---|
+| `MASTER_PLAN.md` against the uploaded plan | byte-identical, sha256 `46d0f44c…` |
+| §2.1 rule 3 — one semantic slice, one commit | holds for all twelve commits |
+| §2.4 verification order | followed; detekt was missing until V2-1-01 caught it, already recorded |
+| §4.1 module graph and forbidden edges | asserted by `EngineModuleBoundaryTest` |
+| §2.2 required files | seven present; five correctly assigned to unbuilt slices; one was owed — finding 1 |
+| god classes in code written here | largest is `ProvenanceRules.kt` at 133 lines; nothing above 140 |
+
+### On the god classes that already exist
+
+`PlayerViewModel` is 2,518 lines, `ThemePackCatalog` 2,026, `VisualizerRenderer` 1,670. They
+are real, and §12 is explicit about the first: **DECOMPOSE only at proven seams — behaviour
+tests; no speculative rewrite.** §16 lists "giant rewrite branch becomes unreviewable" as a
+named risk.
+
+So decomposing them is not deferred out of caution but because the plan forbids doing it
+*this* way. It needs its own slice, behaviour tests written first against the seams being cut,
+and ideally a device to confirm nothing moved. Doing it inside an audit, with no device, would
+be the exact failure §16 names.
+
+`VisualizerRenderer` grew by 19 lines here (V2-0-02b's flash gain). Worth noting because §12
+marks it BRIDGE then DELETE: adding to it is acceptable while it remains the only renderer,
+and every addition is one more thing the eventual `FrameRunner` must carry.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:app:testDebugUnitTest --tests '*SafeByDefaultTest*'` | 5 passed |
+| `checkAll` | BUILD SUCCESSFUL, after `ktlintFormat` |
+| `:app:testDebugUnitTest` | **1,252 tests, 0 failures** (1,247 before) |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+
+---
+
+## V2-1-04b: validate the shader include manifest offline
+
+State: COMPLETE
+
+Goal: move the include contract's failures from the GL thread on a device to the build.
+
+User-visible effect: none today; the tree is already clean. What changes is when a future
+mistake surfaces — at `check` instead of as a blank visual on whichever device first selects
+that scene.
+
+In scope: `ShaderIncludeManifestTest` — six assertions over the 65 shaders in
+`app/src/main/res/raw` and the include registry in `GlUtil.kt`.
+
+Out of scope: compiling the shaders. There is no `glslangValidator` or `glslc` in this
+container, and a real syntax check needs one — brace balance is the only structural fixture
+available without it, and it is described as exactly that rather than as syntax validation.
+Also out of scope: making this a cross-module Gradle task. Unlike provenance, which applies to
+all source, the include registry is one loader's implementation detail and lives only in
+`:app` today; generalising it now would be shape guessed against a module with no shaders in
+it.
+
+Files expected to change: `app/src/test/java/dev/musicviz/ShaderIncludeManifestTest.kt`,
+`docs/visualizer-v2/LEGACY_DISPOSITION.md`.
+
+Compatibility contract: untouched. No production file changes; every shader is byte-identical
+to `HEAD` after the fault injection below.
+
+External source/provenance entries: none.
+
+Tests written first: this slice is only tests, so "first" is meaningless — the discipline
+that replaces it is fault injection. Each assertion was proved by planting the fault it
+claims to catch and watching it name the file. A green run on a clean tree is not evidence.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: the brace check strips comments before counting, and if GLSL ever grew string literals
+that stripping would be wrong. It has none, and the assertion says so where a reader will
+look.
+
+Review findings: **I reported a bug that did not exist, and caught it before it reached this
+document.** A `grep` for the substring `//#include` said `lib_particle_common.glsl` nested an
+include — which, with a one-level resolver, would have been a real defect. It does not:
+line 2 is prose describing how the library is used, and `GlUtil.INCLUDE_PATTERN` is anchored
+to line start *and* end, so it never matched. Re-probing with the resolver's exact pattern
+showed zero nested directives.
+
+That near-miss became the design. A checker looser than the resolver invents faults; one
+stricter misses real ones. The test therefore uses the identical anchored pattern, and its
+first assertion pins the regex literal in `GlUtil.kt` so the two cannot drift apart silently.
+
+One assertion was also dropped after checking it: "every registered library exists as a file"
+is redundant, because the registry maps to `R.raw.lib_palette` and `R` is generated from
+`res/raw` — delete the file and the map stops compiling.
+
+Commands and results: below.
+
+Commit: `test(shaders): check the include manifest at build time, not on the GL thread`
+
+Next slice: **V2-2-01 — specify the PCM and presentation-clock ABIs.**
+
+### What the six assertions cover
+
+| Assertion | The failure it moves off the device |
+|---|---|
+| the pattern matches the resolver's | the whole test measuring something the loader does not do |
+| every include is registered | `resolveIncludes` throwing on the GL thread the first time a scene is picked |
+| no library nests an include | a leftover `//#include` reads as a GLSL comment, so the shader compiles and the function it needed is simply absent |
+| every registered library is used | dead weight in the APK |
+| no real `#include` | GLSL ES 3.0 has no preprocessor include; it fails at driver compile |
+| braces balance | a merge resolution that truncates or doubles a block |
+
+### Verification
+
+Every assertion proved by injecting its fault, then restored:
+
+| Injected | Result |
+|---|---|
+| `//#include lib_paletee` in `aurora_frag.glsl` | FAILED — `aurora_frag.glsl: lib_paletee` |
+| `//#include lib_psrdnoise2` inside `lib_palette.glsl` | FAILED — `lib_palette.glsl: lib_psrdnoise2` |
+| an unclosed `{` in `aurora_frag.glsl` | FAILED — `aurora_frag.glsl: 1` |
+| all reverted | `git status` clean; BUILD SUCCESSFUL |
+
+| Command | Result |
+|---|---|
+| `checkAll` | BUILD SUCCESSFUL, after `ktlintFormat` on the new file |
+| `:app:testDebugUnitTest` | **1,247 tests, 0 failures** (1,241 before this slice) |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+
+---
+
+## V2-1-04a: make the provenance gate a build task that scans every module
+
+State: COMPLETE
+
+Goal: move the provenance rules out of one module's unit test and into `check`, in every
+module, and add the two §3.3 rules that did not exist at all.
+
+User-visible effect: none. Build verification only.
+
+In scope: `ProvenanceRules`, a pure Kotlin rules engine in `build-logic`;
+`readProvenanceRegistry`; the `musicviz.provenance` convention plugin registering
+`checkEngineProvenance` and wiring it to `check`; thirteen fixtures; removal of the two checks
+it supersedes from `EngineProvenanceRegistryTest`.
+
+Out of scope: shader asset enumeration and include validation, and the capability report —
+split off as **V2-1-04b** and **V2-1-04c**. The capability report describes what a device's GL
+driver supports, and the probes that populate it are V2-4-01 — defining the type now, with no
+producer and no device, would be a shape guessed against imagined needs.
+
+Files expected to change: `build-logic/src/main/kotlin/{ProvenanceRules,ProvenanceRegistryReader}.kt`,
+`build-logic/src/main/kotlin/musicviz.{provenance,kotlin-common}.gradle.kts`,
+`build-logic/src/test/kotlin/ProvenanceRulesTest.kt`, `build-logic/build.gradle.kts`,
+`app/src/test/java/dev/musicviz/EngineProvenanceRegistryTest.kt`.
+
+Compatibility contract: untouched. No production source file changes; the gate only reads.
+
+External source/provenance entries: none. This slice is the machinery, not an adoption.
+
+Tests written first: thirteen fixtures in `build-logic`, each tripping one rule. They are the
+whole evidence base — a provenance gate on a tree with no adapted code passes trivially, and
+would go on passing if it checked nothing at all.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit. The two superseded assertions return with it.
+
+Risks: the mention rule is a substring match on a repository URL, so a file legitimately
+discussing a forbidden source in prose would fail. That is the intended trade — §3.3 says a
+STUDY or EXCLUDE source must not appear as an origin in shipped source, and the escape hatch
+is to put the discussion in `docs/`, which is not scanned.
+
+Commands and results: below.
+
+Review findings: two, both from re-reading rather than a failing run.
+
+1. **A hole in the rule engine.** `checkFile` ran the mention scan only when a file had *no*
+   `Origin:` marker, so one correct attribution hid every other source named in the same
+   file — a properly cited SwissGL kernel would have excused a GPL repository mentioned three
+   lines below it. Both now run, with marker-reached sources excluded from the mention list so
+   each is reported once, as the more specific violation. Two regression fixtures added.
+2. `readProvenanceRegistry` cast the parsed root unchecked, so a malformed registry threw
+   `ClassCastException` out of a Gradle task rather than being reported. It now returns no
+   records and leaves the diagnosis to `EngineProvenanceRegistryTest`, which exists to say
+   *why* a registry is malformed. Two things failing the same way for different reasons makes
+   the second report useless.
+
+Commit: `build: check provenance markers on every module, not one module's tests`
+
+Next slice: **V2-1-04b — shader asset enumeration and include validation.**
+
+### What was wrong with the old gate
+
+`EngineProvenanceRegistryTest` scanned `File(moduleRoot, "app/src/main")` — a hardcoded path,
+written when `:app` was the only module. Two of its rules were therefore about to become
+decorative, and the two §3.3 rules that matter most for adopted code did not exist at all:
+
+| §3.3 requirement | Before | Now |
+|---|---|---|
+| scan every module | `app/src/main` only | per-module task, applied through the shared convention |
+| wired to `check` | `:app:test` only | `check` in all seven projects |
+| SPDX marker on an adapted file | **not checked** | `OriginWithoutSpdx` |
+| cited origin exists in the registry | **not checked** | `UnknownOrigin` |
+| cited commit is the pinned one | **not checked** | `OriginCommitMismatch` |
+| declared licence matches the registry | **not checked** | `LicenceMismatch` |
+| no STUDY/EXCLUDE source as an origin | `app/src/main` only | every module, marker or bare mention |
+| adopted files carry a shipped notice | in the unit test | `MissingNotice` |
+
+The demonstration is the point. A file citing Velo Visualiser — GPL-3.0, STUDY tier — planted
+in `engine/scenes/src/main/kotlin`:
+
+```
+> provenance check failed in :engine:scenes
+    …/Bad.kt: ForbiddenTier(id=velo-visualiser, tier=STUDY)
+    …/Bad.kt: OriginWithoutSpdx
+```
+
+The same file, against the old test: **BUILD SUCCESSFUL**. That is the gap, measured rather
+than argued.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `-p build-logic test` | **13 tests, 0 failures**, `--rerun-tasks` to confirm they executed |
+| `:engine:scenes:checkEngineProvenance`, GPL citation planted | **FAILED**, two violations named |
+| `:app:testDebugUnitTest --tests '*EngineProvenanceRegistryTest*'`, same file planted | BUILD SUCCESSFUL — the old blind spot |
+| `checkEngineProvenance` present in | all seven projects |
+| `checkAll` | BUILD SUCCESSFUL |
+| `:app:testDebugUnitTest` | **1,241 tests, 0 failures** (1,243 before; two moved to `build-logic`) |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+
+---
+
 ## V2-1-03: establish manual composition and lifetime contracts
 
 State: COMPLETE

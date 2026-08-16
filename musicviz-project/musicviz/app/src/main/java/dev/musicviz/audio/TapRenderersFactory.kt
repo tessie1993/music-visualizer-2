@@ -18,6 +18,17 @@ class TapRenderersFactory(
     context: Context,
     private val sink: TeeAudioProcessor.AudioBufferSink,
 ) : DefaultRenderersFactory(context) {
+    /**
+     * The chain [buildAudioSink] installs.
+     *
+     * Extracted so the tap-first invariant is asserted against the array this
+     * actually builds, rather than by reading the order out of this file.
+     * A text proof stops proving anything the moment the tap moves module -
+     * which MASTER_PLAN §12 schedules - and it stops loudly enough that
+     * nobody notices.
+     */
+    internal fun audioProcessorChain(): MvzAudioProcessorChain = MvzAudioProcessorChain(TeeAudioProcessor(sink))
+
     override fun buildAudioSink(
         context: Context,
         enableFloatOutput: Boolean,
@@ -38,6 +49,6 @@ class TapRenderersFactory(
             // float DSP stage exist at all. Order and rationale live in
             // MvzAudioProcessorChain; with no DSP stages it is exactly the
             // single-tap array this replaced.
-            .setAudioProcessorChain(MvzAudioProcessorChain(TeeAudioProcessor(sink)))
+            .setAudioProcessorChain(audioProcessorChain())
             .build()
 }

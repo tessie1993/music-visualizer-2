@@ -23,7 +23,7 @@ session (§12).
 | `VisualizerRenderer` | `render/VisualizerRenderer.kt` (1,651) | BRIDGE then DELETE | every output on `FrameRunner`; every legacy ID resolves | not started |
 | `Scene` interface | `render/scene/Scene.kt` (31) | PRESERVE lifecycle shape, ADAPT | V2 bridge and context-loss tests | not started |
 | `ParticleSceneBase` + CPU subclasses | `render/scene/ParticleSceneBase.kt` (444) + 9 scenes | REPLACE then DELETE | GPU family parity/fallback, screenshots, device benchmarks | not started |
-| Existing GLSL scenes | `app/src/main/res/raw/*.glsl` (65) | RECIPE, ADAPT or LEGACY bridge, individually | a coverage ledger row and a golden image each | not started |
+| Existing GLSL scenes | `app/src/main/res/raw/*.glsl` (65) | RECIPE, ADAPT or LEGACY bridge, individually | a coverage ledger row and a golden image each | include manifest checked offline, V2-1-04b; `ShaderIncludeManifestTest` moves with the shaders |
 | `SceneParams` | `render/scene/SceneParams.kt` (521, 165 fields) | FREEZE then REPLACE | disposition for all 168 serialized keys; preset round trips | not started |
 | `VisualStyleCatalog` | `render/scene/VisualStyleCatalog.kt` | MIGRATE IDs and names | all 11 Hyperspace and 11 Cymatics looks resolve recognisably | not started |
 | `CompositeGrade` / `FxCompositor` | `render/CompositeGrade.kt`, `export/FxCompositor.kt` (468) | CONSOLIDATE into the render graph | blend, colour and golden tests | not started |

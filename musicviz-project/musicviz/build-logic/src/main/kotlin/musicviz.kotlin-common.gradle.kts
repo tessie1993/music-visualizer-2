@@ -8,6 +8,7 @@
 // module whose ktlint never ran.
 plugins {
     id("org.jlleitschuh.gradle.ktlint")
+    id("musicviz.provenance")
 }
 
 ktlint {

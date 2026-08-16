@@ -5,11 +5,21 @@ recorded here with its repository URL, pinned commit, licence, role, the files i
 from it, the modifications made, and its attribution requirements.
 
 [`provenance.json`](provenance.json) is the machine-readable form of the same data and is
-now the one that gates the build: `EngineProvenanceRegistryTest` validates it, checks it
-against [`MASTER_PLAN.md`](MASTER_PLAN.md) §3.1 in both directions, and fails if a source
-nobody may copy from claims an adopted file. `checkEngineProvenance` (§3.3) promotes those
-rules to a Gradle task at slice V2-1-04. **Where this prose and the registry disagree, the
-registry is right** — it is the one under test.
+now the one that gates the build, in two halves. `EngineProvenanceRegistryTest` asks whether
+the registry itself is sound — schema, licence hashes, and coverage against
+[`MASTER_PLAN.md`](MASTER_PLAN.md) §3.1 in both directions. `checkEngineProvenance`, a Gradle
+task on `check` in every module, asks whether the source tree obeys it: an adapted file
+carries an SPDX line and an `Origin:` marker, that origin is a registered source at its
+pinned commit under an adoptable tier, and no STUDY or EXCLUDE repository is named as an
+origin anywhere in shipped source. **Where this prose and the registry disagree, the registry
+is right** — it is the one under test.
+
+An adapted file is marked like this, and the gate reads both lines:
+
+```kotlin
+// SPDX-License-Identifier: Apache-2.0
+// Origin: https://github.com/google/swissgl@489dfcf437702d6e2446f3e36beadecb34cc81ca
+```
 
 **Working clones** live outside the repository at
 `C:/Users/tessi/Claude/repos/_visualizer-research/`. They are reference material, not a
