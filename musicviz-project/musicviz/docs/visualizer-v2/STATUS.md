@@ -14,6 +14,85 @@ Newest slice first.
 
 ---
 
+## V2-1-03: establish manual composition and lifetime contracts
+
+State: COMPLETE
+
+Goal: write the start/reset/close rule once, with its transitions tested, instead of leaving
+six lifetime owners to each invent it.
+
+User-visible effect: none. `:engine:runtime` gains its first code; no production consumer is
+switched, per §V2-1-03.
+
+In scope: `LifetimeId` and `LifetimePhase` from §4.3; the `EngineLifetime` port;
+`ManagedLifetime`, which owns the transitions so an implementor writes only what it acquires
+and releases; `EngineComposition`, the §4.4 hand-written root.
+
+Out of scope: switching any production consumer, and a DI framework. §4.4 sets the threshold
+for reconsidering the latter — roughly forty independently constructed production objects, or
+a third lifetime needing scoped composition — and a container today would hide the one thing
+that matters here, which is who closes what and in what order.
+
+Files expected to change: `engine/runtime/src/main/kotlin/dev/musicviz/engine/runtime/{EngineLifetime,EngineComposition}.kt`,
+`engine/runtime/src/test/kotlin/dev/musicviz/engine/runtime/EngineLifetimeTest.kt`.
+
+Compatibility contract: untouched. Nothing in `:app` references any of it yet.
+
+External source/provenance entries: none.
+
+Tests written first: `EngineLifetimeTest`, eleven assertions, run red as unresolved references
+before the port existed. The fakes §V2-1-03 asks for are one recording implementation of
+`ManagedLifetime` — the transitions are what needs proving, and a mocking framework would have
+proved the mock instead.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit. Nothing depends on the module's contents.
+
+Risks: a lifetime abstraction written before it has users can be shaped for imagined needs.
+Bounded by keeping it to the three verbs §4.3 names and refusing to add a fourth until a real
+owner asks for one.
+
+Commands and results: below.
+
+Review findings: the asymmetry between `close` and `start` is the design, so it is worth
+saying why rather than leaving it to be read as inconsistency. `close` is idempotent because
+teardown races are ordinary — a surface goes away while an export is finishing — and the
+second close should be boring. `start` after `close` **throws**, because that is a use after
+free, and returning quietly would hand the caller an object that looks alive and owns nothing.
+That is the shape of the bug V2-0-01 fixed, one layer up.
+
+Commit: `feat(runtime): give the engine lifetimes one start, reset and close`
+
+Next slice: **V2-1-04 — add capability and provenance build gates.**
+
+### What the contract fixes
+
+The engine has six lifetimes and, today, no shared rule for any of them. V2-0-01 is the
+concrete cost: a player released while a live consumer still pointed at it, because two owners
+disagreed about who was last. That is not a playback bug, it is a missing lifetime contract,
+and there are five more places to make it.
+
+| Rule | Why it is that way |
+|---|---|
+| `close` twice releases once | teardown races are ordinary; the second close must be boring |
+| `close` before `start` releases nothing | nothing was acquired |
+| `start` after `close` throws | a use after free is a bug, not a restart |
+| `reset` only while running | there is nothing to return to a known state otherwise |
+| the root closes in reverse | the GL context outlives the surfaces drawn on it |
+| one failing teardown does not stop the sweep | a driver throwing must not strand the encoder behind it |
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:engine:runtime:test`, before the port | unresolved references — the intended red |
+| `:engine:runtime:test` | **11 tests, 0 failures**, `--rerun-tasks` to confirm they executed |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+| `:app:testDebugUnitTest` | 1,243 tests, 0 failures — unchanged |
+
+---
+
 ## V2-1-02: create the six engine modules
 
 State: COMPLETE
