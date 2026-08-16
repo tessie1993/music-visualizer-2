@@ -70,6 +70,27 @@ class SinkClockDriverTest {
         ) {
             driver.onTapBoundary(ended, endedFrames, begun)
         }
+
+        /**
+         * A speed change as the sink actually produces it: **two** boundaries.
+         *
+         * media3 drains to end of stream first, which flushes the tap with the
+         * whole ended generation and no hooks, and only then applies the
+         * parameters and flushes again — that second boundary carries the hooks
+         * and zero frames. [parameterChange] models a single combined boundary,
+         * which the sink never emits; use this wherever the shape matters.
+         */
+        fun speedChange(
+            to: Float,
+            ended: PcmTapFormat,
+            endedFrames: Long,
+            middle: PcmTapFormat,
+            begun: PcmTapFormat,
+            skipSilence: Boolean = false,
+        ) {
+            unhookedFlush(ended, endedFrames, middle)
+            parameterChange(to, middle, 0L, begun, skipSilence)
+        }
     }
 
     /** A rig already past the first parameter application, so speed is authoritative. */
@@ -93,12 +114,19 @@ class SinkClockDriverTest {
 
     @Test
     fun `a speed change scales only what follows it`() {
+        // Driven through the real two-boundary shape, not a synthetic combined
+        // one: the drain carries the frames, the hooked flush carries the speed.
         val rig = started(speed = 1f)
-        rig.parameterChange(2f, ended = format(1), endedFrames = rate.toLong(), begun = format(2))
+        rig.speedChange(2f, ended = format(1), endedFrames = rate.toLong(), middle = format(2), begun = format(3))
         // One second was heard at 1x, so the new generation starts at 1 s...
-        assertEquals(PresentationTime.At(1_000_000), rig.clock.current.presentationTimeOf(0, epoch = 2))
+        assertEquals(PresentationTime.At(1_000_000), rig.clock.current.presentationTimeOf(0, epoch = 3))
         // ...and its own second of audio is heard in half a second.
-        assertEquals(PresentationTime.At(1_500_000), rig.clock.current.presentationTimeOf(rate.toLong(), epoch = 2))
+        assertEquals(PresentationTime.At(1_500_000), rig.clock.current.presentationTimeOf(rate.toLong(), epoch = 3))
+        // Three segments, not two: the zero-length generation between the two
+        // boundaries gets one at the same anchor, so the clock always holds a
+        // segment for whichever generation the tap is currently filling.
+        assertEquals(listOf(0L, 1_000_000L, 1_000_000L), rig.clock.current.segments.map { it.presentationUsStart })
+        assertEquals(listOf(1, 2, 3), rig.clock.current.segments.map { it.epoch })
     }
 
     @Test
@@ -118,9 +146,12 @@ class SinkClockDriverTest {
         // The trap in the real call order: a reconfiguration drains to end of
         // stream (flushing the tap with everything captured so far) and THEN
         // applies parameters and flushes again with nothing captured. Reading
-        // the counter at both would subtract the same silence twice; the
-        // second read would also return a counter the silence-skipping stage
-        // has already zeroed.
+        // the counter at both would subtract the same silence twice.
+        //
+        // Note the second read would NOT return zero: the pipeline flushes in
+        // ascending order, so the tap reads before the silence-skipping stage
+        // zeroes its counter. Only the endedFrames guard prevents the double
+        // subtraction.
         val rig = started()
         rig.skips.frames = rate.toLong() / 2
         rig.unhookedFlush(format(1), endedFrames = 2L * rate, begun = format(2))
@@ -154,20 +185,51 @@ class SinkClockDriverTest {
     }
 
     @Test
-    fun `the speed verdict recovers when the chain regains authority`() {
-        // The refusal is a verdict on the CURRENT configuration, not a
-        // permanent one. Offload and tunneling end; a sink that stopped
-        // telling the chain about speed can start again, and a driver that
-        // latched "not authoritative" for good would leave the clock frozen
-        // for the rest of the process with every counter looking healthy.
+    fun `once a span goes unmodelled the clock stops rather than resuming early`() {
+        // The tempting behaviour is to recover when the hooks come back. It is
+        // the wrong one: the anchor is short by the whole refused span, so
+        // every later mapping would be early by it - minutes, potentially - and
+        // would arrive as a confident At rather than as StaleEpoch. Refusing
+        // keeps the clock's answer "I do not have that", which is true.
         val rig = started()
         rig.driver.onSkipSilenceApplied(false)
         rig.driver.onTapBoundary(format(1), rate.toLong(), format(2))
-        assertEquals(1L, rig.driver.diagnostics.refusedSpeedNotAuthoritative)
+        assertEquals(1, rig.clock.current.segments.size)
 
+        // The sink goes back to applying speed at Sonic. Both hooks return.
         rig.parameterChange(1f, ended = format(2), endedFrames = rate.toLong(), begun = format(3))
-        assertEquals("the driver never recovered", 2, rig.clock.current.segments.size)
-        assertEquals(3, rig.clock.current.epoch)
+        rig.parameterChange(1f, ended = format(3), endedFrames = rate.toLong(), begun = format(4))
+
+        val d = rig.driver.diagnostics
+        assertTrue("the clock resumed on a stale anchor", !d.anchorTrusted)
+        assertEquals("no segment may be appended after an unmodelled span", 1, rig.clock.current.segments.size)
+        assertEquals(2L, d.refusedUntrustedAnchor)
+        assertEquals(PresentationTime.StaleEpoch(4, 1), rig.clock.current.presentationTimeOf(0, 4))
+    }
+
+    @Test
+    fun `refusals before the timeline starts are not gaps`() {
+        // speedAuthoritative begins false, so the boundaries media3 raises
+        // while configuring are refused. Latching distrust on those would mean
+        // the clock could never start at all.
+        val rig = Rig()
+        rig.unhookedFlush(null, 0, format(1))
+        rig.unhookedFlush(format(1), 0, format(2))
+        assertTrue(rig.driver.diagnostics.anchorTrusted)
+        rig.parameterChange(1f, ended = format(2), endedFrames = 0, begun = format(3))
+        assertEquals(1, rig.clock.current.segments.size)
+    }
+
+    @Test
+    fun `a NaN speed is refused rather than thrown out of the audio callback`() {
+        // `speed <= 0f` is false for NaN, so the negative form is the only
+        // guard that catches it - and without it ClockSegment.fromFormat
+        // throws, from inside AudioProcessor.flush.
+        val rig = started()
+        rig.parameterChange(Float.NaN, ended = format(1), endedFrames = 0, begun = format(2))
+        assertEquals(1L, rig.driver.diagnostics.refusedUnreadableFormat)
+        assertEquals(0L, rig.driver.diagnostics.refusedByClockInvariant)
+        assertEquals(1, rig.clock.current.segments.size)
     }
 
     @Test
@@ -212,7 +274,7 @@ class SinkClockDriverTest {
         val rig = started()
         rig.skips.frames = 10L * rate
         rig.unhookedFlush(format(1), endedFrames = rate.toLong(), begun = format(2))
-        assertEquals(1L, rig.driver.diagnostics.clampedSkipExceedingFrames)
+        assertEquals(1L, rig.driver.diagnostics.discardedSkipExceedingFrames)
         assertEquals(PresentationTime.At(1_000_000), rig.clock.current.presentationTimeOf(0, 2))
         assertEquals(0L, rig.driver.diagnostics.refusedByClockInvariant)
     }

@@ -59,12 +59,16 @@ class SinkClockDriver(
     /** Slope of the open generation; 0.0 means its span cannot be measured. */
     private var openSlope: Double = 0.0
 
+    /** False once a span went unmodelled; see [distrustAnchor]. */
+    private var anchorTrusted = true
+
     private var boundaries = 0L
     private var segmentsAppended = 0L
     private var hookedBoundaries = 0L
     private var refusedSpeedNotAuthoritative = 0L
     private var refusedUnreadableFormat = 0L
-    private var clampedSkipExceedingFrames = 0L
+    private var refusedUntrustedAnchor = 0L
+    private var discardedSkipExceedingFrames = 0L
     private var refusedByClockInvariant = 0L
     private var unmeasuredBoundaries = 0L
 
@@ -76,10 +80,12 @@ class SinkClockDriver(
                 hookedBoundaries = hookedBoundaries,
                 refusedSpeedNotAuthoritative = refusedSpeedNotAuthoritative,
                 refusedUnreadableFormat = refusedUnreadableFormat,
-                clampedSkipExceedingFrames = clampedSkipExceedingFrames,
+                refusedUntrustedAnchor = refusedUntrustedAnchor,
+                discardedSkipExceedingFrames = discardedSkipExceedingFrames,
                 refusedByClockInvariant = refusedByClockInvariant,
                 unmeasuredBoundaries = unmeasuredBoundaries,
                 skippedFramesAttached = skippedFramesAttached,
+                anchorTrusted = anchorTrusted,
             )
 
     @Volatile
@@ -107,10 +113,11 @@ class SinkClockDriver(
         boundaries++
         if (sawSkipHook) hookedBoundaries++
 
-        // Read only when the ended generation actually captured something.
-        // A parameter change drains to end of stream first, which flushes the
-        // tap once with nothing captured before the hooked flush that follows;
-        // reading there would subtract the same silence twice.
+        // Read only where there is something to attribute the silence to. The
+        // boundary that carries the frames is the DRAIN one - media3 drains to
+        // end of stream before reconfiguring, so the tap sees the whole ended
+        // generation there - and the hooked flush that follows carries zero.
+        // Reading at the empty one would subtract the same silence twice.
         val rawSkip = if (ended != null && endedFrames > 0L) skipped.skippedInputFramesSinceFlush() else 0L
         // More silence removed than frames captured is arithmetically
         // impossible, so the number is not a large skip - it is a bad read.
@@ -118,13 +125,18 @@ class SinkClockDriver(
         // which is the part still trustworthy; believing it would silently
         // declare a whole generation silent.
         val trustworthy = rawSkip in 0L..endedFrames
-        if (!trustworthy) clampedSkipExceedingFrames++
+        if (!trustworthy) discardedSkipExceedingFrames++
         val skip = if (trustworthy) rawSkip else 0L
 
         if (openSlope > 0.0) {
             anchorUs += ((endedFrames - skip) / openSlope).roundToLong()
-        } else if (ended != null) {
+        } else if (ended != null && endedFrames > 0L) {
+            // Frames were captured across a span whose slope was never known,
+            // so real presentation time advanced by an amount nothing here can
+            // compute. Gated on endedFrames because a zero-frame boundary
+            // loses nothing and would otherwise report a hole that is not one.
             unmeasuredBoundaries++
+            distrustAnchor()
         }
 
         // A skip hook without a speed hook proves media3 routed speed to the
@@ -138,34 +150,61 @@ class SinkClockDriver(
         openSlope = 0.0
         if (!speedAuthoritative) {
             refusedSpeedNotAuthoritative++
+            distrustAnchor()
             return
         }
-        if (begun.sampleRateHz <= 0 || begun.channelCount <= 0 || begun.sampleWidth == null || speed <= 0f) {
+        // `!(speed > 0f)` rather than `speed <= 0f`: every comparison with NaN
+        // is false, so the negative form is the only one that refuses it.
+        if (begun.sampleRateHz <= 0 || begun.channelCount <= 0 || begun.sampleWidth == null || !(speed > 0f)) {
             refusedUnreadableFormat++
+            distrustAnchor()
+            return
+        }
+        if (!anchorTrusted) {
+            refusedUntrustedAnchor++
             return
         }
 
-        val segment =
-            ClockSegment.fromFormat(
-                epoch = begun.generation,
-                discontinuityGeneration = begun.generation,
-                // Exact: the tap zeroed its counter immediately before calling.
-                inputSampleStart = 0L,
-                presentationUsStart = anchorUs,
-                sampleRateHz = begun.sampleRateHz,
-                speed = speed,
-                skippedInputSamples = 0L,
-            )
-        // Every invariant above is satisfiable by construction, so this net
-        // should never fire. It exists because the alternative to catching is
-        // an exception propagating through AudioProcessor.flush into the
-        // renderer, which stops playback.
+        // Inside the try, not above it: ClockSegment.fromFormat and the data
+        // class's own init both require(), and this runs inside
+        // AudioProcessor.flush where a throw stops the music. Building the
+        // segment outside would have left that net to PcmTap's catch, which
+        // would swallow the fault without counting it here.
         try {
+            val segment =
+                ClockSegment.fromFormat(
+                    epoch = begun.generation,
+                    discontinuityGeneration = begun.generation,
+                    // Exact: the tap zeroed its counter immediately before calling.
+                    inputSampleStart = 0L,
+                    presentationUsStart = anchorUs,
+                    sampleRateHz = begun.sampleRateHz,
+                    speed = speed,
+                    skippedInputSamples = 0L,
+                )
             clock.append(segment)
             openSlope = segment.inputSamplesPerPresentationUs
             segmentsAppended++
-        } catch (expected: IllegalArgumentException) {
+        } catch (unexpected: IllegalArgumentException) {
             refusedByClockInvariant++
         }
+    }
+
+    /**
+     * Records that presentation time advanced across a span this could not
+     * model, and stops appending for good.
+     *
+     * Resuming would be worse than stopping. The anchor is short by the whole
+     * unmodelled span, so every later segment would map input frames to times
+     * that are early by minutes - a confident `At` where `StaleEpoch` is the
+     * truthful answer, which is the exact failure §5.1 exists to prevent. The
+     * span cannot be recovered either: its duration is frames times a slope
+     * that was, by definition, unknown.
+     *
+     * Only latched once the timeline has started. Refusals before the first
+     * append are not gaps - nothing was being modelled yet.
+     */
+    private fun distrustAnchor() {
+        if (segmentsAppended > 0L) anchorTrusted = false
     }
 }

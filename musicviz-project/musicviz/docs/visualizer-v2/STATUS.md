@@ -135,6 +135,46 @@ listing every write to that field (two in `outputShortenedSilenceBuffer`, one ze
 The mistake is the same one this session has now made three times: a mechanism that is right,
 described more confidently than the evidence supports.
 
+### Second correction: three defects found by an adversarial review of this slice
+
+**A refused boundary froze the anchor but not the timeline.** `openSlope = 0.0` runs before both
+refusal returns, so the next boundary cannot advance `anchorUs` — but real presentation time did
+advance. The driver then *resumed* when the hooks came back, appending at an anchor short by the
+whole refused span, and every later mapping returned a confident `At` that was early by it.
+Reachable: `useAudioOutputPlaybackParams()` is read per output configuration, so a route change
+can flip it and flip it back.
+
+The first fix I wrote made it worse — a test named "the speed verdict recovers when the chain
+regains authority", asserting exactly the behaviour that produces the wrong answer. Recovery is
+not achievable: the missed span is frames times a slope that was by definition unknown. So the
+driver now latches `anchorTrusted = false` and stops appending for good, which leaves consumers
+with `StaleEpoch` — "I do not have that" — instead of a plausible number. The old test is
+deleted rather than adjusted; it encoded the wrong answer.
+
+**`ClockSegment.fromFormat` sat outside the `try` whose comment claimed it kept exceptions out
+of `AudioProcessor.flush`.** All three of its `require`s throw, so the real net was `PcmTap`'s
+catch one frame up the stack — which would have swallowed the fault without
+`refusedByClockInvariant` ever seeing it, defeating the test that asserts that counter stays 0.
+Moved inside. And `speed <= 0f` is **false for NaN**, so a NaN speed passed the guard and threw
+from `fromFormat`; it is now `!(speed > 0f)`.
+
+**The test rig modelled a shape the sink never emits.** `parameterChange` raised both hooks *and*
+carried the frame count in one boundary. Media3 always produces two: an unhooked drain carrying
+the whole ended generation, then a hooked flush carrying zero. Added `speedChange`, which drives
+the real pair, and the speed test now asserts three segments where it asserted two.
+
+Also taken from the same review: `clampedSkipExceedingFrames` renamed to
+`discardedSkipExceedingFrames` (the code discards, the name claimed the behaviour the slice
+deliberately rejected), `unmeasuredBoundaries` gated on `endedFrames > 0` (it fired on every
+playback start, reporting a hole where nothing was lost), and two comments that contradicted
+each other about which flush carries the frames.
+
+| Fault re-injected | Result |
+|---|---|
+| anchor stays trusted after an unmodelled span | FAILED |
+| untrusted anchor still appends | FAILED |
+| `speed <= 0f` instead of `!(speed > 0f)` | FAILED |
+
 `PresentationTime.Skipped` is therefore **unreachable in production**: a §5.2 field and a whole
 sealed-interface case ship dead. Saying so plainly rather than reporting five of five triggers
 implemented — silence-skip discontinuity is not implementable, because no such media3 event
