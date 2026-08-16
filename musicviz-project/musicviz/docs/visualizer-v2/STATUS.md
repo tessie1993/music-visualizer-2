@@ -14,6 +14,93 @@ Newest slice first.
 
 ---
 
+## V2-2-02: build the sample-indexed ring in audio-core
+
+State: COMPLETE
+
+Goal: give the engine a PCM store where "your buffer was full" and "you fell behind and audio
+is gone" are different answers, and where two readers cannot move each other's cursor.
+
+User-visible effect: none. New code in `:engine:audio-core`; no production consumer switched,
+and `PcmRingBuffer` is untouched.
+
+In scope: `SampleRing` (storage and write), `RingReader` (an independent cursor),
+`RingReadResult` (`Ok`/`Gap`/`Discontinuity`/`NotYetAvailable`), and the §5.1 cases.
+
+Out of scope: switching the tap or the analyzer onto it — V2-2-03 bridges the tap, and §12
+holds `PcmRingBuffer` at REPLACE-incrementally until then. Also out of scope: the write-path
+allocation benchmark §V2-2-02 asks for. There is no device and no benchmark harness; the write
+loop creates no objects, which is reviewable but not the measurement the plan wants, so it
+stays open rather than being claimed.
+
+Files expected to change: `engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/{SampleRing,RingReader,RingReadResult}.kt`,
+`engine/audio-core/src/test/kotlin/dev/musicviz/engine/audio/SampleRingTest.kt`.
+
+Compatibility contract: nothing to preserve yet — no caller. The semantics §1.3 pins
+(`stereoCorrelation = 1f` for mono, empty chroma meaning no pitch information) belong to
+feature extraction, not to the store, and are unaffected.
+
+External source/provenance entries: none.
+
+Tests written first: fourteen, covering wrap, exact capacity, one-past-capacity, gap, cursor
+behaviour after a gap, interleaved stereo, mono, epoch, seek recovery, two independent readers,
+construction validation, channel mismatch, and a threaded race.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit. Nothing depends on the module's contents.
+
+Risks: a store built before its consumers can be shaped for imagined needs. Bounded by
+implementing only what §5.1 lists and leaving mid/side conversion out — that is a feature's
+choice of axes, not the store's job.
+
+Review findings: two, and the second is the one worth reading.
+
+1. **The read had a torn-window hole.** `oldestAvailable` is `written - capacity`, so a reader
+   at the tail copies right up to the write head and, with a real audio thread, has its first
+   frames overwritten mid-copy — returned as ordinary `Ok`. The old buffer reserves a quarter
+   of the ring against this; this reserves nothing. Fixed by re-checking after the copy and
+   returning `Gap`, which costs one wasted copy on the rare occasion it happens and wastes no
+   capacity the rest of the time.
+
+2. **The test I wrote for that hole was vacuous.** It passed with the guard removed. Writing
+   past the reader trips the lag check at the *top* of `read` and never reaches the copy, so it
+   was exercising ordinary lag under a name about races. Replaced with a genuine two-thread
+   test over 200,000 frames of self-describing data — frame *i* holds value *i*, so any `Ok`
+   must satisfy `out[k] == first + k` and a torn window cannot pass as audio. It fails with the
+   guard removed and passes with it, which is the proof the first version never gave.
+
+Commands and results: below.
+
+Commit: `feat(audio-core): a sample-indexed ring whose gaps are visible`
+
+Next slice: **V2-2-03 — bridge the current PCM tap through `audio-android`.**
+
+### What the three types replace
+
+| `PcmRingBuffer` today | Why it cannot answer | `SampleRing` |
+|---|---|---|
+| `copyNewSince` returns `Int`, clamped twice | a full buffer and a lapped reader are the same number | `Ok` or `Gap`, and `Gap` names what was missed |
+| `lastCopyEndIndex`, "single-reader only" | a second reader moves the first one's position | the cursor lives in `RingReader`; one per consumer |
+| no epoch anywhere | after a seek a stale index reads new audio as though it continued | `Discontinuity` carries both epochs |
+| clamps a lagging reader into the ring | the buffer decides what the caller loses | the cursor stays put; the caller chooses |
+| mid/side fixed at the store | one pair of axes for every feature | planar channels; axes are the feature's choice |
+
+`Discontinuity` is a fourth case the plan's illustrative snippet does not list. A seek is not a
+gap: the samples are not old, they are from a different timeline, and interpolating across the
+boundary produces features for audio nobody played.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:engine:audio-core:test` | **14 tests, 0 failures**, `--rerun-tasks` to confirm execution |
+| the same, torn-window guard removed | **FAILED** — `torn windows returned as Ok` |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+
+---
+
 ## V2-2-01: specify the PCM and presentation-clock ABIs
 
 State: COMPLETE
