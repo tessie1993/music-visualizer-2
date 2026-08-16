@@ -14,6 +14,134 @@ Newest slice first.
 
 ---
 
+## V2-3-04a: the onset strength signal, delayed by a whole number of frames
+
+State: COMPLETE
+
+Goal: V2-3-04's first bullet — the sample-aligned onset evidence the current `PulseTracker`
+will be fed. This slice builds the evidence; feeding it in is V2-3-04b.
+
+User-visible effect: none. One new node in `audio-core` with no production consumer.
+
+In scope: `OnsetStrength` and its tests; the full read of the compact C tracker that the design
+decisions come from.
+
+Out of scope: tempo estimation, the CBSS beat predictor, downbeat/bar state and kick evidence —
+V2-3-04b and later. Running BTT itself over the corpus belongs with those, because tempo and
+predicted beats are what there is to compare; at this stage the two libraries would only be
+producing the same smoothed curve at different scalings.
+
+Files expected to change: `engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/OnsetStrength.kt`
+and its test. No existing file changes.
+
+Compatibility contract: nothing existing changes. No new dependency, permission or ABI — in
+particular no native dependency, which `provenance.json` records as the thing BTT must not bring.
+
+External source/provenance entries: none new. **BTT** (`michaelkrzyzaniak/Beat-and-Tempo-Tracking`,
+ORACLE, MIT) was cloned at its registered pin `c039090` and its `LICENSE` re-hashed against the
+registry — `74400a6e…`, 1,074 bytes — before anything was read. `BTT.c`, `BTT.h`, `Filter.c` and
+`Statistics.c` were read in full. Per the ORACLE tier no code was taken; the three numbers below
+are measurements of its behaviour, and what was written from them is the published windowed-sinc
+method, not its implementation.
+
+Tests written first: the filter was designed and its response measured in Python before any Kotlin
+existed, so every figure the tests assert was measured rather than predicted. Five fault
+injections, all caught.
+
+Benchmark or visual evidence: `next` allocates under 1 byte per frame against a 1-byte assertion
+floor. Frequency response and group delay are measured in the test rather than asserted from the
+design formula.
+
+Rollback: revert the one commit. Nothing depends on the file.
+
+Risks: no production consumer, so its behaviour on real material is argued rather than observed —
+V2-3-04b owes that. `DELAY_SECONDS` is taken from BTT's own kernel length and is a starting value,
+not a tuned one; at the general branch's 93.75 Hz hop it rounds to two frames, which is a short
+kernel and a gentler roll-off than the same span buys at BTT's rate. The test measures the
+response so a future change to the span cannot quietly change the filter.
+
+Commands and results: below.
+
+Review findings: three.
+
+**BTT's group delay is 7.5 frames, and that is why it carries a magic number.** Sixteen taps at
+order 15 puts the kernel centre between two frames, so an onset's sample index cannot be corrected
+by any whole-frame shift. Its header says as much: the analysis latency "is caused by complex
+interactions between filters, buffering, adaptive thresholds, and other things, and I couldn't
+find a closed-form expression that captures it", and it ships an empirically-measured
+`BTT_DEFAULT_ANALYSIS_LATENCY_ONSET_ADJUSTMENT` of 857 audio samples. Sizing the kernel as
+`2·delayFrames + 1` makes the delay exactly `delayFrames`, which is what §5.7's one-hop timestamp
+budget needs — a half-frame error spends the whole of it before any other stage has had a turn.
+
+**Its kernel is not normalised: the taps sum to 0.451.** So its onset strength is its flux scaled
+by an arbitrary factor, and `BTT_DEFAULT_ONSET_TREHSHOLD_MIN = 5.0` is a raw number that only
+means anything against that scaling. Normalised to unit DC gain the signal stays in the flux's own
+units, which is what lets a threshold be stated in them.
+
+**A tap count is the `BandSmoother` mistake again.** BTT is built around one sample rate and one
+hop, so a fixed 16 taps is a fixed span for it. Here the same count would be 46 ms of music on the
+transient branch and 171 ms on the general one. The span is therefore specified in seconds and the
+odd tap count derived from the hop rate — the same correction V2-3-03b made to attack and release,
+and for the same reason.
+
+Commit: `feat(audio-core): the onset strength signal, delayed a whole number of frames`
+
+Next slice: V2-3-04b — tempo estimation, compared against BTT and the current tracker on the corpus.
+
+### What was read, and what it measured
+
+| BTT stage | What it does | Taken as |
+|---|---|---|
+| STFT 1024 / hop 128 | magnitude spectrum, DC zeroed | already `Spectrum` + `FrameGrid` |
+| noise cancellation | bins under −74 dBFS zeroed before flux | not yet — V2-3-04b, with its effect measured |
+| flux | half-wave-rectified sum over bins 1..N/2−1 | already `SpectralFlux`, same definition |
+| 10 Hz FIR, order 15, Hamming | flux → onset strength | this slice, with the two corrections above |
+| `adaptive_threshold_update` | sliding 1024-sample mean and **population** std; fires on the **rising edge** of `x − mean > max(σ·devs, min)`; skips the first 10 samples; only updated when flux > 0 | V2-3-04b — and the edge trigger, not a millisecond refractory, is the part worth reproducing |
+| generalized autocorrelation, exponent 0.5 | tempo candidates | V2-3-04b |
+| log-gaussian weight about 120 BPM, decaying histogram | harmonic suppression, tempo stability | V2-3-04b |
+| CBSS, α 0.9, η 300 | cumulative beat strength, predicted beat | V2-3-04c |
+
+The threshold's "only updated when flux > 0" is the same rule V2-3-03b arrived at independently
+for `AdaptiveRange`: silence must not train an adaptive statistic.
+
+### Measured, at BTT's own 344.5 Hz onset rate
+
+| | BTT, 16 taps | here, 17 taps |
+|---|---:|---:|
+| group delay | 7.5 frames | **8 frames, exact** |
+| DC gain | 0.451 | **1.000** |
+| smallest tap | 0.0033 | 0.0066 — both non-negative, so neither can ring below zero |
+| −3 dB point for a 10 Hz design cutoff | — | 14.4 Hz |
+| \|H(5 Hz)\| — 300 BPM, the fastest pulse the app's gate admits | — | 0.96 |
+| \|H(40 Hz)\| | — | 0.045 |
+
+And what the smoothing is actually for, on a click track with ±1 frame of jitter:
+
+| Normalised autocorrelation at the true period | raw flux | smoothed |
+|---|---:|---:|
+| jittered ±1 frame | 0.348 | **0.955** |
+| no jitter | 0.979 | 0.979 |
+
+So the stage buys jitter tolerance and costs nothing when there is none — which is the honest
+version of "smoothing makes the tempo peak clearer", and it is two tests rather than a claim.
+
+### Verification
+
+| Fault injected | Result |
+|---|---|
+| even tap count, so the group delay is half a frame (BTT's shape) | FAILED |
+| kernel left unnormalised, as BTT leaves it | FAILED |
+| a fixed tap count instead of a fixed span in seconds | FAILED |
+| rectangular window instead of Hamming | FAILED |
+| the ring read newest-first, shifting the delay | FAILED |
+
+| Command | Result |
+|---|---|
+| `:engine:audio-core:test --tests '*OnsetStrengthTest*'` | 11 tests, 0 failures |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+---
+
 ## V2-3-03b: semitone bands, and the three normalization modes
 
 State: COMPLETE
