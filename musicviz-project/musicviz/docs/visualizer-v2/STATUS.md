@@ -14,6 +14,94 @@ Newest slice first.
 
 ---
 
+## V2-2-01: specify the PCM and presentation-clock ABIs
+
+State: COMPLETE
+
+Goal: make the tap-first invariant provable against the chain the app builds, before the slice
+that moves the tap out of `:app` makes the current text proof read the wrong file.
+
+User-visible effect: none. One seam extracted, one test added, no behaviour changed.
+
+In scope: `AUDIO_FEATURE_ABI.md` time, epoch and channel sections plus the tap stage order;
+`TapRenderersFactory.audioProcessorChain()`; `AudioChainOrderRuntimeTest`.
+
+Out of scope: §5.4's feature table, which V2-3-03 onward writes when the features exist to
+describe — a table of names with no producer is a wish list, not an ABI. Also out of scope:
+implementing `RingReadResult` or the presentation clock. This slice specifies them; V2-2-02 and
+V2-2-04 build them.
+
+Files expected to change: `docs/visualizer-v2/AUDIO_FEATURE_ABI.md`,
+`app/src/main/java/dev/musicviz/audio/TapRenderersFactory.kt`,
+`app/src/test/java/dev/musicviz/audio/AudioChainOrderRuntimeTest.kt`.
+
+Compatibility contract: preserved exactly. The chain construction moved into a method the
+sink builder calls; the array it produces is identical, and §1.3's audio-tap semantics are
+untouched.
+
+External source/provenance entries: none.
+
+Tests written first: not applicable in the usual sense — the invariant already held, and what
+was missing was a proof of it. Fault injection replaces red-first, twice.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit. The chain returns to being constructed inline.
+
+Risks: the seam adds a method whose only caller is the sink builder, which a reader could take
+for indirection. The fifth assertion answers that directly by failing if the builder stops
+using it.
+
+Commands and results: below.
+
+Review findings: **the test §12 warned would become vacuous already was.**
+`AudioChainContractTest` guards each stage comparison with `if (at >= 0)` over seven DSP stage
+names — `GainProcessor`, `EqProcessor` and five more. None of them exists in the tree. The loop
+body has never executed, so the ordering half of that test has been asserting nothing since it
+was written. The plan anticipated the failure as a future risk of moving the tap; it is
+present tense.
+
+`AudioChainContractTest` is nonetheless left untouched. §2.1 rule 7 forbids removing a legacy
+seam in the slice that introduces its replacement, and the audit one slice ago criticised
+exactly that. It retires in V2-2-03, which moves the tap and makes its text target wrong.
+
+Commit: `test(audio): prove the tap is first against the chain, not the source text`
+
+Next slice: **V2-2-02 — build the sample-indexed ring in `audio-core`.**
+
+### Why a runtime assertion is different in kind
+
+The old proof reads `TapRenderersFactory.kt` and compares string indices. It cannot see an
+empty chain, cannot see a reordering inside `MvzAudioProcessorChain`, and stops describing
+anything once the tap lives in another module.
+
+The new one builds the chain and looks at it. The assertion that matters most is identity
+rather than type: it pushes 64 bytes of PCM through the first processor and requires **this
+factory's sink** to receive them. A second `TeeAudioProcessor` wired somewhere else passes a
+type check and fails this.
+
+Both faults were planted and both were caught — and the old test passed through the first one:
+
+| Planted | Runtime test | Text test |
+|---|---|---|
+| silence skipping moved before the tap | FAILED — `the tap must be first expected:<0> but was:<1>` | **passed** |
+| tap wired to a different sink | FAILED — `does not feed this factory's sink expected:<64> but was:<0>` | — |
+
+Plant A is the exact regression the text test exists to catch: analysis would have been reading
+audio after silence-skipping had already removed spans from it.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:app:testDebugUnitTest --tests '*AudioChainOrderRuntimeTest*'` | 5 passed |
+| both faults planted, then reverted | caught; `git diff` shows only the intended seam |
+| `checkAll` | BUILD SUCCESSFUL, after `ktlintFormat` |
+| `:app:testDebugUnitTest` | **1,257 tests, 0 failures** (1,252 before) |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+
+---
+
 ## V2-AUDIT-01: re-audit the completed slices against the plan
 
 State: COMPLETE
