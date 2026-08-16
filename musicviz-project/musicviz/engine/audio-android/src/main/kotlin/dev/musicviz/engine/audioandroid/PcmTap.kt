@@ -37,9 +37,36 @@ class PcmTap(
      *
      * Published so a consumer that attaches mid-playback can ask, instead of
      * waiting for the next reconfiguration to be told.
+     *
+     * **This is the sequence field.** [flush] stores it last, so a reader
+     * wanting a coherent (format, frame count) pair reads `format`, then
+     * `framesWritten`, then `format` again and retries if it changed. Both are
+     * volatile, so neither read may be reordered. Without that protocol a
+     * reader can pair a new generation with the previous one's frame count,
+     * and get a confident presentation time for audio that is minutes away.
      */
     @Volatile
     var format: PcmTapFormat? = null
+        private set
+
+    /**
+     * Notified when one generation ends and the next begins.
+     *
+     * Called after both counters are published, so the listener cannot be the
+     * thing that observes them disagreeing - but still inside [flush], which
+     * matters: the silence-skipping stage sits after the tap in the chain and
+     * zeroes its own per-generation counter when its turn comes, so this is
+     * the last moment that number exists.
+     */
+    @Volatile
+    var boundaryListener: TapBoundaryListener? = null
+
+    /**
+     * Boundaries whose listener threw. Nothing steers on it; it exists so a
+     * silently-swallowed clock fault is still countable rather than invisible.
+     */
+    @Volatile
+    var boundaryFailures: Long = 0L
         private set
 
     /** Frames delivered to [sink] since the current [PcmTapFormat.generation] began. */
@@ -59,12 +86,14 @@ class PcmTap(
         channelCount: Int,
         encoding: Int,
     ) {
+        val ended = format
+        val endedFrames = framesWritten
         val next =
             PcmTapFormat(
                 sampleRateHz = sampleRateHz,
                 channelCount = channelCount,
                 encoding = encoding,
-                generation = (format?.generation ?: 0) + 1,
+                generation = (ended?.generation ?: 0) + 1,
             )
         if (channelCount > 0) {
             val floats = STAGING_FRAMES * channelCount
@@ -72,6 +101,24 @@ class PcmTap(
         }
         framesWritten = 0L
         format = next
+        // Both counters are published before anyone is told, so no listener
+        // and no concurrent reader can pair the new generation with the ended
+        // one's frame count. The ended values travel as arguments instead.
+        //
+        // Guarded because this runs inside AudioProcessor.flush: an exception
+        // escaping here would propagate into the renderer and stop playback,
+        // and would take the format callback below with it - which is what
+        // retunes the live analyzer.
+        //
+        // RuntimeException rather than runCatching, which catches Throwable:
+        // that would swallow the AssertionError raised by a test asserting
+        // inside the listener, and did - the ordering test above this one was
+        // vacuous until the catch was narrowed.
+        try {
+            boundaryListener?.onTapBoundary(ended, endedFrames, next)
+        } catch (survivable: RuntimeException) {
+            boundaryFailures++
+        }
         onFormat(next)
     }
 

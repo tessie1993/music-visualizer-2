@@ -10,7 +10,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import dev.musicviz.audio.AudioFxController
 import dev.musicviz.audio.PcmRingBuffer
 import dev.musicviz.audio.TapRenderersFactory
+import dev.musicviz.engine.audio.AudioPresentationClock
 import dev.musicviz.engine.audioandroid.PcmTap
+import dev.musicviz.engine.audioandroid.SinkClockDriver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -49,6 +51,20 @@ class PlaybackSession internal constructor(
     var onAudioFormat: ((sampleRateHz: Int, channelCount: Int, encoding: Int) -> Unit)? = null
 
     /**
+     * The map between captured frames and the time they are heard.
+     *
+     * Owned here for the same reason [ring] is: a clock fed from a
+     * screen-scoped listener stops updating the moment the app is swiped away
+     * while [PlaybackService] keeps playing. `internal` because nothing
+     * consumes it yet — the bridge to the V2 ring is the Phase 2 gate slice —
+     * and public API with no caller is dead API.
+     */
+    internal val presentationClock = AudioPresentationClock()
+
+    /** `internal` so a test can drive the real chain hooks into the real clock. */
+    internal val clockDriver = SinkClockDriver(presentationClock)
+
+    /**
      * The capture end of the pipeline, in `:engine:audio-android` per §4.1.
      * It knows a [dev.musicviz.engine.audio.PcmSink], not this class's buffer,
      * which is what lets the same tap feed the V2 ring later without touching
@@ -72,7 +88,7 @@ class PlaybackSession internal constructor(
                 // must stay in tune with the music the service is playing.
                 analysis.sampleRateHz = format.sampleRateHz
             }
-        }
+        }.apply { boundaryListener = clockDriver }
 
     /**
      * The player itself. Public because a MediaSession has to be handed the
@@ -82,7 +98,7 @@ class PlaybackSession internal constructor(
      */
     val player: ExoPlayer =
         ExoPlayer
-            .Builder(context, TapRenderersFactory(context, tap))
+            .Builder(context, TapRenderersFactory(context, tap, clockDriver))
             // AIFF/AIFC support: Media3 ships no AIFF extractor, so ours is
             // appended after the defaults (sniff order keeps defaults first).
             .setMediaSourceFactory(

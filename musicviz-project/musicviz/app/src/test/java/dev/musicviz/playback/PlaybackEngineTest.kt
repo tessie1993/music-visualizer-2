@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import androidx.media3.common.C
 import androidx.test.core.app.ApplicationProvider
+import dev.musicviz.engine.audio.PresentationTime
 import dev.musicviz.ui.PlayerViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -92,6 +93,32 @@ class PlaybackEngineTest {
         assertEquals(256, chunk?.count)
         assertEquals("8192 of 32768 full scale is 0.25", 0.25f, chunk?.data?.get(0) ?: 0f, 0f)
         assertEquals(256L, session.tap.framesWritten)
+    }
+
+    @Test
+    fun `the session's presentation clock is driven by the session's own audio chain`() {
+        // Three objects have to be the same three: the chain the factory built
+        // for THIS player raises the hooks, the tap that feeds THIS ring
+        // reports the boundary, and the clock THIS session publishes receives
+        // the segment. Any one of them wired to a different instance leaves a
+        // clock that stays empty forever, with nothing failing.
+        val session = PlaybackEngine.acquireForUi(ctx)
+        assertNotNull("the tap reports boundaries to nobody", session.tap.boundaryListener)
+        assertTrue(
+            "the player's audio chain never handed the driver its skip counter, so the factory " +
+                "was built without it and no speed change will ever reach the clock",
+            session.clockDriver.diagnostics.skippedFramesAttached,
+        )
+        assertEquals("nothing has been decoded yet", 0, session.presentationClock.current.segments.size)
+
+        session.clockDriver.onSpeedApplied(2f)
+        session.clockDriver.onSkipSilenceApplied(false)
+        session.tap.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+
+        val snapshot = session.presentationClock.current
+        assertEquals(1, snapshot.segments.size)
+        assertEquals(2f, snapshot.segments.single().speed, 0f)
+        assertEquals("48000 frames at 2x are heard in half a second", PresentationTime.At(500_000), snapshot.presentationTimeOf(48_000, 1))
     }
 
     /**

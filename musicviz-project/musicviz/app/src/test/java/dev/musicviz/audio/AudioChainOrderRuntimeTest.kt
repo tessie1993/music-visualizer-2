@@ -6,6 +6,8 @@ import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.test.core.app.ApplicationProvider
+import dev.musicviz.engine.audioandroid.SinkClockHooks
+import dev.musicviz.engine.audioandroid.SkippedFrameSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -101,6 +103,82 @@ class AudioChainOrderRuntimeTest {
         assertTrue("Sonic is missing from the chain", sonicAt > 0)
         assertTrue("silence skipping is upstream of the tap", silenceAt > tapAt)
         assertTrue("Sonic is upstream of the tap", sonicAt > tapAt)
+    }
+
+    @Test
+    fun `silence skipping sits directly after the tap`() {
+        // Not style: the presentation clock reads that stage's skipped-frame
+        // counter and uses it as tap-domain input frames. That conversion is
+        // the identity only because the tap is pass-through and the two are
+        // adjacent. A resampling stage inserted between them would corrupt
+        // every skip count with no other symptom, so the adjacency is pinned
+        // here rather than left as a comment.
+        val processors = chainOf(RecordingSink()).toList()
+        assertEquals("the tap must be first", 0, processors.indexOfFirst { it is TeeAudioProcessor })
+        assertEquals(
+            "a stage between the tap and silence skipping breaks the skipped-frame unit",
+            1,
+            processors.indexOfFirst { it is SilenceSkippingAudioProcessor },
+        )
+    }
+
+    @Test
+    fun `the sink hooks the factory installs reach the object that was passed in`() {
+        // The clock is driven from applyPlaybackParameters and
+        // applySkipSilenceEnabled on this chain. If the factory built a chain
+        // without the hooks, nothing would fail: the clock would simply stay
+        // empty for the life of the process.
+        val speeds = mutableListOf<Float>()
+        val skips = mutableListOf<Boolean>()
+        var attached: SkippedFrameSource? = null
+        val hooks =
+            object : SinkClockHooks {
+                override fun onSpeedApplied(speed: Float) {
+                    speeds += speed
+                }
+
+                override fun onSkipSilenceApplied(enabled: Boolean) {
+                    skips += enabled
+                }
+
+                override fun attachSkippedFrames(source: SkippedFrameSource) {
+                    attached = source
+                }
+            }
+        val chain = TapRenderersFactory(context, RecordingSink(), hooks).audioProcessorChain()
+        chain.applyPlaybackParameters(androidx.media3.common.PlaybackParameters(2f, 1f))
+        chain.applySkipSilenceEnabled(true)
+
+        assertEquals(listOf(2f), speeds)
+        assertEquals(listOf(true), skips)
+        assertEquals("the skipped-frame source must be the chain that owns the stage", chain, attached)
+        assertEquals("no audio has been through it", 0L, attached?.skippedInputFramesSinceFlush())
+    }
+
+    @Test
+    fun `the sink never asks the AudioTrack to apply playback parameters`() {
+        // Media3 skips the chain's applyPlaybackParameters hook entirely when
+        // the sink applies speed at the AudioTrack instead of at Sonic
+        // (DefaultAudioSink.applyAudioProcessorPlaybackParametersAndSkipSilence
+        // returns before the chain call when useAudioOutputPlaybackParams() is
+        // true). The clock would then stop appending and never say why.
+        //
+        // The flag reaching buildAudioSink comes from a private field of
+        // DefaultRenderersFactory that no test can read, so a source scan is
+        // the only available form. Stated plainly rather than dressed as a
+        // runtime assertion.
+        val appSources =
+            java.io.File(dev.musicviz.ParamSurface.moduleRoot, "app/src/main")
+                .walkTopDown()
+                .filter { it.extension == "kt" }
+                .filter { it.readText().contains("setEnableAudioTrackPlaybackParams(") }
+                .map { it.name }
+                .toList()
+        assertEquals(
+            "enabling AudioTrack playback parameters silently stops the presentation clock",
+            emptyList<String>(),
+            appSources,
+        )
     }
 
     @Test

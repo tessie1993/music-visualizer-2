@@ -14,6 +14,153 @@ Newest slice first.
 
 ---
 
+## V2-2-04b: drive the presentation clock from the audio sink
+
+State: COMPLETE
+
+Goal: make V2-2-04a's clock live. Something has to observe speed changes, seeks, source
+changes and skipped silence and append a segment at the right input frame.
+
+User-visible effect: none. Nothing consumes `presentationClock` yet — the bridge to `SampleRing`
+is the Phase 2 gate slice — so this adds a producer with no consumer, deliberately, in that
+order. What changes is that the mapping is now fed by the pipeline that actually applies speed
+and removes silence, rather than by nothing.
+
+In scope: `SinkClockContracts.kt` and `SinkClockDriver.kt` in `:engine:audio-android`;
+`PcmTap.boundaryListener`; `MvzAudioProcessorChain` raising the hooks and exposing its skip
+counter; a defaulted `hooks` parameter on `TapRenderersFactory`; `PlaybackSession` owning the
+clock and driver.
+
+Out of scope: V2-2-04's third bullet, "compare predicted versus presented position" — that is
+device work and is named **V2-2-04c** below. Locating skipped-silence spans (**V2-2-04d**).
+Wiring the tap to `SampleRing`. Deleting `PcmTapSink`.
+
+Files expected to change: `engine/audio-android/src/main/kotlin/dev/musicviz/engine/audioandroid/{SinkClockContracts,SinkClockDriver,PcmTap}.kt`,
+`engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/AudioPresentationClock.kt`,
+`app/src/main/java/dev/musicviz/audio/{TapRenderersFactory,dsp/MvzAudioProcessorChain}.kt`,
+`app/src/main/java/dev/musicviz/playback/PlaybackEngine.kt`, and the docs below.
+
+Compatibility contract: every new constructor parameter is defaulted, so no existing call site
+changes. `TapRenderersFactory` is edited in place and `buildAudioSink`'s body is untouched, so
+both source-text gates that read it still read what they read before. `handleBuffer` is not
+touched, so V2-2-03's zero-allocation gate stands unmodified.
+
+External source/provenance entries: none. No new dependency; media3 was already on this module.
+
+Tests written first: no — this is a driver for behaviour that only exists inside media3, so the
+red step was establishing what media3 actually does, from bytecode, before any code was written.
+Recorded as a §2.1 rule 1 testability exception. Nine fault injections are the substitute
+evidence, and two of them found real defects (below).
+
+Benchmark or visual evidence: allocation per boundary, measured — 368 bytes.
+
+Rollback: revert the one commit.
+
+Risks: below the verification table.
+
+Commands and results: below.
+
+Review findings: three, two of them mine and one a design defect caught before it was written.
+
+Commit: `feat(audio): drive the presentation clock from the sink's own flush points`
+
+Next slice: V2-2-04c — the device comparison, or the Phase 2 bridge.
+
+### Why the sink and not `Player.Listener`
+
+`Player.Listener` was the obvious answer and is the wrong one. Its callbacks arrive on the
+application looper, unordered with respect to the tap's frame counter, so they can say *that*
+speed changed but not *at which frame* — and they die with the screen while `PlaybackService`
+keeps playing.
+
+The chain's own `applyPlaybackParameters` runs on the playback thread at the stream position
+where the parameter takes effect, and `PcmTap.flush` is the last instant at which the ended
+generation's frame count and the silence-skipping counter both still exist. One call stack, one
+thread, every number simultaneously live.
+
+Verified from the media3 1.10.0 bytecode rather than assumed, because three of the load-bearing
+facts are undocumented:
+
+| Question | Answer, from `javap` |
+|---|---|
+| Does enabling AudioTrack playback parameters skip the chain's speed hook? | **Yes** — `applyAudioProcessorPlaybackParametersAndSkipSilence` returns before the chain call when `useAudioOutputPlaybackParams()` is true. Not enabled in this app; now guarded by a test and used as a detector. |
+| Is `getSkippedFrames` output frames below Sonic? | **No** — input frames of its own stage, which the pass-through tap makes identical to tap frames. The conversion is the identity, not an approximation. |
+| Does `skippedFrames` survive a flush? | **No** — `onFlush` zeroes it, *after* the tap's flush in the same pipeline pass. That ordering is why the counter can be read at all. |
+
+I had recorded the third as the opposite, from misreading `onReset` as `onFlush`. It was caught
+by re-deriving it instead of trusting the note.
+
+### Review findings
+
+**1. The design reproduced V2-2-02a's bug, and its own test would have pinned it.** The first
+draft called the boundary listener *before* resetting the tap's counters, so the clock's newest
+epoch became N+1 while `framesWritten` still held N's total. A consumer reading the clock then
+the tap maps that count into the new segment and gets a confident presentation time an entire
+track away — the same shape as `SampleRing` publishing its frame count after its slot stores:
+a frontier out of step with the data it describes, failing as plausible output. The listener now
+runs after both stores, with the ended values passed as arguments.
+
+**2. The test for that was vacuous, because of the guard added for a different reason.** The
+listener call is wrapped so a clock fault cannot stop playback. The first version used
+`runCatching`, which catches `Throwable` — including the `AssertionError` from the assertions
+made inside the listener. The fault injection passed. Narrowed to `RuntimeException`, which
+still catches every realistic driver bug and lets a test failure through; the assertions moved
+outside the callback as well, and a `boundaryFailures` counter makes a swallowed fault countable.
+
+**3. `append` copied the segment list twice.** Found by the allocation budget failing at 944
+bytes: `(segments + segment).takeLast(cap)` builds the whole list, then builds it again. One
+pass instead — 368 bytes, on the playback thread, where the second copy was least welcome.
+
+### What this cannot know
+
+*Where* silence was removed. Media3 announces the toggle, never a skip event. So the total is
+folded into the next anchor and every segment carries `skippedInputSamples = 0`:
+
+| Property | Value |
+|---|---|
+| Segment anchors | exact, factor 1 |
+| Segment interiors, skip-silence on | late by (silence removed so far within the segment) / slope; corrected at the next boundary |
+| Segment interiors, skip-silence off | identically zero — and it is off by default |
+
+`PresentationTime.Skipped` is therefore **unreachable in production**: a §5.2 field and a whole
+sealed-interface case ship dead. Saying so plainly rather than reporting five of five triggers
+implemented — silence-skip discontinuity is not implementable, because no such media3 event
+exists. Recorded in `AUDIO_FEATURE_ABI.md` §2.2, not just here.
+
+Also absent: any absolute offset for output latency, and the sink's buffered lead discarded at a
+seek, which the anchor still counts. Both are V2-2-04c.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:engine:audio-android:testDebugUnitTest` | 29 tests, 0 failures, 0 skipped |
+| fault: listener notified before the counters are reset | **passed at first** — the vacuous test above; FAILED after narrowing the catch |
+| fault: listener call not guarded | FAILED |
+| fault: skip counter read on every boundary | FAILED |
+| fault: speed always treated as authoritative | FAILED (2 tests) |
+| fault: speed verdict recomputed on unhooked boundaries | FAILED (5 tests) |
+| fault: `append` builds the kept list twice | FAILED (the allocation budget) |
+| fault: factory builds a chain without the hooks | FAILED |
+| fault: tap never told which listener to report to | FAILED |
+| fault: session builds its factory without the driver | **passed at first** — the session test drove the driver directly; FAILED after asserting the chain attached its counter |
+| boundary allocation | 368 bytes, budget 600 |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+### Risks
+
+1. **The anchor counts frames the sink discards at a seek.** Bounded by the sink's buffered
+   lead, unmeasured here. First experiment in V2-2-04c.
+2. **It runs inside `AudioProcessor.flush` on the playback thread**, so a bad number stops the
+   music. Mitigated at both ends: the tap guards the listener call, the driver catches what the
+   clock rejects, and both keep a counter. `the driver never builds a segment the clock rejects`
+   drives 200 boundaries and asserts the net stays dry.
+3. **It rests on media3 internals no API documents.** A version bump can change them silently.
+   The detector for the worst case (speed applied at the AudioTrack) is a test; the others would
+   surface as a clock that stops appending, which the diagnostics counters name.
+
+---
+
 ## V2-2-04a: the segmented presentation clock
 
 State: COMPLETE

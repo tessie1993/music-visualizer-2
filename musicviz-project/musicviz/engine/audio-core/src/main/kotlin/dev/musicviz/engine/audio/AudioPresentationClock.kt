@@ -56,8 +56,16 @@ class AudioPresentationClock(
                     "${segment.inputSampleStart} follows ${last.inputSampleStart} in epoch ${segment.epoch}"
             }
         }
-        val kept = snapshot.segments + segment
-        snapshot = PresentationSnapshot(if (kept.size > maxSegments) kept.takeLast(maxSegments) else kept)
+        // Built in one pass rather than `(segments + segment).takeLast(...)`,
+        // which copies the whole list twice on every append. Appends land on
+        // the playback thread, so the second copy is garbage generated where
+        // it is least welcome.
+        val previous = snapshot.segments
+        val dropped = maxOf(0, previous.size + 1 - maxSegments)
+        val kept = ArrayList<ClockSegment>(previous.size + 1 - dropped)
+        for (i in dropped until previous.size) kept.add(previous[i])
+        kept.add(segment)
+        snapshot = PresentationSnapshot(kept)
     }
 
     private companion object {
