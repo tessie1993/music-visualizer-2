@@ -298,6 +298,10 @@ tasks.withType<Test>().configureEach {
 }
 
 dependencies {
+    // The only engine edge :app is allowed (§4.1). Empty today; the seams move
+    // across it one slice at a time.
+    implementation(project(":engine:runtime"))
+
     robolectricSdk34(libs.android.all.sdk34)
     robolectricSdk35(libs.android.all.sdk35)
 

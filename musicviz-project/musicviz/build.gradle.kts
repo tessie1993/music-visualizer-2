@@ -17,5 +17,7 @@ plugins {
 tasks.register("checkAll") {
     group = "verification"
     description = "Runs check in every module."
-    dependsOn(subprojects.map { "${it.path}:check" })
+    // Only projects that actually carry a build file: `:engine` is a
+    // container Gradle creates from the `:engine:*` paths and has no tasks.
+    dependsOn(subprojects.filter { it.buildFile.exists() }.map { "${it.path}:check" })
 }

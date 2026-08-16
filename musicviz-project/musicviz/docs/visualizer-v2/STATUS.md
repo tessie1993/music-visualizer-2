@@ -14,6 +14,95 @@ Newest slice first.
 
 ---
 
+## V2-1-02: create the six engine modules
+
+State: COMPLETE
+
+Goal: put the §4.1 dependency graph into the build, so the boundaries the V2 engine depends on
+are enforced by what compiles rather than by what a session remembers.
+
+User-visible effect: none, measured rather than assumed — the debug APK is **byte-identical**
+with and without the modules.
+
+In scope: `:engine:{audio-core,visual-core,gl,scenes,audio-android,runtime}`; the
+`musicviz.jvm-library` and `musicviz.android-library` convention plugins; `:app` depending on
+`:engine:runtime` and on nothing beneath it; `EngineModuleBoundaryTest`.
+
+Out of scope: moving any production code. §V2-1-02 says "no production migration", and the
+modules are empty on purpose — a boundary is worth having before there is code to put behind
+it, because afterwards every move argues with the boundary instead of following it.
+
+Files expected to change: `settings.gradle.kts`, `build.gradle.kts`, `app/build.gradle.kts`,
+`gradle/libs.versions.toml`, `build-logic/src/main/kotlin/musicviz.{jvm,android}-library.gradle.kts`,
+`engine/*/build.gradle.kts`, `app/src/test/java/dev/musicviz/EngineModuleBoundaryTest.kt`.
+
+Compatibility contract: unchanged. No production source file moved, so every source-text gate
+still points at the file it was written against — the failure mode `LEGACY_DISPOSITION.md`
+warns about does not arise until code starts moving.
+
+External source/provenance entries: none.
+
+Tests written first: `EngineModuleBoundaryTest`, six assertions. The interesting half is what
+it does *not* try to check: `audio-core` and `visual-core` cannot import `android.*` because a
+`java-library` module has no Android on its compile classpath, so the test asserts the
+*plugin* rather than the imports. Get the plugin wrong and the forbidden import quietly
+becomes possible again, which an import scan would not notice.
+
+Benchmark or visual evidence: APK size measured on a clean baseline — see below.
+
+Rollback: revert the one commit. The modules are empty, so nothing depends on them.
+
+Risks: six empty modules are ceremony until they carry code, which §16 lists as a named risk.
+The mitigation is the plan's own ordering — the modules exist so V2-2-02 has somewhere to put
+the sample-indexed ring, and nothing else is created until then.
+
+Commands and results: below.
+
+Review findings: two.
+
+1. `checkAll` failed with "Task with path `:engine:check` not found". Gradle creates a
+   container project for the `:engine:*` paths, and it has no build file and no tasks. The
+   aggregation now filters on `buildFile.exists()`, which is also the right rule for any
+   future grouping.
+2. The first APK comparison showed the modules *shrinking* the APK by 1.1 MB, which is not a
+   thing empty modules can do. The "before" number was a stale artifact from an earlier
+   commit. Re-measured against a real baseline — `git stash`, build, restore, build — the
+   delta is **0 bytes**. Worth the second measurement: reporting a 1.1 MB improvement from
+   adding empty modules would have been nonsense with a number attached.
+
+Commit: `build: create the six engine modules and their boundaries`
+
+Next slice: **V2-1-03 — establish manual composition and lifetime contracts.**
+
+### The graph, as built
+
+```text
+audio-core     -> (nothing)
+visual-core    -> audio-core
+gl             -> visual-core
+scenes         -> gl, visual-core, audio-core
+audio-android  -> audio-core
+runtime        -> scenes, audio-android (and their transitive engine modules)
+app            -> runtime
+```
+
+`audio-core` and `visual-core` are `java-library`, which is the boundary doing its own
+enforcement: `ENGINE_V2_PLAN.md` §1 traces the whole module argument to two files in
+`analysis/` that drifted into importing `android.*` under a package convention with no way to
+stop them. Those two modules now cannot.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `projects` | seven projects: `:app` plus the six under `:engine` |
+| `checkAll`, first run | **FAILED** — `:engine:check` not found; container project has no tasks |
+| `checkAll`, after the fix | BUILD SUCCESSFUL across all seven |
+| `:app:testDebugUnitTest` | **1,243 tests, 0 failures** (1,237 before this slice) |
+| debug APK, baseline vs. with modules | 347,220,588 bytes both — **0 byte delta** |
+
+---
+
 ## V2-1-01: add build conventions and whole-project gates
 
 State: COMPLETE
