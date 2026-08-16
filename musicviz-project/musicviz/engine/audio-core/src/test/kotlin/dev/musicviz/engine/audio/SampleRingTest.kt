@@ -12,10 +12,16 @@ import org.junit.Test
  * number that two different situations share.
  */
 class SampleRingTest {
+    /**
+     * Rings here name their runway explicitly. The default is a quarter of
+     * capacity, which at test sizes is a frame or two and would reject every
+     * write below; production capacities make it thousands.
+     */
     private fun ring(
-        frames: Int = 8,
+        frames: Int = 16,
         channels: Int = 2,
-    ) = SampleRing(frames, channels)
+        maxWrite: Int = frames / 2,
+    ) = SampleRing(frames, channels, maxWrite)
 
     private fun out(
         frames: Int,
@@ -56,59 +62,101 @@ class SampleRingTest {
 
     @Test
     fun `reading across the wrap point returns the samples, in order`() {
-        val r = ring(frames = 8)
+        val r = ring(frames = 16, maxWrite = 6)
         val reader = RingReader(r)
         r.write(stereo(0, 6), 6, 2)
         reader.read(out(6))
         r.write(stereo(6, 6), 6, 2)
+        reader.read(out(6))
+        r.write(stereo(12, 6), 6, 2)
         val dst = out(6)
-        assertEquals(RingReadResult.Ok(6, 6, 0), reader.read(dst))
-        assertEquals(listOf(6f, 7f, 8f, 9f, 10f, 11f), dst[0].toList())
+        // Frames 12..17 occupy slots 12,13,14,15,0,1 - the wrap is inside the
+        // window, not at its edge.
+        assertEquals(RingReadResult.Ok(12, 6, 0), reader.read(dst))
+        assertEquals(listOf(12f, 13f, 14f, 15f, 16f, 17f), dst[0].toList())
     }
 
     @Test
-    fun `exactly one capacity of unread audio is still readable`() {
-        val r = ring(frames = 8)
-        r.write(stereo(0, 8), 8, 2)
-        val dst = out(8)
-        assertEquals(RingReadResult.Ok(0, 8, 0), RingReader(r).read(dst))
+    fun `the deepest safe read is a capacity less the writer's runway`() {
+        // NOT a full capacity, which is what this test asserted until
+        // `SampleRingConcurrencyTest` caught the ring handing back a lap-old
+        // window as Ok. The oldest frame of a full-capacity window sits exactly
+        // where the writer is about to store, and the writer publishes its
+        // frame count only after storing - so a reader there cannot tell.
+        val r = ring(frames = 16, maxWrite = 4)
+        r.write(stereo(0, 4), 4, 2)
+        r.write(stereo(4, 4), 4, 2)
+        r.write(stereo(8, 4), 4, 2)
+        val dst = out(12)
+        assertEquals(RingReadResult.Ok(0, 12, 0), RingReader(r).read(dst))
         assertEquals(0f, dst[0].first(), 0f)
-        assertEquals(7f, dst[0].last(), 0f)
+        assertEquals(11f, dst[0].last(), 0f)
     }
 
     @Test
-    fun `one frame past capacity is a gap, not a short read`() {
+    fun `one frame past the safe depth is a gap, not a short read`() {
         // The distinction PcmRingBuffer cannot make: it would return a count
         // and the caller could not tell it had lost the oldest frame.
-        val r = ring(frames = 8)
-        r.write(stereo(0, 9), 9, 2)
-        assertEquals(RingReadResult.Gap(0, 1), RingReader(r).read(out(8)))
+        val r = ring(frames = 16, maxWrite = 4)
+        repeat(4) { r.write(stereo(it * 4, 4), 4, 2) }
+        assertEquals(RingReadResult.Gap(0, 4), RingReader(r).read(out(12)))
     }
 
     @Test
     fun `a gap leaves the cursor alone so the caller decides what to do`() {
-        val r = ring(frames = 8)
+        val r = ring(frames = 16, maxWrite = 4)
         val reader = RingReader(r)
-        r.write(stereo(0, 9), 9, 2)
-        reader.read(out(8))
+        repeat(4) { r.write(stereo(it * 4, 4), 4, 2) }
+        reader.read(out(12))
         assertEquals("the ring must not silently reposition a lagging reader", 0L, reader.nextSample)
         reader.skipToOldest()
-        val dst = out(8)
-        assertEquals(RingReadResult.Ok(1, 8, 0), reader.read(dst))
-        assertEquals(1f, dst[0].first(), 0f)
+        val dst = out(12)
+        assertEquals(RingReadResult.Ok(4, 12, 0), reader.read(dst))
+        assertEquals(4f, dst[0].first(), 0f)
     }
 
     @Test
     fun `a full buffer and a lost sample are different answers`() {
         // Both are "8" through copyNewSince. Here one is Ok and one is Gap.
-        val full = ring(frames = 16)
+        val full = ring(frames = 32, maxWrite = 12)
         full.write(stereo(0, 12), 12, 2)
         val okResult = RingReader(full).read(out(8))
         assertTrue("a caller-sized read is Ok with more still queued", okResult is RingReadResult.Ok)
 
-        val lapped = ring(frames = 8)
+        val lapped = ring(frames = 16, maxWrite = 12)
         lapped.write(stereo(0, 12), 12, 2)
+        lapped.write(stereo(12, 12), 12, 2)
         assertTrue("a lapped reader is Gap", RingReader(lapped).read(out(8)) is RingReadResult.Gap)
+    }
+
+    @Test
+    fun `the oldest trusted frame excludes the writer's runway`() {
+        // The invariant the torn-read bug reduces to, stated where it cannot
+        // depend on thread timing. `SampleRingConcurrencyTest` is what found
+        // the hole, but it needs the reader to be preempted at exactly the
+        // wrong moment and has not reproduced on demand since - so this, and
+        // `one frame past the safe depth is a gap`, are what actually pin it.
+        val r = ring(frames = 16, maxWrite = 4)
+        assertEquals("nothing written yet", 0L, r.oldestAvailable)
+        repeat(3) { r.write(stereo(it * 4, 4), 4, 2) }
+        assertEquals("12 written, 4 of runway, 16 of ring", 0L, r.oldestAvailable)
+        r.write(stereo(12, 4), 4, 2)
+        assertEquals("the writer may already be storing into frame 16's slot", 4L, r.oldestAvailable)
+        r.write(stereo(16, 4), 4, 2)
+        assertEquals(8L, r.oldestAvailable)
+    }
+
+    @Test
+    fun `a write longer than the runway readers reserve is refused`() {
+        // Allowing it would make oldestAvailable a guess: the writer would
+        // reach further into the ring than any reader believes is unsafe.
+        val r = ring(frames = 16, maxWrite = 4)
+        try {
+            r.write(stereo(0, 5), 5, 2)
+            error("expected a rejected write")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("maxWriteFrames"))
+        }
     }
 
     @Test
@@ -143,7 +191,7 @@ class SampleRingTest {
     fun `two readers advance independently`() {
         // The property one shared lastCopyEndIndex cannot have: the analysis
         // worker and a second consumer each see the whole stream.
-        val r = ring(frames = 16)
+        val r = ring(frames = 32, maxWrite = 8)
         val fast = RingReader(r)
         val slow = RingReader(r)
         r.write(stereo(0, 8), 8, 2)
@@ -227,7 +275,7 @@ class SampleRingConcurrencyTest {
 
     @Test
     fun `a mismatched channel count is rejected rather than half-filled`() {
-        val ring = SampleRing(8, 2)
+        val ring = SampleRing(8, 2, maxWriteFrames = 4)
         ring.write(FloatArray(8), 4, 2)
         try {
             RingReader(ring).read(arrayOf(FloatArray(4)))

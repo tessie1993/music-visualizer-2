@@ -14,6 +14,80 @@ Newest slice first.
 
 ---
 
+## V2-2-02a: reserve the writer's runway in the sample ring
+
+State: COMPLETE
+
+Goal: fix a torn-read hole in V2-2-02's ring, found when its own stress test failed for the
+first time during an unrelated run.
+
+User-visible effect: none yet — nothing reads `SampleRing` in production. What it prevents is
+the failure once something does: a window of audio from one lap later, returned as `Ok`, which
+every consumer would treat as ordinary audio.
+
+In scope: `SampleRing.oldestAvailable`, a `maxWriteFrames` bound enforced in `write`, the
+`RingReader` comment that argued the wrong thing, and the tests that encoded the unsafe
+guarantee.
+
+Out of scope: a claim/commit counter pair, which would keep a full capacity readable at the cost
+of resting on a memory-ordering argument (a release store does not stop later plain stores
+moving before it, so the claim would need a full fence, and `VarHandle` is API 33). Reserving
+the runway needs no such argument.
+
+Files expected to change: `engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/{SampleRing,RingReader}.kt`,
+`engine/audio-core/src/test/kotlin/dev/musicviz/engine/audio/SampleRingTest.kt`.
+
+Compatibility contract: the safe read depth shrinks from `capacity` to `capacity -
+maxWriteFrames`. No production caller exists to notice.
+
+External source/provenance entries: none.
+
+Tests written first: the failing run was the red. `the oldest trusted frame excludes the
+writer's runway` states the invariant deterministically, because the stress test that found the
+bug needs the reader preempted at exactly the wrong moment and has not reproduced on demand
+since — 0 failures in 9 further runs, with the old formula in place.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: the runway costs a quarter of the ring by default. At the capacities this is used at
+that is thousands of frames of headroom for buffers of ~1,000, which is the same trade
+`PcmRingBuffer` already made.
+
+Commands and results: below.
+
+Review findings: the bug is one my own comment argued could not happen. `RingReader` said the
+post-copy re-check "beats reserving a fraction of the ring against a case that mostly does not
+occur". Both halves were wrong: the re-check reads the same lagging counter it is meant to
+outsmart, and the case does occur. The comment is replaced rather than deleted, so the reasoning
+that failed is on the record next to what replaced it.
+
+Commit: `fix(audio-core): reserve the writer's runway so a lapped read is a Gap`
+
+Next slice: V2-2-04a — the presentation clock.
+
+### Why the re-check alone could not work
+
+`write` stores its slots and *then* publishes `written`. So between those two, the writer has
+already reached frames the counter does not admit to:
+
+| | writer's true frontier | published `written` | old `oldestAvailable` | safe? |
+|---|---|---|---|---|
+| mid-write | 46400 | 46400 | 45376 | reader at 45376 passes — and reads frame 46400 |
+| with the runway | 46400 | 46400 | 45632 | reader at 45376 gets `Gap` |
+
+### Verification
+
+| Command | Result |
+|---|---|
+| old formula, 3 deterministic tests | **all 3 FAILED** — runway invariant, gap past safe depth, cursor-after-gap |
+| new formula, whole `audio-core` suite | 26 tests, 0 failures, 5 consecutive clean runs |
+| old formula, stress test alone, 9 runs | 0 failures — which is why it is not the proof |
+| `checkAll` | BUILD SUCCESSFUL |
+
+---
+
 ## V2-2-03: bridge the PCM tap through audio-android
 
 State: COMPLETE
