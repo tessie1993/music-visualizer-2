@@ -14,6 +14,96 @@ Newest slice first.
 
 ---
 
+## V2-0-03: verify and gate 16 KB native libraries
+
+State: COMPLETE
+
+Goal: check the binaries that actually ship, not the ones a workflow happens to build.
+
+User-visible effect: none today. **Release builds now fail**, deliberately — see the finding
+below. Debug builds, tests and lint are unaffected.
+
+In scope: `checkNativePageAlignment`, a Gradle task that reads ELF program headers out of the
+`.so` entries inside the packaged APK or AAB and is wired to `assembleRelease`/`bundleRelease`;
+`NativeLibraryAlignmentTest`, which does the same over the checked-in `jniLibs` sources.
+
+Out of scope: rebuilding the libraries. That is NDK r28 plus a full projectM CMake build —
+`.github/workflows/native-libs.yml`, which budgets 90 minutes — and it would produce native
+binaries no device here can load. Also out of scope: the second ABI. `abiFilters` is
+`arm64-v8a` alone, so there is one to check.
+
+Files expected to change: `app/build.gradle.kts`,
+`app/src/test/java/dev/musicviz/NativeLibraryAlignmentTest.kt`.
+
+Compatibility contract: nothing user-facing. No packaging option, ABI or dependency changes;
+the gate only reads what the existing build already produces.
+
+External source/provenance entries: none. The ELF64 layout is the published format; no code
+was taken from anywhere.
+
+Tests written first: three. The load-bearing one is the positive control — it copies a real
+library, rewrites `p_align` to 16384 in every `PT_LOAD` header, and asserts the reader now
+reports 16384. Without it a reader that returned 4096 for everything would pass the main
+assertion for the wrong reason and keep passing after a real rebuild fixed the libraries.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit. The gate is additive.
+
+Risks: the release gate is red until the rebuild lands, which is the intended behaviour and
+still needs saying out loud — anyone cutting a release will hit it. The alternative is
+shipping an app that does not start on a 16 KB-page device.
+
+Commands and results: below.
+
+Review findings: the ELF reader now exists twice, in the Gradle task and in the test. That is
+deliberate for one slice — the task reads a zip entry and the test reads a file — and
+**V2-1-01 collapses it into the build-conventions plugin**, which is the next slice and the
+right home for logic two modules will want.
+
+Commit: `feat(build): gate release artifacts on 16 KB page alignment`
+
+Next slice: **V2-0-04 — collect runtime baseline.**
+
+### The finding
+
+Both shipped libraries are **4 KB aligned**, and the app targets SDK 36:
+
+```
+app-debug.apk!lib/arm64-v8a/libprojectM-4.so   aligned to 4096
+app-debug.apk!lib/arm64-v8a/libprojectmjni.so  aligned to 4096
+```
+
+Android 15 ships devices with 16 KB memory pages, and a library laid out for 4 KB will not
+load on them. `MASTER_PLAN.md` §1.2 listed this as unverified; it is now verified, and it
+fails.
+
+The repository was not unaware of the requirement — `native-libs.yml` is literally titled
+"Rebuild native libs (16 KB aligned)" and verifies alignment on its own output. The gap was
+narrower and easier to miss: **a workflow that checks what it builds says nothing about
+whether that output was ever committed.** The binaries in `jniLibs` predate it.
+
+Fixing it is one run of that workflow followed by committing the artifacts. Until then the
+release path is blocked, which is the correct failure: an unloadable app is worse than an
+unbuilt one.
+
+### Verification
+
+| Command | Result |
+|---|---|
+| `:app:checkNativePageAlignment` | **FAILED**, naming both libraries and their 4096 alignment — the finding above |
+| `:app:testDebugUnitTest --tests '*NativeLibraryAlignmentTest*'` | 3 passed, including the 16 KB positive control |
+| `:app:testDebugUnitTest` | **1,237 tests, 0 failures** (1,234 before this slice) |
+| `:app:ktlintCheck` | BUILD SUCCESSFUL, after `ktlintFormat` on the buildscript |
+| `:app:lintDebug` | BUILD SUCCESSFUL |
+| `:app:assembleDebug` | BUILD SUCCESSFUL — the gate is on the release outputs only |
+
+`assembleRelease` was not run: it needs signing configuration this container does not have.
+The gate was exercised directly against the debug APK instead, which is the same code path
+over the same kind of archive.
+
+---
+
 ## V2-0-02b: bound how often the beat flash may fire
 
 State: COMPLETE
