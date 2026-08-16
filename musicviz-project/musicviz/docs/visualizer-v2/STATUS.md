@@ -88,6 +88,17 @@ forbids, three lines under a comment claiming it did not. Encoding is now resolv
 Left dead and unmarked it is a trap for the next session — two tap implementations, one wired.
 Its KDoc now says which one is live, why this one is still here, and which slice removes it.
 
+A third, found on the review pass after the commit: **the one line the slice changed in `:app`
+had no test on it.** `PcmTapParityTest` builds its own tap and its own ring, and
+`PlaybackEngineTest`'s existing wiring test writes to `session.ring` directly with a comment
+saying the tap "only runs inside a real audio pipeline". So both halves were proved and the
+join between them — the `PcmSink` lambda in `PlaybackSession` — was not. `tap` is now `internal`
+and a test pushes PCM through the session's real tap and reads it back out through
+`PlayerViewModel`; pointing the lambda at a different `PcmRingBuffer` fails it.
+
+That is the failure the class exists to prevent, and it would not have crashed, logged, or
+failed to compile.
+
 Commit: `refactor(audio): move the PCM tap into audio-android and off the allocator`
 
 Next slice: V2-2-04 — the segmented presentation clock.
@@ -99,21 +110,36 @@ equal warm-up.
 
 | Path | Bytes per callback |
 |---|---|
-| `PcmTapSink` (before) | **120.0** |
-| `PcmTap` (after) | **0.0** |
-| empty loop — the meter's floor | 0.003 |
+| `PcmTapSink` (before) | **120.003** |
+| `PcmTap` (after) | **0.007** |
+| empty loop — the meter's own floor | 0.002 |
 | a loop allocating one `FloatArray(1)` — the meter's control | > 8 |
 
 The 120 bytes were a `duplicate()`, an `asShortBuffer()` view and, whenever a larger buffer
 arrived, a fresh `FloatArray`. At roughly forty callbacks a second that is ~5 KB/s of garbage
-generated on the thread whose deadline is the audio device's. It is now zero: absolute
-`getShort`/`getFloat` reads need no view object, and a buffer wider than the staging array is
-written as several chunks instead of growing it.
+generated on the thread whose deadline is the audio device's. Afterwards the tap sits within
+0.005 bytes of a loop that does nothing at all — the code has no allocation site left on that
+path: absolute `getShort`/`getFloat` reads need no view object, and a buffer wider than the
+staging array is written as several chunks instead of growing it.
 
-The zero is not a threshold that happens to hold. Tightening the budget to `0.0` fails the test,
-which places the true value at exactly 0. And the meter is proved able to see allocation in the
-same test, by a control loop that allocates — otherwise "zero" and "measuring nothing" are the
-same result.
+`PcmTapTest` asserts a budget of 8 bytes rather than zero, and proves in the same test that the
+meter can see allocation at all, using a control loop that allocates — otherwise "under budget"
+and "measuring nothing" would be the same result.
+
+### Correction
+
+The first version of this entry, and the commit message that went with it, said the new tap
+measures **exactly 0.0** bytes per callback, and offered as proof that the test fails when its
+budget is tightened to `0.0`.
+
+That proof is worthless and the number was wrong. `perCallback < 0.0` is false for *every*
+non-negative measurement, so tightening the budget to zero fails whatever the tap does — it
+distinguishes nothing. Printing the value instead gives **0.0068**, against a floor of 0.0024
+for an empty loop: the residue is the reflective meter's own boxing, not the tap's.
+
+The conclusion the slice rests on is unchanged — 120 bytes to noise — but "exactly 0" was a
+claim built from an experiment that could not have produced it, which is worse than a wrong
+number. Corrected here rather than quietly restated; the commit that carried it is `2ca6be0`.
 
 ### Verification
 
@@ -125,9 +151,10 @@ same result.
 | parity under fault: `32768f` → `32767f` | 4 of 5 FAILED — the float case correctly survives a 16-bit-only fault |
 | parity under fault: one frame dropped per chunk seam | FAILED |
 | parity under fault: big-endian read | FAILED |
-| allocation test with the budget at 0.0 | FAILED — so the measured value is exactly 0 |
+| `PcmTap` allocation, printed | 0.0068 bytes/callback vs a 0.0024 floor |
+| session wiring under fault: tap pointed at another ring | FAILED |
 | `checkAll` | BUILD SUCCESSFUL across all seven projects |
-| whole suite | app 2,532 + engine 62 tests, 0 failures, 0 skipped |
+| whole suite | 1,298 distinct tests (app 1,267, engine 31), 0 failures, 0 skipped — each also re-run in the release variant |
 
 ---
 

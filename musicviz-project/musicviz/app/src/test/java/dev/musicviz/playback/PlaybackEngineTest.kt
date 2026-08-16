@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import androidx.media3.common.C
 import androidx.test.core.app.ApplicationProvider
 import dev.musicviz.ui.PlayerViewModel
 import org.junit.Assert.assertEquals
@@ -17,6 +18,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /**
  * The one invariant background playback rests on: there is exactly one player
@@ -63,13 +66,32 @@ class PlaybackEngineTest {
         val session = PlaybackEngine.acquireForUi(ctx)
         val viewModel = PlayerViewModel(ctx)
         assertNull("nothing has been decoded yet", viewModel.latestPcm())
-        // Stands in for the tap sink, which only runs inside a real audio
-        // pipeline. What is being asserted is the wiring either side of it: the
-        // buffer the player writes into is the buffer the scenes read from.
         session.ring.writeInterleaved(FloatArray(512) { 0.25f }, 256, 2)
         val chunk = viewModel.latestPcm()
         assertNotNull("the scenes read a different ring buffer from the one the player fills", chunk)
         assertEquals("the 512 interleaved samples are 256 mono frames", 256, chunk?.count)
+    }
+
+    @Test
+    fun `PCM handed to the session's own tap arrives in that ring`() {
+        // The test above writes to the ring directly, so it proves the read
+        // side and assumes the write side. This drives the real tap, which is
+        // the half that moved module in V2-2-03 and is one lambda wide: point
+        // it at a different buffer and every scene sits still over playing
+        // music, with nothing failing to compile and no crash to notice.
+        val session = PlaybackEngine.acquireForUi(ctx)
+        val viewModel = PlayerViewModel(ctx)
+        session.tap.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+
+        val pcm = ByteBuffer.allocate(512 * Short.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(512) { pcm.putShort(8192) }
+        session.tap.handleBuffer(pcm.flip() as ByteBuffer)
+
+        val chunk = viewModel.latestPcm()
+        assertNotNull("the tap writes into a buffer nothing reads", chunk)
+        assertEquals(256, chunk?.count)
+        assertEquals("8192 of 32768 full scale is 0.25", 0.25f, chunk?.data?.get(0) ?: 0f, 0f)
+        assertEquals(256L, session.tap.framesWritten)
     }
 
     /**

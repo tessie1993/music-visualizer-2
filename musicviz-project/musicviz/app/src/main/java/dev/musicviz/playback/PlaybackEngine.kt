@@ -53,8 +53,14 @@ class PlaybackSession internal constructor(
      * It knows a [dev.musicviz.engine.audio.PcmSink], not this class's buffer,
      * which is what lets the same tap feed the V2 ring later without touching
      * the capture path.
+     *
+     * `internal` so a test can push audio through the real tap and watch it
+     * arrive in [ring]. That one lambda is the whole join between the capture
+     * path and everything that draws, and wiring it to the wrong buffer is
+     * silent - a visualizer that sits still over playing music, which is the
+     * failure this class's own documentation says it exists to prevent.
      */
-    private val tap =
+    internal val tap =
         PcmTap({ samples, frames, channels -> ring.writeInterleaved(samples, frames, channels) }) { format ->
             val hook = onAudioFormat
             if (hook != null) {
