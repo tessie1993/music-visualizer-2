@@ -35,8 +35,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.geode.R
 import dev.geode.export.ClipEdit
 import dev.geode.export.ClipLook
 import dev.geode.export.ExportQuality
@@ -74,10 +77,13 @@ fun StudioScreen(viewModel: PlayerViewModel) {
             if (uri != null) viewModel.describeStudioClip(uri) { editing = it }
         }
 
+    val chooserTitle = stringResource(R.string.studio_share_chooser)
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
-            CrystalOverline("Geode")
-            GlowTitle(if (editing == null) "Studio" else "Edit")
+            CrystalOverline(stringResource(R.string.app_name))
+            GlowTitle(
+                stringResource(if (editing == null) R.string.nav_studio else R.string.studio_edit),
+            )
         }
         val clip = editing
         if (clip == null) {
@@ -85,7 +91,7 @@ fun StudioScreen(viewModel: PlayerViewModel) {
                 studio = studio,
                 onOpen = { editing = it },
                 onPick = { picker.launch(arrayOf("video/*")) },
-                onShare = { context.shareVideo(it) },
+                onShare = { context.shareVideo(it, chooserTitle) },
                 onRename = { clip, name, done -> viewModel.renameStudioClip(clip.uri, name, done) },
                 onDelete = { clip, done -> viewModel.deleteStudioClip(clip.uri, done) },
             )
@@ -118,6 +124,10 @@ private fun ClipLibrary(
     var renaming by remember { mutableStateOf<StudioClip?>(null) }
     var deleting by remember { mutableStateOf<StudioClip?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
+    // Read here rather than inside the result callbacks: those run off the
+    // composition, where stringResource does not exist.
+    val renameFailed = stringResource(R.string.studio_rename_failed)
+    val deleteFailed = stringResource(R.string.studio_delete_failed)
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -125,7 +135,7 @@ private fun ClipLibrary(
     ) {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CrystalButton(onClick = onPick) { Text("Open a video…") }
+                CrystalButton(onClick = onPick) { Text(stringResource(R.string.studio_open_video)) }
             }
         }
         if (studio.clips.isEmpty() && !studio.loading) {
@@ -141,11 +151,9 @@ private fun ClipLibrary(
                         ).padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    CrystalOverline("Nothing rendered yet")
+                    CrystalOverline(stringResource(R.string.studio_empty_title))
                     Text(
-                        "Render a visual from Settings › Export video and it lands here, ready to be " +
-                            "cut, graded and sent somewhere. Any other video on the phone can be opened " +
-                            "with the button above.",
+                        stringResource(R.string.studio_empty_body),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -180,9 +188,9 @@ private fun ClipLibrary(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                TextButton(onClick = { onShare(Uri.parse(clip.uri)) }) { Text("Send") }
-                TextButton(onClick = { renaming = clip }) { Text("Rename") }
-                TextButton(onClick = { deleting = clip }) { Text("Delete") }
+                TextButton(onClick = { onShare(Uri.parse(clip.uri)) }) { Text(stringResource(R.string.studio_send)) }
+                TextButton(onClick = { renaming = clip }) { Text(stringResource(R.string.action_rename)) }
+                TextButton(onClick = { deleting = clip }) { Text(stringResource(R.string.action_delete)) }
             }
         }
         if (studio.clips.isNotEmpty()) {
@@ -191,8 +199,12 @@ private fun ClipLibrary(
                 // number that tells someone whether to start clearing up.
                 val bytes = studio.clips.sumOf { it.sizeBytes }
                 Text(
-                    "${studio.clips.size} clip${if (studio.clips.size == 1) "" else "s"}, " +
-                        "%.1f GB in Movies/Geode".format(bytes / (1024f * 1024f * 1024f)),
+                    pluralStringResource(R.plurals.clip_count, studio.clips.size, studio.clips.size) +
+                        ", " +
+                        stringResource(
+                            R.string.studio_storage_used,
+                            stringResource(R.string.studio_size_gb, bytes / (1024f * 1024f * 1024f)),
+                        ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -204,53 +216,53 @@ private fun ClipLibrary(
         var name by remember(clip.uri) { mutableStateOf(clip.name.substringBeforeLast('.')) }
         AlertDialog(
             onDismissRequest = { renaming = null },
-            title = { Text("Rename clip") },
+            title = { Text(stringResource(R.string.studio_rename_title)) },
             text = {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     singleLine = true,
-                    label = { Text("Name") },
+                    label = { Text(stringResource(R.string.studio_rename_field)) },
                 )
             },
             confirmButton = {
                 TextButton(
                     enabled = name.isNotBlank(),
                     onClick = {
-                        onRename(clip, name) { ok -> notice = if (ok) null else "Could not rename that clip." }
+                        onRename(clip, name) { ok -> notice = if (ok) null else renameFailed }
                         renaming = null
                     },
-                ) { Text("Rename") }
+                ) { Text(stringResource(R.string.action_rename)) }
             },
-            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
 
     deleting?.let { clip ->
         AlertDialog(
             onDismissRequest = { deleting = null },
-            title = { Text("Delete clip?") },
+            title = { Text(stringResource(R.string.studio_delete_title)) },
             // Named, and stated as permanent: the file is gone from the device,
             // not from this list.
-            text = { Text("\"${clip.name}\" will be deleted from this device. This cannot be undone.") },
+            text = { Text(stringResource(R.string.studio_delete_body, clip.name)) },
             confirmButton = {
                 TextButton(onClick = {
                     onDelete(clip) { ok ->
-                        notice = if (ok) null else "Android would not let Geode delete that file."
+                        notice = if (ok) null else deleteFailed
                     }
                     deleting = null
-                }) { Text("Delete") }
+                }) { Text(stringResource(R.string.action_delete)) }
             },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
 
     notice?.let { message ->
         AlertDialog(
             onDismissRequest = { notice = null },
-            title = { Text("Didn't work") },
+            title = { Text(stringResource(R.string.studio_notice_title)) },
             text = { Text(message) },
-            confirmButton = { TextButton(onClick = { notice = null }) { Text("OK") } },
+            confirmButton = { TextButton(onClick = { notice = null }) { Text(stringResource(R.string.action_ok)) } },
         )
     }
 }
@@ -270,6 +282,7 @@ private fun ClipEditor(
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
+    val chooserTitle = stringResource(R.string.studio_share_chooser)
     var edit by remember(clip.uri) { mutableStateOf(ClipEdit()) }
     val duration = clip.durationMs.coerceAtLeast(1L)
     val outEnd = if (edit.endMs > 0) edit.endMs else duration
@@ -291,13 +304,13 @@ private fun ClipEditor(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                TextButton(onClick = onClose) { Text("Back") }
+                TextButton(onClick = onClose) { Text(stringResource(R.string.action_back)) }
             }
         }
 
         // ---- Trim -----------------------------------------------------
         item {
-            StudioSection("Cut") {
+            StudioSection(stringResource(R.string.studio_section_cut)) {
                 // A filmstrip rather than a scrub bar: six keyframes across
                 // the clip is enough to find the bit you meant, and it is what
                 // the range handles are being dragged over.
@@ -326,8 +339,17 @@ private fun ClipEditor(
                     valueRange = 0f..duration.toFloat(),
                 )
                 Text(
-                    "${clock(edit.startMs)} → ${clock(outEnd)}   ·   keeps ${clock(edit.trimmedMs(duration))}" +
-                        if (edit.speed != 1f) ", renders ${clock(edit.outputMs(duration))}" else "",
+                    stringResource(
+                        R.string.studio_trim_summary,
+                        clock(edit.startMs),
+                        clock(outEnd),
+                        clock(edit.trimmedMs(duration)),
+                    ) +
+                        if (edit.speed != 1f) {
+                            stringResource(R.string.studio_trim_renders, clock(edit.outputMs(duration)))
+                        } else {
+                            ""
+                        },
                     style = MaterialTheme.typography.labelMedium,
                     color = accentTextColor(),
                 )
@@ -336,7 +358,7 @@ private fun ClipEditor(
 
         // ---- Look -----------------------------------------------------
         item {
-            StudioSection("Look") {
+            StudioSection(stringResource(R.string.studio_section_look)) {
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -347,13 +369,22 @@ private fun ClipEditor(
                         }
                     }
                 }
-                StudioSlider("Brightness", edit.brightness, -0.5f..0.5f) { edit = edit.copy(brightness = it) }
-                StudioSlider("Contrast", edit.contrast, -0.6f..0.6f) { edit = edit.copy(contrast = it) }
-                StudioSlider("Saturation", edit.saturation, -100f..100f, unit = "%") { edit = edit.copy(saturation = it) }
-                StudioSlider("Hue shift", edit.hueDegrees, -180f..180f, unit = "°") { edit = edit.copy(hueDegrees = it) }
+                StudioSlider(stringResource(R.string.studio_brightness), edit.brightness, -0.5f..0.5f) { edit = edit.copy(brightness = it) }
+                StudioSlider(stringResource(R.string.studio_contrast), edit.contrast, -0.6f..0.6f) { edit = edit.copy(contrast = it) }
+                StudioSlider(
+                    stringResource(R.string.studio_saturation),
+                    edit.saturation,
+                    -100f..100f,
+                    unit = "%",
+                ) { edit = edit.copy(saturation = it) }
+                StudioSlider(
+                    stringResource(R.string.studio_hue_shift),
+                    edit.hueDegrees,
+                    -180f..180f,
+                    unit = "°",
+                ) { edit = edit.copy(hueDegrees = it) }
                 Text(
-                    "A look writes these four and then gets out of the way — every one stays an ordinary " +
-                        "slider afterwards, the same way the live-input profiles work.",
+                    stringResource(R.string.studio_look_explainer),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -362,19 +393,19 @@ private fun ClipEditor(
 
         // ---- Motion and frame ------------------------------------------
         item {
-            StudioSection("Frame") {
-                StudioSlider("Speed", edit.speed, 0.25f..4f, unit = "×", decimals = 2) {
+            StudioSection(stringResource(R.string.studio_section_frame)) {
+                StudioSlider(stringResource(R.string.studio_speed), edit.speed, 0.25f..4f, unit = "×", decimals = 2) {
                     edit = edit.copy(speed = it)
                 }
-                StudioSlider("Rotate", edit.rotationDegrees, -180f..180f, unit = "°") {
+                StudioSlider(stringResource(R.string.studio_rotate), edit.rotationDegrees, -180f..180f, unit = "°") {
                     edit = edit.copy(rotationDegrees = it)
                 }
-                Text("Reframe", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.studio_reframe), style = MaterialTheme.typography.labelMedium)
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    StudioChip("As shot", selected = edit.ratio == null) { edit = edit.copy(ratio = null) }
+                    StudioChip(stringResource(R.string.studio_as_shot), selected = edit.ratio == null) { edit = edit.copy(ratio = null) }
                     ExportRatio.entries.forEach { r ->
                         StudioChip(r.label, selected = edit.ratio == r) { edit = edit.copy(ratio = r) }
                     }
@@ -386,8 +417,7 @@ private fun ClipEditor(
                         }
                     }
                     Text(
-                        "Reframing crops rather than pillarboxes — turning 16:9 into 9:16 means losing the " +
-                            "sides, and black bars are the one result nobody wants from that.",
+                        stringResource(R.string.studio_reframe_explainer),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -397,21 +427,20 @@ private fun ClipEditor(
 
         // ---- Sound and caption -----------------------------------------
         item {
-            StudioSection("Sound & caption") {
+            StudioSection(stringResource(R.string.studio_section_sound)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Mute", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.studio_mute), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = edit.mute, onCheckedChange = { edit = edit.copy(mute = it) })
                 }
                 OutlinedTextField(
                     value = edit.caption,
                     onValueChange = { edit = edit.copy(caption = it) },
-                    label = { Text("Burnt-in caption") },
+                    label = { Text(stringResource(R.string.studio_caption)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    "Drawn into the frame after everything else, so it is not graded or cropped with the " +
-                        "picture. Leave it empty for none.",
+                    stringResource(R.string.studio_caption_explainer),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -420,7 +449,7 @@ private fun ClipEditor(
 
         // ---- Render ------------------------------------------------------
         item {
-            StudioSection("Render & send") {
+            StudioSection(stringResource(R.string.studio_section_render)) {
                 when {
                     studio.running -> {
                         LinearProgressIndicator(
@@ -428,22 +457,28 @@ private fun ClipEditor(
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Text(
-                            "Rendering… ${(studio.progress * 100).roundToInt()}%",
+                            stringResource(R.string.studio_rendering, (studio.progress * 100).roundToInt()),
                             style = MaterialTheme.typography.labelMedium,
                         )
-                        CrystalButton(filled = false, onClick = viewModel::cancelStudioExport) { Text("Cancel") }
+                        CrystalButton(
+                            filled = false,
+                            onClick = viewModel::cancelStudioExport,
+                        ) { Text(stringResource(R.string.action_cancel)) }
                     }
                     studio.resultUri != null -> {
-                        Text("Saved to Movies/Geode.", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.studio_saved), style = MaterialTheme.typography.bodyMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            CrystalButton(onClick = { context.shareVideo(studio.resultUri!!) }) { Text("Send…") }
-                            CrystalButton(filled = false, onClick = { context.viewVideo(studio.resultUri!!) }) { Text("Play") }
-                            TextButton(onClick = viewModel::clearStudioResult) { Text("Edit again") }
+                            CrystalButton(
+                                onClick = { context.shareVideo(studio.resultUri!!, chooserTitle) },
+                            ) { Text(stringResource(R.string.studio_send_ellipsis)) }
+                            CrystalButton(
+                                filled = false,
+                                onClick = { context.viewVideo(studio.resultUri!!) },
+                            ) { Text(stringResource(R.string.studio_play)) }
+                            TextButton(onClick = viewModel::clearStudioResult) { Text(stringResource(R.string.studio_edit_again)) }
                         }
                         Text(
-                            "Send opens the phone's own share sheet — YouTube, Instagram, TikTok, Drive, " +
-                                "a message, whatever is installed and signed in. Geode has no network " +
-                                "access of its own and never uploads anything itself.",
+                            stringResource(R.string.studio_send_explainer),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -456,15 +491,17 @@ private fun ClipEditor(
                             CrystalButton(
                                 enabled = edit.trimmedMs(duration) > 0,
                                 onClick = { viewModel.startStudioExport(clip, edit) },
-                            ) { Text("Render") }
-                            TextButton(onClick = { edit = ClipEdit() }) { Text("Reset") }
+                            ) { Text(stringResource(R.string.studio_render)) }
+                            TextButton(onClick = { edit = ClipEdit() }) { Text(stringResource(R.string.studio_reset)) }
                         }
                         Text(
-                            if (edit.isIdentity(duration)) {
-                                "Nothing is changed yet — rendering now would just copy the clip."
-                            } else {
-                                "Renders a NEW file. The original is never overwritten."
-                            },
+                            stringResource(
+                                if (edit.isIdentity(duration)) {
+                                    R.string.studio_nothing_changed
+                                } else {
+                                    R.string.studio_renders_new_file
+                                },
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -511,7 +548,7 @@ private fun StudioSlider(
 ) {
     Column {
         Text(
-            "$label  ${"%.${decimals}f".format(value)}$unit",
+            stringResource(R.string.studio_slider_value, label, "%.${decimals}f".format(value), unit),
             style = MaterialTheme.typography.labelMedium,
         )
         CrystalSlider(value = value, onValueChange = onChange, valueRange = range)
@@ -555,13 +592,16 @@ private fun clock(ms: Long): String = "%d:%02d".format(ms / 60_000, (ms / 1000) 
  * that need OAuth and a network permission the app does not have would be
  * worse in every way.
  */
-private fun android.content.Context.shareVideo(uri: Uri) {
+private fun android.content.Context.shareVideo(
+    uri: Uri,
+    chooserTitle: String,
+) {
     val send =
         Intent(Intent.ACTION_SEND)
             .setType("video/mp4")
             .putExtra(Intent.EXTRA_STREAM, uri)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    runCatching { startActivity(Intent.createChooser(send, "Send video")) }
+    runCatching { startActivity(Intent.createChooser(send, chooserTitle)) }
 }
 
 private fun android.content.Context.viewVideo(uri: Uri) {

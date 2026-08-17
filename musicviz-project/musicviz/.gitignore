@@ -7,3 +7,15 @@ local.properties
 keystore.properties
 *.jks
 *.keystore
+
+# Service credentials. The upload feature needs OAuth client ids and secrets
+# for YouTube, TikTok and Instagram, and the moment those exist locally they
+# must not be committable — a leaked client secret is a rotation and a store
+# re-verification, not an inconvenience. Ignored ahead of the feature rather
+# than alongside it, because the commit that adds the first .env is exactly
+# the one nobody reads carefully.
+.env
+.env.*
+!.env.example
+secrets.properties
+google-services.json
