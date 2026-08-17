@@ -15,7 +15,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.geode.R
 import dev.geode.analysis.PlaybackMath
 import dev.geode.data.PlayerPrefs
 
@@ -34,7 +36,10 @@ fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
     val sleepRemainingMs by viewModel.sleepTimerRemainingMs.collectAsState()
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Column {
-            Text("Speed  ${"%.2f".format(prefs.speed)}x", style = MaterialTheme.typography.labelMedium)
+            Text(
+                stringResource(R.string.playback_speed, "%.2f".format(prefs.speed)),
+                style = MaterialTheme.typography.labelMedium,
+            )
             CrystalSlider(
                 value = prefs.speed,
                 onValueChange = { viewModel.setPlayerPrefs(prefs.copy(speed = PlaybackMath.snap(it, 0.05f))) },
@@ -43,7 +48,7 @@ fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
         }
         Column {
             Text(
-                "Pitch  ${"%.1f".format(prefs.pitchSemitones)} st (0 = normal)",
+                stringResource(R.string.playback_pitch, "%.1f".format(prefs.pitchSemitones)),
                 style = MaterialTheme.typography.labelMedium,
             )
             CrystalSlider(
@@ -55,9 +60,9 @@ fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
         Column {
             Text(
                 if (prefs.fadeMs <= 0) {
-                    "Fade on pause, resume and skip — off"
+                    stringResource(R.string.playback_fade_off)
                 } else {
-                    "Fade on pause, resume and skip  ${"%.1f".format(prefs.fadeMs / 1000f)}s"
+                    stringResource(R.string.playback_fade, "%.1f".format(prefs.fadeMs / 1000f))
                 },
                 style = MaterialTheme.typography.labelMedium,
             )
@@ -71,27 +76,25 @@ fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
                 valueRange = 0f..PlayerPrefs.MAX_FADE_MS.toFloat(),
             )
             Text(
-                "Ramps the volume instead of cutting it. Not a crossfade — one player decodes one " +
-                    "track at a time, and a second one would give the analyser two streams to sum — " +
-                    "but it removes the hard edges, which is the part you hear.",
+                stringResource(R.string.playback_fade_explainer),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        PlaybackSwitchRow("Skip silence", prefs.skipSilence) {
+        PlaybackSwitchRow(stringResource(R.string.playback_skip_silence), prefs.skipSilence) {
             viewModel.setPlayerPrefs(prefs.copy(skipSilence = it))
         }
-        PlaybackSwitchRow("Pause when unplugged", prefs.pauseOnNoisy) {
+        PlaybackSwitchRow(stringResource(R.string.playback_pause_unplugged), prefs.pauseOnNoisy) {
             viewModel.setPlayerPrefs(prefs.copy(pauseOnNoisy = it))
         }
-        PlaybackSwitchRow("Keep screen on", prefs.keepScreenOn) {
+        PlaybackSwitchRow(stringResource(R.string.playback_keep_screen_on), prefs.keepScreenOn) {
             viewModel.setPlayerPrefs(prefs.copy(keepScreenOn = it))
         }
-        PlaybackSwitchRow("Auto-resume last track", prefs.autoResume) {
+        PlaybackSwitchRow(stringResource(R.string.playback_auto_resume), prefs.autoResume) {
             viewModel.setPlayerPrefs(prefs.copy(autoResume = it))
         }
         Column {
-            Text("Sleep timer", style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(R.string.playback_sleep_timer), style = MaterialTheme.typography.labelMedium)
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -110,23 +113,30 @@ fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
                         },
                         label = {
                             Text(
-                                if (minutes == 0) "Off" else "$minutes min",
+                                if (minutes == 0) {
+                                    stringResource(R.string.playback_sleep_off)
+                                } else {
+                                    stringResource(R.string.playback_sleep_minutes, minutes)
+                                },
                                 style = MaterialTheme.typography.labelSmall,
                             )
                         },
                     )
                 }
             }
-            PlaybackSwitchRow("Let the track finish", prefs.sleepFinishTrack) {
+            PlaybackSwitchRow(stringResource(R.string.playback_sleep_finish_track), prefs.sleepFinishTrack) {
                 viewModel.setPlayerPrefs(prefs.copy(sleepFinishTrack = it))
             }
             sleepRemainingMs?.let { remaining ->
                 Text(
-                    if (prefs.sleepFinishTrack) {
-                        "Pausing after the track playing in ${PlaybackMath.formatCountdown(remaining)}"
-                    } else {
-                        "Pausing in ${PlaybackMath.formatCountdown(remaining)}"
-                    },
+                    stringResource(
+                        if (prefs.sleepFinishTrack) {
+                            R.string.playback_sleep_pausing_after_track
+                        } else {
+                            R.string.playback_sleep_pausing_in
+                        },
+                        PlaybackMath.formatCountdown(remaining),
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = accentTextColor(),
                 )

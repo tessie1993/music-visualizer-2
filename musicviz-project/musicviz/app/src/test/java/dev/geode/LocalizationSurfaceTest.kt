@@ -52,6 +52,9 @@ class LocalizationSurfaceTest {
     private val localized: List<String> =
         listOf(
             "ui/AppShell.kt",
+            "ui/FolderSettings.kt",
+            "ui/EqualizerSettings.kt",
+            "ui/PlaybackSettings.kt",
             "ui/StudioScreen.kt",
             "ui/LibraryScreen.kt",
             "ui/VisualizerScreen.kt",
@@ -72,9 +75,6 @@ class LocalizationSurfaceTest {
             "ui/SettingsDialog.kt" to "not converted yet — the export dialog's long explanatory copy",
             "ui/AudioSettings.kt" to "not converted yet — analysis and live-input copy",
             "ui/ExportSettings.kt" to "not converted yet — export defaults copy",
-            "ui/FolderSettings.kt" to "not converted yet — folder and cache management copy",
-            "ui/PlaybackSettings.kt" to "not converted yet — playback and sleep-timer copy",
-            "ui/EqualizerSettings.kt" to "not converted yet — equalizer copy and device-support messages",
             "ui/ExternalAudioSettings.kt" to "not converted yet — capture permission and refusal copy",
             "ui/CustomizeTabs.kt" to
                 "control labels are also the lock and randomizer identity keys (see ParamRandomizer), " +

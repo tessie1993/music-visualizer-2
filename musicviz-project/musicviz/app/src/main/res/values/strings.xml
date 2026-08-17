@@ -242,7 +242,7 @@
     <string name="studio_section_sound">Sound &amp; caption</string>
     <string name="studio_section_render">Render &amp; send</string>
 
-    <string name="studio_trim_summary">%1$s → %2$s   ·   keeps %3$s</string>
+    <string name="studio_trim_summary">"%1$s → %2$s   ·   keeps %3$s"</string>
     <string name="studio_trim_renders">, renders %1$s</string>
     <string name="studio_look_explainer">A look writes these four and then gets out of the way — every one stays an ordinary slider afterwards, the same way the live-input profiles work.</string>
     <string name="studio_brightness">Brightness</string>
@@ -266,7 +266,53 @@
     <string name="studio_reset">Reset</string>
     <string name="studio_nothing_changed">Nothing is changed yet — rendering now would just copy the clip.</string>
     <string name="studio_renders_new_file">Renders a NEW file. The original is never overwritten.</string>
-    <string name="studio_slider_value">%1$s  %2$s%3$s</string>
+    <string name="studio_slider_value">"%1$s  %2$s%3$s"</string>
+
+    <!-- Settings › Audio › Playback. -->
+    <string name="playback_speed">"Speed  %1$sx"</string>
+    <string name="playback_pitch">"Pitch  %1$s st (0 = normal)"</string>
+    <string name="playback_fade_off">Fade on pause, resume and skip — off</string>
+    <string name="playback_fade">"Fade on pause, resume and skip  %1$ss"</string>
+    <string name="playback_fade_explainer">Ramps the volume instead of cutting it. Not a crossfade — one player decodes one track at a time, and a second one would give the analyser two streams to sum — but it removes the hard edges, which is the part you hear.</string>
+    <string name="playback_skip_silence">Skip silence</string>
+    <string name="playback_pause_unplugged">Pause when unplugged</string>
+    <string name="playback_keep_screen_on">Keep screen on</string>
+    <string name="playback_auto_resume">Auto-resume last track</string>
+    <string name="playback_sleep_timer">Sleep timer</string>
+    <string name="playback_sleep_off">Off</string>
+    <string name="playback_sleep_minutes">%1$d min</string>
+    <string name="playback_sleep_finish_track">Let the track finish</string>
+    <string name="playback_sleep_pausing_after_track">Pausing after the track playing in %1$s</string>
+    <string name="playback_sleep_pausing_in">Pausing in %1$s</string>
+
+    <!-- Settings › Audio › Equalizer. -->
+    <string name="eq_title">Equalizer</string>
+    <string name="eq_no_session">Play something first — the effects chain attaches to the audio session, and there is no session until audio starts.</string>
+    <string name="eq_unsupported">Not supported on this device</string>
+    <string name="eq_partial">This device would not grant an equalizer. What it did grant is below.</string>
+    <string name="eq_preset">Preset</string>
+    <string name="eq_custom">Custom</string>
+    <string name="eq_band">"%1$s  %2$s"</string>
+    <string name="eq_bass_boost">"Bass boost  %1$d%%"</string>
+    <string name="eq_loudness">"Loudness  %1$s"</string>
+
+    <!-- Settings › Folders. -->
+    <string name="folders_group_preset">Preset folder</string>
+    <string name="folders_group_music">Music folders</string>
+    <string name="folders_group_cache">Analysis cache</string>
+    <string name="folders_group_export">Export destination</string>
+    <string name="folders_export_explainer">Exports land in your Videos library (Movies/Geode), or in a folder you pick at render time — there is no standing export folder to configure. Defaults for quality and size live in the Export tab.</string>
+    <string name="folders_preset_chosen">Preset folder: chosen — saves are mirrored there</string>
+    <string name="folders_preset_internal">Preset folder: internal only</string>
+    <string name="folders_choose_preset">Choose preset folder</string>
+    <string name="folders_preset_explainer">Presets always save inside the app; a chosen folder gets a mirror copy so your own sorting is visible in any file manager.</string>
+    <string name="folders_none_yet">No folders yet. Device music appears in the Library on its own; folders you add here are scanned into the import library as well.</string>
+    <string name="folders_rescan_explainer">The same list as Library › Folders. Rescanning re-walks every folder; tracks already imported keep their analysis.</string>
+    <string name="folders_cache_measuring">…</string>
+    <string name="folders_cache_summary">%1$d tracks · %2$.1f MB</string>
+    <string name="folders_cache_label">Analysis cache: %1$s</string>
+    <string name="folders_cache_explainer">Analysis results per track, so replaying never re-analyses. Clearing costs nothing but the next analysis pass.</string>
+    <string name="action_clear">Clear</string>
 
     <!-- Shared verbs. One definition each, so a translator sees them once. -->
     <string name="action_save">Save</string>

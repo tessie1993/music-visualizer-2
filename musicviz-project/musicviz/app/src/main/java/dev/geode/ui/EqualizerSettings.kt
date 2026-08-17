@@ -10,7 +10,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.geode.R
 import dev.geode.audio.AudioFxFormat
 import dev.geode.audio.AudioFxState
 
@@ -67,7 +69,7 @@ internal fun EqualizerCard(
 ) {
     val anyEffect = fx.available || fx.bassAvailable || fx.loudnessAvailable
     SettingsGroup(
-        title = "Equalizer",
+        title = stringResource(R.string.eq_title),
         header = {
             Switch(
                 checked = fx.enabled && anyEffect,
@@ -78,8 +80,7 @@ internal fun EqualizerCard(
     ) {
         if (!fx.attached) {
             Text(
-                "Play something first — the effects chain attaches to the audio session, and there " +
-                    "is no session until audio starts.",
+                stringResource(R.string.eq_no_session),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -87,7 +88,7 @@ internal fun EqualizerCard(
         }
         if (!anyEffect) {
             Text(
-                "Not supported on this device",
+                stringResource(R.string.eq_unsupported),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -96,13 +97,13 @@ internal fun EqualizerCard(
         val controlsOn = fx.enabled
         if (!fx.available) {
             Text(
-                "This device would not grant an equalizer. What it did grant is below.",
+                stringResource(R.string.eq_partial),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         if (fx.presets.isNotEmpty()) {
-            Text("Preset", style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(R.string.eq_preset), style = MaterialTheme.typography.labelMedium)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 itemsIndexed(fx.presets) { i, name ->
                     FilterChip(
@@ -115,7 +116,7 @@ internal fun EqualizerCard(
             }
             if (fx.presetIndex < 0) {
                 Text(
-                    "Custom",
+                    stringResource(R.string.eq_custom),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -123,7 +124,7 @@ internal fun EqualizerCard(
         }
         fx.bands.forEachIndexed { i, band ->
             Text(
-                "${band.label}  ${AudioFxFormat.dbLabel(band.levelMb)}",
+                stringResource(R.string.eq_band, band.label, AudioFxFormat.dbLabel(band.levelMb)),
                 style = MaterialTheme.typography.labelMedium,
             )
             CrystalSlider(
@@ -134,7 +135,10 @@ internal fun EqualizerCard(
             )
         }
         if (fx.bassAvailable) {
-            Text("Bass boost  ${fx.bassBoost / 10}%", style = MaterialTheme.typography.labelMedium)
+            Text(
+                stringResource(R.string.eq_bass_boost, fx.bassBoost / 10),
+                style = MaterialTheme.typography.labelMedium,
+            )
             CrystalSlider(
                 value = fx.bassBoost.toFloat(),
                 onValueChange = { onBassBoost(it.toInt()) },
@@ -143,7 +147,10 @@ internal fun EqualizerCard(
             )
         }
         if (fx.loudnessAvailable) {
-            Text("Loudness  ${AudioFxFormat.dbLabel(fx.loudness)}", style = MaterialTheme.typography.labelMedium)
+            Text(
+                stringResource(R.string.eq_loudness, AudioFxFormat.dbLabel(fx.loudness)),
+                style = MaterialTheme.typography.labelMedium,
+            )
             CrystalSlider(
                 value = fx.loudness.toFloat(),
                 onValueChange = { onLoudness(it.toInt()) },

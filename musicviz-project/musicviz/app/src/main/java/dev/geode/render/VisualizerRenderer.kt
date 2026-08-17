@@ -19,7 +19,6 @@ import dev.geode.render.scene.HyperspaceScene
 import dev.geode.render.scene.InkflowScene
 import dev.geode.render.scene.NebulaScene
 import dev.geode.render.scene.OrbitScene
-import dev.geode.render.scene.PMBridge
 import dev.geode.render.scene.ParticleSceneBase
 import dev.geode.render.scene.PcmChunk
 import dev.geode.render.scene.ProjectMScene
@@ -30,6 +29,7 @@ import dev.geode.render.scene.ShaderScene
 import dev.geode.render.scene.StormScene
 import dev.geode.render.scene.SwarmScene
 import dev.geode.render.scene.VisualStyleCatalog
+import dev.musicviz.render.scene.PMBridge
 import java.io.File
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10

@@ -4,6 +4,7 @@ import android.opengl.GLES30
 import android.os.SystemClock
 import dev.geode.analysis.AudioFeatures
 import dev.geode.render.CompositeGrade
+import dev.musicviz.render.scene.PMBridge
 import java.io.File
 
 /** A chunk of fresh mono PCM samples; [count] entries of [data] are valid. */
