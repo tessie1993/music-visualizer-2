@@ -155,7 +155,14 @@ Suite went 1,262 → 1,325 tests, all green, with ktlint and lint clean througho
   notification, survives backgrounding.
 - **M8**: string extraction, top-5 Play locales for shell chrome.
 
-### R2 — Creation suite (M6, the goal's centre of gravity)
+### R2 — Creation suite (M6, the goal's centre of gravity) — **in progress**
+
+Done: time-range export; takes anchored to track position; clip delete, rename
+and storage totals; render ETA in both the notification and the dialog.
+
+Outstanding: `CompositionPlayer` live preview, mid-render scene switches for
+takes, beat-snapped trim, HEVC, aspect-crop preview, export queue.
+
 
 - **Time-range export.** Choose start–end; stop rendering whole songs to get
   15 seconds.
