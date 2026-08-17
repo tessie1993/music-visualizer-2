@@ -3,3 +3,9 @@
 # they are cleaned up automatically and must never be committed.
 .claude/worktrees/
 __pycache__/
+
+# Service credentials, at the repo root too: an .env dropped beside the
+# project directory is just as committable as one inside it.
+.env
+.env.*
+!.env.example

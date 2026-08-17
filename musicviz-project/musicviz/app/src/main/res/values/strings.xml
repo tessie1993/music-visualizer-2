@@ -163,6 +163,55 @@
     <string name="action_move_up">Move up</string>
     <string name="action_remove_from_queue">Remove from queue</string>
 
+    <!-- Library: tabs, permission recovery, playlists and folders. -->
+    <string name="library_tab_tracks">Tracks</string>
+    <string name="library_tab_albums">Albums</string>
+    <string name="library_tab_artists">Artists</string>
+    <string name="library_tab_playlists">Playlists</string>
+    <string name="library_tab_folders">Folders</string>
+    <string name="library_permission_rationale">Grant music access to browse everything on this device.</string>
+    <string name="library_permission_denied_forever">Music access is turned off for Geode, and Android will not ask again from here. Open app settings to turn on Music and audio.</string>
+    <string name="library_permission_allow">Allow music access</string>
+    <string name="library_permission_open_settings">Open app settings</string>
+    <string name="library_no_music">No music found on device.</string>
+    <string name="library_group_unnamed">(no name)</string>
+    <string name="library_back">‹ Back</string>
+    <string name="library_play_all">Play all</string>
+
+    <string name="action_more">More</string>
+    <string name="action_play_next">Play next</string>
+    <string name="action_add_to_playlist">Add to playlist</string>
+    <string name="action_add_to_library_list">Add to library list</string>
+    <string name="action_edit_track_info">Edit track info</string>
+    <string name="action_rename">Rename</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_create">Create</string>
+    <string name="action_up">Up</string>
+    <string name="action_down">Down</string>
+    <string name="action_ok">OK</string>
+
+    <!-- The analysed badge announces itself as one phrase; the gem is decoration. -->
+    <string name="analysed_badge">Analysed</string>
+    <string name="analysed_badge_with_tempo">Analysed, %1$s</string>
+
+    <string name="playlist_new">New playlist</string>
+    <string name="playlist_new_branch">New playlist…</string>
+    <string name="playlist_delete_title">Delete playlist</string>
+    <string name="playlist_delete_body">\"%1$s\" is removed. Its tracks stay in the library.</string>
+    <string name="playlist_rename_title">Rename playlist</string>
+    <string name="playlist_name_required">A playlist needs a name.</string>
+    <string name="playlist_name_taken">There is already a playlist called \"%1$s\".</string>
+    <string name="playlist_none_yet">No playlists yet. Start one with \"New playlist\" above, save the current queue from the queue panel in Now Playing, or use \"Add to playlist\" in any track\'s ⋮ menu.</string>
+    <string name="playlist_untitled_track">Track %1$d</string>
+    <string name="action_remove_from_playlist">Remove from playlist</string>
+
+    <string name="folders_library">Library folders</string>
+    <string name="folders_device">Device folders</string>
+    <string name="folders_add">Add folder</string>
+    <string name="folders_remove">Remove folder</string>
+    <string name="folders_rescan">Rescan</string>
+    <string name="folders_scanning">Scanning…</string>
+
     <!-- Shared verbs. One definition each, so a translator sees them once. -->
     <string name="action_save">Save</string>
     <string name="action_cancel">Cancel</string>

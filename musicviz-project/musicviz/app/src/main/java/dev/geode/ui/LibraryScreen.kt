@@ -55,6 +55,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import dev.geode.R
 import dev.geode.data.MusicPlaylist
 import dev.geode.ui.theme.StoneIcon
 import dev.geode.ui.theme.StoneIconArt
@@ -88,15 +91,22 @@ fun LibraryScreen(
     // composition of this tab no longer blocks on the content resolver.
     LaunchedEffect(granted, reloadKey) { if (granted) viewModel.refreshDeviceTracks() }
     var tab by rememberSaveable { mutableStateOf(0) }
-    val tabs = listOf("Tracks", "Albums", "Artists", "Playlists", "Folders")
+    val tabs =
+        listOf(
+            stringResource(R.string.library_tab_tracks),
+            stringResource(R.string.library_tab_albums),
+            stringResource(R.string.library_tab_artists),
+            stringResource(R.string.library_tab_playlists),
+            stringResource(R.string.library_tab_folders),
+        )
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                CrystalOverline("Geode")
-                GlowTitle("Library")
+                CrystalOverline(stringResource(R.string.app_name))
+                GlowTitle(stringResource(R.string.nav_library))
             }
-            IconButton(onClick = onOpenSearch) { StoneIconArt(StoneIcon.SEARCH, "Search") }
+            IconButton(onClick = onOpenSearch) { StoneIconArt(StoneIcon.SEARCH, stringResource(R.string.action_search)) }
         }
         if (!granted) {
             // Android stops delivering the system dialog after two refusals, so
@@ -113,21 +123,24 @@ fun LibraryScreen(
                     ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    if (canAskAgain) {
-                        "Grant music access to browse everything on this device."
-                    } else {
-                        "Music access is turned off for Geode, and Android will not ask again from " +
-                            "here. Open app settings to turn on Music and audio."
-                    },
+                    stringResource(
+                        if (canAskAgain) {
+                            R.string.library_permission_rationale
+                        } else {
+                            R.string.library_permission_denied_forever
+                        },
+                    ),
                 )
                 if (canAskAgain) {
                     CrystalButton(onClick = {
                         asked = true
                         permLauncher.launch(permission)
-                    }) { Text("Allow music access") }
+                    }) { Text(stringResource(R.string.library_permission_allow)) }
                 } else {
                     val context = LocalContext.current
-                    CrystalButton(onClick = { context.openAppSettings() }) { Text("Open app settings") }
+                    CrystalButton(
+                        onClick = { context.openAppSettings() },
+                    ) { Text(stringResource(R.string.library_permission_open_settings)) }
                 }
             }
             return
@@ -153,7 +166,7 @@ private fun TrackList(
     val queue = remember(tracks) { tracks.map(PlaybackQueue::queueTrack) }
     LazyColumn(Modifier.fillMaxSize()) {
         items(tracks, key = { it.uri }) { t -> TrackRow(t, viewModel, queue = queue) }
-        if (tracks.isEmpty()) item { Text("No music found on device.", Modifier.padding(16.dp)) }
+        if (tracks.isEmpty()) item { Text(stringResource(R.string.library_no_music), Modifier.padding(16.dp)) }
     }
 }
 
@@ -206,25 +219,25 @@ private fun TrackRow(
             }
         }
         if (analyzed != null) AnalyzedBadge(analyzed.bpm, Modifier.padding(start = 8.dp))
-        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
+        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.action_more)) }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            DropdownMenuItem(text = { Text("Play next") }, onClick = {
+            DropdownMenuItem(text = { Text(stringResource(R.string.action_play_next)) }, onClick = {
                 viewModel.playNext(t.uri)
                 menu = false
             })
-            DropdownMenuItem(text = { Text("Add to queue") }, onClick = {
+            DropdownMenuItem(text = { Text(stringResource(R.string.action_add_to_queue)) }, onClick = {
                 viewModel.enqueue(t.uri)
                 menu = false
             })
-            DropdownMenuItem(text = { Text("Add to playlist") }, onClick = {
+            DropdownMenuItem(text = { Text(stringResource(R.string.action_add_to_playlist)) }, onClick = {
                 addingToPlaylist = true
                 menu = false
             })
-            DropdownMenuItem(text = { Text("Add to library list") }, onClick = {
+            DropdownMenuItem(text = { Text(stringResource(R.string.action_add_to_library_list)) }, onClick = {
                 viewModel.importTracks(listOf(Uri.parse(t.uri)))
                 menu = false
             })
-            DropdownMenuItem(text = { Text("Edit track info") }, onClick = {
+            DropdownMenuItem(text = { Text(stringResource(R.string.action_edit_track_info)) }, onClick = {
                 editing = true
                 menu = false
             })
@@ -255,8 +268,8 @@ private fun AddToPlaylistDialog(
     var naming by remember { mutableStateOf(false) }
     if (naming) {
         PlaylistNameDialog(
-            title = "New playlist",
-            confirmLabel = "Create",
+            title = stringResource(R.string.playlist_new),
+            confirmLabel = stringResource(R.string.action_create),
             taken = library.playlists.map { it.name }.toSet(),
             onName = { name ->
                 viewModel.createMusicPlaylist(name)
@@ -268,7 +281,7 @@ private fun AddToPlaylistDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add to playlist") },
+        title = { Text(stringResource(R.string.action_add_to_playlist)) },
         text = {
             // Scrolls on its own: the dialog caps its height well before a
             // long-standing user's playlist collection runs out.
@@ -287,14 +300,14 @@ private fun AddToPlaylistDialog(
                     )
                 }
                 Text(
-                    "New playlist…",
+                    stringResource(R.string.playlist_new_branch),
                     Modifier.fillMaxWidth().clickable { naming = true }.padding(vertical = 10.dp),
                     color = accentTextColor(),
                 )
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
 
@@ -317,6 +330,12 @@ private fun AnalyzedBadge(
     val cs = MaterialTheme.colorScheme
     val shape = crystalShardShape(8.dp, 3.dp)
     val label = if (bpm > 0f) "${bpm.toInt()} BPM" else ""
+    val spoken =
+        if (label.isEmpty()) {
+            stringResource(R.string.analysed_badge)
+        } else {
+            stringResource(R.string.analysed_badge_with_tempo, label)
+        }
     Row(
         modifier
             .clip(shape)
@@ -325,7 +344,7 @@ private fun AnalyzedBadge(
             .padding(horizontal = 7.dp, vertical = 3.dp)
             // The gem is decoration a screen reader cannot see, so the whole
             // chip announces itself as one phrase.
-            .semantics { contentDescription = if (label.isEmpty()) "Analysed" else "Analysed, $label" },
+            .semantics { contentDescription = spoken },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CrystalGem(cs.primary, size = 5.dp)
@@ -350,15 +369,19 @@ private fun GroupList(
     if (sel != null && groups.containsKey(sel)) {
         Column {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("‹ Back", Modifier.clickable { open = null }.padding(end = 12.dp), color = accentTextColor())
+                Text(
+                    stringResource(R.string.library_back),
+                    Modifier.clickable { open = null }.padding(end = 12.dp),
+                    color = accentTextColor(),
+                )
                 Text(sel, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             val queue = remember(sel, groups) { groups.getValue(sel).map(PlaybackQueue::queueTrack) }
             Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CrystalButton(compact = true, onClick = { viewModel.playAll(queue) }) { Text("Play all") }
+                CrystalButton(compact = true, onClick = { viewModel.playAll(queue) }) { Text(stringResource(R.string.library_play_all)) }
                 CrystalButton(compact = true, filled = false, onClick = {
                     viewModel.playAll(queue, shuffled = true)
-                }) { Text("Shuffle") }
+                }) { Text(stringResource(R.string.action_shuffle)) }
             }
             LazyColumn(Modifier.fillMaxSize()) {
                 items(groups.getValue(sel), key = { it.uri }) { t ->
@@ -374,8 +397,19 @@ private fun GroupList(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(g.ifEmpty { "(no name)" }, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${groups.getValue(g).size} tracks", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            g.ifEmpty { stringResource(R.string.library_group_unnamed) },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            pluralStringResource(
+                                R.plurals.track_count,
+                                groups.getValue(g).size,
+                                groups.getValue(g).size,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                 }
             }
@@ -393,7 +427,7 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
     var deleting by remember { mutableStateOf<String?>(null) }
     Column {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
-            CrystalButton(compact = true, filled = false, onClick = { creating = true }) { Text("New playlist") }
+            CrystalButton(compact = true, filled = false, onClick = { creating = true }) { Text(stringResource(R.string.playlist_new)) }
         }
         LazyColumn(Modifier.fillMaxSize()) {
             items(library.playlists, key = { it.name }) { pl ->
@@ -407,19 +441,26 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(pl.name)
-                            Text("${pl.trackUris.size} tracks", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                pluralStringResource(
+                                    R.plurals.track_count,
+                                    pl.trackUris.size,
+                                    pl.trackUris.size,
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                         }
                         IconButton(onClick = {
                             renaming = pl.name
                             renameText = pl.name
-                        }) { StoneIconArt(StoneIcon.EDIT, "Rename") }
+                        }) { StoneIconArt(StoneIcon.EDIT, stringResource(R.string.action_rename)) }
                         IconButton(onClick = { viewModel.playPlaylist(pl.name) }) {
-                            StoneIconArt(StoneIcon.PLAY, "Play")
+                            StoneIconArt(StoneIcon.PLAY, stringResource(R.string.action_play))
                         }
                         // Behind a confirm: this row's other taps are all
                         // recoverable, deleting a playlist is not.
                         IconButton(onClick = { deleting = pl.name }) {
-                            StoneIconArt(StoneIcon.CLOSE, "Delete playlist")
+                            StoneIconArt(StoneIcon.CLOSE, stringResource(R.string.playlist_delete_title))
                         }
                     }
                     if (expanded == pl.name) {
@@ -430,8 +471,7 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
             if (library.playlists.isEmpty()) {
                 item {
                     Text(
-                        "No playlists yet. Start one with \"New playlist\" above, save the current queue from " +
-                            "the queue panel in Now Playing, or use \"Add to playlist\" in any track's ⋮ menu.",
+                        stringResource(R.string.playlist_none_yet),
                         Modifier.padding(16.dp),
                     )
                 }
@@ -440,8 +480,8 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
     }
     if (creating) {
         PlaylistNameDialog(
-            title = "New playlist",
-            confirmLabel = "Create",
+            title = stringResource(R.string.playlist_new),
+            confirmLabel = stringResource(R.string.action_create),
             taken = library.playlists.map { it.name }.toSet(),
             onName = viewModel::createMusicPlaylist,
             onDismiss = { creating = false },
@@ -450,15 +490,15 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
     deleting?.let { doomed ->
         AlertDialog(
             onDismissRequest = { deleting = null },
-            title = { Text("Delete playlist") },
-            text = { Text("\"$doomed\" is removed. Its tracks stay in the library.") },
+            title = { Text(stringResource(R.string.playlist_delete_title)) },
+            text = { Text(stringResource(R.string.playlist_delete_body, doomed)) },
             confirmButton = {
                 CrystalButton(onClick = {
                     viewModel.deleteMusicPlaylist(doomed)
                     deleting = null
-                }) { Text("Delete") }
+                }) { Text(stringResource(R.string.action_delete)) }
             },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
     renaming?.let { old ->
@@ -472,13 +512,17 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
         val nameOk = playlistNameAccepted(proposed, otherNames)
         AlertDialog(
             onDismissRequest = { renaming = null },
-            title = { Text("Rename playlist") },
+            title = { Text(stringResource(R.string.playlist_rename_title)) },
             text = {
                 Column {
                     OutlinedTextField(value = renameText, onValueChange = { renameText = it }, singleLine = true)
                     if (!nameOk) {
                         Text(
-                            if (proposed.isEmpty()) "A playlist needs a name." else "There is already a playlist called \"$proposed\".",
+                            if (proposed.isEmpty()) {
+                                stringResource(R.string.playlist_name_required)
+                            } else {
+                                stringResource(R.string.playlist_name_taken, proposed)
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.error,
                         )
@@ -489,9 +533,9 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
                 CrystalButton(enabled = nameOk, onClick = {
                     viewModel.renameMusicPlaylist(old, proposed)
                     renaming = null
-                }) { Text("Rename") }
+                }) { Text(stringResource(R.string.action_rename)) }
             },
-            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
 }
@@ -622,7 +666,7 @@ private fun PlaylistTracks(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             )
             Text(
-                t?.title ?: "Track ${i + 1}",
+                t?.title ?: stringResource(R.string.playlist_untitled_track, i + 1),
                 Modifier.weight(1f).padding(start = 6.dp),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -631,13 +675,13 @@ private fun PlaylistTracks(
             IconButton(
                 onClick = { viewModel.moveMusicPlaylistTrack(playlist.name, i, i - 1) },
                 enabled = i > 0,
-            ) { Icon(Icons.Filled.KeyboardArrowUp, "Up") }
+            ) { Icon(Icons.Filled.KeyboardArrowUp, stringResource(R.string.action_up)) }
             IconButton(
                 onClick = { viewModel.moveMusicPlaylistTrack(playlist.name, i, i + 1) },
                 enabled = i < count - 1,
-            ) { Icon(Icons.Filled.KeyboardArrowDown, "Down") }
+            ) { Icon(Icons.Filled.KeyboardArrowDown, stringResource(R.string.action_down)) }
             IconButton(onClick = { viewModel.removeTrackFromPlaylist(playlist.name, uri) }) {
-                StoneIconArt(StoneIcon.CLOSE, "Remove from playlist", Modifier.size(18.dp))
+                StoneIconArt(StoneIcon.CLOSE, stringResource(R.string.action_remove_from_playlist), Modifier.size(18.dp))
             }
         }
     }
@@ -656,7 +700,7 @@ private fun FoldersTab(
         }
     Column {
         Text(
-            "Library folders",
+            stringResource(R.string.folders_library),
             Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             style = MaterialTheme.typography.titleSmall,
         )
@@ -675,7 +719,7 @@ private fun FoldersTab(
                     style = MaterialTheme.typography.bodySmall,
                 )
                 IconButton(onClick = { viewModel.removeMediaRoot(root) }) {
-                    StoneIconArt(StoneIcon.CLOSE, "Remove folder")
+                    StoneIconArt(StoneIcon.CLOSE, stringResource(R.string.folders_remove))
                 }
             }
         }
@@ -683,14 +727,18 @@ private fun FoldersTab(
             Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            CrystalButton(compact = true, filled = false, onClick = { folderPicker.launch(null) }) { Text("Add folder") }
+            CrystalButton(
+                compact = true,
+                filled = false,
+                onClick = { folderPicker.launch(null) },
+            ) { Text(stringResource(R.string.folders_add)) }
             CrystalButton(
                 compact = true,
                 filled = false,
                 onClick = viewModel::rescanMediaRoots,
                 enabled = roots.isNotEmpty() && !scanning,
             ) {
-                Text(if (scanning) "Scanning…" else "Rescan")
+                Text(stringResource(if (scanning) R.string.folders_scanning else R.string.folders_rescan))
             }
         }
         // Device folders is the whole story, not the first half of one: the
@@ -698,7 +746,7 @@ private fun FoldersTab(
         // source is not a feature that has not been built yet - it is one the
         // architecture rules out.
         Text(
-            "Device folders",
+            stringResource(R.string.folders_device),
             Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             style = MaterialTheme.typography.bodySmall,
         )
