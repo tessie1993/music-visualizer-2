@@ -60,9 +60,13 @@ class StudioClipsInstrumentedTest {
                 put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
                 put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Geode")
             }
+        // EXTERNAL_CONTENT_URI, not the volume-qualified form, because that is
+        // what both exporters insert through — and the two produce different
+        // uri STRINGS for the same row, so seeding the other way made the
+        // listing assertion compare a clip against itself and lose.
         val uri =
             context.contentResolver.insert(
-                MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
                 values,
             ) ?: return null
         // A few bytes so the row has a real file behind it.
