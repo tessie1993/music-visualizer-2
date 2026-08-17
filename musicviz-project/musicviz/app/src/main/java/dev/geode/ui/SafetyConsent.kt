@@ -16,11 +16,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import dev.geode.R
 import dev.geode.render.VisualSafetyChoice
 
 /**
@@ -63,7 +65,7 @@ fun SafetyConsent(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            "Before the visuals start",
+            stringResource(R.string.safety_title),
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onBackground,
             textAlign = TextAlign.Center,
@@ -71,17 +73,14 @@ fun SafetyConsent(
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            "Geode reacts to music with light. With its limits switched off it can flash the " +
-                "whole screen up to nine times a second — enough to trigger a seizure in people " +
-                "with photosensitive epilepsy, whether or not they know they have it.",
+            stringResource(R.string.safety_warning),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            "Until you answer, the visuals run limited. Pick what suits you — you can change it " +
-                "any time in Settings › Behavior.",
+            stringResource(R.string.safety_prompt),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -89,28 +88,20 @@ fun SafetyConsent(
         Spacer(Modifier.height(28.dp))
 
         ConsentOption(
-            title = "Keep it safe",
-            detail =
-                "Caps how fast and how strongly the screen can flash, holds brightness near " +
-                    "neutral, and crossfades scene changes instead of cutting. Recommended if you " +
-                    "or anyone watching is sensitive to flashing light.",
+            title = stringResource(R.string.safety_option_safe),
+            detail = stringResource(R.string.safety_option_safe_detail),
             onClick = { onChoose(VisualSafetyChoice.SAFE, true) },
         )
         Spacer(Modifier.height(12.dp))
         ConsentOption(
-            title = "Safe, and easier on motion",
-            detail =
-                "Everything above, plus speed, drift, shake and endless zoom scaled down for " +
-                    "motion comfort. Colour and texture keep reacting to the music.",
+            title = stringResource(R.string.safety_option_reduced_motion),
+            detail = stringResource(R.string.safety_option_reduced_motion_detail),
             onClick = { onChoose(VisualSafetyChoice.REDUCED_MOTION, true) },
         )
         Spacer(Modifier.height(12.dp))
         ConsentOption(
-            title = "Full effects",
-            detail =
-                "No limits: the strobe runs at 9 Hz and the beat flash at the track's rate. " +
-                    "Choose this only if flashing light does not affect you or anyone who can see " +
-                    "your screen.",
+            title = stringResource(R.string.safety_option_full),
+            detail = stringResource(R.string.safety_option_full_detail),
             onClick = { onChoose(VisualSafetyChoice.CUSTOM, false) },
         )
     }
@@ -122,6 +113,7 @@ private fun ConsentOption(
     detail: String,
     onClick: () -> Unit,
 ) {
+    val spoken = stringResource(R.string.safety_option_description, title, detail)
     Column(Modifier.fillMaxWidth()) {
         CrystalButton(
             onClick = onClick,
@@ -131,7 +123,7 @@ private fun ConsentOption(
                     // The detail is the substance of the choice, so a screen
                     // reader has to hear it as part of the button rather than
                     // as loose text that follows it.
-                    .semantics { contentDescription = "$title. $detail" },
+                    .semantics { contentDescription = spoken },
         ) {
             Text(title)
         }

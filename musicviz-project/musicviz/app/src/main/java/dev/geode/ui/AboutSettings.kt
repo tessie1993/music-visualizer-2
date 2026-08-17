@@ -21,9 +21,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.geode.BuildConfig
+import dev.geode.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -34,7 +36,7 @@ const val PRIVACY_POLICY_URL = "https://tessie1993.github.io/music-visualizer-2/
 @Composable
 internal fun AboutSettingsTab() {
     SettingsTabColumn {
-        item { SettingsGroup("About") { AboutSection() } }
+        item { SettingsGroup(stringResource(R.string.about_group)) { AboutSection() } }
     }
 }
 
@@ -53,23 +55,22 @@ fun AboutSection() {
     var showLicenses by remember { mutableStateOf(false) }
     val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Geode", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleSmall)
         Text(
-            "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+            stringResource(R.string.about_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
             style = MaterialTheme.typography.bodySmall,
         )
         Text(
-            "Plays music from your device and renders it. No account, no ads, " +
-                "no analytics — nothing leaves the phone unless you export a video and share it.",
+            stringResource(R.string.about_blurb),
             style = MaterialTheme.typography.bodySmall,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { showLicenses = true }) { Text("Open source licenses") }
+            OutlinedButton(onClick = { showLicenses = true }) { Text(stringResource(R.string.about_licenses)) }
             OutlinedButton(onClick = {
                 runCatching {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
                 }
-            }) { Text("Privacy policy") }
+            }) { Text(stringResource(R.string.about_privacy_policy)) }
         }
     }
     if (showLicenses) {
@@ -87,12 +88,12 @@ private fun LicensesDialog(onDismiss: () -> Unit) {
             withContext(Dispatchers.IO) {
                 runCatching {
                     context.assets.open("third_party_notices.txt").use { it.readBytes().decodeToString() }
-                }.getOrElse { "Third-party notices could not be loaded." }
+                }.getOrElse { context.getString(R.string.about_licenses_unavailable) }
             }
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Open source licenses") },
+        title = { Text(stringResource(R.string.about_licenses)) },
         text = {
             Column(
                 Modifier
@@ -100,11 +101,11 @@ private fun LicensesDialog(onDismiss: () -> Unit) {
                     .verticalScroll(rememberScrollState()),
             ) {
                 Text(
-                    notices ?: "Loading…",
+                    notices ?: stringResource(R.string.about_licenses_loading),
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                 )
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } },
     )
 }

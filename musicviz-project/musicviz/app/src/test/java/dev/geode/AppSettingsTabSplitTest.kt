@@ -254,6 +254,17 @@ class AppSettingsTabSplitTest {
         )
     }
 
+    /**
+     * A settings file's source, with every `R.string.x` replaced by the words
+     * that resource holds.
+     *
+     * The catalog above is written in the labels a user reads, which is what
+     * makes it reviewable — "Privacy policy lives on About" is a claim anyone
+     * can check. Extraction into `strings.xml` would otherwise silently empty
+     * this test out one file at a time, since the label stops being in the
+     * Kotlin at all. Substituting the value back keeps the claim intact and
+     * makes the catalog indifferent to whether a label has been localized yet.
+     */
     private fun sourceOf(fileName: String): String {
         val relatives =
             listOf(
@@ -264,11 +275,30 @@ class AppSettingsTabSplitTest {
         while (dir != null) {
             for (rel in relatives) {
                 val candidate = File(dir, rel)
-                if (candidate.isFile) return candidate.readText()
+                if (candidate.isFile) return withStringsResolved(candidate.readText())
             }
             dir = dir.parentFile
         }
         fail("$fileName not found from ${File("").absolutePath}")
         error("unreachable")
+    }
+
+    private fun withStringsResolved(source: String): String =
+        Regex("""R\.string\.([A-Za-z0-9_]+)""").replace(source) { m ->
+            stringValues[m.groupValues[1]] ?: m.value
+        }
+
+    private val stringValues: Map<String, String> by lazy {
+        var dir: File? = File("").absoluteFile
+        while (dir != null) {
+            val candidate = File(dir, "app/src/main/res/values/strings.xml")
+            if (candidate.isFile) {
+                return@lazy Regex("""<string name="([^"]+)"[^>]*>(.*?)</string>""", RegexOption.DOT_MATCHES_ALL)
+                    .findAll(candidate.readText())
+                    .associate { it.groupValues[1] to it.groupValues[2].replace("\\'", "'").replace("&amp;", "&") }
+            }
+            dir = dir.parentFile
+        }
+        emptyMap()
     }
 }

@@ -13,4 +13,43 @@
     <string name="export_channel_description">Shown while Geode is rendering a video, so the render is not interrupted.</string>
     <string name="export_notification_title">Rendering video</string>
     <string name="export_notification_text">Geode is rendering your visuals.</string>
+
+    <!-- First-run photosensitivity choice. Safety copy: translate carefully,
+         the flash rates are factual and must survive translation. -->
+    <string name="safety_title">Before the visuals start</string>
+    <string name="safety_warning">Geode reacts to music with light. With its limits switched off it can flash the whole screen up to nine times a second — enough to trigger a seizure in people with photosensitive epilepsy, whether or not they know they have it.</string>
+    <string name="safety_prompt">Until you answer, the visuals run limited. Pick what suits you — you can change it any time in Settings › Behavior.</string>
+    <string name="safety_option_safe">Keep it safe</string>
+    <string name="safety_option_safe_detail">Caps how fast and how strongly the screen can flash, holds brightness near neutral, and crossfades scene changes instead of cutting. Recommended if you or anyone watching is sensitive to flashing light.</string>
+    <string name="safety_option_reduced_motion">Safe, and easier on motion</string>
+    <string name="safety_option_reduced_motion_detail">Everything above, plus speed, drift, shake and endless zoom scaled down for motion comfort. Colour and texture keep reacting to the music.</string>
+    <string name="safety_option_full">Full effects</string>
+    <string name="safety_option_full_detail">No limits: the strobe runs at 9 Hz and the beat flash at the track\'s rate. Choose this only if flashing light does not affect you or anyone who can see your screen.</string>
+    <!-- Read out as one button: the detail is the substance of the choice. -->
+    <string name="safety_option_description">%1$s. %2$s</string>
+
+    <!-- Per-track metadata editor. -->
+    <string name="track_info_title">Track info</string>
+    <string name="track_info_field_title">Title</string>
+    <string name="track_info_field_artist">Artist</string>
+    <string name="track_info_field_album">Album</string>
+    <string name="track_info_field_genre">Genre</string>
+    <string name="track_info_field_year">Year</string>
+    <string name="track_info_field_track_no">Track #</string>
+    <string name="track_info_field_comment">Comment / info</string>
+    <string name="track_info_note">Edits are stored in the app only — audio files are not modified.</string>
+
+    <!-- Settings › About. -->
+    <string name="about_group">About</string>
+    <string name="about_version">Version %1$s (%2$d)</string>
+    <string name="about_blurb">Plays music from your device and renders it. No account, no ads, no analytics — nothing leaves the phone unless you export a video and share it.</string>
+    <string name="about_licenses">Open source licenses</string>
+    <string name="about_privacy_policy">Privacy policy</string>
+    <string name="about_licenses_unavailable">Third-party notices could not be loaded.</string>
+    <string name="about_licenses_loading">Loading…</string>
+
+    <!-- Shared verbs. One definition each, so a translator sees them once. -->
+    <string name="action_save">Save</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_close">Close</string>
 </resources>

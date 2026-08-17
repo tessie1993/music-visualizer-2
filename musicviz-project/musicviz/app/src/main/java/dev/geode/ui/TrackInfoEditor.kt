@@ -21,8 +21,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.geode.R
 
+/**
+ * Suggestion chips for the genre field.
+ *
+ * Deliberately NOT localized: tapping one writes that exact word into the
+ * track's genre, which is stored and matched against the tags already on the
+ * files. Translating them would make the same chip save a different value per
+ * device language, so a library tagged on a French phone would not group with
+ * the same music tagged on an English one.
+ */
 private val COMMON_GENRES =
     listOf("Electronic", "Rock", "Pop", "Hip-Hop", "Jazz", "Classical", "Ambient", "Other")
 
@@ -53,7 +64,7 @@ fun TrackInfoEditor(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Track info") },
+        title = { Text(stringResource(R.string.track_info_title)) },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
@@ -62,28 +73,28 @@ fun TrackInfoEditor(
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Title") },
+                    label = { Text(stringResource(R.string.track_info_field_title)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = artist,
                     onValueChange = { artist = it },
-                    label = { Text("Artist") },
+                    label = { Text(stringResource(R.string.track_info_field_artist)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = album,
                     onValueChange = { album = it },
-                    label = { Text("Album") },
+                    label = { Text(stringResource(R.string.track_info_field_album)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = genre,
                     onValueChange = { genre = it },
-                    label = { Text("Genre") },
+                    label = { Text(stringResource(R.string.track_info_field_genre)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -103,14 +114,14 @@ fun TrackInfoEditor(
                     OutlinedTextField(
                         value = year,
                         onValueChange = { v -> year = v.filter { it.isDigit() }.take(4) },
-                        label = { Text("Year") },
+                        label = { Text(stringResource(R.string.track_info_field_year)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f),
                     )
                     OutlinedTextField(
                         value = trackNo,
                         onValueChange = { v -> trackNo = v.filter { it.isDigit() }.take(3) },
-                        label = { Text("Track #") },
+                        label = { Text(stringResource(R.string.track_info_field_track_no)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f),
                     )
@@ -118,12 +129,12 @@ fun TrackInfoEditor(
                 OutlinedTextField(
                     value = comment,
                     onValueChange = { comment = it },
-                    label = { Text("Comment / info") },
+                    label = { Text(stringResource(R.string.track_info_field_comment)) },
                     minLines = 3,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    "Edits are stored in the app only — audio files are not modified.",
+                    stringResource(R.string.track_info_note),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -142,8 +153,8 @@ fun TrackInfoEditor(
                     comment = comment.trim(),
                 )
                 onDismiss()
-            }) { Text("Save") }
+            }) { Text(stringResource(R.string.action_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
