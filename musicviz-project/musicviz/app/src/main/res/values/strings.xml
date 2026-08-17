@@ -9,4 +9,8 @@
     <string name="capture_notification_title">Visualizing other apps</string>
     <string name="capture_notification_text">Geode is reading the audio playing on this device.</string>
     <string name="capture_notification_stop">Stop</string>
+    <string name="export_channel_name">Rendering video</string>
+    <string name="export_channel_description">Shown while Geode is rendering a video, so the render is not interrupted.</string>
+    <string name="export_notification_title">Rendering video</string>
+    <string name="export_notification_text">Geode is rendering your visuals.</string>
 </resources>

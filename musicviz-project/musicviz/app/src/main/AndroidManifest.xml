@@ -41,6 +41,14 @@
          in .playback.PlaybackService, and none of it involves the network:
          titles come from the file's own tags and the local library. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!--
+      A 4K render is tens of minutes of GPU work. Android 15 added the
+      mediaProcessing type for exactly this ("time-consuming operations on
+      media assets"); below 15 the service falls back to dataSync, which is
+      what those versions accept for long-running local work.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!--
       The crystal packs' haptic cues name Android feedback constants that all
@@ -165,6 +173,18 @@
             android:name=".audio.PlaybackCaptureService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+
+        <!--
+          Keeps a video render alive while the app is not in front of the user.
+          It does not own the render - that lives in ExportRun's process-scoped
+          coroutine - it only tells Android the process is doing visible work.
+          Both types are declared because mediaProcessing does not exist before
+          Android 15 and the service picks at runtime.
+        -->
+        <service
+            android:name=".export.ExportService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProcessing|dataSync" />
 
         <!--
           Does nothing, and must exist: getActiveSessions() is gated on being

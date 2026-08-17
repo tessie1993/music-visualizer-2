@@ -2380,15 +2380,18 @@ class PlayerViewModel(
         // cancelled BEFORE onCleared runs, so the last slider the user touched
         // is only on disk if it is written here.
         if (vizStateDirty) writeVizState()
-        // A running export is not stopped by that same cancellation:
-        // VideoExporter's render loop never suspends, so the cancel flag is its
-        // only exit. Left set false, a hardware AVC encoder, an EGL context and
-        // a full GPU loop keep running for minutes with the UI gone and
-        // cancelExport() unreachable - and re-entering builds a ViewModel whose
-        // export state says idle, so a second export starts against a codec the
-        // first still holds. The flag is also what makes the exporter delete
-        // its half-written file, exactly as a user-cancel does.
-        cancelExport()
+        // A running export is deliberately NOT cancelled here. It used to be,
+        // and that was the feature's worst failure: a 4K render is tens of
+        // minutes of GPU work, so switching apps or letting the screen time out
+        // threw it away with no message. The render now lives in ExportRun's
+        // process-scoped coroutine with a foreground service holding the
+        // process up, so it survives this screen exactly as playback does.
+        //
+        // The two hazards that cancelling here used to cover are now covered
+        // where they belong: ExportController refuses to start a second export
+        // while ExportRun reports one running, and it mirrors that run's
+        // progress on re-entry so a returning UI shows the render rather than
+        // an idle dialog.
         captureController.shutdown()
         // The screen's interest in live analysis ends here. The analyzer
         // itself belongs to the session now and keeps running if a visible

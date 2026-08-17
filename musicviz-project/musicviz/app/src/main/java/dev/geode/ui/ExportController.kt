@@ -5,6 +5,8 @@ import android.net.Uri
 import dev.geode.analysis.FeatureTimeline
 import dev.geode.data.PerformanceTake
 import dev.geode.export.ExportAspect
+import dev.geode.export.ExportRun
+import dev.geode.export.ExportService
 import dev.geode.export.VideoExporter
 import dev.geode.render.scene.SceneParams
 import kotlinx.coroutines.CoroutineScope
@@ -147,6 +149,24 @@ internal class ExportController(
     private var exportCancelled = false
 
     private var exportJob: Job? = null
+
+    init {
+        // A render started before this controller existed - the user left the
+        // app mid-export and came back - is adopted rather than ignored, so the
+        // UI shows progress instead of an idle dialog over a running encoder.
+        if (ExportRun.running) {
+            scope.launch {
+                ExportRun.state.collect { run ->
+                    if (!run.running) {
+                        if (_exportState.value.running) _exportState.value = ExportUiState(running = false)
+                        return@collect
+                    }
+                    _exportState.value = ExportUiState(running = true, progress = run.progress ?: 0f)
+                }
+            }
+        }
+    }
+
     private var studioJob: Job? = null
 
     fun startExport(
@@ -166,15 +186,24 @@ internal class ExportController(
         sceneFactoryFor: ((String) -> VideoExporter.SceneFactory)? = null,
     ) {
         val uri = host.exportUri ?: return
-        if (_exportState.value.running) return
+        // Both guards: the local one is the ordinary re-tap, the process-wide
+        // one catches a fresh ViewModel started while an earlier render is
+        // still holding the encoder.
+        if (_exportState.value.running || ExportRun.running) return
         exportCancelled = false
         _exportState.value = ExportUiState(running = true, customDestination = destination != null)
+        // Announce the run BEFORE starting the service: the service reads its
+        // first notification straight out of this state, and one that starts
+        // against an idle run stops itself immediately.
+        ExportRun.begin(uri.lastPathSegment.orEmpty())
+        ExportService.start(application)
         exportJob =
-            scope.launch(Dispatchers.Default) {
+            ExportRun.scope.launch(Dispatchers.Default) {
                 try {
                     val analysed =
                         host.cachedTimeline ?: host.analyze(uri) { p ->
                             _exportState.update { it.copy(progress = p * 0.2f) }
+                            ExportRun.publish(p * 0.2f)
                         }.also { if (host.exportUri == uri) host.cachedTimeline = it }
                     // Always re-decide the beats from the stored onset curve
                     // at the sensitivity in force right now: the in-memory
@@ -229,7 +258,9 @@ internal class ExportController(
                             loopSafe = loopSafe,
                             destination = destination,
                             onProgress = { p ->
-                                _exportState.update { it.copy(progress = 0.2f + p * 0.8f) }
+                                val overall = 0.2f + p * 0.8f
+                                _exportState.update { it.copy(progress = overall) }
+                                ExportRun.publish(overall)
                             },
                             isCancelled = { exportCancelled },
                         )
@@ -247,6 +278,13 @@ internal class ExportController(
                         val detail = "${t.javaClass.simpleName}: ${t.message ?: "no message"}"
                         _exportState.value = ExportUiState(running = false, error = detail)
                     }
+                } finally {
+                    // Saved, cancelled and failed alike: the service's only
+                    // question is whether the process still has work to
+                    // protect, and it does not. In a finally so a throw on the
+                    // CancellationException path cannot leave a foreground
+                    // notification standing over nothing.
+                    ExportRun.finish()
                 }
             }
     }
