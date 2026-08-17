@@ -13,6 +13,7 @@ import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import dev.geode.data.HistoryStore
+import dev.geode.data.SessionStore
 
 /**
  * Keeps music playing when Geode is not on screen, and publishes what is
@@ -160,6 +161,28 @@ class PlaybackService : MediaSessionService() {
          */
         @OptIn(UnstableApi::class)
         internal fun lastPlayedResumption(context: Context): MediaSession.MediaItemsWithStartPosition? {
+            // The saved session first: the whole queue at the exact position,
+            // which is what the System UI carousel should hand back after a
+            // reboot. Falling back to the last-played track keeps installs that
+            // predate the session file working, where one track at 0:00 is
+            // still better than a control that connects and does nothing.
+            SessionStore(context).load()?.let { saved ->
+                val items =
+                    saved.tracks.map { t ->
+                        MediaItem
+                            .Builder()
+                            .setUri(t.uri)
+                            .setMediaMetadata(
+                                MediaMetadata
+                                    .Builder()
+                                    .setTitle(t.title)
+                                    .setArtist(t.artist.ifBlank { null })
+                                    .setArtworkUri(android.net.Uri.parse(t.uri))
+                                    .build(),
+                            ).build()
+                    }
+                return MediaSession.MediaItemsWithStartPosition(items, saved.index, saved.positionMs)
+            }
             val last = HistoryStore(context).recentlyPlayed(1).firstOrNull() ?: return null
             val item =
                 MediaItem
@@ -170,6 +193,7 @@ class PlaybackService : MediaSessionService() {
                             .Builder()
                             .setTitle(last.title)
                             .setArtist(last.artist)
+                            .setArtworkUri(android.net.Uri.parse(last.uri))
                             .build(),
                     ).build()
             return MediaSession.MediaItemsWithStartPosition(listOf(item), 0, 0L)

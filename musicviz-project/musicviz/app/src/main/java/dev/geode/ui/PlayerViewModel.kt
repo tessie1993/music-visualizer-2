@@ -29,6 +29,7 @@ import dev.geode.data.PlayerPrefs
 import dev.geode.data.PlayerPrefsStore
 import dev.geode.data.Preset
 import dev.geode.data.PresetStore
+import dev.geode.data.SessionStore
 import dev.geode.export.ExportAspect
 import dev.geode.export.VideoExporter
 import dev.geode.playback.PlaybackEngine
@@ -783,6 +784,9 @@ class PlayerViewModel(
     private var beatRedecideJob: Job? = null
 
     private val historyStore = HistoryStore(application)
+
+    /** The queue and position to come back to; see [SessionStore]. */
+    private val sessionStore = SessionStore(application)
     private val _historyTick = MutableStateFlow(0)
     val historyTick: StateFlow<Int> = _historyTick
 
@@ -920,11 +924,30 @@ class PlayerViewModel(
     }
 
     /**
-     * Auto-resume: prepares (without playing) the most recent history entry
-     * so the mini-player and the Home resume card can continue it with one
-     * tap. Prepare-only by design - the existing Resume card stays the UI.
+     * Auto-resume: puts the last session back — the whole queue, at the track
+     * and the second it was left on — prepared but not playing, so the
+     * mini-player and the Home resume card can continue it with one tap.
+     * Prepare-only by design; the existing Resume card stays the UI.
+     *
+     * This used to rebuild ONE track at 0:00 from the play history, so a
+     * listener forty minutes into a mix lost the mix and the forty minutes
+     * every time Android reclaimed the process. The history fallback is kept
+     * for installs that predate the session file, where one track is still
+     * better than a cold start.
      */
     private fun prepareLastPlayed() {
+        val saved = sessionStore.load()
+        if (saved != null) {
+            runCatching {
+                player.setMediaItems(
+                    saved.tracks.map { mediaItemFor(QueueTrack(it.uri, it.title, it.artist)) },
+                    saved.index,
+                    saved.positionMs,
+                )
+                player.prepare()
+                currentUri = Uri.parse(saved.tracks[saved.index].uri)
+            }.onSuccess { return }
+        }
         val last = historyStore.recentlyPlayed(1).firstOrNull() ?: return
         runCatching {
             val uri = Uri.parse(last.uri)
@@ -932,6 +955,42 @@ class PlayerViewModel(
             player.prepare()
             currentUri = uri
         }
+    }
+
+    /**
+     * Last position written, so the poll only rewrites when playback has
+     * actually moved on. See [SessionStore.POSITION_WRITE_INTERVAL_MS].
+     */
+    private var lastSessionWriteMs = Long.MIN_VALUE
+    private var lastSessionIndex = -1
+
+    /**
+     * Writes the queue and position, off the main thread, at most every
+     * [SessionStore.POSITION_WRITE_INTERVAL_MS] — except on a track change,
+     * which is written immediately because it is the thing most likely to be
+     * followed by the process going away.
+     */
+    private fun persistSession() {
+        val count = runCatching { player.mediaItemCount }.getOrDefault(0)
+        if (count == 0) return
+        val index = runCatching { player.currentMediaItemIndex }.getOrDefault(0)
+        val position = runCatching { player.currentPosition }.getOrDefault(0L)
+        val movedTrack = index != lastSessionIndex
+        if (!movedTrack && position - lastSessionWriteMs in 0 until SessionStore.POSITION_WRITE_INTERVAL_MS) return
+        lastSessionWriteMs = position
+        lastSessionIndex = index
+
+        val tracks =
+            (0 until count).mapNotNull { i ->
+                val item = runCatching { player.getMediaItemAt(i) }.getOrNull() ?: return@mapNotNull null
+                val uri = item.localConfiguration?.uri?.toString() ?: return@mapNotNull null
+                SessionStore.SavedTrack(
+                    uri = uri,
+                    title = item.mediaMetadata.title?.toString().orEmpty(),
+                    artist = item.mediaMetadata.artist?.toString().orEmpty(),
+                )
+            }
+        storeWriter.execute { sessionStore.save(SessionStore.Saved(tracks, index, position)) }
     }
 
     // ---- Sleep timer ----
@@ -2554,6 +2613,7 @@ class PlayerViewModel(
                 autoVisuals.advanceVizPlaylist()
                 autoVisuals.advanceRandomMode()
                 autoVisuals.advanceSectionStaging()
+                persistSession()
                 delay(500)
             }
         }
