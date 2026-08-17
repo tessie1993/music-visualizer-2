@@ -1,4 +1,4 @@
-# MusicViz — Android Music Visualizer
+# Geode — Android Music Visualizer
 
 Native Android music player and real-time GPU music visualizer, written in
 Kotlin (Jetpack Compose UI, OpenGL ES 3.0 rendering, a thin C/JNI layer for

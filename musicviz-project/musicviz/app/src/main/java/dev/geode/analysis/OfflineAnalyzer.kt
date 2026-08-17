@@ -1,0 +1,319 @@
+package dev.geode.analysis
+
+import android.content.Context
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.net.Uri
+import dev.geode.engine.audio.ReactiveAnalyzer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.nio.ByteOrder
+
+/**
+ * Decodes a whole audio file (no playback) via MediaExtractor/MediaCodec and
+ * runs the same FFT/feature pipeline as live analysis at a fixed hop.
+ *
+ * Streaming: decoded PCM is analyzed chunk-by-chunk and discarded, so the
+ * PCM side of memory stays constant regardless of track length; the frame
+ * list itself is bounded by [FrameAccumulator], which trades time resolution
+ * for coverage on multi-hour files instead of growing without limit.
+ *
+ * The beat gate is driven by the caller's sensitivity settings, exactly as
+ * [AnalysisEngine] drives the live one - otherwise every export and every
+ * section-driven decision would silently run at the shipped defaults. The
+ * timeline also carries the raw onset curve, so [AnalysisCache] can re-decide
+ * the beats later without a second decode (see
+ * [FeatureTimeline.withBeatSensitivity]).
+ */
+class OfflineAnalyzer(
+    private val context: Context,
+) {
+    suspend fun analyze(
+        uri: Uri,
+        beatSensitivity: Float = BeatTuning.SENSITIVITY_DEFAULT,
+        beatMinIntervalMs: Float = BeatTuning.INTERVAL_MS_DEFAULT,
+        onProgress: (Float) -> Unit = {},
+    ): FeatureTimeline =
+        withContext(Dispatchers.Default) {
+            analyzeBlocking(uri, beatSensitivity, beatMinIntervalMs, onProgress)
+        }
+
+    fun analyzeBlocking(
+        uri: Uri,
+        beatSensitivity: Float = BeatTuning.SENSITIVITY_DEFAULT,
+        beatMinIntervalMs: Float = BeatTuning.INTERVAL_MS_DEFAULT,
+        onProgress: (Float) -> Unit = {},
+    ): FeatureTimeline {
+        // AIFF first: the platform extractor/codec stack can't read it, but
+        // it's plain PCM - stream it straight into the pipeline.
+        dev.geode.audio.AiffPcm.open(context, uri)?.let { aiff ->
+            try {
+                val pipeline = StreamingPipeline(beatSensitivity, beatMinIntervalMs)
+                val buf = ShortArray(16384)
+                var last = 0f
+                while (true) {
+                    val n = aiff.read(buf)
+                    if (n <= 0) break
+                    pipeline.feed(java.nio.ShortBuffer.wrap(buf, 0, n), aiff.channels, aiff.sampleRate)
+                    if (aiff.progress - last > 0.01f) {
+                        last = aiff.progress
+                        onProgress(last)
+                    }
+                }
+                return pipeline.finish()
+            } finally {
+                aiff.close()
+            }
+        }
+        val extractor = MediaExtractor()
+        var codecRef: MediaCodec? = null
+        val pipeline = StreamingPipeline(beatSensitivity, beatMinIntervalMs)
+        val info = MediaCodec.BufferInfo()
+        var inputDone = false
+        var outputDone = false
+        var lastProgress = 0f
+        // Setup runs inside the try as well: setDataSource on a truncated or
+        // DRM file, and createDecoderByType on a codec this device does not
+        // have, throw as readily as the decode loop does, and used to leave
+        // the extractor holding an open descriptor and the decoder a native
+        // instance - which a batch of files accumulates.
+        try {
+            extractor.setDataSource(context, uri, null)
+            val trackIndex =
+                (0 until extractor.trackCount).firstOrNull {
+                    extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+                } ?: throw IllegalArgumentException("No audio track in file")
+            val format = extractor.getTrackFormat(trackIndex)
+            extractor.selectTrack(trackIndex)
+            val durationUs =
+                if (format.containsKey(MediaFormat.KEY_DURATION)) format.getLong(MediaFormat.KEY_DURATION) else 0L
+            val mime = requireNotNull(format.getString(MediaFormat.KEY_MIME))
+            val codec = MediaCodec.createDecoderByType(mime).also { codecRef = it }
+            codec.configure(format, null, null, 0)
+            codec.start()
+            while (!outputDone) {
+                if (!inputDone) {
+                    val inIndex = codec.dequeueInputBuffer(10_000)
+                    if (inIndex >= 0) {
+                        val buf = checkNotNull(codec.getInputBuffer(inIndex)) { "decoder input buffer null (codec error state)" }
+                        val size = extractor.readSampleData(buf, 0)
+                        if (size < 0) {
+                            codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            inputDone = true
+                        } else {
+                            codec.queueInputBuffer(inIndex, 0, size, extractor.sampleTime, 0)
+                            if (durationUs > 0) {
+                                val p = (extractor.sampleTime / durationUs.toFloat()).coerceIn(0f, 1f)
+                                if (p - lastProgress > 0.01f) {
+                                    lastProgress = p
+                                    onProgress(p)
+                                }
+                            }
+                            extractor.advance()
+                        }
+                    }
+                }
+                val outIndex = codec.dequeueOutputBuffer(info, 10_000)
+                if (outIndex >= 0) {
+                    if (info.size > 0) {
+                        val outFormat = codec.outputFormat
+                        val sampleRate = outFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                        val channels = outFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                        val buf = checkNotNull(codec.getOutputBuffer(outIndex)) { "decoder output buffer null (codec error state)" }
+                        buf.position(info.offset)
+                        buf.limit(info.offset + info.size)
+                        val pcmEncoding =
+                            if (outFormat.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
+                                outFormat.getInteger(MediaFormat.KEY_PCM_ENCODING)
+                            } else {
+                                android.media.AudioFormat.ENCODING_PCM_16BIT
+                            }
+                        if (pcmEncoding == android.media.AudioFormat.ENCODING_PCM_FLOAT) {
+                            pipeline.feedFloat(buf.order(ByteOrder.nativeOrder()).asFloatBuffer(), channels, sampleRate)
+                        } else {
+                            pipeline.feed(buf.order(ByteOrder.LITTLE_ENDIAN).asShortBuffer(), channels, sampleRate)
+                        }
+                    }
+                    codec.releaseOutputBuffer(outIndex, false)
+                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
+                }
+            }
+        } finally {
+            codecRef?.let {
+                runCatching { it.stop() }
+                it.release()
+            }
+            extractor.release()
+        }
+        onProgress(1f)
+        return pipeline.finish()
+    }
+
+    /** Windows a mono stream at a fixed hop, running the shared FFT/feature pipeline. */
+    private class StreamingPipeline(
+        sigma: Float,
+        minIntervalMs: Float,
+    ) {
+        private val keyDetector = KeyDetector()
+
+        /**
+         * The same graph the live path runs, configured the same way. It is
+         * literally the same class, which is what makes an exported video match
+         * what playback showed — the two paths cannot drift apart because there
+         * is only one implementation of the analysis.
+         */
+        private val analyzer =
+            ReactiveAnalyzer(
+                bandCount = AnalysisEngine.DEFAULT_BAND_COUNT,
+                fftSize = AnalysisEngine.DEFAULT_FFT_SIZE,
+                hopRateHz = HOP_RATE_HZ,
+            ).also {
+                it.sensitivity = BeatTuning.clampSensitivity(sigma)
+                it.refractoryMs = BeatTuning.clampIntervalMs(minIntervalMs)
+                it.attackSeconds = BeatTuning.envelopeSeconds(AnalysisEngine.DEFAULT_ATTACK)
+                it.releaseSeconds = BeatTuning.envelopeSeconds(AnalysisEngine.DEFAULT_DECAY)
+            }
+        private val fftSize = AnalysisEngine.DEFAULT_FFT_SIZE
+        private val window = FloatArray(fftSize)
+        private val chromaMagnitudes = FloatArray(fftSize / 2)
+        private val waveform = FloatArray(128)
+        private val dtSeconds = 1f / HOP_RATE_HZ
+
+        /** Bounded frame store: halves its own time resolution rather than
+         *  letting a 3-hour file OOM the process; see [FrameAccumulator]. */
+        private val frames = FrameAccumulator()
+        private var buffer = FloatArray(AnalysisEngine.DEFAULT_FFT_SIZE * 4)
+        private var buffered = 0
+        private var sampleRate = 44100
+        private var hopSamples = sampleRate / 60
+
+        /** Absolute mono-sample index of the current window start; timestamps
+         *  derive from this so they never drift (1000/60 truncates to 16 ms). */
+        private var absSample = 0L
+
+        fun feed(
+            pcm: java.nio.ShortBuffer,
+            channels: Int,
+            sampleRateHz: Int,
+        ) {
+            // A malformed header or a broken codec reporting zero channels or
+            // rate would otherwise divide by zero below; there is no audio to
+            // analyse in either case.
+            if (channels <= 0 || sampleRateHz <= 0) return
+            if (sampleRateHz != sampleRate) {
+                sampleRate = sampleRateHz
+                hopSamples = (sampleRate / 60).coerceAtLeast(1)
+            }
+            val frameCount = pcm.remaining() / channels
+            if (buffered + frameCount > buffer.size) {
+                buffer = buffer.copyOf((buffered + frameCount).coerceAtLeast(buffer.size * 2))
+            }
+            var s = 0
+            for (f in 0 until frameCount) {
+                var acc = 0f
+                for (c in 0 until channels) {
+                    acc += pcm.get(s) / 32768f
+                    s++
+                }
+                buffer[buffered + f] = acc / channels
+            }
+            buffered += frameCount
+            drain()
+        }
+
+        /** Same as [feed] for decoders that output float PCM. */
+        fun feedFloat(
+            pcm: java.nio.FloatBuffer,
+            channels: Int,
+            sampleRateHz: Int,
+        ) {
+            if (channels <= 0 || sampleRateHz <= 0) return
+            if (sampleRateHz != sampleRate) {
+                sampleRate = sampleRateHz
+                hopSamples = (sampleRate / 60).coerceAtLeast(1)
+            }
+            val frameCount = pcm.remaining() / channels
+            if (buffered + frameCount > buffer.size) {
+                buffer = buffer.copyOf((buffered + frameCount).coerceAtLeast(buffer.size * 2))
+            }
+            var s = 0
+            for (f in 0 until frameCount) {
+                var acc = 0f
+                for (c in 0 until channels) {
+                    acc += pcm.get(s)
+                    s++
+                }
+                buffer[buffered + f] = acc / channels
+            }
+            buffered += frameCount
+            drain()
+        }
+
+        private fun drain() {
+            var start = 0
+            while (start + fftSize <= buffered) {
+                System.arraycopy(buffer, start, window, 0, fftSize)
+                analyzer.sampleRateHz = sampleRate
+                analyzer.analyze(window, dtSeconds)
+                keyDetector.accumulate(analyzer.spectrumInto(chromaMagnitudes), sampleRate, fftSize)
+                val step = fftSize / waveform.size
+                for (i in waveform.indices) waveform[i] = window[i * step]
+                val timeMs = absSample * 1000L / sampleRate
+                frames.add(TimelineFrame(timeMs, snapshot()))
+                absSample += hopSamples
+                start += hopSamples
+            }
+            if (start > 0) {
+                System.arraycopy(buffer, start, buffer, 0, buffered - start)
+                buffered -= start
+            }
+        }
+
+        /** One frame of the analyzer's outputs, in the shape scenes consume. */
+        private fun snapshot(): AudioFeatures =
+            AudioFeatures(
+                bands = analyzer.bands.copyOf(),
+                waveform = waveform.copyOf(),
+                rms = analyzer.rms,
+                bass = analyzer.bass,
+                mid = analyzer.mid,
+                treble = analyzer.treble,
+                onset = analyzer.onset,
+                beat = analyzer.beat,
+                bpm = analyzer.bpm,
+                centroid = analyzer.centroid,
+                flux = analyzer.fluxValue,
+                beatStrength = analyzer.beatStrength,
+                transient = analyzer.transient,
+                beatPhase = analyzer.beatPhase,
+                pulseConfidence = analyzer.pulseConfidence,
+                macroEnergy = analyzer.macroEnergy,
+                kick = analyzer.kick,
+                snare = analyzer.snare,
+                hat = analyzer.hat,
+            )
+
+        fun finish(): FeatureTimeline {
+            // groupSize is 1 for every track under FrameAccumulator's bound,
+            // making this exactly the historical 60 Hz timeline; past it the
+            // effective hop rate halves per doubling and the timeline carries
+            // the true rate, so withBeatSensitivity's frame-based windows stay
+            // measured in the right units.
+            val out = frames.finish()
+            val group = frames.groupSize
+            return FeatureTimeline(
+                out,
+                hopMs = group * 1000L / 60,
+                key = keyDetector.finish(),
+                hopRateHz = HOP_RATE_HZ / group,
+            )
+        }
+
+        private companion object {
+            /** Offline hop rate. Note hopMs above truncates it to 16 ms, which
+             *  is why the timeline carries the rate separately. */
+            const val HOP_RATE_HZ = 60f
+        }
+    }
+}

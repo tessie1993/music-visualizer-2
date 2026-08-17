@@ -1,0 +1,152 @@
+package dev.geode.ui
+
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import dev.geode.analysis.PlaybackMath
+import dev.geode.data.PlayerPrefs
+
+/** Sleep-timer choices in minutes; 0 renders as "Off". */
+private val SLEEP_TIMER_CHOICES = listOf(0, 15, 30, 45, 60)
+
+/**
+ * Playback group for the Settings › Audio tab: speed/pitch sliders, skip
+ * silence, pause-on-unplug, keep-screen-on, auto-resume and the sleep timer.
+ * Mounted inside a [SettingsGroup] card, which carries the "Playback" header,
+ * so this is content only.
+ */
+@Composable
+fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
+    val prefs by viewModel.playerPrefs.collectAsState()
+    val sleepRemainingMs by viewModel.sleepTimerRemainingMs.collectAsState()
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column {
+            Text("Speed  ${"%.2f".format(prefs.speed)}x", style = MaterialTheme.typography.labelMedium)
+            CrystalSlider(
+                value = prefs.speed,
+                onValueChange = { viewModel.setPlayerPrefs(prefs.copy(speed = PlaybackMath.snap(it, 0.05f))) },
+                valueRange = 0.5f..2f,
+            )
+        }
+        Column {
+            Text(
+                "Pitch  ${"%.1f".format(prefs.pitchSemitones)} st (0 = normal)",
+                style = MaterialTheme.typography.labelMedium,
+            )
+            CrystalSlider(
+                value = prefs.pitchSemitones,
+                onValueChange = { viewModel.setPlayerPrefs(prefs.copy(pitchSemitones = PlaybackMath.snap(it, 0.5f))) },
+                valueRange = -6f..6f,
+            )
+        }
+        Column {
+            Text(
+                if (prefs.fadeMs <= 0) {
+                    "Fade on pause, resume and skip — off"
+                } else {
+                    "Fade on pause, resume and skip  ${"%.1f".format(prefs.fadeMs / 1000f)}s"
+                },
+                style = MaterialTheme.typography.labelMedium,
+            )
+            CrystalSlider(
+                value = prefs.fadeMs.toFloat(),
+                onValueChange = {
+                    // Snapped to 250 ms so the slider has landing points and
+                    // "off" is reachable rather than a 3 ms fade.
+                    viewModel.setPlayerPrefs(prefs.copy(fadeMs = (PlaybackMath.snap(it, 250f)).toInt()))
+                },
+                valueRange = 0f..PlayerPrefs.MAX_FADE_MS.toFloat(),
+            )
+            Text(
+                "Ramps the volume instead of cutting it. Not a crossfade — one player decodes one " +
+                    "track at a time, and a second one would give the analyser two streams to sum — " +
+                    "but it removes the hard edges, which is the part you hear.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        PlaybackSwitchRow("Skip silence", prefs.skipSilence) {
+            viewModel.setPlayerPrefs(prefs.copy(skipSilence = it))
+        }
+        PlaybackSwitchRow("Pause when unplugged", prefs.pauseOnNoisy) {
+            viewModel.setPlayerPrefs(prefs.copy(pauseOnNoisy = it))
+        }
+        PlaybackSwitchRow("Keep screen on", prefs.keepScreenOn) {
+            viewModel.setPlayerPrefs(prefs.copy(keepScreenOn = it))
+        }
+        PlaybackSwitchRow("Auto-resume last track", prefs.autoResume) {
+            viewModel.setPlayerPrefs(prefs.copy(autoResume = it))
+        }
+        Column {
+            Text("Sleep timer", style = MaterialTheme.typography.labelMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                val running = sleepRemainingMs != null
+                SLEEP_TIMER_CHOICES.forEach { minutes ->
+                    FilterChip(
+                        selected =
+                            if (running) {
+                                minutes != 0 && minutes == prefs.sleepTimerMinutes
+                            } else {
+                                minutes == 0
+                            },
+                        onClick = {
+                            if (minutes == 0) viewModel.cancelSleepTimer() else viewModel.startSleepTimer(minutes)
+                        },
+                        label = {
+                            Text(
+                                if (minutes == 0) "Off" else "$minutes min",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        },
+                    )
+                }
+            }
+            PlaybackSwitchRow("Let the track finish", prefs.sleepFinishTrack) {
+                viewModel.setPlayerPrefs(prefs.copy(sleepFinishTrack = it))
+            }
+            sleepRemainingMs?.let { remaining ->
+                Text(
+                    if (prefs.sleepFinishTrack) {
+                        "Pausing after the track playing in ${PlaybackMath.formatCountdown(remaining)}"
+                    } else {
+                        "Pausing in ${PlaybackMath.formatCountdown(remaining)}"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = accentTextColor(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaybackSwitchRow(
+    label: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}

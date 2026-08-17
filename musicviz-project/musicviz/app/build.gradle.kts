@@ -8,7 +8,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    id("musicviz.kotlin-common")
+    id("geode.kotlin-common")
     alias(libs.plugins.detekt)
 }
 
@@ -25,7 +25,7 @@ detekt {
 
 // Upload-key material for the Play Store build. Resolved from (in order):
 //   1) keystore.properties next to settings.gradle.kts (local dev; git-ignored)
-//   2) MUSICVIZ_KEYSTORE / _PASSWORD / _KEY_ALIAS / _KEY_PASSWORD env vars (CI)
+//   2) GEODE_KEYSTORE / _PASSWORD / _KEY_ALIAS / _KEY_PASSWORD env vars (CI)
 // When neither is present, the release build type is left unsigned so that
 // `assembleRelease` still works for local smoke tests.
 val keystoreProps =
@@ -39,10 +39,10 @@ fun releaseSecret(
     envKey: String,
 ): String? = keystoreProps.getProperty(propKey) ?: System.getenv(envKey)
 
-val releaseStorePath = releaseSecret("storeFile", "MUSICVIZ_KEYSTORE")
-val releaseStorePassword = releaseSecret("storePassword", "MUSICVIZ_KEYSTORE_PASSWORD")
-val releaseKeyAlias = releaseSecret("keyAlias", "MUSICVIZ_KEY_ALIAS")
-val releaseKeyPassword = releaseSecret("keyPassword", "MUSICVIZ_KEY_PASSWORD")
+val releaseStorePath = releaseSecret("storeFile", "GEODE_KEYSTORE")
+val releaseStorePassword = releaseSecret("storePassword", "GEODE_KEYSTORE_PASSWORD")
+val releaseKeyAlias = releaseSecret("keyAlias", "GEODE_KEY_ALIAS")
+val releaseKeyPassword = releaseSecret("keyPassword", "GEODE_KEY_PASSWORD")
 val hasReleaseSigning =
     releaseStorePath != null &&
         releaseStorePassword != null &&
@@ -50,15 +50,19 @@ val hasReleaseSigning =
         releaseKeyPassword != null
 
 android {
-    namespace = "dev.musicviz"
+    namespace = "dev.geode"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "dev.musicviz"
+        applicationId = "dev.geode"
         minSdk = 26
         targetSdk = 36
         versionCode = 31
         versionName = "1.7.0"
+        // Instrumented tests run on a device or emulator, which is the only
+        // place MediaStore, a real MediaSession and the permission dialogs
+        // exist. CI runs them; see .github/workflows/android.yml.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += "arm64-v8a"
         }
@@ -105,7 +109,7 @@ android {
     }
 
     bundle {
-        // MusicViz ships a single locale and its own GL assets; splitting by
+        // Geode ships a single locale and its own GL assets; splitting by
         // language/density only adds ways for a device to end up missing
         // resources at runtime.
         language {
@@ -340,4 +344,12 @@ dependencies {
     testImplementation(libs.androidx.test.junit.ktx)
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.ui.test.junit4)
+    // Supplies the empty host activity createComposeRule() needs. Without it a
+    // component-level Compose test cannot resolve an activity at all, which
+    // forces every UI test through MainActivity and the whole app shell.
+    debugImplementation(libs.ui.test.manifest)
+
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.rules)
 }

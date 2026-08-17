@@ -1,9 +1,9 @@
 plugins {
-    id("musicviz.android-library")
+    id("geode.android-library")
 }
 
 android {
-    namespace = "dev.musicviz.engine.audioandroid"
+    namespace = "dev.geode.engine.audioandroid"
 }
 
 dependencies {

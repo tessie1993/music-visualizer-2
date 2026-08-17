@@ -1,12 +1,172 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">MusicViz</string>
-    <string name="wallpaper_label">MusicViz</string>
-    <string name="wallpaper_description">Your last MusicViz style, reacting to whatever the app is playing and drifting gently when it is not.</string>
-    <string name="notification_listener_label">MusicViz — now playing in other apps</string>
+    <string name="app_name">Geode</string>
+    <string name="wallpaper_label">Geode</string>
+    <string name="wallpaper_description">Your last Geode style, reacting to whatever the app is playing and drifting gently when it is not.</string>
+    <string name="notification_listener_label">Geode — now playing in other apps</string>
     <string name="capture_channel_name">Visualizing other apps</string>
-    <string name="capture_channel_description">Shown while MusicViz is reading the audio another app is playing.</string>
+    <string name="capture_channel_description">Shown while Geode is reading the audio another app is playing.</string>
     <string name="capture_notification_title">Visualizing other apps</string>
-    <string name="capture_notification_text">MusicViz is reading the audio playing on this device.</string>
+    <string name="capture_notification_text">Geode is reading the audio playing on this device.</string>
     <string name="capture_notification_stop">Stop</string>
+    <string name="export_channel_name">Rendering video</string>
+    <string name="export_channel_description">Shown while Geode is rendering a video, so the render is not interrupted.</string>
+    <string name="export_notification_title">Rendering video</string>
+    <string name="export_notification_text">Geode is rendering your visuals.</string>
+
+    <!-- First-run photosensitivity choice. Safety copy: translate carefully,
+         the flash rates are factual and must survive translation. -->
+    <string name="safety_title">Before the visuals start</string>
+    <string name="safety_warning">Geode reacts to music with light. With its limits switched off it can flash the whole screen up to nine times a second — enough to trigger a seizure in people with photosensitive epilepsy, whether or not they know they have it.</string>
+    <string name="safety_prompt">Until you answer, the visuals run limited. Pick what suits you — you can change it any time in Settings › Behavior.</string>
+    <string name="safety_option_safe">Keep it safe</string>
+    <string name="safety_option_safe_detail">Caps how fast and how strongly the screen can flash, holds brightness near neutral, and crossfades scene changes instead of cutting. Recommended if you or anyone watching is sensitive to flashing light.</string>
+    <string name="safety_option_reduced_motion">Safe, and easier on motion</string>
+    <string name="safety_option_reduced_motion_detail">Everything above, plus speed, drift, shake and endless zoom scaled down for motion comfort. Colour and texture keep reacting to the music.</string>
+    <string name="safety_option_full">Full effects</string>
+    <string name="safety_option_full_detail">No limits: the strobe runs at 9 Hz and the beat flash at the track\'s rate. Choose this only if flashing light does not affect you or anyone who can see your screen.</string>
+    <!-- Read out as one button: the detail is the substance of the choice. -->
+    <string name="safety_option_description">%1$s. %2$s</string>
+
+    <!-- Per-track metadata editor. -->
+    <string name="track_info_title">Track info</string>
+    <string name="track_info_field_title">Title</string>
+    <string name="track_info_field_artist">Artist</string>
+    <string name="track_info_field_album">Album</string>
+    <string name="track_info_field_genre">Genre</string>
+    <string name="track_info_field_year">Year</string>
+    <string name="track_info_field_track_no">Track #</string>
+    <string name="track_info_field_comment">Comment / info</string>
+    <string name="track_info_note">Edits are stored in the app only — audio files are not modified.</string>
+
+    <!-- Settings › About. -->
+    <string name="about_group">About</string>
+    <string name="about_version">Version %1$s (%2$d)</string>
+    <string name="about_blurb">Plays music from your device and renders it. No account, no ads, no analytics — nothing leaves the phone unless you export a video and share it.</string>
+    <string name="about_licenses">Open source licenses</string>
+    <string name="about_privacy_policy">Privacy policy</string>
+    <string name="about_licenses_unavailable">Third-party notices could not be loaded.</string>
+    <string name="about_licenses_loading">Loading…</string>
+
+    <!-- Bottom navigation. Short: these sit under an icon in a five-item bar. -->
+    <string name="nav_player">Player</string>
+    <string name="nav_library">Library</string>
+    <string name="nav_visuals">Visuals</string>
+    <string name="nav_studio">Studio</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Mini-player above the nav bar. -->
+    <string name="mini_player_idle">Now playing</string>
+
+    <!-- Offered once, after a run that crashed. -->
+    <string name="crash_dialog_title">Previous crash captured</string>
+    <string name="crash_dialog_body">The last run crashed. Copy the report to share it, then dismiss.\n\n%1$s</string>
+    <string name="crash_clip_label">Geode crash</string>
+
+    <!-- Search across tracks, playlists and presets. -->
+    <string name="search_placeholder">Search tracks, playlists &amp; presets</string>
+    <string name="search_close">Close search</string>
+    <string name="search_hint">Type to search your music</string>
+    <string name="search_heading_tracks">Tracks (%1$d)</string>
+    <string name="search_heading_playlists">Playlists (%1$d)</string>
+    <string name="search_heading_presets">Presets (%1$d)</string>
+    <string name="search_no_results">No results for “%1$s”</string>
+
+    <!-- Playback notices: a transient error strip under the top bar. -->
+    <string name="notice_dismiss">Dismiss</string>
+    <string name="notice_dismiss_description">Dismiss playback message</string>
+
+    <plurals name="track_count">
+        <item quantity="one">%1$d track</item>
+        <item quantity="other">%1$d tracks</item>
+    </plurals>
+
+    <!-- Transport controls. Spoken by screen readers, so they name the action. -->
+    <string name="action_previous">Previous</string>
+    <string name="action_play_pause">Play/Pause</string>
+    <string name="action_next">Next</string>
+    <string name="action_add_to_queue">Add to queue</string>
+
+    <!-- Now Playing: what the app is listening to, and to what. -->
+    <string name="source_other_apps">Other apps</string>
+    <string name="source_live_input">Live input</string>
+    <string name="state_now_playing">Now playing</string>
+    <string name="state_paused">Paused</string>
+    <string name="state_nothing_playing">Nothing playing</string>
+    <string name="title_whatever_is_playing">Whatever is playing</string>
+    <string name="title_the_room">The room</string>
+    <string name="title_untitled">Untitled</string>
+    <string name="title_pick_something">Pick something to play</string>
+    <string name="subtitle_capture_refused">%1$s will not be captured — see Settings</string>
+    <string name="subtitle_capture_refused_unknown_app">That app</string>
+    <string name="subtitle_captured_from_another_app">Captured from another app</string>
+    <string name="subtitle_microphone_hears">Whatever the microphone hears</string>
+    <string name="subtitle_unknown_artist">Unknown artist</string>
+    <string name="subtitle_nothing_playing">Your library, your history, or the room</string>
+
+    <string name="action_search">Search</string>
+    <string name="action_shuffle">Shuffle</string>
+    <string name="action_play">Play</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_repeat">Repeat</string>
+    <string name="action_favourite_add">Add to favourites</string>
+    <string name="action_favourite_remove">Remove from favourites</string>
+    <string name="action_stop_capture">Stop capture</string>
+    <string name="action_resume_last_played">Resume last played</string>
+    <string name="action_open_library">Open library</string>
+    <string name="action_open_queue">Open queue</string>
+
+    <!-- A–B loop: one control, three states, named so colour is not the only cue. -->
+    <string name="ab_loop_idle">A–B</string>
+    <string name="ab_loop_set_b">Set B</string>
+    <string name="ab_loop_looping">Looping</string>
+
+    <!-- Automatic visual switching. -->
+    <string name="auto_random">Auto: random</string>
+    <string name="auto_smart">Auto: smart</string>
+    <string name="auto_sections">Auto: sections</string>
+    <string name="auto_off">Auto: off</string>
+
+    <string name="queue">Queue</string>
+    <string name="queue_with_count">Queue · %1$d</string>
+    <string name="queue_up_next">Up next</string>
+
+    <!-- Quick actions under the player. -->
+    <string name="quick_room_on">Room: on</string>
+    <string name="quick_capturing">Capturing</string>
+    <string name="quick_sleep_on">Sleep: on</string>
+    <string name="quick_sleep_30m">Sleep 30m</string>
+    <string name="quick_shuffle_all">Shuffle all</string>
+
+    <!-- Now Playing on a connected display: this screen becomes the remote. -->
+    <string name="second_screen_showing_on">Showing on</string>
+    <string name="second_screen_explainer">The visuals are on the connected display. Everything here still controls them — turn this off in Settings › Live input &amp; touch to bring them back.</string>
+    <string name="action_collapse">Collapse</string>
+
+    <!-- Panel chips under the transport. -->
+    <string name="panel_now">Now</string>
+    <string name="panel_lyrics">Lyrics</string>
+
+    <!-- Seek bar. Spoken, not drawn: the bar itself is a bare canvas. -->
+    <string name="seek_description">Seek. %1$s of %2$s</string>
+
+    <!-- Lyrics panel. -->
+    <string name="lyrics_none">No lyrics</string>
+    <string name="lyrics_none_explainer">Drop an .lrc file next to the track — same name, .lrc extension — and it shows up here, timed and following the music. Words written into the file\'s own tags are read too. Nothing is fetched: the app has no network access.</string>
+    <string name="lyrics_source_timed">Timed lyrics from %1$s. Tap a line to jump there.</string>
+    <string name="lyrics_source_untimed">Untimed lyrics from %1$s.</string>
+
+    <!-- Queue panel. -->
+    <string name="queue_empty_explainer">Nothing queued. Playing anything from a list — the library, a shelf on Home, a search result — queues that whole list.</string>
+    <string name="queue_save_as_playlist">Save as playlist</string>
+    <string name="queue_save_dialog_title">Save queue as playlist</string>
+    <string name="action_move_up">Move up</string>
+    <string name="action_remove_from_queue">Remove from queue</string>
+
+    <!-- Shared verbs. One definition each, so a translator sees them once. -->
+    <string name="action_save">Save</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_close">Close</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_dismiss">Dismiss</string>
 </resources>

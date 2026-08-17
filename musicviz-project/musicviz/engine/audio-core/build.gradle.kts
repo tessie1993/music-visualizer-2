@@ -1,5 +1,5 @@
 plugins {
-    id("musicviz.jvm-library")
+    id("geode.jvm-library")
 }
 
 dependencies {

@@ -30,25 +30,23 @@
     <ID>MemberNameEqualsClassName:FluidBuffers.kt$FluidBuffers.Fbo$var fbo = 0 private set</ID>
     <ID>NestedBlockDepth:Adsr.kt$AdsrEngine$fun tick( dt: Float, features: AudioFeatures, ): FloatArray</ID>
     <ID>NestedBlockDepth:AiffPcm.kt$AiffPcm.Companion$internal fun parse(rawStream: InputStream): AiffPcm?</ID>
-    <ID>NestedBlockDepth:AudioTranscoder.kt$AudioTranscoder$fun transcode( uri: Uri, maxDurationMs: Long, isCancelled: () -&gt; Boolean = { false }, onProgress: (Float) -&gt; Unit = {}, ): Result</ID>
-    <ID>NestedBlockDepth:AudioTranscoder.kt$AudioTranscoder$private fun transcodeAiff( aiff: dev.musicviz.audio.AiffPcm, maxDurationMs: Long, isCancelled: () -&gt; Boolean, onProgress: (Float) -&gt; Unit, ): Result</ID>
-    <ID>NestedBlockDepth:Crystal.kt$private fun DrawScope.drawMineralTexture( theme: AppTheme, primary: Color, secondary: Color, alpha: Float, panel: Boolean, )</ID>
+    <ID>NestedBlockDepth:AudioTranscoder.kt$AudioTranscoder$fun transcode( uri: Uri, maxDurationMs: Long, startMs: Long = 0L, isCancelled: () -&gt; Boolean = { false }, onProgress: (Float) -&gt; Unit = {}, ): Result</ID>
+    <ID>NestedBlockDepth:AudioTranscoder.kt$AudioTranscoder$private fun transcodeAiff( aiff: dev.geode.audio.AiffPcm, maxDurationMs: Long, startMs: Long, isCancelled: () -&gt; Boolean, onProgress: (Float) -&gt; Unit, ): Result</ID>
     <ID>NestedBlockDepth:CymaticsClockSafetyTest.kt$CymaticsClockSafetyTest$private fun enclosingCall( src: String, pos: Int, ): String?</ID>
     <ID>NestedBlockDepth:ExportDefaultsPersistenceTest.kt$ExportDefaultsPersistenceTest$@Test fun everyChoiceCombinationRoundTrips()</ID>
     <ID>NestedBlockDepth:FluidSim.kt$FluidSim$private fun allocGrids(preserve: Boolean)</ID>
     <ID>NestedBlockDepth:HyperspaceMath.kt$BloomBank$fun advance( dt: Float, target: Int, impulse: Float, species: HyperspaceMath.Species?, lifetime: Float, spread: Float, sizeScale: Float, motion: Float, orbitScale: Float, spinScale: Float = 1f, )</ID>
-    <ID>NestedBlockDepth:OfflineAnalyzer.kt$OfflineAnalyzer$fun analyzeBlocking( uri: Uri, beatThresholdSigma: Float = FeatureExtractor.SIGMA_DEFAULT, beatMinIntervalMs: Float = FeatureExtractor.INTERVAL_MS_DEFAULT, onProgress: (Float) -&gt; Unit = {}, ): FeatureTimeline</ID>
+    <ID>NestedBlockDepth:OfflineAnalyzer.kt$OfflineAnalyzer$fun analyzeBlocking( uri: Uri, beatSensitivity: Float = BeatTuning.SENSITIVITY_DEFAULT, beatMinIntervalMs: Float = BeatTuning.INTERVAL_MS_DEFAULT, onProgress: (Float) -&gt; Unit = {}, ): FeatureTimeline</ID>
     <ID>NestedBlockDepth:PlaybackCapture.kt$PlaybackCapture$@RequiresApi(Build.VERSION_CODES.Q) private fun openRecord(projection: MediaProjection): AudioRecord?</ID>
     <ID>NestedBlockDepth:PlayerScreen.kt$internal suspend fun driveSpectrum( live: Boolean, bands: () -&gt; FloatArray, emit: (FloatArray) -&gt; Unit, )</ID>
     <ID>NestedBlockDepth:RippleMathTest.kt$RippleMathTest$private fun ringRadius(h: FloatArray): Float</ID>
     <ID>NestedBlockDepth:SceneFailureTest.kt$SceneFailureTest$private fun shaderFailureBlocks(source: String): List&lt;String&gt;</ID>
-    <ID>NestedBlockDepth:VideoExporter.kt$VideoExporter$private fun encodeInto( pfd: ParcelFileDescriptor, audioUri: Uri, timeline: FeatureTimeline, sceneFactory: SceneFactory, aspect: ExportAspect, sceneParams: SceneParams, lfoConfigs: List&lt;dev.musicviz.render.LfoConfig&gt;, adsrConfigs: List&lt;dev.musicviz.render.AdsrConfig&gt;, safety: dev.musicviz.render.VisualSafety.SafetyConfig, requestedFps: Int, paramsAt: ((Long) -&gt; SceneParams)?, loopSafe: Boolean, onProgress: (Float) -&gt; Unit, isCancelled: () -&gt; Boolean, )</ID>
+    <ID>NestedBlockDepth:VideoExporter.kt$VideoExporter$private fun encodeInto( pfd: ParcelFileDescriptor, audioUri: Uri, timeline: FeatureTimeline, sceneFactory: SceneFactory, aspect: ExportAspect, sceneParams: SceneParams, lfoConfigs: List&lt;dev.geode.render.LfoConfig&gt;, adsrConfigs: List&lt;dev.geode.render.AdsrConfig&gt;, safety: dev.geode.render.VisualSafety.SafetyConfig, requestedFps: Int, paramsAt: ((Long) -&gt; SceneParams)?, loopSafe: Boolean, range: ExportRange?, onProgress: (Float) -&gt; Unit, isCancelled: () -&gt; Boolean, )</ID>
     <ID>ReturnCount:AiffExtractor.kt$AiffExtractor$override fun read( input: ExtractorInput, seekPosition: PositionHolder, ): Int</ID>
     <ID>ReturnCount:AiffPcm.kt$AiffPcm$fun read(out: ShortArray): Int</ID>
     <ID>ReturnCount:AiffPcm.kt$AiffPcm.Companion$internal fun parse(rawStream: InputStream): AiffPcm?</ID>
     <ID>ReturnCount:AiffPcm.kt$AiffPcm.Companion$private fun readExtended80(din: DataInputStream): Int</ID>
-    <ID>ReturnCount:AnalysisCache.kt$AnalysisCache$fun load( context: Context, uri: Uri, beatThresholdSigma: Float, beatMinIntervalMs: Float, ): FeatureTimeline?</ID>
-    <ID>ReturnCount:AppTheme.kt$AppTheme$fun resolvedFontColor( fontColorArgb: Int?, backgroundDim: Float = 0f, ): Int?</ID>
+    <ID>ReturnCount:AnalysisCache.kt$AnalysisCache$fun load( context: Context, uri: Uri, beatSensitivity: Float, beatMinIntervalMs: Float, ): FeatureTimeline?</ID>
     <ID>ReturnCount:ArtPalette.kt$ArtPalette$fun extract(pixels: IntArray): Extracted?</ID>
     <ID>ReturnCount:AudioTranscoder.kt$AudioTranscoder$fun feedEncoder(): Boolean</ID>
     <ID>ReturnCount:AutoVisualsController.kt$AutoVisualsController$fun advanceSectionStaging()</ID>
@@ -56,11 +54,10 @@
     <ID>ReturnCount:BlueNoise.kt$BlueNoise$fun createTexture(context: Context): Int</ID>
     <ID>ReturnCount:CaptureController.kt$CaptureController$fun setMicEnabled(enabled: Boolean): MicCapture.Failure?</ID>
     <ID>ReturnCount:Chromagram.kt$Chromagram$private fun peakToMedian(): Float</ID>
-    <ID>ReturnCount:Crystal.kt$internal fun onyxBandRhythm( seed: Float, span: Float, minDim: Float, units: Int, ): List&lt;OnyxBand&gt;</ID>
     <ID>ReturnCount:CyclicPalettes.kt$CyclicPalettes$fun createTexture(context: Context): Int</ID>
     <ID>ReturnCount:CymaticsScene.kt$CymaticsScene$private fun driveSpectrum( f: AudioFeatures, dt: Float, ): FloatArray</ID>
     <ID>ReturnCount:FeatureTimeline.kt$FeatureTimeline$fun featuresAt( timeMs: Long, spanMs: Long = 0L, ): AudioFeatures</ID>
-    <ID>ReturnCount:FeatureTimeline.kt$FeatureTimeline$fun withBeatSensitivity( beatThresholdSigma: Float, beatMinIntervalMs: Float, ): FeatureTimeline</ID>
+    <ID>ReturnCount:FeatureTimeline.kt$FeatureTimeline$fun withBeatSensitivity( beatSensitivity: Float, beatMinIntervalMs: Float, ): FeatureTimeline</ID>
     <ID>ReturnCount:FeatureTimeline.kt$FeatureTimeline$fun withDrumChannels(sampleRateHz: Int = 48_000): FeatureTimeline</ID>
     <ID>ReturnCount:FluidEmitters.kt$FluidEmitters$private fun suctionSplats( out: MutableList&lt;FluidSim.Splat&gt;, radius: Float, )</ID>
     <ID>ReturnCount:FluidLook.kt$FluidLook$private fun applySunrays(dyeTex: Int)</ID>
@@ -103,8 +100,8 @@
     <ID>SwallowedException:PMBridge.kt$PMBridge$t: Throwable</ID>
     <ID>SwallowedException:VideoExporter.kt$VideoExporter$e: Exception</ID>
     <ID>ThrowsCount:AiffExtractor.kt$AiffExtractor$private fun parseHeaders(input: ExtractorInput)</ID>
-    <ID>ThrowsCount:AudioTranscoder.kt$AudioTranscoder$fun transcode( uri: Uri, maxDurationMs: Long, isCancelled: () -&gt; Boolean = { false }, onProgress: (Float) -&gt; Unit = {}, ): Result</ID>
-    <ID>ThrowsCount:AudioTranscoder.kt$AudioTranscoder$private fun transcodeAiff( aiff: dev.musicviz.audio.AiffPcm, maxDurationMs: Long, isCancelled: () -&gt; Boolean, onProgress: (Float) -&gt; Unit, ): Result</ID>
+    <ID>ThrowsCount:AudioTranscoder.kt$AudioTranscoder$fun transcode( uri: Uri, maxDurationMs: Long, startMs: Long = 0L, isCancelled: () -&gt; Boolean = { false }, onProgress: (Float) -&gt; Unit = {}, ): Result</ID>
+    <ID>ThrowsCount:AudioTranscoder.kt$AudioTranscoder$private fun transcodeAiff( aiff: dev.geode.audio.AiffPcm, maxDurationMs: Long, startMs: Long, isCancelled: () -&gt; Boolean, onProgress: (Float) -&gt; Unit, ): Result</ID>
     <ID>TooGenericExceptionCaught:AudioTranscoder.kt$AudioTranscoder$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:ExportController.kt$ExportController$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:PMBridge.kt$PMBridge$t: Throwable</ID>
