@@ -74,6 +74,18 @@ internal class TakeController(
         /** URI of the playing track a finished take is tagged with, or null. */
         val trackUri: String?
 
+        /**
+         * Where in the track playback is right now, in milliseconds.
+         *
+         * Recorded at the instant recording starts and stored with the take,
+         * because a take's keyframes are timestamped from the moment the button
+         * was pressed. Without this, an export samples the take from video time
+         * zero, so unless the user happened to press record at exactly 0:00
+         * every automation move lands at the wrong musical moment — the sweep
+         * performed on the chorus fires during the intro.
+         */
+        val trackPositionMs: Long
+
         fun selectScene(sceneId: String)
 
         fun setSceneParams(params: SceneParams)
@@ -94,6 +106,9 @@ internal class TakeController(
 
     private var recorder: PerformanceTake.Recorder? = null
     private var recordStartMs = 0L
+
+    /** Track position when recording began; see [Host.trackPositionMs]. */
+    private var recordTrackOffsetMs = 0L
     private var recordJob: Job? = null
     private var recordTickJob: Job? = null
     private var replayJob: Job? = null
@@ -112,6 +127,7 @@ internal class TakeController(
         val s = host.vizState.value
         recorder = PerformanceTake.Recorder(s.sceneId, s.params, host.activeMilkPath)
         recordStartMs = android.os.SystemClock.elapsedRealtime()
+        recordTrackOffsetMs = host.trackPositionMs
         _state.update { it.copy(recording = true, recordedEvents = 1, recordedMs = 0L, note = null) }
         recordJob =
             scope.launch {
@@ -181,7 +197,7 @@ internal class TakeController(
         val requested = name?.takeIf { it.isNotBlank() }
         scope.launch(Dispatchers.IO) {
             val label = requested ?: defaultTakeName()
-            store.save(label, rec.finish(label, trackUri, durationMs))
+            store.save(label, rec.finish(label, trackUri, durationMs, recordTrackOffsetMs))
             refresh()
         }
     }

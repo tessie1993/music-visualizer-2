@@ -800,6 +800,12 @@ class PlayerViewModel(
                 override val activeMilkPath: String? get() = _activeMilkPath.value
                 override val trackUri: String? get() = currentUri?.toString()
 
+                // Read from the player rather than the polled UI state: the
+                // poll is up to 500 ms stale, and half a second of offset is
+                // audible against a beat grid.
+                override val trackPositionMs: Long
+                    get() = runCatching { player.currentPosition }.getOrDefault(0L)
+
                 override fun selectScene(sceneId: String) = this@PlayerViewModel.selectScene(sceneId)
 
                 override fun setSceneParams(params: SceneParams) = this@PlayerViewModel.setSceneParams(params)

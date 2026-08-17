@@ -255,9 +255,23 @@ internal class ExportController(
                             adsrConfigs = host.adsrConfigs(),
                             safety = gui.safety,
                             requestedFps = fps,
+                            // The exporter hands clip-relative time. A take's
+                            // keyframes are timestamped from the moment record
+                            // was pressed, so putting the performance back where
+                            // it was played means adding where the clip starts in
+                            // the track and subtracting where the recording did.
+                            // Without the second term, every automation move
+                            // landed at the wrong musical moment unless the user
+                            // happened to press record at exactly 0:00 — the
+                            // sweep performed on the chorus fired during the intro.
                             paramsAt =
-                                exportTake
-                                    ?.let { take -> { ms: Long -> take.stateAt(ms)?.params ?: host.sceneParams } },
+                                exportTake?.let { take ->
+                                    val clipStartMs = range?.startMs ?: 0L
+                                    { ms: Long ->
+                                        take.stateAt(clipStartMs + ms - take.trackOffsetMs)?.params
+                                            ?: host.sceneParams
+                                    }
+                                },
                             loopSafe = loopSafe,
                             range = range,
                             destination = destination,

@@ -125,15 +125,25 @@ object PerformanceTake {
             return true
         }
 
-        /** Serializes the take. [durationMs] is how long the recording ran. */
+        /**
+         * Serializes the take. [durationMs] is how long the recording ran, and
+         * [trackOffsetMs] is where in the track it started.
+         *
+         * The offset is what lets an export put the performance back where it
+         * was played. Takes written before it existed have none, and read back
+         * as 0 — which is exactly the old behaviour, correct for the recordings
+         * that did start at 0:00 and no worse than before for the rest.
+         */
         fun finish(
             name: String,
             trackUri: String?,
             durationMs: Long,
+            trackOffsetMs: Long = 0L,
         ): String =
             JSONObject()
                 .put("name", name)
                 .put("durationMs", durationMs)
+                .put("trackOffsetMs", trackOffsetMs)
                 .apply { if (trackUri != null) put("trackUri", trackUri) }
                 .put("events", events)
                 .toString()
@@ -156,6 +166,15 @@ object PerformanceTake {
         val name: String = root.optString("name", "Take")
         val trackUri: String? = root.optString("trackUri", "").takeIf { it.isNotEmpty() }
         val durationMs: Long = root.optLong("durationMs", 0L)
+
+        /**
+         * Where in the track this performance began, in milliseconds.
+         *
+         * 0 for takes recorded before the offset was stored, which is both the
+         * old behaviour and the right answer for a recording that did start at
+         * the top of the track.
+         */
+        val trackOffsetMs: Long = root.optLong("trackOffsetMs", 0L)
         val eventCount: Int get() = events.length()
 
         /** True when the take carries nothing to replay. */
