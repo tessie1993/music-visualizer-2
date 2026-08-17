@@ -21,8 +21,8 @@ import java.io.File
  *
  * ## Why the file list is explicit
  *
- * Two lists rather than "scan everything": [LOCALIZED] is finished and must
- * stay clean, [PENDING] is not converted yet and says why. A pending entry
+ * Two lists rather than "scan everything": [localized] is finished and must
+ * stay clean, [pending] is not converted yet and says why. A pending entry
  * that no longer exists fails too, so the list cannot quietly rot into a
  * permanent excuse — and moving a file between the lists is the visible act of
  * finishing it.
@@ -51,6 +51,7 @@ class LocalizationSurfaceTest {
      */
     private val localized: List<String> =
         listOf(
+            "ui/AppShell.kt",
             "ui/SafetyConsent.kt",
             "ui/TrackInfoEditor.kt",
             "ui/AboutSettings.kt",
@@ -63,7 +64,6 @@ class LocalizationSurfaceTest {
      */
     private val pending: Map<String, String> =
         mapOf(
-            "ui/AppShell.kt" to "not converted yet — shell chrome, search and the crash dialog",
             "ui/PlayerScreen.kt" to "not converted yet — the largest screen, converted after the shell",
             "ui/PlayerPanels.kt" to "not converted yet — queue, lyrics and the save-playlist dialog",
             "ui/VisualizerScreen.kt" to "not converted yet — shares its transport strings with PlayerScreen",

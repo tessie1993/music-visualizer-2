@@ -41,6 +41,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -48,6 +50,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.geode.R
 import dev.geode.analysis.SearchMatcher
 import dev.geode.render.VisualSafetyChoice
 import dev.geode.render.VisualizerView
@@ -199,11 +202,11 @@ fun AppRoot(viewModel: PlayerViewModel) {
                         CrystalNavBar(
                             items =
                                 listOf(
-                                    CrystalNavItem("Player", StoneIcon.PLAY),
-                                    CrystalNavItem("Library", StoneIcon.LIBRARY),
-                                    CrystalNavItem("Visuals", StoneIcon.VISUALIZER),
-                                    CrystalNavItem("Studio", StoneIcon.STUDIO),
-                                    CrystalNavItem("Settings", StoneIcon.SETTINGS),
+                                    CrystalNavItem(stringResource(R.string.nav_player), StoneIcon.PLAY),
+                                    CrystalNavItem(stringResource(R.string.nav_library), StoneIcon.LIBRARY),
+                                    CrystalNavItem(stringResource(R.string.nav_visuals), StoneIcon.VISUALIZER),
+                                    CrystalNavItem(stringResource(R.string.nav_studio), StoneIcon.STUDIO),
+                                    CrystalNavItem(stringResource(R.string.nav_settings), StoneIcon.SETTINGS),
                                 ),
                             selected = dest,
                             onSelect = { dest = it },
@@ -241,28 +244,28 @@ fun AppRoot(viewModel: PlayerViewModel) {
             if (searching) {
                 SearchScreen(viewModel, onClose = { searching = false })
             }
+            val clipLabel = stringResource(R.string.crash_clip_label)
             crashText?.let { text ->
                 androidx.compose.material3.AlertDialog(
                     onDismissRequest = {},
-                    title = { Text("Previous crash captured") },
+                    title = { Text(stringResource(R.string.crash_dialog_title)) },
                     text = {
                         Text(
-                            "The last run crashed. Copy the report to share it, then dismiss.\n\n" +
-                                text.take(600),
+                            stringResource(R.string.crash_dialog_body, text.take(600)),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     },
                     confirmButton = {
                         CrystalButton(onClick = {
                             val cm = context.getSystemService(android.content.ClipboardManager::class.java)
-                            cm.setPrimaryClip(android.content.ClipData.newPlainText("Geode crash", text))
-                        }) { Text("Copy") }
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText(clipLabel, text))
+                        }) { Text(stringResource(R.string.action_copy)) }
                     },
                     dismissButton = {
                         CrystalButton(filled = false, onClick = {
                             java.io.File(context.filesDir, "crash-latest.txt").delete()
                             crashText = null
-                        }) { Text("Dismiss") }
+                        }) { Text(stringResource(R.string.action_dismiss)) }
                     },
                 )
             }
@@ -335,7 +338,7 @@ private fun MiniPlayer(
                 tint = MaterialTheme.colorScheme.primary,
             )
             Text(
-                title ?: "Now playing",
+                title ?: stringResource(R.string.mini_player_idle),
                 modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -344,11 +347,14 @@ private fun MiniPlayer(
             // Previous sits next to Next here too: with the queue now built
             // from the list a track was played from, both directions mean
             // something from the mini-player, not only in Now Playing.
-            IconButton(onClick = onPrevious) { StoneIconArt(StoneIcon.PREVIOUS, "Previous") }
+            IconButton(onClick = onPrevious) { StoneIconArt(StoneIcon.PREVIOUS, stringResource(R.string.action_previous)) }
             IconButton(onClick = onPlayPause) {
-                StoneIconArt(if (isPlaying) StoneIcon.PAUSE else StoneIcon.PLAY, "Play/Pause")
+                StoneIconArt(
+                    if (isPlaying) StoneIcon.PAUSE else StoneIcon.PLAY,
+                    stringResource(R.string.action_play_pause),
+                )
             }
-            IconButton(onClick = onNext) { StoneIconArt(StoneIcon.NEXT, "Next") }
+            IconButton(onClick = onNext) { StoneIconArt(StoneIcon.NEXT, stringResource(R.string.action_next)) }
         }
         LinearProgressIndicator(
             progress = { progress.coerceIn(0f, 1f) },
@@ -378,8 +384,8 @@ fun SettingsScreen(
     var showExport by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
-            CrystalOverline("Geode")
-            GlowTitle("Settings")
+            CrystalOverline(stringResource(R.string.app_name))
+            GlowTitle(stringResource(R.string.nav_settings))
         }
         AppSettingsTab(viewModel, exportOpen = showExport, onOpenExport = { showExport = true })
     }
@@ -476,24 +482,29 @@ fun SearchScreen(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Search tracks, playlists & presets") },
+                    placeholder = { Text(stringResource(R.string.search_placeholder)) },
                     singleLine = true,
                     shape = crystalShardShape(14.dp, 5.dp),
                 )
-                IconButton(onClick = onClose) { StoneIconArt(StoneIcon.CLOSE, "Close search") }
+                IconButton(onClick = onClose) { StoneIconArt(StoneIcon.CLOSE, stringResource(R.string.search_close)) }
             }
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (terms.isEmpty()) {
                     item {
                         Text(
-                            "Type to search your music",
+                            stringResource(R.string.search_hint),
                             Modifier.padding(vertical = 16.dp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 } else {
                     if (trackResults.isNotEmpty()) {
-                        item { CrystalOverline("Tracks (${trackResults.size})", Modifier.padding(top = 8.dp)) }
+                        item {
+                            CrystalOverline(
+                                stringResource(R.string.search_heading_tracks, trackResults.size),
+                                Modifier.padding(top = 8.dp),
+                            )
+                        }
                         items(trackResults, key = { "t:${it.uri}" }) { t ->
                             Row(
                                 Modifier
@@ -522,13 +533,18 @@ fun SearchScreen(
                                     }
                                 }
                                 IconButton(onClick = { viewModel.enqueue(t.uri) }) {
-                                    StoneIconArt(StoneIcon.QUEUE, "Add to queue")
+                                    StoneIconArt(StoneIcon.QUEUE, stringResource(R.string.action_add_to_queue))
                                 }
                             }
                         }
                     }
                     if (playlistResults.isNotEmpty()) {
-                        item { CrystalOverline("Playlists (${playlistResults.size})", Modifier.padding(top = 8.dp)) }
+                        item {
+                            CrystalOverline(
+                                stringResource(R.string.search_heading_playlists, playlistResults.size),
+                                Modifier.padding(top = 8.dp),
+                            )
+                        }
                         items(playlistResults) { pl ->
                             Column(
                                 Modifier
@@ -540,7 +556,11 @@ fun SearchScreen(
                             ) {
                                 Text(pl.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(
-                                    "${pl.trackUris.size} tracks",
+                                    pluralStringResource(
+                                        R.plurals.track_count,
+                                        pl.trackUris.size,
+                                        pl.trackUris.size,
+                                    ),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -548,7 +568,12 @@ fun SearchScreen(
                         }
                     }
                     if (presetResults.isNotEmpty()) {
-                        item { CrystalOverline("Presets (${presetResults.size})", Modifier.padding(top = 8.dp)) }
+                        item {
+                            CrystalOverline(
+                                stringResource(R.string.search_heading_presets, presetResults.size),
+                                Modifier.padding(top = 8.dp),
+                            )
+                        }
                         items(presetResults) { p ->
                             Text(
                                 p.name,
@@ -564,7 +589,7 @@ fun SearchScreen(
                     if (trackResults.isEmpty() && playlistResults.isEmpty() && presetResults.isEmpty()) {
                         item {
                             Text(
-                                "No results for “$debounced”",
+                                stringResource(R.string.search_no_results, debounced),
                                 Modifier.padding(vertical = 16.dp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -592,6 +617,7 @@ fun SearchScreen(
 private fun PlaybackNoticeBanner(viewModel: PlayerViewModel) {
     val notice by viewModel.playbackNotice.collectAsStateWithLifecycle()
     val message = notice ?: return
+    val dismissDescription = stringResource(R.string.notice_dismiss_description)
 
     LaunchedEffect(message) {
         kotlinx.coroutines.delay(NOTICE_VISIBLE_MS)
@@ -618,13 +644,13 @@ private fun PlaybackNoticeBanner(viewModel: PlayerViewModel) {
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "Dismiss",
+                text = stringResource(R.string.notice_dismiss),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer,
                 modifier =
                     Modifier
                         .clickable { viewModel.clearPlaybackNotice() }
-                        .semantics { contentDescription = "Dismiss playback message" }
+                        .semantics { contentDescription = dismissDescription }
                         .padding(8.dp),
             )
         }
