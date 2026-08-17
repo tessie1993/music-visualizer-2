@@ -5,6 +5,7 @@ import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -12,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import dev.geode.ui.MainActivity
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,6 +34,26 @@ import org.robolectric.annotation.GraphicsMode
 class AppSmokeTest {
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
+
+    /**
+     * Answers the first-run safety question the way a user does, then carries
+     * on with the test.
+     *
+     * A click rather than a seeded preference: the compose rule creates the
+     * activity while the rule is being applied, so anything written in `@Before`
+     * or an instance initialiser races the activity's own read of preferences
+     * and made these tests order-dependent. Driving the real UI has no such
+     * race and exercises a path a user actually takes. That the gate appears at
+     * all on a fresh install is [FirstRunSafetyGateTest]'s job.
+     */
+    @Before
+    fun answerSafetyQuestion() {
+        val gate = compose.onAllNodesWithContentDescription("Keep it safe", substring = true)
+        if (gate.fetchSemanticsNodes().isNotEmpty()) {
+            gate.onFirst().performClick()
+            compose.waitForIdle()
+        }
+    }
 
     private fun navTo(label: String) {
         compose.onNode(hasText(label) and isSelectable()).performClick()

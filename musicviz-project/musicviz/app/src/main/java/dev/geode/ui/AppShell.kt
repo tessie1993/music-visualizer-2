@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.analysis.SearchMatcher
+import dev.geode.render.VisualSafetyChoice
 import dev.geode.render.VisualizerView
 import dev.geode.ui.theme.StoneIcon
 import dev.geode.ui.theme.StoneIconArt
@@ -274,6 +275,15 @@ fun AppRoot(viewModel: PlayerViewModel) {
                     onOpenVisuals = {
                         expanded = false
                         dest = 2
+                    },
+                )
+            }
+            // Above the app, below the boot intro: the question is asked once
+            // the intro has finished playing, not over the top of it.
+            if ((!bootAnimEnabled || bootDone) && gui.safetyChoice == VisualSafetyChoice.UNKNOWN) {
+                SafetyConsent(
+                    onChoose = { choice, limited ->
+                        viewModel.setGuiPrefs(gui.copy(safetyChoice = choice, safeVisuals = limited))
                     },
                 )
             }
