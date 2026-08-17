@@ -59,6 +59,10 @@ android {
         targetSdk = 36
         versionCode = 31
         versionName = "1.7.0"
+        // Instrumented tests run on a device or emulator, which is the only
+        // place MediaStore, a real MediaSession and the permission dialogs
+        // exist. CI runs them; see .github/workflows/android.yml.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += "arm64-v8a"
         }
@@ -344,4 +348,8 @@ dependencies {
     // component-level Compose test cannot resolve an activity at all, which
     // forces every UI test through MainActivity and the whole app shell.
     debugImplementation(libs.ui.test.manifest)
+
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.rules)
 }
