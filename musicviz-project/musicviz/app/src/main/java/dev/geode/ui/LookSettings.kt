@@ -31,8 +31,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.geode.R
 
 /**
  * LOOK: everything about how the app itself is dressed - the theme stones,
@@ -45,11 +47,11 @@ internal fun LookSettingsTab(viewModel: PlayerViewModel) {
     val appTheme by viewModel.theme.collectAsState()
     SettingsTabColumn {
         item {
-            SettingsGroup("Theme") {
+            SettingsGroup(stringResource(R.string.look_group_theme)) {
                 ThemePickerRow(viewModel, appTheme)
                 Column {
                     Text(
-                        "Accent intensity  ${(gui.accentIntensity * 100).toInt()}%",
+                        stringResource(R.string.look_accent_intensity, (gui.accentIntensity * 100).toInt()),
                         style = MaterialTheme.typography.labelMedium,
                     )
                     CrystalSlider(
@@ -60,7 +62,7 @@ internal fun LookSettingsTab(viewModel: PlayerViewModel) {
                 }
                 Column {
                     Text(
-                        "Background dim  ${(gui.backgroundDim * 100).toInt()}%",
+                        stringResource(R.string.look_background_dim, (gui.backgroundDim * 100).toInt()),
                         style = MaterialTheme.typography.labelMedium,
                     )
                     CrystalSlider(
@@ -70,7 +72,7 @@ internal fun LookSettingsTab(viewModel: PlayerViewModel) {
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Follow system light/dark", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.look_follow_system), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Switch(
                         checked = gui.followSystemDark,
                         onCheckedChange = { viewModel.setGuiPrefs(gui.copy(followSystemDark = it)) },
@@ -79,11 +81,11 @@ internal fun LookSettingsTab(viewModel: PlayerViewModel) {
             }
         }
         item {
-            SettingsGroup("Text") {
+            SettingsGroup(stringResource(R.string.look_group_text)) {
                 FontColorRow(viewModel, gui, appTheme)
                 Column {
                     Text(
-                        "Text size  ${(gui.textScale * 100).toInt()}%",
+                        stringResource(R.string.look_text_size, (gui.textScale * 100).toInt()),
                         style = MaterialTheme.typography.labelMedium,
                     )
                     CrystalSlider(
@@ -92,14 +94,14 @@ internal fun LookSettingsTab(viewModel: PlayerViewModel) {
                         valueRange = GuiPrefs.TEXT_SCALE_MIN..GuiPrefs.TEXT_SCALE_MAX,
                     )
                     Text(
-                        "Scales every font in the app, live - including this one.",
+                        stringResource(R.string.look_text_size_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
         }
-        item { SettingsGroup("Layout") { LayoutGroup(viewModel, gui) } }
+        item { SettingsGroup(stringResource(R.string.look_group_layout)) { LayoutGroup(viewModel, gui) } }
     }
 }
 
@@ -164,7 +166,7 @@ private fun FontColorRow(
 ) {
     val cs = MaterialTheme.colorScheme
     Column {
-        Text("Font color", style = MaterialTheme.typography.labelMedium)
+        Text(stringResource(R.string.look_font_color), style = MaterialTheme.typography.labelMedium)
         LazyRow(
             Modifier.padding(top = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -211,7 +213,7 @@ private fun FontColorRow(
                         }
                     }
                     Text(
-                        choice.label,
+                        stringResource(choice.labelRes),
                         style = MaterialTheme.typography.labelSmall,
                         color = if (sel) accentTextColor() else cs.onSurfaceVariant,
                         maxLines = 1,
@@ -220,11 +222,9 @@ private fun FontColorRow(
             }
         }
         Text(
-            if (appTheme.isLight) {
-                "Pale colors are greyed out on this light theme - they could not be read on its surfaces."
-            } else {
-                "Recolors the writing everywhere; Auto returns to the theme's own text colors."
-            },
+            stringResource(
+                if (appTheme.isLight) R.string.look_font_color_light_hint else R.string.look_font_color_hint,
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -238,7 +238,7 @@ private fun LayoutGroup(
     gui: GuiPrefs,
 ) {
     Column {
-        Text("Bar opacity  ${(gui.barOpacity * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
+        Text(stringResource(R.string.look_bar_opacity, (gui.barOpacity * 100).toInt()), style = MaterialTheme.typography.labelMedium)
         CrystalSlider(
             value = gui.barOpacity,
             onValueChange = { viewModel.setGuiPrefs(gui.copy(barOpacity = it)) },
@@ -246,25 +246,25 @@ private fun LayoutGroup(
         )
     }
     Column {
-        Text("Player position", style = MaterialTheme.typography.labelMedium)
+        Text(stringResource(R.string.look_player_position), style = MaterialTheme.typography.labelMedium)
         CrystalSegmented(
-            options = PlayerPosition.entries.map { it.label },
+            options = PlayerPosition.entries.map { stringResource(it.labelRes) },
             selected = PlayerPosition.entries.indexOf(gui.playerPosition),
             onSelect = { viewModel.setGuiPrefs(gui.copy(playerPosition = PlayerPosition.entries[it])) },
             modifier = Modifier.padding(top = 4.dp),
         )
     }
     Column {
-        Text("Corner style", style = MaterialTheme.typography.labelMedium)
+        Text(stringResource(R.string.look_corner_style), style = MaterialTheme.typography.labelMedium)
         CrystalSegmented(
-            options = CornerStyle.entries.map { it.label },
+            options = CornerStyle.entries.map { stringResource(it.labelRes) },
             selected = CornerStyle.entries.indexOf(gui.cornerStyle),
             onSelect = { viewModel.setGuiPrefs(gui.copy(cornerStyle = CornerStyle.entries[it])) },
             modifier = Modifier.padding(top = 4.dp),
         )
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Compact mini-player", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.look_compact_player), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
         Switch(
             checked = gui.compactPlayer,
             onCheckedChange = { viewModel.setGuiPrefs(gui.copy(compactPlayer = it)) },
@@ -272,14 +272,14 @@ private fun LayoutGroup(
     }
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Clear-overlay Visuals menu", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.look_clear_visuals_menu), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             Switch(
                 checked = gui.clearVisualsMenu,
                 onCheckedChange = { viewModel.setGuiPrefs(gui.copy(clearVisualsMenu = it)) },
             )
         }
         Text(
-            "Text-only Visuals menu over the live visuals, so adjustments are visible as you make them.",
+            stringResource(R.string.look_clear_visuals_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -297,7 +297,7 @@ private fun BootAnimationRow() {
     val prefs = remember { ctx.getSharedPreferences("geode-prefs", android.content.Context.MODE_PRIVATE) }
     var bootAnim by remember { mutableStateOf(prefs.getBoolean("boot_anim", true)) }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Boot animation", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.look_boot_animation), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
         Switch(checked = bootAnim, onCheckedChange = {
             bootAnim = it
             prefs.edit().putBoolean("boot_anim", it).apply()

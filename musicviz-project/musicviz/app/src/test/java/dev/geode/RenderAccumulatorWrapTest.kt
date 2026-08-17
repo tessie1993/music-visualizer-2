@@ -38,15 +38,7 @@ class RenderAccumulatorWrapTest {
          * `FileName.kt:variable`. Reasons must describe why the value is
          * bounded anyway - "it looks fine" is not one.
          */
-        val NOT_WRAPPED: Map<String, String> =
-            mapOf(
-                "SwarmScene.kt:px" to
-                    "position integration, not a clock: velocity is damped every frame " +
-                    "(vx *= 1 - 1.2*dt) and spring-pulled toward an attractor inside " +
-                    "[-0.6, 0.6], so the position is dynamically bounded",
-                "SwarmScene.kt:py" to
-                    "position integration, not a clock: same damped spring as px",
-            )
+        val NOT_WRAPPED: Map<String, String> = emptyMap()
 
         val CANDIDATE = Regex("""(\w+)(\[[^\]]*\])?\s*\+=\s*([^\n;]*)""")
         val DT_TOKEN = Regex("""\b(dt|lastDt|dtSeconds|simDt)\b""")

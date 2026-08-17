@@ -4,6 +4,7 @@ import android.opengl.GLES30
 import android.os.SystemClock
 import dev.geode.analysis.AudioFeatures
 import dev.geode.render.CompositeGrade
+import dev.musicviz.render.scene.PMBridge
 import java.io.File
 
 /** A chunk of fresh mono PCM samples; [count] entries of [data] are valid. */
@@ -34,18 +35,42 @@ class ProjectMScene(
     private val postFragmentSrc: String,
     /** Extra shared texture directory (e.g. filesDir/milk/textures). */
     private val sharedTextureDir: String?,
-    /** Returns fresh mono PCM since the last call, or null. GL thread only. */
-    private val pcmProvider: () -> PcmChunk?,
     private val onError: (String?) -> Unit = {},
-) : Scene {
+    /**
+     * Fires on the GL thread with the path of a preset the engine actually
+     * accepted. The ViewModel records the active .milk from here rather than
+     * at pick time, because a preset that failed to parse used to be noted as
+     * active anyway - and then copied verbatim into every preset the user
+     * saved, persisting the broken file forever.
+     */
+    private val onPresetLoaded: (String) -> Unit = {},
+) : Scene,
+    PcmSink {
     companion object {
         private const val LOAD_DEBOUNCE_MS = 400L
+
+        /** Enough for two frames of 48 kHz audio; overflow keeps the newest. */
+        private const val PCM_CAPACITY = 8192
 
         /** [rotationAngle] wrap; pm_post_frag only reads it through cos/sin. */
         private const val TWO_PI = (2.0 * Math.PI).toFloat()
     }
 
     override val id: String = SceneIds.MILKDROP
+
+    private val pcmBuffer = FloatArray(PCM_CAPACITY)
+    private var pcmCount = 0
+
+    override fun acceptPcm(
+        samples: FloatArray,
+        count: Int,
+    ) {
+        val n = count.coerceAtMost(PCM_CAPACITY)
+        if (n <= 0) return
+        if (pcmCount + n > PCM_CAPACITY) pcmCount = 0
+        System.arraycopy(samples, count - n, pcmBuffer, pcmCount, n)
+        pcmCount += n
+    }
 
     private var handle: Long = 0
     private var width = 0
@@ -210,9 +235,9 @@ class ProjectMScene(
         // and budgeted off-grid transients add texture between beats.
         beatPulse = maxOf(features.motionImpulse, beatPulse - dt * 3f).coerceAtLeast(0f)
         if (handle == 0L) return
-        val chunk = pcmProvider()
-        if (chunk != null && chunk.count > 0) {
-            PMBridge.nativeAddPcmMono(handle, chunk.data, chunk.count)
+        if (pcmCount > 0) {
+            PMBridge.nativeAddPcmMono(handle, pcmBuffer, pcmCount)
+            pcmCount = 0
         } else {
             PMBridge.nativeAddPcmMono(handle, features.waveform, features.waveform.size)
         }
@@ -257,7 +282,10 @@ class ProjectMScene(
                 PMBridge.nativeLoadPreset(handle, path, sceneParams.milkdropBlendPresets)
                 val error = PMBridge.nativeGetLastError()
                 onError(error)
-                if (error == null) lastPresetPath = path
+                if (error == null) {
+                    lastPresetPath = path
+                    onPresetLoaded(path)
+                }
             }
         }
         val p = sceneParams

@@ -180,6 +180,9 @@ object StudioClips {
      * plain update is enough on some versions and an item left pending is
      * invisible to every other app — the narrower the window, the better.
      */
+    @Volatile
+    internal var lastRenameDiagnostic: String? = null
+
     @Suppress("ReturnCount")
     fun rename(
         context: Context,
@@ -196,13 +199,26 @@ object StudioClips {
         val extension = before?.substringAfterLast('.', "")?.takeIf { it.isNotEmpty() }
         val display = if (extension == null) trimmed else "$trimmed.$extension"
         if (display == before) return true
-        return runCatching {
-            val resolver = context.contentResolver
-            resolver.update(parsed, displayName(display), null, null)
-            if (currentName(context, parsed) == display) return@runCatching true
-            renameWhilePending(context, parsed, display)
-            currentName(context, parsed) == display
-        }.getOrDefault(false)
+        val log = StringBuilder("rename '$before' -> '$display'")
+        val renamed =
+            runCatching {
+                val resolver = context.contentResolver
+                val direct = runCatching { resolver.update(parsed, displayName(display), null, null) }
+                log.append("; direct=").append(direct.exceptionOrNull()?.toString() ?: direct.getOrNull())
+                var after = settledName(context, parsed, display)
+                log.append(" now='").append(after).append('\'')
+                if (after != display) {
+                    renameWhilePending(context, parsed, display, log)
+                    after = settledName(context, parsed, display)
+                    log.append("; final='").append(after).append('\'')
+                }
+                after == display
+            }.getOrElse {
+                log.append("; threw=").append(it)
+                false
+            }
+        lastRenameDiagnostic = log.toString()
+        return renamed
     }
 
     private fun displayName(display: String): ContentValues = ContentValues().apply { put(MediaStore.Video.Media.DISPLAY_NAME, display) }
@@ -219,16 +235,20 @@ object StudioClips {
         context: Context,
         uri: Uri,
         display: String,
+        log: StringBuilder,
     ) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
         val resolver = context.contentResolver
         val pending = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 1) }
         val published = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }
-        runCatching { resolver.update(uri, pending, null, null) }
+        val p1 = runCatching { resolver.update(uri, pending, null, null) }
+        log.append("; pend=").append(p1.exceptionOrNull()?.toString() ?: p1.getOrNull())
         try {
-            runCatching { resolver.update(uri, displayName(display), null, null) }
+            val p2 = runCatching { resolver.update(uri, displayName(display), null, null) }
+            log.append(" upd=").append(p2.exceptionOrNull()?.toString() ?: p2.getOrNull())
         } finally {
-            runCatching { resolver.update(uri, published, null, null) }
+            val p3 = runCatching { resolver.update(uri, published, null, null) }
+            log.append(" pub=").append(p3.exceptionOrNull()?.toString() ?: p3.getOrNull())
         }
     }
 
@@ -241,4 +261,32 @@ object StudioClips {
                 .query(uri, arrayOf(MediaStore.Video.Media.DISPLAY_NAME), null, null, null)
                 ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
         }.getOrNull()
+
+    /**
+     * Reads the row's name until it matches [display] or the window closes.
+     *
+     * MediaStore's rename is eventually consistent: update() can report one
+     * row changed while a read a moment later still serves the old name, and
+     * during the pending flip the row is hidden and reads as null. Both were
+     * observed on the API 30 emulator - the same rename passing one run and
+     * failing the next, decided by who won the race - so the verdict waits
+     * briefly for the store instead of trusting the first read. Callers run
+     * on Dispatchers.IO, where a short poll is cheap.
+     */
+    private fun settledName(
+        context: Context,
+        uri: Uri,
+        display: String,
+    ): String? {
+        var name: String? = null
+        repeat(SETTLE_ATTEMPTS) {
+            name = currentName(context, uri)
+            if (name == display) return name
+            android.os.SystemClock.sleep(SETTLE_STEP_MS)
+        }
+        return name
+    }
+
+    private const val SETTLE_ATTEMPTS = 10
+    private const val SETTLE_STEP_MS = 40L
 }

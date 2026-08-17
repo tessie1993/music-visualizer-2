@@ -18,7 +18,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.geode.R
 import dev.geode.data.ExportDefaults
 import dev.geode.data.ExportPrefsStore
 import dev.geode.data.exportQualityLabel
@@ -51,9 +53,9 @@ internal fun ExportSettingsTab(
     }
     SettingsTabColumn {
         item {
-            SettingsGroup("Defaults") {
+            SettingsGroup(stringResource(R.string.export_group_defaults)) {
                 Column {
-                    Text("Platform preset", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.export_platform_preset), style = MaterialTheme.typography.labelMedium)
                     // Six named targets against 36 reachable combinations of the
                     // four controls below. The row is a shortcut into those
                     // controls, never a fifth setting: it writes the same
@@ -82,13 +84,16 @@ internal fun ExportSettingsTab(
                         )
                     }
                     Text(
-                        presetCaption(defaults),
+                        presetCaption(
+                            defaults,
+                            stringResource(R.string.export_spec, defaults.ratio.label, exportQualityLabel(defaults.quality), defaults.fps),
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Column {
-                    Text("Quality", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.export_quality), style = MaterialTheme.typography.labelMedium)
                     CrystalSegmented(
                         options = ExportQuality.entries.map { exportQualityLabel(it) },
                         selected = ExportQuality.entries.indexOf(defaults.quality),
@@ -97,16 +102,16 @@ internal fun ExportSettingsTab(
                     )
                 }
                 Column {
-                    Text("Frame rate", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.export_frame_rate), style = MaterialTheme.typography.labelMedium)
                     CrystalSegmented(
-                        options = listOf("30 fps", "60 fps"),
+                        options = listOf(stringResource(R.string.export_fps_30), stringResource(R.string.export_fps_60)),
                         selected = if (defaults.fps == 30) 0 else 1,
                         onSelect = { update(defaults.copy(fps = if (it == 0) 30 else 60)) },
                         modifier = Modifier.padding(top = 4.dp),
                     )
                 }
                 Column {
-                    Text("Aspect ratio", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.export_aspect_ratio), style = MaterialTheme.typography.labelMedium)
                     // Six ratios outgrow the width of a phone; the selector
                     // scrolls rather than squeezing its labels.
                     Row(Modifier.fillMaxWidth().padding(top = 4.dp).horizontalScroll(rememberScrollState())) {
@@ -119,16 +124,18 @@ internal fun ExportSettingsTab(
                 }
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Loop-safe by default", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            stringResource(R.string.export_loop_safe_default),
+                            Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
                         Switch(
                             checked = defaults.loopSafe,
                             onCheckedChange = { update(defaults.copy(loopSafe = it)) },
                         )
                     }
                     Text(
-                        "Loop-safe trims the end of the render to a bar boundary so the clip repeats " +
-                            "cleanly when a platform autoplays it. It needs a detected tempo, so a track " +
-                            "that has not been analysed falls back to full length for that render.",
+                        stringResource(R.string.export_loop_safe_explainer),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -136,12 +143,10 @@ internal fun ExportSettingsTab(
             }
         }
         item {
-            SettingsGroup("Render") {
-                CrystalButton(onClick = onOpenExport) { Text("Export video…") }
+            SettingsGroup(stringResource(R.string.studio_render)) {
+                CrystalButton(onClick = onOpenExport) { Text(stringResource(R.string.export_video_button)) }
                 Text(
-                    "Starts from the defaults above; each render can change them for that one file. " +
-                        "The destination — your Videos library or a folder you pick — is chosen at " +
-                        "render time, per export.",
+                    stringResource(R.string.export_defaults_explainer),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -157,12 +162,15 @@ internal fun ExportSettingsTab(
  * can be moved individually: once they no longer spell any named target the row
  * lights nothing, and a row lighting nothing with no explanation reads as broken.
  */
-private fun presetCaption(defaults: ExportDefaults): String {
+@Composable
+private fun presetCaption(
+    defaults: ExportDefaults,
+    baseSpec: String,
+): String {
     val spec =
-        "${defaults.ratio.label}, ${exportQualityLabel(defaults.quality)}, ${defaults.fps} fps" +
-            if (defaults.loopSafe) ", loop-safe" else ""
+        if (defaults.loopSafe) stringResource(R.string.export_spec_loop_safe, baseSpec) else baseSpec
     return ExportPresets
         .matching(defaults.quality, defaults.ratio, defaults.fps, defaults.loopSafe)
-        ?.let { "${it.name} — $spec" }
-        ?: "Custom — $spec"
+        ?.let { stringResource(R.string.export_named_preset, it.name, spec) }
+        ?: stringResource(R.string.export_custom_preset, spec)
 }

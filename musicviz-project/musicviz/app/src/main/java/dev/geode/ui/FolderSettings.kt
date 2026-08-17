@@ -21,8 +21,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.geode.R
 import dev.geode.ui.theme.StoneIcon
 import dev.geode.ui.theme.StoneIconArt
 import kotlinx.coroutines.Dispatchers
@@ -37,15 +39,13 @@ import kotlinx.coroutines.withContext
 internal fun FolderSettingsTab(viewModel: PlayerViewModel) {
     val gui by viewModel.guiPrefs.collectAsState()
     SettingsTabColumn {
-        item { SettingsGroup("Preset folder") { PresetFolderGroup(viewModel, gui) } }
-        item { SettingsGroup("Music folders") { MusicFoldersEditor(viewModel) } }
-        item { SettingsGroup("Analysis cache") { AnalysisCacheGroup() } }
+        item { SettingsGroup(stringResource(R.string.folders_group_preset)) { PresetFolderGroup(viewModel, gui) } }
+        item { SettingsGroup(stringResource(R.string.folders_group_music)) { MusicFoldersEditor(viewModel) } }
+        item { SettingsGroup(stringResource(R.string.folders_group_cache)) { AnalysisCacheGroup() } }
         item {
-            SettingsGroup("Export destination") {
+            SettingsGroup(stringResource(R.string.folders_group_export)) {
                 Text(
-                    "Exports land in your Videos library (Movies/Geode), or in a folder you pick " +
-                        "at render time — there is no standing export folder to configure. Defaults " +
-                        "for quality and size live in the Export tab.",
+                    stringResource(R.string.folders_export_explainer),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -85,22 +85,25 @@ private fun PresetFolderGroup(
         }
     Column {
         Text(
-            if (gui.presetMirrorUri != null) {
-                "Preset folder: chosen — saves are mirrored there"
-            } else {
-                "Preset folder: internal only"
-            },
+            stringResource(
+                if (gui.presetMirrorUri != null) {
+                    R.string.folders_preset_chosen
+                } else {
+                    R.string.folders_preset_internal
+                },
+            ),
             style = MaterialTheme.typography.labelMedium,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CrystalButton(filled = false, onClick = { folderPicker.launch(null) }) { Text("Choose preset folder") }
+            CrystalButton(filled = false, onClick = { folderPicker.launch(null) }) { Text(stringResource(R.string.folders_choose_preset)) }
             if (gui.presetMirrorUri != null) {
-                TextButton(onClick = { viewModel.setGuiPrefs(gui.copy(presetMirrorUri = null)) }) { Text("Clear") }
+                TextButton(
+                    onClick = { viewModel.setGuiPrefs(gui.copy(presetMirrorUri = null)) },
+                ) { Text(stringResource(R.string.action_clear)) }
             }
         }
         Text(
-            "Presets always save inside the app; a chosen folder gets a mirror copy so your own " +
-                "sorting is visible in any file manager.",
+            stringResource(R.string.folders_preset_explainer),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -124,8 +127,7 @@ internal fun MusicFoldersEditor(viewModel: PlayerViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (roots.isEmpty()) {
             Text(
-                "No folders yet. Device music appears in the Library on its own; folders you add " +
-                    "here are scanned into the import library as well.",
+                stringResource(R.string.folders_none_yet),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -145,24 +147,27 @@ internal fun MusicFoldersEditor(viewModel: PlayerViewModel) {
                     style = MaterialTheme.typography.bodySmall,
                 )
                 IconButton(onClick = { viewModel.removeMediaRoot(root) }) {
-                    StoneIconArt(StoneIcon.CLOSE, "Remove folder")
+                    StoneIconArt(StoneIcon.CLOSE, stringResource(R.string.folders_remove))
                 }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CrystalButton(compact = true, filled = false, onClick = { folderPicker.launch(null) }) { Text("Add folder") }
+            CrystalButton(
+                compact = true,
+                filled = false,
+                onClick = { folderPicker.launch(null) },
+            ) { Text(stringResource(R.string.folders_add)) }
             CrystalButton(
                 compact = true,
                 filled = false,
                 onClick = viewModel::rescanMediaRoots,
                 enabled = roots.isNotEmpty() && !scanning,
             ) {
-                Text(if (scanning) "Scanning…" else "Rescan")
+                Text(stringResource(if (scanning) R.string.folders_scanning else R.string.folders_rescan))
             }
         }
         Text(
-            "The same list as Library › Folders. Rescanning re-walks every folder; tracks already " +
-                "imported keep their analysis.",
+            stringResource(R.string.folders_rescan_explainer),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -173,7 +178,8 @@ internal fun MusicFoldersEditor(viewModel: PlayerViewModel) {
 @Composable
 private fun AnalysisCacheGroup() {
     val context = LocalContext.current
-    var cacheInfo by remember { mutableStateOf("…") }
+    val measuring = stringResource(R.string.folders_cache_measuring)
+    var cacheInfo by remember { mutableStateOf(measuring) }
     var cacheBump by remember { mutableIntStateOf(0) }
     LaunchedEffect(cacheBump) {
         cacheInfo =
@@ -185,20 +191,23 @@ private fun AnalysisCacheGroup() {
                 val mb =
                     dev.geode.analysis.AnalysisCache
                         .sizeBytes(app) / (1024f * 1024f)
-                "%d tracks · %.1f MB".format(n, mb)
+                context.getString(R.string.folders_cache_summary, n, mb)
             }
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Analysis cache: $cacheInfo", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+        Text(
+            stringResource(R.string.folders_cache_label, cacheInfo),
+            Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+        )
         TextButton(onClick = {
             dev.geode.analysis.AnalysisCache
                 .clear(context.applicationContext)
             cacheBump++
-        }) { Text("Clear") }
+        }) { Text(stringResource(R.string.action_clear)) }
     }
     Text(
-        "Analysis results per track, so replaying never re-analyses. Clearing costs nothing but " +
-            "the next analysis pass.",
+        stringResource(R.string.folders_cache_explainer),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

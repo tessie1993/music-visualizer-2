@@ -751,11 +751,27 @@ private fun MilkDropTab(
     // follows the engine even when a preset apply, a take replay or the random
     // mode changed the .milk from somewhere else entirely.
     val loaded by viewModel.activeMilkPath.collectAsState()
+    var packReport by remember { mutableStateOf<dev.geode.data.MilkPackImporter.Report?>(null) }
+    var singleMissesTexture by remember { mutableStateOf(false) }
+    val milkFolderPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri != null) {
+                viewModel.importMilkFolderAsync(uri) { report ->
+                    packReport = report
+                    refresh++
+                }
+            }
+        }
     val milkPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
                 viewModel.importMilkPresetAsync(uri) { path ->
                     if (path != null) {
+                        singleMissesTexture =
+                            dev.geode.data.MilkPackImporter.missesATexture(
+                                java.io.File(path),
+                                java.io.File(java.io.File(path).parentFile, "textures"),
+                            )
                         selectMilk(viewModel, visualizerView, path)
                         refresh++
                     }
@@ -769,7 +785,30 @@ private fun MilkDropTab(
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CrystalButton(onClick = { milkPicker.launch(arrayOf("*/*")) }) { Text("Load .milk file") }
+            CrystalButton(filled = false, onClick = { milkFolderPicker.launch(null) }) { Text("Import folder…") }
             CrystalButton(filled = false, onClick = onOpenTextures) { Text("Textures…") }
+        }
+        packReport?.let { r ->
+            Text(
+                buildString {
+                    append("Imported ${r.presets} presets and ${r.textures} textures")
+                    if (r.skipped > 0) append(", ${r.skipped} skipped (already present or unreadable)")
+                    append('.')
+                    if (r.presetsMissingTextures > 0) {
+                        append(
+                            " ${r.presetsMissingTextures} reference textures you don't have - " +
+                                "import those images too or they render without them.",
+                        )
+                    }
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color =
+                    if (r.presetsMissingTextures > 0) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+            )
         }
         // A .milk that fails to parse (or a texture it references that is not
         // imported) reports through the same channel the GLSL editors use, and
@@ -779,6 +818,14 @@ private fun MilkDropTab(
         if (viz.sceneId == SceneIds.MILKDROP) {
             viz.shaderError?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+            }
+            if (singleMissesTexture) {
+                Text(
+                    "This preset references textures you have not imported - it will render " +
+                        "without them. Textures… imports the images it wants.",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.labelSmall,
+                )
             }
         }
         Text("Your .milk presets", style = MaterialTheme.typography.titleMedium, color = accentTextColor())
@@ -818,7 +865,6 @@ private fun selectMilk(
     // pick; only the .milk load itself talks to the renderer directly.
     viewModel.selectScene(SceneIds.MILKDROP)
     visualizerView.visualizerRenderer.loadMilkPreset(path)
-    viewModel.noteMilkPreset(path)
 }
 
 // ---------------------------------------------------------------- Customize
@@ -907,7 +953,7 @@ internal fun isShaderLookSceneId(sceneId: String): Boolean = sceneId in Visualiz
 /**
  * Styles that draw a particle sprite, i.e. the readers of BOTH `particleShape`
  * and `particleSize`. Two families, one look: the CPU styles in
- * [VisualizerRenderer.PARTICLE_SCENES] (`ParticleSceneBase.draw` uploads
+ * [VisualizerRenderer.PARTICLE_SCENES] (`EmergenceScene.drawSprites` uploads
  * `uShape` and `uSize`) and the GPU lifecycle layer the fluid styles run
  * (`FluidScene` folds `particleSize` into `pointScale` and passes
  * `particleShape` straight through to `FluidParticles.draw`, `CurlFlowScene`
@@ -1005,6 +1051,7 @@ internal fun CustomizePanel(
                             isPointSpriteScene = isPointSpriteSceneId(viz.sceneId),
                             particleLayerOff = isFluidSceneId(viz.sceneId) && !p.fluidParticlesEnabled,
                             isBeamScene = isBeamSceneId(viz.sceneId),
+                            isEmergenceScene = viz.sceneId == dev.geode.render.scene.SceneIds.EMERGENCE,
                         )
                     CustomizeTab.BEHAVIOR ->
                         BehaviorTab(

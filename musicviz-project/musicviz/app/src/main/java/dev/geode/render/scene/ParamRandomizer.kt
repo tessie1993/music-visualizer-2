@@ -231,6 +231,10 @@ object ParamRandomizer {
         r("Posterize") { it.copy(posterize = sometimes(0.15f, 0.2f, 0.6f)) }
         r("Particle shape") { it.copy(particleShape = rng.nextInt(SceneParams.PARTICLE_SHAPES.size)) }
         r("Particle size") { it.copy(particleSize = f(0.5f, 1.8f)) }
+        r("Emergence field") { it.copy(emergenceField = rng.nextInt(SceneParams.EMERGENCE_FIELDS.size)) }
+        r("Field current") { it.copy(emergenceSwarm = f(0.35f, 1.2f)) }
+        r("Growth tuning") { it.copy(emergenceGrowth = f(0.25f, 0.85f)) }
+        r("Acid warp") { it.copy(emergenceAcid = sometimes(0.35f, 0.15f, 0.8f)) }
 
         // ---- Behavior ----
         section(CustomizeTab.BEHAVIOR)

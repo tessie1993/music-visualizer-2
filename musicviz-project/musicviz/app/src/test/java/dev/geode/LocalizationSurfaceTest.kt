@@ -44,7 +44,17 @@ class LocalizationSurfaceTest {
             ?: error("geode project root not found from ${File("").absolutePath}")
 
     private val sources = File(moduleRoot, "app/src/main/java/dev/geode")
-    private val strings = File(moduleRoot, "app/src/main/res/values/strings.xml")
+
+    /**
+     * Every default-locale string file. The Customize surface's resources
+     * live in their own files beside `strings.xml` so a conversion that adds
+     * two hundred names does not turn the shared file into a merge hazard.
+     */
+    private val stringFiles: List<File> =
+        File(moduleRoot, "app/src/main/res/values")
+            .listFiles { f -> f.name.startsWith("strings") && f.extension == "xml" }
+            .orEmpty()
+            .sorted()
 
     /**
      * Converted. No user-visible literal may appear in these.
@@ -52,6 +62,13 @@ class LocalizationSurfaceTest {
     private val localized: List<String> =
         listOf(
             "ui/AppShell.kt",
+            "ui/SettingsDialog.kt",
+            "ui/ExternalAudioSettings.kt",
+            "ui/ExportSettings.kt",
+            "ui/AudioSettings.kt",
+            "ui/FolderSettings.kt",
+            "ui/EqualizerSettings.kt",
+            "ui/PlaybackSettings.kt",
             "ui/StudioScreen.kt",
             "ui/LibraryScreen.kt",
             "ui/VisualizerScreen.kt",
@@ -60,6 +77,9 @@ class LocalizationSurfaceTest {
             "ui/SafetyConsent.kt",
             "ui/TrackInfoEditor.kt",
             "ui/AboutSettings.kt",
+            "ui/LookSettings.kt",
+            "ui/BehaviorSettings.kt",
+            "ui/AutoVisualsSettings.kt",
         )
 
     /**
@@ -69,21 +89,11 @@ class LocalizationSurfaceTest {
      */
     private val pending: Map<String, String> =
         mapOf(
-            "ui/SettingsDialog.kt" to "not converted yet — the export dialog's long explanatory copy",
-            "ui/AudioSettings.kt" to "not converted yet — analysis and live-input copy",
-            "ui/ExportSettings.kt" to "not converted yet — export defaults copy",
-            "ui/FolderSettings.kt" to "not converted yet — folder and cache management copy",
-            "ui/PlaybackSettings.kt" to "not converted yet — playback and sleep-timer copy",
-            "ui/EqualizerSettings.kt" to "not converted yet — equalizer copy and device-support messages",
-            "ui/ExternalAudioSettings.kt" to "not converted yet — capture permission and refusal copy",
             "ui/CustomizeTabs.kt" to
-                "control labels are also the lock and randomizer identity keys (see ParamRandomizer), " +
-                "so localizing them needs the key split from the label first",
+                "the key/label split exists now (LabeledSlider display=), so conversion is " +
+                "mechanical - each control keeps its English key and gains a translated display",
             "ui/VisualsHub.kt" to
                 "renders the Customize surface, so it shares CustomizeTabs' key-vs-label problem",
-            "ui/BehaviorSettings.kt" to "carries Customize-keyed control labels",
-            "ui/LookSettings.kt" to "carries Customize-keyed control labels",
-            "ui/AutoVisualsSettings.kt" to "carries Customize-keyed control labels",
             "ui/PaletteMaker.kt" to "carries Customize-keyed control labels",
             "ui/CrystalControls.kt" to "carries Customize-keyed control labels",
             "ui/BuiltInPresets.kt" to "preset names are persisted identifiers, not display text",
@@ -276,10 +286,12 @@ class LocalizationSurfaceTest {
     @Test
     fun `every string the code asks for is defined`() {
         val declared =
-            Regex("""<string name="([^"]+)"""")
-                .findAll(strings.readText())
-                .map { it.groupValues[1] }
-                .toSet()
+            stringFiles
+                .flatMap { file ->
+                    Regex("""<(?:string|plurals) name="([^"]+)"""")
+                        .findAll(file.readText())
+                        .map { it.groupValues[1] }
+                }.toSet()
         val referenced =
             sources
                 .walkTopDown()
@@ -288,6 +300,39 @@ class LocalizationSurfaceTest {
                 .toSet()
         val missing = (referenced - declared).sorted()
         assertEquals("referenced from Kotlin but absent from strings.xml", emptyList<String>(), missing)
+    }
+
+    /**
+     * The mechanism the Customize conversion depends on: a control's lock and
+     * randomizer identity ([label], stable English, persisted) is a separate
+     * argument from what the user reads ([display], translatable). If a
+     * refactor collapses them again, translating a label would silently break
+     * every saved lock and turn the randomizer's matching into a no-op -
+     * invisible in review, permanent in prefs.
+     */
+    @Test
+    fun `customize controls key their locks on label while rendering display`() {
+        val tabs = File(sources, "ui/CustomizeTabs.kt").readText()
+        for (shape in listOf("LabeledSlider", "LabeledIntSlider", "CheckRow", "LockableChipLabel")) {
+            val declaration =
+                Regex("""fun $shape\((.*?)\)""", RegexOption.DOT_MATCHES_ALL)
+                    .find(tabs)
+                    ?.groupValues
+                    ?.get(1)
+            assertTrue("$shape is gone from CustomizeTabs", declaration != null)
+            assertTrue(
+                "$shape lost its display/label split - localizing it would break lock persistence",
+                declaration!!.contains("display: String = label"),
+            )
+        }
+        assertTrue(
+            "LockChip must be keyed on label, never on display",
+            !Regex("""LockChip\(display\)""").containsMatchIn(tabs),
+        )
+        assertTrue(
+            "ControlLabelRow's lockKey position must receive label",
+            Regex("ControlLabelRow\\(\"\\$" + "display[^\"]*\", label\\)").containsMatchIn(tabs),
+        )
     }
 
     @Test

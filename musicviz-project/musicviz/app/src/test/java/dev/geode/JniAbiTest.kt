@@ -1,0 +1,126 @@
+package dev.geode
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.File
+
+/**
+ * The Kotlin side of the JNI bridge, checked against the symbols the shipped
+ * library actually exports.
+ *
+ * ## The failure this exists to prevent, because it already happened
+ *
+ * A JNI symbol is named after the fully-qualified Java class that declares it.
+ * `PMBridge.nativeCreate` resolves to
+ * `Java_dev_musicviz_render_scene_PMBridge_nativeCreate`. `libprojectmjni.so`
+ * is a committed prebuilt binary, so renaming the Kotlin package does not
+ * rename its exports — it just stops finding them.
+ *
+ * The rebrand from MusicViz to Geode moved `PMBridge` into `dev.geode`, and
+ * MilkDrop died on the spot. Every entry to the scene threw
+ * `UnsatisfiedLinkError` on the GL thread, from `nativeCreate`, before any of
+ * the app's own error reporting could run — so the flagship feature was
+ * completely dead and nothing said why. It compiled, every unit test passed,
+ * lint was clean, and the whole thing shipped.
+ *
+ * Nothing in a Kotlin toolchain can catch that: `external fun` promises a
+ * symbol exists and is only checked when it is called, on a device, with that
+ * ABI. So it is checked here instead, by reading the binary.
+ *
+ * The test is skipped rather than failed when the toolchain has no `nm`, since
+ * a missing binutils is not a defect in this repository — CI has it.
+ */
+class JniAbiTest {
+    private val moduleRoot: File =
+        generateSequence(File("").absoluteFile) { it.parentFile }
+            .firstOrNull { File(it, "app/src/main/res/values/strings.xml").isFile }
+            ?: error("module root not found from ${File("").absolutePath}")
+
+    private val library = File(moduleRoot, "app/src/main/jniLibs/arm64-v8a/libprojectmjni.so")
+
+    private val bridgeSource: File =
+        File(moduleRoot, "app/src/main/java/dev/musicviz/render/scene/PMBridge.kt")
+
+    /** `Java_<package with dots as underscores>_<Class>_<method>`. */
+    private fun expectedSymbol(
+        packageName: String,
+        className: String,
+        method: String,
+    ): String = "Java_${packageName.replace(".", "_")}_${className}_$method"
+
+    private fun exportedSymbols(): List<String>? {
+        val nm =
+            listOf("/usr/bin/nm", "/usr/local/bin/nm", "nm")
+                .firstOrNull { runCatching { ProcessBuilder(it, "--version").start().waitFor() == 0 }.getOrDefault(false) }
+                ?: return null
+        val process =
+            ProcessBuilder(nm, "-D", "--defined-only", library.absolutePath)
+                .redirectErrorStream(true)
+                .start()
+        val output = process.inputStream.bufferedReader().readText()
+        process.waitFor()
+        return output
+            .lineSequence()
+            .mapNotNull { line -> line.trim().split(" ").lastOrNull() }
+            .filter { it.startsWith("Java_") }
+            .toList()
+    }
+
+    private fun declaredPackage(): String =
+        bridgeSource
+            .readLines()
+            .first { it.startsWith("package ") }
+            .removePrefix("package ")
+            .trim()
+
+    private fun declaredNatives(): List<String> =
+        Regex("""external fun (\w+)""")
+            .findAll(bridgeSource.readText())
+            .map { it.groupValues[1] }
+            .toList()
+
+    @Test
+    fun `the bridge lives where the shipped library expects it`() {
+        assertTrue("PMBridge.kt is not where it was left; the .so's symbols are package-specific", bridgeSource.isFile)
+        assertEquals(
+            "moving PMBridge breaks every native call at runtime — rebuild libprojectmjni.so to match, " +
+                "or move it back",
+            "dev.musicviz.render.scene",
+            declaredPackage(),
+        )
+    }
+
+    @Test
+    fun `every external fun resolves to a symbol the library exports`() {
+        val exported = exportedSymbols()
+        org.junit.Assume.assumeTrue("no nm on this toolchain", exported != null)
+        assertTrue("the prebuilt library is missing", library.isFile)
+        val natives = declaredNatives()
+        assertTrue("PMBridge declares no external functions at all", natives.isNotEmpty())
+        val missing =
+            natives
+                .map { expectedSymbol(declaredPackage(), "PMBridge", it) }
+                .filterNot { it in exported!! }
+        assertEquals(
+            "these would throw UnsatisfiedLinkError on a device, on the GL thread, with no UI to explain it",
+            emptyList<String>(),
+            missing,
+        )
+    }
+
+    /**
+     * The reverse direction is a weaker signal but a real one: a symbol the
+     * library exports and nothing declares is a capability that was built and
+     * then lost in a refactor.
+     */
+    @Test
+    fun `nothing the library offers has been silently dropped`() {
+        val exported = exportedSymbols()
+        org.junit.Assume.assumeTrue("no nm on this toolchain", exported != null)
+        val prefix = expectedSymbol(declaredPackage(), "PMBridge", "")
+        val declared = declaredNatives().map { expectedSymbol(declaredPackage(), "PMBridge", it) }.toSet()
+        val orphaned = exported!!.filter { it.startsWith(prefix) }.filterNot { it in declared }
+        assertEquals("native entry points exist that no Kotlin declares", emptyList<String>(), orphaned)
+    }
+}

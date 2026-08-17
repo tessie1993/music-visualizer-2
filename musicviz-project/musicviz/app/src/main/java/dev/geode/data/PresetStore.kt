@@ -254,6 +254,10 @@ class PresetStore(
                 .put("posterize", p.params.posterize.toDouble())
                 .put("particleShape", p.params.particleShape)
                 .put("particleSize", p.params.particleSize.toDouble())
+                .put("emergenceField", p.params.emergenceField)
+                .put("emergenceSwarm", p.params.emergenceSwarm.toDouble())
+                .put("emergenceGrowth", p.params.emergenceGrowth.toDouble())
+                .put("emergenceAcid", p.params.emergenceAcid.toDouble())
                 .put("palette2", p.params.palette2)
                 .put("paletteMix", p.params.paletteMix.toDouble())
                 .put("paletteBaseOverride", p.params.paletteBaseOverride.toDouble())
@@ -490,6 +494,10 @@ class PresetStore(
                         posterize = o.optDouble("posterize", 0.0).toFloat(),
                         particleShape = o.optInt("particleShape", 0),
                         particleSize = o.optDouble("particleSize", 1.0).toFloat(),
+                        emergenceField = o.optInt("emergenceField", 0),
+                        emergenceSwarm = o.optDouble("emergenceSwarm", 0.6).toFloat(),
+                        emergenceGrowth = o.optDouble("emergenceGrowth", 0.5).toFloat(),
+                        emergenceAcid = o.optDouble("emergenceAcid", 0.35).toFloat(),
                         tile = o.optDouble("tile", 1.0).toFloat(),
                         twist = o.optDouble("twist", 0.0).toFloat(),
                         palette = o.optInt("palette", 0),

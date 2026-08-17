@@ -108,14 +108,14 @@ class VideoExporter(
          * Whether the export fades the canvas instead of hard-clearing it.
          * Live twin: VisualizerRenderer's `persists` gate - Curl Flow and the
          * beam persist regardless of the Trails toggle (their looks are
-         * DEFINED by canvas echo); particle scenes only when it is on.
+         * DEFINED by canvas echo). The particle family is deliberately absent:
+         * EmergenceScene runs its own feedback loop internally, so a composite
+         * echo on top would double every trail.
          */
         fun canvasPersists(
             isCurlFlow: Boolean,
             isBeam: Boolean,
-            trails: Boolean,
-            isParticle: Boolean,
-        ): Boolean = isCurlFlow || isBeam || (trails && isParticle)
+        ): Boolean = isCurlFlow || isBeam
 
         /**
          * Live twin: VisualizerRenderer's `isBeam` retention. The beam is
@@ -450,7 +450,7 @@ class VideoExporter(
             scene.init()
             scene.resize(aspect.width, aspect.height)
             GLES30.glViewport(0, 0, aspect.width, aspect.height)
-            val isParticle = scene is dev.geode.render.scene.ParticleSceneBase
+            val isParticle = scene is dev.geode.render.scene.EmergenceScene
             val isShaderScene = scene is dev.geode.render.scene.ShaderScene
             // Milkdrop grades (and mirrors/inverts) in pm_post_frag, so the
             // composite must send it the neutral identity like the live path.
@@ -504,7 +504,7 @@ class VideoExporter(
             // with Flow off, or its export would be the one place the style
             // renders as a dead screen.
             val styleNeedsFlowField =
-                (scene as? dev.geode.render.scene.ParticleSceneBase)?.requiresFlowField == true
+                (scene as? dev.geode.render.scene.EmergenceScene)?.requiresFlowField == true
             val usesFlowField = effectUse.flowField || styleNeedsFlowField
             val usesRippleOverlay = effectUse.rippleOverlay
             val exportFluidScene = scene as? dev.geode.render.fluid.FluidScene
@@ -628,11 +628,11 @@ class VideoExporter(
                 // Flow toggle says, exactly as the live renderer does - the
                 // exported clip has to be the style the user approved.
                 val sceneNeedsFlow =
-                    (scene as? dev.geode.render.scene.ParticleSceneBase)?.requiresFlowField == true
+                    (scene as? dev.geode.render.scene.EmergenceScene)?.requiresFlowField == true
                 // Two-way coupling's return leg, drained after the update that
                 // produced the kicks and before the step that consumes them.
                 if (flowField != null && flowField.available && isParticle) {
-                    val kicks = (scene as dev.geode.render.scene.ParticleSceneBase).flowKicks
+                    val kicks = (scene as dev.geode.render.scene.EmergenceScene).flowKicks
                     for (i in 0 until kicks.size) {
                         flowField.queueKick(kicks.x[i], kicks.y[i], kicks.vx[i], kicks.vy[i], kicks.radius[i])
                     }
@@ -668,9 +668,9 @@ class VideoExporter(
                 if ((p.flowEnabled || sceneNeedsFlow) && flowField != null && flowField.available) {
                     if (isParticle && (p.flowAdvectParticles || sceneNeedsFlow)) {
                         flowField.readback(flowField.velocityTex, flowField.flowScale, flowField.aspect)
-                        (scene as dev.geode.render.scene.ParticleSceneBase).flowGrid = flowField.cpuGrid
+                        (scene as dev.geode.render.scene.EmergenceScene).flowGrid = flowField.cpuGrid
                     } else if (isParticle) {
-                        (scene as dev.geode.render.scene.ParticleSceneBase).flowGrid = null
+                        (scene as dev.geode.render.scene.EmergenceScene).flowGrid = null
                     }
                     if (scene is dev.geode.render.scene.ShaderScene && p.flowEnabled) {
                         scene.setFlow(flowField.velocityTex, p.flowStrength)
@@ -692,7 +692,7 @@ class VideoExporter(
                 // Draw the scene into the FX FBO, then composite (with the full
                 // FX chain) onto the encoder surface, matching the live path.
                 fx.bindSceneTarget()
-                if (canvasPersists(isCurlFlow, isBeam, p.trails, isParticle) && frame > 0) {
+                if (canvasPersists(isCurlFlow, isBeam) && frame > 0) {
                     // Mirror the live trails gate (VisualizerRenderer): Curl
                     // Flow ALWAYS persists - its bare GL_POINTS strobe on a
                     // cleared canvas and `trails` defaults to false - but the

@@ -18,7 +18,7 @@ reach every style through the composite pass, which is its own column.
 | Family | Classes |
 |---|---|
 | **Shader** | `ShaderScene` |
-| **Particle** | `ParticleSceneBase`, `NebulaScene`, `BurstScene`, `SwarmScene`, `FountainScene`, `OrbitScene` |
+| **Particle** | `EmergenceScene`, `EmergenceSim`, `EmergenceField` |
 | **MilkDrop** | `ProjectMScene` |
 | **Fluid** | `FluidScene` |
 | **Curl Flow** | `CurlFlowScene` |
@@ -36,8 +36,8 @@ reach every style through the composite pass, which is its own column.
 | `speed` | Motion | `Speed` | `speed` | · | · |   | · | · | · | · |   | · | · | · |
 | `zoom` | Motion | `Zoom` | `zoom` | · | · | · |   |   |   |   |   |   | · | · |
 | `rotation` | Motion | `Rotation` | `rotation` | · | · | · |   | · |   | · |   | · | · | · |
-| `endlessZoom` | Motion | `Endless zoom` | `endlessZoom` | · | · | · |   |   |   |   |   |   |   |   |
-| `endlessZoomSpeed` | Motion | `Dive speed` | `endlessZoomSpeed` | · | · | · |   |   |   |   |   |   |   |   |
+| `endlessZoom` | Motion | `Endless zoom` | `endlessZoom` | · |   | · |   |   |   |   |   |   |   |   |
+| `endlessZoomSpeed` | Motion | `Dive speed` | `endlessZoomSpeed` | · |   | · |   |   |   |   |   |   |   |   |
 | `sway` | Motion | `Sway` | `sway` | · |   |   |   |   |   |   |   |   | · | · |
 | `pulse` | Motion | `Beat pulse` | `pulse` | · | · |   |   | · |   |   |   |   | · | · |
 | `driftX` | Motion | `Drift X` | `driftX` | · |   |   |   |   |   |   |   |   | · | · |
@@ -48,11 +48,11 @@ reach every style through the composite pass, which is its own column.
 | `turbulence` | Behavior | `Turbulence` | `turbulence` | · | · |   |   | · |   |   |   |   |   |   |
 | `density` | Behavior | `Density` | `density` |   | · |   | · |   |   |   |   |   |   |   |
 | `trails` | Behavior | `Trails (particle scenes)` | `trails` |   | · |   |   |   | · |   |   |   | · | · |
-| `trailLength` | Behavior | `Trail length` | `trailLength` |   |   |   |   |   |   |   |   |   | · | · |
-| `trailZoom` | Behavior | `Trail zoom (echo in/out)` | `trailZoom` |   |   |   |   |   |   |   |   |   | · | · |
-| `trailWarp` | Behavior | `Trail warp (liquid echo)` | `trailWarp` |   |   |   |   |   |   |   |   |   | · | · |
+| `trailLength` | Behavior | `Trail length` | `trailLength` |   | · |   |   |   |   |   |   |   | · | · |
+| `trailZoom` | Behavior | `Trail zoom (echo in/out)` | `trailZoom` |   | · |   |   |   |   |   |   |   | · | · |
+| `trailWarp` | Behavior | `Trail warp (liquid echo)` | `trailWarp` |   | · |   |   |   |   |   |   |   | · | · |
 | `mirror` | Behavior | `Mirror` | `mirror` | · |   | · |   |   | · |   |   | · | · | · |
-| `warp` | Shape | `Domain warp` | `warp` | · |   |   |   |   |   |   |   |   | · | · |
+| `warp` | Shape | `Domain warp` | `warp` | · | · |   |   |   |   |   |   |   | · | · |
 | `ripple` | Shape | `Ripple` | `ripple` | · |   |   |   |   |   | · |   |   | · | · |
 | `symmetry` | Shape | `Kaleidoscope` | `symmetry` | · |   |   |   |   |   |   |   |   | · | · |
 | `kaleidoscope` | Shape | `Kaleidoscope` | `kaleidoscope` | · |   |   |   |   |   |   |   |   | · | · |
@@ -61,6 +61,10 @@ reach every style through the composite pass, which is its own column.
 | `posterize` | Shape | `Posterize` | `posterize` | · |   |   |   |   |   |   |   |   | · | · |
 | `particleShape` | Shape | `Particle shape` | `particleShape` |   | · |   | · | · |   |   |   |   |   |   |
 | `particleSize` | Shape | `Particle size` | `particleSize` |   | · |   | · | · |   |   |   |   |   |   |
+| `emergenceField` | Shape | `Emergence field` | `emergenceField` |   | · |   |   |   |   |   |   |   |   |   |
+| `emergenceSwarm` | Shape | `Field current` | `emergenceSwarm` |   | · |   |   |   |   |   |   |   |   |   |
+| `emergenceGrowth` | Shape | `Growth tuning` | `emergenceGrowth` |   | · |   |   |   |   |   |   |   |   |   |
+| `emergenceAcid` | Shape | `Acid warp` | `emergenceAcid` |   | · |   |   |   |   |   |   |   |   |   |
 | `tile` | Shape | `Tile` | `tile` | · |   |   |   | · |   |   |   |   | · | · |
 | `twist` | Shape | `Twist` | `twist` | · |   |   |   |   |   |   |   |   | · | · |
 | `palette` | Color | `Palette` | `palette` | · | · | · | · | · | · | · | · | · | · |   |
@@ -97,7 +101,7 @@ reach every style through the composite pass, which is its own column.
 | `vignette` | FX | `Vignette` | `vignette` |   |   |   |   |   |   |   |   |   | · | · |
 | `scanlines` | FX | `Scanlines` | `scanlines` |   |   |   |   |   |   |   |   |   | · | · |
 | `grain` | FX | `Film grain` | `grain` |   |   |   |   |   |   |   |   |   | · | · |
-| `glitch` | FX | `Glitch` | `glitch` |   |   |   |   |   |   |   | · |   | · | · |
+| `glitch` | FX | `Glitch` | `glitch` |   |   |   |   |   |   |   |   |   | · | · |
 | `fisheye` | FX | `Fisheye` | `fisheye` |   |   |   |   |   |   |   |   |   | · | · |
 | `strobe` | FX | `Strobe` | `strobe` |   |   |   |   | · |   |   |   |   | · | · |
 | `paramFadeSec` | FX | — | `paramFadeSec` |   |   |   |   |   |   |   |   |   | · |   |
@@ -240,7 +244,7 @@ and "⚄ Randomize <tab>" rolls exactly the keys below it.
 | Tab | Controls | Rolled keys |
 |---|---|---|
 | Motion | 10 | 10 |
-| Shape | 15 | 14 |
+| Shape | 19 | 18 |
 | Behavior | 14 | 14 |
 | Color | 25 | 19 |
 | FX | 8 | 7 |

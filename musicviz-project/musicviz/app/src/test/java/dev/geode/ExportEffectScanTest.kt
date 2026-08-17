@@ -112,11 +112,9 @@ class ExportEffectScanTest {
         // Live twin: VisualizerRenderer's `persists` gate. Beam and Curl Flow
         // keep their canvas with Trails off; particles need the toggle; a
         // scene that is none of these hard-clears even with it on.
-        assertTrue(VideoExporter.canvasPersists(isCurlFlow = false, isBeam = true, trails = false, isParticle = false))
-        assertTrue(VideoExporter.canvasPersists(isCurlFlow = true, isBeam = false, trails = false, isParticle = false))
-        assertTrue(VideoExporter.canvasPersists(isCurlFlow = false, isBeam = false, trails = true, isParticle = true))
-        assertFalse(VideoExporter.canvasPersists(isCurlFlow = false, isBeam = false, trails = false, isParticle = true))
-        assertFalse(VideoExporter.canvasPersists(isCurlFlow = false, isBeam = false, trails = true, isParticle = false))
+        assertTrue(VideoExporter.canvasPersists(isCurlFlow = false, isBeam = true))
+        assertTrue(VideoExporter.canvasPersists(isCurlFlow = true, isBeam = false))
+        assertFalse(VideoExporter.canvasPersists(isCurlFlow = false, isBeam = false))
     }
 
     @Test

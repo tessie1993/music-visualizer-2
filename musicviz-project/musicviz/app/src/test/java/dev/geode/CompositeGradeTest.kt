@@ -567,10 +567,10 @@ class CompositeGradeTest {
      */
     @Test
     fun onlySelfGradingScenesReadZoomAndRotation() {
-        val selfGrading = setOf("ShaderScene.kt", "ParticleSceneBase.kt", "ProjectMScene.kt")
+        val selfGrading = setOf("ShaderScene.kt", "EmergenceScene.kt", "ProjectMScene.kt")
         // The three bases, plus anything that extends one of them: a subclass
         // inherits its base's own view()/grade() and is graded there too.
-        val extendsSelfGrading = Regex(""":\s*(?:ShaderScene|ParticleSceneBase|ProjectMScene)\b""")
+        val extendsSelfGrading = Regex(""":\s*(?:ShaderScene|EmergenceScene|ProjectMScene)\b""")
         val reads = Regex("""\b(?:p|params)\.(zoom|rotation)\b""")
         val offenders = mutableListOf<String>()
         var scanned = 0

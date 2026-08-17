@@ -40,6 +40,8 @@ class RenderTargetOwnershipTest {
                     "ping-pong and MRT at probed half-float formats - a different allocator, not this one",
                 "render/fluid/FlowField.kt" to "its own velocity-field ping-pong at field resolution",
                 "render/scene/ProjectMScene.kt" to "the FBO handed to libprojectM's native renderer",
+                "render/scene/EmergenceScene.kt" to
+                    "the acid feedback ping-pong: its history must survive the composite's own clears",
             )
 
         /**

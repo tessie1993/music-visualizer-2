@@ -89,7 +89,7 @@ class FontColorMigrationTest {
     fun fontColorRoundTripsThroughEveryCuratedSwatch() {
         for (choice in FontColorChoice.CHOICES) {
             store.saveGui(GuiPrefs(fontColorArgb = choice.argb))
-            assertEquals(choice.label, choice.argb, store.loadGui().fontColorArgb)
+            assertEquals("swatch res ${choice.labelRes}", choice.argb, store.loadGui().fontColorArgb)
         }
     }
 

@@ -128,8 +128,9 @@ class EngineModuleBoundaryTest {
         // deliberate choice rather than drift into the old home.
         val legacy = File(root, "app/src/main/res/raw").listFiles { f -> f.extension == "glsl" }.orEmpty()
         assertEquals(
-            "a new shader under app/src/main/res/raw belongs in :engine:scenes assets instead",
-            65,
+            "a new shader under app/src/main/res/raw belongs in :engine:scenes resources instead " +
+                "(the emergence family already lives there; the pin drops as legacy shaders leave)",
+            63,
             legacy.size,
         )
     }

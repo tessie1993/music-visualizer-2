@@ -30,9 +30,15 @@ class ShaderScene(
      * preset. The built-in source is deliberately not reported.
      */
     private val onUserSourceCompiled: (String) -> Unit = {},
-) : Scene {
+) : Scene,
+    PcmSink {
     companion object {
-        const val AUDIO_TEX_WIDTH: Int = 64
+        /**
+         * Widened from 64 with the raw-PCM feed: the waveform row now carries
+         * real samples, and 64 texels cannot show a transient. Shaders sample
+         * the row through normalized coordinates, so none of them changes.
+         */
+        const val AUDIO_TEX_WIDTH: Int = 512
 
         /**
          * Shader clock wrap, matching VisualizerRenderer.TIME_WRAP_SEC: an
@@ -89,6 +95,20 @@ class ShaderScene(
     // speed change (slider or LFO) jump uTime by (t * delta-speed) - a
     // teleport that grows unbounded with session length.
     private var shaderTime = 0f
+
+    private val pcm = FloatArray(AUDIO_TEX_WIDTH * 8)
+    private var pcmCount = 0
+    private val waveRow = FloatArray(AUDIO_TEX_WIDTH)
+
+    override fun acceptPcm(
+        samples: FloatArray,
+        count: Int,
+    ) {
+        val n = count.coerceAtMost(pcm.size)
+        if (n <= 0) return
+        System.arraycopy(samples, count - n, pcm, 0, n)
+        pcmCount = n
+    }
 
     override fun setParams(params: SceneParams) {
         sceneParams = params
@@ -210,9 +230,14 @@ class ShaderScene(
         for (i in 0 until AUDIO_TEX_WIDTH) {
             texFloats.put((features.bands[i * features.bands.size / AUDIO_TEX_WIDTH] * drive).coerceIn(0f, 1.5f))
         }
+        if (pcmCount > 0) {
+            PcmRow.fill(waveRow, pcm, pcmCount)
+            pcmCount = 0
+        } else {
+            PcmRow.fill(waveRow, features.waveform, features.waveform.size)
+        }
         for (i in 0 until AUDIO_TEX_WIDTH) {
-            val sample = features.waveform[i * features.waveform.size / AUDIO_TEX_WIDTH]
-            texFloats.put((sample * drive * 0.5f + 0.5f).coerceIn(0f, 1f))
+            texFloats.put((waveRow[i] * drive * 0.5f + 0.5f).coerceIn(0f, 1f))
         }
     }
 

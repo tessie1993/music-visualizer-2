@@ -25,7 +25,7 @@ class SceneDisplayLabelTest {
 
     @Test
     fun uncataloguedIdsFallBackToReadableTitleCase() {
-        assertEquals("Nebula", sceneDisplayLabel(SceneIds.NEBULA))
+        assertEquals("Emergence", sceneDisplayLabel(SceneIds.EMERGENCE))
         assertEquals("Curlflow", sceneDisplayLabel(SceneIds.CURLFLOW))
         assertEquals("Some Future Style", sceneDisplayLabel("some_future_style"))
     }
@@ -35,7 +35,7 @@ class SceneDisplayLabelTest {
         val everyKnownId =
             VisualStyleCatalog.hyperspaceIds +
                 VisualStyleCatalog.cymaticsIds +
-                listOf(SceneIds.NEBULA, SceneIds.FLUID, SceneIds.CURLFLOW, SceneIds.WATER, SceneIds.BEAM, SceneIds.MILKDROP)
+                listOf(SceneIds.EMERGENCE, SceneIds.FLUID, SceneIds.CURLFLOW, SceneIds.WATER, SceneIds.BEAM, SceneIds.MILKDROP)
         everyKnownId.forEach { id ->
             val label = sceneDisplayLabel(id)
             assertFalse(label, label.contains('_'))

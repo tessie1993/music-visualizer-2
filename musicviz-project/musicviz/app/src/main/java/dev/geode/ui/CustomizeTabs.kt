@@ -252,6 +252,7 @@ internal fun ShapeTab(
     isPointSpriteScene: Boolean,
     particleLayerOff: Boolean = false,
     isBeamScene: Boolean = false,
+    isEmergenceScene: Boolean = false,
 ) {
     Column {
         if (isBeamScene) {
@@ -300,8 +301,8 @@ internal fun ShapeTab(
         LabeledSlider("Posterize", p.posterize, 0f..1f) { onChange(p.copy(posterize = it)) }
         if (isPointSpriteScene) {
             SectionHeader("Particles")
-            // uShape reaches both families: ParticleSceneBase.draw uploads it
-            // for the CPU styles, FluidParticles.draw for the fluid layer, and
+            // uShape reaches both families: EmergenceScene.drawSprites uploads
+            // it, FluidParticles.draw does for the fluid layer, and
             // lib_particle_common.glsl's ptShapeField is the single reader.
             LockableChipLabel("Particle shape")
             ChipRow(SceneParams.PARTICLE_SHAPES, p.particleShape) { onChange(p.copy(particleShape = it)) }
@@ -312,6 +313,18 @@ internal fun ShapeTab(
                         "sprites to scale until you switch it back on.",
                 )
             }
+        }
+        if (isEmergenceScene) {
+            SectionHeader("Emergence")
+            LockableChipLabel("Emergence field")
+            ChipRow(SceneParams.EMERGENCE_FIELDS, p.emergenceField) { onChange(p.copy(emergenceField = it)) }
+            LabeledSlider("Field current", p.emergenceSwarm, 0.1f..1.5f) { onChange(p.copy(emergenceSwarm = it)) }
+            LabeledSlider("Growth tuning", p.emergenceGrowth, 0f..1f) { onChange(p.copy(emergenceGrowth = it)) }
+            LabeledSlider("Acid warp", p.emergenceAcid, 0f..1f) { onChange(p.copy(emergenceAcid = it)) }
+            ControlHint(
+                "Growth tuning sets which crowd density feels alive: low starves " +
+                    "the colonies apart, high packs them into dense cells.",
+            )
         }
     }
 }
@@ -771,15 +784,23 @@ private fun ChipRow(
     }
 }
 
+/**
+ * [label] is the control's IDENTITY - the lock-chip persistence key and the
+ * randomizer key, stable English forever (see `ParamRandomizer`). [display]
+ * is what the user reads, and is the only part localization may translate.
+ * They default to the same string because that is what every existing call
+ * site already meant; a converted screen passes both.
+ */
 @Composable
 private fun LabeledSlider(
     label: String,
     value: Float,
     range: ClosedFloatingPointRange<Float>,
+    display: String = label,
     onChange: (Float) -> Unit,
 ) {
     Column(Modifier.padding(vertical = 2.dp)) {
-        ControlLabelRow("$label ${"%.2f".format(value)}", label)
+        ControlLabelRow("$display ${"%.2f".format(value)}", label)
         CrystalSlider(value = value, onValueChange = onChange, valueRange = range, modifier = Modifier.fillMaxWidth())
     }
 }
@@ -794,7 +815,10 @@ private fun LabeledSlider(
  * user could not protect: every roll re-picked the palette they had chosen.
  */
 @Composable
-private fun LockableChipLabel(label: String) = ControlLabelRow(label, label)
+private fun LockableChipLabel(
+    label: String,
+    display: String = label,
+) = ControlLabelRow(display, label)
 
 /**
  * Checkbox + label, carrying the same [LockChip] every other control shape
@@ -811,11 +835,12 @@ private fun LockableChipLabel(label: String) = ControlLabelRow(label, label)
 private fun CheckRow(
     label: String,
     checked: Boolean,
+    display: String = label,
     onChange: (Boolean) -> Unit,
 ) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Checkbox(checked = checked, onCheckedChange = onChange)
-        Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+        Text(display, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
         LockChip(label)
     }
 }
@@ -1329,10 +1354,11 @@ private fun LabeledIntSlider(
     label: String,
     value: Int,
     range: IntRange,
+    display: String = label,
     onChange: (Int) -> Unit,
 ) {
     Column(Modifier.padding(vertical = 2.dp)) {
-        ControlLabelRow("$label $value", label)
+        ControlLabelRow("$display $value", label)
         CrystalSlider(
             value = value.toFloat(),
             onValueChange = { onChange(it.toInt().coerceIn(range.first, range.last)) },

@@ -1,6 +1,7 @@
 package dev.geode.ui
 
 import android.content.Context
+import androidx.annotation.StringRes
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -9,6 +10,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
+import dev.geode.R
 import dev.geode.analysis.BeatTuning
 import dev.geode.render.VisualSafetyChoice
 import dev.geode.ui.theme.ThemePack
@@ -109,19 +111,19 @@ fun onAccentTextColor(): Color {
 
 /** Where the music player bar sits on screen; controls sit on the other side. */
 enum class PlayerPosition(
-    val label: String,
+    @StringRes val labelRes: Int,
 ) {
-    TOP("Top"),
-    BOTTOM("Bottom"),
+    TOP(R.string.look_position_top),
+    BOTTOM(R.string.look_position_bottom),
 }
 
 /** Corner styling for the floating control surfaces. */
 enum class CornerStyle(
-    val label: String,
+    @StringRes val labelRes: Int,
 ) {
-    SHARP("Sharp"),
-    ROUNDED("Rounded"),
-    PILL("Pill"),
+    SHARP(R.string.look_corner_sharp),
+    ROUNDED(R.string.look_corner_rounded),
+    PILL(R.string.look_corner_pill),
 }
 
 /** Maps the corner style to Material [Shapes] applied at the theme root. */
