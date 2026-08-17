@@ -129,9 +129,20 @@ Nothing else can parallelise safely until `PlayerViewModel` is decomposed.
 - Store base + repository interfaces exposed as `Flow` (M2).
 - String-resource extraction harness + lint rule banning new hardcoded strings.
 
-### R1 — Ship blockers (parallel across M1/M2/M3/M6/M8)
+### R1 — Ship blockers — **DONE except B8**
 
-B1–B8 above. Each is independently testable and lands with its own tests.
+| # | Outcome |
+|---|---|
+| B1 | **Corrected, then done.** Safe-by-default was already fixed before this programme — `VisualSafetyChoice.UNKNOWN` resolves to `SAFE_DEFAULTS`. What was missing was the asking, and it cut both ways: nobody was warned, and nobody who wanted full effects knew they were being held back. A first-run consent screen now gates the app, with no live preview, because demonstrating a 9 Hz flash to someone deciding about 9 Hz flashes is the harm itself. |
+| B2 | Done. `onPlayerError` reports the failure and skips past one dead file; a dead *source* stops after three failures in a row rather than burning the queue. |
+| B3 | Done. `SessionStore` persists queue, index and position; both auto-resume and media-session resumption restore them. |
+| B4 | Done. Artwork reaches the lock screen via a custom `BitmapLoader` — the default one decodes `artworkUri` and is handed an MP3. |
+| B5 | Done. Seek bar has `progressBarRangeInfo` + `setProgress`; `formatClock` gained hours. |
+| B6 | Done. Permanent permission denial offers a settings route. |
+| B7 | Done. Renders survive backgrounding: process-scoped coroutine plus a `mediaProcessing` foreground service, and `onCleared` no longer kills them. |
+| B8 | **Outstanding.** Localization is untouched — still hundreds of hardcoded English strings. |
+
+Suite went 1,262 → 1,325 tests, all green, with ktlint and lint clean throughout.
 
 - **M8**: first-run safety consent as the boot intro's final beat, with live
   side-by-side preview; safe visuals defaults on until answered. Seek-bar
