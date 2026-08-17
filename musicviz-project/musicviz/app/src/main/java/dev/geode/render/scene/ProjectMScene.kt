@@ -38,6 +38,14 @@ class ProjectMScene(
     /** Returns fresh mono PCM since the last call, or null. GL thread only. */
     private val pcmProvider: () -> PcmChunk?,
     private val onError: (String?) -> Unit = {},
+    /**
+     * Fires on the GL thread with the path of a preset the engine actually
+     * accepted. The ViewModel records the active .milk from here rather than
+     * at pick time, because a preset that failed to parse used to be noted as
+     * active anyway - and then copied verbatim into every preset the user
+     * saved, persisting the broken file forever.
+     */
+    private val onPresetLoaded: (String) -> Unit = {},
 ) : Scene {
     companion object {
         private const val LOAD_DEBOUNCE_MS = 400L
@@ -258,7 +266,10 @@ class ProjectMScene(
                 PMBridge.nativeLoadPreset(handle, path, sceneParams.milkdropBlendPresets)
                 val error = PMBridge.nativeGetLastError()
                 onError(error)
-                if (error == null) lastPresetPath = path
+                if (error == null) {
+                    lastPresetPath = path
+                    onPresetLoaded(path)
+                }
             }
         }
         val p = sceneParams

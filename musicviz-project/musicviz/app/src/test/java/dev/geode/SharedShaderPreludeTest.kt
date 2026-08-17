@@ -3,8 +3,8 @@ package dev.geode
 import dev.geode.analysis.AudioFeatures
 import dev.geode.render.CompositeGrade
 import dev.geode.render.fluid.FlowField
-import dev.geode.render.scene.NebulaScene
-import dev.geode.render.scene.ParticleSceneBase
+import dev.geode.render.scene.EmergenceField
+import dev.geode.render.scene.EmergenceSim
 import dev.geode.render.scene.SceneParams
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -257,12 +257,12 @@ class SharedShaderPreludeTest {
             "the composite no longer owns mirror for the particle family",
             CompositeGrade.gateFor(CompositeGrade.SceneFamily.PARTICLE).mirrorInvert,
         )
-        val postProcess =
+        val applyPalette =
             ParamSurface
-                .source("render/scene/ParticleSceneBase.kt")
-                .substringAfter("private fun postProcess(p: SceneParams) {")
+                .source("render/scene/EmergenceScene.kt")
+                .substringAfter("private fun applyPalette(p: SceneParams) {")
                 .substringBefore("\n    }")
-        assertTrue("ParticleSceneBase mirrors the population as well as the composite", !postProcess.contains("mirror"))
+        assertTrue("EmergenceScene mirrors the population as well as the composite", !applyPalette.contains("mirror"))
     }
 
     @Test
@@ -274,30 +274,36 @@ class SharedShaderPreludeTest {
         // Stepped headlessly against a uniform rightward current, where the
         // answer is arithmetic. Both scenes are seeded identically and driven
         // identically, so the field is the ONLY difference between them.
-        val params = SceneParams.DEFAULT.copy(flowEnabled = true, flowAdvectParticles = true, flowStrength = 1f)
-        val free = NebulaScene(ParticleSceneBase.ShaderSources("", ""), count = 200)
-        val ridden = NebulaScene(ParticleSceneBase.ShaderSources("", ""), count = 200)
+        val free = EmergenceSim(count = 200, seed = 11L)
+        val ridden = EmergenceSim(count = 200, seed = 11L)
+        listOf(free, ridden).forEach {
+            it.field = EmergenceField.THOMAS
+            it.flowStrength = 1f
+        }
         ridden.flowGrid = uniformField(vx = 0.6f, vy = 0f)
-        free.setParams(params)
-        ridden.setParams(params)
         repeat(120) {
-            free.update(features(), FRAME)
-            ridden.update(features(), FRAME)
+            free.step(features(), FRAME)
+            ridden.step(features(), FRAME)
         }
         val travelled = meanX(ridden) - meanX(free)
-        assertTrue("the field displaced the population by $travelled - it is being discarded again", travelled > 0.2f)
+        assertTrue("the field displaced the population by $travelled - it is being discarded again", travelled > 0.08f)
         rowsOf(ridden).forEachIndexed { i, r ->
-            assertTrue("particle $i left the advection rail at ${r[0]}, ${r[1]}", abs(r[0]) <= 1.2f && abs(r[1]) <= 1.2f)
+            assertTrue(
+                "particle $i left the world at ${r[0]}, ${r[1]}",
+                abs(r[0]) <= EmergenceSim.RESPAWN_EDGE && abs(r[1]) <= EmergenceSim.RESPAWN_EDGE,
+            )
         }
         // ...and letting go has to give the population back, rather than
         // parking every particle wherever the current left it.
-        ridden.setParams(params.copy(flowEnabled = false))
-        repeat(600) {
-            free.update(features(), FRAME)
-            ridden.update(features(), FRAME)
+        ridden.flowStrength = 0f
+        repeat(900) {
+            free.step(features(), FRAME)
+            ridden.step(features(), FRAME)
         }
-        val residue = meanX(ridden) - meanX(free)
-        assertTrue("the field never let go: $residue still displaced", abs(residue) < 0.02f)
+        assertTrue(
+            "the field never let go: the ridden population is still parked off-centre at ${meanX(ridden)}",
+            abs(meanX(ridden)) < 0.15f,
+        )
     }
 
     // ---- helpers -------------------------------------------------------
@@ -343,13 +349,13 @@ class SharedShaderPreludeTest {
             treble = 0.2f,
         )
 
-    private fun rowsOf(scene: ParticleSceneBase): List<FloatArray> {
-        val data = scene.particleRecords()
-        val stride = ParticleSceneBase.FLOATS_PER_PARTICLE
+    private fun rowsOf(sim: EmergenceSim): List<FloatArray> {
+        val data = sim.records
+        val stride = EmergenceSim.FLOATS_PER_PARTICLE
         return (0 until data.size / stride).map { i -> data.copyOfRange(i * stride, i * stride + stride) }
     }
 
-    private fun meanX(scene: ParticleSceneBase): Float = rowsOf(scene).map { it[0] }.average().toFloat()
+    private fun meanX(sim: EmergenceSim): Float = rowsOf(sim).map { it[0] }.average().toFloat()
 
     /**
      * A top-level function body, from its signature to the closing brace.

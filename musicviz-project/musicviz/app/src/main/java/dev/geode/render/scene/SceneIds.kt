@@ -2,10 +2,7 @@ package dev.geode.render.scene
 
 /** Stable identifiers shared by renderer, presets and the intelligence layer. */
 object SceneIds {
-    const val NEBULA: String = "nebula"
-    const val BURSTS: String = "bursts"
-    const val SWARM: String = "swarm"
-    const val FOUNTAIN: String = "fountain"
+    const val EMERGENCE: String = "emergence"
     const val JULIA: String = "julia"
     const val TUNNEL: String = "tunnel"
     const val BARS: String = "bars"
@@ -28,11 +25,6 @@ object SceneIds {
     const val SOLAR: String = "solar"
     const val WINTER: String = "winter"
     const val LAVA: String = "lava"
-    const val ORBITS: String = "orbits"
-    const val GALAXY: String = "galaxy"
-    const val ATTRACTOR: String = "attractor"
-    const val STORM: String = "storm"
-    const val INKFLOW: String = "inkflow"
     const val MILKDROP: String = "milkdrop"
     const val FLUID: String = "fluid"
     const val CURLFLOW: String = "curlflow"

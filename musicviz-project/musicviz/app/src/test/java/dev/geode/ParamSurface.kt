@@ -46,12 +46,9 @@ object ParamSurface {
             "Shader" to listOf("render/scene/ShaderScene.kt"),
             "Particle" to
                 listOf(
-                    "render/scene/ParticleSceneBase.kt",
-                    "render/scene/NebulaScene.kt",
-                    "render/scene/BurstScene.kt",
-                    "render/scene/SwarmScene.kt",
-                    "render/scene/FountainScene.kt",
-                    "render/scene/OrbitScene.kt",
+                    "render/scene/EmergenceScene.kt",
+                    "render/scene/EmergenceSim.kt",
+                    "render/scene/EmergenceField.kt",
                 ),
             "MilkDrop" to listOf("render/scene/ProjectMScene.kt"),
             "Fluid" to listOf("render/fluid/FluidScene.kt"),

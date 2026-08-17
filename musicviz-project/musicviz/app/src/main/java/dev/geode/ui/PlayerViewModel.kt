@@ -70,7 +70,7 @@ data class PlayerUiState(
 )
 
 data class VizUiState(
-    val sceneId: String = SceneIds.NEBULA,
+    val sceneId: String = SceneIds.EMERGENCE,
     val intelligenceMode: IntelligenceMode = IntelligenceMode.MANUAL,
     val suggestedSceneId: String? = null,
     val attack: Float = 0.6f,
@@ -749,6 +749,51 @@ class PlayerViewModel(
             dev.geode.RingLog.note("MilkImport", "milk import failed", t)
             null
         }
+
+    /**
+     * Async bulk import of every .milk and texture under a picked folder.
+     * Enumeration happens here because DocumentFile needs the resolver; every
+     * decision (what counts, collisions, the missing-texture scan) is
+     * [MilkPackImporter]'s, where the headless suite pins it.
+     */
+    fun importMilkFolderAsync(
+        treeUri: Uri,
+        onDone: (dev.geode.data.MilkPackImporter.Report) -> Unit,
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            val entries = mutableListOf<dev.geode.data.MilkPackImporter.Entry>()
+            runCatching {
+                val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(app, treeUri)
+                if (root != null) collectMilkEntries(root, entries, depth = 0)
+            }
+            val report = dev.geode.data.MilkPackImporter.import(entries, java.io.File(app.filesDir, "milk"))
+            withContext(Dispatchers.Main) { onDone(report) }
+        }
+    }
+
+    private fun collectMilkEntries(
+        dir: androidx.documentfile.provider.DocumentFile,
+        out: MutableList<dev.geode.data.MilkPackImporter.Entry>,
+        depth: Int,
+    ) {
+        if (depth > MILK_WALK_DEPTH) return
+        for (child in dir.listFiles()) {
+            when {
+                child.isDirectory -> collectMilkEntries(child, out, depth + 1)
+                child.isFile -> {
+                    val name = child.name ?: continue
+                    val uri = child.uri
+                    out +=
+                        dev.geode.data.MilkPackImporter.Entry(name) {
+                            runCatching {
+                                getApplication<Application>().contentResolver.openInputStream(uri)
+                            }.getOrNull()
+                        }
+                }
+            }
+        }
+    }
 
     /** The name the source app shows the user for [uri], or null. */
     private fun displayNameOf(uri: Uri): String? =
@@ -2646,6 +2691,13 @@ class PlayerViewModel(
     }
 
     private companion object {
+        /**
+         * How deep the MilkDrop folder import walks. MegaPacks nest one or
+         * two levels (author/pack/preset.milk); a bound keeps a pathological
+         * tree or a cyclic provider from walking forever.
+         */
+        const val MILK_WALK_DEPTH = 4
+
         /**
          * One writer thread for preset and take mutations - fsync'd saves,
          * deletes and the re-list that follows them - so they stay ordered

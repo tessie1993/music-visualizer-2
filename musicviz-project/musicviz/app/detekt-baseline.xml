@@ -9,8 +9,8 @@
     <ID>ComplexCondition:TextureStore.kt$TextureStore$bytes.size &gt;= 4 &amp;&amp; bytes[0] == 'D'.code.toByte() &amp;&amp; bytes[1] == 'D'.code.toByte() &amp;&amp; bytes[2] == 'S'.code.toByte() &amp;&amp; bytes[3] == ' '.code.toByte()</ID>
     <ID>ComplexCondition:VideoExporter.kt$VideoExporter$(p.flowEnabled || sceneNeedsFlow) &amp;&amp; flowField != null &amp;&amp; flowField.available</ID>
     <ID>ComplexCondition:VisualizerRenderer.kt$VisualizerRenderer$(p.flowEnabled || sceneNeedsFlow || layerNeedsFlow) &amp;&amp; ff != null &amp;&amp; ff.available &amp;&amp; !fluidActive</ID>
-    <ID>ComplexCondition:VisualizerRenderer.kt$VisualizerRenderer$ff == null || !ff.available || fluidActive || target !is ParticleSceneBase</ID>
-    <ID>ComplexCondition:VisualizerRenderer.kt$VisualizerRenderer$target is ParticleSceneBase &amp;&amp; (p.flowAdvectParticles || targetNeedsFlow) &amp;&amp; ff.available</ID>
+    <ID>ComplexCondition:VisualizerRenderer.kt$VisualizerRenderer$ff == null || !ff.available || fluidActive || target !is EmergenceScene</ID>
+    <ID>ComplexCondition:VisualizerRenderer.kt$VisualizerRenderer$target is EmergenceScene &amp;&amp; (p.flowAdvectParticles || targetNeedsFlow) &amp;&amp; ff.available</ID>
     <ID>EmptyFunctionBlock:AiffExtractor.kt$AiffExtractor${}</ID>
     <ID>InstanceOfCheckForException:ExportController.kt$ExportController$t is kotlinx.coroutines.CancellationException</ID>
     <ID>InstanceOfCheckForException:PlayerViewModel.kt$PlayerViewModel$t is kotlinx.coroutines.CancellationException</ID>
@@ -94,7 +94,7 @@
     <ID>ReturnCount:TakeStore.kt$TakeStore$fun rename( from: String, to: String, ): Boolean</ID>
     <ID>ReturnCount:TextureStore.kt$TextureStore$private fun importOne(uri: Uri): TextureImportResult</ID>
     <ID>ReturnCount:TrackLibrary.kt$TrackLibrary$private fun readLocked(): List&lt;LibraryTrack&gt;?</ID>
-    <ID>ReturnCount:VisualizerRenderer.kt$VisualizerRenderer$private fun createScene( id: String, particleShaders: ParticleSceneBase.ShaderSources, quadVert: String, export: Boolean = false, ): Scene</ID>
+    <ID>ReturnCount:VisualizerRenderer.kt$VisualizerRenderer$private fun createScene( id: String, particleShaders: EmergenceScene.Shaders, quadVert: String, export: Boolean = false, ): Scene</ID>
     <ID>ReturnCount:VisualizerRenderer.kt$VisualizerRenderer$private fun sceneFor(id: String): Scene?</ID>
     <ID>ReturnCount:VisualizerRenderer.kt$VisualizerRenderer$private fun transitionProgram(id: String): CompositeProgram</ID>
     <ID>SwallowedException:PMBridge.kt$PMBridge$t: Throwable</ID>

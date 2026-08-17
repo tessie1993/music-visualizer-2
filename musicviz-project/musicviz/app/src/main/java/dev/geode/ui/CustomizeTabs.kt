@@ -252,6 +252,7 @@ internal fun ShapeTab(
     isPointSpriteScene: Boolean,
     particleLayerOff: Boolean = false,
     isBeamScene: Boolean = false,
+    isEmergenceScene: Boolean = false,
 ) {
     Column {
         if (isBeamScene) {
@@ -300,8 +301,8 @@ internal fun ShapeTab(
         LabeledSlider("Posterize", p.posterize, 0f..1f) { onChange(p.copy(posterize = it)) }
         if (isPointSpriteScene) {
             SectionHeader("Particles")
-            // uShape reaches both families: ParticleSceneBase.draw uploads it
-            // for the CPU styles, FluidParticles.draw for the fluid layer, and
+            // uShape reaches both families: EmergenceScene.drawSprites uploads
+            // it, FluidParticles.draw does for the fluid layer, and
             // lib_particle_common.glsl's ptShapeField is the single reader.
             LockableChipLabel("Particle shape")
             ChipRow(SceneParams.PARTICLE_SHAPES, p.particleShape) { onChange(p.copy(particleShape = it)) }
@@ -312,6 +313,18 @@ internal fun ShapeTab(
                         "sprites to scale until you switch it back on.",
                 )
             }
+        }
+        if (isEmergenceScene) {
+            SectionHeader("Emergence")
+            LockableChipLabel("Emergence field")
+            ChipRow(SceneParams.EMERGENCE_FIELDS, p.emergenceField) { onChange(p.copy(emergenceField = it)) }
+            LabeledSlider("Field current", p.emergenceSwarm, 0.1f..1.5f) { onChange(p.copy(emergenceSwarm = it)) }
+            LabeledSlider("Growth tuning", p.emergenceGrowth, 0f..1f) { onChange(p.copy(emergenceGrowth = it)) }
+            LabeledSlider("Acid warp", p.emergenceAcid, 0f..1f) { onChange(p.copy(emergenceAcid = it)) }
+            ControlHint(
+                "Growth tuning sets which crowd density feels alive: low starves " +
+                    "the colonies apart, high packs them into dense cells.",
+            )
         }
     }
 }

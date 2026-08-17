@@ -37,8 +37,7 @@ class SceneSuggesterIdsTest {
     fun everySuggestionIsAnIdTheRendererKnows() {
         val suggestions =
             setOf(
-                SceneSuggester.SCENE_NEBULA,
-                SceneSuggester.SCENE_BURSTS,
+                SceneSuggester.SCENE_EMERGENCE,
                 SceneSuggester.SCENE_JULIA,
                 SceneSuggester.SCENE_TUNNEL,
             )

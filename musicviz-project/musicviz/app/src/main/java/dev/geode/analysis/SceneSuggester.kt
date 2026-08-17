@@ -22,8 +22,7 @@ object SceneSuggester {
     // Aliases of the renderer's stable ids, NOT free literals: a renamed scene
     // id must fail to compile here rather than silently suggest a scene the
     // renderer no longer knows.
-    const val SCENE_NEBULA = SceneIds.NEBULA
-    const val SCENE_BURSTS = SceneIds.BURSTS
+    const val SCENE_EMERGENCE = SceneIds.EMERGENCE
     const val SCENE_JULIA = SceneIds.JULIA
     const val SCENE_TUNNEL = SceneIds.TUNNEL
 
@@ -53,7 +52,6 @@ object SceneSuggester {
     val AFFINITIES: List<Affinity> =
         listOf(
             // Calm, dark, ambient.
-            Affinity(SceneIds.NEBULA, tempoBpm = 50f..105f, energy = 0f..0.14f, brightness = 0f..0.45f, percussiveBias = -0.3f),
             Affinity(
                 SceneIds.AURORA,
                 tempoBpm = 50f..110f,
@@ -62,7 +60,6 @@ object SceneSuggester {
                 percussiveBias = -0.4f,
                 widthBias = 0.6f,
             ),
-            Affinity(SceneIds.GALAXY, tempoBpm = 50f..100f, energy = 0f..0.16f, brightness = 0f..0.5f, widthBias = 0.3f),
             Affinity(SceneIds.WATER, tempoBpm = 60f..115f, energy = 0.05f..0.22f, brightness = 0.1f..0.5f, percussiveBias = -0.5f),
             // Flowing mid-energy.
             Affinity(SceneIds.CURLFLOW, tempoBpm = 70f..130f, energy = 0.1f..0.3f, brightness = 0.15f..0.6f, percussiveBias = -0.2f),
@@ -79,9 +76,16 @@ object SceneSuggester {
             // Bright.
             Affinity(SceneIds.TUNNEL, tempoBpm = 90f..160f, energy = 0.15f..0.4f, brightness = 0.45f..1f),
             Affinity(SceneIds.HYPERSPACE, tempoBpm = 120f..200f, energy = 0.2f..0.5f, brightness = 0.4f..1f, percussiveBias = 0.2f),
-            // Loud, percussive.
-            Affinity(SceneIds.BURSTS, tempoBpm = 118f..200f, energy = 0.24f..0.6f, brightness = 0.15f..0.7f, percussiveBias = 0.8f),
-            Affinity(SceneIds.STORM, tempoBpm = 100f..180f, energy = 0.28f..0.7f, brightness = 0f..0.5f, percussiveBias = 0.5f),
+            // Loud, percussive: the emergence colonies scatter and re-form on
+            // every hit, which is the character percussive material rewards.
+            Affinity(
+                SceneIds.EMERGENCE,
+                tempoBpm = 95f..200f,
+                energy = 0.16f..0.7f,
+                brightness = 0.1f..0.75f,
+                percussiveBias = 0.6f,
+                widthBias = 0.2f,
+            ),
         )
 
     /** 1 inside [range], falling to 0 one range-width outside it. */

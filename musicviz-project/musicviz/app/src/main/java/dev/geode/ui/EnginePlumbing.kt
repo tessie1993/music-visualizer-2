@@ -143,11 +143,11 @@ fun VisualizerEngineBindings(
         // milkdrop style came back to projectM's idle "M" logo. The renderer
         // re-queues its own last preset after an EGL context loss; this covers
         // the case where there is no renderer state left at all.
+        visualizerView.visualizerRenderer.onMilkPresetLoaded = { viewModel.noteMilkPreset(it) }
         viewModel.activeMilkPath.value?.let { visualizerView.visualizerRenderer.loadMilkPreset(it) }
         viewModel.vizApply.collect { apply ->
             apply.milkPath?.let {
                 visualizerView.visualizerRenderer.loadMilkPreset(it)
-                viewModel.noteMilkPreset(it)
             }
             apply.customShader?.let {
                 visualizerView.visualizerRenderer.submitShader(apply.sceneId ?: viz.sceneId, it)

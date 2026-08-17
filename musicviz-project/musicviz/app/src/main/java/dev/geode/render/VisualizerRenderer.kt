@@ -8,26 +8,17 @@ import dev.geode.R
 import dev.geode.analysis.AudioFeatures
 import dev.geode.export.VideoExporter
 import dev.geode.render.fluid.CurlFlowMath
-import dev.geode.render.scene.AttractorScene
 import dev.geode.render.scene.BeamScene
-import dev.geode.render.scene.BurstScene
 import dev.geode.render.scene.CymaticsScene
-import dev.geode.render.scene.FountainScene
-import dev.geode.render.scene.GalaxyScene
+import dev.geode.render.scene.EmergenceScene
 import dev.geode.render.scene.GlUtil
 import dev.geode.render.scene.HyperspaceScene
-import dev.geode.render.scene.InkflowScene
-import dev.geode.render.scene.NebulaScene
-import dev.geode.render.scene.OrbitScene
-import dev.geode.render.scene.ParticleSceneBase
 import dev.geode.render.scene.PcmChunk
 import dev.geode.render.scene.ProjectMScene
 import dev.geode.render.scene.Scene
 import dev.geode.render.scene.SceneIds
 import dev.geode.render.scene.SceneParams
 import dev.geode.render.scene.ShaderScene
-import dev.geode.render.scene.StormScene
-import dev.geode.render.scene.SwarmScene
 import dev.geode.render.scene.VisualStyleCatalog
 import dev.musicviz.render.scene.PMBridge
 import java.io.File
@@ -94,18 +85,7 @@ class VisualizerRenderer(
                 SceneIds.WINTER to R.raw.winter_frag,
                 SceneIds.LAVA to R.raw.lava_frag,
             )
-        val PARTICLE_SCENES: List<String> =
-            listOf(
-                SceneIds.NEBULA,
-                SceneIds.BURSTS,
-                SceneIds.SWARM,
-                SceneIds.FOUNTAIN,
-                SceneIds.ORBITS,
-                SceneIds.GALAXY,
-                SceneIds.ATTRACTOR,
-                SceneIds.STORM,
-                SceneIds.INKFLOW,
-            )
+        val PARTICLE_SCENES: List<String> = listOf(SceneIds.EMERGENCE)
 
         /** Fingertip footprint for the touch smear, in sim units. */
         private const val TOUCH_RADIUS = 0.11f
@@ -227,7 +207,7 @@ class VisualizerRenderer(
     var features: AudioFeatures = AudioFeatures.empty()
 
     @Volatile
-    var requestedSceneId: String = SceneIds.NEBULA
+    var requestedSceneId: String = SceneIds.EMERGENCE
 
     @Volatile
     var sceneParams: SceneParams = SceneParams.DEFAULT
@@ -310,7 +290,7 @@ class VisualizerRenderer(
      *  "Beat pulse" swell for the scenes that don't pulse themselves. The
      *  shader's own `uBeat` is a per-frame boolean, so a pulse driven from it
      *  would be a single-frame pop; this is the same decaying envelope
-     *  ShaderScene/ParticleSceneBase keep. */
+     *  ShaderScene/EmergenceScene keep. */
     private var postBeatPulse = 0f
 
     private fun gainAdjusted(
@@ -362,6 +342,9 @@ class VisualizerRenderer(
 
     @Volatile
     var onShaderError: (String?) -> Unit = {}
+
+    /** Fires (GL thread) with the path of a .milk the engine accepted. */
+    var onMilkPresetLoaded: (String) -> Unit = {}
 
     /** Queue (not a single slot) so rapid edits to different scenes all land. */
     private val pendingCustomShaders = java.util.concurrent.ConcurrentLinkedQueue<Pair<String, String>>()
@@ -653,7 +636,7 @@ class VisualizerRenderer(
      */
     private fun createScene(
         id: String,
-        particleShaders: ParticleSceneBase.ShaderSources,
+        particleShaders: EmergenceScene.Shaders,
         quadVert: String,
         export: Boolean = false,
     ): Scene {
@@ -680,15 +663,7 @@ class VisualizerRenderer(
             }
         }
         return when (id) {
-            SceneIds.NEBULA -> NebulaScene(particleShaders)
-            SceneIds.BURSTS -> BurstScene(particleShaders)
-            SceneIds.SWARM -> SwarmScene(particleShaders)
-            SceneIds.FOUNTAIN -> FountainScene(particleShaders)
-            SceneIds.ORBITS -> OrbitScene(particleShaders)
-            SceneIds.GALAXY -> GalaxyScene(particleShaders)
-            SceneIds.ATTRACTOR -> AttractorScene(particleShaders)
-            SceneIds.STORM -> StormScene(particleShaders)
-            SceneIds.INKFLOW -> InkflowScene(particleShaders)
+            SceneIds.EMERGENCE -> EmergenceScene(particleShaders)
             SceneIds.FLUID ->
                 dev.geode.render.fluid.FluidScene(context).also { fluid ->
                     fluid.onShaderError = { onShaderError(it) }
@@ -719,6 +694,7 @@ class VisualizerRenderer(
                     sharedTextureDir = File(context.filesDir, "milk/textures").absolutePath,
                     pcmProvider = milkPcm,
                     onError = { onShaderError(it) },
+                    onPresetLoaded = { onMilkPresetLoaded(it) },
                 )
             }
             else -> error("availableSceneIds offers \"$id\" but createScene cannot build it")
@@ -804,7 +780,7 @@ class VisualizerRenderer(
      * re-broadcasts the fresh texture to every shader scene afterwards.
      */
     private fun wireScene(scene: Scene) {
-        if (scene is ParticleSceneBase) {
+        if (scene is EmergenceScene) {
             scene.onShaderError = { onShaderError(it) }
         }
         if (scene is ShaderScene && paletteLutTex != 0) {
@@ -888,7 +864,7 @@ class VisualizerRenderer(
         // time it is selected, including every restore the old context lost -
         // see its docs for what building all of them up front cost.
         if (fluidForceSrc != null || fluidDyeSrc != null) fluidInjectionDirty = true
-        activeScene = sceneFor(requestedSceneId) ?: sceneFor(SceneIds.NEBULA)
+        activeScene = sceneFor(requestedSceneId) ?: sceneFor(SceneIds.EMERGENCE)
         outgoingScene = null
         outgoingParams = null
 
@@ -1082,7 +1058,7 @@ class VisualizerRenderer(
         // the Flow toggle says: `flowEnabled` ships off, and a style that
         // renders a frozen screen until the user finds a checkbox in another
         // tab would read as broken, not as opt-in.
-        val sceneNeedsFlow = (scene as? ParticleSceneBase)?.requiresFlowField == true
+        val sceneNeedsFlow = (scene as? EmergenceScene)?.requiresFlowField == true
         // Layers and transitions both want FBO B, so a transition WINS: it is
         // brief and it is the thing the user just asked for, while the layer is
         // a standing setting that can resume a second later. Resolved every
@@ -1100,7 +1076,7 @@ class VisualizerRenderer(
                     ?.let { sceneFor(it) }
                     ?.takeIf { it !== activeScene }
             }
-        val layerNeedsFlow = (layerScene as? ParticleSceneBase)?.requiresFlowField == true
+        val layerNeedsFlow = (layerScene as? EmergenceScene)?.requiresFlowField == true
         if ((p.flowEnabled || sceneNeedsFlow || layerNeedsFlow) && ff != null && ff.available && !fluidActive) {
             ff.step(gainAdjusted(features, p), dt, p)
         }
@@ -1206,7 +1182,7 @@ class VisualizerRenderer(
         // it persists regardless of the Trails toggle, which still sets how
         // long the glow lasts.
         val isBeam = scene is BeamScene
-        val persists = isCurl || isBeam || (p.trails && scene is ParticleSceneBase)
+        val persists = isCurl || isBeam
         if (persists && !sceneJustSwitched) {
             val keep =
                 when {
@@ -1497,20 +1473,20 @@ class VisualizerRenderer(
     ): Boolean {
         var fresh = gridFresh
         if ((p.flowEnabled || targetNeedsFlow) && ff != null) {
-            if (target is ParticleSceneBase && (p.flowAdvectParticles || targetNeedsFlow) && ff.available) {
+            if (target is EmergenceScene && (p.flowAdvectParticles || targetNeedsFlow) && ff.available) {
                 if (!fresh) {
                     ff.readback(ff.velocityTex, ff.flowScale, ff.aspect)
                     fresh = true
                 }
                 target.flowGrid = ff.cpuGrid
-            } else if (target is ParticleSceneBase) {
+            } else if (target is EmergenceScene) {
                 target.flowGrid = null
             }
             if (target is ShaderScene && p.flowEnabled) {
                 target.setFlow(if (ff.available) ff.velocityTex else zeroTex, p.flowStrength)
             }
         } else {
-            (target as? ParticleSceneBase)?.flowGrid = null
+            (target as? EmergenceScene)?.flowGrid = null
             (target as? ShaderScene)?.setFlow(zeroTex, 0f)
         }
         return fresh
@@ -1529,7 +1505,7 @@ class VisualizerRenderer(
         ff: dev.geode.render.fluid.FlowField?,
         fluidActive: Boolean,
     ) {
-        if (ff == null || !ff.available || fluidActive || target !is ParticleSceneBase) return
+        if (ff == null || !ff.available || fluidActive || target !is EmergenceScene) return
         val kicks = target.flowKicks
         for (i in 0 until kicks.size) {
             ff.queueKick(kicks.x[i], kicks.y[i], kicks.vx[i], kicks.vy[i], kicks.radius[i])
@@ -1547,7 +1523,7 @@ class VisualizerRenderer(
     private fun compositeFamily(scene: Scene?): CompositeGrade.SceneFamily =
         when (scene) {
             is ShaderScene -> CompositeGrade.SceneFamily.SHADER
-            is ParticleSceneBase -> CompositeGrade.SceneFamily.PARTICLE
+            is EmergenceScene -> CompositeGrade.SceneFamily.PARTICLE
             is ProjectMScene -> CompositeGrade.SceneFamily.MILKDROP
             else -> CompositeGrade.SceneFamily.FLUID
         }
@@ -1654,17 +1630,5 @@ class VisualizerRenderer(
             }
         }
 
-    private fun particleShaderSources(context: Context): ParticleSceneBase.ShaderSources {
-        // The app-wide particle look, shared with the fluid styles' own
-        // particle layer. Both stages include lib_particle_common (constants,
-        // the SDF shapes, the billboard and sub-pixel math); only the fragment
-        // stage includes lib_particle_shade, which antialiases with fwidth()
-        // and would not compile in a vertex shader. Which libraries a stage
-        // takes is stated in the shader that needs them rather than assembled
-        // here, so the two particle families cannot drift apart.
-        return ParticleSceneBase.ShaderSources(
-            GlUtil.loadShader(context, R.raw.particle_vert),
-            GlUtil.loadShader(context, R.raw.particle_frag),
-        )
-    }
+    private fun particleShaderSources(context: Context): EmergenceScene.Shaders = EmergenceScene.Shaders.load(context)
 }
