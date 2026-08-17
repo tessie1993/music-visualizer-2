@@ -198,20 +198,39 @@ Play Data Safety declaration, store listing assets.
 
 ## 4. Verification
 
-Every round: `:app:testDebugUnitTest`, `:engine:*:test`, `ktlintCheck`,
-`lintDebug` green before commit. Beyond that, per the goal's Phase 3:
+Every round runs four gates before commit: `:app:detekt`,
+`:app:testDebugUnitTest`, `ktlintCheck` and `lintDebug`. Detekt was missed for
+several rounds and CI caught it — it is part of the local loop now.
 
-- **Instrumented + UI tests** on the real app for every workflow.
-- **Adversarial agents** per lens: security/permissions, data isolation,
-  accessibility, visual regression, edge cases (empty library, 5k tracks,
-  corrupt files, revoked SAF, disk full, encoder refusal, process death mid-export).
-- **Device matrix** via the emulator: API 26 floor, 34, 36; phone, tablet,
-  foldable; low-RAM profile.
-- Defects logged, fixed, retested; loop repeats until acceptance passes.
+### What can and cannot be verified here
 
-Currently there are **no instrumented tests** and the JVM suite asserts on
-source text in ~40 files. Building the instrumented harness is itself an R1
-task, or Phase 3 has nothing to run.
+This container has no emulator package, no `/dev/kvm` and no CPU
+virtualization, so **instrumented tests and the running app cannot be executed
+in the development environment.** That is a hard constraint on Phase 3, not a
+scheduling one, and it splits verification in two:
+
+| Runs locally | Needs a device |
+|---|---|
+| JVM + Robolectric unit tests, adversarial and edge-case suites | MediaStore round trips, a live MediaSession, permission dialogs, GL rendering, real export encode |
+| Static gates: detekt, ktlint, lint | Anything visual, thermal or timing-dependent |
+
+Robolectric is not a substitute where it shadows the platform: its
+`ContentResolver` reports success for any content uri (so a delete of a missing
+file "succeeds") and its `BitmapFactory` fabricates a bitmap for any bytes.
+Tests that would assert against those shadows assert "does not throw" instead,
+each saying so at the point of the compromise.
+
+Instrumented tests therefore run in CI, in their own emulator job, and are
+triggered per run rather than assumed. **A change is not verified until that
+job is green on it.**
+
+### Still outstanding
+
+- Instrumented coverage beyond clip management: session restore across process
+  death, artwork on a real session, permission flows, export encode.
+- Device matrix: API 26 floor, 34, 36; phone, tablet, foldable; low-RAM.
+- Thermal and soak behaviour, which the engine plan also owes a benchmark for.
+- No visual-regression capability at all.
 
 ## 5. Open decision: upload
 
