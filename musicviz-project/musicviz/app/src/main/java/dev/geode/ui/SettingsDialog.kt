@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -13,10 +14,12 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -28,6 +31,7 @@ import dev.geode.data.ExportPrefsStore
 import dev.geode.data.exportQualityLabel
 import dev.geode.export.ExportAspect
 import dev.geode.export.ExportQuality
+import dev.geode.export.ExportRange
 import dev.geode.export.ExportRatio
 
 /**
@@ -49,8 +53,10 @@ fun SettingsDialog(
     onSelectTake: (String?) -> Unit,
     /** Detected tempo, so the dialog can say whether a bar trim is possible. */
     bpm: Float,
-    onStart: (ExportAspect, Int, Boolean) -> Unit,
-    onStartToDestination: (ExportAspect, Int, Boolean) -> Unit,
+    /** Length of the loaded track, so a segment can be chosen inside it. */
+    trackDurationMs: Long,
+    onStart: (ExportAspect, Int, Boolean, ExportRange?) -> Unit,
+    onStartToDestination: (ExportAspect, Int, Boolean, ExportRange?) -> Unit,
     onCancel: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -65,6 +71,21 @@ fun SettingsDialog(
     var loopSafe by remember {
         mutableStateOf(defaults.loopSafe && dev.geode.analysis.BarTrim.barDurationUs(bpm) != null)
     }
+    // Whole track by default: that is what every render did before segments
+    // existed, and it is the only choice that needs no decision from the user.
+    var segment by remember { mutableStateOf(false) }
+    var rangeStart by remember { mutableFloatStateOf(0f) }
+    var rangeEnd by remember { mutableFloatStateOf(1f) }
+    val range =
+        if (!segment) {
+            null
+        } else {
+            ExportRange.of(
+                startMs = (rangeStart * trackDurationMs).toLong(),
+                endMs = (rangeEnd * trackDurationMs).toLong(),
+                trackDurationMs = trackDurationMs,
+            )
+        }
 
     // Written back after every change below, so the next export - and the
     // Settings › Export tab - start from what was chosen here.
@@ -143,6 +164,35 @@ fun SettingsDialog(
                                 }
                             }
                         }
+                        if (trackDurationMs > 0) {
+                            Text("Length", style = MaterialTheme.typography.labelMedium)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                QualityChip("Whole track", !segment) { segment = false }
+                                QualityChip("Segment", segment) { segment = true }
+                            }
+                            if (segment) {
+                                RangeSlider(
+                                    value = rangeStart..rangeEnd,
+                                    onValueChange = { r ->
+                                        rangeStart = r.start
+                                        rangeEnd = r.endInclusive
+                                    },
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
+                                Text(
+                                    if (range == null) {
+                                        "Drag to pick at least ${ExportRange.MIN_DURATION_MS / 1000} second of " +
+                                            "the track. Anything shorter renders the whole thing instead."
+                                    } else {
+                                        "Renders ${formatClock(range.startMs)}–${formatClock(range.endMs)} " +
+                                            "(${formatClock(range.durationMs)}). The clip starts at 0:00 in the " +
+                                            "file, and the visuals are the ones from that part of the track."
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                         val barUs = dev.geode.analysis.BarTrim.barDurationUs(bpm)
                         Text("Looping", style = MaterialTheme.typography.labelMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -195,14 +245,14 @@ fun SettingsDialog(
                             )
                         }
                         Button(
-                            onClick = { onStart(ExportAspect.of(quality, ratio), fps, loopSafe) },
+                            onClick = { onStart(ExportAspect.of(quality, ratio), fps, loopSafe, range) },
                             enabled = hasMedia,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text("Render ${quality.shortSide}p ${ratio.label} ${fps}fps")
                         }
                         OutlinedButton(
-                            onClick = { onStartToDestination(ExportAspect.of(quality, ratio), fps, loopSafe) },
+                            onClick = { onStartToDestination(ExportAspect.of(quality, ratio), fps, loopSafe, range) },
                             enabled = hasMedia,
                             modifier = Modifier.fillMaxWidth(),
                         ) {

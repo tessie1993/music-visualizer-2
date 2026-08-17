@@ -5,6 +5,7 @@ import android.net.Uri
 import dev.geode.analysis.FeatureTimeline
 import dev.geode.data.PerformanceTake
 import dev.geode.export.ExportAspect
+import dev.geode.export.ExportRange
 import dev.geode.export.ExportRun
 import dev.geode.export.ExportService
 import dev.geode.export.VideoExporter
@@ -176,6 +177,8 @@ internal class ExportController(
         destination: Uri? = null,
         /** Trim to whole bars so the clip loops without a stumble. */
         loopSafe: Boolean = false,
+        /** Null renders the whole track; see [ExportRange]. */
+        range: ExportRange? = null,
         /**
          * Builds a factory for an arbitrary scene id, so a chosen export take
          * renders on the style it was RECORDED on ([exportSceneIdFor]) rather
@@ -256,6 +259,7 @@ internal class ExportController(
                                 exportTake
                                     ?.let { take -> { ms: Long -> take.stateAt(ms)?.params ?: host.sceneParams } },
                             loopSafe = loopSafe,
+                            range = range,
                             destination = destination,
                             onProgress = { p ->
                                 val overall = 0.2f + p * 0.8f

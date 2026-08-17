@@ -10,6 +10,7 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import dev.geode.export.ExportAspect
+import dev.geode.export.ExportRange
 import dev.geode.render.VisualizerView
 
 /** An export request waiting for the user to choose an output file. */
@@ -18,7 +19,12 @@ private data class PendingExport(
     val fps: Int,
     val sceneId: String,
     val loopSafe: Boolean,
-)
+    val rangeStartMs: Long,
+    val rangeDurationMs: Long,
+) {
+    /** Zero duration means the whole track, matching the exporter's null range. */
+    val range: ExportRange? get() = if (rangeDurationMs > 0) ExportRange(rangeStartMs, rangeDurationMs) else null
+}
 
 /**
  * Flattens [PendingExport] into saved instance state. The system document
@@ -34,7 +40,16 @@ private val PendingExportSaver =
             if (req == null) {
                 emptyList()
             } else {
-                listOf(req.aspect.width, req.aspect.height, req.aspect.bitRate, req.fps, req.sceneId, req.loopSafe)
+                listOf(
+                    req.aspect.width,
+                    req.aspect.height,
+                    req.aspect.bitRate,
+                    req.fps,
+                    req.sceneId,
+                    req.loopSafe,
+                    req.rangeStartMs,
+                    req.rangeDurationMs,
+                )
             }
         },
         restore = { saved ->
@@ -46,6 +61,8 @@ private val PendingExportSaver =
                     fps = saved[3] as Int,
                     sceneId = saved[4] as String,
                     loopSafe = saved[5] as Boolean,
+                    rangeStartMs = saved[6] as Long,
+                    rangeDurationMs = saved[7] as Long,
                 )
             }
         },
@@ -93,6 +110,7 @@ fun ExportHost(
                     visualizerView.visualizerRenderer.exportSceneFactory(req.sceneId),
                     destination = dest,
                     loopSafe = req.loopSafe,
+                    range = req.range,
                     sceneFactoryFor = { id -> sceneFactoryFor(id, req.sceneId) },
                 )
             }
@@ -105,17 +123,27 @@ fun ExportHost(
         selectedTake = takes.exportTake,
         onSelectTake = viewModel::setExportTake,
         bpm = viz.bpm,
-        onStart = { aspect, fps, loopSafe ->
+        trackDurationMs = state.durationMs,
+        onStart = { aspect, fps, loopSafe, range ->
             viewModel.startExport(
                 aspect,
                 fps,
                 visualizerView.visualizerRenderer.exportSceneFactory(viz.sceneId),
                 loopSafe = loopSafe,
+                range = range,
                 sceneFactoryFor = { id -> sceneFactoryFor(id, viz.sceneId) },
             )
         },
-        onStartToDestination = { aspect, fps, loopSafe ->
-            pendingExport = PendingExport(aspect, fps, viz.sceneId, loopSafe)
+        onStartToDestination = { aspect, fps, loopSafe, range ->
+            pendingExport =
+                PendingExport(
+                    aspect,
+                    fps,
+                    viz.sceneId,
+                    loopSafe,
+                    range?.startMs ?: 0L,
+                    range?.durationMs ?: 0L,
+                )
             destinationPicker.launch("geode_${System.currentTimeMillis()}.mp4")
         },
         onCancel = viewModel::cancelExport,

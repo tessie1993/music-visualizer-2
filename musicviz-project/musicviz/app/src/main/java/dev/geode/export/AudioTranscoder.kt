@@ -91,6 +91,7 @@ class AudioTranscoder(
     private fun transcodeAiff(
         aiff: dev.geode.audio.AiffPcm,
         maxDurationMs: Long,
+        startMs: Long,
         isCancelled: () -> Boolean,
         onProgress: (Float) -> Unit,
     ): Result {
@@ -133,6 +134,18 @@ class AudioTranscoder(
         var fedBytes = 0L
         var progressed = false
         var stallIterations = 0
+        // AiffPcm reads forward only, so a start offset is reached by reading
+        // and discarding. Uncompressed PCM has no sync frames, so this is exact
+        // rather than the nearest-keyframe approximation the codec path needs.
+        if (startMs > 0) {
+            var toSkip = startMs * aiff.sampleRate / 1000 * aiff.channels
+            while (toSkip > 0) {
+                val want = minOf(toSkip, readBuf.size.toLong()).toInt()
+                val n = aiff.read(if (want == readBuf.size) readBuf else ShortArray(want))
+                if (n <= 0) break
+                toSkip -= n
+            }
+        }
         try {
             while (!encoderDone) {
                 if (isCancelled()) throw kotlinx.coroutines.CancellationException("Export cancelled")
@@ -241,14 +254,20 @@ class AudioTranscoder(
         }
     }
 
+    /**
+     * @param startMs where in the source to begin. The output is rebased to
+     *   zero, so a clip from 1:30 starts at 0:00 in the file it lands in.
+     * @param maxDurationMs how much to take from [startMs]; 0 means "to the end".
+     */
     fun transcode(
         uri: Uri,
         maxDurationMs: Long,
+        startMs: Long = 0L,
         isCancelled: () -> Boolean = { false },
         onProgress: (Float) -> Unit = {},
     ): Result {
         dev.geode.audio.AiffPcm.open(context, uri)?.let { aiff ->
-            return transcodeAiff(aiff, maxDurationMs, isCancelled, onProgress)
+            return transcodeAiff(aiff, maxDurationMs, startMs, isCancelled, onProgress)
         }
         val extractor = MediaExtractor()
         val srcFormat: MediaFormat
@@ -270,6 +289,12 @@ class AudioTranscoder(
                 } ?: throw IllegalArgumentException("No audio track in source file")
             srcFormat = extractor.getTrackFormat(trackIndex)
             extractor.selectTrack(trackIndex)
+            // SEEK_TO_PREVIOUS_SYNC, not CLOSEST: a decoder needs a sync frame
+            // to start from, so landing before the requested point and dropping
+            // what comes early is the only way to get sample-accurate audio at
+            // an arbitrary offset. Dropping happens on the DECODER's output
+            // below, where timestamps are trustworthy.
+            if (startMs > 0) extractor.seekTo(startMs * 1000, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
             val mime = requireNotNull(srcFormat.getString(MediaFormat.KEY_MIME))
             sampleRate = srcFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             srcChannels = srcFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
@@ -324,12 +349,18 @@ class AudioTranscoder(
         val infos = mutableListOf<SampleInfo>()
         var outFormat: MediaFormat? = null
         val maxUs = maxDurationMs * 1000
+        val startUs = startMs * 1000
+        // The extractor is compared against an ABSOLUTE end; the encoder is fed
+        // timestamps rebased to zero. Keeping the two apart is what stops a
+        // ranged export from either stopping early or writing negative
+        // timestamps into the muxer.
+        val endUs = if (maxUs > 0) startUs + maxUs else 0L
         // For progress reporting when uncapped, estimate from container metadata.
         val estimatedUs =
             if (maxUs > 0) {
                 maxUs
             } else if (srcFormat.containsKey(MediaFormat.KEY_DURATION)) {
-                srcFormat.getLong(MediaFormat.KEY_DURATION)
+                (srcFormat.getLong(MediaFormat.KEY_DURATION) - startUs).coerceAtLeast(0L)
             } else {
                 0L
             }
@@ -371,7 +402,7 @@ class AudioTranscoder(
                     if (inIndex >= 0) {
                         val buf = checkNotNull(decoder.getInputBuffer(inIndex)) { "decoder input buffer null (codec error state)" }
                         val size = extractor.readSampleData(buf, 0)
-                        if (size < 0 || (maxUs > 0 && extractor.sampleTime > maxUs)) {
+                        if (size < 0 || (endUs > 0 && extractor.sampleTime > endUs)) {
                             decoder.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                             extractorDone = true
                         } else {
@@ -436,8 +467,16 @@ class AudioTranscoder(
                                 } else {
                                     copy
                                 }
+                            // Everything before the requested start decoded only
+                            // so the decoder could reach a sync point; it is not
+                            // part of the clip.
+                            if (decInfo.presentationTimeUs + 1000 < startUs) {
+                                decoder.releaseOutputBuffer(outIndex, false)
+                                if (decInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) decoderDone = true
+                                continue
+                            }
                             pcmCarry = mixed
-                            carryTimeUs = decInfo.presentationTimeUs
+                            carryTimeUs = (decInfo.presentationTimeUs - startUs).coerceAtLeast(0L)
                         }
                         decoder.releaseOutputBuffer(outIndex, false)
                         if (decInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) decoderDone = true

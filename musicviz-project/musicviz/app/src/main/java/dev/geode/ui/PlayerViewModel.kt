@@ -2345,8 +2345,10 @@ class PlayerViewModel(
         sceneFactory: VideoExporter.SceneFactory,
         destination: Uri? = null,
         loopSafe: Boolean = false,
+        /** Null renders the whole track; see [dev.geode.export.ExportRange]. */
+        range: dev.geode.export.ExportRange? = null,
         sceneFactoryFor: ((String) -> VideoExporter.SceneFactory)? = null,
-    ) = exportController.startExport(aspect, fps, sceneFactory, destination, loopSafe, sceneFactoryFor)
+    ) = exportController.startExport(aspect, fps, sceneFactory, destination, loopSafe, range, sceneFactoryFor)
 
     fun cancelExport() = exportController.cancelExport()
 

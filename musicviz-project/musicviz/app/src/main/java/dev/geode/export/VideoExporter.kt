@@ -200,6 +200,18 @@ class VideoExporter(
             dev.geode.render.VisualSafety.SafetyConfig.OFF,
         requestedFps: Int = FPS,
         /**
+         * The slice of the track to render, in milliseconds from its start.
+         *
+         * `null` renders the whole thing, which is what every export did before
+         * this existed — and why getting a fifteen-second clip cost a full-song
+         * render plus a second pass through the Studio to trim it.
+         *
+         * The output is rebased to zero: a clip taken from 1:30 begins at 0:00
+         * in the file. Visual features are still sampled at the SOURCE time, so
+         * the drop looks like the drop.
+         */
+        range: ExportRange? = null,
+        /**
          * Per-frame parameter override: a recorded performance take, sampled
          * at the frame's own timestamp. Null renders [sceneParams] flat, which
          * is what every export did before takes existed.
@@ -239,6 +251,7 @@ class VideoExporter(
                     requestedFps,
                     paramsAt,
                     loopSafe,
+                    range,
                     onProgress,
                     isCancelled,
                 )
@@ -279,6 +292,7 @@ class VideoExporter(
                         requestedFps,
                         paramsAt,
                         loopSafe,
+                        range,
                         onProgress,
                         isCancelled,
                     )
@@ -314,6 +328,7 @@ class VideoExporter(
         requestedFps: Int,
         paramsAt: ((Long) -> SceneParams)?,
         loopSafe: Boolean,
+        range: ExportRange?,
         onProgress: (Float) -> Unit,
         isCancelled: () -> Boolean,
     ): Result {
@@ -339,6 +354,7 @@ class VideoExporter(
                     requestedFps,
                     paramsAt,
                     loopSafe,
+                    range,
                     onProgress,
                     isCancelled,
                 )
@@ -368,6 +384,7 @@ class VideoExporter(
         requestedFps: Int,
         paramsAt: ((Long) -> SceneParams)?,
         loopSafe: Boolean,
+        range: ExportRange?,
         onProgress: (Float) -> Unit,
         isCancelled: () -> Boolean,
     ) {
@@ -416,9 +433,15 @@ class VideoExporter(
 
             val muxer = MediaMuxer(pfd.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4).also { muxerRef = it }
             // MP4 cannot carry MP3/Vorbis/FLAC tracks; transcode audio to AAC first.
+            val rangeStartMs = range?.startMs ?: 0L
             val aac =
                 AudioTranscoder(context)
-                    .transcode(audioUri, 0L, isCancelled) { onProgress(it * 0.1f) }
+                    .transcode(
+                        uri = audioUri,
+                        maxDurationMs = range?.durationMs ?: 0L,
+                        startMs = rangeStartMs,
+                        isCancelled = isCancelled,
+                    ) { onProgress(it * 0.1f) }
                     .also { aacRef = it }
             val egl = EncoderSurface(inputSurface).also { eglRef = it }
             egl.makeCurrent()
@@ -553,7 +576,11 @@ class VideoExporter(
                 // and no Beat pulse on those. Spans tile exactly, so at 60 fps
                 // this is still one timeline frame and nothing changes.
                 val nextTimeMs = (frame + 1) * 1000L / fps
-                val features = timeline.progressionAt(timeMs, sections, nextTimeMs - timeMs)
+                // Video time is relative to the clip; the timeline is indexed by
+                // the SOURCE track. Sampling at the clip's own clock would make a
+                // ranged export render the intro's features over the drop's audio.
+                val sourceTimeMs = rangeStartMs + timeMs
+                val features = timeline.progressionAt(sourceTimeMs, sections, nextTimeMs - timeMs)
                 // Mirror the live modulation order exactly (envelopes first:
                 // their offsets can drive LFO rate/depth): the export was
                 // silently dropping ALL ADSR routing - including the new
