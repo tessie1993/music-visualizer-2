@@ -38,6 +38,7 @@ android-all-sdk35 = { module = "org.robolectric:android-all-instrumented", versi
 androidx-test-core-ktx = { module = "androidx.test:core-ktx", version = "1.6.1" }
 androidx-test-junit-ktx = { module = "androidx.test.ext:junit-ktx", version = "1.2.1" }
 ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 
 ktlint-gradle = { module = "org.jlleitschuh.gradle.ktlint:org.jlleitschuh.gradle.ktlint.gradle.plugin", version.ref = "ktlint" }
 kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }

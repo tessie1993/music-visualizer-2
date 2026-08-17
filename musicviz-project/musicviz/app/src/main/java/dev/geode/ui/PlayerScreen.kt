@@ -754,7 +754,21 @@ private fun QuickActionShell(
     }
 }
 
-private fun formatClock(ms: Long): String {
+/**
+ * A clock label for a position or duration.
+ *
+ * Internal rather than private because the seek bar announces the same figure
+ * to screen readers and must not drift from what is drawn beside it.
+ *
+ * Hours are only shown once there are any: a three-minute song reads "3:24",
+ * not "0:03:24". Without the hour field a two-hour mix used to read "126:07",
+ * which is a number rather than a time — mixes and audiobooks are exactly the
+ * material people scrub through most.
+ */
+internal fun formatClock(ms: Long): String {
     val total = (ms / 1000).coerceAtLeast(0)
-    return "%d:%02d".format(total / 60, total % 60)
+    val hours = total / 3600
+    val minutes = (total % 3600) / 60
+    val seconds = total % 60
+    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(minutes, seconds)
 }

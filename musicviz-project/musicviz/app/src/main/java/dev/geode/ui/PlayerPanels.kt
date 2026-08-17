@@ -41,6 +41,11 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -89,8 +94,24 @@ fun WaveformSeekBar(
     // onSurface rather than white: follows the theme (dark playhead on the
     // light stones) and any font colour override.
     val playhead = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+    val positionLabel = formatClock(if (dragFraction >= 0f) (dragFraction * durationMs).toLong() else positionMs)
+    val durationLabel = formatClock(durationMs)
     Canvas(
         modifier
+            // Without this the primary seek control does not exist for TalkBack
+            // or switch access: a bare Canvas has no role, no value and no
+            // action, so the whole app was unseekable for anyone not using a
+            // pointer. progressBarRangeInfo gives it a value to announce and
+            // setProgress gives assistive tech something to call — the same
+            // fraction the drag commits, so both routes land in one place.
+            .semantics {
+                contentDescription = "Seek. $positionLabel of $durationLabel"
+                progressBarRangeInfo = ProgressBarRangeInfo(played, 0f..1f)
+                setProgress { target ->
+                    onSeek(target.coerceIn(0f, 1f))
+                    true
+                }
+            }
             .pointerInput(durationMs) {
                 detectTapGestures { offset ->
                     onSeek((offset.x / size.width.toFloat()).coerceIn(0f, 1f))

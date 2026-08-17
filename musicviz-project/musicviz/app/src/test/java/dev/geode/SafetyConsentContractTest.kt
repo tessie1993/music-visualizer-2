@@ -111,6 +111,25 @@ class SafetyConsentContractTest {
         assertTrue("the flash rate is never named", "nine times a second" in text || "9 hz" in text)
     }
 
+    /**
+     * The gate itself, asserted structurally.
+     *
+     * A UI test of this was order-dependent — Robolectric shares preferences
+     * between test classes, so whichever screen test ran first left an answer
+     * behind. What actually has to be true is that the shell shows the consent
+     * screen while the stored choice is UNKNOWN, and that is a property of the
+     * shell's source.
+     */
+    @Test
+    fun `the shell gates the app on an unanswered choice`() {
+        val shell = File(sourceDir(), "ui/AppShell.kt").readText()
+        assertTrue("the shell never mounts the consent screen", "SafetyConsent(" in shell)
+        assertTrue(
+            "the consent screen is not gated on an unanswered choice",
+            "VisualSafetyChoice.UNKNOWN" in shell,
+        )
+    }
+
     private fun permissive() =
         VisualSafety.SafetyConfig(
             enabled = false,

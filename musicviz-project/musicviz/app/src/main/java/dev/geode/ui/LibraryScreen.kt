@@ -3,6 +3,7 @@ package dev.geode.ui
 import android.Manifest
 import android.net.Uri
 import android.os.Build
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
@@ -59,6 +60,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import dev.geode.data.MusicPlaylist
 import dev.geode.ui.theme.StoneIcon
@@ -97,9 +99,36 @@ fun LibraryScreen(
             IconButton(onClick = onOpenSearch) { StoneIconArt(StoneIcon.SEARCH, "Search") }
         }
         if (!granted) {
+            // Android stops delivering the system dialog after two refusals, so
+            // re-launching the request is the "dead button" failure this app
+            // prides itself on fixing elsewhere: the user taps and nothing at
+            // all happens, forever. shouldShowRequestPermissionRationale is
+            // false both before the first ask and after a permanent denial, so
+            // asking-once is what distinguishes them.
+            val activity = LocalActivity.current
+            var asked by rememberSaveable { mutableStateOf(false) }
+            val canAskAgain =
+                activity == null ||
+                    !asked ||
+                    ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Grant music access to browse everything on this device.")
-                CrystalButton(onClick = { permLauncher.launch(permission) }) { Text("Allow music access") }
+                Text(
+                    if (canAskAgain) {
+                        "Grant music access to browse everything on this device."
+                    } else {
+                        "Music access is turned off for Geode, and Android will not ask again from " +
+                            "here. Open app settings to turn on Music and audio."
+                    },
+                )
+                if (canAskAgain) {
+                    CrystalButton(onClick = {
+                        asked = true
+                        permLauncher.launch(permission)
+                    }) { Text("Allow music access") }
+                } else {
+                    val context = LocalContext.current
+                    CrystalButton(onClick = { context.openAppSettings() }) { Text("Open app settings") }
+                }
             }
             return
         }

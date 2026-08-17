@@ -340,4 +340,8 @@ dependencies {
     testImplementation(libs.androidx.test.junit.ktx)
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.ui.test.junit4)
+    // Supplies the empty host activity createComposeRule() needs. Without it a
+    // component-level Compose test cannot resolve an activity at all, which
+    // forces every UI test through MainActivity and the whole app shell.
+    debugImplementation(libs.ui.test.manifest)
 }
