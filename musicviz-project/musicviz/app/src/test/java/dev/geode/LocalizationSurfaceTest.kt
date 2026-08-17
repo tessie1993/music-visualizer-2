@@ -44,7 +44,17 @@ class LocalizationSurfaceTest {
             ?: error("geode project root not found from ${File("").absolutePath}")
 
     private val sources = File(moduleRoot, "app/src/main/java/dev/geode")
-    private val strings = File(moduleRoot, "app/src/main/res/values/strings.xml")
+
+    /**
+     * Every default-locale string file. The Customize surface's resources
+     * live in their own files beside `strings.xml` so a conversion that adds
+     * two hundred names does not turn the shared file into a merge hazard.
+     */
+    private val stringFiles: List<File> =
+        File(moduleRoot, "app/src/main/res/values")
+            .listFiles { f -> f.name.startsWith("strings") && f.extension == "xml" }
+            .orEmpty()
+            .sorted()
 
     /**
      * Converted. No user-visible literal may appear in these.
@@ -276,10 +286,12 @@ class LocalizationSurfaceTest {
     @Test
     fun `every string the code asks for is defined`() {
         val declared =
-            Regex("""<string name="([^"]+)"""")
-                .findAll(strings.readText())
-                .map { it.groupValues[1] }
-                .toSet()
+            stringFiles
+                .flatMap { file ->
+                    Regex("""<(?:string|plurals) name="([^"]+)"""")
+                        .findAll(file.readText())
+                        .map { it.groupValues[1] }
+                }.toSet()
         val referenced =
             sources
                 .walkTopDown()
