@@ -1,4 +1,4 @@
-# MusicViz — Changelog
+# Geode — Changelog
 
 All release notes, newest first, kept verbatim from the project README (the
 history used to sit above the README's own introduction; it now lives here).
@@ -81,13 +81,13 @@ a partial reconstruction, rebuilt from the references in these entries, is at
     cannot do), and a sleep timer that can **let the track finish**.
 - **The Export Studio** (new bottom-nav tab). The exporter made a file and
   stopped, leaving "cut the good bit out" and "get it somewhere" to a second
-  app. Studio lists what MusicViz has rendered (or opens any video), and does
+  app. Studio lists what Geode has rendered (or opens any video), and does
   both: trim over a filmstrip, seven looks that write ordinary grade sliders,
   brightness/contrast/saturation/hue, speed, rotate, reframe to any of the six
   export ratios (cropping, not pillarboxing), mute, and a burnt-in caption.
   Built on Media3's Transformer - it knows when NOT to re-encode, and a
   trim-only edit becomes a lossless container rewrite. Every render is a NEW
-  file in Movies/MusicViz; the original is never overwritten. "Send" is the
+  file in Movies/Geode; the original is never overwritten. "Send" is the
   system share sheet on purpose: the app holds no network permission and no
   API keys, and the sheet reaches YouTube, Instagram, TikTok and Drive with
   the account the phone is already signed in to.
@@ -1168,7 +1168,7 @@ Smaller fixes (P2):
   every load site) alongside the customization bundle.
 - Export destination: new "Render to chosen folder..." button opens the system
   file picker (SAF) so you choose exactly where the .mp4 is written, instead of
-  it always going to Movies/MusicViz.
+  it always going to Movies/Geode.
 - Zoom pixelation fixed: scenes now render into 1.4x supersampled framebuffers
   (eased down on large screens) and downsample at composite time, so the Zoom
   customization has real detail to magnify instead of blowing up screen texels.
@@ -1366,7 +1366,7 @@ Smaller fixes (P2):
   first TRY_AGAIN (was truncating the video); cleanup in finally is
   exception-safe so real errors are reported instead of "Failed to stop
   the muxer"; encoder falls back to 30 fps / 8 Mbps if the device rejects
-  1080p60; MediaStore writes use IS_PENDING + Movies/MusicViz on Q+;
+  1080p60; MediaStore writes use IS_PENDING + Movies/Geode on Q+;
   export errors now include the exception class.
 - Milkdrop: presets load with a hard cut (smooth blending is fragile on
   GLES), the preset is locked so projectM can't auto-switch away, texture
@@ -1392,7 +1392,7 @@ used to sit on top of, kept verbatim for the record. Several of them describe
 the app as it stood around v0.3 and the MVP phases; the current
 [README.md](README.md) supersedes them.
 
-# MusicViz — Android Music Visualizer (MVP)
+# Geode — Android Music Visualizer (MVP)
 
 Native Android app: pick a local audio file, it plays with a real-time
 GL ES 3.0 particle visualization driven by FFT data. The roadmap this section

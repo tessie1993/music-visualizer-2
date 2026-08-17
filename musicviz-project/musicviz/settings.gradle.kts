@@ -16,7 +16,7 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "musicviz"
+rootProject.name = "geode"
 include(":app")
 
 // MASTER_PLAN §4.1. Empty at first by design: V2-1-02 creates the boundaries,

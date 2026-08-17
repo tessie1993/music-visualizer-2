@@ -4,7 +4,7 @@ THIRD-PARTY NOTICES
 WebGL-Fluid-Simulation
 ----------------------
 The fluid simulation shaders and pipeline in app/src/main/res/raw/fluid_*.glsl
-and app/src/main/java/dev/musicviz/render/fluid/ are ported in part from:
+and app/src/main/java/dev/geode/render/fluid/ are ported in part from:
 
   https://github.com/PavelDoGreat/WebGL-Fluid-Simulation
 
@@ -36,7 +36,7 @@ clean-room from published literature: J. Stam, "Stable Fluids" (1999);
 M. Harris, GPU Gems ch. 38 (2004); Fedkiw et al. (2001). No code from
 GPL-licensed fluid projects is included.
 
-The HYPERSPACE style's "melt" (app/src/main/java/dev/musicviz/render/fluid/
+The HYPERSPACE style's "melt" (app/src/main/java/dev/geode/render/fluid/
 MeltField.kt) runs that same simulation as a world-anchored medium behind the
 raymarched fractals; the coupling in both directions - bodies stirring the
 field, and the field displacing the raymarcher's domain - is this project's
@@ -147,7 +147,7 @@ libprojectM
 -----------
 The MilkDrop-compatible visualization engine bundled as a native library
 (libprojectM, https://github.com/projectM-visualizer/projectm) is licensed
-under the GNU Lesser General Public License v2.1 (LGPL-2.1). MusicViz links
+under the GNU Lesser General Public License v2.1 (LGPL-2.1). Geode links
 it dynamically as a separate shared object (.so) and does not modify it.
 Per LGPL-2.1: this notice preserves attribution; the library's source is
 available at the URL above; and the dynamic-linking arrangement preserves

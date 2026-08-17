@@ -35,7 +35,7 @@
          same in-memory analysis ring buffer the microphone and the player
          already share. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
-    <!-- Music keeps playing when MusicViz is not on screen. Everything the
+    <!-- Music keeps playing when Geode is not on screen. Everything the
          platform then shows for it — the notification transport, the lock
          screen, a Bluetooth headset's buttons — is driven by the MediaSession
          in .playback.PlaybackService, and none of it involves the network:
@@ -55,7 +55,7 @@
         android:required="false" />
 
     <application
-        android:name=".MusicVizApp"
+        android:name=".GeodeApp"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"
@@ -66,7 +66,7 @@
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.MusicViz.Splash"
+            android:theme="@style/Theme.Geode.Splash"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -83,7 +83,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:scheme="musicviz"
+                    android:scheme="geode"
                     android:host="preset" />
             </intent-filter>
         </activity>
@@ -136,7 +136,7 @@
           app's own manifest — the library declares none of its own. Without
           it the merged manifest carried exactly one receiver (the profile
           installer) and zero MEDIA_BUTTON filters, so PlaybackService's
-          onPlaybackResumption was never invoked: MusicViz never appeared in
+          onPlaybackResumption was never invoked: Geode never appeared in
           the System UI media carousel after its process died, and
           lastPlayedResumption was code that could not run in production.
 
@@ -173,7 +173,7 @@
           Optional — the visuals work on the captured audio alone.
         -->
         <service
-            android:name=".audio.MusicVizNotificationListener"
+            android:name=".audio.GeodeNotificationListener"
             android:exported="false"
             android:label="@string/notification_listener_label"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">

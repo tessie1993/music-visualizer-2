@@ -1,6 +1,6 @@
-# music-visualizer-2
+# Geode (repo: music-visualizer-2)
 
-Android/Kotlin music visualizer. The app lives in `musicviz-project/musicviz`
+Android/Kotlin music player and visualizer, branded **Geode** (`dev.geode`). The app lives in `musicviz-project/musicviz`
 (Gradle root; the `:app` module is the application).
 
 ## Build & Test

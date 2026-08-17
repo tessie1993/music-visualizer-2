@@ -1,6 +1,6 @@
 #version 300 es
 // Ported from WebGL-Fluid-Simulation - MIT License, (c) 2017 Pavel Dobryakov
-// (structure); sim-space varying per MusicViz FLUID_SIM v2 spec.
+// (structure); sim-space varying per Geode FLUID_SIM v2 spec.
 precision highp float;
 layout(location = 0) in vec2 aPosition;
 uniform vec2 uInvRes;   // 1/texels of the grid being finite-differenced
