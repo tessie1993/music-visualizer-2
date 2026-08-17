@@ -110,6 +110,73 @@ class MilkPackImportTest {
         assertEquals(0, report.presetsMissingTextures)
     }
 
+    /**
+     * SAF entries come from an arbitrary documents provider - the names are
+     * attacker-controlled. Nothing an entry calls itself may write outside
+     * the milk directory.
+     */
+    @Test
+    fun `hostile names cannot escape the import directory`() {
+        val dir = milkDir()
+        val outside = File(dir.parentFile, "escaped.milk")
+        MilkPackImporter.import(
+            listOf(
+                entry("../escaped.milk"),
+                entry("../../escaped.milk"),
+                entry("/etc/escaped.milk"),
+                entry("../escape.png", content = "img"),
+                entry("a/../../../escape2.png", content = "img"),
+            ),
+            dir,
+        )
+        assertFalse("a preset escaped the milk directory", outside.exists())
+        val strays =
+            dir.parentFile
+                .walkTopDown()
+                .filter { it.isFile }
+                .filterNot { it.absolutePath.startsWith(dir.absolutePath) }
+                .toList()
+        assertEquals("files were written outside the import root: $strays", emptyList<File>(), strays)
+        dir
+            .walkTopDown()
+            .filter { it.isFile }
+            .forEach { f ->
+                assertFalse("a dot-segment survived sanitization: ${f.name}", f.name.contains(".."))
+            }
+    }
+
+    @Test
+    fun `an entry that throws on open is skipped, not fatal`() {
+        val dir = milkDir()
+        val report =
+            MilkPackImporter.import(
+                listOf(
+                    MilkPackImporter.Entry("bomb.milk") { throw IllegalStateException("provider died") },
+                    entry("fine.milk"),
+                ),
+                dir,
+            )
+        assertEquals(1, report.presets)
+        assertEquals(1, report.skipped)
+    }
+
+    @Test
+    fun `degenerate names do not crash the import`() {
+        val dir = milkDir()
+        val report =
+            MilkPackImporter.import(
+                listOf(
+                    entry(""),
+                    entry("."),
+                    entry(".."),
+                    entry(".milk"),
+                    entry("x".repeat(4000) + ".milk"),
+                ),
+                dir,
+            )
+        assertTrue("the import must survive degenerate names", report.presets + report.skipped >= 1)
+    }
+
     @Test
     fun `wrap and filter prefixes still resolve to the texture name`() {
         val dir = milkDir()
