@@ -1,7 +1,6 @@
 package dev.geode.ui
 
 import android.content.Context
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.LruCache
 import androidx.compose.foundation.Image
@@ -31,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.geode.playback.MediaArtwork
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -68,30 +68,16 @@ object ArtworkCache {
     /** Synchronous peek for callers that must not suspend (list pre-fill). */
     fun peek(uri: String): ImageBitmap? = cache.get(uri)?.takeIf { it !== NONE } as? ImageBitmap
 
+    /**
+     * Delegates to [MediaArtwork] so the sleeve in the app and the sleeve on
+     * the lock screen are the same bytes decoded the same way. This used to
+     * hold its own copy of the retriever-and-downsample logic, which meant a
+     * fix to one was a fix to one.
+     */
     private fun decode(
         context: Context,
         uri: String,
-    ): ImageBitmap? =
-        runCatching {
-            // try/finally rather than use(): MediaMetadataRetriever only became
-            // AutoCloseable in API 29 and this app runs from 26.
-            val retriever = android.media.MediaMetadataRetriever()
-            val bytes =
-                try {
-                    retriever.setDataSource(context, Uri.parse(uri))
-                    retriever.embeddedPicture
-                } finally {
-                    retriever.release()
-                } ?: return null
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            val longest = maxOf(bounds.outWidth, bounds.outHeight)
-            if (longest <= 0) return null
-            var sample = 1
-            while (longest / (sample * 2) >= ART_PX) sample *= 2
-            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)?.asImageBitmap()
-        }.getOrNull()
+    ): ImageBitmap? = MediaArtwork.decodeEmbedded(context, uri, ART_PX)?.asImageBitmap()
 }
 
 /**

@@ -1626,6 +1626,11 @@ class PlayerViewModel(
                     .Builder()
                     .setTitle(t)
                     .setArtist(a.ifBlank { null })
+                    // The track's own uri: cover art is embedded in the media
+                    // file, and PlaybackService's SessionBitmapLoader reads it
+                    // back out. Not the artwork BYTES, which would mean holding
+                    // a decoded sleeve for every item in a 1001-track queue.
+                    .setArtworkUri(uri)
                     .build(),
             ).build()
     }
@@ -1646,6 +1651,7 @@ class PlayerViewModel(
                     .Builder()
                     .setTitle(track.title)
                     .setArtist(track.artist.ifBlank { null })
+                    .setArtworkUri(Uri.parse(track.uri))
                     .build(),
             ).build()
     }

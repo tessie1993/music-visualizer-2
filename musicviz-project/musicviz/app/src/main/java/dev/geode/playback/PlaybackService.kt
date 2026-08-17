@@ -7,6 +7,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.CacheBitmapLoader
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.Futures
@@ -38,11 +39,19 @@ import dev.geode.data.HistoryStore
  * different notification ids and different channels, and Android is happy to
  * run both at once.
  */
+@OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
+    // The session's bitmap loader is an UnstableApi surface touched by the
+    // field, onCreate and onDestroy alike, so the opt-in above belongs to the
+    // class rather than being repeated on each of them.
+
     private var session: MediaSession? = null
+    private var artworkLoader: SessionBitmapLoader? = null
 
     override fun onCreate() {
         super.onCreate()
+        val loader = SessionBitmapLoader(this)
+        artworkLoader = loader
         session =
             MediaSession
                 .Builder(this, PlaybackEngine.acquireForService(this).player)
@@ -50,6 +59,12 @@ class PlaybackService : MediaSessionService() {
                 // it rather than starting a second copy of the app.
                 .setSessionActivity(openAppIntent())
                 .setCallback(ResumptionCallback(this))
+                // Cover art lives inside the media file, so the default
+                // loader - which fetches artworkUri and decodes what it gets -
+                // is handed an MP3 and fails every time. Cached because the
+                // notification is rebuilt on every position update and the
+                // sleeve does not change between them.
+                .setBitmapLoader(CacheBitmapLoader(loader))
                 .build()
     }
 
@@ -110,6 +125,9 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         session?.release()
         session = null
+        // After the session, which is the only thing that submits to it.
+        artworkLoader?.release()
+        artworkLoader = null
         PlaybackEngine.releaseService()
         super.onDestroy()
     }
