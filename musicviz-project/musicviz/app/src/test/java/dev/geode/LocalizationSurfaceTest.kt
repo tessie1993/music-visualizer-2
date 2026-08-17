@@ -76,14 +76,14 @@ class LocalizationSurfaceTest {
      */
     private val pending: Map<String, String> =
         mapOf(
+            "ui/LookSettings.kt" to "no blocker - its labels are plain GUI prefs, conversion queued",
+            "ui/BehaviorSettings.kt" to "no blocker - its labels are catalog anchors, conversion queued",
+            "ui/AutoVisualsSettings.kt" to "no blocker - its labels are plain switches, conversion queued",
             "ui/CustomizeTabs.kt" to
                 "the key/label split exists now (LabeledSlider display=), so conversion is " +
                 "mechanical - each control keeps its English key and gains a translated display",
             "ui/VisualsHub.kt" to
                 "renders the Customize surface, so it shares CustomizeTabs' key-vs-label problem",
-            "ui/BehaviorSettings.kt" to "carries Customize-keyed control labels",
-            "ui/LookSettings.kt" to "carries Customize-keyed control labels",
-            "ui/AutoVisualsSettings.kt" to "carries Customize-keyed control labels",
             "ui/PaletteMaker.kt" to "carries Customize-keyed control labels",
             "ui/CrystalControls.kt" to "carries Customize-keyed control labels",
             "ui/BuiltInPresets.kt" to "preset names are persisted identifiers, not display text",
