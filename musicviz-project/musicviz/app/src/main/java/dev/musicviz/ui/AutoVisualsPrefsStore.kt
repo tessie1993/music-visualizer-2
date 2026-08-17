@@ -71,7 +71,6 @@ class AutoVisualsPrefsStore(
             .putBoolean(KEY_PLAYLIST_ENABLED, state.vizPlaylistEnabled)
             .putInt(KEY_PLAYLIST_INTERVAL, state.vizPlaylistIntervalSec)
             .putBoolean(KEY_PLAYLIST_INTELLIGENT, state.vizPlaylistIntelligent)
-            .putString(KEY_PLAYLIST_ENTRIES, entriesToJson(state.vizPlaylist))
             .apply()
     }
 
@@ -91,47 +90,5 @@ class AutoVisualsPrefsStore(
         private const val KEY_PLAYLIST_ENABLED = "auto_playlist_enabled"
         private const val KEY_PLAYLIST_INTERVAL = "auto_playlist_interval_sec"
         private const val KEY_PLAYLIST_INTELLIGENT = "auto_playlist_intelligent"
-        private const val KEY_PLAYLIST_ENTRIES = "auto_playlist_entries"
-
-        internal fun entriesToJson(entries: List<VizPlaylistEntry>): String {
-            val arr = JSONArray()
-            for (e in entries) {
-                arr.put(
-                    JSONObject()
-                        .put("sceneId", e.sceneId)
-                        .put("label", e.label)
-                        .apply {
-                            e.presetName?.let { put("presetName", it) }
-                            e.milkPath?.let { put("milkPath", it) }
-                        },
-                )
-            }
-            return arr.toString()
-        }
-
-        /**
-         * Parses a stored playlist; a malformed document restores as empty
-         * rather than crashing the ViewModel constructor, and a malformed
-         * ENTRY (no scene) is dropped rather than poisoning the rotation.
-         */
-        internal fun entriesFromJson(json: String): List<VizPlaylistEntry> =
-            runCatching {
-                val arr = JSONArray(json)
-                buildList {
-                    for (i in 0 until arr.length()) {
-                        val o = arr.optJSONObject(i) ?: continue
-                        val sceneId = o.optString("sceneId", "")
-                        if (sceneId.isEmpty()) continue
-                        add(
-                            VizPlaylistEntry(
-                                sceneId = sceneId,
-                                presetName = o.optString("presetName", "").takeIf { it.isNotEmpty() },
-                                milkPath = o.optString("milkPath", "").takeIf { it.isNotEmpty() },
-                                label = o.optString("label", "").ifEmpty { sceneId },
-                            ),
-                        )
-                    }
-                }
-            }.getOrDefault(emptyList())
     }
 }

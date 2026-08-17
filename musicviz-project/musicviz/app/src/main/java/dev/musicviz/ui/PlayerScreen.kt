@@ -183,7 +183,11 @@ private fun PlayerHero(
     onOpenLibrary: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val uri = remember(state.title, state.artist) { viewModel.currentTrackUri() }
+    // Do not cache this by title/artist: two different files can share both,
+    // and the second track would otherwise keep the first track's artwork and
+    // favourite state. The surrounding collected player state already drives
+    // recomposition, and reading the current URI is just an in-memory lookup.
+    val uri = viewModel.currentTrackUri()
     // What the hero is about, most specific first: another app's audio
     // outranks our own paused track, because it is what is making sound
     // right now.
