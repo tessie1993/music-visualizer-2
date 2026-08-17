@@ -82,7 +82,8 @@ class StudioClipsInstrumentedTest {
     @Test
     fun renaming_a_clip_changes_its_display_name_and_keeps_the_extension() {
         val uri = inserted!!
-        assertTrue("rename reported failure", StudioClips.rename(context, uri.toString(), "sunset drop"))
+        val renamed = StudioClips.rename(context, uri.toString(), "sunset drop")
+        assertTrue("rename reported failure: ${StudioClips.lastRenameDiagnostic}", renamed)
         val name = displayNameOf(uri)
         assertNotNull(name)
         assertTrue("name did not change: $name", name!!.startsWith("sunset drop"))
