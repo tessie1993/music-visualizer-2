@@ -161,7 +161,15 @@ class AdaptiveRange(
          * above it. Digital silence is a fact about the signal, not about the
          * music's dynamics, and something has to stop the normalizer from
          * learning a window inside the noise floor of a fade-out.
+         *
+         * Set far below any musical level on purpose. This is a numerical
+         * backstop, not the silence decision — a band's mean power density sits
+         * tens of dB under the signal's own dBFS level, so a floor placed at a
+         * plausible-looking -90 dB silently gated the quieter bands of an
+         * ordinary quiet master and cost exactly the level-independence this
+         * class exists for. The musical judgement belongs to a whole-signal
+         * check, which is where [ReactiveAnalyzer] makes it.
          */
-        const val SILENCE_DB: Float = -90f
+        const val SILENCE_DB: Float = -120f
     }
 }
