@@ -87,6 +87,82 @@
     <string name="action_next">Next</string>
     <string name="action_add_to_queue">Add to queue</string>
 
+    <!-- Now Playing: what the app is listening to, and to what. -->
+    <string name="source_other_apps">Other apps</string>
+    <string name="source_live_input">Live input</string>
+    <string name="state_now_playing">Now playing</string>
+    <string name="state_paused">Paused</string>
+    <string name="state_nothing_playing">Nothing playing</string>
+    <string name="title_whatever_is_playing">Whatever is playing</string>
+    <string name="title_the_room">The room</string>
+    <string name="title_untitled">Untitled</string>
+    <string name="title_pick_something">Pick something to play</string>
+    <string name="subtitle_capture_refused">%1$s will not be captured — see Settings</string>
+    <string name="subtitle_capture_refused_unknown_app">That app</string>
+    <string name="subtitle_captured_from_another_app">Captured from another app</string>
+    <string name="subtitle_microphone_hears">Whatever the microphone hears</string>
+    <string name="subtitle_unknown_artist">Unknown artist</string>
+    <string name="subtitle_nothing_playing">Your library, your history, or the room</string>
+
+    <string name="action_search">Search</string>
+    <string name="action_shuffle">Shuffle</string>
+    <string name="action_play">Play</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_repeat">Repeat</string>
+    <string name="action_favourite_add">Add to favourites</string>
+    <string name="action_favourite_remove">Remove from favourites</string>
+    <string name="action_stop_capture">Stop capture</string>
+    <string name="action_resume_last_played">Resume last played</string>
+    <string name="action_open_library">Open library</string>
+    <string name="action_open_queue">Open queue</string>
+
+    <!-- A–B loop: one control, three states, named so colour is not the only cue. -->
+    <string name="ab_loop_idle">A–B</string>
+    <string name="ab_loop_set_b">Set B</string>
+    <string name="ab_loop_looping">Looping</string>
+
+    <!-- Automatic visual switching. -->
+    <string name="auto_random">Auto: random</string>
+    <string name="auto_smart">Auto: smart</string>
+    <string name="auto_sections">Auto: sections</string>
+    <string name="auto_off">Auto: off</string>
+
+    <string name="queue">Queue</string>
+    <string name="queue_with_count">Queue · %1$d</string>
+    <string name="queue_up_next">Up next</string>
+
+    <!-- Quick actions under the player. -->
+    <string name="quick_room_on">Room: on</string>
+    <string name="quick_capturing">Capturing</string>
+    <string name="quick_sleep_on">Sleep: on</string>
+    <string name="quick_sleep_30m">Sleep 30m</string>
+    <string name="quick_shuffle_all">Shuffle all</string>
+
+    <!-- Now Playing on a connected display: this screen becomes the remote. -->
+    <string name="second_screen_showing_on">Showing on</string>
+    <string name="second_screen_explainer">The visuals are on the connected display. Everything here still controls them — turn this off in Settings › Live input &amp; touch to bring them back.</string>
+    <string name="action_collapse">Collapse</string>
+
+    <!-- Panel chips under the transport. -->
+    <string name="panel_now">Now</string>
+    <string name="panel_lyrics">Lyrics</string>
+
+    <!-- Seek bar. Spoken, not drawn: the bar itself is a bare canvas. -->
+    <string name="seek_description">Seek. %1$s of %2$s</string>
+
+    <!-- Lyrics panel. -->
+    <string name="lyrics_none">No lyrics</string>
+    <string name="lyrics_none_explainer">Drop an .lrc file next to the track — same name, .lrc extension — and it shows up here, timed and following the music. Words written into the file\'s own tags are read too. Nothing is fetched: the app has no network access.</string>
+    <string name="lyrics_source_timed">Timed lyrics from %1$s. Tap a line to jump there.</string>
+    <string name="lyrics_source_untimed">Untimed lyrics from %1$s.</string>
+
+    <!-- Queue panel. -->
+    <string name="queue_empty_explainer">Nothing queued. Playing anything from a list — the library, a shelf on Home, a search result — queues that whole list.</string>
+    <string name="queue_save_as_playlist">Save as playlist</string>
+    <string name="queue_save_dialog_title">Save queue as playlist</string>
+    <string name="action_move_up">Move up</string>
+    <string name="action_remove_from_queue">Remove from queue</string>
+
     <!-- Shared verbs. One definition each, so a translator sees them once. -->
     <string name="action_save">Save</string>
     <string name="action_cancel">Cancel</string>

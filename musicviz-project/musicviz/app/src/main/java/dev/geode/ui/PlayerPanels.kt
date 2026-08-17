@@ -41,6 +41,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
@@ -50,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.geode.R
 import dev.geode.ui.theme.StoneIcon
 import dev.geode.ui.theme.StoneIconArt
 import kotlinx.coroutines.delay
@@ -96,6 +98,7 @@ fun WaveformSeekBar(
     val playhead = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
     val positionLabel = formatClock(if (dragFraction >= 0f) (dragFraction * durationMs).toLong() else positionMs)
     val durationLabel = formatClock(durationMs)
+    val seekDescription = stringResource(R.string.seek_description, positionLabel, durationLabel)
     Canvas(
         modifier
             // Without this the primary seek control does not exist for TalkBack
@@ -105,7 +108,7 @@ fun WaveformSeekBar(
             // setProgress gives assistive tech something to call — the same
             // fraction the drag commits, so both routes land in one place.
             .semantics {
-                contentDescription = "Seek. $positionLabel of $durationLabel"
+                contentDescription = seekDescription
                 progressBarRangeInfo = ProgressBarRangeInfo(played, 0f..1f)
                 setProgress { target ->
                     onSeek(target.coerceIn(0f, 1f))
@@ -193,11 +196,9 @@ fun LyricsPanel(
             modifier.padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            CrystalOverline("No lyrics")
+            CrystalOverline(stringResource(R.string.lyrics_none))
             Text(
-                "Drop an .lrc file next to the track — same name, .lrc extension — and it shows up " +
-                    "here, timed and following the music. Words written into the file's own tags are " +
-                    "read too. Nothing is fetched: the app has no network access.",
+                stringResource(R.string.lyrics_none_explainer),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -256,11 +257,10 @@ fun LyricsPanel(
         }
         item {
             Text(
-                if (lyrics.synced) {
-                    "Timed lyrics from ${lyrics.source}. Tap a line to jump there."
-                } else {
-                    "Untimed lyrics from ${lyrics.source}."
-                },
+                stringResource(
+                    if (lyrics.synced) R.string.lyrics_source_timed else R.string.lyrics_source_untimed,
+                    lyrics.source,
+                ),
                 Modifier.padding(top = 16.dp),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -336,10 +336,9 @@ fun QueuePanel(
 ) {
     if (queue.tracks.isEmpty()) {
         Column(modifier.padding(24.dp)) {
-            CrystalOverline("Queue")
+            CrystalOverline(stringResource(R.string.queue))
             Text(
-                "Nothing queued. Playing anything from a list — the library, a shelf on Home, a " +
-                    "search result — queues that whole list.",
+                stringResource(R.string.queue_empty_explainer),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -361,8 +360,12 @@ fun QueuePanel(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CrystalOverline("Queue", Modifier.weight(1f))
-            CrystalButton(compact = true, filled = false, onClick = { saving = true }) { Text("Save as playlist") }
+            CrystalOverline(stringResource(R.string.queue), Modifier.weight(1f))
+            CrystalButton(
+                compact = true,
+                filled = false,
+                onClick = { saving = true },
+            ) { Text(stringResource(R.string.queue_save_as_playlist)) }
         }
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth(),
@@ -395,7 +398,8 @@ fun QueuePanel(
                             listOfNotNull(
                                 track.artist.takeIf { it.isNotBlank() },
                                 "★".takeIf { track.uri in favourites },
-                            ).joinToString("  ").ifBlank { "Unknown artist" },
+                            ).joinToString("  ")
+                                .ifBlank { stringResource(R.string.subtitle_unknown_artist) },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -404,11 +408,11 @@ fun QueuePanel(
                     }
                     if (index > 0) {
                         IconButton(onClick = { onMoveUp(index) }) {
-                            Icon(Icons.Filled.KeyboardArrowUp, "Move up", Modifier.size(18.dp))
+                            Icon(Icons.Filled.KeyboardArrowUp, stringResource(R.string.action_move_up), Modifier.size(18.dp))
                         }
                     }
                     IconButton(onClick = { onRemove(index) }) {
-                        StoneIconArt(StoneIcon.CLOSE, "Remove from queue", Modifier.size(18.dp))
+                        StoneIconArt(StoneIcon.CLOSE, stringResource(R.string.action_remove_from_queue), Modifier.size(18.dp))
                     }
                 }
             }
@@ -416,8 +420,8 @@ fun QueuePanel(
     }
     if (saving) {
         PlaylistNameDialog(
-            title = "Save queue as playlist",
-            confirmLabel = "Save",
+            title = stringResource(R.string.queue_save_dialog_title),
+            confirmLabel = stringResource(R.string.action_save),
             taken = library.playlists.map { it.name }.toSet(),
             onName = { name ->
                 viewModel.createMusicPlaylist(name)
@@ -490,7 +494,7 @@ internal fun PlaylistNameDialog(
                 },
             ) { Text(confirmLabel) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
 

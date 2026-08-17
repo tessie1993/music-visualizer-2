@@ -35,10 +35,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
+import dev.geode.R
 import dev.geode.ui.theme.StoneIcon
 import dev.geode.ui.theme.StoneIconArt
 import kotlinx.coroutines.delay
@@ -90,10 +92,10 @@ fun PlayerScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    CrystalOverline("Geode")
-                    GlowTitle("Player")
+                    CrystalOverline(stringResource(R.string.app_name))
+                    GlowTitle(stringResource(R.string.nav_player))
                 }
-                IconButton(onClick = onOpenSearch) { StoneIconArt(StoneIcon.SEARCH, "Search") }
+                IconButton(onClick = onOpenSearch) { StoneIconArt(StoneIcon.SEARCH, stringResource(R.string.action_search)) }
             }
         }
 
@@ -213,19 +215,19 @@ private fun PlayerHero(
             Column(Modifier.weight(1f)) {
                 CrystalOverline(
                     when {
-                        foreign -> external.nowPlaying?.appLabel ?: "Other apps"
-                        micActive -> "Live input"
-                        state.isPlaying -> "Now playing"
-                        state.hasMedia -> "Paused"
-                        else -> "Nothing playing"
+                        foreign -> external.nowPlaying?.appLabel ?: stringResource(R.string.source_other_apps)
+                        micActive -> stringResource(R.string.source_live_input)
+                        state.isPlaying -> stringResource(R.string.state_now_playing)
+                        state.hasMedia -> stringResource(R.string.state_paused)
+                        else -> stringResource(R.string.state_nothing_playing)
                     },
                 )
                 Text(
                     when {
-                        foreign -> foreignTrack?.title ?: "Whatever is playing"
-                        micActive -> "The room"
-                        state.hasMedia -> state.title ?: "Untitled"
-                        else -> "Pick something to play"
+                        foreign -> foreignTrack?.title ?: stringResource(R.string.title_whatever_is_playing)
+                        micActive -> stringResource(R.string.title_the_room)
+                        state.hasMedia -> state.title ?: stringResource(R.string.title_untitled)
+                        else -> stringResource(R.string.title_pick_something)
                     },
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                     maxLines = 1,
@@ -234,11 +236,19 @@ private fun PlayerHero(
                 Text(
                     when {
                         external.refusedByApp ->
-                            "${external.refusingApp ?: "That app"} will not be captured — see Settings"
-                        foreign -> foreignTrack?.artist?.ifBlank { null } ?: "Captured from another app"
-                        micActive -> "Whatever the microphone hears"
-                        state.hasMedia -> state.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist"
-                        else -> "Your library, your history, or the room"
+                            stringResource(
+                                R.string.subtitle_capture_refused,
+                                external.refusingApp
+                                    ?: stringResource(R.string.subtitle_capture_refused_unknown_app),
+                            )
+                        foreign ->
+                            foreignTrack?.artist?.ifBlank { null }
+                                ?: stringResource(R.string.subtitle_captured_from_another_app)
+                        micActive -> stringResource(R.string.subtitle_microphone_hears)
+                        state.hasMedia ->
+                            state.artist?.takeIf { it.isNotBlank() }
+                                ?: stringResource(R.string.subtitle_unknown_artist)
+                        else -> stringResource(R.string.subtitle_nothing_playing)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color =
@@ -255,7 +265,9 @@ private fun PlayerHero(
                 IconButton(onClick = { viewModel.toggleFavourite() }) {
                     StoneIconArt(
                         StoneIcon.FAVORITE,
-                        if (isFavourite) "Remove from favourites" else "Add to favourites",
+                        stringResource(
+                            if (isFavourite) R.string.action_favourite_remove else R.string.action_favourite_add,
+                        ),
                         tint =
                             if (isFavourite) {
                                 MaterialTheme.colorScheme.primary
@@ -274,16 +286,16 @@ private fun PlayerHero(
             Box(Modifier.weight(1f))
             if (foreign) {
                 CrystalButton(filled = false, compact = true, onClick = viewModel::stopExternalAudio) {
-                    Text("Stop capture")
+                    Text(stringResource(R.string.action_stop_capture))
                 }
             }
         }
         if (!hasSource) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CrystalButton(enabled = canResume, onClick = viewModel::resumeLastPlayed) {
-                    Text("Resume last played")
+                    Text(stringResource(R.string.action_resume_last_played))
                 }
-                CrystalButton(filled = false, onClick = onOpenLibrary) { Text("Open library") }
+                CrystalButton(filled = false, onClick = onOpenLibrary) { Text(stringResource(R.string.action_open_library)) }
             }
         }
     }
@@ -368,7 +380,7 @@ private fun TransportCard(
             IconButton(onClick = viewModel::toggleShuffle) {
                 StoneIconArt(
                     StoneIcon.SHUFFLE,
-                    "Shuffle",
+                    stringResource(R.string.action_shuffle),
                     tint =
                         if (state.shuffle) {
                             MaterialTheme.colorScheme.primary
@@ -378,21 +390,21 @@ private fun TransportCard(
                 )
             }
             IconButton(onClick = viewModel::previous, enabled = state.hasMedia) {
-                StoneIconArt(StoneIcon.PREVIOUS, "Previous")
+                StoneIconArt(StoneIcon.PREVIOUS, stringResource(R.string.action_previous))
             }
             CrystalPlayButton(
                 icon = if (state.isPlaying) StoneIcon.PAUSE else StoneIcon.PLAY,
-                contentDescription = if (state.isPlaying) "Pause" else "Play",
+                contentDescription = stringResource(if (state.isPlaying) R.string.action_pause else R.string.action_play),
                 onClick = viewModel::togglePlayPause,
                 enabled = state.hasMedia,
             )
             IconButton(onClick = viewModel::next, enabled = state.hasMedia) {
-                StoneIconArt(StoneIcon.NEXT, "Next")
+                StoneIconArt(StoneIcon.NEXT, stringResource(R.string.action_next))
             }
             IconButton(onClick = viewModel::cycleRepeatMode) {
                 StoneIconArt(
                     StoneIcon.REPEAT,
-                    "Repeat",
+                    stringResource(R.string.action_repeat),
                     tint =
                         if (state.repeatMode != Player.REPEAT_MODE_OFF) {
                             MaterialTheme.colorScheme.primary
@@ -412,9 +424,9 @@ private fun TransportCard(
             TextButton(onClick = viewModel::cycleAbLoop, enabled = state.hasMedia) {
                 Text(
                     when {
-                        abLoop == null -> "A–B"
-                        abLoop.endMs == null -> "Set B"
-                        else -> "Looping"
+                        abLoop == null -> stringResource(R.string.ab_loop_idle)
+                        abLoop.endMs == null -> stringResource(R.string.ab_loop_set_b)
+                        else -> stringResource(R.string.ab_loop_looping)
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color =
@@ -428,10 +440,10 @@ private fun TransportCard(
             TextButton(onClick = viewModel::cycleAutoMode) {
                 Text(
                     when (autoMode) {
-                        1 -> "Auto: random"
-                        2 -> "Auto: smart"
-                        3 -> "Auto: sections"
-                        else -> "Auto: off"
+                        1 -> stringResource(R.string.auto_random)
+                        2 -> stringResource(R.string.auto_smart)
+                        3 -> stringResource(R.string.auto_sections)
+                        else -> stringResource(R.string.auto_off)
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -439,7 +451,11 @@ private fun TransportCard(
             }
             TextButton(onClick = onToggleQueue) {
                 Text(
-                    if (queueSize > 1) "Queue · $queueSize" else "Queue",
+                    if (queueSize > 1) {
+                        stringResource(R.string.queue_with_count, queueSize)
+                    } else {
+                        stringResource(R.string.queue)
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     color =
                         if (queueOpen) {
@@ -476,10 +492,11 @@ private fun QueuePreview(
             ).padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 4.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        CrystalOverline("Up next")
+        val untitled = stringResource(R.string.title_untitled)
+        CrystalOverline(stringResource(R.string.queue_up_next))
         upNext.forEach { t ->
             Text(
-                t.title.ifBlank { "Untitled" },
+                t.title.ifBlank { untitled },
                 Modifier.fillMaxWidth().clickable(onClick = onExpand),
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
@@ -488,7 +505,7 @@ private fun QueuePreview(
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = onExpand) {
-                Text("Open queue", style = MaterialTheme.typography.labelMedium, color = accentTextColor())
+                Text(stringResource(R.string.action_open_queue), style = MaterialTheme.typography.labelMedium, color = accentTextColor())
             }
         }
     }
@@ -640,7 +657,11 @@ private fun QuickActions(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
     ) {
         item {
-            QuickAction(StoneIcon.MICROPHONE, if (micActive) "Room: on" else "Live input", active = micActive) {
+            QuickAction(
+                StoneIcon.MICROPHONE,
+                stringResource(if (micActive) R.string.quick_room_on else R.string.source_live_input),
+                active = micActive,
+            ) {
                 if (micActive) {
                     viewModel.setMicEnabled(false)
                 } else if (viewModel.hasMicPermission()) {
@@ -654,7 +675,7 @@ private fun QuickActions(
             item {
                 QuickAction(
                     Icons.Filled.Cast,
-                    if (external.active) "Capturing" else "Other apps",
+                    stringResource(if (external.active) R.string.quick_capturing else R.string.source_other_apps),
                     active = external.active,
                 ) {
                     if (external.active) {
@@ -677,14 +698,14 @@ private fun QuickActions(
         item {
             QuickAction(
                 Icons.Filled.Bedtime,
-                if (sleepRunning) "Sleep: on" else "Sleep 30m",
+                stringResource(if (sleepRunning) R.string.quick_sleep_on else R.string.quick_sleep_30m),
                 active = sleepRunning,
             ) {
                 if (sleepRunning) viewModel.cancelSleepTimer() else viewModel.startSleepTimer(30)
             }
         }
         item {
-            QuickAction(StoneIcon.SHUFFLE, "Shuffle all", enabled = canShuffle) {
+            QuickAction(StoneIcon.SHUFFLE, stringResource(R.string.quick_shuffle_all), enabled = canShuffle) {
                 viewModel.shuffleAllHistory()
             }
         }

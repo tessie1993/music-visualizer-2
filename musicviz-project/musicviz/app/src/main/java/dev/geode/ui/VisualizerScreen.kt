@@ -1,6 +1,7 @@
 package dev.geode.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -33,9 +34,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
+import dev.geode.R
 import dev.geode.render.VisualizerView
 import dev.geode.render.scene.TouchTransform
 import dev.geode.ui.theme.StoneIcon
@@ -136,15 +139,14 @@ fun VisualizerScreen(
                 Modifier.align(Alignment.Center).padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                CrystalOverline("Showing on")
+                CrystalOverline(stringResource(R.string.second_screen_showing_on))
                 Text(
                     externalDisplayName,
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
                 Text(
-                    "The visuals are on the connected display. Everything here still controls them — " +
-                        "turn this off in Settings › Live input & touch to bring them back.",
+                    stringResource(R.string.second_screen_explainer),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
@@ -170,17 +172,18 @@ fun VisualizerScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 FilledTonalIconButton(onClick = onCollapse) {
-                    Icon(Icons.Filled.KeyboardArrowDown, "Collapse")
+                    Icon(Icons.Filled.KeyboardArrowDown, stringResource(R.string.action_collapse))
                 }
                 Column(Modifier.weight(1f, fill = false)) {
                     // Another app's audio outranks our own metadata: it is what
                     // is making the sound on screen.
                     val foreign = external.active
                     val foreignTrack = external.nowPlaying?.takeIf { it.title.isNotBlank() }
+                    val appName = stringResource(R.string.app_name)
                     Text(
                         when {
-                            foreign -> foreignTrack?.title ?: "Other apps"
-                            else -> state.title?.ifBlank { "Geode" } ?: "Geode"
+                            foreign -> foreignTrack?.title ?: stringResource(R.string.source_other_apps)
+                            else -> state.title?.ifBlank { appName } ?: appName
                         },
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -193,7 +196,8 @@ fun VisualizerScreen(
                                 listOfNotNull(
                                     foreignTrack?.artist?.takeIf { it.isNotBlank() },
                                     external.nowPlaying?.appLabel,
-                                ).joinToString(" · ").ifBlank { "Captured from another app" }
+                                ).joinToString(" · ")
+                                    .ifBlank { stringResource(R.string.subtitle_captured_from_another_app) }
                             else -> state.artist?.takeIf { it.isNotBlank() }.orEmpty()
                         }
                     if (subtitle.isNotEmpty()) {
@@ -210,7 +214,13 @@ fun VisualizerScreen(
                     IconButton(onClick = { viewModel.toggleFavourite() }) {
                         StoneIconArt(
                             StoneIcon.FAVORITE,
-                            if (isFavourite) "Remove from favourites" else "Add to favourites",
+                            stringResource(
+                                if (isFavourite) {
+                                    R.string.action_favourite_remove
+                                } else {
+                                    R.string.action_favourite_add
+                                },
+                            ),
                             tint =
                                 if (isFavourite) {
                                     MaterialTheme.colorScheme.primary
@@ -307,7 +317,7 @@ fun VisualizerScreen(
                         IconButton(onClick = viewModel::toggleShuffle) {
                             StoneIconArt(
                                 StoneIcon.SHUFFLE,
-                                "Shuffle",
+                                stringResource(R.string.action_shuffle),
                                 tint =
                                     if (state.shuffle) {
                                         MaterialTheme.colorScheme.primary
@@ -317,21 +327,22 @@ fun VisualizerScreen(
                             )
                         }
                         IconButton(onClick = viewModel::previous, enabled = state.hasMedia) {
-                            StoneIconArt(StoneIcon.PREVIOUS, "Previous")
+                            StoneIconArt(StoneIcon.PREVIOUS, stringResource(R.string.action_previous))
                         }
                         CrystalPlayButton(
                             icon = if (state.isPlaying) StoneIcon.PAUSE else StoneIcon.PLAY,
-                            contentDescription = if (state.isPlaying) "Pause" else "Play",
+                            contentDescription =
+                                stringResource(if (state.isPlaying) R.string.action_pause else R.string.action_play),
                             onClick = viewModel::togglePlayPause,
                             enabled = state.hasMedia,
                         )
                         IconButton(onClick = viewModel::next, enabled = state.hasMedia) {
-                            StoneIconArt(StoneIcon.NEXT, "Next")
+                            StoneIconArt(StoneIcon.NEXT, stringResource(R.string.action_next))
                         }
                         IconButton(onClick = viewModel::cycleRepeatMode) {
                             StoneIconArt(
                                 StoneIcon.REPEAT,
-                                "Repeat",
+                                stringResource(R.string.action_repeat),
                                 tint =
                                     if (state.repeatMode != Player.REPEAT_MODE_OFF) {
                                         MaterialTheme.colorScheme.primary
@@ -348,17 +359,20 @@ fun VisualizerScreen(
                     ) {
                         TextButton(onClick = onOpenVisuals) {
                             StoneIconArt(StoneIcon.SETTINGS, null)
-                            Text("  Visuals")
+                            Text("  " + stringResource(R.string.nav_visuals))
                         }
                         TextButton(onClick = viewModel::cycleAutoMode) {
                             StoneIconArt(StoneIcon.QUEUE, null)
                             Text(
-                                when (autoMode) {
-                                    1 -> "  Auto: random"
-                                    2 -> "  Auto: smart"
-                                    3 -> "  Auto: sections"
-                                    else -> "  Auto: off"
-                                },
+                                "  " +
+                                    stringResource(
+                                        when (autoMode) {
+                                            1 -> R.string.auto_random
+                                            2 -> R.string.auto_smart
+                                            3 -> R.string.auto_sections
+                                            else -> R.string.auto_off
+                                        },
+                                    ),
                             )
                         }
                     }
@@ -369,7 +383,7 @@ fun VisualizerScreen(
                     ) {
                         PlayerPanel.entries.forEach { p ->
                             PanelChip(
-                                label = p.label,
+                                label = stringResource(p.label),
                                 selected = panel == p,
                                 badge = if (p == PlayerPanel.QUEUE && queue.tracks.size > 1) queue.tracks.size else 0,
                                 onClick = { panel = if (panel == p) PlayerPanel.TRANSPORT else p },
@@ -381,9 +395,9 @@ fun VisualizerScreen(
                         TextButton(onClick = viewModel::cycleAbLoop, enabled = state.hasMedia) {
                             Text(
                                 when {
-                                    abLoop == null -> "A–B"
-                                    abLoop?.endMs == null -> "Set B"
-                                    else -> "Looping"
+                                    abLoop == null -> stringResource(R.string.ab_loop_idle)
+                                    abLoop?.endMs == null -> stringResource(R.string.ab_loop_set_b)
+                                    else -> stringResource(R.string.ab_loop_looping)
                                 },
                                 style = MaterialTheme.typography.labelMedium,
                                 color =
@@ -401,13 +415,19 @@ fun VisualizerScreen(
     }
 }
 
-/** The three faces of Now Playing, chosen by the chips under the transport. */
+/**
+ * The three faces of Now Playing, chosen by the chips under the transport.
+ *
+ * The label is a resource id rather than the word itself: an enum constant is
+ * built once, before any composition, so it cannot hold text that has to follow
+ * the device language.
+ */
 enum class PlayerPanel(
-    val label: String,
+    @StringRes val label: Int,
 ) {
-    TRANSPORT("Now"),
-    LYRICS("Lyrics"),
-    QUEUE("Queue"),
+    TRANSPORT(R.string.panel_now),
+    LYRICS(R.string.panel_lyrics),
+    QUEUE(R.string.queue),
 }
 
 @Composable

@@ -52,6 +52,9 @@ class LocalizationSurfaceTest {
     private val localized: List<String> =
         listOf(
             "ui/AppShell.kt",
+            "ui/VisualizerScreen.kt",
+            "ui/PlayerPanels.kt",
+            "ui/PlayerScreen.kt",
             "ui/SafetyConsent.kt",
             "ui/TrackInfoEditor.kt",
             "ui/AboutSettings.kt",
@@ -64,9 +67,6 @@ class LocalizationSurfaceTest {
      */
     private val pending: Map<String, String> =
         mapOf(
-            "ui/PlayerScreen.kt" to "not converted yet — the largest screen, converted after the shell",
-            "ui/PlayerPanels.kt" to "not converted yet — queue, lyrics and the save-playlist dialog",
-            "ui/VisualizerScreen.kt" to "not converted yet — shares its transport strings with PlayerScreen",
             "ui/LibraryScreen.kt" to "not converted yet — library, playlists and folder management",
             "ui/StudioScreen.kt" to "not converted yet — the clip editor and its dialogs",
             "ui/SettingsDialog.kt" to "not converted yet — the export dialog's long explanatory copy",
