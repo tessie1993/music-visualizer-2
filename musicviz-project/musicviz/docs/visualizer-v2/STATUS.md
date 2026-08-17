@@ -14,6 +14,96 @@ Newest slice first.
 
 ---
 
+## V2-3-03b-fix: the tracked bounds could cross
+
+State: COMPLETE
+
+Goal: fix what an adversarial sweep over the new `audio-core` nodes turned up, before building
+anything on top of them.
+
+User-visible effect: none. No production consumer yet.
+
+In scope: `AdaptiveRange`'s bound ordering and its frame counter; the same counter in
+`CenteredRange`; one regression test.
+
+Out of scope: everything else the sweep touched came back clean.
+
+Files expected to change: `AdaptiveRange.kt`, `CenteredRange.kt`, `AdaptiveRangeTest.kt`.
+
+Compatibility contract: nothing existing changes.
+
+External source/provenance entries: none.
+
+Tests written first: no — the sweep found the state first and the regression test was written to
+reproduce it, then the guard was added and the test re-run red-to-green by fault injection.
+
+Benchmark or visual evidence: not applicable; two comparisons per frame, allocation unchanged.
+
+Rollback: revert the one commit.
+
+Risks: none identified. The guard is on a branch that only runs after warmup.
+
+Commands and results: below.
+
+Review findings: two defects, and one wrong assumption of my own.
+
+**`trackedFloor` could sit above `trackedCeiling`.** A frame landing between the bounds draws them
+together by `2 · step · tailFraction`, and `minimumSpan` floors the step — so once the material's
+spread falls under that floor, the two estimates step past each other. The output was never
+affected (`maxOf(high - low, minimumSpan)` and `coerceIn` both guard it), but both bounds are
+public, so a reader of the pair could see a floor above its own ceiling. They have in fact
+converged, so both now park on the midpoint, which says that without favouring either.
+
+Worst observed inversion: **7.75e-8** on a `minimumSpan` of 1e-4, lasting one frame — small and
+transient, which is exactly why reading the code did not find it and a sweep did.
+
+**The frame counter could wrap.** `soundingFrames` incremented forever, but is only ever asked
+whether it is zero and whether it has passed `warmupFrames`. After about 289 days of unbroken
+audio at 86 Hz it would wrap negative and strand the feature in warmup for the rest of the
+session. It now stops at `warmupFrames`, so the overflow is gone by construction rather than by
+argument. Not reachable in practice and not claimed to be tested — the fix is free and the bound
+is now structural.
+
+**My first three hypotheses about the cause were all wrong.** Narrow material against a large
+`minimumSpan`, wide material with huge outliers, and a wide passage collapsing to a constant were
+each simulated and each produced zero crossings. The actual trigger is a repeated value at any
+warmup length. Recorded because the wrong guess was the fast one, and the class KDoc had already
+been written as if the first guess were true.
+
+Commit: `fix(audio-core): stop the adaptive bounds crossing, and cap the warmup counter`
+
+Next slice: V2-3-04b — tempo estimation, compared against BTT and the current tracker on the corpus.
+
+### The sweep
+
+A throwaway property test, run and then deleted rather than committed — it is a search, not a
+regression. What it covered:
+
+| Swept | Result |
+|---|---|
+| `AdaptiveRange` × 200 configurations × 5,000 adversarial frames (0, ±1e6, 1e-8, uniform, 1-in-4 silent) | output always finite and inside `0..1`; **bounds crossed on 3 of 200** |
+| `CenteredRange` × 200 configurations × 5,000 frames | always finite and inside `-1..1` |
+| `OnsetStrength` at seven hop rates from 21.5 Hz to 1 kHz | delay exact at every one, DC gain 1 within 1e-5 |
+| `SemitoneBands` × 7 FFT sizes × 10 sample rates, 8 kHz to 192 kHz | no bin range ever left the spectrum, no non-finite value |
+| `SilenceGate` × 4 hold lengths × 50,000 frames | reached both states at every hold |
+
+The gate's first run failed, and the test was wrong rather than the gate: with a per-frame
+one-in-three chance of silence, twenty-four consecutive silent frames has probability 3e-12, so
+the hold was right to keep it open. Rewritten to feed runs of silence, it passes.
+
+### Verification
+
+| Fault injected | Result |
+|---|---|
+| the crossing guard removed | FAILED |
+
+| Command | Result |
+|---|---|
+| `:engine:audio-core:test --tests '*AdaptiveRangeTest*'` | 11 tests, 0 failures |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+---
+
 ## V2-3-04a: the onset strength signal, delayed by a whole number of frames
 
 State: COMPLETE

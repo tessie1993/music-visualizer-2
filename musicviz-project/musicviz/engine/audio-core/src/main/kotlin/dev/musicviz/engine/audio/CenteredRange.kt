@@ -95,7 +95,9 @@ class CenteredRange(
             mean += error * coefficient
             deviation += (abs(error) - deviation) * coefficient
         }
-        soundingFrames++
+        // Stops at the warmup length; see AdaptiveRange for why a counter
+        // that kept going would strand the feature in warmup eventually.
+        if (soundingFrames < warmupFrames) soundingFrames++
         validity = if (soundingFrames >= warmupFrames) FeatureValidity.Valid else FeatureValidity.Warmup
         return (error / (deviations * maxOf(deviation, minimumDeviation))).coerceIn(-1f, 1f)
     }

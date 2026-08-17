@@ -160,6 +160,31 @@ class AdaptiveRangeTest {
     }
 
     @Test
+    fun `the tracked bounds never cross, whatever the material does`() {
+        // Found by an adversarial sweep, not by reading the code. A frame that
+        // lands between the bounds draws them together by 2·step·tailFraction,
+        // and minimumSpan floors the step — so once the material's spread is
+        // under that floor the two estimates step past each other and a reader
+        // of the public pair sees a floor above its own ceiling.
+        val cases =
+            listOf(
+                FloatArray(4_000) { 0.42f },
+                FloatArray(4_000) { if (it < 500) it / 500f else 0.5f },
+                FloatArray(4_000) { 0.5f + 1e-7f * (it % 3) },
+            )
+        for ((case, material) in cases.withIndex()) {
+            val adaptive = range(minimumSpan = 1e-2f)
+            for (sample in material) {
+                adaptive.normalize(sample, FrameActivity.Sounding)
+                assertTrue(
+                    "case $case: floor ${adaptive.trackedFloor} above ceiling ${adaptive.trackedCeiling}",
+                    adaptive.trackedFloor <= adaptive.trackedCeiling,
+                )
+            }
+        }
+    }
+
+    @Test
     fun `reset forgets the loud track before the quiet one starts`() {
         val adaptive = range()
         adaptive.feed(noise(seed = 5, count = 5_000, low = 0.5f, high = 1f))

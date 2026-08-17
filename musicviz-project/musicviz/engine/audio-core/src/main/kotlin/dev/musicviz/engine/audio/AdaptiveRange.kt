@@ -77,13 +77,13 @@ class AdaptiveRange(
         private set
 
     /**
-     * The tracked lower bound. Above [trackedCeiling] only on material with no
-     * dynamic range at all, where the two quantiles coincide and both dither
-     * around it; [minimumSpan] is what keeps the mapping finite there.
+     * The tracked lower bound, never above [trackedCeiling]. On material whose
+     * spread has collapsed the two converge onto one value and stay there;
+     * [minimumSpan] is what keeps the mapping finite in that case.
      */
     val trackedFloor: Float get() = low
 
-    /** The tracked upper bound. See [trackedFloor] for the degenerate case. */
+    /** The tracked upper bound, never below [trackedFloor]. */
     val trackedCeiling: Float get() = high
 
     override fun normalize(
@@ -118,9 +118,26 @@ class AdaptiveRange(
                 val step = maxOf(high - low, minimumSpan) * stepFraction
                 high += if (raw > high) step * (1f - tailFraction) else -step * tailFraction
                 low += if (raw < low) -step * (1f - tailFraction) else step * tailFraction
+                if (low > high) {
+                    // A frame between the bounds draws them together by
+                    // `2 · step · tailFraction`, and [minimumSpan] floors the
+                    // step — so on material whose spread has collapsed below
+                    // that floor the two estimates step past each other. They
+                    // have simply converged; parking both on the midpoint says
+                    // that without favouring either, and keeps a reader of
+                    // [trackedFloor] and [trackedCeiling] from ever seeing a
+                    // pair that cannot be true.
+                    val converged = (low + high) * 0.5f
+                    low = converged
+                    high = converged
+                }
             }
         }
-        soundingFrames++
+        // Stops at the warmup length: the count is only ever asked whether it
+        // is zero and whether it has passed [warmupFrames], and a counter that
+        // kept going would wrap after a few hundred days of unbroken audio and
+        // strand the feature in warmup for the rest of the session.
+        if (soundingFrames < warmupFrames) soundingFrames++
         validity = if (soundingFrames >= warmupFrames) FeatureValidity.Valid else FeatureValidity.Warmup
     }
 
