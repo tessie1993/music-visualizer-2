@@ -38,6 +38,7 @@ import dev.geode.playback.PlaybackService
 import dev.geode.playback.QueueOps
 import dev.geode.render.TransitionStyle
 import dev.geode.render.scene.CustomizeTab
+import dev.geode.render.scene.MilkStarterPack
 import dev.geode.render.scene.ParamRandomizer
 import dev.geode.render.scene.PcmChunk
 import dev.geode.render.scene.SceneIds
@@ -684,11 +685,14 @@ class PlayerViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             val files =
                 try {
-                    // Built-in .milk presets were removed (they were low
-                    // quality); clean up any copies from older versions so
-                    // they stop appearing, and list only the user's files.
+                    // The old built-in directory held a set removed for being
+                    // poor; clean up copies left by older versions so they stop
+                    // appearing. The replacement pack installs into the user's
+                    // own directory instead, so its presets are as deletable
+                    // and editable as any they import themselves.
                     builtInDir().deleteRecursively()
                     java.io.File(importDir(), "textures").mkdirs()
+                    MilkStarterPack.install(getApplication(), importDir())
                     importDir()
                         .listFiles { f -> f.extension == "milk" }
                         .orEmpty()

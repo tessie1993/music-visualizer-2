@@ -72,9 +72,19 @@ internal class PresetLibraryController(
         }
     }
 
-    /** User .milk files (imports + saves), newest first. Built-ins removed. */
+    /**
+     * The .milk files in the user's directory, newest first — their imports and
+     * saves, plus the shipped starter pack, which installs itself here once so
+     * that it is as deletable and editable as anything they added.
+     *
+     * Installed from this side too, not only from the browser's listing: this
+     * is the call the MilkDrop TAB uses, and a user whose first MilkDrop action
+     * is opening that tab must not find it empty.
+     */
     fun userMilkPresets(): List<java.io.File> {
         val dir = java.io.File(application.filesDir, "milk")
+        dev.geode.render.scene.MilkStarterPack
+            .install(application, dir)
         return dir
             .listFiles { f -> f.isFile && f.extension == "milk" }
             ?.sortedByDescending { it.lastModified() }
