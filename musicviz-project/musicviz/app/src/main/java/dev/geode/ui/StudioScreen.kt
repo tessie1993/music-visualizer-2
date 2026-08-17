@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -85,6 +86,8 @@ fun StudioScreen(viewModel: PlayerViewModel) {
                 onOpen = { editing = it },
                 onPick = { picker.launch(arrayOf("video/*")) },
                 onShare = { context.shareVideo(it) },
+                onRename = { clip, name, done -> viewModel.renameStudioClip(clip.uri, name, done) },
+                onDelete = { clip, done -> viewModel.deleteStudioClip(clip.uri, done) },
             )
         } else {
             ClipEditor(
@@ -107,7 +110,14 @@ private fun ClipLibrary(
     onOpen: (StudioClip) -> Unit,
     onPick: () -> Unit,
     onShare: (Uri) -> Unit,
+    onRename: (StudioClip, String, (Boolean) -> Unit) -> Unit,
+    onDelete: (StudioClip, (Boolean) -> Unit) -> Unit,
 ) {
+    // Null when no dialog is up. Held by clip rather than by index so a refresh
+    // that reorders the list cannot retarget a pending delete at another file.
+    var renaming by remember { mutableStateOf<StudioClip?>(null) }
+    var deleting by remember { mutableStateOf<StudioClip?>(null) }
+    var notice by remember { mutableStateOf<String?>(null) }
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -171,8 +181,77 @@ private fun ClipLibrary(
                     )
                 }
                 TextButton(onClick = { onShare(Uri.parse(clip.uri)) }) { Text("Send") }
+                TextButton(onClick = { renaming = clip }) { Text("Rename") }
+                TextButton(onClick = { deleting = clip }) { Text("Delete") }
             }
         }
+        if (studio.clips.isNotEmpty()) {
+            item {
+                // Renders run to 300 MB a minute at 4K, so the total is the
+                // number that tells someone whether to start clearing up.
+                val bytes = studio.clips.sumOf { it.sizeBytes }
+                Text(
+                    "${studio.clips.size} clip${if (studio.clips.size == 1) "" else "s"}, " +
+                        "%.1f GB in Movies/Geode".format(bytes / (1024f * 1024f * 1024f)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+
+    renaming?.let { clip ->
+        var name by remember(clip.uri) { mutableStateOf(clip.name.substringBeforeLast('.')) }
+        AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("Rename clip") },
+            text = {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    label = { Text("Name") },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = name.isNotBlank(),
+                    onClick = {
+                        onRename(clip, name) { ok -> notice = if (ok) null else "Could not rename that clip." }
+                        renaming = null
+                    },
+                ) { Text("Rename") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
+        )
+    }
+
+    deleting?.let { clip ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Delete clip?") },
+            // Named, and stated as permanent: the file is gone from the device,
+            // not from this list.
+            text = { Text("\"${clip.name}\" will be deleted from this device. This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete(clip) { ok ->
+                        notice = if (ok) null else "Android would not let Geode delete that file."
+                    }
+                    deleting = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+        )
+    }
+
+    notice?.let { message ->
+        AlertDialog(
+            onDismissRequest = { notice = null },
+            title = { Text("Didn't work") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = { notice = null }) { Text("OK") } },
+        )
     }
 }
 

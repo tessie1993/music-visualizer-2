@@ -2362,6 +2362,17 @@ class PlayerViewModel(
 
     fun refreshStudioClips() = exportController.refreshStudioClips()
 
+    fun deleteStudioClip(
+        uri: String,
+        onResult: (Boolean) -> Unit,
+    ) = exportController.deleteStudioClip(uri, onResult)
+
+    fun renameStudioClip(
+        uri: String,
+        name: String,
+        onResult: (Boolean) -> Unit,
+    ) = exportController.renameStudioClip(uri, name, onResult)
+
     fun describeStudioClip(
         uri: Uri,
         onReady: (dev.geode.export.StudioClip) -> Unit,

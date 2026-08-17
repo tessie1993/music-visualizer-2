@@ -1,7 +1,9 @@
 package dev.geode.export
 
 import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 
@@ -135,4 +137,61 @@ object StudioClips {
             }.getOrNull() ?: uri.lastPathSegment ?: "Clip"
         return StudioClip(uri.toString(), name, durationMs, 0L, width, height)
     }
+
+    /**
+     * Deletes a rendered clip.
+     *
+     * Renders accumulate at up to 300 MB a minute at 4K, and the app offered no
+     * way to remove one — a weekend of experimenting left gigabytes of
+     * `geode_<epoch>.mp4` that had to be hunted down in a gallery app.
+     *
+     * Returns false when the delete did not happen, including the Android 10+
+     * case where the file belongs to another app and the system demands a user
+     * confirmation this call cannot give. Reporting that honestly is better
+     * than a row that vanishes from the list and reappears on the next refresh.
+     */
+    fun delete(
+        context: Context,
+        uri: String,
+    ): Boolean =
+        runCatching {
+            context.contentResolver.delete(Uri.parse(uri), null, null) > 0
+        }.getOrDefault(false)
+
+    /**
+     * Renames a rendered clip, keeping its extension.
+     *
+     * Outputs are named `geode_<epoch>.mp4`, which tells the user nothing about
+     * which of nine renders is the one they wanted. [name] is the display name
+     * without an extension; the original's is preserved so the file stays
+     * playable.
+     */
+    fun rename(
+        context: Context,
+        uri: String,
+        name: String,
+    ): Boolean {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return false
+        // Path separators would let a rename move the file out of the
+        // collection MediaStore expects it in.
+        if (trimmed.any { it == '/' || it == '\\' }) return false
+        return runCatching {
+            val parsed = Uri.parse(uri)
+            val extension = currentName(context, parsed)?.substringAfterLast('.', "")?.takeIf { it.isNotEmpty() }
+            val display = if (extension == null) trimmed else "$trimmed.$extension"
+            val values = ContentValues().apply { put(MediaStore.Video.Media.DISPLAY_NAME, display) }
+            context.contentResolver.update(parsed, values, null, null) > 0
+        }.getOrDefault(false)
+    }
+
+    private fun currentName(
+        context: Context,
+        uri: Uri,
+    ): String? =
+        runCatching {
+            context.contentResolver
+                .query(uri, arrayOf(MediaStore.Video.Media.DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        }.getOrNull()
 }

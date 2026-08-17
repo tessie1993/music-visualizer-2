@@ -327,6 +327,38 @@ internal class ExportController(
         }
     }
 
+    /**
+     * Deletes a rendered clip and refreshes the list.
+     *
+     * [onResult] is told whether it actually happened: on Android 10+ the
+     * system can refuse a delete for a file another app owns, and a row that
+     * silently vanishes and returns on the next refresh is worse than being
+     * told no.
+     */
+    fun deleteStudioClip(
+        uri: String,
+        onResult: (Boolean) -> Unit,
+    ) {
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) { dev.geode.export.StudioClips.delete(application, uri) }
+            if (ok) refreshStudioClips()
+            onResult(ok)
+        }
+    }
+
+    /** Renames a rendered clip, keeping its extension, and refreshes the list. */
+    fun renameStudioClip(
+        uri: String,
+        name: String,
+        onResult: (Boolean) -> Unit,
+    ) {
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) { dev.geode.export.StudioClips.rename(application, uri, name) }
+            if (ok) refreshStudioClips()
+            onResult(ok)
+        }
+    }
+
     /** Describes a clip the user picked through the system file picker. */
     fun describeStudioClip(
         uri: Uri,
