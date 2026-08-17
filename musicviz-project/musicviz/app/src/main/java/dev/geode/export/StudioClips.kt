@@ -205,11 +205,11 @@ object StudioClips {
                 val resolver = context.contentResolver
                 val direct = runCatching { resolver.update(parsed, displayName(display), null, null) }
                 log.append("; direct=").append(direct.exceptionOrNull()?.toString() ?: direct.getOrNull())
-                var after = currentName(context, parsed)
+                var after = settledName(context, parsed, display)
                 log.append(" now='").append(after).append('\'')
                 if (after != display) {
                     renameWhilePending(context, parsed, display, log)
-                    after = currentName(context, parsed)
+                    after = settledName(context, parsed, display)
                     log.append("; final='").append(after).append('\'')
                 }
                 after == display
@@ -261,4 +261,32 @@ object StudioClips {
                 .query(uri, arrayOf(MediaStore.Video.Media.DISPLAY_NAME), null, null, null)
                 ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
         }.getOrNull()
+
+    /**
+     * Reads the row's name until it matches [display] or the window closes.
+     *
+     * MediaStore's rename is eventually consistent: update() can report one
+     * row changed while a read a moment later still serves the old name, and
+     * during the pending flip the row is hidden and reads as null. Both were
+     * observed on the API 30 emulator - the same rename passing one run and
+     * failing the next, decided by who won the race - so the verdict waits
+     * briefly for the store instead of trusting the first read. Callers run
+     * on Dispatchers.IO, where a short poll is cheap.
+     */
+    private fun settledName(
+        context: Context,
+        uri: Uri,
+        display: String,
+    ): String? {
+        var name: String? = null
+        repeat(SETTLE_ATTEMPTS) {
+            name = currentName(context, uri)
+            if (name == display) return name
+            android.os.SystemClock.sleep(SETTLE_STEP_MS)
+        }
+        return name
+    }
+
+    private const val SETTLE_ATTEMPTS = 10
+    private const val SETTLE_STEP_MS = 40L
 }
