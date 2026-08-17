@@ -9,7 +9,8 @@ import java.nio.FloatBuffer
 internal class EmergenceScene(
     private val shaders: Shaders,
     private val sim: EmergenceSim = EmergenceSim(),
-) : Scene {
+) : Scene,
+    PcmSink {
     class Shaders(
         val spriteVertex: String,
         val spriteFragment: String,
@@ -102,6 +103,11 @@ internal class EmergenceScene(
     private val centroid = FloatArray(2)
     private val viewport = IntArray(4)
     private val boundFbo = IntArray(1)
+
+    override fun acceptPcm(
+        samples: FloatArray,
+        count: Int,
+    ) = sim.acceptPcm(samples, count)
 
     override fun setParams(params: SceneParams) {
         sceneParams = params

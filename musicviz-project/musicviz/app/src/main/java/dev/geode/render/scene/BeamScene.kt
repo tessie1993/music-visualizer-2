@@ -43,7 +43,8 @@ import kotlin.math.max
  */
 internal class BeamScene(
     private val context: Context,
-) : Scene {
+) : Scene,
+    PcmSink {
     override val id: String = SceneIds.BEAM
 
     private companion object {
@@ -72,6 +73,19 @@ internal class BeamScene(
 
     /** Interleaved sample store, resampled from whatever the analyzer sends. */
     private val samples = FloatArray(SAMPLES)
+    private val pcm = FloatArray(SAMPLES * 8)
+    private var pcmCount = 0
+
+    override fun acceptPcm(
+        samples: FloatArray,
+        count: Int,
+    ) {
+        val n = count.coerceAtMost(pcm.size)
+        if (n <= 0) return
+        System.arraycopy(samples, count - n, pcm, 0, n)
+        pcmCount = n
+    }
+
     private val upload = ByteBuffer.allocateDirect(SAMPLES * 4).order(ByteOrder.nativeOrder())
 
     /**
@@ -138,31 +152,27 @@ internal class BeamScene(
         features: AudioFeatures,
         dt: Float,
     ) {
+        // Raw PCM when the frame delivered any - the trace IS the signal, and
+        // 512 true samples against 64 decimated points is the difference
+        // between an oscilloscope and a bar sketch. The analyzer's waveform
+        // stays as the fallback for export and idle frames; PcmRow scrubs
+        // non-finite samples either way.
         val wave = features.waveform
-        // Resample whatever length the analyzer produced onto the beam's own
-        // sample count: more segments than samples would draw a polygon, fewer
-        // would throw away detail the waveform actually carries.
-        if (wave.isEmpty()) {
+        if (pcmCount > 0) {
+            PcmRow.fill(samples, pcm, pcmCount)
+            pcmCount = 0
+        } else if (wave.isEmpty()) {
             samples.fill(0f)
         } else {
-            var peak = 0f
-            for (i in samples.indices) {
-                val raw = wave[i * wave.size / samples.size]
-                // Scrubbed at ingest, the fluid pipeline's isnan hygiene:
-                // max() propagates NaN, so one non-finite sample from an
-                // upstream glitch would poison peak - stalling the auto-gain
-                // - and land in the waveform texture as garbage beam
-                // geometry. A bad sample reads as silence.
-                val v = if (raw.isFinite()) raw else 0f
-                samples[i] = v
-                peak = max(peak, abs(v))
-            }
-            // Auto-gain: a scope with no vertical control is unreadable on
-            // quiet material and clipped on loud. Rises slowly, falls slower,
-            // and never amplifies silence into noise.
-            val target = if (peak > 0.02f) (0.85f / peak).coerceIn(0.5f, 6f) else autoGain
-            autoGain += (target - autoGain) * (if (target < autoGain) 0.06f else 0.02f)
+            PcmRow.fill(samples, wave, wave.size)
         }
+        var peak = 0f
+        for (i in samples.indices) peak = max(peak, abs(samples[i]))
+        // Auto-gain: a scope with no vertical control is unreadable on
+        // quiet material and clipped on loud. Rises slowly, falls slower,
+        // and never amplifies silence into noise.
+        val target = if (peak > 0.02f) (0.85f / peak).coerceIn(0.5f, 6f) else autoGain
+        autoGain += (target - autoGain) * (if (target < autoGain) 0.06f else 0.02f)
         beatPulse = max(features.motionImpulse, beatPulse - dt * 3f).coerceIn(0f, 1.5f)
     }
 

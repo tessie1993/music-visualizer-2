@@ -78,6 +78,25 @@ internal class EmergenceSim(
     var lastRadius: Float = RADIUS_BASE
         private set
 
+    private var pcmSpark = 0f
+
+    fun acceptPcm(
+        samples: FloatArray,
+        count: Int,
+    ) {
+        var peak = 0f
+        var i = 0
+        while (i < count) {
+            val v = samples[i]
+            if (v.isFinite()) {
+                val a = kotlin.math.abs(v)
+                if (a > peak) peak = a
+            }
+            i++
+        }
+        if (peak > pcmSpark) pcmSpark = peak.coerceAtMost(1.5f)
+    }
+
     init {
         for (i in 0 until count) {
             val angle = random.nextFloat() * (2f * Math.PI.toFloat())
@@ -111,9 +130,10 @@ internal class EmergenceSim(
         lastRadius = radius
         binParticles(radius)
 
-        val gain = swarm * (0.55f + bass * 1.25f) * speed
+        val gain = swarm * (0.55f + bass * 1.25f + pcmSpark * 0.6f) * speed
         val friction = exp(-dt / FRICTION_TIME_CONSTANT)
-        val jitter = (JITTER_BASE + turbulence * 0.35f) * (0.3f + treble)
+        pcmSpark = (pcmSpark - dt * 4f).coerceAtLeast(0f)
+        val jitter = (JITTER_BASE + turbulence * 0.35f) * (0.3f + treble + pcmSpark * 0.7f)
         val grid = flowGrid
         val flowK = if (grid != null) flowStrength.coerceIn(0f, 1f) else 0f
         val mu = 0.08f + growthMu.coerceIn(0f, 1f) * 0.5f
