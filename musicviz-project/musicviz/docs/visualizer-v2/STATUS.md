@@ -14,6 +14,104 @@ Newest slice first.
 
 ---
 
+## V2-3-04b: onsets, timed at the peak so they land on a sample
+
+State: COMPLETE
+
+Goal: finish V2-3-04's first bullet — turn the onset strength signal into onsets whose sample
+index is exact rather than empirically corrected.
+
+User-visible effect: none. One new node in `audio-core`; `FeatureExtractor.BeatGate` still
+produces every beat the app reacts to.
+
+In scope: `OnsetDetector` and its tests, including the composition test that places an onset on
+the sample the transient occupied.
+
+Out of scope: feeding it to `PulseTracker` — that is a change to the app module and belongs with
+tempo, in V2-3-04c, so the tracker is rewired once rather than twice. Tempo estimation, the CBSS
+predictor, downbeat/bar state and kick evidence all follow there.
+
+Files expected to change: `engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/OnsetDetector.kt`
+and its test. No existing file changes.
+
+Compatibility contract: nothing existing changes. No new dependency, permission or ABI.
+
+External source/provenance entries: none new. **BTT** (ORACLE, MIT, pin `c039090`) was already
+read in full for V2-3-04a; `adaptive_threshold_update`, `moving_average_update` and
+`moving_average_variance` are the parts this slice draws its method from. No code taken.
+
+Tests written first: the alignment test was written from the design claim, and it failed — which
+is how the design error below was found, before the node had any consumer.
+
+Benchmark or visual evidence: `next` allocates under 1 byte per frame. The incremental sliding
+variance was measured against a full recomputation over two million frames — six and a half hours
+at an 86 Hz hop — and drifts by **2e-13 relative**, so the O(1) form is used rather than
+recomputing a 258-frame window every frame.
+
+Rollback: revert the one commit.
+
+Risks: no production consumer, so the firing *rate* on real material is unmeasured — the tests
+establish the timing and the excursion semantics, not how many onsets a song produces per second.
+V2-3-04c owes that against the corpus. `DEVIATIONS = 0.1` is BTT's and is a starting value.
+
+Commands and results: below.
+
+Review findings: one, and it changed the design.
+
+**An edge-triggered onset cannot be sample-aligned, and that is what BTT's magic number is for.**
+The slice was written to BTT's rule — report the frame the strength signal rises past its
+threshold — and the composition test that places the event on an audio sample failed by exactly
+1,024 samples, two hops. The reason is structural, not a tuning error: where in a rise the signal
+crosses a threshold depends on the threshold, so the offset between the reported frame and the
+audio is not a constant. BTT hits the same wall and answers it empirically, with
+`analysis_latency_onset_adjustment = 857` audio samples and a header comment blaming "complex
+interactions between filters, buffering, adaptive thresholds, and other things" for having no
+closed form. The **adaptive threshold** is named in that list.
+
+Reporting the excursion's **peak** instead makes it exact. [OnsetStrength]'s kernel is symmetric,
+so it is linear phase and delays every frequency by the same whole number of frames; a peak
+therefore emerges exactly `delayFrames` late and nowhere else. That property was already built in
+V2-3-04a and was worth nothing until something located the peak rather than the edge. The
+composition
+
+```
+onsetSample = grid.centerSample(frame - PEAK_FRAMES_BACK) - strength.delayFrames * hopFrames
+```
+
+now lands on the transient's own centre sample **exactly**, with no empirical term, and the test
+asserts equality rather than a tolerance.
+
+The cost is one frame of lookahead — a peak is only known once something fails to beat it. That
+frame was already spent inside the strength stage's own delay, so it buys an exact time for
+nothing.
+
+A second-order detail that only showed up while writing it: the turn must be `strength <= previous`
+and not `<`. A held crash plateaus, and a strict comparison waits for the release, timing the
+onset at the end of the cymbal instead of the start. Fault injection D3 is that case.
+
+Commit: `feat(audio-core): onsets timed at their peak, so they land on a sample`
+
+Next slice: V2-3-04c — tempo estimation, and rewiring `PulseTracker` onto this evidence.
+
+### Verification
+
+| Fault injected | Result |
+|---|---|
+| report the excursion's start, as BTT does | FAILED |
+| a level trigger: every frame above the threshold | FAILED |
+| the plateau waits for the fall instead of the turn | FAILED |
+| train on silence as well | FAILED |
+| the raw minimum dropped | FAILED |
+| the sliding variance update loses a term | FAILED |
+| a rest leaves the excursion open | FAILED |
+
+| Command | Result |
+|---|---|
+| `:engine:audio-core:test --tests '*OnsetDetectorTest*'` | 12 tests, 0 failures |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+---
+
 ## V2-3-03b-fix: the tracked bounds could cross
 
 State: COMPLETE
