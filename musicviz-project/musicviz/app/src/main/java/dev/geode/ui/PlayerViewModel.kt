@@ -6,6 +6,7 @@ import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -31,6 +32,7 @@ import dev.geode.data.PresetStore
 import dev.geode.export.ExportAspect
 import dev.geode.export.VideoExporter
 import dev.geode.playback.PlaybackEngine
+import dev.geode.playback.PlaybackErrors
 import dev.geode.playback.PlaybackService
 import dev.geode.playback.QueueOps
 import dev.geode.render.TransitionStyle
@@ -1889,6 +1891,30 @@ class PlayerViewModel(
         }
     }
 
+    private val _playbackNotice = MutableStateFlow<String?>(null)
+
+    /**
+     * The last playback failure, as a sentence for the user; null when there is
+     * nothing to say.
+     *
+     * A one-shot notice rather than durable state: the shell shows it, the user
+     * dismisses it or it times out, and it is gone. Cleared by [clearPlaybackNotice]
+     * and by the next track that actually plays, so a fixed problem stops
+     * talking about itself.
+     */
+    val playbackNotice: StateFlow<String?> = _playbackNotice
+
+    /**
+     * Tracks that have failed back-to-back. Reset the moment anything plays,
+     * so this counts a run of dead files rather than a lifetime total.
+     */
+    private var consecutivePlaybackFailures = 0
+
+    /** Dismisses [playbackNotice]. */
+    fun clearPlaybackNotice() {
+        _playbackNotice.value = null
+    }
+
     private val _artPaletteNote = MutableStateFlow<String?>(null)
 
     /** Result of the last artwork-palette attempt, for the Colour tab to show. */
@@ -2441,6 +2467,39 @@ class PlayerViewModel(
                 }
 
                 /**
+                 * A track that will not play. Until this existed, a deleted
+                 * file or a revoked SAF grant simply froze the transport with
+                 * no message and no recovery.
+                 */
+                override fun onPlayerError(error: PlaybackException) {
+                    consecutivePlaybackFailures++
+                    val failed =
+                        player.currentMediaItem
+                            ?.mediaMetadata
+                            ?.title
+                            ?.toString()
+                    val action =
+                        PlaybackErrors.decide(
+                            consecutivePlaybackFailures,
+                            hasNext = player.hasNextMediaItem(),
+                        )
+                    _playbackNotice.value = PlaybackErrors.describe(error.errorCode, failed, action)
+                    when (action) {
+                        PlaybackErrors.Action.SkipToNext -> {
+                            // seekToNext leaves the player in the error state on
+                            // some devices; prepare() is what clears it and lets
+                            // the next item actually start.
+                            player.seekToNextMediaItem()
+                            player.prepare()
+                        }
+
+                        PlaybackErrors.Action.StopEndOfQueue,
+                        PlaybackErrors.Action.StopSourceUnavailable,
+                        -> player.pause()
+                    }
+                }
+
+                /**
                  * Everything that has to be true whenever playback starts, no
                  * matter who started it.
                  *
@@ -2452,8 +2511,11 @@ class PlayerViewModel(
                  * player is the same reasoning as the seek reset above - the
                  * player is where every path meets.
                  */
+
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     if (!isPlaying) return
+                    // Something played, so whatever was wrong is behind us.
+                    consecutivePlaybackFailures = 0
                     // One ring buffer, one source. A track and the room (or a
                     // track and Spotify) summed into a single spectrum drive
                     // the visuals as neither.

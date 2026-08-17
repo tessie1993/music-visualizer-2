@@ -50,6 +50,24 @@ class GaplessQueueTest {
                 "private fun prepareLastPlayed(" to "restores last session's track at startup, before anything plays",
             )
 
+        /**
+         * The other legitimate reason to prepare: recovery, not opening.
+         *
+         * A [androidx.media3.common.PlaybackException] leaves the player in
+         * STATE_IDLE — the pipeline is already torn down by the failure — and
+         * prepare() is the documented way back out. That is the opposite of the
+         * case [QUEUE_OPENINGS] guards against, which is re-preparing a pipeline
+         * that is still running fine.
+         *
+         * Kept separate from [QUEUE_OPENINGS] on purpose: recovery may prepare,
+         * but it may NOT hand the player a new playlist, and the setMediaItems
+         * test still holds it to that.
+         */
+        val ERROR_RECOVERY: Map<String, String> =
+            mapOf(
+                "override fun onPlayerError(" to "the player is in STATE_IDLE after a failure; prepare() is the way back",
+            )
+
         /** Navigation within the queue: what an advance is allowed to be. */
         val TRANSPORT: List<String> = listOf("fun next(", "fun previous(")
     }
@@ -105,10 +123,11 @@ class GaplessQueueTest {
         // name: it reinitialises the source and the sink for a queue the player
         // is already playing.
         val text = withoutComments(source(VIEW_MODEL))
-        val declared = QUEUE_OPENINGS.keys.sumOf { occurrences(functionBody(text, it), ".prepare()") }
+        val allowed = QUEUE_OPENINGS.keys + ERROR_RECOVERY.keys
+        val declared = allowed.sumOf { occurrences(functionBody(text, it), ".prepare()") }
         assertEquals(
-            "prepare() is called outside a queue opening, which reinitialises a pipeline that is " +
-                "already running",
+            "prepare() is called outside a queue opening or an error recovery, which reinitialises " +
+                "a pipeline that is already running",
             occurrences(text, ".prepare()"),
             declared,
         )

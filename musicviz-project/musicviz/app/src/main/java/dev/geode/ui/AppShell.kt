@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -14,8 +15,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
@@ -35,10 +38,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.analysis.SearchMatcher
 import dev.geode.render.VisualizerView
 import dev.geode.ui.theme.StoneIcon
@@ -203,6 +212,7 @@ fun AppRoot(viewModel: PlayerViewModel) {
                 },
             ) { pad ->
                 Box(Modifier.padding(pad)) {
+                    PlaybackNoticeBanner(viewModel)
                     when (dest) {
                         0 ->
                             PlayerScreen(
@@ -555,3 +565,61 @@ fun SearchScreen(
         }
     }
 }
+
+/**
+ * The "that track would not play" banner.
+ *
+ * Overlaid at the top of whatever screen is showing rather than owned by one
+ * of them, because the failure arrives from the player and can land while the
+ * user is anywhere in the app — including on a tab that has no transport on it
+ * at all.
+ *
+ * Dismisses itself after [NOTICE_VISIBLE_MS]. A skipped track is information,
+ * not a decision: making the user tap it away would put a modal in the path of
+ * a queue that has already recovered on its own.
+ */
+@Composable
+private fun PlaybackNoticeBanner(viewModel: PlayerViewModel) {
+    val notice by viewModel.playbackNotice.collectAsStateWithLifecycle()
+    val message = notice ?: return
+
+    LaunchedEffect(message) {
+        kotlinx.coroutines.delay(NOTICE_VISIBLE_MS)
+        viewModel.clearPlaybackNotice()
+    }
+
+    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.errorContainer)
+                    .clickable { viewModel.clearPlaybackNotice() }
+                    .semantics { liveRegion = LiveRegionMode.Polite }
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "Dismiss",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier =
+                    Modifier
+                        .clickable { viewModel.clearPlaybackNotice() }
+                        .semantics { contentDescription = "Dismiss playback message" }
+                        .padding(8.dp),
+            )
+        }
+    }
+}
+
+/** How long a playback notice stays up before clearing itself. */
+private const val NOTICE_VISIBLE_MS = 8_000L
