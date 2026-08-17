@@ -1,5 +1,6 @@
 package dev.musicviz.render.scene
 
+import dev.musicviz.engine.audio.LogBands
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -56,33 +57,11 @@ import kotlin.math.sqrt
  * the plate within three octaves.
  */
 object CymaticsMath {
-    /** Lowest band edge the analyzer resolves; mirrors `FftProcessor.minFreqHz`. */
-    const val MIN_BAND_HZ: Float = 40f
+    /** Lowest band edge the analyzer resolves; mirrors [LogBands.DEFAULT_MIN_HZ]. */
+    const val MIN_BAND_HZ: Float = LogBands.DEFAULT_MIN_HZ
 
-    /**
-     * Nyquist the band -> frequency map assumes, i.e. 44.1 kHz audio.
-     *
-     * [dev.musicviz.analysis.AudioFeatures] does not carry the rate the
-     * spectrum was measured at, and this is the rate essentially all of it
-     * arrives at. The error at 48 kHz is a 4% frequency shift at the very top
-     * of the band range - a fraction of one mode order, against a
-     * [SceneParams.cymaticsFundamental] slider that retunes the whole mapping
-     * by an octave and a half either way.
-     */
-    const val REFERENCE_NYQUIST_HZ: Float = 22_050f
-
-    /**
-     * FFT bins the band map assumes, i.e. `FftProcessor.fftSize` / 2.
-     *
-     * Needed because the analyzer's low bands are not where the logarithm
-     * says they are: at 44.1 kHz a bin is ~21.5 Hz wide, so the bottom ~20
-     * log-spaced band edges all round onto the same bin and
-     * `FftProcessor.bandEdges` pushes each one a bin further up to keep them
-     * distinct. Band 12 covers 280-323 Hz there, not the 130 Hz the pure log
-     * spacing suggests, and a plate that believed the logarithm would answer
-     * every bass note an order too coarse.
-     */
-    const val REFERENCE_FFT_BINS: Int = 1024
+    /** Highest band edge the analyzer resolves; mirrors [LogBands.DEFAULT_MAX_HZ]. */
+    const val MAX_BAND_HZ: Float = LogBands.DEFAULT_MAX_HZ
 
     /** Highest mode order enumerated: finer than this is sub-pixel on a phone. */
     const val MAX_ORDER: Int = 14
@@ -157,63 +136,27 @@ object CymaticsMath {
     private val WAVENUMBERS: FloatArray = FloatArray(MODES.size) { MODES[it].wavenumber }
 
     /**
-     * Mirror of `FftProcessor.bandEdges`: the first FFT bin of each band, and
-     * therefore the frequencies each band actually measures.
-     *
-     * Reproduced rather than called because the analyzer holds an FFT plan and
-     * a window buffer that a scene has no business allocating, and because the
-     * edges are wanted once per "Fundamental" change rather than per frame -
-     * but it IS the same arithmetic, including the clamp and the "bump any
-     * repeated edge up one bin" pass that makes the bottom of the range
-     * linear, and `CymaticsMathTest` asserts the two agree bin for bin.
-     */
-    fun bandEdgeBins(
-        bandCount: Int,
-        nyquistHz: Float = REFERENCE_NYQUIST_HZ,
-        bins: Int = REFERENCE_FFT_BINS,
-    ): IntArray {
-        val edges = IntArray(bandCount + 1)
-        val logMin = ln(MIN_BAND_HZ.toDouble())
-        val logMax = ln(nyquistHz.toDouble())
-        for (b in 0..bandCount) {
-            val f = exp(logMin + (logMax - logMin) * b / bandCount)
-            edges[b] = ((f / nyquistHz * bins).toInt()).coerceIn(1, bins - 1)
-        }
-        for (b in 1..bandCount) {
-            if (edges[b] <= edges[b - 1]) edges[b] = minOf(bins - 1, edges[b - 1] + 1)
-        }
-        return edges
-    }
-
-    /**
      * Centre frequency of band [band] of [bandCount]: the geometric mean of
-     * the frequency range the analyzer takes that band's peak over, i.e. bins
-     * `edges[band] .. edges[band + 1]` inclusive.
+     * the frequency span that band covers.
      *
-     * Not hot - [bandModeMap] builds the edge table once and reuses it - so
-     * this recomputes the edges rather than caching them behind a lock.
+     * The analyzer's band edges are pure log spacing between [MIN_BAND_HZ] and
+     * [MAX_BAND_HZ], so this is a closed form. It used to mirror the old
+     * analyzer's *bin* edges instead, complete with a "bump any repeated edge
+     * up one bin" pass, because that analyzer quantized its band edges to FFT
+     * bins and the bottom twenty bands all landed on the same one — the map
+     * had to reproduce the quantization or a bass note drove the wrong mode.
+     * The bands are no longer quantized that way, so neither is this, and the
+     * reference-Nyquist and reference-bin-count constants that existed only to
+     * feed the quantization are gone with it.
      */
     fun bandCenterHz(
         band: Int,
         bandCount: Int,
-        nyquistHz: Float = REFERENCE_NYQUIST_HZ,
-        bins: Int = REFERENCE_FFT_BINS,
     ): Float {
         if (bandCount <= 0) return MIN_BAND_HZ
-        return centerHz(bandEdgeBins(bandCount, nyquistHz, bins), band, nyquistHz, bins)
-    }
-
-    private fun centerHz(
-        edges: IntArray,
-        band: Int,
-        nyquistHz: Float,
-        bins: Int,
-    ): Float {
-        val binHz = nyquistHz / bins
-        val low = edges[band] * binHz
-        // The band's peak is taken over the last bin as well, so its span runs
-        // to the far edge of edges[band + 1].
-        val high = (edges[band + 1] + 1) * binHz
+        val ratio = ln(MAX_BAND_HZ / MIN_BAND_HZ)
+        val low = MIN_BAND_HZ * exp(ratio * band / bandCount).toFloat()
+        val high = MIN_BAND_HZ * exp(ratio * (band + 1) / bandCount).toFloat()
         return sqrt(low * high)
     }
 
@@ -245,14 +188,10 @@ object CymaticsMath {
     fun bandModeMap(
         bandCount: Int,
         fundamentalHz: Float,
-        nyquistHz: Float = REFERENCE_NYQUIST_HZ,
-        bins: Int = REFERENCE_FFT_BINS,
-    ): IntArray {
-        val edges = bandEdgeBins(bandCount, nyquistHz, bins)
-        return IntArray(bandCount) { band ->
-            modeIndexFor(wavenumberFor(centerHz(edges, band, nyquistHz, bins), fundamentalHz))
+    ): IntArray =
+        IntArray(bandCount) { band ->
+            modeIndexFor(wavenumberFor(bandCenterHz(band, bandCount), fundamentalHz))
         }
-    }
 
     /** One mode's displacement at plate coordinates [x], [y] in [-1, 1]. */
     fun modeHeight(

@@ -20,7 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import dev.musicviz.analysis.FeatureExtractor
+import dev.musicviz.analysis.BeatTuning
 import kotlin.math.roundToInt
 
 /**
@@ -51,14 +51,14 @@ private fun AnalysisGroup(viewModel: PlayerViewModel) {
     val gui by viewModel.guiPrefs.collectAsState()
     Column {
         Text(
-            "Beat sensitivity  ${"%.1f".format(gui.beatThresholdSigma)}σ " +
+            "Beat sensitivity  ${"%.1f".format(gui.beatSensitivity)}σ " +
                 "— drag right for LESS sensitive (fewer beat flashes)",
             style = MaterialTheme.typography.labelMedium,
         )
         CrystalSlider(
-            value = gui.beatThresholdSigma,
-            onValueChange = { viewModel.setGuiPrefs(gui.copy(beatThresholdSigma = it)) },
-            valueRange = FeatureExtractor.SIGMA_MIN..FeatureExtractor.SIGMA_MAX,
+            value = gui.beatSensitivity,
+            onValueChange = { viewModel.setGuiPrefs(gui.copy(beatSensitivity = it)) },
+            valueRange = BeatTuning.SENSITIVITY_MIN..BeatTuning.SENSITIVITY_MAX,
         )
         Text(
             "Minimum gap between beats  ${gui.beatMinIntervalMs.roundToInt()} ms " +
@@ -68,7 +68,7 @@ private fun AnalysisGroup(viewModel: PlayerViewModel) {
         CrystalSlider(
             value = gui.beatMinIntervalMs,
             onValueChange = { viewModel.setGuiPrefs(gui.copy(beatMinIntervalMs = it)) },
-            valueRange = FeatureExtractor.INTERVAL_MS_MIN..FeatureExtractor.INTERVAL_MS_MAX,
+            valueRange = BeatTuning.INTERVAL_MS_MIN..BeatTuning.INTERVAL_MS_MAX,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CrystalButton(
@@ -76,8 +76,8 @@ private fun AnalysisGroup(viewModel: PlayerViewModel) {
                 onClick = {
                     viewModel.setGuiPrefs(
                         gui.copy(
-                            beatThresholdSigma = FeatureExtractor.SLOW_SIGMA,
-                            beatMinIntervalMs = FeatureExtractor.SLOW_INTERVAL_MS,
+                            beatSensitivity = BeatTuning.SLOW_SENSITIVITY,
+                            beatMinIntervalMs = BeatTuning.SLOW_INTERVAL_MS,
                         ),
                     )
                 },
@@ -86,8 +86,8 @@ private fun AnalysisGroup(viewModel: PlayerViewModel) {
                 onClick = {
                     viewModel.setGuiPrefs(
                         gui.copy(
-                            beatThresholdSigma = FeatureExtractor.SIGMA_DEFAULT,
-                            beatMinIntervalMs = FeatureExtractor.INTERVAL_MS_DEFAULT,
+                            beatSensitivity = BeatTuning.SENSITIVITY_DEFAULT,
+                            beatMinIntervalMs = BeatTuning.INTERVAL_MS_DEFAULT,
                         ),
                     )
                 },

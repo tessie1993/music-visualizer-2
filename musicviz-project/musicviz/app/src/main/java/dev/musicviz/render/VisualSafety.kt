@@ -297,7 +297,7 @@ object VisualSafety {
      *
      * Worth knowing how little this does at the DEFAULT settings, so nobody
      * reads more into the switch than it delivers:
-     * `FeatureExtractor.INTERVAL_MS_DEFAULT` is 1000/3 ms, i.e. already
+     * `BeatTuning.INTERVAL_MS_DEFAULT` is 1000/3 ms, i.e. already
      * exactly the 3 Hz limit, so a user who has not touched "Minimum gap
      * between beats" sees no change here at all. It bites only for someone who
      * dragged that slider down toward its 200 ms minimum (5 Hz), which is

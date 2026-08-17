@@ -9,7 +9,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
-import dev.musicviz.analysis.FeatureExtractor
+import dev.musicviz.analysis.BeatTuning
 import dev.musicviz.render.VisualSafetyChoice
 import dev.musicviz.ui.theme.ThemePack
 import dev.musicviz.ui.theme.ThemePackCatalog
@@ -152,9 +152,9 @@ data class GuiPrefs(
     val cornerStyle: CornerStyle = CornerStyle.ROUNDED,
     val barOpacity: Float = 0.72f,
     /** Beat-detection threshold in sigmas; higher = less sensitive. */
-    val beatThresholdSigma: Float = FeatureExtractor.SIGMA_DEFAULT,
+    val beatSensitivity: Float = BeatTuning.SENSITIVITY_DEFAULT,
     /** Minimum gap between beat flags in ms; higher = fewer flashes on slow tracks. */
-    val beatMinIntervalMs: Float = FeatureExtractor.INTERVAL_MS_DEFAULT,
+    val beatMinIntervalMs: Float = BeatTuning.INTERVAL_MS_DEFAULT,
     /** SAF tree the user picked as their preset folder; presets are mirrored
      *  there on save so their own sorting is visible in any file manager. */
     val presetMirrorUri: String? = null,
@@ -328,14 +328,14 @@ class ThemeStore(
             // are still valid, but a stored value must never fall outside the
             // slider's range or Compose would clamp the thumb and the shown
             // number would disagree with what the engine is using.
-            beatThresholdSigma =
+            beatSensitivity =
                 prefs
-                    .getFloat("beat_sigma", FeatureExtractor.SIGMA_DEFAULT)
-                    .coerceIn(FeatureExtractor.SIGMA_MIN, FeatureExtractor.SIGMA_MAX),
+                    .getFloat("beat_sigma", BeatTuning.SENSITIVITY_DEFAULT)
+                    .coerceIn(BeatTuning.SENSITIVITY_MIN, BeatTuning.SENSITIVITY_MAX),
             beatMinIntervalMs =
                 prefs
-                    .getFloat(KEY_BEAT_INTERVAL, FeatureExtractor.INTERVAL_MS_DEFAULT)
-                    .coerceIn(FeatureExtractor.INTERVAL_MS_MIN, FeatureExtractor.INTERVAL_MS_MAX),
+                    .getFloat(KEY_BEAT_INTERVAL, BeatTuning.INTERVAL_MS_DEFAULT)
+                    .coerceIn(BeatTuning.INTERVAL_MS_MIN, BeatTuning.INTERVAL_MS_MAX),
             presetMirrorUri = prefs.getString("preset_mirror_uri", null),
             morphBeats = prefs.getInt("morph_beats", 4),
             accentIntensity = prefs.getFloat(KEY_ACCENT, 1f),
@@ -408,7 +408,7 @@ class ThemeStore(
             .putString(KEY_POS, gui.playerPosition.name)
             .putString(KEY_CORNER, gui.cornerStyle.name)
             .putFloat(KEY_OPACITY, gui.barOpacity)
-            .putFloat("beat_sigma", gui.beatThresholdSigma)
+            .putFloat("beat_sigma", gui.beatSensitivity)
             .putFloat(KEY_BEAT_INTERVAL, gui.beatMinIntervalMs)
             .putString("preset_mirror_uri", gui.presetMirrorUri)
             .putInt("morph_beats", gui.morphBeats)

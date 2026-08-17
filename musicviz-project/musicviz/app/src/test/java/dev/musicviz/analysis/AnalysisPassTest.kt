@@ -17,7 +17,7 @@ import kotlin.math.sin
  */
 class AnalysisPassTest {
     private val rate = 48_000
-    private val fftSize = FftProcessor().fftSize
+    private val fftSize = AnalysisEngine.DEFAULT_FFT_SIZE
 
     private fun ring() = SampleRing(capacityFrames = 1 shl 16, channelCount = 2)
 

@@ -185,7 +185,7 @@ internal class ExportController(
                     val gui = host.guiPrefs
                     val t =
                         analysed.withBeatSensitivity(
-                            gui.beatThresholdSigma,
+                            gui.beatSensitivity,
                             // Same floor the live engine runs under, or an
                             // export would flash faster than the screen did.
                             gui.effectiveBeatMinIntervalMs,

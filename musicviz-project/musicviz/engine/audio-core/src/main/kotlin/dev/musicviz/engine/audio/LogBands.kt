@@ -196,5 +196,29 @@ class LogBands(
 
         /** Pivot of the tilt: bands here are unchanged, below cut, above lifted. */
         const val TILT_REFERENCE_HZ: Float = 1_000f
+
+        /**
+         * Index of the band containing [hz], for a bank of [bandCount] bands
+         * over the same span an instance would use.
+         *
+         * Static because the answer depends only on the log spacing and the
+         * Nyquist clamp, never on the FFT size — which lets a consumer that has
+         * band values but no spectrum (a cache replay) map frequencies onto
+         * them without inventing an FFT configuration to do it.
+         */
+        fun bandForHz(
+            hz: Float,
+            bandCount: Int,
+            sampleRateHz: Int,
+            minHz: Float = DEFAULT_MIN_HZ,
+            maxHz: Float = DEFAULT_MAX_HZ,
+        ): Int {
+            val top = min(maxHz, sampleRateHz / 2f)
+            val bottom = min(minHz, top * 0.5f)
+            if (hz <= bottom) return 0
+            if (hz >= top) return bandCount - 1
+            val fraction = ln(hz / bottom) / ln(top / bottom)
+            return (fraction * bandCount).toInt().coerceIn(0, bandCount - 1)
+        }
     }
 }

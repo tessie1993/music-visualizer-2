@@ -1,5 +1,8 @@
 package dev.musicviz.analysis
 
+import dev.musicviz.engine.audio.DrumChannels
+import dev.musicviz.engine.audio.PulseReplay
+import dev.musicviz.engine.audio.SuperFlux
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -22,17 +25,21 @@ class FeatureTimelineTest {
         bandCount: Int = 64,
     ): TimelineFrame = TimelineFrame(timeMs, AudioFeatures(FloatArray(bandCount) { level }, FloatArray(128), rms = level))
 
-    /** A slow, sparse track run through the real extractor, so the frames
-     *  carry a real onset curve (kick every second, softer hits between). */
-    private fun analyzed(
-        sigma: Float,
+    /**
+     * A slow, sparse track: a kick every second with softer transients every
+     * 250 ms in between — the material whose spurious flashes the sensitivity
+     * sliders exist to suppress. The onset curve is produced by the shipped
+     * [SuperFlux] and decided by the shipped [PulseReplay], so the frames carry
+     * a real curve rather than a hand-drawn one.
+     */
+    private fun analyzedFrames(
+        sensitivity: Float,
         intervalMs: Float,
-    ): FeatureTimeline {
-        val extractor = FeatureExtractor(64, hopRateHz = 60f)
-        extractor.beatThresholdSigma = sigma
-        extractor.beatMinIntervalMs = intervalMs
-        val waveform = FloatArray(128)
-        val frames = ArrayList<TimelineFrame>(900)
+    ): List<TimelineFrame> {
+        val flux = SuperFlux(64)
+        val perFrameBands = ArrayList<FloatArray>(900)
+        val fluxCurve = FloatArray(900)
+        val rmsCurve = FloatArray(900)
         for (i in 0 until 900) {
             val kick = i % 60 == 0
             val minor = !kick && i % 15 == 0
@@ -45,10 +52,36 @@ class FeatureTimelineTest {
                         else -> 0.05f
                     }
                 }
-            frames += TimelineFrame(i * 1000L / 60L, extractor.extract(bands, waveform, 44100))
+            perFrameBands += bands
+            fluxCurve[i] = flux.next(bands)
+            var acc = 0f
+            for (v in bands) acc += v
+            rmsCurve[i] = acc / bands.size
         }
-        return FeatureTimeline(frames, hopMs = 16L, key = "A minor", hopRateHz = 60f)
+        val pulse = PulseReplay.decide(fluxCurve, rmsCurve, 60f, sensitivity, intervalMs)
+        return (0 until 900).map { i ->
+            TimelineFrame(
+                i * 1000L / 60L,
+                AudioFeatures(
+                    bands = perFrameBands[i],
+                    waveform = FloatArray(128),
+                    rms = rmsCurve[i],
+                    flux = fluxCurve[i],
+                    beat = pulse.beat[i],
+                    beatStrength = pulse.strength[i],
+                    transient = pulse.transient[i],
+                    beatPhase = pulse.phase[i],
+                    pulseConfidence = pulse.confidence[i],
+                    macroEnergy = pulse.energy[i],
+                ),
+            )
+        }
     }
+
+    private fun analyzed(
+        sigma: Float,
+        intervalMs: Float,
+    ): FeatureTimeline = FeatureTimeline(analyzedFrames(sigma, intervalMs), hopMs = 16L, key = "A minor", hopRateHz = 60f)
 
     private fun beats(t: FeatureTimeline): List<Boolean> = t.frames.map { it.features.beat }
 
@@ -212,16 +245,16 @@ class FeatureTimelineTest {
 
     @Test
     fun `re-deciding at the analysed settings is a no-op`() {
-        val t = analyzed(FeatureExtractor.SLOW_SIGMA, FeatureExtractor.SLOW_INTERVAL_MS)
-        val same = t.withBeatSensitivity(FeatureExtractor.SLOW_SIGMA, FeatureExtractor.SLOW_INTERVAL_MS)
+        val t = analyzed(BeatTuning.SLOW_SENSITIVITY, BeatTuning.SLOW_INTERVAL_MS)
+        val same = t.withBeatSensitivity(BeatTuning.SLOW_SENSITIVITY, BeatTuning.SLOW_INTERVAL_MS)
         assertTrue("expected some beats to compare", beats(t).any { it })
         assertEquals(beats(t), beats(same))
     }
 
     @Test
     fun `re-deciding at a stricter setting drops beats without re-analysis`() {
-        val t = analyzed(FeatureExtractor.SIGMA_DEFAULT, FeatureExtractor.INTERVAL_MS_DEFAULT)
-        val strict = t.withBeatSensitivity(FeatureExtractor.SLOW_SIGMA, FeatureExtractor.SLOW_INTERVAL_MS)
+        val t = analyzed(BeatTuning.SENSITIVITY_DEFAULT, BeatTuning.INTERVAL_MS_DEFAULT)
+        val strict = t.withBeatSensitivity(BeatTuning.SLOW_SENSITIVITY, BeatTuning.SLOW_INTERVAL_MS)
         val before = beats(t).count { it }
         val after = beats(strict).count { it }
         assertTrue("stricter settings should flash less, got $after vs $before", after < before)
@@ -249,7 +282,7 @@ class FeatureTimelineTest {
                 TimelineFrame(it * 16L, AudioFeatures(FloatArray(64), FloatArray(128), beat = it % 3 == 0))
             }
         val t = FeatureTimeline(frames, hopMs = 16)
-        val same = t.withBeatSensitivity(FeatureExtractor.SIGMA_MAX, FeatureExtractor.INTERVAL_MS_MAX)
+        val same = t.withBeatSensitivity(BeatTuning.SENSITIVITY_MAX, BeatTuning.INTERVAL_MS_MAX)
         assertEquals(beats(t), beats(same))
         assertEquals(4, beats(same).count { it })
     }
@@ -325,7 +358,7 @@ class FeatureTimelineTest {
         for (i in 0 until 400) {
             val b = bandsAt(i)
             live.step(b)
-            expected += Triple(live.kickImpulse, live.snareImpulse, live.hatImpulse)
+            expected += Triple(live.kick, live.snare, live.hat)
             // Stored WITHOUT the channels, exactly as AnalysisCache.load rebuilds it.
             frames += TimelineFrame((i * 1000L / 60L), AudioFeatures(bands = b, waveform = FloatArray(0)))
         }

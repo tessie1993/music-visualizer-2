@@ -57,10 +57,7 @@ class ReactiveAnalyzer(
     private val grid = BeatGrid()
 
     /** Band-limited onset channels; see [kick]. */
-    private val drumPickers = Array(DRUM_CHANNELS) { OnsetPeakPicker(hopRateHz, refractorySeconds = 0.05f) }
-    private val drumFlux = Array(DRUM_CHANNELS) { SuperFlux(bandCount) }
-    private val drumBands = Array(DRUM_CHANNELS) { FloatArray(bandCount) }
-    private val drumRange = IntArray(DRUM_CHANNELS * 2)
+    private var drums = DrumChannels(bandCount, hopRateHz, sampleRateHz)
 
     /** Smoothed band levels, the array a scene reads. Valid after [analyze]. */
     val bands: FloatArray = FloatArray(bandCount)
@@ -72,7 +69,7 @@ class ReactiveAnalyzer(
             if (value != field) {
                 field = value
                 logBands.sampleRateHz = value
-                rebuildDrumRanges()
+                drums = DrumChannels(bandCount, hopRateHz, value).also { it.sensitivity = picker.sensitivity }
             }
         }
 
@@ -89,7 +86,7 @@ class ReactiveAnalyzer(
         get() = picker.sensitivity
         set(value) {
             picker.sensitivity = value
-            for (p in drumPickers) p.sensitivity = value
+            drums.sensitivity = value
         }
 
     /** See [OnsetPeakPicker.refractorySeconds]. */
@@ -176,10 +173,7 @@ class ReactiveAnalyzer(
     val warmup: Float get() = range.warmup
 
     private var levelPeak = 0f
-
-    init {
-        rebuildDrumRanges()
-    }
+    private var lastFrameSilent = true
 
     /**
      * Analyzes one window of mono samples, advancing every stateful node by
@@ -199,10 +193,12 @@ class ReactiveAnalyzer(
             // without advancing the adaptive nodes is what lets the visuals pick
             // up where they left off after a gap between tracks, rather than
             // spending the first bar re-learning the range from nothing.
+            lastFrameSilent = true
             silenceOutputs()
             return
         }
 
+        lastFrameSilent = false
         window.applyInto(samples, 0, windowed)
         spectrum.compute(windowed)
 
@@ -230,7 +226,10 @@ class ReactiveAnalyzer(
         beatPhase = grid.phase
         beatStrength = if (beat) picker.strength else 0f
 
-        stepDrums()
+        drums.step(whitened)
+        kick = drums.kick
+        snare = drums.snare
+        hat = drums.hat
     }
 
     /**
@@ -249,8 +248,7 @@ class ReactiveAnalyzer(
         picker.reset()
         tempo.reset()
         grid.reset()
-        for (p in drumPickers) p.reset()
-        for (f in drumFlux) f.reset()
+        drums.reset()
         smoothingState.fill(0f)
         bands.fill(0f)
         levelPeak = 0f
@@ -271,6 +269,33 @@ class ReactiveAnalyzer(
         kick = 0f
         snare = 0f
         hat = 0f
+    }
+
+    /**
+     * Writes the half magnitude spectrum of the last analyzed frame into [out],
+     * scaled so a full-scale tone reads near 1.
+     *
+     * [out] must hold `fftSize / 2` values — DC through the bin below Nyquist,
+     * with DC forced to zero because it carries offset rather than music. That
+     * is the layout and the scale the pitch nodes ([dev.musicviz] `Chromagram`
+     * and `KeyDetector`) were written against, and their silence thresholds are
+     * absolute, so handing them this node's natural unscaled magnitudes would
+     * quietly disable those thresholds.
+     *
+     * Reads as silence after a silent frame rather than serving the last loud
+     * spectrum, which would leave a harmony reading frozen on the note the
+     * track ended on.
+     */
+    fun spectrumInto(out: FloatArray): FloatArray {
+        require(out.size == fftSize / 2) { "expected ${fftSize / 2} bins, got ${out.size}" }
+        if (lastFrameSilent) {
+            out.fill(0f)
+            return out
+        }
+        val scale = 2f / fftSize
+        out[0] = 0f
+        for (k in 1 until fftSize / 2) out[k] = spectrum.magnitudes[k] * scale
+        return out
     }
 
     /** Publishes a wholly-still frame, leaving every learned model untouched. */
@@ -370,42 +395,6 @@ class ReactiveAnalyzer(
         return if (levelPeak <= 1e-6f) 0f else (level / levelPeak).coerceIn(0f, 1f)
     }
 
-    private fun stepDrums() {
-        for (c in 0 until DRUM_CHANNELS) {
-            val from = drumRange[c * 2]
-            val to = drumRange[c * 2 + 1]
-            val slice = drumBands[c]
-            // Zero outside the channel's range so the shared-width SuperFlux
-            // sees only this channel's bands.
-            for (b in 0 until bandCount) slice[b] = if (b in from..to) whitened[b] else 0f
-            val fired = drumPickers[c].accept(drumFlux[c].next(slice))
-            val impulse = if (fired) drumPickers[c].strength else 0f
-            when (c) {
-                0 -> kick = impulse
-                1 -> snare = impulse
-                else -> hat = impulse
-            }
-        }
-    }
-
-    /**
-     * Maps the three drum channels onto band indices by frequency, so they
-     * follow the band layout instead of assuming it — a 16 kHz mic capture and
-     * a 48 kHz file put the same frequency in very different bands.
-     */
-    private fun rebuildDrumRanges() {
-        val edges = floatArrayOf(30f, 120f, 120f, 900f, 4_000f, 16_000f)
-        for (c in 0 until DRUM_CHANNELS) {
-            drumRange[c * 2] = bandContaining(edges[c * 2])
-            drumRange[c * 2 + 1] = bandContaining(edges[c * 2 + 1])
-        }
-    }
-
-    private fun bandContaining(hz: Float): Int {
-        for (b in 0 until bandCount) if (hz <= logBands.upperHz(b)) return b
-        return bandCount - 1
-    }
-
     private fun mean(
         values: FloatArray,
         from: Int,
@@ -417,9 +406,6 @@ class ReactiveAnalyzer(
     }
 
     companion object {
-        /** Kick, snare and hat band-activity channels. */
-        private const val DRUM_CHANNELS = 3
-
         /**
          * How far above the peak-picking threshold [onset] saturates. The
          * continuous readout should still be climbing when the discrete

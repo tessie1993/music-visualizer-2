@@ -1,5 +1,9 @@
 package dev.musicviz.analysis
 
+import dev.musicviz.engine.audio.LogBands
+import dev.musicviz.engine.audio.Spectrum
+import dev.musicviz.engine.audio.WindowShape
+import dev.musicviz.engine.audio.WindowTable
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -99,21 +103,21 @@ class CorpusOracleTest {
     @Test
     fun `a pure tone lands in the band that contains it`() {
         // Ties our log band layout to the oracle's spectral centroid, which for
-        // a pure tone is the tone. A band table off by a few bands - the exact
-        // failure FftProcessor.MIN_FREQ_HZ exists to prevent duplicating -
-        // shows up here as the peak sitting somewhere else.
+        // a pure tone is the tone. A band table off by a few bands shows up
+        // here as the peak sitting somewhere else.
         val fixture = Corpus.named("tone_440")
-        val processor = FftProcessor()
-        val window = FloatArray(processor.fftSize)
-        fixture.mono().copyInto(window, 0, 0, processor.fftSize)
-        val bands = FloatArray(processor.bandCount)
-        processor.process(window, fixture.sampleRateHz, bands)
+        val fftSize = 2048
+        val windowed = FloatArray(fftSize)
+        WindowTable(fftSize, WindowShape.HANN).applyInto(fixture.mono(), 0, windowed)
+        val spectrum = Spectrum(fftSize)
+        spectrum.compute(windowed)
+        val bander = LogBands(64, fftSize, fixture.sampleRateHz)
+        val bands = FloatArray(64)
+        bander.energyDb(spectrum.magnitudes, bands)
 
         val peak = bands.indices.maxBy { bands[it] }
-        val edges = processor.bandEdges(fixture.sampleRateHz)
-        val binHz = fixture.sampleRateHz.toDouble() / processor.fftSize
-        val low = edges[peak] * binHz
-        val high = (edges[peak + 1] + 1) * binHz
+        val low = bander.lowerHz(peak).toDouble()
+        val high = bander.upperHz(peak).toDouble()
         val centroid = fixture.expected("spectralCentroidHz")
 
         assertTrue(

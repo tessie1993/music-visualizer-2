@@ -47,8 +47,8 @@ enum class LiveInputProfile(
     SPEAKER(
         label = "Speaker",
         summary = "Music playing nearby, loud and clear. Closest to normal playback.",
-        beatSigma = FeatureExtractor.SIGMA_DEFAULT,
-        beatIntervalMs = FeatureExtractor.INTERVAL_MS_DEFAULT,
+        beatSigma = BeatTuning.SENSITIVITY_DEFAULT,
+        beatIntervalMs = BeatTuning.INTERVAL_MS_DEFAULT,
         attack = 0.6f,
         decay = 0.12f,
         audioDrive = 1f,
@@ -64,7 +64,7 @@ enum class LiveInputProfile(
      * threshold (the onsets are softer) while pulling the bass back and
      * pushing the treble up to recover the detail the room ate.
      *
-     * The original design wanted 1.15 sigma, below [FeatureExtractor.SIGMA_MIN];
+     * The original design wanted 1.15 sigma, below [BeatTuning.SENSITIVITY_MIN];
      * the engine clamps there because a lower gate fires on noise, so the old
      * value silently ran at the floor anyway while Settings displayed 1.15.
      * Pinned to the floor until a DSP review widens the engine range.
@@ -72,7 +72,7 @@ enum class LiveInputProfile(
     ROOM(
         label = "Room",
         summary = "A PA across a room: softer transients, boomy low end, reverb tail.",
-        beatSigma = FeatureExtractor.SIGMA_MIN,
+        beatSigma = BeatTuning.SENSITIVITY_MIN,
         beatIntervalMs = 260f,
         attack = 0.45f,
         decay = 0.2f,
@@ -91,16 +91,16 @@ enum class LiveInputProfile(
      * passage is thinned as little as possible.
      *
      * The original design wanted 1 sigma / 130 ms, below both engine floors
-     * ([FeatureExtractor.SIGMA_MIN] against noise triggers,
-     * [FeatureExtractor.INTERVAL_MS_MIN] = the 300 BPM refractory); the old
+     * ([BeatTuning.SENSITIVITY_MIN] against noise triggers,
+     * [BeatTuning.INTERVAL_MS_MIN] = the 300 BPM refractory); the old
      * values silently ran at the floors anyway while Settings displayed them.
      * Pinned to the floors until a DSP review widens the engine range.
      */
     INSTRUMENT(
         label = "Instrument",
         summary = "Played into the phone: sharp attacks, wide dynamics, no steady beat.",
-        beatSigma = FeatureExtractor.SIGMA_MIN,
-        beatIntervalMs = FeatureExtractor.INTERVAL_MS_MIN,
+        beatSigma = BeatTuning.SENSITIVITY_MIN,
+        beatIntervalMs = BeatTuning.INTERVAL_MS_MIN,
         attack = 0.85f,
         decay = 0.28f,
         audioDrive = 1.6f,

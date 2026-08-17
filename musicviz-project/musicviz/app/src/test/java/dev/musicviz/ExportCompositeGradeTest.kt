@@ -2,7 +2,6 @@ package dev.musicviz
 
 import dev.musicviz.analysis.AudioFeatures
 import dev.musicviz.analysis.FeatureTimeline
-import dev.musicviz.analysis.PulseTracker
 import dev.musicviz.analysis.TimelineFrame
 import dev.musicviz.export.ExportGradeState
 import dev.musicviz.render.CompositeGrade
@@ -285,7 +284,9 @@ class ExportCompositeGradeTest {
 
         val hard = peakFor(1f)
         val soft = peakFor(0.4f)
-        val faint = peakFor(PulseTracker.STRENGTH_FLOOR * PulseTracker.ENERGY_BASE * PulseTracker.UNLOCKED_SCALE)
+        // The weakest beat the pulse path can emit: a quiet hit, graded against a
+        // recent peak roughly six times its size.
+        val faint = peakFor(0.168f)
         assertTrue("a full-strength beat should reach the slider, got $hard", hard >= 0.99f)
         // pulseAmount SQUARES the envelope, so the ordering is preserved but
         // the spread is wider than the strengths themselves - which is the

@@ -1,5 +1,6 @@
 package dev.musicviz.analysis
 
+import dev.musicviz.engine.audio.ReactiveAnalyzer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -29,9 +30,8 @@ class ChromagramTest {
         frames: Int = 40,
         amp: Float = 0.5f,
     ): Chromagram {
-        val fft = FftProcessor(fftSize = fftSize)
+        val fft = SpectrumSource()
         val chroma = Chromagram(hopRateHz = 60f)
-        val bands = FloatArray(fft.bandCount)
         val buf = FloatArray(fftSize)
         var phase = 0
         repeat(frames) {
@@ -41,8 +41,7 @@ class ChromagramTest {
                 buf[i] = (v * amp / maxOf(1, notes.size)).toFloat()
             }
             phase += fftSize
-            fft.process(buf, rate, bands)
-            fft.updateChroma(chroma, rate)
+            fft.feed(buf, chroma)
         }
         return chroma
     }
@@ -123,9 +122,8 @@ class ChromagramTest {
      */
     @Test
     fun `noise is not confident`() {
-        val fft = FftProcessor(fftSize = fftSize)
+        val fft = SpectrumSource()
         val chroma = Chromagram(hopRateHz = 60f)
-        val bands = FloatArray(fft.bandCount)
         val buf = FloatArray(fftSize)
         var seed = 1234567
         repeat(40) {
@@ -133,32 +131,28 @@ class ChromagramTest {
                 seed = seed * 1103515245 + 12345
                 buf[i] = ((seed ushr 16) and 0x7fff) / 16384f - 1f
             }
-            fft.process(buf, rate, bands)
-            fft.updateChroma(chroma, rate)
+            fft.feed(buf, chroma)
         }
         assertTrue("noise scored ${chroma.confidence}", chroma.confidence < 0.35f)
     }
 
     @Test
     fun `silence is not confident and decays to nothing`() {
-        val fft = FftProcessor(fftSize = fftSize)
+        val fft = SpectrumSource()
         val chroma = Chromagram(hopRateHz = 60f)
-        val bands = FloatArray(fft.bandCount)
         // A real chord first, so this measures DECAY rather than a cold start.
         val buf = FloatArray(fftSize)
         repeat(40) { f ->
             for (i in 0 until fftSize) {
                 buf[i] = (0.5 * sin(2.0 * PI * midiHz(76) * (f * fftSize + i) / rate)).toFloat()
             }
-            fft.process(buf, rate, bands)
-            fft.updateChroma(chroma, rate)
+            fft.feed(buf, chroma)
         }
         assertTrue("should have been confident first", chroma.confidence > 0.5f)
 
         java.util.Arrays.fill(buf, 0f)
         repeat(180) {
-            fft.process(buf, rate, bands)
-            fft.updateChroma(chroma, rate)
+            fft.feed(buf, chroma)
         }
         assertEquals("silence must report no confidence", 0f, chroma.confidence, 0f)
         for (v in chroma.bins) assertTrue("bin did not decay: $v", v < 0.05f)
@@ -212,5 +206,23 @@ class ChromagramTest {
     fun `AudioFeatures reports whether a chromagram ran`() {
         assertTrue(!AudioFeatures.empty().hasChroma)
         assertTrue(AudioFeatures.empty().copy(chroma = FloatArray(12)).hasChroma)
+    }
+
+    /**
+     * Produces the half-spectrum [Chromagram] consumes, on the scale it was
+     * written against. Wraps [ReactiveAnalyzer] rather than an FFT of its own
+     * so the tests exercise the same spectrum the app feeds the chromagram.
+     */
+    private inner class SpectrumSource {
+        private val analyzer = ReactiveAnalyzer(fftSize = fftSize, sampleRateHz = rate, hopRateHz = 60f)
+        private val magnitudes = FloatArray(fftSize / 2)
+
+        fun feed(
+            samples: FloatArray,
+            chroma: Chromagram,
+        ) {
+            analyzer.analyze(samples, 1f / 60f)
+            chroma.step(analyzer.spectrumInto(magnitudes), rate, fftSize)
+        }
     }
 }

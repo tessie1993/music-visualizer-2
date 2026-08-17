@@ -5,6 +5,7 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import dev.musicviz.engine.audio.ReactiveAnalyzer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.ByteOrder
@@ -30,25 +31,25 @@ class OfflineAnalyzer(
 ) {
     suspend fun analyze(
         uri: Uri,
-        beatThresholdSigma: Float = FeatureExtractor.SIGMA_DEFAULT,
-        beatMinIntervalMs: Float = FeatureExtractor.INTERVAL_MS_DEFAULT,
+        beatSensitivity: Float = BeatTuning.SENSITIVITY_DEFAULT,
+        beatMinIntervalMs: Float = BeatTuning.INTERVAL_MS_DEFAULT,
         onProgress: (Float) -> Unit = {},
     ): FeatureTimeline =
         withContext(Dispatchers.Default) {
-            analyzeBlocking(uri, beatThresholdSigma, beatMinIntervalMs, onProgress)
+            analyzeBlocking(uri, beatSensitivity, beatMinIntervalMs, onProgress)
         }
 
     fun analyzeBlocking(
         uri: Uri,
-        beatThresholdSigma: Float = FeatureExtractor.SIGMA_DEFAULT,
-        beatMinIntervalMs: Float = FeatureExtractor.INTERVAL_MS_DEFAULT,
+        beatSensitivity: Float = BeatTuning.SENSITIVITY_DEFAULT,
+        beatMinIntervalMs: Float = BeatTuning.INTERVAL_MS_DEFAULT,
         onProgress: (Float) -> Unit = {},
     ): FeatureTimeline {
         // AIFF first: the platform extractor/codec stack can't read it, but
         // it's plain PCM - stream it straight into the pipeline.
         dev.musicviz.audio.AiffPcm.open(context, uri)?.let { aiff ->
             try {
-                val pipeline = StreamingPipeline(beatThresholdSigma, beatMinIntervalMs)
+                val pipeline = StreamingPipeline(beatSensitivity, beatMinIntervalMs)
                 val buf = ShortArray(16384)
                 var last = 0f
                 while (true) {
@@ -67,7 +68,7 @@ class OfflineAnalyzer(
         }
         val extractor = MediaExtractor()
         var codecRef: MediaCodec? = null
-        val pipeline = StreamingPipeline(beatThresholdSigma, beatMinIntervalMs)
+        val pipeline = StreamingPipeline(beatSensitivity, beatMinIntervalMs)
         val info = MediaCodec.BufferInfo()
         var inputDone = false
         var outputDone = false
@@ -154,26 +155,35 @@ class OfflineAnalyzer(
         sigma: Float,
         minIntervalMs: Float,
     ) {
-        private val processor = FftProcessor()
         private val keyDetector = KeyDetector()
-        private val smoother = BandSmoother(processor.bandCount)
-        private val extractor =
-            FeatureExtractor(processor.bandCount, hopRateHz = HOP_RATE_HZ).also {
-                // Clamped to the same bounds AnalysisEngine uses for the live
-                // extractor, so the two paths cannot diverge at the extremes.
-                it.beatThresholdSigma = sigma.coerceIn(FeatureExtractor.SIGMA_MIN, FeatureExtractor.SIGMA_MAX)
-                it.beatMinIntervalMs =
-                    minIntervalMs.coerceIn(FeatureExtractor.INTERVAL_MS_MIN, FeatureExtractor.INTERVAL_MS_MAX)
+
+        /**
+         * The same graph the live path runs, configured the same way. It is
+         * literally the same class, which is what makes an exported video match
+         * what playback showed — the two paths cannot drift apart because there
+         * is only one implementation of the analysis.
+         */
+        private val analyzer =
+            ReactiveAnalyzer(
+                bandCount = AnalysisEngine.DEFAULT_BAND_COUNT,
+                fftSize = AnalysisEngine.DEFAULT_FFT_SIZE,
+                hopRateHz = HOP_RATE_HZ,
+            ).also {
+                it.sensitivity = BeatTuning.clampSensitivity(sigma)
+                it.refractoryMs = BeatTuning.clampIntervalMs(minIntervalMs)
+                it.attackSeconds = BeatTuning.envelopeSeconds(AnalysisEngine.DEFAULT_ATTACK)
+                it.releaseSeconds = BeatTuning.envelopeSeconds(AnalysisEngine.DEFAULT_DECAY)
             }
-        private val window = FloatArray(processor.fftSize)
-        private val raw = FloatArray(processor.bandCount)
-        private val smoothed = FloatArray(processor.bandCount)
+        private val fftSize = AnalysisEngine.DEFAULT_FFT_SIZE
+        private val window = FloatArray(fftSize)
+        private val chromaMagnitudes = FloatArray(fftSize / 2)
         private val waveform = FloatArray(128)
+        private val dtSeconds = 1f / HOP_RATE_HZ
 
         /** Bounded frame store: halves its own time resolution rather than
          *  letting a 3-hour file OOM the process; see [FrameAccumulator]. */
         private val frames = FrameAccumulator()
-        private var buffer = FloatArray(processor.fftSize * 4)
+        private var buffer = FloatArray(AnalysisEngine.DEFAULT_FFT_SIZE * 4)
         private var buffered = 0
         private var sampleRate = 44100
         private var hopSamples = sampleRate / 60
@@ -242,15 +252,15 @@ class OfflineAnalyzer(
 
         private fun drain() {
             var start = 0
-            while (start + processor.fftSize <= buffered) {
-                System.arraycopy(buffer, start, window, 0, processor.fftSize)
-                processor.process(window, sampleRate, raw)
-                processor.accumulateChroma(keyDetector, sampleRate)
-                smoother.apply(raw, smoothed)
-                val step = processor.fftSize / waveform.size
+            while (start + fftSize <= buffered) {
+                System.arraycopy(buffer, start, window, 0, fftSize)
+                analyzer.sampleRateHz = sampleRate
+                analyzer.analyze(window, dtSeconds)
+                keyDetector.accumulate(analyzer.spectrumInto(chromaMagnitudes), sampleRate, fftSize)
+                val step = fftSize / waveform.size
                 for (i in waveform.indices) waveform[i] = window[i * step]
                 val timeMs = absSample * 1000L / sampleRate
-                frames.add(TimelineFrame(timeMs, extractor.extract(smoothed, waveform, sampleRate)))
+                frames.add(TimelineFrame(timeMs, snapshot()))
                 absSample += hopSamples
                 start += hopSamples
             }
@@ -259,6 +269,30 @@ class OfflineAnalyzer(
                 buffered -= start
             }
         }
+
+        /** One frame of the analyzer's outputs, in the shape scenes consume. */
+        private fun snapshot(): AudioFeatures =
+            AudioFeatures(
+                bands = analyzer.bands.copyOf(),
+                waveform = waveform.copyOf(),
+                rms = analyzer.rms,
+                bass = analyzer.bass,
+                mid = analyzer.mid,
+                treble = analyzer.treble,
+                onset = analyzer.onset,
+                beat = analyzer.beat,
+                bpm = analyzer.bpm,
+                centroid = analyzer.centroid,
+                flux = analyzer.fluxValue,
+                beatStrength = analyzer.beatStrength,
+                transient = analyzer.transient,
+                beatPhase = analyzer.beatPhase,
+                pulseConfidence = analyzer.pulseConfidence,
+                macroEnergy = analyzer.macroEnergy,
+                kick = analyzer.kick,
+                snare = analyzer.snare,
+                hat = analyzer.hat,
+            )
 
         fun finish(): FeatureTimeline {
             // groupSize is 1 for every track under FrameAccumulator's bound,

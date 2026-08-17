@@ -119,7 +119,7 @@ object AnalysisCache {
     fun load(
         context: Context,
         uri: Uri,
-        beatThresholdSigma: Float,
+        beatSensitivity: Float,
         beatMinIntervalMs: Float,
     ): FeatureTimeline? {
         val f = fileFor(context, uri)
@@ -189,7 +189,7 @@ object AnalysisCache {
         // bands rather than serialised, so a v2 entry written before they
         // existed comes back with them populated and no format bump was needed.
         return loaded
-            .withBeatSensitivity(beatThresholdSigma, beatMinIntervalMs)
+            .withBeatSensitivity(beatSensitivity, beatMinIntervalMs)
             .withDrumChannels()
     }
 

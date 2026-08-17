@@ -4,9 +4,11 @@ import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import dev.musicviz.analysis.AnalysisCache
 import dev.musicviz.analysis.AudioFeatures
-import dev.musicviz.analysis.FeatureExtractor
+import dev.musicviz.analysis.BeatTuning
 import dev.musicviz.analysis.FeatureTimeline
 import dev.musicviz.analysis.TimelineFrame
+import dev.musicviz.engine.audio.PulseReplay
+import dev.musicviz.engine.audio.SuperFlux
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -41,8 +43,8 @@ import java.io.File
 class AnalysisCacheTest {
     private val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
 
-    private val defaultSigma = FeatureExtractor.SIGMA_DEFAULT
-    private val defaultInterval = FeatureExtractor.INTERVAL_MS_DEFAULT
+    private val defaultSigma = BeatTuning.SENSITIVITY_DEFAULT
+    private val defaultInterval = BeatTuning.INTERVAL_MS_DEFAULT
 
     private fun timeline(): FeatureTimeline {
         val frames =
@@ -69,35 +71,61 @@ class AnalysisCacheTest {
 
     /**
      * A slow, sparse track: a kick every second with softer transients every
-     * 250 ms in between - the material whose spurious flashes the sensitivity
-     * sliders exist to suppress. Run through a real [FeatureExtractor] so the
-     * frames carry a real onset curve.
+     * 250 ms in between — the material whose spurious flashes the sensitivity
+     * sliders exist to suppress. The onset curve is produced by the shipped
+     * [SuperFlux] and decided by the shipped [PulseReplay], so the frames carry
+     * a real curve rather than a hand-drawn one.
      */
-    private fun analyzedTimeline(
-        sigma: Float,
+    private fun analyzedFrames(
+        sensitivity: Float,
         intervalMs: Float,
-    ): FeatureTimeline {
-        val extractor = FeatureExtractor(64, hopRateHz = 60f)
-        extractor.beatThresholdSigma = sigma
-        extractor.beatMinIntervalMs = intervalMs
-        val waveform = FloatArray(128)
-        val frames = ArrayList<TimelineFrame>(900)
-        for (frame in 0 until 900) {
-            val kick = frame % 60 == 0
-            val minor = !kick && frame % 15 == 0
+    ): List<TimelineFrame> {
+        val flux = SuperFlux(64)
+        val perFrameBands = ArrayList<FloatArray>(900)
+        val fluxCurve = FloatArray(900)
+        val rmsCurve = FloatArray(900)
+        for (i in 0 until 900) {
+            val kick = i % 60 == 0
+            val minor = !kick && i % 15 == 0
             val bands =
-                FloatArray(64) { i ->
+                FloatArray(64) { b ->
                     when {
-                        i >= 16 -> 0.05f
+                        b >= 16 -> 0.05f
                         kick -> 0.65f
                         minor -> 0.40f
                         else -> 0.05f
                     }
                 }
-            frames += TimelineFrame(frame * 1000L / 60L, extractor.extract(bands, waveform, 44100))
+            perFrameBands += bands
+            fluxCurve[i] = flux.next(bands)
+            var acc = 0f
+            for (v in bands) acc += v
+            rmsCurve[i] = acc / bands.size
         }
-        return FeatureTimeline(frames, hopMs = 16L, key = "A minor", hopRateHz = 60f)
+        val pulse = PulseReplay.decide(fluxCurve, rmsCurve, 60f, sensitivity, intervalMs)
+        return (0 until 900).map { i ->
+            TimelineFrame(
+                i * 1000L / 60L,
+                AudioFeatures(
+                    bands = perFrameBands[i],
+                    waveform = FloatArray(128),
+                    rms = rmsCurve[i],
+                    flux = fluxCurve[i],
+                    beat = pulse.beat[i],
+                    beatStrength = pulse.strength[i],
+                    transient = pulse.transient[i],
+                    beatPhase = pulse.phase[i],
+                    pulseConfidence = pulse.confidence[i],
+                    macroEnergy = pulse.energy[i],
+                ),
+            )
+        }
     }
+
+    private fun analyzedTimeline(
+        sigma: Float,
+        intervalMs: Float,
+    ): FeatureTimeline = FeatureTimeline(analyzedFrames(sigma, intervalMs), hopMs = 16L, key = "A minor", hopRateHz = 60f)
 
     private fun beatsOf(t: FeatureTimeline): List<Boolean> = t.frames.map { it.features.beat }
 
@@ -147,9 +175,9 @@ class AnalysisCacheTest {
     fun cacheRoundtripKeepsTheLiveBeatsAtTheSameSettings() {
         val uri = Uri.parse("content://media/audio/slow-1")
         AnalysisCache.clear(ctx)
-        val live = analyzedTimeline(FeatureExtractor.SLOW_SIGMA, FeatureExtractor.SLOW_INTERVAL_MS)
+        val live = analyzedTimeline(BeatTuning.SLOW_SENSITIVITY, BeatTuning.SLOW_INTERVAL_MS)
         AnalysisCache.save(ctx, uri, live)
-        val back = AnalysisCache.load(ctx, uri, FeatureExtractor.SLOW_SIGMA, FeatureExtractor.SLOW_INTERVAL_MS)!!
+        val back = AnalysisCache.load(ctx, uri, BeatTuning.SLOW_SENSITIVITY, BeatTuning.SLOW_INTERVAL_MS)!!
         assertTrue("expected some beats", beatsOf(live).any { it })
         assertEquals(beatsOf(live), beatsOf(back))
         // The stored onset curve is what makes that possible; it is written at
@@ -165,12 +193,12 @@ class AnalysisCacheTest {
         val uri = Uri.parse("content://media/audio/slow-2")
         AnalysisCache.clear(ctx)
         // Analysed at the defaults...
-        val analysed = analyzedTimeline(FeatureExtractor.SIGMA_DEFAULT, FeatureExtractor.INTERVAL_MS_DEFAULT)
+        val analysed = analyzedTimeline(BeatTuning.SENSITIVITY_DEFAULT, BeatTuning.INTERVAL_MS_DEFAULT)
         AnalysisCache.save(ctx, uri, analysed)
 
         val atDefault =
-            AnalysisCache.load(ctx, uri, FeatureExtractor.SIGMA_DEFAULT, FeatureExtractor.INTERVAL_MS_DEFAULT)!!
-        val atSlow = AnalysisCache.load(ctx, uri, FeatureExtractor.SLOW_SIGMA, FeatureExtractor.SLOW_INTERVAL_MS)!!
+            AnalysisCache.load(ctx, uri, BeatTuning.SENSITIVITY_DEFAULT, BeatTuning.INTERVAL_MS_DEFAULT)!!
+        val atSlow = AnalysisCache.load(ctx, uri, BeatTuning.SLOW_SENSITIVITY, BeatTuning.SLOW_INTERVAL_MS)!!
 
         assertEquals(beatsOf(analysed), beatsOf(atDefault))
         assertNotEquals(beatsOf(atDefault), beatsOf(atSlow))

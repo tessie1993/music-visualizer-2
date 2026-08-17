@@ -1,7 +1,7 @@
 package dev.musicviz
 
 import dev.musicviz.analysis.AnalysisEngine
-import dev.musicviz.analysis.FeatureExtractor
+import dev.musicviz.analysis.BeatTuning
 import dev.musicviz.analysis.LiveInputProfile
 import dev.musicviz.engine.audio.SampleRing
 import org.junit.Assert.assertEquals
@@ -12,7 +12,7 @@ import org.junit.Test
  * Guards the contract between [LiveInputProfile] and the engine clamps.
  *
  * Historical bug: ROOM shipped beatSigma = 1.15 and INSTRUMENT 1.0 sigma /
- * 130 ms - all below [FeatureExtractor.SIGMA_MIN] / [FeatureExtractor.INTERVAL_MS_MIN].
+ * 130 ms - all below [BeatTuning.SENSITIVITY_MIN] / [BeatTuning.INTERVAL_MS_MIN].
  * [AnalysisEngine] clamped them on write, so the profiles' documented extra
  * sensitivity never ran, while the Settings sliders showed the unclamped
  * numbers the engine was not using. The profiles are pinned to the engine
@@ -26,13 +26,13 @@ class LiveInputProfileTest {
             assertEquals(
                 "$profile beatSigma must not be silently clamped",
                 profile.beatSigma,
-                profile.beatSigma.coerceIn(FeatureExtractor.SIGMA_MIN, FeatureExtractor.SIGMA_MAX),
+                profile.beatSigma.coerceIn(BeatTuning.SENSITIVITY_MIN, BeatTuning.SENSITIVITY_MAX),
                 0f,
             )
             assertEquals(
                 "$profile beatIntervalMs must not be silently clamped",
                 profile.beatIntervalMs,
-                profile.beatIntervalMs.coerceIn(FeatureExtractor.INTERVAL_MS_MIN, FeatureExtractor.INTERVAL_MS_MAX),
+                profile.beatIntervalMs.coerceIn(BeatTuning.INTERVAL_MS_MIN, BeatTuning.INTERVAL_MS_MAX),
                 0f,
             )
         }
@@ -45,8 +45,8 @@ class LiveInputProfileTest {
         // using.
         val engine = AnalysisEngine(SampleRing(1 shl 16, 2))
         for (profile in LiveInputProfile.entries) {
-            engine.beatThresholdSigma = profile.beatSigma
-            assertEquals("$profile beatSigma", profile.beatSigma, engine.beatThresholdSigma, 0f)
+            engine.beatSensitivity = profile.beatSigma
+            assertEquals("$profile beatSigma", profile.beatSigma, engine.beatSensitivity, 0f)
             engine.beatMinIntervalMs = profile.beatIntervalMs
             assertEquals("$profile beatIntervalMs", profile.beatIntervalMs, engine.beatMinIntervalMs, 0f)
         }

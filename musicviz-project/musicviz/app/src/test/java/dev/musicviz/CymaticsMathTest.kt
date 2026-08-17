@@ -1,6 +1,6 @@
 package dev.musicviz
 
-import dev.musicviz.analysis.FftProcessor
+import dev.musicviz.engine.audio.LogBands
 import dev.musicviz.render.scene.CymaticsMath
 import dev.musicviz.render.scene.CymaticsPlate
 import org.junit.Assert.assertEquals
@@ -178,26 +178,16 @@ class CymaticsMathTest {
 
     @Test
     fun band_centres_sit_inside_the_bands_the_analyzer_measures() {
-        // CymaticsMath re-derives the band -> frequency map instead of calling
-        // the analyzer, so this is the pin that keeps the two the same map -
-        // including the bin quantization that makes the bottom of the range
-        // linear rather than logarithmic (REFERENCE_FFT_BINS).
+        // CymaticsMath re-derives the band -> frequency map instead of holding
+        // an analyzer, so this is the pin that keeps the two the same map.
         val bandCount = 64
-        val rate = 44_100
-        val processor = FftProcessor(bandCount = bandCount)
-        val edges = processor.bandEdges(rate)
-        val mirrored = CymaticsMath.bandEdgeBins(bandCount)
-        assertEquals("band edges drifted from FftProcessor", edges.toList(), mirrored.toList())
-        val binHz = (rate / 2f) / (processor.fftSize / 2f)
+        val bander = LogBands(bandCount, fftSize = 2048, sampleRateHz = 44_100)
         for (band in 0 until bandCount) {
-            val center = CymaticsMath.bandCenterHz(band, bandCount)
-            val low = edges[band] * binHz
-            val high = (edges[band + 1] + 1) * binHz
-            assertTrue("band $band centre $center Hz outside [$low, $high]", center in low..high)
+            val centre = CymaticsMath.bandCenterHz(band, bandCount)
+            val low = bander.lowerHz(band)
+            val high = bander.upperHz(band)
+            assertTrue("band $band centre $centre Hz outside [$low, $high]", centre in low..high)
         }
-        // The bass really is where the analyzer says it is, not where the
-        // logarithm alone would put it.
-        assertTrue("band 12 sits below its measured range", CymaticsMath.bandCenterHz(12, bandCount) > 200f)
     }
 
     @Test

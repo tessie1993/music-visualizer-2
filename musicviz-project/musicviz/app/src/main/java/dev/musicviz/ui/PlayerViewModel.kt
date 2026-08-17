@@ -262,7 +262,7 @@ class PlayerViewModel(
     fun applyLiveInputProfile(profile: dev.musicviz.analysis.LiveInputProfile) {
         setGuiPrefs(
             _guiPrefs.value.copy(
-                beatThresholdSigma = profile.beatSigma,
+                beatSensitivity = profile.beatSigma,
                 beatMinIntervalMs = profile.beatIntervalMs,
             ),
         )
@@ -412,12 +412,12 @@ class PlayerViewModel(
     private val _guiPrefs = MutableStateFlow(themeStore.loadGui())
 
     init {
-        engine.beatThresholdSigma = _guiPrefs.value.beatThresholdSigma
+        engine.beatSensitivity = _guiPrefs.value.beatSensitivity
         engine.beatMinIntervalMs = _guiPrefs.value.effectiveBeatMinIntervalMs
         // Apply the restored reactivity to the engine (setReactivity normally
         // does this, but the restored values arrive outside that path).
-        engine.smoother.attack = _vizState.value.attack
-        engine.smoother.decay = _vizState.value.decay
+        engine.attack = _vizState.value.attack
+        engine.decay = _vizState.value.decay
     }
 
     val guiPrefs: StateFlow<GuiPrefs> = _guiPrefs
@@ -426,7 +426,7 @@ class PlayerViewModel(
         val previous = _guiPrefs.value
         themeStore.saveGui(prefs)
         _guiPrefs.value = prefs
-        engine.beatThresholdSigma = prefs.beatThresholdSigma
+        engine.beatSensitivity = prefs.beatSensitivity
         // Safe visuals floors the gap between beats, because `flash` fires
         // once per beat and no visual slider governs how often that is.
         engine.beatMinIntervalMs = prefs.effectiveBeatMinIntervalMs
@@ -437,7 +437,7 @@ class PlayerViewModel(
         // each tick of those sliders would re-decide tens of thousands of
         // frames to produce a byte-identical timeline.
         val sensitivityChanged =
-            previous.beatThresholdSigma != prefs.beatThresholdSigma ||
+            previous.beatSensitivity != prefs.beatSensitivity ||
                 previous.effectiveBeatMinIntervalMs != prefs.effectiveBeatMinIntervalMs
         if (sensitivityChanged) redecideCachedBeats(prefs)
     }
@@ -457,10 +457,10 @@ class PlayerViewModel(
         beatRedecideJob =
             viewModelScope.launch(Dispatchers.Default) {
                 delay(120)
-                val updated = base.withBeatSensitivity(prefs.beatThresholdSigma, prefs.effectiveBeatMinIntervalMs)
+                val updated = base.withBeatSensitivity(prefs.beatSensitivity, prefs.effectiveBeatMinIntervalMs)
                 val now = _guiPrefs.value
                 val stillCurrent =
-                    now.beatThresholdSigma == prefs.beatThresholdSigma &&
+                    now.beatSensitivity == prefs.beatSensitivity &&
                         now.effectiveBeatMinIntervalMs == prefs.effectiveBeatMinIntervalMs
                 if (stillCurrent && currentUri == uri) timeline = updated
             }
@@ -1180,13 +1180,13 @@ class PlayerViewModel(
         val app = getApplication<Application>()
         val gui = _guiPrefs.value
         dev.musicviz.analysis.AnalysisCache
-            .load(app, uri, gui.beatThresholdSigma, gui.effectiveBeatMinIntervalMs)
+            .load(app, uri, gui.beatSensitivity, gui.effectiveBeatMinIntervalMs)
             ?.let {
                 onProgress(1f)
                 return it
             }
         return offlineAnalyzer
-            .analyze(uri, gui.beatThresholdSigma, gui.effectiveBeatMinIntervalMs, onProgress)
+            .analyze(uri, gui.beatSensitivity, gui.effectiveBeatMinIntervalMs, onProgress)
             .also {
                 dev.musicviz.analysis.AnalysisCache
                     .save(app, uri, it)
@@ -1779,7 +1779,7 @@ class PlayerViewModel(
             val gui = _guiPrefs.value
             viewModelScope.launch(Dispatchers.IO) {
                 dev.musicviz.analysis.AnalysisCache
-                    .load(getApplication<Application>(), uri, gui.beatThresholdSigma, gui.effectiveBeatMinIntervalMs)
+                    .load(getApplication<Application>(), uri, gui.beatSensitivity, gui.effectiveBeatMinIntervalMs)
                     ?.let { t ->
                         if (currentUri == uri) {
                             timeline = t
@@ -2054,8 +2054,8 @@ class PlayerViewModel(
         attack: Float,
         decay: Float,
     ) {
-        engine.smoother.attack = attack
-        engine.smoother.decay = decay
+        engine.attack = attack
+        engine.decay = decay
         _vizState.update { it.copy(attack = attack, decay = decay) }
         persistVizState()
     }
@@ -2158,8 +2158,8 @@ class PlayerViewModel(
         // bindings observe sceneId and params through separate effects, so
         // separate emissions could land the scene switch a frame before the
         // new params - the new scene flashed in wearing the old look.
-        engine.smoother.attack = preset.attack
-        engine.smoother.decay = preset.decay
+        engine.attack = preset.attack
+        engine.decay = preset.decay
         _vizState.update {
             it.copy(
                 sceneId = preset.sceneId,

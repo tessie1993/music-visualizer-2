@@ -2,7 +2,7 @@ package dev.musicviz
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import dev.musicviz.analysis.FeatureExtractor
+import dev.musicviz.analysis.BeatTuning
 import dev.musicviz.data.ExportDefaults
 import dev.musicviz.data.ExportPrefsStore
 import dev.musicviz.data.PlayerPrefs
@@ -72,7 +72,7 @@ class PrefsRoundtripReflectionTest {
             "presetMirrorUri" to "content://musicviz/test-mirror",
             "fontColorArgb" to 0xFF336699.toInt(),
             // within SIGMA_MIN..SIGMA_MAX
-            "beatThresholdSigma" to 4f,
+            "beatSensitivity" to 4f,
             // within INTERVAL_MS_MIN..INTERVAL_MS_MAX
             "beatMinIntervalMs" to 500f,
             // within TEXT_SCALE_MIN..TEXT_SCALE_MAX
@@ -93,10 +93,10 @@ class PrefsRoundtripReflectionTest {
     fun every_gui_pref_field_survives_saveGui_loadGui() {
         // Sanity-pin the override bounds against their real constants, so a
         // widened default cannot quietly turn an override into a no-op.
-        assertTrue(FeatureExtractor.SIGMA_DEFAULT != 4f && 4f in FeatureExtractor.SIGMA_MIN..FeatureExtractor.SIGMA_MAX)
+        assertTrue(BeatTuning.SENSITIVITY_DEFAULT != 4f && 4f in BeatTuning.SENSITIVITY_MIN..BeatTuning.SENSITIVITY_MAX)
         assertTrue(
-            FeatureExtractor.INTERVAL_MS_DEFAULT != 500f &&
-                500f in FeatureExtractor.INTERVAL_MS_MIN..FeatureExtractor.INTERVAL_MS_MAX,
+            BeatTuning.INTERVAL_MS_DEFAULT != 500f &&
+                500f in BeatTuning.INTERVAL_MS_MIN..BeatTuning.INTERVAL_MS_MAX,
         )
 
         val mutated = mutatedInstance(GuiPrefs::class, GuiPrefs(), guiOverrides)

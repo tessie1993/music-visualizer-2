@@ -1,5 +1,7 @@
 package dev.musicviz.analysis
 
+import dev.musicviz.engine.audio.DrumChannels
+import dev.musicviz.engine.audio.PulseReplay
 import kotlin.math.sqrt
 
 /** One analysis frame at a fixed hop, produced by offline analysis. */
@@ -51,7 +53,7 @@ class FeatureTimeline(
      * decided beats: changing "Beat sensitivity" or "Minimum gap between
      * beats" then applies to already-analysed tracks immediately, and an
      * exported video keeps matching what playback just showed - the live
-     * path and this one are the same [PulseTracker] code fed the same
+     * path and this one are the same [PulseReplay] code fed the same
      * numbers in the same order.
      *
      * Timelines with no onset curve (analysed before it was stored, or
@@ -59,14 +61,14 @@ class FeatureTimeline(
      * would silently erase every beat.
      */
     fun withBeatSensitivity(
-        beatThresholdSigma: Float,
+        beatSensitivity: Float,
         beatMinIntervalMs: Float,
     ): FeatureTimeline {
         if (frames.isEmpty()) return this
         val flux = FloatArray(frames.size) { frames[it].features.flux }
         if (flux.none { it > 0f }) return this
         val rms = FloatArray(frames.size) { frames[it].features.rms }
-        val pulse = PulseTracker.decidePulse(flux, rms, hopRateHz, beatThresholdSigma, beatMinIntervalMs)
+        val pulse = PulseReplay.decide(flux, rms, hopRateHz, beatSensitivity, beatMinIntervalMs)
         val out = ArrayList<TimelineFrame>(frames.size)
         var anyChanged = false
         for (i in frames.indices) {
@@ -108,13 +110,21 @@ class FeatureTimeline(
 
     /**
      * Fills in [AudioFeatures.kick] / [snare] / [hat] for every frame by
-     * replaying [DrumChannels] over the stored band spectra.
+     * replaying band-limited onset detection over the stored band spectra.
      *
      * Needed because a cache entry reconstructs its frames from stored scalars
      * and the three channels are not among them - but the BANDS they are
      * derived from are, so no cache-format change is required and existing v2
      * entries keep working. The live and offline paths get these from
-     * [FeatureExtractor] directly and never need this.
+     * [dev.musicviz.engine.audio.ReactiveAnalyzer] directly and never need
+     * this.
+     *
+     * A reconstruction, not a reproduction: the live channels are derived from
+     * whitened band POWER, and what a cache entry stores is the normalized,
+     * smoothed band levels a scene sees. The events land in the same places
+     * because the same detector runs over the same bands, but the strengths
+     * are graded against a different curve. Re-analysing the track is what
+     * gets the exact values back.
      *
      * [sampleRateHz] defaults to 48 kHz because the cache header does not
      * carry it. The band ranges are logarithmic, so 44.1 vs 48 kHz moves every
@@ -129,7 +139,7 @@ class FeatureTimeline(
         if (frames.isEmpty()) return this
         val bandCount = frames[0].features.bands.size
         if (bandCount == 0) return this
-        val drums = DrumChannels(bandCount, hopRateHz, sampleRateHz)
+        val channels = DrumChannels(bandCount, hopRateHz, sampleRateHz)
         val out = ArrayList<TimelineFrame>(frames.size)
         var anyChanged = false
         for (fr in frames) {
@@ -141,8 +151,8 @@ class FeatureTimeline(
                 out += fr
                 continue
             }
-            drums.step(f.bands)
-            if (drums.kickImpulse == f.kick && drums.snareImpulse == f.snare && drums.hatImpulse == f.hat) {
+            channels.step(f.bands)
+            if (channels.kick == f.kick && channels.snare == f.snare && channels.hat == f.hat) {
                 out += fr
                 continue
             }
@@ -150,7 +160,7 @@ class FeatureTimeline(
             out +=
                 TimelineFrame(
                     fr.timeMs,
-                    f.copy(kick = drums.kickImpulse, snare = drums.snareImpulse, hat = drums.hatImpulse),
+                    f.copy(kick = channels.kick, snare = channels.snare, hat = channels.hat),
                 )
         }
         return if (anyChanged) FeatureTimeline(out, hopMs, key, hopRateHz) else this
