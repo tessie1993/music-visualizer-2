@@ -75,6 +75,7 @@ object BeatTuning {
      * `f = 1 - exp(-dt / tau)`, inverted. A fraction of 1 means "follow
      * instantly", which is a time constant of 0.
      */
+    @Suppress("ReturnCount")
     fun envelopeSeconds(perTickFraction: Float): Float {
         val f = perTickFraction.coerceIn(0f, 1f)
         if (f >= 1f) return 0f

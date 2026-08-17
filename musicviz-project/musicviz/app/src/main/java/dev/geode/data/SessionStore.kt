@@ -65,6 +65,7 @@ class SessionStore(
      * other stores use, for the same reason: one bad read must not erase the
      * record.
      */
+    @Suppress("ReturnCount")
     fun load(): Saved? {
         if (!file.isFile) return null
         val text = runCatching { file.readText() }.getOrNull() ?: return null
@@ -103,6 +104,7 @@ class SessionStore(
         return file.delete()
     }
 
+    @Suppress("ReturnCount", "LoopWithTooManyJumpStatements")
     private fun parse(text: String): Saved? {
         val root = JSONObject(text)
         val array = root.optJSONArray(KEY_TRACKS) ?: return null

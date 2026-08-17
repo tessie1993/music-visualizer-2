@@ -39,6 +39,7 @@ class RenderEta(
      * @return whole seconds remaining, or null while the estimate would be a
      *   guess. Callers show the bare progress bar until this turns non-null.
      */
+    @Suppress("ReturnCount")
     fun sample(
         progress: Float,
         atMs: Long,

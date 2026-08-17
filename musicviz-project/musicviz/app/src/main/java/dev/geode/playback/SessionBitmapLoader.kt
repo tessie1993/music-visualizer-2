@@ -68,6 +68,7 @@ class SessionBitmapLoader(
      * as "draw the placeholder" — the right answer for a track with no cover,
      * and different from a failed future, which reads as an error.
      */
+    @Suppress("ReturnCount")
     override fun loadBitmapFromMetadata(metadata: MediaMetadata): ListenableFuture<Bitmap>? {
         metadata.artworkData?.let { return decodeBitmap(it) }
         metadata.artworkUri?.let { return loadBitmap(it) }

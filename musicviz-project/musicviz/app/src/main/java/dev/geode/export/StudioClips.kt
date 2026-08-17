@@ -166,6 +166,7 @@ object StudioClips {
      * without an extension; the original's is preserved so the file stays
      * playable.
      */
+    @Suppress("ReturnCount")
     fun rename(
         context: Context,
         uri: String,

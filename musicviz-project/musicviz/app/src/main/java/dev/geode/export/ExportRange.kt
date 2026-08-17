@@ -40,6 +40,7 @@ data class ExportRange(
          * skips the seek entirely, which is both faster and the behaviour every
          * pre-existing export had.
          */
+        @Suppress("ReturnCount")
         fun of(
             startMs: Long,
             endMs: Long,

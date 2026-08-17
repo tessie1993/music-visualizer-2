@@ -160,6 +160,7 @@ class PlaybackService : MediaSessionService() {
          * standing up a MediaSession, which Robolectric cannot drive.
          */
         @OptIn(UnstableApi::class)
+        @Suppress("ReturnCount")
         internal fun lastPlayedResumption(context: Context): MediaSession.MediaItemsWithStartPosition? {
             // The saved session first: the whole queue at the exact position,
             // which is what the System UI carousel should hand back after a
