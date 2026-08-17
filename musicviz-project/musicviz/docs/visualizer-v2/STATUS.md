@@ -14,6 +14,109 @@ Newest slice first.
 
 ---
 
+## V2-3-04c-pre: give the corpus a tempo it can be scored against
+
+State: COMPLETE
+
+Goal: make V2-3-04's third bullet — "compare against the current tracker and compact C oracle on
+the corpus" — possible at all. The corpus could not judge a tempo estimator, so this comes before
+building one.
+
+User-visible effect: none. Test resources and the oracle generator only.
+
+In scope: `tools/oracle/generate_corpus.py` (generator version 3), the two tempo fixtures and the
+manifest, `Corpus.expectedSeries`, and `CorpusTempoTruthTest`.
+
+Out of scope: the estimator itself — V2-3-04c. Nine of the eleven fixtures are deliberately
+untouched and are byte-identical, so no descriptor expectation moves in this slice.
+
+Files expected to change: the generator, `clicks_120bpm.pcm`, `tempo_ramp.pcm`, `manifest.json`,
+`Corpus.kt`, and one new test.
+
+Compatibility contract: nothing in the app changes. `Corpus.expected` keeps its signature; the new
+series accessor is additive.
+
+External source/provenance entries: none new. **librosa** (ORACLE) is still the oracle for
+everything it is good for; this slice demotes exactly one of its outputs from truth to cross-check
+and records why beside it.
+
+Tests written first: no — the defect was found by reading the manifest while planning the
+estimator, and the test was written to pin the corrected values. Four fault injections confirm it
+can tell.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit; the generator is deterministic and reproduces either version.
+
+Risks: the corpus grew from 904 KiB to 1.8 MiB on disk. Measured rather than assumed to be a
+problem: a sparse click track deflates to about 5 KiB whatever its length — 517 KiB of 12-second
+click track compresses to 5.6 KiB — so what git actually stores barely moves.
+
+Commands and results: below.
+
+Review findings: three defects in the corpus, all of them in values that looked like measurements.
+
+**The recorded tempo of the click track was not its tempo.** `clicks_120bpm` is generated at
+120.000 BPM by construction, and the manifest recorded `tempoBpm = 117.45383522727273`. That
+number is `60 × (22050/512) / 22` — the nearest tempo librosa's **integer autocorrelation lag** can
+express at this rate and hop. The two lags either side of 120 BPM read 123.05 and 117.45, so 120
+is not on the grid at all. An estimator scored against that manifest would have been penalised for
+being correct. The construction value is now the truth; librosa's reading is kept as
+`librosaTempoBpm` beside `librosaLagQuantumBpm`, which is the same number arrived at from the lag
+alone — the evidence for the claim, in the manifest itself.
+
+**The ramp carried the same scalar as the click track.** `tempo_ramp` sweeps its tempo, and a
+single `tempoBpm` cannot describe it; it recorded 117.45 too. It now records the beat times and
+the instantaneous BPM at each beat.
+
+**The ramp was not the ramp its comment claimed.** The comment said "90 -> 150 BPM"; the code added
+4 BPM per beat and stopped at six seconds, ending at **130**. It is now linear in time from 90 to
+150 over twelve seconds, with beat times from the closed form for a linear tempo ramp — and a test
+re-derives them independently by integrating the stated tempo between consecutive beats and
+requiring the phase to advance by exactly one.
+
+Both fixtures went from four and six seconds to twelve, because an estimator needs a window at
+least twice its slowest lag (50 BPM is 1.2 s) before it can say anything and then room to settle.
+
+Commit: `test(analysis): record the tempo fixtures' construction truth, not an oracle's reading`
+
+Next slice: V2-3-04c — the tempo estimator, scored against this.
+
+### Why an integer lag is not good enough, measured
+
+This is also the case for the estimator that follows. A readout of `60 · hopRate / lag` for
+integer `lag` is quantised, and the step widens with tempo:
+
+| | live, 62.5 Hz hop | offline, 60 Hz hop | they disagree by |
+|---|---:|---:|---:|
+| 120 BPM | 120.97 | 120.00 | 0.97 |
+| 180 BPM | 178.57 | 180.00 | 1.43 |
+| 200 BPM | 197.37 | 200.00 | 2.63 |
+
+`PulseTracker.updateTempo` computes `bpmEstimate = hopRateHz * 60f / bestLag` with an integer
+`bestLag`, and `AnalysisEngine` runs at 62.5 Hz while `OfflineAnalyzer` runs at 60 Hz. So the same
+track already reads up to **2.63 BPM apart live and offline** from quantisation alone, before any
+signal difference — which is a live/offline parity failure waiting for V2-3-08 to measure it.
+Sub-lag interpolation in the estimator is the fix, and this corpus is what will show it working.
+
+### Verification
+
+| Fault injected | Result |
+|---|---|
+| the tempo truth reverts to librosa's lag-quantised reading | FAILED |
+| a beat time nudged off the grid | FAILED |
+| the ramp's end reverts to the value its old comment claimed | FAILED |
+| the manifest's generator version reverts to 2 | FAILED |
+
+| Command | Result |
+|---|---|
+| regeneration, checksums diffed against the previous corpus | only `clicks_120bpm` and `tempo_ramp` changed; the other nine byte-identical |
+| `:app:testDebugUnitTest --tests '*CorpusTempoTruthTest*'` | 8 tests, 0 failures |
+| `:app:testDebugUnitTest --tests '*DescriptorOracleTest*'` | 11 tests, 0 failures — the lengthened fixtures re-verified frame by frame |
+| `checkAll` | BUILD SUCCESSFUL across all seven projects |
+
+---
+
 ## V2-3-04b: onsets, timed at the peak so they land on a sample
 
 State: COMPLETE

@@ -70,6 +70,21 @@ object Corpus {
 
         fun expected(feature: String): Double = json.getJSONObject("expected").getDouble(feature)
 
+        /**
+         * A constructed fixture's own numbers, as an array — beat times, or the
+         * instantaneous BPM at each of them. Empty when the fixture has none.
+         *
+         * These are construction values, not readings: a click track generated
+         * at 120.000 BPM is at 120.000 BPM, and no estimator's answer is a
+         * better one than the number it was built from.
+         */
+        fun expectedSeries(feature: String): DoubleArray {
+            val block = json.getJSONObject("expected")
+            if (!block.has(feature)) return DoubleArray(0)
+            val array = block.getJSONArray(feature)
+            return DoubleArray(array.length()) { array.getDouble(it) }
+        }
+
         /** Per-frame descriptor expectations, and the STFT they were computed over. */
         fun perFrame(): JSONObject = json.getJSONObject("perFrame")
 

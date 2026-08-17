@@ -37,9 +37,9 @@ import numpy as np
 import scipy
 import soundfile
 
-# Bumped by hand whenever a fixture's definition changes, so a stale corpus is
-# a visible mismatch rather than a silent one.
-GENERATOR_VERSION = 2
+# Bumped by hand whenever a fixture's definition or the manifest's shape
+# changes, so a stale corpus is a visible mismatch rather than a silent one.
+GENERATOR_VERSION = 3
 
 # The STFT the per-frame expectations are computed over. Matches
 # AnalysisBranch.GENERAL, and librosa's center=True / pad_mode="constant"
@@ -53,6 +53,19 @@ FRAME_HOP = 512
 ROLLOFF_FRACTION = 0.85
 
 SR = 22_050
+
+# The tempo fixtures' construction. These ARE the ground truth: a click track
+# generated at 120.000 BPM is at 120.000 BPM, and no estimator's reading of it
+# is a better answer than the number it was built from.
+CLICKS_BPM = 120.0
+CLICKS_SECONDS = 12.0
+RAMP_START_BPM = 90.0
+RAMP_END_BPM = 150.0
+RAMP_SECONDS = 12.0
+
+# Filled by _fixtures() and read by _expected(): what each fixture was built
+# to be, as opposed to what an oracle reads back out of it.
+TRUTH: dict[str, dict] = {}
 OUT = pathlib.Path(__file__).resolve().parents[2] / "app/src/test/resources/corpus"
 
 # Per-feature agreement required between this oracle and the Kotlin engine.
@@ -88,6 +101,12 @@ TOLERANCES = {
     "zeroCrossingRate": 1e-9,
     "frameRms": 1e-6,
     "framePeak": 1e-9,
+    # Tempo is the fixture's construction value, so this is what an estimator
+    # must get within - not what two implementations of one formula differ by.
+    # Half a BPM at 120 is 0.4%, well inside what a listener would call the
+    # same tempo, and far tighter than the +/- 2.6 BPM an integer-lag readout
+    # is quantised to at this hop rate.
+    "tempoBpm": 0.5,
 }
 
 
@@ -118,18 +137,44 @@ def _fixtures() -> dict[str, np.ndarray]:
     t = np.arange(carrier.size, dtype=np.float64) / SR
     out["am_4hz"] = (carrier * (0.5 + 0.5 * np.sin(2 * np.pi * 4.0 * t)).astype(np.float32) * 0.5).reshape(-1, 1)
 
+    # Twelve seconds, not four: a tempo estimator needs a window twice its
+    # slowest lag before it can say anything, and then room to settle inside
+    # the fixture. Sparse click tracks deflate to about 5 KiB whatever their
+    # length, so this costs the repository nothing - measured, not assumed.
+    click_times = np.arange(0.0, CLICKS_SECONDS, 60.0 / CLICKS_BPM)
     out["clicks_120bpm"] = librosa.clicks(
-        times=np.arange(0.0, 4.0, 0.5), sr=SR, length=int(SR * 4)
+        times=click_times, sr=SR, length=int(SR * CLICKS_SECONDS)
     ).astype(np.float32).reshape(-1, 1)
+    TRUTH["clicks_120bpm"] = {
+        "tempoBpm": CLICKS_BPM,
+        "beatTimesSeconds": [float(t) for t in click_times],
+    }
 
-    # Tempo ramp 90 -> 150 BPM: beat trackers that lock to a fixed grid follow
-    # this badly, which is the point of having it.
-    times, now, bpm = [], 0.0, 90.0
-    while now < 6.0:
-        times.append(now)
-        now += 60.0 / bpm
-        bpm += 4.0
-    out["tempo_ramp"] = librosa.clicks(times=np.array(times), sr=SR, length=int(SR * 6)).astype(np.float32).reshape(-1, 1)
+    # A tempo ramp that is actually the ramp its name claims. The previous
+    # version added 4 BPM per beat and stopped at six seconds, which ended at
+    # 130 BPM while the comment beside it said 150 - so the fixture nobody
+    # could describe was also the one nobody could score against.
+    #
+    # Linear in time: bpm(t) = A + B t, so beat k is where the accumulated
+    # phase (A t + B t^2 / 2) / 60 reaches k, which has a closed form.
+    a, b = RAMP_START_BPM, (RAMP_END_BPM - RAMP_START_BPM) / RAMP_SECONDS
+    ramp_times, ramp_bpm, k = [], [], 0
+    while True:
+        t = (-a / 60.0 + np.sqrt((a / 60.0) ** 2 + 4 * (b / 120.0) * k)) / (2 * b / 120.0)
+        if t >= RAMP_SECONDS:
+            break
+        ramp_times.append(float(t))
+        ramp_bpm.append(float(a + b * t))
+        k += 1
+    out["tempo_ramp"] = librosa.clicks(
+        times=np.array(ramp_times), sr=SR, length=int(SR * RAMP_SECONDS)
+    ).astype(np.float32).reshape(-1, 1)
+    TRUTH["tempo_ramp"] = {
+        "tempoBpmStart": RAMP_START_BPM,
+        "tempoBpmEnd": RAMP_END_BPM,
+        "beatTimesSeconds": ramp_times,
+        "beatBpm": ramp_bpm,
+    }
 
     # Stereo: hard anti-phase, the case that collapses to silence in mono.
     mono = _tone(300.0, 1.0)
@@ -273,9 +318,21 @@ def _expected(name: str, data: np.ndarray) -> dict:
         s = float(np.sqrt(np.mean(side * side)))
         exp["stereoWidth"] = float(s / (m + s)) if (m + s) > 1e-9 else 0.0
 
-    if name.startswith(("clicks", "tempo")):
+    if name in TRUTH:
+        exp.update(TRUTH[name])
+        # librosa's own reading, kept as a cross-check and NOT as the truth.
+        #
+        # It cannot be the truth here: beat_track reports 60 * frameRate / lag
+        # for an integer lag, so at this rate and hop it can only express
+        # 123.05 or 117.45 BPM either side of 120, and the manifest used to
+        # record 117.45 as the expected tempo of a click track that is 120.000
+        # BPM by construction. An estimator scored against that number would be
+        # penalised for being right.
         tempo, _ = librosa.beat.beat_track(y=mono, sr=SR)
-        exp["tempoBpm"] = float(np.atleast_1d(tempo)[0])
+        exp["librosaTempoBpm"] = float(np.atleast_1d(tempo)[0])
+        exp["librosaLagQuantumBpm"] = float(
+            60.0 * (SR / FRAME_HOP) / round(60.0 * (SR / FRAME_HOP) / exp["librosaTempoBpm"])
+        )
 
     return exp
 
