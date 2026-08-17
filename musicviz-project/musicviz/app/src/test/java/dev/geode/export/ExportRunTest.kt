@@ -11,6 +11,10 @@ import java.io.File
 /**
  * The lifetime a render runs under, and the manifest that lets it.
  *
+ * Timestamps are passed explicitly rather than left to the default clock: the
+ * published state now carries a time estimate, so these are time-dependent, and
+ * a plain JVM test has no SystemClock anyway.
+ *
  * A 4K render is tens of minutes of GPU work, and it used to run on
  * `viewModelScope` with `onCleared` cancelling it on purpose — so switching
  * apps or letting the screen time out threw it away silently. What has to hold
@@ -45,16 +49,16 @@ class ExportRunTest {
     @Test
     fun `progress is published while running`() {
         ExportRun.begin("track")
-        ExportRun.publish(0.42f)
+        ExportRun.publish(0.42f, atMs = 1_000)
         assertEquals(0.42f, ExportRun.state.value.progress!!, 1e-6f)
     }
 
     @Test
     fun `progress is clamped rather than trusted`() {
         ExportRun.begin("track")
-        ExportRun.publish(5f)
+        ExportRun.publish(5f, atMs = 1_000)
         assertEquals(1f, ExportRun.state.value.progress!!, 0f)
-        ExportRun.publish(-1f)
+        ExportRun.publish(-1f, atMs = 2_000)
         assertEquals(0f, ExportRun.state.value.progress!!, 0f)
     }
 
@@ -63,7 +67,7 @@ class ExportRunTest {
     fun `progress published after finishing is ignored`() {
         ExportRun.begin("track")
         ExportRun.finish()
-        ExportRun.publish(0.9f)
+        ExportRun.publish(0.9f, atMs = 3_000)
         assertFalse(ExportRun.running)
         assertNull(ExportRun.state.value.progress)
     }
@@ -71,7 +75,7 @@ class ExportRunTest {
     @Test
     fun `finishing clears the label so no notification outlives the run`() {
         ExportRun.begin("track")
-        ExportRun.publish(0.5f)
+        ExportRun.publish(0.5f, atMs = 1_000)
         ExportRun.finish()
         assertEquals("", ExportRun.state.value.label)
     }

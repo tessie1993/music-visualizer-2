@@ -119,7 +119,12 @@ class ExportService : Service() {
             Notification
                 .Builder(this, CHANNEL_ID)
                 .setContentTitle(getString(dev.geode.R.string.export_notification_title))
-                .setContentText(state.label.ifBlank { getString(dev.geode.R.string.export_notification_text) })
+                .setContentText(
+                    listOfNotNull(
+                        state.label.ifBlank { getString(dev.geode.R.string.export_notification_text) },
+                        state.secondsRemaining?.let { RenderEta.describe(it) },
+                    ).joinToString(" · "),
+                )
                 .setSmallIcon(dev.geode.R.drawable.ic_stat_capture)
                 .setOngoing(true)
                 .setContentIntent(open)

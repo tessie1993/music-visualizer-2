@@ -18,6 +18,7 @@ import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -97,10 +98,24 @@ fun SettingsDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 when {
                     export.running -> {
-                        Text("Rendering offline...")
+                        // The estimate comes from the run itself, so the dialog
+                        // and the notification cannot disagree about how long
+                        // is left.
+                        val run by dev.geode.export.ExportRun.state.collectAsState()
+                        Text(
+                            listOfNotNull(
+                                "Rendering offline…",
+                                run.secondsRemaining?.let { dev.geode.export.RenderEta.describe(it) },
+                            ).joinToString(" · "),
+                        )
                         LinearProgressIndicator(
                             progress = { export.progress },
                             modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            "You can leave Geode — the render keeps going and finishes in the background.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     export.resultUri != null -> {

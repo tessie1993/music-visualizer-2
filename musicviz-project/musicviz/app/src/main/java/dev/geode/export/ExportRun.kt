@@ -43,7 +43,14 @@ object ExportRun {
         val progress: Float? = null,
         /** What is being rendered, for the notification's text. */
         val label: String = "",
+        /**
+         * Time left, in whole seconds, or null while an estimate would be a
+         * guess. See [RenderEta] for why it stays quiet at the start.
+         */
+        val secondsRemaining: Long? = null,
     )
+
+    private val eta = RenderEta()
 
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state
@@ -52,14 +59,23 @@ object ExportRun {
 
     /** Marks a render as started. [label] names the track in the notification. */
     fun begin(label: String) {
+        eta.reset()
         _state.value = State(running = true, progress = null, label = label)
     }
 
-    /** Publishes render progress; ignored when no render is running. */
-    fun publish(progress: Float) {
+    /**
+     * Publishes render progress; ignored when no render is running.
+     *
+     * [atMs] is injectable so the estimate can be tested without a clock.
+     */
+    fun publish(
+        progress: Float,
+        atMs: Long = android.os.SystemClock.elapsedRealtime(),
+    ) {
         val current = _state.value
         if (!current.running) return
-        _state.value = current.copy(progress = progress.coerceIn(0f, 1f))
+        val clamped = progress.coerceIn(0f, 1f)
+        _state.value = current.copy(progress = clamped, secondsRemaining = eta.sample(clamped, atMs))
     }
 
     /**
@@ -71,6 +87,7 @@ object ExportRun {
      * already reads.
      */
     fun finish() {
+        eta.reset()
         _state.value = State()
     }
 }
