@@ -494,6 +494,10 @@
     <string name="autoviz_wait_strong">Wait for a strong moment</string>
     <string name="autoviz_wait_strong_hint">The same timing Random\'s \"strong beat\" uses, applied to the playlist order: the next look still comes next, it just waits for a moment worth arriving on.</string>
 
+    <!-- Studio clip preview. -->
+    <string name="studio_preview_hint">Loops your cut, muted — grade, speed and reframe show as they will render. Tap to pause.</string>
+    <string name="studio_preview_toggle">Play or pause the preview</string>
+
     <!-- Shared verbs. One definition each, so a translator sees them once. -->
     <string name="action_save">Save</string>
     <string name="action_cancel">Cancel</string>

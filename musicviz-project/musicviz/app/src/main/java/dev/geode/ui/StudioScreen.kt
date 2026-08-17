@@ -275,6 +275,7 @@ private fun ClipLibrary(
  * the thing on screen rather than a re-derivation of it.
  */
 @Composable
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 private fun ClipEditor(
     viewModel: PlayerViewModel,
     clip: StudioClip,
@@ -306,6 +307,16 @@ private fun ClipEditor(
                 }
                 TextButton(onClick = onClose) { Text(stringResource(R.string.action_back)) }
             }
+        }
+
+        // ---- Preview --------------------------------------------------
+        item {
+            ClipPreview(clip, edit)
+            Text(
+                stringResource(R.string.studio_preview_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         // ---- Trim -----------------------------------------------------

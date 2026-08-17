@@ -70,6 +70,22 @@ class GaplessQueueTest {
 
         /** Navigation within the queue: what an advance is allowed to be. */
         val TRANSPORT: List<String> = listOf("fun next(", "fun previous(")
+
+        /**
+         * Files that own a PRIVATE player and may hand IT a playlist.
+         *
+         * The gapless invariant guards the shared music pipeline; a muted
+         * one-clip preview player torn down with its screen has no album to
+         * be gapless across. An entry here is only honoured when the file
+         * really does build its own ExoPlayer - verified below - so the
+         * exemption cannot be borrowed to smuggle a queue rebuild into the
+         * shared player.
+         */
+        val PRIVATE_PLAYERS: Map<String, String> =
+            mapOf(
+                "ui/StudioPreview.kt" to
+                    "muted clip-preview player, released when the editor closes; the music pipeline never sees it",
+            )
     }
 
     @Test
@@ -91,6 +107,7 @@ class GaplessQueueTest {
         val offenders =
             mainSources()
                 .filter { (path, text) -> path != VIEW_MODEL && withoutComments(text).contains("setMediaItems(") }
+                .filterNot { (path, _) -> path in PRIVATE_PLAYERS }
                 .map { (path, _) -> path }
                 .sorted()
         assertEquals(
@@ -98,6 +115,17 @@ class GaplessQueueTest {
             emptyList<String>(),
             offenders,
         )
+    }
+
+    @Test
+    fun `a private-player exemption is reasoned and builds its own player`() {
+        for ((path, reason) in PRIVATE_PLAYERS) {
+            assertTrue("$path has no honest reason for a private player", reason.length > 20)
+            assertTrue(
+                "$path claims a private player but never builds one - it is using the shared pipeline",
+                source(path).contains("ExoPlayer.Builder("),
+            )
+        }
     }
 
     @Test
