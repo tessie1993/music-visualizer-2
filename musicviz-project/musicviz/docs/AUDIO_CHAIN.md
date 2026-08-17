@@ -77,9 +77,10 @@ This is also why #21 bit-perfect and #23 hi-res are a product question rather
 than an engineering task: float output is the only escape from media3's int16
 conversion, and taking it deletes the visualizer.
 
-**2. The analysis tap stays first.** `FeatureExtractor.reset` and
+**2. The analysis tap stays first.** `ReactiveAnalyzer.reset` and
 `AnalysisEngine.reset` both hold live features to matching the cached and
-exported features for the same file — and the offline path decodes the file with
+exported features for the same file — the live and offline paths run the same
+`ReactiveAnalyzer`, so they can only agree if they are also fed the same audio — and the offline path decodes the file with
 no user EQ in it. Put user-tunable DSP upstream of the tap and live visuals
 diverge from every exported video, differently for every user and every preset,
 with no test able to pin it. The loudness seek bar, drawn from the offline RMS

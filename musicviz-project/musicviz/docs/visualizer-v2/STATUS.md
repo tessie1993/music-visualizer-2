@@ -14,6 +14,104 @@ Newest slice first.
 
 ---
 
+## V2-3-03b: the audio-reactive engine
+
+State: COMPLETE
+
+Goal: make the engine audio-*reactive*. V2-3-03's second bullet (adaptive/fixed/centered
+normalization and validity/silence semantics), plus the rhythm graph of V2-3-04, taken together
+and switched on — because the reported defect is not that a feature is missing, it is that the
+values reaching every scene are unusable.
+
+User-visible effect: the visuals move with the music. Measured on pink noise at an ordinary master
+level, the legacy chain put the bass/mid/treble drivers at 0.076/0.020/0.066 of their nominal 0..1
+range and at -30 dBFS put mid and treble at exactly 0; every scene multiplies those by `audioDrive`
+and expects a signal that spans its range. They now peak above 0.5 on the same material and behave
+identically 30 dB down.
+
+In scope: `LogBands`, `AdaptiveRange`, `Envelope`, `AdaptiveWhitening`, `SuperFlux`,
+`OnsetPeakPicker`, `TempoTracker`, `BeatGrid`, `DrumChannels`, `PulseReplay`, `ReactiveAnalyzer` in
+`audio-core`; rewiring `AnalysisEngine`, `OfflineAnalyzer` and `FeatureTimeline` onto them;
+deleting `FftProcessor`, `FeatureExtractor`, `BandSmoother`, `PulseTracker` and the app-side
+`DrumChannels`; `BeatTuning` for the user-facing bounds and unit conversions.
+
+Out of scope: the sample-addressed feature ring (V2-3-07), the versioned cache identity rework
+(V2-3-08), BS.1770 loudness, MFCC/spectral contrast and the structure channels (V2-3-05/06). The
+`AudioFeatures` ABI is unchanged in shape; only the values in it moved.
+
+Files expected to change: `engine/audio-core/src/main/kotlin/dev/musicviz/engine/audio/*.kt` and
+their tests; `app/src/main/java/dev/musicviz/analysis/{AnalysisEngine,OfflineAnalyzer,FeatureTimeline,BeatTuning}.kt`;
+`app/src/main/java/dev/musicviz/render/scene/CymaticsMath.kt`; `ui/{AppTheme,AudioSettings,PlayerViewModel}.kt`.
+
+Compatibility contract: deliberately broken, on the user's instruction. Band-derived values are on
+a different scale, so any visual calibrated against the old ones changes. Shipped presets need no
+rescaling — their `audioDrive` values were always written for a 0..1 signal and only now receive
+one. Saved envelope settings are preserved: `attack`/`decay` are still stored as per-tick mix
+fractions and converted to time constants on load. `GuiPrefs.beatThresholdSigma` is renamed
+`beatSensitivity` because the unit is no longer sigmas; the stored value is clamped into the new
+range on read.
+
+External source/provenance entries: no new dependencies. **projectM** `Loudness.cpp` and
+**Butterchurn** `audioLevels.js` (REIMPLEMENT) were read for their `imm / longAvg` normalization;
+**Clubber** (REIMPLEMENT) for its adaptive window. Published formulations implemented from the
+papers: Stowell & Plumbley, *Adaptive whitening for improved real-time audio onset detection*
+(ICMC 2007); Böck & Widmer, *Maximum Filter Vibrato Suppression for Onset Detection* (DAFx 2013);
+Scheirer, *Tempo and beat analysis of acoustic musical signals* (JASA 1998). No code, naming,
+layout or constant table taken from any of them.
+
+Tests written first: yes, for every node. The end-to-end assertions are written against the
+numbers from the bug report rather than against the implementation.
+
+Benchmark or visual evidence: none on device — this session had no display. The evidence is
+numeric: `ReactiveAnalyzerTest` drives synthesised material through the whole graph at two master
+levels 30 dB apart. **Owed by the next slice: a real-device visual check and a CPU measurement of
+the graph in situ.**
+
+Rollback: revert the five commits from `feat(audio-core): adaptive per-band normalization` through
+`refactor(analysis): replace the legacy DSP`.
+
+Risks: the drum-channel replay over a cached timeline is a reconstruction, not a reproduction —
+events land in the same places but strengths grade against a different curve, because the live
+channels come from whitened band power and a cache entry stores normalized smoothed levels.
+`NebulaScene`'s `bass * audioDrive > 0.55f` burst condition was unreachable before and is now
+reached on loud passages, which is what it was written to do but has never actually run. The graph
+is unmeasured on device.
+
+Commands and results: `:engine:audio-core:test` 125 tests green; `:app:testDebugUnitTest` 1262
+tests across 174 classes, 0 failures; `:app:ktlintCheck`, `:engine:audio-core:ktlintCheck` and
+`:app:lintDebug` green.
+
+Review findings: four, each caught by a test rather than by reading.
+
+**The comb-filter bank reported exactly half the true tempo.** Scaling a resonator's input by
+`1 - a` already equalizes the resonant steady state across periods; normalizing by the gain a
+second time tilts the whole bank toward slow periods. Removing the second normalization fixed
+every tempo test at once.
+
+**The per-band silence floor was set where a plausible silence looks, not where one is.** A band's
+mean power density sits far below the signal's own dBFS level, so a -90 dB floor gated the quieter
+bands of an ordinary quiet master and cost exactly the level-independence the work exists for. It
+is now a -120 dB numerical backstop, with the musical judgement made once on whole-signal RMS.
+
+**Grading a hit by how far it cleared its threshold does not grade.** An isolated spike dominates
+the deviation of its own window, so its z-score comes out at roughly the window length whatever
+its height. Strength is measured against a decaying record of the track's own peaks instead — and
+the test had to be rewritten to put the loud hit first, because no causal detector can know a hit
+is small before a larger one arrives.
+
+**The first end-to-end harness advanced its sample clock by a whole FFT window per frame** while
+telling the analyzer the hop was 16 ms, which is a 2.7x error and showed up as a wrong BPM. It
+also asserted that pink noise makes the treble driver move; pink noise is stationary, so that was
+asserting a physical falsehood rather than testing reactivity, and the material grew a kick and a
+hat.
+
+Commit: `ff7da9d`, `0c81dc6`, `7a6f662`, `d024083`, `c06c526`.
+
+Next slice: V2-3-04's remaining bullets — downbeat/bar state and tempo stability — on top of
+`TempoTracker`, and the device benchmark this slice owes.
+
+---
+
 ## V2-3-03a: levels and spectral descriptors, checked frame by frame
 
 State: COMPLETE

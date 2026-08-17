@@ -28,7 +28,7 @@ import dev.musicviz.engine.audioandroid.SkippedFrameSource
  * ## The order, and why it is this order
  *
  * 1. **[tap] first.** Everything after this point is audio the analysis must not
- *    see. `FeatureExtractor` and `AnalysisEngine` both hold live features to
+ *    see. `ReactiveAnalyzer` and `AnalysisEngine` both hold live features to
  *    matching the offline and exported ones for the same file, and the offline
  *    path decodes the file with no user EQ in it. A tap below user-tunable DSP
  *    would make live visuals diverge from every exported video, differently per
