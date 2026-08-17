@@ -67,6 +67,9 @@ class LocalizationSurfaceTest {
             "ui/SafetyConsent.kt",
             "ui/TrackInfoEditor.kt",
             "ui/AboutSettings.kt",
+            "ui/LookSettings.kt",
+            "ui/BehaviorSettings.kt",
+            "ui/AutoVisualsSettings.kt",
         )
 
     /**
@@ -76,9 +79,6 @@ class LocalizationSurfaceTest {
      */
     private val pending: Map<String, String> =
         mapOf(
-            "ui/LookSettings.kt" to "no blocker - its labels are plain GUI prefs, conversion queued",
-            "ui/BehaviorSettings.kt" to "no blocker - its labels are catalog anchors, conversion queued",
-            "ui/AutoVisualsSettings.kt" to "no blocker - its labels are plain switches, conversion queued",
             "ui/CustomizeTabs.kt" to
                 "the key/label split exists now (LabeledSlider display=), so conversion is " +
                 "mechanical - each control keeps its English key and gains a translated display",

@@ -12,7 +12,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.geode.R
 import dev.geode.render.VisualSafety
 import dev.geode.render.VisualSafetyChoice
 import kotlin.math.roundToInt
@@ -26,11 +28,11 @@ import kotlin.math.roundToInt
 internal fun BehaviorSettingsTab(viewModel: PlayerViewModel) {
     val gui by viewModel.guiPrefs.collectAsState()
     SettingsTabColumn {
-        item { SettingsGroup("Touch") { TouchGroup(viewModel, gui) } }
-        item { SettingsGroup("Connected display") { ConnectedDisplayGroup(viewModel, gui) } }
-        item { SettingsGroup("Visual safety") { VisualSafetyGroup(viewModel, gui) } }
-        item { SettingsGroup("Auto visuals") { AutoVisualsGroup(viewModel) } }
-        item { SettingsGroup("Live wallpaper") { LiveWallpaperGroup() } }
+        item { SettingsGroup(stringResource(R.string.behavior_group_touch)) { TouchGroup(viewModel, gui) } }
+        item { SettingsGroup(stringResource(R.string.behavior_group_display)) { ConnectedDisplayGroup(viewModel, gui) } }
+        item { SettingsGroup(stringResource(R.string.behavior_group_safety)) { VisualSafetyGroup(viewModel, gui) } }
+        item { SettingsGroup(stringResource(R.string.behavior_group_auto)) { AutoVisualsGroup(viewModel) } }
+        item { SettingsGroup(stringResource(R.string.behavior_group_wallpaper)) { LiveWallpaperGroup() } }
     }
 }
 
@@ -42,21 +44,22 @@ private fun TouchGroup(
 ) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Smear the visuals with a finger", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.behavior_touch_smear), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             Switch(
                 checked = gui.touchSmear,
                 onCheckedChange = { viewModel.setGuiPrefs(gui.copy(touchSmear = it)) },
             )
         }
         Text(
-            "Drag on the fullscreen visualizer to push the image around: the drag raises the " +
-                "surface ahead of your finger and dips it behind, and whatever is on screen bends " +
-                "through it. On the Water style it stirs the pool itself and paints into it.",
+            stringResource(R.string.behavior_touch_smear_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (gui.touchSmear) {
-            Text("Smear strength  ${(gui.touchSmearStrength * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
+            Text(
+                stringResource(R.string.behavior_smear_strength, (gui.touchSmearStrength * 100).toInt()),
+                style = MaterialTheme.typography.labelMedium,
+            )
             CrystalSlider(
                 value = gui.touchSmearStrength,
                 onValueChange = { viewModel.setGuiPrefs(gui.copy(touchSmearStrength = it)) },
@@ -66,16 +69,14 @@ private fun TouchGroup(
     }
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Pinch and twist the canvas", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.behavior_touch_transform), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             Switch(
                 checked = gui.touchTransform,
                 onCheckedChange = { viewModel.setGuiPrefs(gui.copy(touchTransform = it)) },
             )
         }
         Text(
-            "Two fingers on the fullscreen visualizer: pinch moves the Zoom slider, twist moves " +
-                "Rotation. They are the same controls the Customize panel shows, so a gesture is " +
-                "saved into presets and takes — and undone by dragging the slider back.",
+            stringResource(R.string.behavior_touch_transform_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -91,7 +92,7 @@ private fun ConnectedDisplayGroup(
     val external = rememberExternalDisplay()
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Use a connected display", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.behavior_display_use), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             Switch(
                 checked = gui.secondScreen,
                 onCheckedChange = { viewModel.setGuiPrefs(gui.copy(secondScreen = it)) },
@@ -99,12 +100,9 @@ private fun ConnectedDisplayGroup(
         }
         Text(
             if (external != null) {
-                "Connected: ${external.name}. The visuals play there and the phone becomes the control " +
-                    "surface — the canvas moves rather than being mirrored, so the big screen shows " +
-                    "exactly what the app renders."
+                stringResource(R.string.behavior_display_connected, external.name)
             } else {
-                "Nothing connected. Plug in HDMI or start casting, and the visuals move to that screen " +
-                    "while the phone keeps the controls."
+                stringResource(R.string.behavior_display_none)
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -119,9 +117,9 @@ private fun ConnectedDisplayGroup(
  */
 private val SAFETY_CHOICES =
     listOf(
-        VisualSafetyChoice.SAFE to "Safe",
-        VisualSafetyChoice.REDUCED_MOTION to "Reduced motion",
-        VisualSafetyChoice.CUSTOM to "Custom",
+        VisualSafetyChoice.SAFE to R.string.behavior_safety_safe,
+        VisualSafetyChoice.REDUCED_MOTION to R.string.behavior_safety_reduced,
+        VisualSafetyChoice.CUSTOM to R.string.behavior_safety_custom,
     )
 
 /**
@@ -135,11 +133,9 @@ private fun VisualSafetyGroup(
     gui: GuiPrefs,
 ) {
     Column {
-        Text("Flashing and motion", style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.behavior_safety_title), style = MaterialTheme.typography.bodyMedium)
         Text(
-            "Limits how fast and how strongly the whole screen can flash: caps the strobe and " +
-                "beat flash, holds brightness and contrast near neutral, turns hard scene cuts into " +
-                "crossfades, and slows any modulation aimed at brightness.",
+            stringResource(R.string.behavior_safety_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -148,14 +144,13 @@ private fun VisualSafetyGroup(
             // is answered the visuals run limited, and the user is told so
             // rather than left to wonder why the strobe looks tame.
             Text(
-                "You have not chosen yet, so the visuals are running limited. Pick one — you can " +
-                    "change it whenever you like.",
+                stringResource(R.string.behavior_safety_unanswered),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
             )
         }
         CrystalSegmented(
-            options = SAFETY_CHOICES.map { it.second },
+            options = SAFETY_CHOICES.map { stringResource(it.second) },
             // -1 while the choice is UNKNOWN: nothing is shown selected,
             // because nothing has been chosen. Presenting Safe as picked
             // would be the app answering a question asked of the user.
@@ -164,23 +159,20 @@ private fun VisualSafetyGroup(
             modifier = Modifier.padding(top = 4.dp),
         )
         Text(
-            when (gui.safetyChoice) {
-                VisualSafetyChoice.UNKNOWN, VisualSafetyChoice.SAFE ->
-                    "Recommended if you or anyone watching is sensitive to flashing light."
-                VisualSafetyChoice.REDUCED_MOTION ->
-                    "Everything Safe does, plus speed, drift, shake and endless zoom scaled down " +
-                        "for motion comfort. Colour and texture keep reacting to the music."
-                VisualSafetyChoice.CUSTOM ->
-                    "Your own limits, including switching them off entirely. The strobe then runs " +
-                        "at 9 Hz and the beat flash at the track's rate."
-            },
+            stringResource(
+                when (gui.safetyChoice) {
+                    VisualSafetyChoice.UNKNOWN, VisualSafetyChoice.SAFE -> R.string.behavior_safety_safe_hint
+                    VisualSafetyChoice.REDUCED_MOTION -> R.string.behavior_safety_reduced_hint
+                    VisualSafetyChoice.CUSTOM -> R.string.behavior_safety_custom_hint
+                },
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
     if (gui.safetyChoice == VisualSafetyChoice.CUSTOM) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Limit flashing", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.behavior_limit_flashing), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             Switch(
                 checked = gui.safeVisuals,
                 onCheckedChange = { viewModel.setGuiPrefs(gui.copy(safeVisuals = it)) },
@@ -190,8 +182,12 @@ private fun VisualSafetyGroup(
     if (gui.safetyChoice == VisualSafetyChoice.CUSTOM && gui.safeVisuals) {
         Column {
             Text(
-                "Maximum flashes per second  ${"%.1f".format(gui.maxFlashHz)} Hz" +
-                    if (gui.maxFlashHz <= VisualSafety.WCAG_FLASHES_PER_SECOND) "  (within guidance)" else "",
+                stringResource(R.string.behavior_max_flash_hz, "%.1f".format(gui.maxFlashHz)) +
+                    if (gui.maxFlashHz <= VisualSafety.WCAG_FLASHES_PER_SECOND) {
+                        stringResource(R.string.behavior_within_guidance)
+                    } else {
+                        ""
+                    },
                 style = MaterialTheme.typography.labelMedium,
             )
             CrystalSlider(
@@ -200,14 +196,13 @@ private fun VisualSafetyGroup(
                 valueRange = 1f..VisualSafety.DEFAULT_STROBE_HZ,
             )
             Text(
-                "Published guidance (WCAG 2.3.1) puts the general limit at three per second; the " +
-                    "risk is highest between about 15 and 20. Without this the strobe runs at 9.",
+                stringResource(R.string.behavior_flash_guidance),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                "Maximum flash strength  ${(gui.maxFlashDepth * 100).roundToInt()}%" +
-                    if (gui.maxFlashDepth <= 0f) "  (no flashing at all)" else "",
+                stringResource(R.string.behavior_max_flash_depth, (gui.maxFlashDepth * 100).roundToInt()) +
+                    if (gui.maxFlashDepth <= 0f) stringResource(R.string.behavior_no_flashing) else "",
                 style = MaterialTheme.typography.labelMedium,
             )
             CrystalSlider(
@@ -217,7 +212,7 @@ private fun VisualSafetyGroup(
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "Allow invert and solarize",
+                    stringResource(R.string.behavior_allow_inversion),
                     Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -227,8 +222,7 @@ private fun VisualSafetyGroup(
                 )
             }
             Text(
-                "These reverse the whole frame at once. Off is safer; on keeps them available if " +
-                    "you are limiting the flash rate alone.",
+                stringResource(R.string.behavior_inversion_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -240,23 +234,21 @@ private fun VisualSafetyGroup(
         // would be worse than no switch at all.
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Slow the motion down", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.behavior_slow_motion), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 Switch(
                     checked = gui.reducedMotion,
                     onCheckedChange = { viewModel.setGuiPrefs(gui.copy(reducedMotion = it)) },
                 )
             }
             Text(
-                "Slows movement, shake, drift and rotation. Independent of the flash limits above: " +
-                    "this one is about motion comfort rather than seizures, and either can be used " +
-                    "on its own.",
+                stringResource(R.string.behavior_slow_motion_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
     Text(
-        "Both settings apply to exported video as well as the screen.",
+        stringResource(R.string.behavior_safety_export_note),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -267,10 +259,7 @@ private fun VisualSafetyGroup(
 private fun LiveWallpaperGroup() {
     val ctx = LocalContext.current
     Text(
-        "Set the visualizer as your wallpaper. It uses the style and settings the app was " +
-            "last showing, reacts to whatever Geode is playing, and drifts gently on its " +
-            "own the rest of the time. It draws nothing while another app is in front, so it " +
-            "is not a background battery drain.",
+        stringResource(R.string.behavior_wallpaper_hint),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -294,5 +283,5 @@ private fun LiveWallpaperGroup() {
                 ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_SET_WALLPAPER))
             }
         }
-    }) { Text("Set as live wallpaper") }
+    }) { Text(stringResource(R.string.behavior_wallpaper_button)) }
 }

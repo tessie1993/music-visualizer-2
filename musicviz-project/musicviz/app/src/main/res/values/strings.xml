@@ -393,6 +393,107 @@
     <string name="export_render_to_folder">Render to chosen folder…</string>
     <string name="export_cancel">Cancel export</string>
 
+    <!-- Settings: Look tab. -->
+    <string name="look_group_theme">Theme</string>
+    <string name="look_accent_intensity">"Accent intensity  %1$d%%"</string>
+    <string name="look_background_dim">"Background dim  %1$d%%"</string>
+    <string name="look_follow_system">Follow system light/dark</string>
+    <string name="look_group_text">Text</string>
+    <string name="look_text_size">"Text size  %1$d%%"</string>
+    <string name="look_text_size_hint">Scales every font in the app, live - including this one.</string>
+    <string name="look_font_color">Font color</string>
+    <string name="look_font_color_light_hint">Pale colors are greyed out on this light theme - they could not be read on its surfaces.</string>
+    <string name="look_font_color_hint">Recolors the writing everywhere; Auto returns to the theme\'s own text colors.</string>
+    <string name="look_group_layout">Layout</string>
+    <string name="look_bar_opacity">"Bar opacity  %1$d%%"</string>
+    <string name="look_player_position">Player position</string>
+    <string name="look_position_top">Top</string>
+    <string name="look_position_bottom">Bottom</string>
+    <string name="look_corner_style">Corner style</string>
+    <string name="look_corner_sharp">Sharp</string>
+    <string name="look_corner_rounded">Rounded</string>
+    <string name="look_corner_pill">Pill</string>
+    <string name="look_compact_player">Compact mini-player</string>
+    <string name="look_clear_visuals_menu">Clear-overlay Visuals menu</string>
+    <string name="look_clear_visuals_hint">Text-only Visuals menu over the live visuals, so adjustments are visible as you make them.</string>
+    <string name="look_boot_animation">Boot animation</string>
+
+    <!-- Font colour swatches. Mineral names; the argb value is what persists. -->
+    <string name="font_color_auto">Auto</string>
+    <string name="font_color_white">White</string>
+    <string name="font_color_moonstone">Moonstone ivory</string>
+    <string name="font_color_pyrite">Pyrite gold</string>
+    <string name="font_color_rose">Rose</string>
+    <string name="font_color_lavender">Lavender</string>
+    <string name="font_color_ice">Ice blue</string>
+    <string name="font_color_mint">Mint</string>
+
+    <!-- Settings: Behavior tab. -->
+    <string name="behavior_group_touch">Touch</string>
+    <string name="behavior_group_display">Connected display</string>
+    <string name="behavior_group_safety">Visual safety</string>
+    <string name="behavior_group_auto">Auto visuals</string>
+    <string name="behavior_group_wallpaper">Live wallpaper</string>
+    <string name="behavior_touch_smear">Smear the visuals with a finger</string>
+    <string name="behavior_touch_smear_hint">Drag on the fullscreen visualizer to push the image around: the drag raises the surface ahead of your finger and dips it behind, and whatever is on screen bends through it. On the Water style it stirs the pool itself and paints into it.</string>
+    <string name="behavior_smear_strength">"Smear strength  %1$d%%"</string>
+    <string name="behavior_touch_transform">Pinch and twist the canvas</string>
+    <string name="behavior_touch_transform_hint">Two fingers on the fullscreen visualizer: pinch moves the Zoom slider, twist moves Rotation. They are the same controls the Customize panel shows, so a gesture is saved into presets and takes — and undone by dragging the slider back.</string>
+    <string name="behavior_display_use">Use a connected display</string>
+    <string name="behavior_display_connected">Connected: %1$s. The visuals play there and the phone becomes the control surface — the canvas moves rather than being mirrored, so the big screen shows exactly what the app renders.</string>
+    <string name="behavior_display_none">Nothing connected. Plug in HDMI or start casting, and the visuals move to that screen while the phone keeps the controls.</string>
+    <string name="behavior_safety_title">Flashing and motion</string>
+    <string name="behavior_safety_hint">Limits how fast and how strongly the whole screen can flash: caps the strobe and beat flash, holds brightness and contrast near neutral, turns hard scene cuts into crossfades, and slows any modulation aimed at brightness.</string>
+    <string name="behavior_safety_unanswered">You have not chosen yet, so the visuals are running limited. Pick one — you can change it whenever you like.</string>
+    <string name="behavior_safety_safe">Safe</string>
+    <string name="behavior_safety_reduced">Reduced motion</string>
+    <string name="behavior_safety_custom">Custom</string>
+    <string name="behavior_safety_safe_hint">Recommended if you or anyone watching is sensitive to flashing light.</string>
+    <string name="behavior_safety_reduced_hint">Everything Safe does, plus speed, drift, shake and endless zoom scaled down for motion comfort. Colour and texture keep reacting to the music.</string>
+    <string name="behavior_safety_custom_hint">Your own limits, including switching them off entirely. The strobe then runs at 9 Hz and the beat flash at the track\'s rate.</string>
+    <string name="behavior_limit_flashing">Limit flashing</string>
+    <string name="behavior_max_flash_hz">"Maximum flashes per second  %1$s Hz"</string>
+    <string name="behavior_within_guidance">"  (within guidance)"</string>
+    <string name="behavior_flash_guidance">Published guidance (WCAG 2.3.1) puts the general limit at three per second; the risk is highest between about 15 and 20. Without this the strobe runs at 9.</string>
+    <string name="behavior_max_flash_depth">"Maximum flash strength  %1$d%%"</string>
+    <string name="behavior_no_flashing">"  (no flashing at all)"</string>
+    <string name="behavior_allow_inversion">Allow invert and solarize</string>
+    <string name="behavior_inversion_hint">These reverse the whole frame at once. Off is safer; on keeps them available if you are limiting the flash rate alone.</string>
+    <string name="behavior_slow_motion">Slow the motion down</string>
+    <string name="behavior_slow_motion_hint">Slows movement, shake, drift and rotation. Independent of the flash limits above: this one is about motion comfort rather than seizures, and either can be used on its own.</string>
+    <string name="behavior_safety_export_note">Both settings apply to exported video as well as the screen.</string>
+    <string name="behavior_wallpaper_hint">Set the visualizer as your wallpaper. It uses the style and settings the app was last showing, reacts to whatever Geode is playing, and drifts gently on its own the rest of the time. It draws nothing while another app is in front, so it is not a background battery drain.</string>
+    <string name="behavior_wallpaper_button">Set as live wallpaper</string>
+
+    <!-- Settings: Auto visuals (rendered inside the Behavior tab). -->
+    <string name="autoviz_intro">Two modes rotate the look on a clock while a track plays. Only one of them runs at a time: starting the visual playlist stops Random, and turning Random on stops the playlist.</string>
+    <string name="autoviz_random_overline">Random</string>
+    <string name="autoviz_random_running">Random is running.</string>
+    <string name="autoviz_random_off_playlist">Random is off — the visual playlist below has it.</string>
+    <string name="autoviz_random_off_auto">Random is off — the Auto button on the Now Playing screen turns it on.</string>
+    <string name="autoviz_shape_hint">The settings below shape it whether it is running or not, so a session can be set up before it starts — and they are remembered across restarts.</string>
+    <string name="autoviz_switch_every">Switch every %1$d s</string>
+    <string name="autoviz_on_beat">Switch on a strong beat</string>
+    <string name="autoviz_on_beat_hint">Waits for a big moment in the music instead of switching the instant the timer is up, so a change lands with the track rather than across it. It still holds a look for at least half the interval, and forces a switch at twice it, so a quiet passage cannot stall the rotation.</string>
+    <string name="autoviz_pick_from">Pick from</string>
+    <string name="autoviz_pick_styles">Styles</string>
+    <string name="autoviz_pick_presets">Saved presets</string>
+    <string name="autoviz_pick_milk">MilkDrop presets</string>
+    <string name="autoviz_nothing_selected">Nothing is selected, so Random has nothing to switch to and will leave the visuals alone.</string>
+    <string name="autoviz_pick_hint">Styles are the built-in looks; saved presets carry their own settings with them.</string>
+    <string name="autoviz_roll_colors">Roll the colours too</string>
+    <string name="autoviz_roll_colors_hint">Rolls both palettes, the blend between them and the hue shift on every switch. It clears a custom palette you made in Customize › Color, because that override outranks the palettes being rolled and the new ones would otherwise never show.</string>
+    <string name="autoviz_playlist_overline">Visual playlist</string>
+    <string name="autoviz_playlist_play">Play the visual playlist</string>
+    <string name="autoviz_playlist_random_running">Random is running — turning this on will stop it.</string>
+    <plurals name="autoviz_playlist_count">
+        <item quantity="one">%1$d look in the playlist.</item>
+        <item quantity="other">%1$d looks in the playlist.</item>
+    </plurals>
+    <string name="autoviz_playlist_add_hint">Add looks with the heart button in Visuals › Presets. The playlist needs at least two before it has anywhere to go.</string>
+    <string name="autoviz_wait_strong">Wait for a strong moment</string>
+    <string name="autoviz_wait_strong_hint">The same timing Random\'s \"strong beat\" uses, applied to the playlist order: the next look still comes next, it just waits for a moment worth arriving on.</string>
+
     <!-- Shared verbs. One definition each, so a translator sees them once. -->
     <string name="action_save">Save</string>
     <string name="action_cancel">Cancel</string>
