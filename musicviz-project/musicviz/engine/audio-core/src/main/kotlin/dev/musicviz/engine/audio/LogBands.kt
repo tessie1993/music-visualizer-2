@@ -107,6 +107,26 @@ class LogBands(
         magnitudes: FloatArray,
         out: FloatArray,
     ) {
+        energy(magnitudes, out)
+        for (b in 0 until bandCount) {
+            val mean = out[b]
+            out[b] = if (mean <= 0f) AdaptiveRange.SILENCE_DB else max(10f * log10(mean), AdaptiveRange.SILENCE_DB)
+        }
+    }
+
+    /**
+     * Writes the mean tilt-weighted **power** of each band into [out], on a
+     * linear scale where a full-scale tone reads near 1.
+     *
+     * The linear form is what [AdaptiveWhitening] wants: normalizing a band by
+     * its own recent peak is a ratio, and taking it in the log domain would
+     * make a rise out of near-silence — inaudible, and mostly noise — look
+     * like the largest onset in the track.
+     */
+    fun energy(
+        magnitudes: FloatArray,
+        out: FloatArray,
+    ) {
         require(magnitudes.size == binCount) { "expected $binCount bins, got ${magnitudes.size}" }
         require(out.size == bandCount) { "expected $bandCount bands, got ${out.size}" }
         for (b in 0 until bandCount) {
@@ -117,8 +137,7 @@ class LogBands(
                 val m = magnitudes[k] * magnitudeScale
                 power += m.toDouble() * m * tiltWeight[k]
             }
-            val mean = power / (to - from + 1)
-            out[b] = if (mean <= 0.0) AdaptiveRange.SILENCE_DB else max(10f * log10(mean).toFloat(), AdaptiveRange.SILENCE_DB)
+            out[b] = (power / (to - from + 1)).toFloat()
         }
     }
 
