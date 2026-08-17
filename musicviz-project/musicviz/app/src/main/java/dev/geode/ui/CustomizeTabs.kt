@@ -784,15 +784,23 @@ private fun ChipRow(
     }
 }
 
+/**
+ * [label] is the control's IDENTITY - the lock-chip persistence key and the
+ * randomizer key, stable English forever (see `ParamRandomizer`). [display]
+ * is what the user reads, and is the only part localization may translate.
+ * They default to the same string because that is what every existing call
+ * site already meant; a converted screen passes both.
+ */
 @Composable
 private fun LabeledSlider(
     label: String,
     value: Float,
     range: ClosedFloatingPointRange<Float>,
+    display: String = label,
     onChange: (Float) -> Unit,
 ) {
     Column(Modifier.padding(vertical = 2.dp)) {
-        ControlLabelRow("$label ${"%.2f".format(value)}", label)
+        ControlLabelRow("$display ${"%.2f".format(value)}", label)
         CrystalSlider(value = value, onValueChange = onChange, valueRange = range, modifier = Modifier.fillMaxWidth())
     }
 }
@@ -807,7 +815,10 @@ private fun LabeledSlider(
  * user could not protect: every roll re-picked the palette they had chosen.
  */
 @Composable
-private fun LockableChipLabel(label: String) = ControlLabelRow(label, label)
+private fun LockableChipLabel(
+    label: String,
+    display: String = label,
+) = ControlLabelRow(display, label)
 
 /**
  * Checkbox + label, carrying the same [LockChip] every other control shape
@@ -824,11 +835,12 @@ private fun LockableChipLabel(label: String) = ControlLabelRow(label, label)
 private fun CheckRow(
     label: String,
     checked: Boolean,
+    display: String = label,
     onChange: (Boolean) -> Unit,
 ) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Checkbox(checked = checked, onCheckedChange = onChange)
-        Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+        Text(display, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
         LockChip(label)
     }
 }
@@ -1342,10 +1354,11 @@ private fun LabeledIntSlider(
     label: String,
     value: Int,
     range: IntRange,
+    display: String = label,
     onChange: (Int) -> Unit,
 ) {
     Column(Modifier.padding(vertical = 2.dp)) {
-        ControlLabelRow("$label $value", label)
+        ControlLabelRow("$display $value", label)
         CrystalSlider(
             value = value.toFloat(),
             onValueChange = { onChange(it.toInt().coerceIn(range.first, range.last)) },

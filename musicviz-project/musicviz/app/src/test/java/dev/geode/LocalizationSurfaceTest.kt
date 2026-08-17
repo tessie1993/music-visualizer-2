@@ -77,8 +77,8 @@ class LocalizationSurfaceTest {
             "ui/ExportSettings.kt" to "not converted yet — export defaults copy",
             "ui/ExternalAudioSettings.kt" to "not converted yet — capture permission and refusal copy",
             "ui/CustomizeTabs.kt" to
-                "control labels are also the lock and randomizer identity keys (see ParamRandomizer), " +
-                "so localizing them needs the key split from the label first",
+                "the key/label split exists now (LabeledSlider display=), so conversion is " +
+                "mechanical - each control keeps its English key and gains a translated display",
             "ui/VisualsHub.kt" to
                 "renders the Customize surface, so it shares CustomizeTabs' key-vs-label problem",
             "ui/BehaviorSettings.kt" to "carries Customize-keyed control labels",
@@ -288,6 +288,39 @@ class LocalizationSurfaceTest {
                 .toSet()
         val missing = (referenced - declared).sorted()
         assertEquals("referenced from Kotlin but absent from strings.xml", emptyList<String>(), missing)
+    }
+
+    /**
+     * The mechanism the Customize conversion depends on: a control's lock and
+     * randomizer identity ([label], stable English, persisted) is a separate
+     * argument from what the user reads ([display], translatable). If a
+     * refactor collapses them again, translating a label would silently break
+     * every saved lock and turn the randomizer's matching into a no-op -
+     * invisible in review, permanent in prefs.
+     */
+    @Test
+    fun `customize controls key their locks on label while rendering display`() {
+        val tabs = File(sources, "ui/CustomizeTabs.kt").readText()
+        for (shape in listOf("LabeledSlider", "LabeledIntSlider", "CheckRow", "LockableChipLabel")) {
+            val declaration =
+                Regex("""fun $shape\((.*?)\)""", RegexOption.DOT_MATCHES_ALL)
+                    .find(tabs)
+                    ?.groupValues
+                    ?.get(1)
+            assertTrue("$shape is gone from CustomizeTabs", declaration != null)
+            assertTrue(
+                "$shape lost its display/label split - localizing it would break lock persistence",
+                declaration!!.contains("display: String = label"),
+            )
+        }
+        assertTrue(
+            "LockChip must be keyed on label, never on display",
+            !Regex("""LockChip\(display\)""").containsMatchIn(tabs),
+        )
+        assertTrue(
+            "ControlLabelRow's lockKey position must receive label",
+            Regex("ControlLabelRow\\(\"\\$" + "display[^\"]*\", label\\)").containsMatchIn(tabs),
+        )
     }
 
     @Test
