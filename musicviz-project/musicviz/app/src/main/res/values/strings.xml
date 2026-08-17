@@ -212,6 +212,62 @@
     <string name="folders_rescan">Rescan</string>
     <string name="folders_scanning">Scanning…</string>
 
+    <!-- Studio: the clip shelf and the editor. -->
+    <string name="studio_edit">Edit</string>
+    <string name="studio_open_video">Open a video…</string>
+    <string name="studio_empty_title">Nothing rendered yet</string>
+    <string name="studio_empty_body">Render a visual from Settings › Export video and it lands here, ready to be cut, graded and sent somewhere. Any other video on the phone can be opened with the button above.</string>
+    <string name="studio_send">Send</string>
+    <string name="studio_send_ellipsis">Send…</string>
+    <string name="studio_share_chooser">Send video</string>
+    <string name="studio_storage_used">%1$s in Movies/Geode</string>
+    <string name="studio_rename_title">Rename clip</string>
+    <string name="studio_rename_field">Name</string>
+    <string name="studio_rename_failed">Could not rename that clip.</string>
+    <string name="studio_delete_title">Delete clip?</string>
+    <string name="studio_delete_body">\"%1$s\" will be deleted from this device. This cannot be undone.</string>
+    <string name="studio_delete_failed">Android would not let Geode delete that file.</string>
+    <string name="studio_notice_title">Didn\'t work</string>
+    <string name="action_back">Back</string>
+
+    <plurals name="clip_count">
+        <item quantity="one">%1$d clip</item>
+        <item quantity="other">%1$d clips</item>
+    </plurals>
+    <string name="studio_size_gb">%1$.1f GB</string>
+
+    <string name="studio_section_cut">Cut</string>
+    <string name="studio_section_look">Look</string>
+    <string name="studio_section_frame">Frame</string>
+    <string name="studio_section_sound">Sound &amp; caption</string>
+    <string name="studio_section_render">Render &amp; send</string>
+
+    <string name="studio_trim_summary">%1$s → %2$s   ·   keeps %3$s</string>
+    <string name="studio_trim_renders">, renders %1$s</string>
+    <string name="studio_look_explainer">A look writes these four and then gets out of the way — every one stays an ordinary slider afterwards, the same way the live-input profiles work.</string>
+    <string name="studio_brightness">Brightness</string>
+    <string name="studio_contrast">Contrast</string>
+    <string name="studio_saturation">Saturation</string>
+    <string name="studio_hue_shift">Hue shift</string>
+    <string name="studio_speed">Speed</string>
+    <string name="studio_rotate">Rotate</string>
+    <string name="studio_reframe">Reframe</string>
+    <string name="studio_as_shot">As shot</string>
+    <string name="studio_reframe_explainer">Reframing crops rather than pillarboxes — turning 16:9 into 9:16 means losing the sides, and black bars are the one result nobody wants from that.</string>
+    <string name="studio_mute">Mute</string>
+    <string name="studio_caption">Burnt-in caption</string>
+    <string name="studio_caption_explainer">Drawn into the frame after everything else, so it is not graded or cropped with the picture. Leave it empty for none.</string>
+    <string name="studio_rendering">Rendering… %1$d%%</string>
+    <string name="studio_saved">Saved to Movies/Geode.</string>
+    <string name="studio_play">Play</string>
+    <string name="studio_edit_again">Edit again</string>
+    <string name="studio_send_explainer">Send opens the phone\'s own share sheet — YouTube, Instagram, TikTok, Drive, a message, whatever is installed and signed in. Geode has no network access of its own and never uploads anything itself.</string>
+    <string name="studio_render">Render</string>
+    <string name="studio_reset">Reset</string>
+    <string name="studio_nothing_changed">Nothing is changed yet — rendering now would just copy the clip.</string>
+    <string name="studio_renders_new_file">Renders a NEW file. The original is never overwritten.</string>
+    <string name="studio_slider_value">%1$s  %2$s%3$s</string>
+
     <!-- Shared verbs. One definition each, so a translator sees them once. -->
     <string name="action_save">Save</string>
     <string name="action_cancel">Cancel</string>
