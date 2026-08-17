@@ -314,6 +314,85 @@
     <string name="folders_cache_explainer">Analysis results per track, so replaying never re-analyses. Clearing costs nothing but the next analysis pass.</string>
     <string name="action_clear">Clear</string>
 
+    <!-- Settings › Audio: analysis, key colour, live input. -->
+    <string name="audio_group_playback">Playback</string>
+    <string name="audio_group_analysis">Analysis</string>
+    <string name="audio_beat_sensitivity">"Beat sensitivity  %1$sσ — drag right for LESS sensitive (fewer beat flashes)"</string>
+    <string name="audio_beat_min_gap">"Minimum gap between beats  %1$d ms — never flash faster than %2$d BPM"</string>
+    <string name="audio_slow_track">Slow track</string>
+    <string name="audio_default">Default</string>
+    <string name="audio_preset_morph">Preset morph: %1$d beats (0 = snap)</string>
+    <string name="audio_key_colour">Colour from the musical key</string>
+    <string name="audio_key_colour_explainer">Sets Hue shift from the key the analyser found, around the circle of fifths — so a track keeps the same colour every time you play it, and two songs that sound related look related. It moves the ordinary Hue shift slider, so you can always disagree with it; switching this off gives your own value back.</string>
+    <string name="audio_react_mic">React to the microphone</string>
+    <string name="audio_react_mic_explainer">Plays nothing and drives the visuals from what the phone hears — a room, an instrument, a speaker across the street. Playback pauses while it is on, because the analyzer has one input and a track plus the room would just blur together. Audio is analysed live and never recorded, saved or sent anywhere.</string>
+    <string name="audio_mic_denied">Microphone access is off for Geode. Turn it on in Android Settings › Apps › Geode › Permissions to use live input.</string>
+    <string name="audio_mic_busy">The microphone could not be opened — another app may be using it.</string>
+    <string name="audio_tune_room">Tune for what the phone is hearing</string>
+    <string name="audio_profiles_explainer">Each sets the beat threshold, the reactivity envelope and the band balance together — they are one decision, and they live on three different screens. Every value stays an ordinary slider afterwards.</string>
+
+    <!-- Settings › Audio › Other apps (playback capture). -->
+    <string name="ext_visualize_other_apps">Visualize other apps</string>
+    <string name="ext_needs_android10">Needs Android 10 or newer — the API that lets one app read another app\'s audio arrived with it. Live input (the microphone) works on every version and can hear the same speaker.</string>
+    <string name="ext_explainer">Drives the visuals from whatever is already playing on this device — a streaming app, a video, a game — instead of from a file in your library. Android asks for capture permission first, and shows a notification the whole time it is running. Audio is analysed live and never recorded, saved or sent anywhere.</string>
+    <string name="ext_waiting_permission">Waiting for the capture permission…</string>
+    <string name="ext_listening_to">Listening to %1$s.</string>
+    <string name="ext_listening_idle">Listening. Start something playing in any app.</string>
+    <string name="ext_now_playing_line">%1$s: %2$s</string>
+    <string name="ext_now_playing_line_with_artist">%1$s: %2$s — %3$s</string>
+    <string name="ext_read_now_playing_explainer">Geode can also show WHAT the other app is playing — the track and artist, on the visualizer. That reads the media session, which Android gates behind notification access. Optional: the visuals work on the sound alone.</string>
+    <string name="ext_allow_reading">Allow reading now playing</string>
+    <string name="ext_silence_title">Silence, on purpose</string>
+    <string name="ext_refused_body">%1$s does not allow other apps to capture its audio. Android honours that, and there is no setting on either side that changes it — the capture is running and being handed digital silence. Most other apps (YouTube, podcast players, games) do allow it and work here.</string>
+    <string name="ext_mic_alternative">The microphone still hears your speaker. It picks up the room with it, so it is a rougher signal — but it reacts to %1$s.</string>
+    <string name="ext_use_mic_instead">Use the microphone instead</string>
+    <string name="ext_fail_unsupported">This device is older than Android 10, which introduced audio capture between apps.</string>
+    <string name="ext_fail_permission">Microphone access is off for Geode. Android requires it for audio capture of any kind — turn it on in Android Settings › Apps › Geode › Permissions.</string>
+    <string name="ext_fail_consent">Capture permission was not given. Nothing is being read.</string>
+    <string name="ext_fail_unavailable">The device would not open an audio capture at any format — another app may be holding it.</string>
+
+    <!-- Export: shared by the Export tab and the export dialog. -->
+    <string name="export_title">Export</string>
+    <string name="export_group_defaults">Defaults</string>
+    <string name="export_platform_preset">Platform preset</string>
+    <string name="export_quality">Quality</string>
+    <string name="export_frame_rate">Frame rate</string>
+    <string name="export_aspect_ratio">Aspect ratio</string>
+    <string name="export_fps_30">30 fps</string>
+    <string name="export_fps_60">60 fps</string>
+    <string name="export_loop_safe">Loop-safe</string>
+    <string name="export_loop_safe_default">Loop-safe by default</string>
+    <string name="export_loop_safe_explainer">Loop-safe trims the end of the render to a bar boundary so the clip repeats cleanly when a platform autoplays it. It needs a detected tempo, so a track that has not been analysed falls back to full length for that render.</string>
+    <string name="export_video_button">Export video…</string>
+    <string name="export_defaults_explainer">Starts from the defaults above; each render can change them for one video. The destination — your Videos library or a folder you pick — is chosen at render time, per export.</string>
+    <string name="export_spec">%1$s, %2$s, %3$d fps</string>
+    <string name="export_spec_loop_safe">%1$s, loop-safe</string>
+    <string name="export_named_preset">%1$s — %2$s</string>
+    <string name="export_custom_preset">Custom — %1$s</string>
+    <string name="export_rendering_offline">Rendering offline…</string>
+    <string name="export_leave_hint">You can leave Geode — the render keeps going and finishes in the background.</string>
+    <string name="export_saved_folder">Saved to your chosen folder.</string>
+    <string name="export_saved_library">Saved to your Videos library (Movies/Geode).</string>
+    <string name="export_failed">Failed: %1$s</string>
+    <string name="export_upload_share_to">Upload / share to</string>
+    <string name="export_upload_drive">Upload to Drive / Share</string>
+    <string name="export_length">Length</string>
+    <string name="export_whole_track">Whole track</string>
+    <string name="export_segment">Segment</string>
+    <string name="export_segment_hint">Drag to pick at least %1$d second of the track. Anything shorter renders the whole thing instead.</string>
+    <string name="export_segment_summary">Renders %1$s–%2$s (%3$s). The clip starts at 0:00 in the file, and the visuals are the ones from that part of the track.</string>
+    <string name="export_looping">Looping</string>
+    <string name="export_full_length">Full length</string>
+    <string name="export_loop_safe_bar_hint">Loop-safe cuts on a bar boundary (%1$s BPM, %2$s s per bar) so the last beat runs into the first — what a short clip needs when a platform autoplays it on repeat. Up to one bar is trimmed from the end.</string>
+    <string name="export_loop_safe_needs_tempo">Loop-safe needs a detected tempo. Analyse the track (Now Playing › Auto) and reopen this dialog.</string>
+    <string name="export_group_performance">Performance</string>
+    <string name="export_live_settings">Live settings</string>
+    <string name="export_take_explainer">Renders the take\'s parameter automation — every slider, colour and effect moving as you performed it. A style SWITCH inside the take is not reproduced: the render draws through the style selected now, for its whole length.</string>
+    <string name="export_4k_fallback">4K depends on your device\'s encoder; it falls back automatically if unsupported.</string>
+    <string name="export_render_button">Render %1$dp %2$s %3$dfps</string>
+    <string name="export_render_to_folder">Render to chosen folder…</string>
+    <string name="export_cancel">Cancel export</string>
+
     <!-- Shared verbs. One definition each, so a translator sees them once. -->
     <string name="action_save">Save</string>
     <string name="action_cancel">Cancel</string>

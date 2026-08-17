@@ -19,7 +19,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.geode.R
 import dev.geode.audio.CaptureFailure
 import dev.geode.audio.PlaybackCaptureService
 
@@ -66,11 +68,9 @@ fun ExternalAudioSettings(viewModel: PlayerViewModel) {
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (!external.supported) {
-            Text("Visualize other apps", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.ext_visualize_other_apps), style = MaterialTheme.typography.bodyMedium)
             Text(
-                "Needs Android 10 or newer — the API that lets one app read another app's audio " +
-                    "arrived with it. Live input (the microphone) works on every version and can " +
-                    "hear the same speaker.",
+                stringResource(R.string.ext_needs_android10),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -78,7 +78,11 @@ fun ExternalAudioSettings(viewModel: PlayerViewModel) {
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Visualize other apps", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(
+                stringResource(R.string.ext_visualize_other_apps),
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
             Switch(
                 checked = external.active || external.awaitingConsent,
                 onCheckedChange = { want ->
@@ -100,10 +104,7 @@ fun ExternalAudioSettings(viewModel: PlayerViewModel) {
             )
         }
         Text(
-            "Drives the visuals from whatever is already playing on this device — a streaming app, " +
-                "a video, a game — instead of from a file in your library. Android asks for capture " +
-                "permission first, and shows a notification the whole time it is running. Audio is " +
-                "analysed live and never recorded, saved or sent anywhere.",
+            stringResource(R.string.ext_explainer),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -111,24 +112,29 @@ fun ExternalAudioSettings(viewModel: PlayerViewModel) {
         when {
             external.awaitingConsent ->
                 Text(
-                    "Waiting for the capture permission…",
+                    stringResource(R.string.ext_waiting_permission),
                     style = MaterialTheme.typography.bodySmall,
                     color = accentTextColor(),
                 )
             external.refusedByApp -> RefusedNotice(viewModel, external)
             external.active ->
                 Text(
-                    external.nowPlaying?.let { "Listening to ${it.appLabel}." }
-                        ?: "Listening. Start something playing in any app.",
+                    external.nowPlaying?.let { stringResource(R.string.ext_listening_to, it.appLabel) }
+                        ?: stringResource(R.string.ext_listening_idle),
                     style = MaterialTheme.typography.bodySmall,
                     color = accentTextColor(),
                 )
-            external.failure != null -> Text(failureText(external.failure!!), style = MaterialTheme.typography.bodySmall)
+            external.failure != null ->
+                Text(stringResource(failureText(external.failure!!)), style = MaterialTheme.typography.bodySmall)
         }
 
         external.nowPlaying?.takeIf { it.title.isNotBlank() }?.let { np ->
             Text(
-                "${np.appLabel}: ${np.title}${if (np.artist.isNotBlank()) " — ${np.artist}" else ""}",
+                if (np.artist.isNotBlank()) {
+                    stringResource(R.string.ext_now_playing_line_with_artist, np.appLabel, np.title, np.artist)
+                } else {
+                    stringResource(R.string.ext_now_playing_line, np.appLabel, np.title)
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -137,9 +143,7 @@ fun ExternalAudioSettings(viewModel: PlayerViewModel) {
         if (!external.hasSessionAccess) {
             Column {
                 Text(
-                    "Geode can also show WHAT the other app is playing — the track and artist, on the " +
-                        "visualizer. That reads the media session, which Android gates behind notification " +
-                        "access. Optional: the visuals work on the sound alone.",
+                    stringResource(R.string.ext_read_now_playing_explainer),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -149,7 +153,7 @@ fun ExternalAudioSettings(viewModel: PlayerViewModel) {
                     onClick = {
                         runCatching { context.startActivity(viewModel.notificationAccessIntent()) }
                     },
-                ) { Text("Allow reading now playing") }
+                ) { Text(stringResource(R.string.ext_allow_reading)) }
             }
         }
     }
@@ -168,7 +172,7 @@ private fun RefusedNotice(
     viewModel: PlayerViewModel,
     external: ExternalAudioState,
 ) {
-    val app = external.refusingApp ?: "That app"
+    val app = external.refusingApp ?: stringResource(R.string.subtitle_capture_refused_unknown_app)
     Column(
         Modifier
             .fillMaxWidth()
@@ -181,36 +185,27 @@ private fun RefusedNotice(
             ).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        CrystalOverline("Silence, on purpose", color = MaterialTheme.colorScheme.error)
+        CrystalOverline(stringResource(R.string.ext_silence_title), color = MaterialTheme.colorScheme.error)
         Text(
-            "$app does not allow other apps to capture its audio. Android honours that, and there " +
-                "is no setting on either side that changes it — the capture is running and being " +
-                "handed digital silence. Most other apps (YouTube, podcast players, games) do allow " +
-                "it and work here.",
+            stringResource(R.string.ext_refused_body, app),
             style = MaterialTheme.typography.bodySmall,
         )
         Text(
-            "The microphone still hears your speaker. It picks up the room with it, so it is a " +
-                "rougher signal — but it reacts to $app.",
+            stringResource(R.string.ext_mic_alternative, app),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         CrystalButton(onClick = {
             viewModel.stopExternalAudio()
             viewModel.setMicEnabled(true)
-        }) { Text("Use the microphone instead") }
+        }) { Text(stringResource(R.string.ext_use_mic_instead)) }
     }
 }
 
-private fun failureText(failure: CaptureFailure): String =
+private fun failureText(failure: CaptureFailure): Int =
     when (failure) {
-        CaptureFailure.UNSUPPORTED ->
-            "This device is older than Android 10, which introduced audio capture between apps."
-        CaptureFailure.PERMISSION ->
-            "Microphone access is off for Geode. Android requires it for audio capture of any " +
-                "kind — turn it on in Android Settings › Apps › Geode › Permissions."
-        CaptureFailure.CONSENT ->
-            "Capture permission was not given. Nothing is being read."
-        CaptureFailure.UNAVAILABLE ->
-            "The device would not open an audio capture at any format — another app may be holding it."
+        CaptureFailure.UNSUPPORTED -> R.string.ext_fail_unsupported
+        CaptureFailure.PERMISSION -> R.string.ext_fail_permission
+        CaptureFailure.CONSENT -> R.string.ext_fail_consent
+        CaptureFailure.UNAVAILABLE -> R.string.ext_fail_unavailable
     }

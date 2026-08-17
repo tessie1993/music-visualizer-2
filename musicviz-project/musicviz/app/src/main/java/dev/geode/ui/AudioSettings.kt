@@ -19,7 +19,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.geode.R
 import dev.geode.analysis.BeatTuning
 import kotlin.math.roundToInt
 
@@ -31,13 +33,13 @@ import kotlin.math.roundToInt
 @Composable
 internal fun AudioSettingsTab(viewModel: PlayerViewModel) {
     SettingsTabColumn {
-        item { SettingsGroup("Playback") { PlaybackSettingsSection(viewModel) } }
+        item { SettingsGroup(stringResource(R.string.audio_group_playback)) { PlaybackSettingsSection(viewModel) } }
         // Carries its own SettingsGroup card: the master switch lives on the
         // group header, so the whole card is the control.
         item { EqualizerSettings(viewModel) }
-        item { SettingsGroup("Analysis") { AnalysisGroup(viewModel) } }
-        item { SettingsGroup("Live input") { LiveInputGroup(viewModel) } }
-        item { SettingsGroup("Other apps") { ExternalAudioSettings(viewModel) } }
+        item { SettingsGroup(stringResource(R.string.audio_group_analysis)) { AnalysisGroup(viewModel) } }
+        item { SettingsGroup(stringResource(R.string.source_live_input)) { LiveInputGroup(viewModel) } }
+        item { SettingsGroup(stringResource(R.string.source_other_apps)) { ExternalAudioSettings(viewModel) } }
     }
 }
 
@@ -51,8 +53,7 @@ private fun AnalysisGroup(viewModel: PlayerViewModel) {
     val gui by viewModel.guiPrefs.collectAsState()
     Column {
         Text(
-            "Beat sensitivity  ${"%.1f".format(gui.beatSensitivity)}σ " +
-                "— drag right for LESS sensitive (fewer beat flashes)",
+            stringResource(R.string.audio_beat_sensitivity, "%.1f".format(gui.beatSensitivity)),
             style = MaterialTheme.typography.labelMedium,
         )
         CrystalSlider(
@@ -61,8 +62,11 @@ private fun AnalysisGroup(viewModel: PlayerViewModel) {
             valueRange = BeatTuning.SENSITIVITY_MIN..BeatTuning.SENSITIVITY_MAX,
         )
         Text(
-            "Minimum gap between beats  ${gui.beatMinIntervalMs.roundToInt()} ms " +
-                "— never flash faster than ${(60_000f / gui.beatMinIntervalMs).roundToInt()} BPM",
+            stringResource(
+                R.string.audio_beat_min_gap,
+                gui.beatMinIntervalMs.roundToInt(),
+                (60_000f / gui.beatMinIntervalMs).roundToInt(),
+            ),
             style = MaterialTheme.typography.labelMedium,
         )
         CrystalSlider(
@@ -81,7 +85,7 @@ private fun AnalysisGroup(viewModel: PlayerViewModel) {
                         ),
                     )
                 },
-            ) { Text("Slow track") }
+            ) { Text(stringResource(R.string.audio_slow_track)) }
             TextButton(
                 onClick = {
                     viewModel.setGuiPrefs(
@@ -91,11 +95,11 @@ private fun AnalysisGroup(viewModel: PlayerViewModel) {
                         ),
                     )
                 },
-            ) { Text("Default") }
+            ) { Text(stringResource(R.string.audio_default)) }
         }
     }
     Column {
-        Text("Preset morph: ${gui.morphBeats} beats (0 = snap)")
+        Text(stringResource(R.string.audio_preset_morph, gui.morphBeats))
         CrystalSlider(
             value = gui.morphBeats.toFloat(),
             onValueChange = { viewModel.setGuiPrefs(gui.copy(morphBeats = it.toInt())) },
@@ -105,14 +109,15 @@ private fun AnalysisGroup(viewModel: PlayerViewModel) {
     }
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Colour from the musical key", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(
+                stringResource(R.string.audio_key_colour),
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
             Switch(checked = gui.keyColor, onCheckedChange = viewModel::setKeyColor)
         }
         Text(
-            "Sets Hue shift from the key the analyser found, around the circle of fifths — so a " +
-                "track keeps the same colour every time you play it, and two songs that sound " +
-                "related look related. It moves the ordinary Hue shift slider, so you can always " +
-                "disagree with it; switching this off gives your own value back.",
+            stringResource(R.string.audio_key_colour_explainer),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -136,7 +141,11 @@ private fun LiveInputGroup(viewModel: PlayerViewModel) {
         }
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("React to the microphone", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(
+                stringResource(R.string.audio_react_mic),
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
             Switch(
                 checked = mic.active,
                 onCheckedChange = { want ->
@@ -152,31 +161,27 @@ private fun LiveInputGroup(viewModel: PlayerViewModel) {
             )
         }
         Text(
-            "Plays nothing and drives the visuals from what the phone hears — a room, an " +
-                "instrument, a speaker across the street. Playback pauses while it is on, because " +
-                "the analyzer has one input and a track plus the room would just blur together. " +
-                "Audio is analysed live and never recorded, saved or sent anywhere.",
+            stringResource(R.string.audio_react_mic_explainer),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         when {
             denied || mic.failure == dev.geode.audio.MicCapture.Failure.PERMISSION ->
                 Text(
-                    "Microphone access is off for Geode. Turn it on in Android Settings › Apps › " +
-                        "Geode › Permissions to use live input.",
+                    stringResource(R.string.audio_mic_denied),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
             mic.failure == dev.geode.audio.MicCapture.Failure.UNAVAILABLE ->
                 Text(
-                    "The microphone could not be opened — another app may be using it.",
+                    stringResource(R.string.audio_mic_busy),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
         }
     }
     Column {
-        Text("Tune for what the phone is hearing", style = MaterialTheme.typography.labelMedium)
+        Text(stringResource(R.string.audio_tune_room), style = MaterialTheme.typography.labelMedium)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(dev.geode.analysis.LiveInputProfile.entries.toList()) { profile ->
                 CrystalButton(
@@ -192,9 +197,7 @@ private fun LiveInputGroup(viewModel: PlayerViewModel) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            "Each sets the beat threshold, the reactivity envelope and the band balance together — " +
-                "they are one decision, and they live on three different screens. Every value stays " +
-                "an ordinary slider afterwards.",
+            stringResource(R.string.audio_profiles_explainer),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

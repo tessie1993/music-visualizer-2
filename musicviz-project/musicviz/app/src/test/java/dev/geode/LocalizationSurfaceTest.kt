@@ -52,6 +52,10 @@ class LocalizationSurfaceTest {
     private val localized: List<String> =
         listOf(
             "ui/AppShell.kt",
+            "ui/SettingsDialog.kt",
+            "ui/ExternalAudioSettings.kt",
+            "ui/ExportSettings.kt",
+            "ui/AudioSettings.kt",
             "ui/FolderSettings.kt",
             "ui/EqualizerSettings.kt",
             "ui/PlaybackSettings.kt",
@@ -72,10 +76,6 @@ class LocalizationSurfaceTest {
      */
     private val pending: Map<String, String> =
         mapOf(
-            "ui/SettingsDialog.kt" to "not converted yet — the export dialog's long explanatory copy",
-            "ui/AudioSettings.kt" to "not converted yet — analysis and live-input copy",
-            "ui/ExportSettings.kt" to "not converted yet — export defaults copy",
-            "ui/ExternalAudioSettings.kt" to "not converted yet — capture permission and refusal copy",
             "ui/CustomizeTabs.kt" to
                 "the key/label split exists now (LabeledSlider display=), so conversion is " +
                 "mechanical - each control keeps its English key and gains a translated display",

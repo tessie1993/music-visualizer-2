@@ -26,7 +26,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.geode.R
 import dev.geode.data.ExportDefaults
 import dev.geode.data.ExportPrefsStore
 import dev.geode.data.exportQualityLabel
@@ -91,9 +93,10 @@ fun SettingsDialog(
     // Written back after every change below, so the next export - and the
     // Settings › Export tab - start from what was chosen here.
     fun persistDefaults() = exportPrefs.save(ExportDefaults(quality, fps, ratio, loopSafe))
+    val chooserTitle = stringResource(R.string.export_upload_share_to)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Export") },
+        title = { Text(stringResource(R.string.export_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 when {
@@ -104,7 +107,7 @@ fun SettingsDialog(
                         val run by dev.geode.export.ExportRun.state.collectAsState()
                         Text(
                             listOfNotNull(
-                                "Rendering offline…",
+                                stringResource(R.string.export_rendering_offline),
                                 run.secondsRemaining?.let { dev.geode.export.RenderEta.describe(it) },
                             ).joinToString(" · "),
                         )
@@ -113,18 +116,20 @@ fun SettingsDialog(
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Text(
-                            "You can leave Geode — the render keeps going and finishes in the background.",
+                            stringResource(R.string.export_leave_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     export.resultUri != null -> {
                         Text(
-                            if (export.customDestination) {
-                                "Saved to your chosen folder."
-                            } else {
-                                "Saved to your Videos library (Movies/Geode)."
-                            },
+                            stringResource(
+                                if (export.customDestination) {
+                                    R.string.export_saved_folder
+                                } else {
+                                    R.string.export_saved_library
+                                },
+                            ),
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = {
@@ -134,17 +139,17 @@ fun SettingsDialog(
                                         putExtra(Intent.EXTRA_STREAM, export.resultUri)
                                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                     }
-                                context.startActivity(Intent.createChooser(share, "Upload / share to"))
+                                context.startActivity(Intent.createChooser(share, chooserTitle))
                             }) {
-                                Text("Upload to Drive / Share")
+                                Text(stringResource(R.string.export_upload_drive))
                             }
                         }
                     }
                     export.error != null -> {
-                        Text("Failed: ${export.error}", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.export_failed, export.error.orEmpty()), color = MaterialTheme.colorScheme.error)
                     }
                     else -> {
-                        Text("Quality", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.export_quality), style = MaterialTheme.typography.labelMedium)
                         Row(
                             modifier = Modifier.horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -156,18 +161,18 @@ fun SettingsDialog(
                                 }
                             }
                         }
-                        Text("Frame rate", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.export_frame_rate), style = MaterialTheme.typography.labelMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            QualityChip("30 fps", fps == 30) {
+                            QualityChip(stringResource(R.string.export_fps_30), fps == 30) {
                                 fps = 30
                                 persistDefaults()
                             }
-                            QualityChip("60 fps", fps == 60) {
+                            QualityChip(stringResource(R.string.export_fps_60), fps == 60) {
                                 fps = 60
                                 persistDefaults()
                             }
                         }
-                        Text("Aspect ratio", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.export_aspect_ratio), style = MaterialTheme.typography.labelMedium)
                         Row(
                             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -180,10 +185,10 @@ fun SettingsDialog(
                             }
                         }
                         if (trackDurationMs > 0) {
-                            Text("Length", style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(R.string.export_length), style = MaterialTheme.typography.labelMedium)
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                QualityChip("Whole track", !segment) { segment = false }
-                                QualityChip("Segment", segment) { segment = true }
+                                QualityChip(stringResource(R.string.export_whole_track), !segment) { segment = false }
+                                QualityChip(stringResource(R.string.export_segment), segment) { segment = true }
                             }
                             if (segment) {
                                 RangeSlider(
@@ -196,12 +201,17 @@ fun SettingsDialog(
                                 )
                                 Text(
                                     if (range == null) {
-                                        "Drag to pick at least ${ExportRange.MIN_DURATION_MS / 1000} second of " +
-                                            "the track. Anything shorter renders the whole thing instead."
+                                        stringResource(
+                                            R.string.export_segment_hint,
+                                            (ExportRange.MIN_DURATION_MS / 1000).toInt(),
+                                        )
                                     } else {
-                                        "Renders ${formatClock(range.startMs)}–${formatClock(range.endMs)} " +
-                                            "(${formatClock(range.durationMs)}). The clip starts at 0:00 in the " +
-                                            "file, and the visuals are the ones from that part of the track."
+                                        stringResource(
+                                            R.string.export_segment_summary,
+                                            formatClock(range.startMs),
+                                            formatClock(range.endMs),
+                                            formatClock(range.durationMs),
+                                        )
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -209,53 +219,50 @@ fun SettingsDialog(
                             }
                         }
                         val barUs = dev.geode.analysis.BarTrim.barDurationUs(bpm)
-                        Text("Looping", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.export_looping), style = MaterialTheme.typography.labelMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            QualityChip("Full length", !loopSafe) {
+                            QualityChip(stringResource(R.string.export_full_length), !loopSafe) {
                                 loopSafe = false
                                 persistDefaults()
                             }
-                            QualityChip("Loop-safe", loopSafe) {
+                            QualityChip(stringResource(R.string.export_loop_safe), loopSafe) {
                                 loopSafe = barUs != null
                                 persistDefaults()
                             }
                         }
                         Text(
                             if (barUs != null) {
-                                "Loop-safe cuts on a bar boundary (${"%.0f".format(bpm)} BPM, " +
-                                    "${"%.1f".format(barUs / 1_000_000f)} s per bar) so the last beat runs " +
-                                    "into the first — what a short clip needs when a platform autoplays it " +
-                                    "on repeat. Up to one bar is trimmed from the end."
+                                stringResource(
+                                    R.string.export_loop_safe_bar_hint,
+                                    "%.0f".format(bpm),
+                                    "%.1f".format(barUs / 1_000_000f),
+                                )
                             } else {
-                                "Loop-safe needs a detected tempo. Analyse the track (Now Playing › Auto) " +
-                                    "and reopen this dialog."
+                                stringResource(R.string.export_loop_safe_needs_tempo)
                             },
                             style = MaterialTheme.typography.labelSmall,
                         )
                         if (takes.isNotEmpty()) {
-                            Text("Performance", style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(R.string.export_group_performance), style = MaterialTheme.typography.labelMedium)
                             Row(
                                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
-                                QualityChip("Live settings", selectedTake == null) { onSelectTake(null) }
+                                QualityChip(stringResource(R.string.export_live_settings), selectedTake == null) { onSelectTake(null) }
                                 takes.forEach { name ->
                                     QualityChip(name, selectedTake == name) { onSelectTake(name) }
                                 }
                             }
                             if (selectedTake != null) {
                                 Text(
-                                    "Renders the take's parameter automation — every slider, colour and " +
-                                        "effect moving as you performed it. A style SWITCH inside the take " +
-                                        "is not reproduced: the render draws through the style selected " +
-                                        "now, for its whole length.",
+                                    stringResource(R.string.export_take_explainer),
                                     style = MaterialTheme.typography.labelSmall,
                                 )
                             }
                         }
                         if (quality == ExportQuality.UHD4K) {
                             Text(
-                                "4K depends on your device's encoder; it falls back automatically if unsupported.",
+                                stringResource(R.string.export_4k_fallback),
                                 style = MaterialTheme.typography.labelSmall,
                             )
                         }
@@ -264,14 +271,14 @@ fun SettingsDialog(
                             enabled = hasMedia,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text("Render ${quality.shortSide}p ${ratio.label} ${fps}fps")
+                            Text(stringResource(R.string.export_render_button, quality.shortSide, ratio.label, fps))
                         }
                         OutlinedButton(
                             onClick = { onStartToDestination(ExportAspect.of(quality, ratio), fps, loopSafe, range) },
                             enabled = hasMedia,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text("Render to chosen folder…")
+                            Text(stringResource(R.string.export_render_to_folder))
                         }
                     }
                 }
@@ -279,9 +286,9 @@ fun SettingsDialog(
         },
         confirmButton = {
             if (export.running) {
-                TextButton(onClick = onCancel) { Text("Cancel export") }
+                TextButton(onClick = onCancel) { Text(stringResource(R.string.export_cancel)) }
             } else {
-                TextButton(onClick = onDismiss) { Text("Close") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
             }
         },
     )
