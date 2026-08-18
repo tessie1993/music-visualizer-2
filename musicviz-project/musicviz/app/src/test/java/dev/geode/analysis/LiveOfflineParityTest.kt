@@ -127,6 +127,40 @@ class LiveOfflineParityTest {
     }
 
     @Test
+    fun `surround extras stay out of the two-speaker image`() {
+        // The capture ring drops channels beyond the front pair, so live
+        // analysis never hears them. Offline must obey the same rule: a loud
+        // third channel fed alongside a stereo pair must change NOTHING —
+        // not the stereo image, not the analysis signal itself.
+        val fixture = Corpus.named("stereo_wide")
+        val frames = fixture.frames
+        val stereoPair = fixture.interleaved
+        val withExtra = FloatArray(frames * 3)
+        for (f in 0 until frames) {
+            withExtra[f * 3] = stereoPair[f * 2]
+            withExtra[f * 3 + 1] = stereoPair[f * 2 + 1]
+            withExtra[f * 3 + 2] = if (f % 2 == 0) 0.9f else -0.9f
+        }
+        val plain = offline(fixture).frames
+        val pipeline =
+            OfflineAnalyzer.StreamingPipeline(
+                BeatTuning.SENSITIVITY_DEFAULT,
+                BeatTuning.INTERVAL_MS_DEFAULT,
+            )
+        pipeline.feedFloat(FloatBuffer.wrap(withExtra), 3, fixture.sampleRateHz)
+        val polluted = pipeline.finish().frames
+        assertEquals("frame counts diverged", plain.size, polluted.size)
+        for (i in plain.indices) {
+            val a = plain[i].features
+            val b = polluted[i].features
+            assertEquals("rms @${plain[i].timeMs}", a.rms, b.rms, 0f)
+            assertEquals("width @${plain[i].timeMs}", a.stereoWidth, b.stereoWidth, 0f)
+            assertEquals("correlation @${plain[i].timeMs}", a.stereoCorrelation, b.stereoCorrelation, 0f)
+            assertEquals("pan @${plain[i].timeMs}", a.stereoPan, b.stereoPan, 0f)
+        }
+    }
+
+    @Test
     fun `stereo width survives export and agrees with live`() {
         val fixture = Corpus.named("stereo_wide")
         val offlineLast = offline(fixture).frames.last().features

@@ -224,20 +224,14 @@ class OfflineAnalyzer(
             }
             var s = 0
             for (f in 0 until frameCount) {
-                var acc = 0f
-                var left = 0f
-                var right = 0f
-                for (c in 0 until channels) {
-                    val v = pcm.get(s) / 32768f
-                    if (c == 0) left = v
-                    if (c == 1) right = v
-                    acc += v
-                    s++
-                }
-                buffer[buffered + f] = acc / channels
-                // The front pair, mirroring the capture ring's rule: the
-                // surrounds are not part of the two-speaker image.
-                sideBuffer[buffered + f] = if (channels >= 2) (left - right) * 0.5f else 0f
+                // The front pair only, mirroring the capture ring's rule:
+                // channels beyond it are dropped, not folded in, so mid and
+                // side describe the same two speakers live analysis hears.
+                val left = pcm.get(s) / 32768f
+                val right = if (channels >= 2) pcm.get(s + 1) / 32768f else left
+                buffer[buffered + f] = (left + right) * 0.5f
+                sideBuffer[buffered + f] = (left - right) * 0.5f
+                s += channels
             }
             buffered += frameCount
             drain()
@@ -261,18 +255,11 @@ class OfflineAnalyzer(
             }
             var s = 0
             for (f in 0 until frameCount) {
-                var acc = 0f
-                var left = 0f
-                var right = 0f
-                for (c in 0 until channels) {
-                    val v = pcm.get(s)
-                    if (c == 0) left = v
-                    if (c == 1) right = v
-                    acc += v
-                    s++
-                }
-                buffer[buffered + f] = acc / channels
-                sideBuffer[buffered + f] = if (channels >= 2) (left - right) * 0.5f else 0f
+                val left = pcm.get(s)
+                val right = if (channels >= 2) pcm.get(s + 1) else left
+                buffer[buffered + f] = (left + right) * 0.5f
+                sideBuffer[buffered + f] = (left - right) * 0.5f
+                s += channels
             }
             buffered += frameCount
             drain()
