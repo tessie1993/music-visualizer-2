@@ -713,8 +713,9 @@ class VisualizerRenderer(
                         fluid.onShaderError = { onShaderError(it) }
                     }
                 SceneIds.CURLFLOW ->
-                    dev.geode.render.fluid
-                        .CurlFlowScene(context)
+                    dev.geode.render.fluid.CurlFlowScene(context).also { curl ->
+                        curl.onShaderError = { onShaderError(it) }
+                    }
                 SceneIds.WATER ->
                     dev.geode.render.fluid.WaterScene(context).also { water ->
                         water.onShaderError = { onShaderError(it) }

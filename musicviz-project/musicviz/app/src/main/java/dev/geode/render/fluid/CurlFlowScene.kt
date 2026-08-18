@@ -84,11 +84,22 @@ internal class CurlFlowScene(
     private val prevFbo = IntArray(1)
     private val prevViewport = IntArray(4)
 
+    /**
+     * Error channel, wired by `VisualizerRenderer.createScene` like every
+     * other fluid style's. This scene used to fail with a logcat line at
+     * best - silent black is the worst failure mode, and this style had
+     * three ways to reach it with nothing on screen to say why.
+     */
+    var onShaderError: (String?) -> Unit = {}
+
     override fun init() {
         release()
         formats = FluidBuffers.probeFormats()
         available = formats.ok
-        if (!available) return
+        if (!available) {
+            onShaderError("Curl Flow unavailable: this GPU can't render half-float buffers")
+            return
+        }
         choreography.reset()
         quad.create()
         // Compile failure must degrade the style, never crash the GL thread.
@@ -97,7 +108,7 @@ internal class CurlFlowScene(
                 GlUtil.loadShader(context, R.raw.fluid_base_vert),
                 // Resolves the psrdnoise include the field is built on.
                 GlUtil.loadShader(context, R.raw.curl_field_frag),
-            ) { android.util.Log.w("FluidSim", "curl field shader rejected by driver: $it") }
+            ) { onShaderError("Curl Flow unavailable on this GPU: $it") }
         if (fieldProgram == 0) {
             release()
             return
@@ -105,6 +116,7 @@ internal class CurlFlowScene(
         fieldUniforms = GlUtil.UniformCache(fieldProgram)
         particles.create(49_152, formats)
         if (!particles.available) {
+            onShaderError("Curl Flow unavailable: this GPU refused the particle state buffers")
             release()
         }
     }
@@ -119,7 +131,14 @@ internal class CurlFlowScene(
         // LINEAR filtering (core ES3 for half-float SAMPLING) smooths the
         // per-cell velocity quantization that banded the old NEAREST field.
         val (fw, fh) = FluidBuffers.resolution(96, width, height)
-        field = FluidBuffers.Fbo(fw, fh, formats.rg, linear = true).also { it.create() }
+        // ok-checked: create() self-releases on an incomplete FBO, and a
+        // dead handle here meant draw() bound framebuffer 0 mid-frame and
+        // rasterized the field pass onto the screen at the field viewport.
+        field =
+            FluidBuffers.Fbo(fw, fh, formats.rg, linear = true)
+                .also { it.create() }
+                .takeIf { it.ok }
+        if (field == null) onShaderError("Curl Flow unavailable: this GPU refused the flow-field buffer")
         particles.invalidateSeed()
     }
 
