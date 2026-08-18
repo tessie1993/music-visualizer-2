@@ -14,6 +14,93 @@ Newest slice first.
 
 ---
 
+## V2-4-01a: the capability report, format policy and cache — the decidable half
+
+State: COMPLETE
+
+Goal: open Phase 4 with the part of "GL capability probes and format policy" that a
+headless JVM can prove. §6.3's rule — "never infer support from GLES version alone; probe
+renderability, filtering, blending, vertex fetch, timer queries, program binary behavior
+and memory limits" — is a *decision* rule, and decisions are pure functions. This slice
+builds the probe-fact ABI (`GlProbeReport`), the derivation from facts to capabilities
+(`GlCapabilities`), the per-role format policy with named fallbacks (`FormatPolicy`), and
+the persisted capability cache with schema and driver-identity invalidation
+(`CapabilityCache`), plus `GPU_RESOURCE_ABI.md`. The code that fills the report by
+touching a real EGL context is V2-4-01b, because writing it here would be writing GL
+calls no machine in this session can execute.
+
+User-visible effect: none. Nothing constructs these types in production yet.
+
+In scope: `:engine:gl` gains its first source — `GlVersion` parsing, `GlProbeReport` (raw
+facts: strings, limits, extension set, per-format behavioural probe outcomes),
+`GlCapabilities.derive` (facts → capability report; version alone never enables
+anything), `FormatPolicy.resolve` (per-role formats: simulation state, filterable field,
+linear accumulation, audio textures, linear color target — each with a named fallback and
+a recorded reason), `CapabilityCache` (encode/decode of the *facts*, invalidated by
+schema version or by any change in the vendor/renderer/version identity). Tests for all
+four. `GPU_RESOURCE_ABI.md` documenting the ABI, the derivation rules and the policy.
+
+Out of scope: every GL call. The EGL harness and the prober that fills `GlProbeReport` on
+a device (V2-4-01b); resource pools and ping-pong (V2-4-03); the render graph (V2-4-04).
+Also out of scope: persisting *derived* capabilities — the cache stores facts only, so a
+later session's better derivation applies to cached facts instead of being masked by them.
+
+Files expected to change: `engine/gl/src/main/kotlin/dev/geode/engine/gl/{GlVersion,GlProbeReport,GlCapabilities,FormatPolicy,CapabilityCache}.kt`,
+`engine/gl/src/test/kotlin/dev/geode/engine/gl/{GlVersionTest,GlCapabilitiesTest,FormatPolicyTest,CapabilityCacheTest}.kt`,
+`docs/visualizer-v2/GPU_RESOURCE_ABI.md`, this file.
+
+Compatibility contract: none touched. No production consumer, no dependency, no
+permission, no ABI change. §6.3's two format commitments are encoded, not prose: the
+linear-accumulation decision can only produce a linear or pre-scaled encoding (log
+packing of additive deposit fields is unrepresentable in its result type), and RGBA32UI
+state remains the baseline with float-bit packing.
+
+External source/provenance entries: none. Original code; the GLES spec minima cited in
+the derivation (128 compute invocations, 4 compute storage blocks, 0 fragment storage
+blocks) are facts of the Khronos specification, not adapted source.
+
+Tests written first: `GlVersionTest` (Adreno/Mali/emulator/ANGLE version strings, and
+garbage), `GlCapabilitiesTest` (claimed 3.1 with sub-minimum limits enables nothing; VTF
+needs the behavioural proof, not the unit count; the timer-query trust ladder),
+`FormatPolicyTest` (baseline device lands on RGBA32UI + pre-scaled RGBA8; proven device
+lands on R16F/RG16F/RGBA16F; a broken-RGBA32UI driver still gets a named fallback rather
+than a black frame; every resolution carries a reason), `CapabilityCacheTest` (round
+trip; schema bump, driver change and corruption all invalidate to "re-probe").
+
+Benchmark or visual evidence: not applicable — no frame is rendered. The probe outcomes
+that would justify each policy branch on real hardware are exactly what V2-0-04/V2-4-01b
+owe.
+
+Rollback: revert the one commit.
+
+Risks: designing a report ABI before the prober runs risks describing fields no probe can
+fill; kept low by limiting facts to what `glGetString`/`glGetIntegerv` and an
+FBO-completeness-plus-readback loop demonstrably report. The other risk is pretending
+this slice probed anything — the STATUS text and the ABI doc both say the facts arrive in
+V2-4-01b.
+
+Commands and results: `:engine:gl:testDebugUnitTest` — 33 tests (6 version, 10 capability,
+8 policy, 9 cache), 0 failures; `:engine:gl:ktlintCheck` clean; the full `:app:testDebugUnitTest`
+suite green at this tree state; `EngineV2PlanAuthorityTest` green over this entry and the new
+doc's links.
+
+Review findings: the intended red-first run was eaten by an environment mistake (a wrong
+`sdk.dir` made the first test invocation fail for SDK reasons, and by the time the SDK path
+was fixed the implementation already existed), so red-before-green was not observed. Replaced
+with the stronger proof this repo already trusts (V2-1-04d's pattern): two faults injected —
+the compute spec-floor check removed from the derivation, the blend requirement removed from
+the accumulation rung — and the suite caught exactly the two tests written for those rules
+(`a claimed 3_1 with sub-minimum compute limits enables no compute`, `accumulation needs the
+blend proof, not just attachability`); originals restored byte-identical (diff-verified) and
+the suite is green again.
+
+Commit: `feat(engine-gl): capability report, format policy and probe cache — the decidable half`.
+
+Next slice: V2-4-01b — the on-device prober and EGL probe harness that fill
+`GlProbeReport`, carrying the device gate with it.
+
+---
+
 ## V2-3-GATE: the Phase 3 gate, with one item held open
 
 State: COMPLETE
