@@ -14,6 +14,66 @@ Newest slice first.
 
 ---
 
+## V2-3-GATE: the Phase 3 gate, with one item held open
+
+State: COMPLETE
+
+Goal: record the phase gate's evidence in one place. MASTER_PLAN: "no app-wide consumer
+switch until corpus accuracy, callback allocations, CPU budget, epoch behavior and
+live/offline parity pass."
+
+User-visible effect: none — this is the ledger entry that authorizes Phase 4 to begin and
+forbids the consumer switch from claiming a gate it did not pass.
+
+In scope: `Phase3GateTest` — the two halves that had no standing test (the callback's ring
+write and the per-hop analysis are measured allocation-free; one hop measured at a median
+of 41 µs on this JVM against the 16 ms hop, asserted only against an absurd ceiling so
+machine weather cannot fail it) — and this entry.
+
+Out of scope: nothing new; this closes the phase.
+
+Files expected to change: `engine/audio-core/.../Phase3GateTest.kt`, this file.
+
+Compatibility contract: none.
+
+External source/provenance entries: none.
+
+Tests written first: the gate test IS the deliverable.
+
+Benchmark or visual evidence: the gate's five items —
+
+- **Corpus accuracy**: the oracle suites — descriptors frame-by-frame (V2-3-03a), timbre
+  (~7,800 MFCC comparisons plus contrast and flux, V2-3-05a), harmony ground truth
+  (V2-3-05b), stereo including pan (V2-3-06a) — all green at measured tolerances with
+  fault-injection sensitivity proofs on record.
+- **Callback allocations**: `SampleRing.write` and `ReactiveAnalyzer.analyze` measured at
+  zero bytes per call (`Phase3GateTest`), alongside the standing `Spectrum` and
+  `FeatureRing` allocation tests.
+- **CPU budget**: one hop = 41 µs median on this JVM, 0.3% of the 16 ms hop. **A JVM
+  proxy.** The on-device Mali/Adreno measurement remains THE open item of this phase,
+  carried since V2-3-03b, and blocks nothing that does not ship to a device.
+- **Epoch behavior**: the `SampleRing`/`RingReader` suites (wrap, runway, gap, epoch,
+  concurrency) and `FeatureRing`'s epoch/gap/not-yet tests.
+- **Live/offline parity**: `LiveOfflineParityTest` (V2-3-08), plus the export defect it
+  caught and fixed.
+
+Rollback: revert the one commit.
+
+Risks: the CPU item is a proxy until hardware exists; the gate entry says so rather than
+letting a green suite imply a device was measured.
+
+Commands and results: `:engine:audio-core:test` (204 tests), `:app:testDebugUnitTest`,
+ktlint both modules, `:app:lintDebug` — all green at this commit.
+
+Review findings: none beyond what each slice recorded.
+
+Commit: `test(audio-core): the Phase 3 gate, measured`.
+
+Next slice: Phase 4 (V2-4-01, GL capability probes) — or the owed device benchmark the
+moment hardware exists.
+
+---
+
 ## V2-3-08: versioned cache identity, and export stops losing harmony and width
 
 State: COMPLETE
