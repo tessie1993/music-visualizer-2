@@ -85,6 +85,7 @@ jobs:
             -o out/libprojectmjni.so \
             musicviz-project/musicviz/tools/pm_jni.c \
             -I projectm/src/api/include \
+            -I build-android/src/api/include \
             -L out -lprojectM-4 -llog \
             $PAGE_FLAGS
 

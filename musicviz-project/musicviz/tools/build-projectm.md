@@ -59,7 +59,7 @@ ninja -C build-android
 $NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang \
   -shared -fPIC -O2 -o libprojectmjni.so \
   musicviz-project/musicviz/tools/pm_jni.c \
-  -I projectm/src/api/include -L. -lprojectM-4 -llog \
+  -I projectm/src/api/include -I build-android/src/api/include -L. -lprojectM-4 -llog \
   -Wl,-z,max-page-size=16384,-z,common-page-size=16384
 ```
 
