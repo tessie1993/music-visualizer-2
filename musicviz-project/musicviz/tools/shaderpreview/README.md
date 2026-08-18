@@ -72,6 +72,7 @@ node preview.mjs --scene hyperspace --composite --param zoom=3 --frames 1
 | `--audio silence\|tone\|beat\|arc` | audio model |
 | `--param name=value` | override one `SceneParams` field, repeatable |
 | `--no-melt` | force `uHasMelt = 0` (the no-float-buffer fallback) |
+| `--no-float-sim` | field-sim families only: pretend no float format is renderable, so every target falls to RGBA8 — the app's `FluidBuffers` byte-fallback path, which SwiftShader's always-present `EXT_color_buffer_float` otherwise hides |
 | `--composite` | run the scene through `composite_frag` afterwards, as the app does |
 | `--layer mix,mode` | force the Layers branch (`uStyle` 6) at that mix and `BlendMode` ordinal. Both layers are the SAME texture, so this checks the blend algebra, not a real two-scene composite |
 | `--field-stats` | read back the fluid dye/velocity grids and report their statistics |

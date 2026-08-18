@@ -778,7 +778,7 @@ export const MYCO_STYLES = [
   {
     id: 'myco_circuit', label: 'Circuit Bloom',
     agentRes: 176, sensorAngle: 0.6, jitter: 0, deposit: 0.12,
-    decay: 0.885, snap: 0.7854, look: 3, exposure: 2.2, hueOffset: 0.35,
+    decay: 0.87, snap: 0.7854, look: 3, exposure: 3.2, hueOffset: 0.35,
   },
   {
     id: 'myco_silkroad', label: 'Silk Roads',
