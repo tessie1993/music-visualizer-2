@@ -3,6 +3,8 @@ package dev.geode.render.fluid
 import android.content.Context
 import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
+import dev.geode.render.scene.PcmPulse
+import dev.geode.render.scene.PcmSink
 import dev.geode.render.scene.Scene
 import dev.geode.render.scene.SceneIds
 import dev.geode.render.scene.SceneParams
@@ -21,7 +23,8 @@ import dev.geode.render.scene.SceneParams
  */
 internal class FluidScene(
     context: Context,
-) : Scene {
+) : Scene,
+    PcmSink {
     override val id: String = SceneIds.FLUID
 
     private companion object {
@@ -50,6 +53,9 @@ internal class FluidScene(
 
     /** "Audio drive": one master reactivity gain for everything below. */
     private val audioDrive = FluidAudioDrive()
+
+    private val pcmPulse = PcmPulse()
+    private var pcmStrike = 0f
 
     private var params = SceneParams()
     private var time = 0f
@@ -132,6 +138,11 @@ internal class FluidScene(
         look.resize(width, height)
     }
 
+    override fun acceptPcm(
+        samples: FloatArray,
+        count: Int,
+    ) = pcmPulse.accept(samples, count)
+
     override fun update(
         features: AudioFeatures,
         dt: Float,
@@ -143,6 +154,7 @@ internal class FluidScene(
         // works), and the `time > 1.5f` dye probe latches long before a wrap.
         time = (time + dt) % TIME_WRAP_SECONDS
         lastDt = dt
+        pcmStrike = pcmPulse.tick(dt)
         pendingFeatures = features
         lastFeatures = features
         featuresAgeSec = 0f
@@ -252,10 +264,11 @@ internal class FluidScene(
         // Param wiring + continuous modulation: mids swirl harder, quiet
         // passages fade the canvas, drops leave ink.
         val energy = f.rms.coerceIn(0f, 1f)
+        val pcmKick = pcmStrike.coerceIn(0f, 1f)
         sim.pressureIterations = p.fluidIterations.coerceIn(8, 40)
         sim.pressureDamp = p.fluidPressure.coerceIn(0f, 1f)
         sim.velocityDissipation = p.fluidVelocityDissipation.coerceIn(0f, 4f)
-        sim.curlStrength = p.fluidCurl.coerceIn(0f, 50f) * (1f + p.fluidCurlAudio * f.mid)
+        sim.curlStrength = p.fluidCurl.coerceIn(0f, 50f) * (1f + p.fluidCurlAudio * f.mid + pcmKick * 0.5f)
         sim.densityDissipation =
             p.fluidDensityDissipation.coerceIn(0f, 4f) *
             (1f + p.fluidFadeAudio * (1f - energy))
@@ -292,7 +305,7 @@ internal class FluidScene(
         // frame by it, so adding it here as well turned the hue twice per
         // unit of Cycle speed.
         emitters.paletteCycleSpeed = FluidHue.paletteCycleSpeed(p.fluidPaletteCycleSpeed)
-        emitters.forceScale = p.fluidSplatForce.coerceIn(0f, 3f)
+        emitters.forceScale = p.fluidSplatForce.coerceIn(0f, 3f) * (1f + pcmKick * 0.5f)
         // One clamped dt for choreography + emitters + sim + particles: the
         // sim clamps internally, so feeding emitters the raw frame dt at low
         // FPS made capsule spacing outrun the fluid (splats degenerate into
