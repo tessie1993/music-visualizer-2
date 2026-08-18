@@ -1,7 +1,9 @@
 package dev.geode.analysis
 
 import dev.geode.engine.audio.AnalysisBranch
+import dev.geode.engine.audio.Chromagram
 import dev.geode.engine.audio.FrameGrid
+import dev.geode.engine.audio.KeyDetector
 import dev.geode.engine.audio.Spectrum
 import dev.geode.engine.audio.WindowTable
 import org.junit.Assert.assertEquals
@@ -108,6 +110,13 @@ class HarmonyOracleTest {
         // every harmony visual to follow a drum fill.
         val driven = Driven(Corpus.named("clicks_120bpm"))
         assertTrue("clicks averaged ${driven.meanConfidence}", driven.meanConfidence < 0.35f)
+    }
+
+    /** The empty marker has to be distinguishable from a silent reading. */
+    @Test
+    fun `AudioFeatures reports whether a chromagram ran`() {
+        assertTrue(!AudioFeatures.empty().hasChroma)
+        assertTrue(AudioFeatures.empty().copy(chroma = FloatArray(12)).hasChroma)
     }
 
     @Test

@@ -5,6 +5,7 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import dev.geode.engine.audio.KeyDetector
 import dev.geode.engine.audio.ReactiveAnalyzer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

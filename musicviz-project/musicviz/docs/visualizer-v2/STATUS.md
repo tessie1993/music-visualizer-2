@@ -14,6 +14,62 @@ Newest slice first.
 
 ---
 
+## V2-3-05c: move the harmony nodes home to audio-core
+
+State: COMPLETE
+
+Goal: architecture movement only — `Chromagram` and `KeyDetector` from `app`'s
+`dev.geode.analysis` into `:engine:audio-core`'s `dev.geode.engine.audio`, now that
+V2-3-05b's ground-truth proof travels with them. Both are pure JVM already; this is the
+§4.1 module boundary catching up with the code.
+
+User-visible effect: none. No behavior change of any kind; the proof is that every moved
+and every consuming test passes unchanged.
+
+In scope: the two source files and their two unit-test files move modules verbatim (package
+line and imports aside); consumers (`AnalysisEngine`, `OfflineAnalyzer`, `KeyPalette`,
+`LibraryScreen`, `AudioFeatures` KDoc, `HarmonyOracleTest`) update imports; two stale KDoc
+references to classes deleted in V2-3-03b (`FftProcessor`, `FeatureExtractor`) are fixed in
+the moved copy rather than carried.
+
+Out of scope: any behavior or signature change; the ABI; the device benchmark — **carried.**
+
+Files expected to change: `engine/audio-core/src/{main,test}/kotlin/dev/geode/engine/audio/{Chromagram,KeyDetector}{,Test}.kt`
+(new), their app-side originals (deleted), and the six consumer files' imports.
+
+Compatibility contract: byte-for-byte behavior. Serialized nothing; UI strings via
+`KeyDetector.compact` unchanged.
+
+External source/provenance entries: none — no new code.
+
+Tests written first: not applicable (movement); the existing suites are the net. Per the
+source-text-gate rule, no gate test hard-codes these paths (verified by grep before the
+move).
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: an import missed in a rarely-built target; `./gradlew check`-breadth gates cover it.
+
+Commands and results: `:engine:audio-core:test` (167 tests, the two moved suites among
+them), `:engine:audio-core:ktlintCheck`, `:app:testDebugUnitTest`, `:app:ktlintCheck`,
+`:app:lintDebug` all green.
+
+Review findings: one relocation inside the move — `ChromagramTest` carried a test asserting
+`AudioFeatures.hasChroma`, which tests the app's ABI marker, not the chromagram; it moved to
+`HarmonyOracleTest` instead of dragging an app dependency into `audio-core`. The moved
+KDoc's references to `FftProcessor`/`FeatureExtractor` (deleted in V2-3-03b) were fixed
+rather than carried. A transient app compile error mid-verification did not reproduce on a
+clean re-run and the final gate pass is what is recorded.
+
+Commit: `refactor(analysis): move Chromagram and KeyDetector into audio-core`.
+
+Next slice: the owed device benchmark when hardware exists; otherwise V2-3-06 (stereo,
+HPSS-like balance and structure) per the plan.
+
+---
+
 ## V2-3-05b: chroma, pitch and key, against musical ground truth
 
 State: COMPLETE

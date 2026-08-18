@@ -192,7 +192,7 @@ private fun TrackRow(
                 stored?.artist?.ifBlank { null } ?: t.artist,
                 stored?.album.orEmpty(),
                 stored?.genre.orEmpty(),
-                dev.geode.analysis.KeyDetector
+                dev.geode.engine.audio.KeyDetector
                     .compact(stored?.key.orEmpty()),
             ).filter { it.isNotBlank() }.joinToString(" \u00b7 ")
     var menu by remember { mutableStateOf(false) }

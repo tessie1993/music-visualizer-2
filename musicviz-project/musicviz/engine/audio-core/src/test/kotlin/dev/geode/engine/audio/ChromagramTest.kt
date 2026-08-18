@@ -1,6 +1,5 @@
-package dev.geode.analysis
+package dev.geode.engine.audio
 
-import dev.geode.engine.audio.ReactiveAnalyzer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -199,13 +198,6 @@ class ChromagramTest {
         val c = Chromagram()
         assertEquals(0f, c.confidence, 0f)
         for (v in c.bins) assertEquals(0f, v, 0f)
-    }
-
-    /** The empty marker has to be distinguishable from a silent reading. */
-    @Test
-    fun `AudioFeatures reports whether a chromagram ran`() {
-        assertTrue(!AudioFeatures.empty().hasChroma)
-        assertTrue(AudioFeatures.empty().copy(chroma = FloatArray(12)).hasChroma)
     }
 
     /**

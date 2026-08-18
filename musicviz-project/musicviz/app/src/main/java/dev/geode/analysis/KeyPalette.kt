@@ -1,5 +1,7 @@
 package dev.geode.analysis
 
+import dev.geode.engine.audio.KeyDetector
+
 /**
  * The track's musical key as a colour.
  *

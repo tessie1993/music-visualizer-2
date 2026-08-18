@@ -1,5 +1,7 @@
 package dev.geode.analysis
 
+import dev.geode.engine.audio.Chromagram
+
 /** Immutable snapshot of per-frame audio analysis, consumed by scenes. */
 data class AudioFeatures(
     val bands: FloatArray,

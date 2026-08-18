@@ -1,5 +1,6 @@
 package dev.geode.analysis
 
+import dev.geode.engine.audio.Chromagram
 import dev.geode.engine.audio.MidSideWindow
 import dev.geode.engine.audio.ReactiveAnalyzer
 import dev.geode.engine.audio.SampleRing

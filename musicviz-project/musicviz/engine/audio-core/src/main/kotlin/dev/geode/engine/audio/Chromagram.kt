@@ -1,4 +1,4 @@
-package dev.geode.analysis
+package dev.geode.engine.audio
 
 import kotlin.math.ceil
 import kotlin.math.exp
@@ -49,7 +49,7 @@ class Chromagram(
     /**
      * Energy per pitch class, index 0 = C, scaled so the largest bin is 1.
      * Normalised rather than absolute because every consumer wants the SHAPE
-     * of the harmony; loudness is already available as [AudioFeatures.rms] and
+     * of the harmony; loudness is already published as the RMS feature and
      * folding it in here would make a chord look different at two volumes.
      */
     val bins: FloatArray = FloatArray(12)
@@ -75,14 +75,14 @@ class Chromagram(
     private val scratch = FloatArray(12)
 
     // Asymmetric so a chord change registers promptly but a gap between
-    // strums does not blank the reading. Same shape as FeatureExtractor's
-    // treble smoother, for the same reason.
+    // strums does not blank the reading. Same asymmetry the analyzer's
+    // band smoothing uses, for the same reason.
     private val attack = poleFor(attackSeconds)
     private val release = poleFor(releaseSeconds)
 
     private fun poleFor(seconds: Float): Float = if (seconds <= 0f) 1f else 1f - exp(-1f / (seconds * hopRateHz).coerceAtLeast(1e-3f))
 
-    /** Forgets one piece of audio; see [FeatureExtractor.reset]. */
+    /** Forgets one piece of audio; call on a track change or a seek. */
     fun reset() {
         java.util.Arrays.fill(bins, 0f)
         java.util.Arrays.fill(raw, 0.0)
@@ -93,7 +93,7 @@ class Chromagram(
     /**
      * Folds one FFT magnitude frame into the running chromagram.
      *
-     * [magnitudes] is the half-spectrum [FftProcessor] computes; it is read,
+     * [magnitudes] is the half-spectrum [ReactiveAnalyzer.spectrumInto] serves; read,
      * never retained.
      */
     fun step(
