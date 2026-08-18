@@ -39,7 +39,7 @@ import soundfile
 
 # Bumped by hand whenever a fixture's definition changes, so a stale corpus is
 # a visible mismatch rather than a silent one.
-GENERATOR_VERSION = 2
+GENERATOR_VERSION = 3
 
 # The STFT the per-frame expectations are computed over. Matches
 # AnalysisBranch.GENERAL, and librosa's center=True / pad_mode="constant"
@@ -51,6 +51,25 @@ FRAME_HOP = 512
 
 # librosa's spectral_rolloff default.
 ROLLOFF_FRACTION = 0.85
+
+# The timbre block, V2-3-05a. One definition per feature, stated here and
+# implemented by the Kotlin side:
+#   MFCC: HTK-mel (2595 log10(1 + f/700)) triangular filters, unit peak
+#   (librosa.filters.mel htk=True norm=None), over the POWER spectrum;
+#   10*log10 with a 1e-10 floor and NO top_db clipping (top_db needs the whole
+#   spectrogram's maximum, which a causal engine cannot see); orthonormal
+#   DCT-II; first N_MFCC coefficients.
+#   Timbre flux: L2 distance between successive MFCC vectors EXCLUDING c0
+#   (c0 is level, and level change is what `flux` already measures).
+#   Spectral contrast: octave bands from CONTRAST_FMIN, peak minus valley in
+#   dB where peak/valley are the means of the top/bottom CONTRAST_ALPHA
+#   fraction of the band's power bins (at least one bin each).
+N_MELS = 40
+N_MFCC = 13
+CONTRAST_BANDS = 6
+CONTRAST_FMIN = 200.0
+CONTRAST_ALPHA = 0.02
+LOG_POWER_FLOOR = 1e-10
 
 SR = 22_050
 OUT = pathlib.Path(__file__).resolve().parents[2] / "app/src/test/resources/corpus"
@@ -88,6 +107,16 @@ TOLERANCES = {
     "zeroCrossingRate": 1e-9,
     "frameRms": 1e-6,
     "framePeak": 1e-9,
+    # MEASURED, per the bandwidth precedent, not guessed. The exposure is
+    # float32-vs-float64 on near-zero bins: a leakage bin differs relatively
+    # most exactly where the log then amplifies it - the corpus worst case is
+    # 2.2% relative (contrast band 3 of am_4hz; mfcc c1 of the sweep is
+    # 2.1%; the splice fixture, whose bands hold only leakage, reaches 5.3%).
+    # 0.08 clears that; fault injections below prove a wrong mel scale, DCT
+    # norm or alpha is out by whole dB to tens.
+    "mfcc": 0.08,
+    "timbreFlux": 0.08,
+    "spectralContrast": 0.08,
 }
 
 
@@ -213,10 +242,33 @@ def _per_frame(mono: np.ndarray) -> dict:
     rms = np.sqrt((frames.astype(np.float64) ** 2).mean(axis=0))
     peak = np.abs(frames).max(axis=0)
 
+    # ---- the timbre block; see the constants' comment for the definitions --
+    mel_fb = librosa.filters.mel(sr=SR, n_fft=FRAME_N_FFT, n_mels=N_MELS, htk=True, norm=None)
+    mel_power = mel_fb @ (spec.astype(np.float64) ** 2)
+    log_mel = 10.0 * np.log10(np.maximum(mel_power, LOG_POWER_FLOOR))
+    mfcc = scipy.fft.dct(log_mel, axis=0, type=2, norm="ortho")[:N_MFCC]
+
+    timbre_flux = np.zeros_like(total)
+    timbre_flux[1:] = np.sqrt((np.diff(mfcc[1:, :], axis=1) ** 2).sum(axis=0))
+
+    contrast = np.zeros((CONTRAST_BANDS, len(total)))
+    power_bins = spec.astype(np.float64) ** 2
+    for b in range(CONTRAST_BANDS):
+        lo, hi = CONTRAST_FMIN * 2.0**b, CONTRAST_FMIN * 2.0 ** (b + 1)
+        sel = (freqs >= lo) & (freqs < hi)
+        band = np.sort(power_bins[sel, :], axis=0)
+        k = max(1, int(CONTRAST_ALPHA * band.shape[0]))
+        valley = 10.0 * np.log10(np.maximum(band[:k, :].mean(axis=0), LOG_POWER_FLOOR))
+        peak_db = 10.0 * np.log10(np.maximum(band[-k:, :].mean(axis=0), LOG_POWER_FLOOR))
+        contrast[b] = peak_db - valley
+
     count = min(len(total), spec.shape[1])
 
     def trim(values: np.ndarray) -> list[float]:
         return [round(float(v), 9) for v in values[:count]]
+
+    def trim2(matrix: np.ndarray) -> list[list[float]]:
+        return [[round(float(v), 6) for v in matrix[:, k]] for k in range(count)]
 
     return {
         "nFft": FRAME_N_FFT,
@@ -231,6 +283,14 @@ def _per_frame(mono: np.ndarray) -> dict:
         "zeroCrossingRate": trim(zcr[:count]),
         "frameRms": trim(rms[:count]),
         "framePeak": trim(peak[:count]),
+        "nMels": N_MELS,
+        "nMfcc": N_MFCC,
+        "contrastBands": CONTRAST_BANDS,
+        "contrastFminHz": CONTRAST_FMIN,
+        "contrastAlpha": CONTRAST_ALPHA,
+        "mfcc": trim2(mfcc),
+        "timbreFlux": trim(timbre_flux),
+        "spectralContrast": trim2(contrast),
     }
 
 
