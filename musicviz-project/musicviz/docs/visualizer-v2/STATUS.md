@@ -14,6 +14,67 @@ Newest slice first.
 
 ---
 
+## V2-3-07: the time-addressed feature ring
+
+State: COMPLETE
+
+Goal: §5.6's replacement for latest-wins feature consumption, as an `audio-core` primitive.
+`FeatureRing`: a single-writer multi-reader ring of feature frames addressed by absolute
+sample index, whose `acquireAt(sampleIndex, spanSamples)` returns continuous slots
+LINEARLY INTERPOLATED at the requested sample and event slots MAX/OR-combined over the
+span — with explicit `OK / GAP / NOT_YET_AVAILABLE / DISCONTINUITY` outcomes and no silent
+clamps, per §5.1's ring contract. An app-side `FeatureRingBridge` maps `AudioFeatures`
+snapshots into slot rows and back, so a renderer polling slower than the analysis hop
+never loses the beat that `AudioBus`'s latest-wins field drops today.
+
+User-visible effect: none yet — the consumer switch is gated behind the phase gate. The
+proof this slice owes (the plan is explicit): the ring's span semantics must be IDENTICAL
+to `FeatureTimeline.featuresAt`'s peak-hold/OR before anything switches.
+
+In scope: `FeatureRing` + `FeatureFrame` (preallocated acquisition target) in `audio-core`,
+with wrap, runway, epoch, gap and not-yet tests in the `SampleRing` discipline; the
+app-side bridge with its slot layout; a mirror test sweeping random (time, span) pairs and
+requiring event-for-event equality with `FeatureTimeline.featuresAt` (nearest-frame base,
+`nearest(t+span) - 1` last frame, OR beat, max onset/flux/beatStrength/transient); a
+latest-wins-loss demonstration test.
+
+Out of scope: switching any consumer (phase-gated); the GPU feature block (Phase 4); the
+device benchmark — **carried.**
+
+Files expected to change: `engine/audio-core/.../{FeatureRing,FeatureFrame}.kt` and tests,
+`app/.../analysis/FeatureRingBridge.kt` and tests.
+
+Compatibility contract: nothing existing changes; `FeatureTimeline` remains the reference
+implementation until the mirror proof stands, exactly as §5.6 instructs.
+
+External source/provenance entries: none.
+
+Tests written first: yes.
+
+Benchmark or visual evidence: not applicable pre-switch.
+
+Rollback: revert the one commit.
+
+Risks: the mirror holds only for the five channels `featuresAt` combines — the bridge
+documents that the remaining event channels (kick/snare/hat) get the same max treatment
+the timeline never gave them, which is a deliberate improvement, not drift.
+
+Commands and results: `:engine:audio-core:test` (201 tests, acquisition measured
+allocation-free), the app suite with the mirror sweep (2,000 random time/span pairs,
+1,500+ event-identical comparisons against `FeatureTimeline.featuresAt`), ktlint and lint
+all green.
+
+Review findings: the latest-wins demonstration test doubles as documentation — it
+constructs the exact loss (a one-hop beat between two 3-hop polls), proves the latest
+read misses it and the span read sees it exactly once, and would fail loudly if either
+half of that story stopped being true.
+
+Commit: `feat(audio-core): the time-addressed feature ring`.
+
+Next slice: V2-3-08 — versioned analysis cache and offline parity.
+
+---
+
 ## V2-3-06b: causal structure and harmonic-percussive evidence
 
 State: COMPLETE
