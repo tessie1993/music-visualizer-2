@@ -70,6 +70,13 @@ object Corpus {
 
         fun expected(feature: String): Double = json.getJSONObject("expected").getDouble(feature)
 
+        fun expectedString(feature: String): String = json.getJSONObject("expected").getString(feature)
+
+        fun expectedInts(feature: String): List<Int> {
+            val array = json.getJSONObject("expected").getJSONArray(feature)
+            return (0 until array.length()).map { array.getInt(it) }
+        }
+
         /** Per-frame descriptor expectations, and the STFT they were computed over. */
         fun perFrame(): JSONObject = json.getJSONObject("perFrame")
 

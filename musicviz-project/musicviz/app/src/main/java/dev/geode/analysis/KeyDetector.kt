@@ -1,8 +1,5 @@
 package dev.geode.analysis
 
-import kotlin.math.ceil
-import kotlin.math.log2
-import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
@@ -15,22 +12,21 @@ import kotlin.math.sqrt
  */
 class KeyDetector {
     private val chroma = DoubleArray(12)
+    private val frame = DoubleArray(12)
     private var frames = 0L
 
-    /** Folds one FFT magnitude frame into the running chromagram. */
+    /**
+     * Folds one FFT magnitude frame into the running chromagram — the peaks
+     * only, through [Chromagram.foldPeaks]; see there for why a rounded-bin
+     * fold painted classes nobody played (it made A minor read F major).
+     */
     fun accumulate(
         magnitudes: FloatArray,
         sampleRateHz: Int,
         fftSize: Int,
     ) {
-        val minBin = ceil(60f * fftSize / sampleRateHz).toInt().coerceAtLeast(1)
-        val maxBin = (5000f * fftSize / sampleRateHz).toInt().coerceAtMost(magnitudes.size - 1)
-        for (k in minBin..maxBin) {
-            val f = k.toFloat() * sampleRateHz / fftSize
-            val midi = 69.0 + 12.0 * log2(f / 440.0)
-            val pc = ((midi.roundToInt() % 12) + 12) % 12
-            chroma[pc] += magnitudes[k].toDouble()
-        }
+        Chromagram.foldPeaks(magnitudes, sampleRateHz, fftSize, 60f, 5000f, frame)
+        for (i in 0 until 12) chroma[i] += frame[i]
         frames++
     }
 

@@ -39,7 +39,7 @@ import soundfile
 
 # Bumped by hand whenever a fixture's definition changes, so a stale corpus is
 # a visible mismatch rather than a silent one.
-GENERATOR_VERSION = 3
+GENERATOR_VERSION = 4
 
 # The STFT the per-frame expectations are computed over. Matches
 # AnalysisBranch.GENERAL, and librosa's center=True / pad_mode="constant"
@@ -125,6 +125,47 @@ def _tone(freq: float, seconds: float, amp: float = 0.5) -> np.ndarray:
     return (amp * np.sin(2 * np.pi * freq * t)).astype(np.float32)
 
 
+def _midi_hz(midi: int) -> float:
+    return 440.0 * 2.0 ** ((midi - 69) / 12.0)
+
+
+def _chord(midis: list[int], seconds: float, amp: float = 0.18) -> np.ndarray:
+    """Equal-tempered sine sum. Pure sines: no harmonics, so spectral leakage
+    is the only cross-bin energy and the expected pitch classes are
+    unambiguous by construction."""
+    out = np.zeros(int(SR * seconds), dtype=np.float64)
+    for m in midis:
+        out += _tone(_midi_hz(m), seconds, amp).astype(np.float64)
+    return out.astype(np.float32)
+
+
+def _melody(midis: list[int], note_seconds: float, fade_seconds: float = 0.01) -> np.ndarray:
+    """One note after another with raised-cosine joins, so the splices stay
+    harmony rather than becoming percussion (and do not trip the measured
+    per-frame tolerances the way the hard-splice fixture does)."""
+    notes = []
+    fade = int(SR * fade_seconds)
+    envelope_edge = 0.5 - 0.5 * np.cos(np.pi * np.arange(fade) / fade)
+    for m in midis:
+        note = _tone(_midi_hz(m), note_seconds, amp=0.4).astype(np.float64)
+        note[:fade] *= envelope_edge
+        note[-fade:] *= envelope_edge[::-1]
+        notes.append(note)
+    return np.concatenate(notes).astype(np.float32)
+
+
+# Ground truth for the harmony fixtures, known by construction: pitch classes
+# with 0 = C, and the key a musician would name. These are product
+# expectations for the app's chromagram and key detector, not numeric parity
+# with any library's chroma implementation.
+HARMONY_EXPECTED = {
+    "tone_440": {"dominantPitchClasses": [9]},
+    "triad_c_major": {"dominantPitchClasses": [0, 4, 7], "key": "C major"},
+    "triad_a_minor": {"dominantPitchClasses": [9, 0, 4], "key": "A minor"},
+    "arpeggio_g_major": {"key": "G major"},
+}
+
+
 def _fixtures() -> dict[str, np.ndarray]:
     """name -> (frames, channels) float32, mono kept as (frames, 1)."""
     rng = np.random.default_rng(0xC0FFEE)
@@ -177,6 +218,12 @@ def _fixtures() -> dict[str, np.ndarray]:
     a = _tone(300.0, 0.5)
     b = _tone(900.0, 0.5)
     out["discontinuity"] = np.concatenate([a, b]).reshape(-1, 1)
+
+    # The harmony fixtures; expectations in HARMONY_EXPECTED. C4-E4-G4,
+    # A3-C4-E4, and the G major scale over one octave.
+    out["triad_c_major"] = _chord([60, 64, 67], 1.0).reshape(-1, 1)
+    out["triad_a_minor"] = _chord([57, 60, 64], 1.0).reshape(-1, 1)
+    out["arpeggio_g_major"] = _melody([67, 69, 71, 72, 74, 76, 78, 79], 0.25).reshape(-1, 1)
 
     return out
 
@@ -336,6 +383,8 @@ def _expected(name: str, data: np.ndarray) -> dict:
     if name.startswith(("clicks", "tempo")):
         tempo, _ = librosa.beat.beat_track(y=mono, sr=SR)
         exp["tempoBpm"] = float(np.atleast_1d(tempo)[0])
+
+    exp.update(HARMONY_EXPECTED.get(name, {}))
 
     return exp
 

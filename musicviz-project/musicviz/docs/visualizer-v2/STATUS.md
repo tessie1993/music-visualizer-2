@@ -16,7 +16,7 @@ Newest slice first.
 
 ## V2-3-05b: chroma, pitch and key, against musical ground truth
 
-State: RED
+State: COMPLETE
 
 Goal: the harmony half of V2-3-05 — prove the app-side incumbents (`Chromagram`,
 `KeyDetector`) against fixtures whose right answers are known by construction, before any
@@ -24,8 +24,14 @@ migration moves them. Numeric parity with librosa's chroma is deliberately NOT t
 its filterbank is an implementation, not a definition. What a chromagram owes the product
 is musical: a C major triad reads C-E-G, an A stays A, a drum track earns no confidence.
 
-User-visible effect: none, unless the tests surface a defect — in which case the fix lands
-in this slice and is the effect.
+User-visible effect: the tests DID surface defects, so there is one: harmony visuals now
+follow sustained mid-register chords they previously ignored (a clean triad scored 0.19
+confidence, under the 0.35 follow threshold), and the key badge stops calling A minor
+"F major". Both had one root cause — the chromagram folded every bin at its rounded pitch
+class, and the window mainlobe is wider than a semitone through the middle register, so a
+third of every note's energy voted for classes nobody played (E4's mainlobe painted a fake
+F). `Chromagram.foldPeaks` now folds parabolically-refined LOCAL PEAKS only, shared by the
+key detector; sidelobes sit below the 0.05 peak floor.
 
 In scope: corpus generator version 4 with pitched fixtures — equal-tempered `triad_c_major`
 (C4+E4+G4), `triad_a_minor` (A3+C4+E4), and `arpeggio_g_major` (the G major scale, one
@@ -42,8 +48,10 @@ Files expected to change: `tools/oracle/generate_corpus.py`,
 `app/src/test/resources/corpus/*` (three new .pcm files; existing ones byte-identical),
 `app/src/test/java/dev/geode/analysis/{Corpus,HarmonyOracleTest}.kt`.
 
-Compatibility contract: nothing existing changes unless a defect is found; the raw-PCM
-`PcmSink` fan-out is untouched.
+Compatibility contract: the chromagram's values change (sharper class separation, higher
+confidence on pitched material); its shape, normalization and confidence semantics do not.
+Every pre-existing `ChromagramTest`/`KeyDetectorTest`/`KeyPaletteTest` case passes
+unchanged. The raw-PCM `PcmSink` fan-out is untouched.
 
 External source/provenance entries: none new. The key profiles under test are
 Krumhansl-Schmuckler, already in the incumbent; fixtures are pure synthesised sine sums
@@ -63,11 +71,18 @@ which is also all the incumbent claims. New fixtures also flow through the exist
 descriptor and timbre sweeps; a noisy note-join frame could trip the measured tolerances,
 which is why the joins are faded.
 
-Commands and results: pending.
+Commands and results: `:app:testDebugUnitTest` (HarmonyOracleTest 6/6 plus all existing
+chroma/key/palette suites), `:app:ktlintCheck`, `:app:lintDebug` green. Corpus regenerated:
+three new .pcm fixtures, existing ones byte-identical.
 
-Review findings: pending.
+Review findings: the RED run was the review. Both planned "prove the incumbents" tests
+failed for real reasons (0.19 triad confidence; A minor read F major), traced to one cause
+(rounded-bin folding under a mainlobe wider than a semitone), fixed with the peak fold, and
+the pre-existing suites confirmed the fix changes values without changing contracts. The
+fake-F mechanism is worth remembering: it is not noise, it is the window physically putting
+E4 energy on an F-centred bin — no tolerance tuning could have fixed it.
 
-Commit: pending.
+Commit: `fix(analysis): fold spectral peaks into chroma, not every smeared bin`.
 
 Next slice: the audio-core migration of the harmony nodes carrying this proof, or the owed
 device benchmark, whichever the environment allows.
