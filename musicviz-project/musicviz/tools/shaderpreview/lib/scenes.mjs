@@ -999,11 +999,12 @@ export function createLifeDriver({ style, params, width, height }) {
 
   /**
    * LifeScene.census(), fed by the page's probe of the state's centre texel.
-   * The app reads GL_FLOAT at a five-probe cross (quarter points + centre)
-   * and calls the world starved only when the LIVEST probe is dead, overgrown
-   * only when the DIMMEST is saturated. The harness's probe channel carries
-   * one texel - the centre, the app's probe [2,2] - so this mirror is the
-   * app's census degenerated to that probe (max = min = centre); see standIns.
+   * The app reads a five-probe cross (quarter points + centre) in the state
+   * target's own type - float, or bytes on its RGBA8 fallback - and calls the
+   * world starved only when the LIVEST probe is dead, overgrown only when the
+   * DIMMEST is saturated. The harness's probe channel carries one float texel
+   * - the centre, the app's probe [2,2] - so this mirror is the app's census
+   * degenerated to that probe (max = min = centre); see standIns.
    */
   function census(probe) {
     const a = probe[0];

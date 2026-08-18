@@ -92,11 +92,12 @@ internal class LifeScene(
     private var kickX = 0.5f
     private var kickY = 0.5f
     private var censusAge = 0f
-    private val censusBuf =
+    private val censusBytes =
         java.nio.ByteBuffer
             .allocateDirect(16)
             .order(java.nio.ByteOrder.nativeOrder())
-            .asFloatBuffer()
+    private val censusFloats = censusBytes.asFloatBuffer()
+    private val probeVals = FloatArray(2)
     private val readbackFormat = IntArray(2)
 
     private val prevFbo = IntArray(1)
@@ -195,6 +196,24 @@ internal class LifeScene(
         return current + (target - current).coerceIn(-limit * dt, limit * dt)
     }
 
+    /** One census texel as (A, V) in 0..1, read in the state's own type. */
+    private fun readProbe(
+        x: Int,
+        y: Int,
+    ): FloatArray {
+        val type = if (byteState) GLES30.GL_UNSIGNED_BYTE else GLES30.GL_FLOAT
+        censusBytes.clear()
+        GLES30.glReadPixels(x, y, 1, 1, GLES30.GL_RGBA, type, censusBytes)
+        if (byteState) {
+            probeVals[0] = (censusBytes.get(0).toInt() and 0xFF) / 255f
+            probeVals[1] = (censusBytes.get(1).toInt() and 0xFF) / 255f
+        } else {
+            probeVals[0] = censusFloats.get(0)
+            probeVals[1] = censusFloats.get(1)
+        }
+        return probeVals
+    }
+
     /**
      * Reads five spread texels every few seconds - quarter points and centre.
      * One texel was a coin flip against a healthy but SPARSE world (an
@@ -208,27 +227,20 @@ internal class LifeScene(
         // ES 3.0 only guarantees readback in the framebuffer's
         // implementation-preferred format (FluidSim's pattern); a mismatched
         // read is undefined, and an undefined read that leaves the buffer
-        // zeroed would reseed a healthy world forever. So: verify, or skip.
+        // zeroed would reseed a healthy world forever. So: verify the pair
+        // the state's own format implies - FLOAT, or the RGBA8 fallback's
+        // UNSIGNED_BYTE - or skip. Gating bytes on FLOAT here disabled the
+        // census on exactly the devices the fallback serves.
         GLES30.glGetIntegerv(GLES30.GL_IMPLEMENTATION_COLOR_READ_FORMAT, readbackFormat, 0)
         GLES30.glGetIntegerv(GLES30.GL_IMPLEMENTATION_COLOR_READ_TYPE, readbackFormat, 1)
-        if (readbackFormat[0] != GLES30.GL_RGBA || readbackFormat[1] != GLES30.GL_FLOAT) return
+        val wantType = if (byteState) GLES30.GL_UNSIGNED_BYTE else GLES30.GL_FLOAT
+        if (readbackFormat[0] != GLES30.GL_RGBA || readbackFormat[1] != wantType) return
         var maxA = 0f
         var maxV = 0f
         var minLive = Float.MAX_VALUE
         var sane = true
         for (probe in CENSUS_PROBES) {
-            censusBuf.clear()
-            GLES30.glReadPixels(
-                field.width * probe[0] / 4,
-                field.height * probe[1] / 4,
-                1,
-                1,
-                GLES30.GL_RGBA,
-                GLES30.GL_FLOAT,
-                censusBuf,
-            )
-            val a = censusBuf.get(0)
-            val v = censusBuf.get(1)
+            val (a, v) = readProbe(field.width * probe[0] / 4, field.height * probe[1] / 4)
             sane = sane && a.isFinite() && v.isFinite()
             maxA = max(maxA, a)
             maxV = max(maxV, v)
