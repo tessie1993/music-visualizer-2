@@ -124,6 +124,16 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            all { test ->
+                // Gradle's default test-worker heap is 512 MB, and this suite
+                // holds two deliberately large residents: PresetLinkBombTest
+                // peaks near 256 MB just BUILDING its gzip-bomb fixture, and
+                // the corpus tests keep the parsed oracle manifest and PCM
+                // fixtures cached for the JVM's lifetime. Together they sat
+                // one test-ordering change away from an OutOfMemoryError,
+                // which is exactly how it failed on CI.
+                test.maxHeapSize = "1g"
+            }
         }
     }
 
