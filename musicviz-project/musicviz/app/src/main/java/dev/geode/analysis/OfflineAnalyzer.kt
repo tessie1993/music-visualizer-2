@@ -5,8 +5,10 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import dev.geode.engine.audio.Chromagram
 import dev.geode.engine.audio.KeyDetector
 import dev.geode.engine.audio.ReactiveAnalyzer
+import dev.geode.engine.audio.StereoField
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.ByteOrder
@@ -152,11 +154,18 @@ class OfflineAnalyzer(
     }
 
     /** Windows a mono stream at a fixed hop, running the shared FFT/feature pipeline. */
-    private class StreamingPipeline(
+    internal class StreamingPipeline(
         sigma: Float,
         minIntervalMs: Float,
     ) {
         private val keyDetector = KeyDetector()
+
+        // The nodes the live Pass runs and this pipeline historically did
+        // not: every exported video lost the harmony and width reactivity
+        // playback showed. Same classes, same configuration - parity by
+        // construction, pinned by LiveOfflineParityTest.
+        private val chroma = Chromagram(hopRateHz = HOP_RATE_HZ)
+        private var stereo = StereoField.MONO
 
         /**
          * The same graph the live path runs, configured the same way. It is
@@ -177,6 +186,7 @@ class OfflineAnalyzer(
             }
         private val fftSize = AnalysisEngine.DEFAULT_FFT_SIZE
         private val window = FloatArray(fftSize)
+        private val sideWindow = FloatArray(fftSize)
         private val chromaMagnitudes = FloatArray(fftSize / 2)
         private val waveform = FloatArray(128)
         private val dtSeconds = 1f / HOP_RATE_HZ
@@ -185,6 +195,7 @@ class OfflineAnalyzer(
          *  letting a 3-hour file OOM the process; see [FrameAccumulator]. */
         private val frames = FrameAccumulator()
         private var buffer = FloatArray(AnalysisEngine.DEFAULT_FFT_SIZE * 4)
+        private var sideBuffer = FloatArray(AnalysisEngine.DEFAULT_FFT_SIZE * 4)
         private var buffered = 0
         private var sampleRate = 44100
         private var hopSamples = sampleRate / 60
@@ -209,15 +220,24 @@ class OfflineAnalyzer(
             val frameCount = pcm.remaining() / channels
             if (buffered + frameCount > buffer.size) {
                 buffer = buffer.copyOf((buffered + frameCount).coerceAtLeast(buffer.size * 2))
+                sideBuffer = sideBuffer.copyOf(buffer.size)
             }
             var s = 0
             for (f in 0 until frameCount) {
                 var acc = 0f
+                var left = 0f
+                var right = 0f
                 for (c in 0 until channels) {
-                    acc += pcm.get(s) / 32768f
+                    val v = pcm.get(s) / 32768f
+                    if (c == 0) left = v
+                    if (c == 1) right = v
+                    acc += v
                     s++
                 }
                 buffer[buffered + f] = acc / channels
+                // The front pair, mirroring the capture ring's rule: the
+                // surrounds are not part of the two-speaker image.
+                sideBuffer[buffered + f] = if (channels >= 2) (left - right) * 0.5f else 0f
             }
             buffered += frameCount
             drain()
@@ -237,15 +257,22 @@ class OfflineAnalyzer(
             val frameCount = pcm.remaining() / channels
             if (buffered + frameCount > buffer.size) {
                 buffer = buffer.copyOf((buffered + frameCount).coerceAtLeast(buffer.size * 2))
+                sideBuffer = sideBuffer.copyOf(buffer.size)
             }
             var s = 0
             for (f in 0 until frameCount) {
                 var acc = 0f
+                var left = 0f
+                var right = 0f
                 for (c in 0 until channels) {
-                    acc += pcm.get(s)
+                    val v = pcm.get(s)
+                    if (c == 0) left = v
+                    if (c == 1) right = v
+                    acc += v
                     s++
                 }
                 buffer[buffered + f] = acc / channels
+                sideBuffer[buffered + f] = if (channels >= 2) (left - right) * 0.5f else 0f
             }
             buffered += frameCount
             drain()
@@ -255,9 +282,13 @@ class OfflineAnalyzer(
             var start = 0
             while (start + fftSize <= buffered) {
                 System.arraycopy(buffer, start, window, 0, fftSize)
+                System.arraycopy(sideBuffer, start, sideWindow, 0, fftSize)
                 analyzer.sampleRateHz = sampleRate
                 analyzer.analyze(window, dtSeconds)
-                keyDetector.accumulate(analyzer.spectrumInto(chromaMagnitudes), sampleRate, fftSize)
+                analyzer.spectrumInto(chromaMagnitudes)
+                keyDetector.accumulate(chromaMagnitudes, sampleRate, fftSize)
+                chroma.step(chromaMagnitudes, sampleRate, fftSize)
+                stereo = StereoField.of(window, sideWindow)
                 val step = fftSize / waveform.size
                 for (i in waveform.indices) waveform[i] = window[i * step]
                 val timeMs = absSample * 1000L / sampleRate
@@ -267,6 +298,7 @@ class OfflineAnalyzer(
             }
             if (start > 0) {
                 System.arraycopy(buffer, start, buffer, 0, buffered - start)
+                System.arraycopy(sideBuffer, start, sideBuffer, 0, buffered - start)
                 buffered -= start
             }
         }
@@ -293,6 +325,11 @@ class OfflineAnalyzer(
                 kick = analyzer.kick,
                 snare = analyzer.snare,
                 hat = analyzer.hat,
+                chroma = chroma.bins.copyOf(),
+                chromaConfidence = chroma.confidence,
+                stereoWidth = stereo.width,
+                stereoCorrelation = stereo.correlation,
+                stereoPan = stereo.pan,
             )
 
         fun finish(): FeatureTimeline {
@@ -314,7 +351,12 @@ class OfflineAnalyzer(
         private companion object {
             /** Offline hop rate. Note hopMs above truncates it to 16 ms, which
              *  is why the timeline carries the rate separately. */
-            const val HOP_RATE_HZ = 60f
+            const val HOP_RATE_HZ = OFFLINE_HOP_RATE_HZ
         }
+    }
+
+    companion object {
+        /** The offline hop rate, part of [AnalysisIdentity]. */
+        const val OFFLINE_HOP_RATE_HZ = 60f
     }
 }

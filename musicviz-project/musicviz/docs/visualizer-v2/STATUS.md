@@ -14,6 +14,74 @@ Newest slice first.
 
 ---
 
+## V2-3-08: versioned cache identity, and export stops losing harmony and width
+
+State: COMPLETE
+
+Goal: the last Phase 3 slice. Two defects with one theme — the offline path drifting from
+the live one. First, the analysis cache's identity covers only the media fingerprint, so an
+engine rewrite (this branch contains one) serves STALE band semantics from disk;
+`cacheKey` now folds in an `AnalysisIdentity` string — algorithm version, FFT size, band
+count, both hop rates — so changed analysis orphans old entries the same way a changed
+file always has. Second, §5.7's parity bullet found real: the offline `StreamingPipeline`
+never computed chroma or stereo, so every exported video lost harmony and width reactivity
+that live playback showed. The pipeline gains the side channel, the chromagram and the
+stereo field — the same nodes, configured the same way — and a headless live-versus-offline
+parity test drives corpus fixtures through both paths.
+
+User-visible effect: exports show the harmony- and stereo-driven behavior live playback
+shows. Every existing cache entry is orphaned once (by design — its values came from a
+deleted DSP) and tracks re-analyse on next play.
+
+In scope: `AnalysisIdentity`; the `cacheKey` identity component and its tests;
+`StreamingPipeline` internal (for headless tests) with side buffering, chroma and stereo;
+`LiveOfflineParityTest` over corpus fixtures — scalar curves within measured tolerance at
+matched timestamps, beat counts agreeing, chroma populated offline, stereo width surviving
+offline.
+
+Out of scope: modulated-uniform parity (the modulation matrix is Phase 7); byte-exact
+live/offline equality (the cadences are documented as 62.5 and 60 Hz; parity is
+per-feature tolerance at matched times, per §5.7); the device benchmark — **carried.**
+
+Files expected to change: `app/.../analysis/{AnalysisIdentity,AnalysisCache,OfflineAnalyzer}.kt`,
+`app/src/test/java/dev/geode/analysis/{AnalysisCacheKeyTest,LiveOfflineParityTest}.kt`.
+
+Compatibility contract: cache files' FORMAT is unchanged (header version 2); their KEYS
+change once, orphaning pre-rewrite entries deliberately. Offline timelines gain populated
+chroma/stereo fields; `FrameAccumulator.merge` already carries them (point-sampled, like
+every continuous channel).
+
+External source/provenance entries: none.
+
+Tests written first: the parity test and the key tests precede the fixes.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: re-analysis storm on first launch after update (bounded: 15-entry LRU, analysis is
+per-play); the parity tolerances are measured against the two documented cadences and
+would mask a defect smaller than the cadence skew — the corpus oracle suites are the
+precision instrument, this test is the drift alarm.
+
+Commands and results: `:app:testDebugUnitTest` (LiveOfflineParityTest 4/4, key tests),
+`:engine:audio-core:test`, ktlint, `:app:lintDebug` all green.
+
+Review findings: one comparison design error, caught by its own failure. The scalar-curve
+parity originally included the click track, and failed at once — on impulse material the
+two documented cadences put the SAME click into DIFFERENT windows, so a pointwise
+comparison measures the 8 ms skew, not the graph. Scalar parity now runs on smooth
+fixtures; the click track's parity claim is the beat-count test, which is the claim that
+material can actually support. The chroma-survives-export test doubles as the defect's
+record: before this slice the offline pipeline never ran the chromagram or the stereo
+field at all.
+
+Commit: `feat(analysis): versioned cache identity; export keeps harmony and width`.
+
+Next slice: the Phase 3 gate entry.
+
+---
+
 ## V2-3-07: the time-addressed feature ring
 
 State: COMPLETE
