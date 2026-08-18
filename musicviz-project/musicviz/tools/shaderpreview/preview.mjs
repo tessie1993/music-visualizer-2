@@ -14,13 +14,14 @@ import { launch } from './lib/cdp.mjs';
 import { parseIncludeRegistry, loadShader, parseUniforms, shaderFile } from './lib/glsl.mjs';
 import { extractUploadedUniforms, auditUniforms } from './lib/kotlin.mjs';
 import { MODELS } from './lib/audio.mjs';
-import { createHyperspaceDriver, createEmergenceDriver, createShaderSceneDriver } from './lib/scenes.mjs';
+import {
+  createHyperspaceDriver, createShaderSceneDriver, FIELD_FAMILIES,
+} from './lib/scenes.mjs';
 import { createCompositeDriver } from './lib/composite.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP = path.resolve(HERE, '../../app/src/main');
 // Both raw roots the build merges into one namespace: the app's, and
-// :engine:scenes where the V2 plan homes new GLSL (emergence lives there).
 const RAW = path.join(APP, 'res/raw');
 const ENGINE_RAW = path.resolve(HERE, '../../engine/scenes/src/main/res/raw');
 const RAWS = [RAW, ENGINE_RAW];
@@ -46,6 +47,7 @@ function parseArgs(argv) {
   const a = {
     scene: 'hyperspace',
     shader: null,
+    style: null,
     frames: 6,
     fps: 60,
     width: 480,
@@ -73,6 +75,7 @@ function parseArgs(argv) {
     switch (k) {
       case '--scene': a.scene = next(); break;
       case '--shader': a.shader = next(); break;
+      case '--style': a.style = next(); break;
       case '--frames': a.frames = Number(next()); break;
       case '--fps': a.fps = Number(next()); break;
       case '--width': a.width = Number(next()); break;
@@ -148,34 +151,35 @@ function makeDriver(args) {
       family: 'SHADER',
     };
   }
-  if (args.scene === 'emergence') {
+  const fam = FIELD_FAMILIES[args.scene];
+  if (fam) {
+    const styleId = args.style || fam.styles[0].id;
+    const style = fam.styles.find((s) => s.id === styleId);
+    if (!style) {
+      throw new Error(
+        `unknown ${args.scene} style '${styleId}' (${fam.styles.map((s) => s.id).join(', ')})`,
+      );
+    }
+    const driver = fam.create({
+      style, params: args.params, width: args.width, height: args.height,
+    });
     return {
-      driver: createEmergenceDriver({
-        params: args.params, width: args.width, height: args.height,
-        count: args.count, seed: args.seed,
-      }),
-      // A scene with a vertex shader of its own: the billboard and the
-      // stretch are vertex-stage work, so half the uniform contract lives
-      // there and the audit has to read both stages - and the acid echo is a
-      // second program again, so its two stages are audited too.
-      vertResource: 'emergence_vert',
-      fragResource: 'emergence_frag',
-      echoVertResource: 'emergence_echo_vert',
-      echoFragResource: 'emergence_echo_frag',
-      kotlinPath: path.join(JAVA, 'render/scene/EmergenceScene.kt'),
+      driver,
+      // A field-sim scene is SEVERAL programs; fieldPrograms names them all
+      // and the audit below merges every stage's declarations.
+      fieldPrograms: driver.fieldPrograms,
+      fragResource: driver.fieldPrograms.show[1],
+      kotlinPath: path.join(JAVA, fam.kotlin),
       ignoreUploaded: [],
-      standIns: [
-        'the particle POPULATION is a stand-in, not EmergenceSim.step(): a deterministic orbit ' +
-        'field spanning the full size/speed/hue range (every 64th particle dead, so the ' +
-        'vFade<=0 discard path runs). The sim is pure CPU and is covered on the JVM by ' +
-        'EmergenceSimTest through the records it publishes.',
-        'the beat envelope is a stand-in decay of motionImpulse, not sim.beatEnvelope()',
-        'no FlowField is bound - the same state as Particles-ride-field off',
-      ],
-      family: 'PARTICLE',
+      standIns: [...driver.standIns],
+      // VisualizerRenderer.compositeFamily(): not ShaderScene, not
+      // ProjectMScene, so the else branch - FLUID gates.
+      family: 'FLUID',
     };
   }
-  throw new Error(`unknown --scene '${args.scene}' (hyperspace | shader | emergence)`);
+  throw new Error(
+    `unknown scene '${args.scene}' (hyperspace, shader, ${Object.keys(FIELD_FAMILIES).join(', ')})`,
+  );
 }
 
 async function main() {
@@ -187,12 +191,12 @@ async function main() {
     console.log(`includes registered in GlUtil: ${[...registry].join(', ')}`);
     console.log('\nscenes:');
     console.log('  hyperspace                 (HyperspaceScene.kt + hyperspace_frag.glsl)');
-    console.log('  emergence                  (EmergenceScene.kt + emergence_vert/frag.glsl');
-    console.log('                             + the emergence_echo acid-trail pass), with a');
-    console.log('                             stand-in population - see --json standIns.');
-    console.log('                             Flags: --count --param trails=false');
     console.log('  shader --shader <id>       (ShaderScene.kt), one of:');
     for (const [id, res] of map) console.log(`    ${id.padEnd(12)} -> ${res}.glsl`);
+    for (const [scene, fam] of Object.entries(FIELD_FAMILIES)) {
+      console.log(`  ${scene} --style <id>${' '.repeat(Math.max(1, 13 - scene.length))}(${fam.blurb}), one of:`);
+      for (const s of fam.styles) console.log(`    ${s.id.padEnd(20)} ${s.label}`);
+    }
     console.log(`\naudio models: ${Object.keys(MODELS).join(', ')}`);
     return;
   }
@@ -202,10 +206,21 @@ async function main() {
     vertResource = 'quad_vert',
     echoVertResource = null,
     echoFragResource = null,
+    fieldPrograms = null,
   } = makeDriver(args);
 
-  const vertSrc = loadShader(RAWS, vertResource, registry);
-  const fragSrc = loadShader(RAWS, fragResource, registry);
+  // A field-sim scene (silk/life/acid/myco) is a set of NAMED programs run as
+  // a per-frame pass list; a classic scene is one program (plus, for
+  // a second program (the echo). Either way every stage's declarations feed the same
+  // three-way audit.
+  const fieldShaders = fieldPrograms
+    ? Object.fromEntries(Object.entries(fieldPrograms).map(([name, [v, fr]]) => [
+      name,
+      { vertSrc: loadShader(RAWS, v, registry), fragSrc: loadShader(RAWS, fr, registry) },
+    ]))
+    : null;
+  const vertSrc = fieldShaders ? null : loadShader(RAWS, vertResource, registry);
+  const fragSrc = fieldShaders ? null : loadShader(RAWS, fragResource, registry);
   const echoShaders = echoVertResource
     ? {
       vert: loadShader(RAWS, echoVertResource, registry),
@@ -214,14 +229,20 @@ async function main() {
     : null;
   // Uniforms from EVERY stage the scene's Kotlin uploads to. quad_vert
   // declares none, so this is a no-op for every fullscreen style;
-  // emergence_vert declares six of the thirteen, and the echo pass is a
+  // a vertex stage may declare part of the contract, and an echo pass is a
   // second program whose six would otherwise be audited against nothing.
+  // A field sim contributes every one of its programs' stages (the deposit
+  // pass declares in its OWN vertex shader).
   const declared = (() => {
     const byName = new Map();
-    const stages = [
-      ...parseUniforms(vertSrc), ...parseUniforms(fragSrc),
-      ...(echoShaders ? [...parseUniforms(echoShaders.vert), ...parseUniforms(echoShaders.frag)] : []),
-    ];
+    const stages = fieldShaders
+      ? Object.values(fieldShaders).flatMap(
+        (s) => [...parseUniforms(s.vertSrc), ...parseUniforms(s.fragSrc)],
+      )
+      : [
+        ...parseUniforms(vertSrc), ...parseUniforms(fragSrc),
+        ...(echoShaders ? [...parseUniforms(echoShaders.vert), ...parseUniforms(echoShaders.frag)] : []),
+      ];
     for (const d of stages) {
       if (!byName.has(d.name)) byName.set(d.name, d);
     }
@@ -275,10 +296,16 @@ async function main() {
 
   const report = {
     scene: args.scene,
+    style: fieldPrograms ? (args.style || FIELD_FAMILIES[args.scene].styles[0].id) : (args.shader || null),
     composite: args.composite ? `composite_frag.glsl, gate ${family}` : null,
-    shader: `${fragResource}.glsl`,
+    shader: fieldPrograms
+      ? Object.entries(fieldPrograms).map(([name, [, fr]]) => `${name}=${fr}.glsl`).join(' ')
+      : `${fragResource}.glsl`,
     kotlin: path.relative(path.resolve(HERE, '../..'), kotlinPath),
-    includesResolved: (fs.readFileSync(shaderFile(RAWS, fragResource), "utf8")
+    includesResolved: (fieldPrograms
+      ? Object.values(fieldPrograms).flatMap(([v, fr]) => [v, fr])
+      : [fragResource]
+    ).flatMap((res) => fs.readFileSync(shaderFile(RAWS, res), 'utf8')
       .match(/^[ \t]*\/\/#include[ \t]+(\w+)[ \t]*$/gm) || []).map((s) => s.trim()),
     uniformAudit: {
       shaderDeclares: declared.length,
@@ -336,6 +363,7 @@ async function main() {
       compositeShaders,
       particles: driver.particleConfig || null,
       echoShaders,
+      fieldSim: fieldShaders ? { programs: fieldShaders, targets: driver.fieldTargets } : null,
     });
     if (!init.ok) {
       console.error('harness init failed: ' + init.error);
@@ -343,12 +371,18 @@ async function main() {
       process.exitCode = 3;
       return;
     }
+    // The page reports the format each ping-pong target actually got (the
+    // FluidBuffers-style probe may have fallen back); drivers that change
+    // their uploads on a fallback - MycoScene's byte-trail deposit rescale -
+    // read it here.
+    if (driver.onInit) driver.onInit(init);
     report.gl = {
       browser: browser.version,
       renderer: init.unmaskedRenderer,
       glsl: init.glsl,
       colorBufferFloat: init.colorBufferFloat,
       melt: init.melt,
+      fieldSim: init.fieldSim || null,
     };
     // A declared uniform the linker dropped is not a harness bug; surface it
     // as a shader observation instead.
@@ -397,11 +431,17 @@ async function main() {
         audioTex: plan.audioTex,
         particles: plan.particles || null,
         echo: plan.echo || null,
+        passes: plan.passes || null,
+        probe: plan.probe || null,
         capture: isCapture && !!outDir,
         wantFieldStats: isCapture && args.fieldStats,
         skipRender: !isCapture,
       });
       if (!res.ok) throw new Error('frame failed: ' + res.error);
+      // The probe channel (LifeScene's census texel) flows back on EVERY
+      // frame, captured or not - the census cadence must not depend on
+      // --every.
+      if (driver.feedback && res.probe) driver.feedback(res.probe);
       if (!isCapture) continue;
 
       const entry = {
@@ -437,12 +477,19 @@ async function main() {
 
 function printReport(r) {
   console.log(`scene      ${r.scene}`);
+  if (r.style) console.log(`style      ${r.style}`);
   console.log(`shader     ${r.shader}${r.includesResolved.length ? `  (${r.includesResolved.join(', ')})` : ''}`);
   if (r.composite) console.log(`composite  ${r.composite}`);
   console.log(`kotlin     ${r.kotlin}`);
   console.log(`gl         ${r.gl.renderer}`);
   console.log(`           ${r.gl.glsl}, EXT_color_buffer_float=${r.gl.colorBufferFloat}`);
   if (r.gl.melt) console.log(`melt       ${JSON.stringify(r.gl.melt)}`);
+  if (r.gl.fieldSim) {
+    for (const [name, t] of Object.entries(r.gl.fieldSim.targets)) {
+      const fb = t.format === t.requested ? '' : ` (requested ${t.requested})`;
+      console.log(`target     ${name}: ${t.width}x${t.height} ${t.format}${fb} ${t.filter}`);
+    }
+  }
   const a = r.uniformAudit;
   console.log(`uniforms   shader declares ${a.shaderDeclares}, kotlin uploads ${a.kotlinUploads}, harness supplies ${a.harnessSupplies} - AUDIT OK`);
   if (a.composite) {

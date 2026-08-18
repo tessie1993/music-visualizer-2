@@ -30,6 +30,10 @@ const state = {
   composite: null,
   compositeLocs: new Map(),
   sceneFbo: null,
+  // The field-sim pipeline (silk/life/acid/myco): named programs and named
+  // ping-pong targets, driven by a per-frame pass list. Null for the classic
+  // single-program scenes.
+  fieldSim: null,
   lastMeanLuma: null,
   frameIndex: 0,
 };
@@ -323,6 +327,224 @@ class Melt {
 
 function round4(x) { return Math.round(x * 10000) / 10000; }
 
+// --------------------------------------------------------------------------
+// the field sims: SILK / LIFE / ACID / MYCO, with the app's real shaders
+// --------------------------------------------------------------------------
+//
+// A generic multipass pipeline: named ping-pong targets, named programs, and
+// a per-frame PASS LIST emitted by the driver in lib/scenes.mjs. Each pass
+// names its program, its target ('screen' or a ping-pong name), the textures
+// to bind (target + side), the draw call ('triangle' via gl_VertexID, or
+// {points: N} for the myco deposit) and the blend state. Ping-pong passes
+// sample the read side, render into the write side and swap - except a pass
+// that says side:'read' (the myco deposit accumulates additively INTO the
+// texture the blur will read, exactly as MycoScene binds field.read.fbo).
+
+class FieldSim {
+  constructor(gl, cfg, colorBufferFloat) {
+    this.gl = gl;
+    // FluidBuffers.probeFormats' idea in WebGL2 terms: ES guarantees SAMPLING
+    // half float but not RENDERING to it. The extension gates say which
+    // internal formats are even color-renderable (EXT_color_buffer_float for
+    // 32F+16F, EXT_color_buffer_half_float for 16F), and the 4x4 attach test
+    // below is the same empirical check FluidBuffers runs per format.
+    const halfOk = colorBufferFloat || !!gl.getExtension('EXT_color_buffer_half_float');
+    const CANDIDATES = {
+      rgba8: { internal: gl.RGBA8, format: gl.RGBA, type: gl.UNSIGNED_BYTE, label: 'rgba8', gated: true },
+      rgba16f: { internal: gl.RGBA16F, format: gl.RGBA, type: gl.HALF_FLOAT, label: 'rgba16f', gated: halfOk },
+      rg16f: { internal: gl.RG16F, format: gl.RG, type: gl.HALF_FLOAT, label: 'rg16f', gated: halfOk },
+      rgba32f: { internal: gl.RGBA32F, format: gl.RGBA, type: gl.FLOAT, label: 'rgba32f', gated: colorBufferFloat },
+    };
+    // Fallback chains, mirroring the app: FluidBuffers falls RG16F back to
+    // RGBA16F (fmt.rg), the whole float family back to RGBA8 (byteTrail),
+    // and the agent texture takes fmt.rgba32 ?: fmt.rgba.
+    const FALLBACK = {
+      rgba8: ['rgba8'],
+      rgba16f: ['rgba16f', 'rgba8'],
+      rg16f: ['rg16f', 'rgba16f', 'rgba8'],
+      rgba32f: ['rgba32f', 'rgba16f', 'rgba8'],
+    };
+    const renderable = (c) => {
+      if (!c.gated) return false;
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texImage2D(gl.TEXTURE_2D, 0, c.internal, 4, 4, 0, c.format, c.type, null);
+      const fbo = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteFramebuffer(fbo);
+      gl.deleteTexture(tex);
+      return ok;
+    };
+
+    this.targets = {};
+    this.formats = {};
+    for (const [name, t] of Object.entries(cfg.targets)) {
+      let chosen = null;
+      for (const lbl of FALLBACK[t.format] || []) {
+        if (renderable(CANDIDATES[lbl])) { chosen = CANDIDATES[lbl]; break; }
+      }
+      if (!chosen) throw new Error(`no renderable format for target '${name}' (wanted ${t.format})`);
+      const linear = t.filter !== 'nearest';
+      const d = new DoubleFbo(gl, t.width, t.height, chosen.internal, chosen.format, chosen.type, linear);
+      if (!d.ok) throw new Error(`target '${name}' FBO incomplete (${t.width}x${t.height} ${chosen.label})`);
+      this.targets[name] = d;
+      this.formats[name] = {
+        requested: t.format,
+        format: chosen.label,
+        width: t.width,
+        height: t.height,
+        filter: linear ? 'linear' : 'nearest',
+        float: chosen.type !== gl.UNSIGNED_BYTE,
+      };
+    }
+
+    this.programs = {};
+    for (const [name, s] of Object.entries(cfg.programs)) {
+      this.programs[name] = { prog: buildProgram(gl, s.vertSrc, s.fragSrc), locs: new Map() };
+    }
+  }
+
+  loc(programName, uniform) {
+    const p = this.programs[programName];
+    if (!p.locs.has(uniform)) {
+      p.locs.set(uniform, this.gl.getUniformLocation(p.prog, uniform));
+    }
+    return p.locs.get(uniform);
+  }
+
+  describe() { return { targets: this.formats }; }
+}
+
+/**
+ * Runs one frame's pass list. Screen passes are skipped when the frame is
+ * not being rendered - the SIM must still step every frame, only the present
+ * is a pure function of the state. Returns the uniform names the linkers had
+ * dropped, prefixed with their program.
+ */
+function runFieldPasses(gl, job) {
+  const fs = state.fieldSim;
+  const skipped = [];
+  gl.disable(gl.DEPTH_TEST);
+  for (const pass of job.passes) {
+    const isScreen = pass.target === 'screen';
+    if (isScreen && job.skipRender) continue;
+    const P = fs.programs[pass.program];
+    if (!P) throw new Error(`unknown field program '${pass.program}'`);
+    gl.useProgram(P.prog);
+    let vw;
+    let vh;
+    if (isScreen) {
+      // With the composite on, 'screen' is the renderer's scene target,
+      // exactly as the app's prevFbo restore lands the show pass there.
+      gl.bindFramebuffer(gl.FRAMEBUFFER, state.sceneFbo ? state.sceneFbo.fbo : null);
+      vw = state.canvas.width; vh = state.canvas.height;
+    } else {
+      const t = fs.targets[pass.target];
+      if (!t) throw new Error(`unknown field target '${pass.target}'`);
+      const side = pass.side === 'read' ? t.read : t.write;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, side.fbo);
+      vw = t.width; vh = t.height;
+    }
+    const vp = pass.viewport || [vw, vh];
+    gl.viewport(0, 0, vp[0], vp[1]);
+    for (const b of pass.textures || []) {
+      const t = fs.targets[b.target];
+      gl.activeTexture(gl.TEXTURE0 + b.unit);
+      gl.bindTexture(gl.TEXTURE_2D, (b.side === 'write' ? t.write : t.read).tex);
+    }
+    gl.activeTexture(gl.TEXTURE0);
+    if (pass.blend === 'add') {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
+    } else {
+      gl.disable(gl.BLEND);
+    }
+    for (const n of uploadUniforms(gl, pass.uniforms, (name) => fs.loc(pass.program, name))) {
+      skipped.push(`${pass.program}:${n}`);
+    }
+    // Both draw shapes are attribute-less (quad_vert and myco_deposit_vert
+    // read gl_VertexID), so the shared empty VAO serves them all.
+    gl.bindVertexArray(state.vao);
+    if (pass.draw && typeof pass.draw === 'object' && pass.draw.points) {
+      gl.drawArrays(gl.POINTS, 0, pass.draw.points);
+    } else {
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    gl.bindVertexArray(null);
+    gl.disable(gl.BLEND);
+    if (!isScreen && pass.swap) fs.targets[pass.target].swap();
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return skipped;
+}
+
+/**
+ * The centre texel of a ping-pong target's READ side - LifeScene's census
+ * input. The app reads GL_UNSIGNED_BYTE; a float target here is read as
+ * float (the WebGL2-legal combination) and the DRIVER quantizes to 8-bit
+ * steps, so the decision arithmetic matches.
+ */
+function readFieldProbe(gl, probe) {
+  const fs = state.fieldSim;
+  if (!fs || !probe || !fs.targets[probe.target]) return null;
+  const t = fs.targets[probe.target];
+  const fmt = fs.formats[probe.target];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, t.read.fbo);
+  const x = Math.floor(t.width / 2);
+  const y = Math.floor(t.height / 2);
+  let out;
+  if (fmt.float) {
+    const px = new Float32Array(4);
+    gl.readPixels(x, y, 1, 1, gl.RGBA, gl.FLOAT, px);
+    out = [px[0], px[1], px[2], px[3]];
+  } else {
+    const px = new Uint8Array(4);
+    gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    out = [px[0] / 255, px[1] / 255, px[2] / 255, px[3] / 255];
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return out;
+}
+
+/** Channel statistics of every field target's read side (--field-stats). */
+function fieldSimStats(gl) {
+  const fs = state.fieldSim;
+  const out = {};
+  for (const [name, t] of Object.entries(fs.targets)) {
+    const fmt = fs.formats[name];
+    const n = t.width * t.height;
+    let px;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.read.fbo);
+    if (fmt.float) {
+      px = new Float32Array(n * 4);
+      gl.readPixels(0, 0, t.width, t.height, gl.RGBA, gl.FLOAT, px);
+    } else {
+      const bytes = new Uint8Array(n * 4);
+      gl.readPixels(0, 0, t.width, t.height, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+      px = Float32Array.from(bytes, (v) => v / 255);
+    }
+    let max = 0; let sum = 0; let over1 = 0; let nonFinite = 0;
+    for (let i = 0; i < n; i++) {
+      const r = px[i * 4]; const g = px[i * 4 + 1]; const b = px[i * 4 + 2];
+      if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) { nonFinite++; continue; }
+      const m = Math.max(Math.abs(r), Math.abs(g), Math.abs(b));
+      if (m > max) max = m;
+      sum += (r + g + b) / 3;
+      if (m > 1) over1++;
+    }
+    out[name] = {
+      max: round4(max), mean: round4(sum / n), fracAbove1: round4(over1 / n), nonFinite,
+    };
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return out;
+}
+
 /** The uniform names a linked program actually kept, array suffix stripped. */
 function activeUniformsOf(gl, program) {
   const out = [];
@@ -357,17 +579,36 @@ window.__init = function init(cfg) {
     const colorBufferFloat = !!gl.getExtension('EXT_color_buffer_float');
     gl.getExtension('OES_texture_float_linear');
 
-    let program;
-    try { program = buildProgram(gl, cfg.vertSrc, cfg.fragSrc); }
-    catch (e) { return fail('shader: ' + e.message); }
+    // A field-sim scene has no single main program - its named programs are
+    // built by FieldSim below - so the main build is conditional.
+    let program = null;
+    if (cfg.fragSrc) {
+      try { program = buildProgram(gl, cfg.vertSrc, cfg.fragSrc); }
+      catch (e) { return fail('shader: ' + e.message); }
+    }
     state.program = program;
     state.uniformLocs = new Map();
 
     // What the LINKER kept. A uniform the shader declares but never reads is
     // dead-stripped, so setting it is a no-op and NOT setting it is harmless;
     // reporting the distinction stops the audit crying wolf about them.
-    const active = new Set(activeUniformsOf(gl, program));
+    const active = new Set(program ? activeUniformsOf(gl, program) : []);
     state.activeUniforms = active;
+
+    // The field-sim pipeline: named programs + named ping-pong targets, with
+    // the FluidBuffers-style renderability probe deciding each format. Every
+    // program's active uniforms join the dead-strip set.
+    state.fieldSim = null;
+    if (cfg.fieldSim) {
+      try {
+        state.fieldSim = new FieldSim(gl, cfg.fieldSim, colorBufferFloat);
+      } catch (e) {
+        return fail('field sim: ' + e.message);
+      }
+      for (const p of Object.values(state.fieldSim.programs)) {
+        for (const n of activeUniformsOf(gl, p.prog)) active.add(n);
+      }
+    }
 
     // A dedicated texture unit per sampler the plan can bind.
     state.audioTex = gl.createTexture();
@@ -512,6 +753,7 @@ window.__init = function init(cfg) {
       activeUniforms: [...active].sort(),
       compositeActiveUniforms: state.composite ? activeUniformsOf(gl, state.composite) : null,
       melt: meltReport,
+      fieldSim: state.fieldSim ? state.fieldSim.describe() : null,
     };
   } catch (e) {
     return fail(String(e && e.stack || e));
@@ -546,6 +788,7 @@ function uploadUniforms(gl, plan, locOf) {
       case '1i': case 'tex': gl.uniform1i(loc, u.v); break;
       case '2f': gl.uniform2f(loc, u.v[0], u.v[1]); break;
       case '3f': gl.uniform3f(loc, u.v[0], u.v[1], u.v[2]); break;
+      case '4f': gl.uniform4f(loc, u.v[0], u.v[1], u.v[2], u.v[3]); break;
       case '1fv': gl.uniform1fv(loc, new Float32Array(u.v)); break;
       case '4fv': gl.uniform4fv(loc, new Float32Array(u.v)); break;
       case 'm3fv': gl.uniformMatrix3fv(loc, false, new Float32Array(u.v)); break;
@@ -577,18 +820,108 @@ window.__frame = function frame(job) {
     const gl = state.gl;
 
     if (state.melt && job.melt) state.melt.step(job.melt);
+    // The field sims step here too - and their SIM passes run on every frame,
+    // captured or not, exactly like the melt; only the 'screen' pass inside
+    // the list obeys skipRender.
+    let fieldSkipped = null;
+    if (state.fieldSim && job.passes) fieldSkipped = runFieldPasses(gl, job);
 
     // A frame that is not being measured still has to advance every
-    // simulation (the melt above), but the raymarch is a pure function of the
-    // uniforms, so skipping the draw changes nothing except the wall clock -
-    // and on software GL the draw is ~99% of it. This is what makes
-    // `--every 30` and long-clock runs finish.
+    // simulation (the melt and field passes above), but the present is a pure
+    // function of the state, so skipping the draw changes nothing except the
+    // wall clock - and on software GL the draw is ~99% of it. This is what
+    // makes `--every 30` and long-clock runs finish.
     if (job.skipRender) {
       state.frameIndex++;
-      return { ok: true, metrics: null };
+      return {
+        ok: true,
+        metrics: null,
+        probe: job.probe ? readFieldProbe(gl, job.probe) : null,
+      };
     }
 
     const sceneTarget = state.sceneFbo;
+    let skipped = fieldSkipped || [];
+    if (!job.passes) {
+      skipped = drawClassicScene(gl, job, sceneTarget);
+    }
+
+    // The composite, exactly as VisualizerRenderer runs it outside a
+    // transition: the scene texture on unit 0, uTexB carrying the same one
+    // because uStyle is CUT and nothing reads it, and the stand-in black on
+    // every other unit the pass can name.
+    if (state.composite) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, state.canvas.width, state.canvas.height);
+      gl.useProgram(state.composite);
+      for (const unit of [2, 3, 4]) {
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, state.blackTex);
+      }
+      for (const unit of [0, 1]) {
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, sceneTarget.tex);
+      }
+      gl.activeTexture(gl.TEXTURE0);
+      for (const name of uploadUniforms(gl, job.composite, compositeLoc)) skipped.push(name);
+      gl.bindVertexArray(state.vao);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.bindVertexArray(null);
+    }
+
+    const err = gl.getError();
+    const w = state.canvas.width, h = state.canvas.height;
+    const px = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+
+    let sum = 0, max = 0, blown = 0, black = 0;
+    const n = w * h;
+    for (let i = 0; i < n; i++) {
+      const r = px[i * 4] / 255, g = px[i * 4 + 1] / 255, b = px[i * 4 + 2] / 255;
+      const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      sum += l;
+      if (l > max) max = l;
+      // "blown out" on the CHANNELS, not on luminance: a saturated red is a
+      // clipped pixel even though its luminance is 0.21.
+      if (r > 0.95 && g > 0.95 && b > 0.95) blown++;
+      if (l < 0.02) black++;
+    }
+    const meanLuma = sum / n;
+    const metrics = {
+      meanLuma: round4(meanLuma),
+      maxLuma: round4(max),
+      fracBlownOut: round4(blown / n),
+      fracBlack: round4(black / n),
+      deltaMeanLuma: state.lastMeanLuma === null ? null : round4(meanLuma - state.lastMeanLuma),
+      glError: err === gl.NO_ERROR ? null : err,
+      skippedUniforms: skipped,
+    };
+    state.lastMeanLuma = meanLuma;
+    state.frameIndex++;
+
+    if (state.melt && job.wantFieldStats) {
+      metrics.dye = state.melt.stats(state.melt.dye);
+      metrics.velocity = state.melt.stats(state.melt.velocity);
+    }
+    if (state.fieldSim && job.wantFieldStats) {
+      metrics.fields = fieldSimStats(gl);
+    }
+
+    const out = { ok: true, metrics };
+    if (job.capture) out.png = state.canvas.toDataURL('image/png');
+    out.probe = job.probe ? readFieldProbe(gl, job.probe) : null;
+    return out;
+  } catch (e) {
+    return fail(String(e && e.stack || e));
+  }
+};
+
+/**
+ * The single-program scenes' draw, verbatim from the pre-field-sim __frame:
+ * hyperspace and the shader family as a fullscreen triangle, emergence as
+ * instanced sprites over the echo. Returns the skipped-uniform names.
+ */
+function drawClassicScene(gl, job, sceneTarget) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, sceneTarget ? sceneTarget.fbo : null);
     gl.viewport(0, 0, state.canvas.width, state.canvas.height);
     gl.disable(gl.BLEND);
@@ -664,72 +997,8 @@ window.__frame = function frame(job) {
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       gl.bindVertexArray(null);
     }
-
-    // The composite, exactly as VisualizerRenderer runs it outside a
-    // transition: the scene texture on unit 0, uTexB carrying the same one
-    // because uStyle is CUT and nothing reads it, and the stand-in black on
-    // every other unit the pass can name.
-    if (state.composite) {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.viewport(0, 0, state.canvas.width, state.canvas.height);
-      gl.useProgram(state.composite);
-      for (const unit of [2, 3, 4]) {
-        gl.activeTexture(gl.TEXTURE0 + unit);
-        gl.bindTexture(gl.TEXTURE_2D, state.blackTex);
-      }
-      for (const unit of [0, 1]) {
-        gl.activeTexture(gl.TEXTURE0 + unit);
-        gl.bindTexture(gl.TEXTURE_2D, sceneTarget.tex);
-      }
-      gl.activeTexture(gl.TEXTURE0);
-      for (const name of uploadUniforms(gl, job.composite, compositeLoc)) skipped.push(name);
-      gl.bindVertexArray(state.vao);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
-      gl.bindVertexArray(null);
-    }
-
-    const err = gl.getError();
-    const w = state.canvas.width, h = state.canvas.height;
-    const px = new Uint8Array(w * h * 4);
-    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
-
-    let sum = 0, max = 0, blown = 0, black = 0;
-    const n = w * h;
-    for (let i = 0; i < n; i++) {
-      const r = px[i * 4] / 255, g = px[i * 4 + 1] / 255, b = px[i * 4 + 2] / 255;
-      const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      sum += l;
-      if (l > max) max = l;
-      // "blown out" on the CHANNELS, not on luminance: a saturated red is a
-      // clipped pixel even though its luminance is 0.21.
-      if (r > 0.95 && g > 0.95 && b > 0.95) blown++;
-      if (l < 0.02) black++;
-    }
-    const meanLuma = sum / n;
-    const metrics = {
-      meanLuma: round4(meanLuma),
-      maxLuma: round4(max),
-      fracBlownOut: round4(blown / n),
-      fracBlack: round4(black / n),
-      deltaMeanLuma: state.lastMeanLuma === null ? null : round4(meanLuma - state.lastMeanLuma),
-      glError: err === gl.NO_ERROR ? null : err,
-      skippedUniforms: skipped,
-    };
-    state.lastMeanLuma = meanLuma;
-    state.frameIndex++;
-
-    if (state.melt && job.wantFieldStats) {
-      metrics.dye = state.melt.stats(state.melt.dye);
-      metrics.velocity = state.melt.stats(state.melt.velocity);
-    }
-
-    const out = { ok: true, metrics };
-    if (job.capture) out.png = state.canvas.toDataURL('image/png');
-    return out;
-  } catch (e) {
-    return fail(String(e && e.stack || e));
-  }
-};
+  return skipped;
+}
 
 window.__harnessReady = true;
 </script>
