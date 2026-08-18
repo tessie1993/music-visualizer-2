@@ -237,6 +237,7 @@ float gSurface;
 /** Aura weight and weight-averaged hue at this sample - see map(). */
 float gAuraW;
 float gAuraH;
+float gAuraRef;
 
 vec3 hsv2rgb(vec3 c) {
     vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
@@ -722,6 +723,7 @@ float map(vec3 p) {
     float d = uFar;
     gAuraW = 0.0;
     gAuraH = 0.0;
+    gAuraRef = 0.0;
     gSurface = 0.0;
     // THE MELT. One displacement for the whole scene, sampled once per march
     // step: every body is then evaluated at the moved point, so they are all
@@ -751,9 +753,19 @@ float map(vec3 p) {
         // ellipse around every body. The sphere's own distance is smooth
         // everywhere, so this is a halo. Weight and weighted hue, not a colour:
         // one hsv2rgb per body per march step would not be affordable.
-        float aw = L.y * (1.0 + 1.3 * (1.0 - S.w)) * exp(-max(bound, 0.0) * 3.2);
-        gAuraW += aw;
-        gAuraH += aw * L.x;
+        // Past ~2.5 units the halo weight is under 1e-3 of a body's glow -
+        // beneath anything the accumulator can show - so distant bodies skip
+        // the exp() instead of paying it every step of every ray.
+        //
+        // Hue is CIRCULAR: each body joins the average through its shortest
+        // arc from the first contributor's hue, because a linear mean of two
+        // reds astride the wheel's seam (0.02 and 0.97) is cyan.
+        if (bound < 2.5) {
+            float aw = L.y * (1.0 + 1.3 * (1.0 - S.w)) * exp(-max(bound, 0.0) * 3.2);
+            if (gAuraW <= 0.0) gAuraRef = L.x;
+            gAuraW += aw;
+            gAuraH += aw * (gAuraRef + fract(L.x - gAuraRef + 0.5) - 0.5);
+        }
 
         if (bound > uBoundMargin) {
             d = min(d, bound);
@@ -822,16 +834,21 @@ vec3 calcNormal(vec3 p, float e) {
     );
 }
 
-/** Three-tap ambient occlusion along the normal - enough to seat the folds. */
+/**
+ * Two-tap ambient occlusion along the normal - enough to seat the folds.
+ * Each tap re-walks every body's estimator, so the third tap this used to
+ * take was a whole extra map() per covered pixel for a 0.3-weighted term;
+ * the 1.9 factor renormalizes the two-tap sum to the same occlusion depth.
+ */
 float calcAO(vec3 p, vec3 n, float scale) {
     float occ = 0.0;
     float w = 1.0;
-    for (int i = 1; i <= 3; i++) {
+    for (int i = 1; i <= 2; i++) {
         float h = scale * float(i) * 0.5;
         occ += (h - map(p + n * h)) * w;
         w *= 0.55;
     }
-    return clamp(1.0 - 1.6 * occ, 0.0, 1.0);
+    return clamp(1.0 - 1.9 * occ, 0.0, 1.0);
 }
 
 /**
@@ -1251,7 +1268,17 @@ void main() {
         if (t > uFar) break;
     }
 
-    vec3 sky = styleSky(rd, chrysanthemum(rd));
+    // The filigree, computed only where it can reach the eye. On a miss it
+    // IS the picture; on a hit it arrives through the distance fog, and most
+    // hit pixels sit under fog too thin to carry it - a 12-fold loop plus a
+    // substyle pass spent on a mix factor of nothing. At the 0.004 flip the
+    // mixed-in term is under half a percent of a channel, so no seam shows.
+    // Cortex reads sky.r as a ridge phase and Plume lifts the medium by it,
+    // so those two substyles keep it everywhere (a uniform branch).
+    float fog = hitT > 0.0 ? 1.0 - exp(-hitT * uHaze * 0.085) : 0.0;
+    vec3 sky = (hitT <= 0.0 || fog > 0.004 || uStyle == 4 || uStyle == 9)
+        ? styleSky(rd, chrysanthemum(rd))
+        : vec3(0.0);
     vec3 col;
 
     if (hitT > 0.0) {
@@ -1339,7 +1366,6 @@ void main() {
         // behind the near ones rather than beside them. The haze is the DARK
         // of the void plus whatever filigree is behind - not the filigree
         // alone, which would make distance read as brightening.
-        float fog = 1.0 - exp(-hitT * uHaze * 0.085);
         col = mix(col, sky * 0.7 + vec3(0.008, 0.006, 0.018), fog);
     } else {
         col = sky;
