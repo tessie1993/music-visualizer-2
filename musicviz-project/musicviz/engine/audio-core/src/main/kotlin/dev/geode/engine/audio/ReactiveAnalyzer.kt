@@ -55,6 +55,8 @@ class ReactiveAnalyzer(
     private val picker = OnsetPeakPicker(hopRateHz)
     private val tempo = TempoTracker(hopRateHz)
     private val grid = BeatGrid()
+    private val stability = TempoStability(hopRateHz)
+    private val bar = BarTracker()
 
     /** Band-limited onset channels; see [kick]. */
     private var drums = DrumChannels(bandCount, hopRateHz, sampleRateHz)
@@ -150,6 +152,26 @@ class ReactiveAnalyzer(
     var bpm: Float = 0f
         private set
 
+    /** Whether the tempo estimate has STAYED PUT, 0..1; see [TempoStability]. */
+    var tempoStability: Float = 0f
+        private set
+
+    /** Position within the tracked 4/4 bar, 0 on the downbeat rising to 1. */
+    var barPhase: Float = 0f
+        private set
+
+    /** Which beat of the bar the grid is in, 0..3; see [BarTracker]. */
+    var beatInBar: Int = 0
+        private set
+
+    /** Whether this frame's beat starts the bar. */
+    var downbeat: Boolean = false
+        private set
+
+    /** How clearly one bar position keeps winning, 0..1; see [BarTracker]. */
+    var downbeatConfidence: Float = 0f
+        private set
+
     /** Track-relative macro-dynamics, 0..1: this moment against the recent peak. */
     var macroEnergy: Float = 0f
         private set
@@ -222,6 +244,8 @@ class ReactiveAnalyzer(
         tempo.step(fluxValue)
         bpm = tempo.bpm
         pulseConfidence = tempo.confidence
+        stability.step(tempo.bpm)
+        tempoStability = stability.value
         beat = grid.step(tempo.periodFrames, tempo.confidence, isOnset)
         beatPhase = grid.phase
         beatStrength = if (beat) picker.strength else 0f
@@ -230,6 +254,20 @@ class ReactiveAnalyzer(
         kick = drums.kick
         snare = drums.snare
         hat = drums.hat
+
+        // After the drums: the bar's accent evidence is the hit's own graded
+        // strength plus the low band, because "which beat is one" is mostly a
+        // question the kick answers.
+        bar.step(
+            phase = grid.phase,
+            beat = beat,
+            locked = grid.locked,
+            accent = if (beat) picker.strength + KICK_ACCENT_WEIGHT * drums.kick else 0f,
+        )
+        barPhase = bar.barPhase
+        beatInBar = bar.beatInBar
+        downbeat = bar.downbeat
+        downbeatConfidence = bar.confidence
     }
 
     /**
@@ -248,6 +286,8 @@ class ReactiveAnalyzer(
         picker.reset()
         tempo.reset()
         grid.reset()
+        stability.reset()
+        bar.reset()
         drums.reset()
         smoothingState.fill(0f)
         bands.fill(0f)
@@ -265,6 +305,11 @@ class ReactiveAnalyzer(
         beatPhase = 0f
         pulseConfidence = 0f
         bpm = 0f
+        tempoStability = 0f
+        barPhase = 0f
+        beatInBar = 0
+        downbeat = false
+        downbeatConfidence = 0f
         macroEnergy = 0f
         kick = 0f
         snare = 0f
@@ -311,6 +356,7 @@ class ReactiveAnalyzer(
         beat = false
         beatStrength = 0f
         transient = 0f
+        downbeat = false
         macroEnergy = 0f
         kick = 0f
         snare = 0f
@@ -415,6 +461,9 @@ class ReactiveAnalyzer(
 
         /** Memory of [macroEnergy]'s reference peak. */
         private const val MACRO_PEAK_SECONDS = 20f
+
+        /** Low-band weight in the bar's accent evidence; see the [bar] step. */
+        private const val KICK_ACCENT_WEIGHT = 0.5f
 
         /**
          * Window RMS below which the input is silence rather than quiet music.

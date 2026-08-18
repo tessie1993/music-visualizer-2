@@ -207,6 +207,9 @@ class ReactiveAnalyzerTest {
                 "transient" to analyzer.transient,
                 "beatPhase" to analyzer.beatPhase,
                 "pulseConfidence" to analyzer.pulseConfidence,
+                "tempoStability" to analyzer.tempoStability,
+                "barPhase" to analyzer.barPhase,
+                "downbeatConfidence" to analyzer.downbeatConfidence,
                 "macroEnergy" to analyzer.macroEnergy,
                 "kick" to analyzer.kick,
                 "snare" to analyzer.snare,
@@ -246,6 +249,45 @@ class ReactiveAnalyzerTest {
         assertTrue("low-band channel fired $kicks times", kicks > 5)
         assertTrue("fired $beats beats", beats > 5)
         assertTrue("read ${analyzer.bpm} BPM", abs(analyzer.bpm - 120f) < 12f)
+    }
+
+    /**
+     * The bar. A kick pattern with a louder first-of-four should settle onto
+     * a downbeat every fourth beat, hold the tempo steady, and never let the
+     * bar phase leave its range.
+     */
+    @Test
+    fun `an accented four-on-the-floor finds its downbeat and holds its tempo`() {
+        val analyzer = analyzer()
+        val buffer = FloatArray(fftSize)
+        var sampleClock = 0
+        var beats = 0
+        var downbeats = 0
+        repeat(1800) {
+            System.arraycopy(buffer, hopSamples, buffer, 0, fftSize - hopSamples)
+            for (i in fftSize - hopSamples until fftSize) {
+                val phase = sampleClock % (sampleRate / 2)
+                val beatIndex = sampleClock / (sampleRate / 2)
+                val amp = if (beatIndex % 4 == 0) 0.95f else 0.55f
+                buffer[i] =
+                    if (phase < 4000) {
+                        amp * sin(2.0 * PI * 60.0 * phase / sampleRate).toFloat() * exp(-phase / 1500.0).toFloat()
+                    } else {
+                        0f
+                    }
+                sampleClock++
+            }
+            analyzer.analyze(buffer, dt)
+            if (analyzer.beat) beats++
+            if (analyzer.downbeat) downbeats++
+            assertTrue("barPhase out of range: ${analyzer.barPhase}", analyzer.barPhase in 0f..1f)
+            assertTrue("beatInBar out of range: ${analyzer.beatInBar}", analyzer.beatInBar in 0..3)
+        }
+        assertTrue("fired $beats beats", beats > 12)
+        assertTrue("fired $downbeats downbeats over $beats beats", downbeats >= 3)
+        assertTrue("a downbeat is one beat in four, got $downbeats of $beats", downbeats <= beats / 2)
+        assertTrue("tempo never settled: stability ${analyzer.tempoStability}", analyzer.tempoStability > 0.5f)
+        assertTrue("no bar conviction: ${analyzer.downbeatConfidence}", analyzer.downbeatConfidence > 0.2f)
     }
 
     @Test
