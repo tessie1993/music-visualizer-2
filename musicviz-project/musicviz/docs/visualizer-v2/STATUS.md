@@ -14,6 +14,84 @@ Newest slice first.
 
 ---
 
+## V2-3-04: downbeat, bar phase and tempo stability
+
+State: COMPLETE
+
+Goal: V2-3-04's remaining bullets — downbeat/bar state and tempo stability — on top of
+`TempoTracker` and `BeatGrid`. Two new nodes in `audio-core` and their wiring into
+`ReactiveAnalyzer`'s outputs; nothing app-side changes shape.
+
+User-visible effect: none yet. The outputs exist on the analyzer with no production consumer;
+plumbing them into `AudioFeatures` and the scenes is a later slice. The raw-PCM `PcmSink`
+fan-out that now drives every scene family is deliberately untouched — per the user's standing
+instruction it is kept in favor of any competing method, and this slice only adds rhythm
+context alongside it.
+
+In scope: `TempoStability` (0..1 "has the tempo stayed put", leaky mean/deviation of log2 BPM —
+distinct from `TempoTracker.confidence`, which is per-frame clarity); `BarTracker` (assumes 4/4,
+counts beat-slot wraps of `BeatGrid.phase` so bars keep flowing through breakdowns, accumulates
+per-position accent evidence with a per-beat leak, picks the downbeat with switch hysteresis);
+new `ReactiveAnalyzer` outputs `barPhase`, `beatInBar`, `downbeat`, `downbeatConfidence`,
+`tempoStability`, reset and silence semantics matching the existing rhythm outputs.
+
+Out of scope: time signatures other than 4/4 (documented assumption; the tracker re-anchors
+rather than pretending); the `AudioFeatures` ABI and scene consumption; the sample-addressed
+feature ring (V2-3-07); the device benchmark this phase still owes — **carried forward, this
+environment has no device.**
+
+Files expected to change: `engine/audio-core/src/main/kotlin/dev/geode/engine/audio/{TempoStability,BarTracker,ReactiveAnalyzer}.kt`
+and their tests.
+
+Compatibility contract: purely additive. Every existing output keeps its value; the new
+outputs are 0/false until evidence accumulates, which is also their silence behavior.
+
+External source/provenance entries: none new. The accent-histogram approach follows the
+published downbeat-tracking intuition (accented beat positions accumulate evidence; e.g.
+Klapuri's and Goto's bar-tracking formulations) implemented independently; no code, naming or
+constant table taken from anything.
+
+Tests written first: `TempoStabilityTest`, `BarTrackerTest`, and `ReactiveAnalyzerTest`
+extensions (accented four-on-the-floor drives the downbeat onto the accent; range checks for
+every new output) — written and failing before the nodes exist.
+
+Benchmark or visual evidence: none on device — carried debt, same as V2-3-03b noted.
+
+Rollback: revert the one commit.
+
+Risks: 4/4 is an assumption, not a detection — waltzes get a musically wrong but stable bar;
+the confidence output is the honest signal and stays low when accents do not repeat at 4. The
+wrap-counting bar advance follows the grid through tempo changes but re-anchors a beat late on
+a hard cut. Unmeasured on device, like the rest of the phase.
+
+Commands and results: `:engine:audio-core:test` 141 tests, 0 failures;
+`:engine:audio-core:ktlintCheck`, `:app:testDebugUnitTest`, `:app:ktlintCheck` and
+`:app:lintDebug` all green.
+
+Review findings: two, both caught by tests before review.
+
+**A cold tracker elected the first beat it ever heard as the downbeat.** With an empty
+histogram, anything beats zero, so beat one of the run fired a downbeat before any evidence
+existed — visible as one off-accent downbeat in the accent-on-three test. A downbeat is a
+claim, and it now waits for a full bar of evidence (`beatsSeen`), per the plan's
+no-false-certainty rule.
+
+**The first draft of the beat-three assertion derived an expected end-state `beatInBar` from a
+hand-computed run-end offset, and the offset was wrong.** Asserting where downbeats actually
+FIRE (against the drive's own true positions) tests the same thing without the fragile
+arithmetic; the test was rewritten before it could mislead.
+
+Also honest to record: on the synthesised accented four-on-the-floor, the full chain accepts
+roughly a third of the kicks as beats (warmup plus off-grid suppression); the end-to-end
+assertions are written against that measured behaviour, not the idealised count.
+
+Commit: `feat(audio-core): downbeat, bar phase and tempo stability`.
+
+Next slice: V2-3-05 (harmony, pitch and timbre) or the owed device benchmark, whichever the
+session's environment allows.
+
+---
+
 ## V2-3-03b: the audio-reactive engine
 
 State: COMPLETE
