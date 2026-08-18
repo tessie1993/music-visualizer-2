@@ -19,6 +19,24 @@ import org.junit.Test
  */
 class AnalysisCacheKeyTest {
     @Test
+    fun `a changed analysis identity changes the key`() {
+        // The second historical form of the same bug: the V2 rewrite replaced
+        // the whole DSP graph, and a key that only fingerprints the media
+        // would keep serving timelines no code in the app produces any more.
+        assertNotEquals(
+            AnalysisCache.cacheKey("content://media/audio/1", 1234L, 99_000L, identity = "alg=1"),
+            AnalysisCache.cacheKey("content://media/audio/1", 1234L, 99_000L, identity = "alg=2"),
+        )
+    }
+
+    @Test
+    fun `the current identity names the algorithm and the configuration`() {
+        for (piece in listOf("alg=", "fft=", "bands=", "liveHz=", "offlineHz=")) {
+            assertTrue("identity lacks $piece: ${AnalysisIdentity.CURRENT}", piece in AnalysisIdentity.CURRENT)
+        }
+    }
+
+    @Test
     fun `same inputs derive the same key`() {
         assertEquals(
             AnalysisCache.cacheKey("content://media/audio/1", 1234L, 99_000L),

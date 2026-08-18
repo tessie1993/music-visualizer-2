@@ -1,11 +1,11 @@
-package dev.geode.analysis
+package dev.geode.engine.audio
 
 import kotlin.math.sqrt
 
 /**
- * Stereo image measurements over a mid/side window from [dev.geode.audio.PcmRingBuffer].
+ * Stereo image measurements over a mid/side window.
  *
- * Two numbers, both of which a visual can use directly and neither of which
+ * Three numbers, each of which a visual can use directly and none of which
  * any amount of spectrum analysis can recover, because the mono downmix that
  * feeds the FFT has already destroyed them.
  *
@@ -13,20 +13,21 @@ import kotlin.math.sqrt
  */
 object StereoField {
     /**
-     * One window's stereo image. A value rather than two loose floats so a
+     * One window's stereo image. A value rather than loose floats so a
      * caller cannot pass them in the wrong order, and so [MONO] can name the
      * reading a mono source genuinely produces.
      */
     data class Reading(
         val width: Float,
         val correlation: Float,
+        val pan: Float,
     )
 
-    /** What a mono source measures: no side energy, perfectly correlated. */
-    val MONO = Reading(width = 0f, correlation = 1f)
+    /** What a mono source measures: no side energy, correlated, centred. */
+    val MONO = Reading(width = 0f, correlation = 1f, pan = 0f)
 
     /**
-     * Both measurements over one mid/side window.
+     * The measurements over one mid/side window.
      *
      * Take this over the FULL analysis window, not over the decimated
      * waveform a scene is handed: [correlation] is phase-sensitive, and
@@ -38,7 +39,7 @@ object StereoField {
         mid: FloatArray,
         side: FloatArray,
         count: Int = minOf(mid.size, side.size),
-    ): Reading = Reading(width(mid, side, count), correlation(mid, side, count))
+    ): Reading = Reading(width(mid, side, count), correlation(mid, side, count), pan(mid, side, count))
 
     /**
      * Interchannel correlation in -1..1, the quantity a studio correlation
@@ -121,6 +122,42 @@ object StereoField {
         val total = m + s
         if (total <= SILENCE) return 0f
         return (s / total).coerceIn(0f, 1f)
+    }
+
+    /**
+     * L/R balance in -1..1: -1 everything left, 0 centred, +1 everything
+     * right — the RMS balance `(rms(R) - rms(L)) / (rms(L) + rms(R))`.
+     *
+     * A balance, not a level, so a quiet mix pans the same as a loud one;
+     * and deliberately not width's cousin: a hard-panned source reads pan
+     * ±1 and width 0.5, which is the difference between WHERE the energy
+     * sits and how much of it is image. Reached through the same mid/side
+     * identities correlation uses (`sum(L*L) = mm + 2ms + ss`, mirrored for
+     * R), so one pass over the pair suffices. Silence is centred, for the
+     * same reason it is correlated: a gap between tracks has no direction.
+     */
+    fun pan(
+        mid: FloatArray,
+        side: FloatArray,
+        count: Int = minOf(mid.size, side.size),
+    ): Float {
+        if (count <= 0) return 0f
+        var mm = 0f
+        var ss = 0f
+        var ms = 0f
+        for (i in 0 until count) {
+            val m = mid[i]
+            val s = side[i]
+            mm += m * m
+            ss += s * s
+            ms += m * s
+        }
+        // Floored for the same cancellation hazard correlation documents.
+        val left = sqrt((mm + 2f * ms + ss).coerceAtLeast(0f) / count)
+        val right = sqrt((mm - 2f * ms + ss).coerceAtLeast(0f) / count)
+        val total = left + right
+        if (total <= SILENCE) return 0f
+        return ((right - left) / total).coerceIn(-1f, 1f)
     }
 
     /**

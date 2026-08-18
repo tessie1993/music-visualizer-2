@@ -1,6 +1,5 @@
-package dev.geode.analysis
+package dev.geode.engine.audio
 
-import dev.geode.audio.PcmRingBuffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -10,7 +9,8 @@ import kotlin.math.sin
 
 /**
  * The stereo measurements, checked against signals whose correct answer is
- * known by construction, plus the ring-buffer plumbing that produces them.
+ * known by construction. The ring-buffer plumbing that produces mid/side in
+ * production is pinned app-side, next to the ring.
  */
 class StereoFieldTest {
     private val n = 2048
@@ -174,86 +174,44 @@ class StereoFieldTest {
         val r = StereoField.of(mid, side)
         assertTrue("width $r", r.width in 0f..1f)
         assertTrue("correlation $r", r.correlation in -1f..1f)
+        assertTrue("pan $r", r.pan in -1f..1f)
     }
 
-    // ---- ring-buffer plumbing ---------------------------------------------
+    // ---- pan ---------------------------------------------------------------
 
-    /**
-     * The mono channel must be BYTE-IDENTICAL to what it was before the side
-     * channel existed, because every downstream stage - FFT, bands, flux,
-     * tempo - reads it and none of them were meant to change.
-     */
     @Test
-    fun `the mid channel is still the plain mono downmix`() {
-        val ring = PcmRingBuffer(1 shl 12)
-        val frames = 512
-        val interleaved = FloatArray(frames * 2)
-        for (i in 0 until frames) {
-            interleaved[i * 2] = tone(440f)(i)
-            interleaved[i * 2 + 1] = tone(660f)(i)
-        }
-        ring.writeInterleaved(interleaved, frames, 2)
-        val mid = FloatArray(frames)
-        assertTrue(ring.snapshotLatest(mid))
-        for (i in 0 until frames) {
-            assertEquals("frame $i", (interleaved[i * 2] + interleaved[i * 2 + 1]) / 2f, mid[i], 1e-6f)
-        }
+    fun `everything on the left reads pan minus one`() {
+        val t = tone(440f)
+        val (mid, side) = ms(t) { 0f }
+        assertEquals(-1f, StereoField.pan(mid, side), 1e-4f)
     }
 
     @Test
-    fun `the ring buffer recovers left and right exactly`() {
-        val ring = PcmRingBuffer(1 shl 12)
-        val frames = 512
-        val interleaved = FloatArray(frames * 2)
-        for (i in 0 until frames) {
-            interleaved[i * 2] = tone(440f)(i)
-            interleaved[i * 2 + 1] = tone(660f, phase = 0.7f)(i)
-        }
-        ring.writeInterleaved(interleaved, frames, 2)
-        val mid = FloatArray(frames)
-        val side = FloatArray(frames)
-        assertTrue(ring.snapshotLatest(mid))
-        assertTrue(ring.snapshotLatestSide(side))
-        for (i in 0 until frames) {
-            assertEquals("L @$i", interleaved[i * 2], mid[i] + side[i], 1e-6f)
-            assertEquals("R @$i", interleaved[i * 2 + 1], mid[i] - side[i], 1e-6f)
-        }
+    fun `everything on the right reads pan plus one`() {
+        val t = tone(440f)
+        val (mid, side) = ms({ 0f }, t)
+        assertEquals(1f, StereoField.pan(mid, side), 1e-4f)
     }
 
     @Test
-    fun `a mono source has an all-zero side channel`() {
-        val ring = PcmRingBuffer(1 shl 12)
-        val frames = 256
-        val interleaved = FloatArray(frames) { tone(440f)(it) }
-        ring.writeInterleaved(interleaved, frames, 1)
-        val side = FloatArray(frames)
-        assertTrue(ring.snapshotLatestSide(side))
-        for (i in 0 until frames) assertEquals("frame $i", 0f, side[i], 0f)
-        val mid = FloatArray(frames)
-        assertTrue(ring.snapshotLatest(mid))
-        assertEquals(StereoField.MONO, StereoField.of(mid, side))
+    fun `a centred source and silence both read pan zero`() {
+        val t = tone(440f)
+        val (mid, side) = ms(t, t)
+        assertEquals(0f, StereoField.pan(mid, side), 1e-4f)
+        val zero = FloatArray(n)
+        assertEquals(0f, StereoField.pan(zero, zero), 0f)
+        assertEquals(0f, StereoField.MONO.pan, 0f)
     }
 
-    /**
-     * Side comes from the front pair on a surround source, not from a fold of
-     * every channel - the surrounds are not part of the image two speakers
-     * will reproduce.
-     */
+    /** Pan is a balance, not a level: quieter overall must not re-centre it. */
     @Test
-    fun `side uses the front pair of a surround source`() {
-        val ring = PcmRingBuffer(1 shl 12)
-        val channels = 6
-        val frames = 128
-        val interleaved = FloatArray(frames * channels)
-        for (i in 0 until frames) {
-            val base = i * channels
-            interleaved[base] = 0.5f // L
-            interleaved[base + 1] = -0.3f // R
-            for (c in 2 until channels) interleaved[base + c] = 0.9f // surrounds
-        }
-        ring.writeInterleaved(interleaved, frames, channels)
-        val side = FloatArray(frames)
-        assertTrue(ring.snapshotLatestSide(side))
-        for (i in 0 until frames) assertEquals("frame $i", (0.5f - -0.3f) / 2f, side[i], 1e-6f)
+    fun `pan is independent of level`() {
+        val loud = ms(tone(440f, amp = 0.9f), tone(440f, amp = 0.45f))
+        val quiet = ms(tone(440f, amp = 0.09f), tone(440f, amp = 0.045f))
+        assertEquals(
+            StereoField.pan(loud.first, loud.second),
+            StereoField.pan(quiet.first, quiet.second),
+            1e-3f,
+        )
     }
 }

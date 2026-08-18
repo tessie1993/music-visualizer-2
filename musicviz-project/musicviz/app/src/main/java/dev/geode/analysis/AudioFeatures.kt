@@ -1,6 +1,7 @@
 package dev.geode.analysis
 
 import dev.geode.engine.audio.Chromagram
+import dev.geode.engine.audio.StereoField
 
 /** Immutable snapshot of per-frame audio analysis, consumed by scenes. */
 data class AudioFeatures(
@@ -92,6 +93,13 @@ data class AudioFeatures(
      * decorrelated.
      */
     val stereoCorrelation: Float = 1f,
+    /**
+     * L/R balance in -1..1; -1 everything left, 0 centred, +1 everything
+     * right. See [StereoField.pan]. 0 for mono sources, synthesised
+     * features and cache entries - a centred reading, which is what all
+     * three genuinely are to a scene.
+     */
+    val stereoPan: Float = 0f,
     /**
      * Per-frame 12-bin chromagram, index 0 = C, largest bin scaled to 1. See
      * [Chromagram], including what its resolution limit means.

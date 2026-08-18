@@ -2,6 +2,7 @@ package dev.geode.analysis
 
 import dev.geode.engine.audio.LogBands
 import dev.geode.engine.audio.Spectrum
+import dev.geode.engine.audio.StereoField
 import dev.geode.engine.audio.WindowShape
 import dev.geode.engine.audio.WindowTable
 import org.junit.Assert.assertEquals
@@ -56,6 +57,23 @@ class CorpusOracleTest {
             val ours = StereoField.correlation(fixture.mono(), fixture.side())
             assertEquals(fixture.name, fixture.expected("stereoCorrelation").toFloat(), ours, tolerance)
         }
+    }
+
+    @Test
+    fun `stereo pan agrees with the oracle, and hard left reads minus one`() {
+        val tolerance = Corpus.tolerance("stereoPan").toFloat()
+        val stereo = Corpus.fixtures.filter { it.has("stereoPan") }
+        assertTrue("no pan fixtures to compare", stereo.size >= 4)
+        for (fixture in stereo) {
+            val ours = StereoField.pan(fixture.mono(), fixture.side())
+            assertEquals(fixture.name, fixture.expected("stereoPan").toFloat(), ours, tolerance)
+        }
+        assertEquals(
+            "a left-only source is fully left",
+            -1f,
+            StereoField.pan(Corpus.named("tone_panned_left").mono(), Corpus.named("tone_panned_left").side()),
+            1e-3f,
+        )
     }
 
     @Test

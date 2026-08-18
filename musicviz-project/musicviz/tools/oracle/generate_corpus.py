@@ -39,7 +39,7 @@ import soundfile
 
 # Bumped by hand whenever a fixture's definition changes, so a stale corpus is
 # a visible mismatch rather than a silent one.
-GENERATOR_VERSION = 4
+GENERATOR_VERSION = 5
 
 # The STFT the per-frame expectations are computed over. Matches
 # AnalysisBranch.GENERAL, and librosa's center=True / pad_mode="constant"
@@ -82,6 +82,8 @@ TOLERANCES = {
     "stereoCorrelation": 1e-4,
     # Width is a ratio of RMS magnitudes, one sqrt more than correlation.
     "stereoWidth": 1e-4,
+    # A ratio of channel RMS magnitudes, same exposure as width.
+    "stereoPan": 1e-4,
     # Plain sqrt(mean(x^2)) over the fixture.
     "rms": 1e-6,
     # The band a tone lands in is an integer; a tone must not straddle.
@@ -211,6 +213,10 @@ def _fixtures() -> dict[str, np.ndarray]:
     out["stereo_wide"] = np.stack([mono + noise_l, mono + noise_r], axis=1)
 
     out["stereo_identical"] = np.stack([mono, mono], axis=1)
+
+    # Hard-panned: everything on the left, the case pan exists to name and
+    # the one width deliberately reads as 0.5 rather than as a direction.
+    out["tone_panned_left"] = np.stack([mono, np.zeros_like(mono)], axis=1)
 
     # A hard splice: 300 Hz cut mid-cycle into 900 Hz, no crossfade. Stands in
     # for the discontinuous stream the plan asks for - a seek, a source change,
@@ -379,6 +385,13 @@ def _expected(name: str, data: np.ndarray) -> dict:
         m = float(np.sqrt(np.mean(mid * mid)))
         s = float(np.sqrt(np.mean(side * side)))
         exp["stereoWidth"] = float(s / (m + s)) if (m + s) > 1e-9 else 0.0
+
+        # Pan: the L/R RMS balance, -1 fully left to +1 fully right, 0 for a
+        # centred or silent signal. Computed from the channels directly; the
+        # Kotlin side reaches the same number through mid/side identities.
+        rms_l = float(np.sqrt(np.mean(left * left)))
+        rms_r = float(np.sqrt(np.mean(right * right)))
+        exp["stereoPan"] = float((rms_r - rms_l) / (rms_l + rms_r)) if (rms_l + rms_r) > 1e-9 else 0.0
 
     if name.startswith(("clicks", "tempo")):
         tempo, _ = librosa.beat.beat_track(y=mono, sr=SR)

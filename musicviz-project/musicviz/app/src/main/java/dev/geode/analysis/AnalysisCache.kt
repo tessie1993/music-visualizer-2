@@ -57,19 +57,22 @@ object AnalysisCache {
 
     /**
      * Pure key derivation, split out so it is testable without Android: SHA-1
-     * over the URI string and the source's size/mtime stamp. Changing either
-     * stamp changes the key, so a stale entry is simply never found again (and
-     * ages out of the LRU) rather than needing explicit invalidation.
+     * over the URI string, the source's size/mtime stamp and the
+     * [AnalysisIdentity] of the engine itself. Changing any of them changes
+     * the key, so a stale entry - a re-tagged file OR a rewritten analyzer -
+     * is simply never found again (and ages out of the LRU) rather than
+     * needing explicit invalidation.
      */
     internal fun cacheKey(
         uriString: String,
         sizeBytes: Long,
         lastModifiedMs: Long,
+        identity: String = AnalysisIdentity.CURRENT,
     ): String {
         val digest =
             MessageDigest
                 .getInstance("SHA-1")
-                .digest("$uriString|$sizeBytes|$lastModifiedMs".toByteArray())
+                .digest("$uriString|$sizeBytes|$lastModifiedMs|$identity".toByteArray())
         return digest.joinToString("") { "%02x".format(it) }
     }
 

@@ -14,6 +14,319 @@ Newest slice first.
 
 ---
 
+## V2-3-GATE: the Phase 3 gate, with one item held open
+
+State: COMPLETE
+
+Goal: record the phase gate's evidence in one place. MASTER_PLAN: "no app-wide consumer
+switch until corpus accuracy, callback allocations, CPU budget, epoch behavior and
+live/offline parity pass."
+
+User-visible effect: none — this is the ledger entry that authorizes Phase 4 to begin and
+forbids the consumer switch from claiming a gate it did not pass.
+
+In scope: `Phase3GateTest` — the two halves that had no standing test (the callback's ring
+write and the per-hop analysis are measured allocation-free; one hop measured at a median
+of 41 µs on this JVM against the 16 ms hop, asserted only against an absurd ceiling so
+machine weather cannot fail it) — and this entry.
+
+Out of scope: nothing new; this closes the phase.
+
+Files expected to change: `engine/audio-core/.../Phase3GateTest.kt`, this file.
+
+Compatibility contract: none.
+
+External source/provenance entries: none.
+
+Tests written first: the gate test IS the deliverable.
+
+Benchmark or visual evidence: the gate's five items —
+
+- **Corpus accuracy**: the oracle suites — descriptors frame-by-frame (V2-3-03a), timbre
+  (~7,800 MFCC comparisons plus contrast and flux, V2-3-05a), harmony ground truth
+  (V2-3-05b), stereo including pan (V2-3-06a) — all green at measured tolerances with
+  fault-injection sensitivity proofs on record.
+- **Callback allocations**: `SampleRing.write` and `ReactiveAnalyzer.analyze` measured at
+  zero bytes per call (`Phase3GateTest`), alongside the standing `Spectrum` and
+  `FeatureRing` allocation tests.
+- **CPU budget**: one hop = 41 µs median on this JVM, 0.3% of the 16 ms hop. **A JVM
+  proxy.** The on-device Mali/Adreno measurement remains THE open item of this phase,
+  carried since V2-3-03b, and blocks nothing that does not ship to a device.
+- **Epoch behavior**: the `SampleRing`/`RingReader` suites (wrap, runway, gap, epoch,
+  concurrency) and `FeatureRing`'s epoch/gap/not-yet tests.
+- **Live/offline parity**: `LiveOfflineParityTest` (V2-3-08), plus the export defect it
+  caught and fixed.
+
+Rollback: revert the one commit.
+
+Risks: the CPU item is a proxy until hardware exists; the gate entry says so rather than
+letting a green suite imply a device was measured.
+
+Commands and results: `:engine:audio-core:test` (204 tests), `:app:testDebugUnitTest`,
+ktlint both modules, `:app:lintDebug` — all green at this commit.
+
+Review findings: none beyond what each slice recorded.
+
+Commit: `test(audio-core): the Phase 3 gate, measured`.
+
+Next slice: Phase 4 (V2-4-01, GL capability probes) — or the owed device benchmark the
+moment hardware exists.
+
+---
+
+## V2-3-08: versioned cache identity, and export stops losing harmony and width
+
+State: COMPLETE
+
+Goal: the last Phase 3 slice. Two defects with one theme — the offline path drifting from
+the live one. First, the analysis cache's identity covers only the media fingerprint, so an
+engine rewrite (this branch contains one) serves STALE band semantics from disk;
+`cacheKey` now folds in an `AnalysisIdentity` string — algorithm version, FFT size, band
+count, both hop rates — so changed analysis orphans old entries the same way a changed
+file always has. Second, §5.7's parity bullet found real: the offline `StreamingPipeline`
+never computed chroma or stereo, so every exported video lost harmony and width reactivity
+that live playback showed. The pipeline gains the side channel, the chromagram and the
+stereo field — the same nodes, configured the same way — and a headless live-versus-offline
+parity test drives corpus fixtures through both paths.
+
+User-visible effect: exports show the harmony- and stereo-driven behavior live playback
+shows. Every existing cache entry is orphaned once (by design — its values came from a
+deleted DSP) and tracks re-analyse on next play.
+
+In scope: `AnalysisIdentity`; the `cacheKey` identity component and its tests;
+`StreamingPipeline` internal (for headless tests) with side buffering, chroma and stereo;
+`LiveOfflineParityTest` over corpus fixtures — scalar curves within measured tolerance at
+matched timestamps, beat counts agreeing, chroma populated offline, stereo width surviving
+offline.
+
+Out of scope: modulated-uniform parity (the modulation matrix is Phase 7); byte-exact
+live/offline equality (the cadences are documented as 62.5 and 60 Hz; parity is
+per-feature tolerance at matched times, per §5.7); the device benchmark — **carried.**
+
+Files expected to change: `app/.../analysis/{AnalysisIdentity,AnalysisCache,OfflineAnalyzer}.kt`,
+`app/src/test/java/dev/geode/analysis/{AnalysisCacheKeyTest,LiveOfflineParityTest}.kt`.
+
+Compatibility contract: cache files' FORMAT is unchanged (header version 2); their KEYS
+change once, orphaning pre-rewrite entries deliberately. Offline timelines gain populated
+chroma/stereo fields; `FrameAccumulator.merge` already carries them (point-sampled, like
+every continuous channel).
+
+External source/provenance entries: none.
+
+Tests written first: the parity test and the key tests precede the fixes.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: re-analysis storm on first launch after update (bounded: 15-entry LRU, analysis is
+per-play); the parity tolerances are measured against the two documented cadences and
+would mask a defect smaller than the cadence skew — the corpus oracle suites are the
+precision instrument, this test is the drift alarm.
+
+Commands and results: `:app:testDebugUnitTest` (LiveOfflineParityTest 4/4, key tests),
+`:engine:audio-core:test`, ktlint, `:app:lintDebug` all green.
+
+Review findings: one comparison design error, caught by its own failure. The scalar-curve
+parity originally included the click track, and failed at once — on impulse material the
+two documented cadences put the SAME click into DIFFERENT windows, so a pointwise
+comparison measures the 8 ms skew, not the graph. Scalar parity now runs on smooth
+fixtures; the click track's parity claim is the beat-count test, which is the claim that
+material can actually support. The chroma-survives-export test doubles as the defect's
+record: before this slice the offline pipeline never ran the chromagram or the stereo
+field at all.
+
+Commit: `feat(analysis): versioned cache identity; export keeps harmony and width`.
+
+Next slice: the Phase 3 gate entry.
+
+---
+
+## V2-3-07: the time-addressed feature ring
+
+State: COMPLETE
+
+Goal: §5.6's replacement for latest-wins feature consumption, as an `audio-core` primitive.
+`FeatureRing`: a single-writer multi-reader ring of feature frames addressed by absolute
+sample index, whose `acquireAt(sampleIndex, spanSamples)` returns continuous slots
+LINEARLY INTERPOLATED at the requested sample and event slots MAX/OR-combined over the
+span — with explicit `OK / GAP / NOT_YET_AVAILABLE / DISCONTINUITY` outcomes and no silent
+clamps, per §5.1's ring contract. An app-side `FeatureRingBridge` maps `AudioFeatures`
+snapshots into slot rows and back, so a renderer polling slower than the analysis hop
+never loses the beat that `AudioBus`'s latest-wins field drops today.
+
+User-visible effect: none yet — the consumer switch is gated behind the phase gate. The
+proof this slice owes (the plan is explicit): the ring's span semantics must be IDENTICAL
+to `FeatureTimeline.featuresAt`'s peak-hold/OR before anything switches.
+
+In scope: `FeatureRing` + `FeatureFrame` (preallocated acquisition target) in `audio-core`,
+with wrap, runway, epoch, gap and not-yet tests in the `SampleRing` discipline; the
+app-side bridge with its slot layout; a mirror test sweeping random (time, span) pairs and
+requiring event-for-event equality with `FeatureTimeline.featuresAt` (nearest-frame base,
+`nearest(t+span) - 1` last frame, OR beat, max onset/flux/beatStrength/transient); a
+latest-wins-loss demonstration test.
+
+Out of scope: switching any consumer (phase-gated); the GPU feature block (Phase 4); the
+device benchmark — **carried.**
+
+Files expected to change: `engine/audio-core/.../{FeatureRing,FeatureFrame}.kt` and tests,
+`app/.../analysis/FeatureRingBridge.kt` and tests.
+
+Compatibility contract: nothing existing changes; `FeatureTimeline` remains the reference
+implementation until the mirror proof stands, exactly as §5.6 instructs.
+
+External source/provenance entries: none.
+
+Tests written first: yes.
+
+Benchmark or visual evidence: not applicable pre-switch.
+
+Rollback: revert the one commit.
+
+Risks: the mirror holds only for the five channels `featuresAt` combines — the bridge
+documents that the remaining event channels (kick/snare/hat) get the same max treatment
+the timeline never gave them, which is a deliberate improvement, not drift.
+
+Commands and results: `:engine:audio-core:test` (201 tests, acquisition measured
+allocation-free), the app suite with the mirror sweep (2,000 random time/span pairs,
+1,500+ event-identical comparisons against `FeatureTimeline.featuresAt`), ktlint and lint
+all green.
+
+Review findings: the latest-wins demonstration test doubles as documentation — it
+constructs the exact loss (a one-hop beat between two 3-hop polls), proves the latest
+read misses it and the span read sees it exactly once, and would fail loudly if either
+half of that story stopped being true.
+
+Commit: `feat(audio-core): the time-addressed feature ring`.
+
+Next slice: V2-3-08 — versioned analysis cache and offline parity.
+
+---
+
+## V2-3-06b: causal structure and harmonic-percussive evidence
+
+State: COMPLETE
+
+Goal: V2-3-06's second half. Two nodes in `audio-core`, both causal, both stepped per
+analysis hop, wired as `ReactiveAnalyzer` outputs. `StructureTracker`: novelty (fast versus
+slow band-profile EMAs, robustly normalized), causal section-boundary events (novelty
+standing above its own trailing statistics, refractory-gated), buildup (a sustained energy
+and onset-density rise), and the drop/arrival event pair. `HarmonicBalance`: the
+harmonic-versus-percussive balance through the HPSS intuition made causal — energy that
+persists in time is harmonic, energy that just appeared is percussive — as per-bin
+`min(now, history)` against positive change over the magnitude spectrum.
+
+User-visible effect: none yet; outputs exist on the analyzer with no production consumer.
+Per the plan's own instruction, **buildup, drop and arrival are marked EXPERIMENTAL** — the
+thresholds are heuristics validated against constructed scenarios, not a labeled corpus of
+real arrangements, and their ABI slots say so.
+
+In scope: the two nodes, their tests (constructed scenarios: a profile change fires exactly
+one section; flat material fires none; a ramp raises buildup; ramp-dip-slam fires one drop;
+quiet-then-recovery fires one arrival; a tone outranks noise outranks clicks on harmonic
+balance), analyzer wiring with reset/silence semantics matching the rhythm channels, range
+checks in the end-to-end suite.
+
+Out of scope: consumer wiring and the `AudioFeatures` ABI; a labeled real-music validation
+corpus (needed before these leave EXPERIMENTAL); the device benchmark — **carried.**
+
+Files expected to change: `engine/audio-core/.../{StructureTracker,HarmonicBalance}.kt`,
+their tests, `ReactiveAnalyzer{,Test}.kt`.
+
+Compatibility contract: purely additive; every existing output keeps its value.
+
+External source/provenance entries: none new. The HPSS temporal-persistence intuition is
+Fitzgerald's median-filtering formulation (DAFx 2010) made causal without copying anything;
+the novelty formulation is the same band-profile distance the offline
+`FeatureTimeline.detectSections` already uses, made causal.
+
+Tests written first: yes, before either node compiles.
+
+Benchmark or visual evidence: not applicable pre-wiring.
+
+Rollback: revert the one commit.
+
+Risks: the experimental trio will false-positive on material outside their heuristics —
+that is WHY they are marked experimental, and their confidence-free boolean form is
+deliberately conservative (refractory-gated, evidence-thresholded). Cost unmeasured in
+situ, as with every node this phase.
+
+Commands and results: `:engine:audio-core:test` (192 tests), `:engine:audio-core:ktlintCheck`,
+`:app:testDebugUnitTest`, `:app:ktlintCheck`, `:app:lintDebug` all green.
+
+Review findings: two, both caught by the constructed-scenario tests.
+
+**Cold-start EMA convergence read as buildup.** A fast average converging ahead of a slow
+one from zero looks exactly like a riser, so every track's first seconds would have read
+0.35 buildup on steady material. Both averages now seed AT the first frame's energy —
+buildup measures rise, never warmup.
+
+**The click-train absolute threshold was arbitrary, and the test said so by failing at
+0.458 against 0.45.** The node's documented contract is the RANKING — tone above noise
+above clicks — plus "leans percussive"; the assertion now states exactly that instead of a
+tuned constant.
+
+Commit: `feat(audio-core): causal structure and harmonic-percussive evidence`.
+
+Next slice: V2-3-07 — the time-addressed feature/event ring.
+
+---
+
+## V2-3-06a: stereo pan, and the stereo field moves home
+
+State: COMPLETE
+
+Goal: V2-3-06's stereo bullet, completed. `StereoField` gains [pan] — the L/R balance the
+ABI table requires and neither width nor correlation carries — computed through the same
+mid/side identities the class already uses, and the object moves into `audio-core` beside
+the rest of the analysis. A hard-panned corpus fixture gives pan an oracle; every stereo
+fixture gains a pan expectation. `AudioFeatures.stereoPan` publishes it (additive, default
+0, live-only like width and correlation — the cache does not carry stereo and never has).
+
+User-visible effect: scenes can read pan; nothing existing changes value.
+
+In scope: pan in `StereoField` (+ the module move with its test), corpus generator v5 with
+`tone_panned_left` and per-fixture `stereoPan` expectations, the `CorpusOracleTest` sweep,
+`AudioFeatures.stereoPan`, `AnalysisEngine` publication.
+
+Out of scope: the structure/HPSS half of V2-3-06 (06b, next); phase output beyond
+correlation (correlation IS the coherence reading; a per-band phase spectrum is a GPU
+resource for Phase 4, not a scalar for this frame type); the device benchmark — **carried.**
+
+Files expected to change: `engine/audio-core/.../StereoField{,Test}.kt` (moved),
+`tools/oracle/generate_corpus.py`, corpus resources, `app/.../analysis/{AudioFeatures,AnalysisEngine}.kt`,
+`app/src/test/java/dev/geode/analysis/CorpusOracleTest.kt`.
+
+Compatibility contract: additive. `stereoPan` defaults 0 (a mono source's honest reading);
+every existing consumer and cache entry is untouched.
+
+External source/provenance entries: none — the pan formula is the textbook L/R RMS balance.
+
+Tests written first: pan unit cases and the corpus sweep precede the implementation.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: minimal; the move is the same shape as V2-3-05c's.
+
+Commands and results: `:engine:audio-core:test`, `:engine:audio-core:ktlintCheck`,
+`:app:testDebugUnitTest`, `:app:ktlintCheck`, `:app:lintDebug` all green; corpus v5 adds
+one fixture, existing .pcm byte-identical.
+
+Review findings: the moved test file carried a whole section that was never about
+`StereoField` — it pins `PcmRingBuffer`'s mid/side derivation — and moving it wholesale
+would have dragged an app dependency into the engine module. Split into
+`PcmRingStereoTest` beside the ring, same assertions verbatim. Two import-order ktlint
+failures from scripted insertion were fixed by hand; scripted import insertion keeps
+proving worse than typing the block.
+
+Commit: `feat(audio-core): stereo pan, and the stereo field moves home`.
+
+Next slice: V2-3-06b — causal structure and harmonic/percussive evidence.
+
+---
+
 ## V2-3-05c: move the harmony nodes home to audio-core
 
 State: COMPLETE

@@ -183,6 +183,9 @@ class ReactiveAnalyzerTest {
         assertEquals(0f, analyzer.treble, 1e-6f)
         assertEquals(0f, analyzer.rms, 1e-6f)
         assertTrue("fired a beat on silence", !analyzer.beat)
+        assertTrue("fired a section on silence", !analyzer.sectionBoundary)
+        assertTrue("fired a drop on silence", !analyzer.drop)
+        assertTrue("fired an arrival on silence", !analyzer.arrival)
     }
 
     @Test
@@ -210,6 +213,9 @@ class ReactiveAnalyzerTest {
                 "tempoStability" to analyzer.tempoStability,
                 "barPhase" to analyzer.barPhase,
                 "downbeatConfidence" to analyzer.downbeatConfidence,
+                "novelty" to analyzer.novelty,
+                "buildup" to analyzer.buildup,
+                "harmonicity" to analyzer.harmonicity,
                 "macroEnergy" to analyzer.macroEnergy,
                 "kick" to analyzer.kick,
                 "snare" to analyzer.snare,
