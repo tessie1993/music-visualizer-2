@@ -3,6 +3,7 @@ package dev.geode.render.fluid
 import android.content.Context
 import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
+import dev.geode.render.scene.GlUtil
 import dev.geode.render.scene.PcmPulse
 import dev.geode.render.scene.PcmSink
 import dev.geode.render.scene.Scene
@@ -220,8 +221,7 @@ internal class FluidScene(
         // The sim runs ~30 FBO passes that assume clean scissor/mask/blend-
         // equation state; enforce the contract in case a prior scene (native
         // projectM especially) left anything dirty this frame.
-        dev.geode.render.scene.GlUtil
-            .resetFrameState()
+        GlUtil.resetFrameState()
         val p = params
         // Prefer this frame's features; fall back to the last REAL features
         // for a short grace window (draw can outrun update), then idle.
