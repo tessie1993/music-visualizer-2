@@ -14,6 +14,61 @@ Newest slice first.
 
 ---
 
+## V2-3-06a: stereo pan, and the stereo field moves home
+
+State: COMPLETE
+
+Goal: V2-3-06's stereo bullet, completed. `StereoField` gains [pan] — the L/R balance the
+ABI table requires and neither width nor correlation carries — computed through the same
+mid/side identities the class already uses, and the object moves into `audio-core` beside
+the rest of the analysis. A hard-panned corpus fixture gives pan an oracle; every stereo
+fixture gains a pan expectation. `AudioFeatures.stereoPan` publishes it (additive, default
+0, live-only like width and correlation — the cache does not carry stereo and never has).
+
+User-visible effect: scenes can read pan; nothing existing changes value.
+
+In scope: pan in `StereoField` (+ the module move with its test), corpus generator v5 with
+`tone_panned_left` and per-fixture `stereoPan` expectations, the `CorpusOracleTest` sweep,
+`AudioFeatures.stereoPan`, `AnalysisEngine` publication.
+
+Out of scope: the structure/HPSS half of V2-3-06 (06b, next); phase output beyond
+correlation (correlation IS the coherence reading; a per-band phase spectrum is a GPU
+resource for Phase 4, not a scalar for this frame type); the device benchmark — **carried.**
+
+Files expected to change: `engine/audio-core/.../StereoField{,Test}.kt` (moved),
+`tools/oracle/generate_corpus.py`, corpus resources, `app/.../analysis/{AudioFeatures,AnalysisEngine}.kt`,
+`app/src/test/java/dev/geode/analysis/CorpusOracleTest.kt`.
+
+Compatibility contract: additive. `stereoPan` defaults 0 (a mono source's honest reading);
+every existing consumer and cache entry is untouched.
+
+External source/provenance entries: none — the pan formula is the textbook L/R RMS balance.
+
+Tests written first: pan unit cases and the corpus sweep precede the implementation.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: minimal; the move is the same shape as V2-3-05c's.
+
+Commands and results: `:engine:audio-core:test`, `:engine:audio-core:ktlintCheck`,
+`:app:testDebugUnitTest`, `:app:ktlintCheck`, `:app:lintDebug` all green; corpus v5 adds
+one fixture, existing .pcm byte-identical.
+
+Review findings: the moved test file carried a whole section that was never about
+`StereoField` — it pins `PcmRingBuffer`'s mid/side derivation — and moving it wholesale
+would have dragged an app dependency into the engine module. Split into
+`PcmRingStereoTest` beside the ring, same assertions verbatim. Two import-order ktlint
+failures from scripted insertion were fixed by hand; scripted import insertion keeps
+proving worse than typing the block.
+
+Commit: `feat(audio-core): stereo pan, and the stereo field moves home`.
+
+Next slice: V2-3-06b — causal structure and harmonic/percussive evidence.
+
+---
+
 ## V2-3-05c: move the harmony nodes home to audio-core
 
 State: COMPLETE

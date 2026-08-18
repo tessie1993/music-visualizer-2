@@ -4,6 +4,7 @@ import dev.geode.engine.audio.Chromagram
 import dev.geode.engine.audio.MidSideWindow
 import dev.geode.engine.audio.ReactiveAnalyzer
 import dev.geode.engine.audio.SampleRing
+import dev.geode.engine.audio.StereoField
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -194,6 +195,7 @@ class AnalysisEngine(
                     chromaConfidence = chroma.confidence,
                     stereoWidth = stereo.width,
                     stereoCorrelation = stereo.correlation,
+                    stereoPan = stereo.pan,
                 )
             return true
         }
