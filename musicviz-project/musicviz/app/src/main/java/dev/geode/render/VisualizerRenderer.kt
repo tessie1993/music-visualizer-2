@@ -8,11 +8,14 @@ import dev.geode.R
 import dev.geode.analysis.AudioFeatures
 import dev.geode.export.VideoExporter
 import dev.geode.render.fluid.CurlFlowMath
+import dev.geode.render.scene.AcidScene
 import dev.geode.render.scene.BeamScene
 import dev.geode.render.scene.CymaticsScene
 import dev.geode.render.scene.EmergenceScene
 import dev.geode.render.scene.GlUtil
 import dev.geode.render.scene.HyperspaceScene
+import dev.geode.render.scene.LifeScene
+import dev.geode.render.scene.MycoScene
 import dev.geode.render.scene.PcmChunk
 import dev.geode.render.scene.PcmSink
 import dev.geode.render.scene.ProjectMScene
@@ -20,6 +23,7 @@ import dev.geode.render.scene.Scene
 import dev.geode.render.scene.SceneIds
 import dev.geode.render.scene.SceneParams
 import dev.geode.render.scene.ShaderScene
+import dev.geode.render.scene.SilkScene
 import dev.geode.render.scene.VisualStyleCatalog
 import dev.musicviz.render.scene.PMBridge
 import java.io.File
@@ -623,6 +627,10 @@ class VisualizerRenderer(
     fun availableSceneIds(): List<String> =
         buildList {
             addAll(PARTICLE_SCENES)
+            addAll(VisualStyleCatalog.silkIds)
+            addAll(VisualStyleCatalog.lifeIds)
+            addAll(VisualStyleCatalog.mycoIds)
+            addAll(VisualStyleCatalog.acidIds)
             addAll(SHADER_SCENES.keys)
             if (PMBridge.available) add(SceneIds.MILKDROP)
             add(SceneIds.FLUID)
@@ -674,6 +682,26 @@ class VisualizerRenderer(
         VisualStyleCatalog.cymatics(id)?.let { style ->
             return CymaticsScene(context, style).also { plate ->
                 plate.onShaderError = { onShaderError(it) }
+            }
+        }
+        VisualStyleCatalog.silk(id)?.let { style ->
+            return SilkScene(context, style).also { scene ->
+                scene.onShaderError = { onShaderError(it) }
+            }
+        }
+        VisualStyleCatalog.life(id)?.let { style ->
+            return LifeScene(context, style).also { scene ->
+                scene.onShaderError = { onShaderError(it) }
+            }
+        }
+        VisualStyleCatalog.acid(id)?.let { style ->
+            return AcidScene(context, style).also { scene ->
+                scene.onShaderError = { onShaderError(it) }
+            }
+        }
+        VisualStyleCatalog.myco(id)?.let { style ->
+            return MycoScene(context, style).also { scene ->
+                scene.onShaderError = { onShaderError(it) }
             }
         }
         VisualStyleCatalog.hyperspace(id)?.let { style ->

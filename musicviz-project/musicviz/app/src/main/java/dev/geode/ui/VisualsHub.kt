@@ -666,24 +666,29 @@ private fun StylesTab(
             }
         }
         CrystalTabs(
-            // Cymatics and Hyperspace are each their own family, neither a
-            // fluid style nor a shader one. Cymatics is the style whose
-            // picture IS the sound (a Chladni plate) rather than a look driven
-            // by it; Hyperspace is the only raymarched one - a room of 3D
-            // fractals, each alive on its own clock, walking a five-act story;
-            // Beam is the oscilloscope, whose trace is the waveform itself.
-            titles = listOf("Particles", "Shaders", "Fluid", "Cymatics", "Hyperspace", "Beam", "MilkDrop"),
+            // Each tab is one engine family. Silk is field-advected luminous
+            // dye (strange-attractor flows, no particles anywhere); Life is
+            // continuous cellular matter (Lenia species and Gray-Scott
+            // organisms); Mycelium is a Physarum trail ecology (the network
+            // is drawn, never the agents); Acid is a video-synth feedback
+            // loop. Cymatics is the style whose picture IS the sound (a
+            // Chladni plate); Hyperspace the raymarched fractal room; Beam
+            // the oscilloscope, whose trace is the waveform itself.
+            titles = listOf("Silk", "Life", "Mycelium", "Acid", "Shaders", "Fluid", "Cymatics", "Hyperspace", "Beam", "MilkDrop"),
             selected = sub,
             onSelect = { sub = it },
         )
         when (sub) {
-            0 -> SceneList(VisualizerRenderer.PARTICLE_SCENES, viz.sceneId, pickScene)
-            1 -> SceneList(VisualizerRenderer.SHADER_SCENES.keys.toList(), viz.sceneId, pickScene)
-            2 -> SceneList(listOf(SceneIds.FLUID, SceneIds.CURLFLOW, SceneIds.WATER), viz.sceneId, pickScene)
-            3 -> SceneList(VisualStyleCatalog.cymaticsIds, viz.sceneId, pickScene)
-            4 -> SceneList(VisualStyleCatalog.hyperspaceIds, viz.sceneId, pickScene)
-            5 -> SceneList(listOf(SceneIds.BEAM), viz.sceneId, pickScene)
-            6 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
+            0 -> SceneList(VisualStyleCatalog.silkIds, viz.sceneId, pickScene)
+            1 -> SceneList(VisualStyleCatalog.lifeIds, viz.sceneId, pickScene)
+            2 -> SceneList(VisualStyleCatalog.mycoIds, viz.sceneId, pickScene)
+            3 -> SceneList(VisualStyleCatalog.acidIds, viz.sceneId, pickScene)
+            4 -> SceneList(VisualizerRenderer.SHADER_SCENES.keys.toList(), viz.sceneId, pickScene)
+            5 -> SceneList(listOf(SceneIds.FLUID, SceneIds.CURLFLOW, SceneIds.WATER), viz.sceneId, pickScene)
+            6 -> SceneList(VisualStyleCatalog.cymaticsIds, viz.sceneId, pickScene)
+            7 -> SceneList(VisualStyleCatalog.hyperspaceIds, viz.sceneId, pickScene)
+            8 -> SceneList(listOf(SceneIds.BEAM), viz.sceneId, pickScene)
+            9 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
         }
     }
 }
