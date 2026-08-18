@@ -104,7 +104,7 @@ class AppSmokeTest {
         // Styles sub-tabs including the MilkDrop tab
         compose.onNode(hasText("Styles") and isSelectable()).performClick()
         compose.waitForIdle()
-        listOf("Particles", "Shaders", "MilkDrop").forEach { sub ->
+        listOf("Silk", "Life", "Mycelium", "Acid", "Shaders", "MilkDrop").forEach { sub ->
             compose.onNode(hasText(sub) and isSelectable()).performClick()
             compose.waitForIdle()
         }

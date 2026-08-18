@@ -115,30 +115,20 @@ class RendererWiringTest {
     @Test
     fun theLayerSceneRidesTheFlowFieldExactlyAsTheActiveSceneDoes() {
         // The layer path did setParams/update/draw with no flow plumbing while
-        // every flow decision looked only at the ACTIVE scene: Inkflow as a
-        // layer - a style DEFINED by the field - rode a field that was never
-        // stepped for it, never read back into its grid and never took its
-        // kicks, so the layer sat on its faint fallback curl instead of
-        // flowing. One shared wiring function for both targets is what keeps
-        // the two paths from drifting apart again.
+        // every flow decision looked only at the ACTIVE scene: a layered
+        // shader style rode a flow texture that was never rebound for it, so
+        // the layer sat on its faint fallback curl instead of flowing. One
+        // shared wiring function for both targets is what keeps the two paths
+        // from drifting apart again.
         val draw = functionBody("onDrawFrame")
         assertTrue(
-            "the FlowField step must consider the layer scene, not just the active one",
-            draw.contains("sceneNeedsFlow || layerNeedsFlow"),
-        )
-        assertTrue(
-            "the layer must be resolved before the field steps, or a field-defined layer rides a frozen field",
+            "the layer must be resolved before the field steps, or a layered flow reader rides a frozen field",
             draw.indexOf("layerScene =") in 0 until draw.indexOf("ff.step("),
         )
         assertEquals(
             "the active scene and the layer scene must share one flow-consumer wiring",
             2,
             Regex("""wireFlowConsumers\(""").findAll(draw).count(),
-        )
-        assertEquals(
-            "the active scene and the layer scene must both push their kicks back into the field",
-            2,
-            Regex("""drainFlowKicks\(""").findAll(draw).count(),
         )
     }
 
@@ -232,10 +222,9 @@ class RendererWiringTest {
             build.indexOf("wireScene(") in 0 until build.indexOf(".init()"),
         )
         val wire = functionBody("wireScene")
-        assertTrue("the particle error channel left wireScene", wire.contains("onShaderError"))
         assertTrue("the palette LUT wiring left wireScene", wire.contains("setPaletteLut"))
         assertFalse(
-            "a second inline particle wiring is growing back outside wireScene",
+            "a second inline scene wiring is growing back outside wireScene",
             surface.contains("onShaderError"),
         )
     }
@@ -319,10 +308,13 @@ class RendererWiringTest {
      */
     private fun idsIn(body: String): Set<String> =
         buildSet {
-            if (body.contains("PARTICLE_SCENES")) addAll(VisualizerRenderer.PARTICLE_SCENES)
             if (body.contains("SHADER_SCENES")) addAll(VisualizerRenderer.SHADER_SCENES.keys)
             if (body.contains("VisualStyleCatalog.cymatics")) addAll(VisualStyleCatalog.cymaticsIds)
             if (body.contains("VisualStyleCatalog.hyperspace")) addAll(VisualStyleCatalog.hyperspaceIds)
+            if (body.contains("VisualStyleCatalog.silk")) addAll(VisualStyleCatalog.silkIds)
+            if (body.contains("VisualStyleCatalog.life")) addAll(VisualStyleCatalog.lifeIds)
+            if (body.contains("VisualStyleCatalog.acid")) addAll(VisualStyleCatalog.acidIds)
+            if (body.contains("VisualStyleCatalog.myco")) addAll(VisualStyleCatalog.mycoIds)
             Regex("""SceneIds\.(\w+)""").findAll(body).forEach { match ->
                 val name = match.groupValues[1]
                 val id = sceneIdValues[name]

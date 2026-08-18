@@ -107,7 +107,6 @@ class ParamRandomizerFluidTest {
             Pair("Shading (embossed ink)", { p: SceneParams -> p.fluidShading }),
             Pair("Glow (fluid)", { p: SceneParams -> p.fluidBloom }),
             Pair("Sunrays", { p: SceneParams -> p.fluidSunrays }),
-            Pair("Particles ride the field", { p: SceneParams -> p.flowAdvectParticles }),
         )
 
     private fun allKnobs(): List<Knob> =

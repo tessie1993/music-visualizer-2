@@ -21,7 +21,20 @@ function base() {
     rms: 0, bass: 0, mid: 0, treble: 0,
     beat: false, beatStrength: 0, transient: 0, bpm: 0,
     macroEnergy: 0,
+    // AudioFeatures.chroma: EMPTY (length 0) means "no chromagram ran", which
+    // is what silence carries; the playing models synthesize a reading below.
+    chroma: new Float32Array(0),
   };
+}
+
+/**
+ * AudioFeatures.beatImpulse, verbatim: 0 off beats, the graded beatStrength on
+ * them, full strength for beat flags that carry no strength. (Named `...Of` to
+ * stay clear of the `beatImpulse` audio MODEL exported below.)
+ */
+export function beatImpulseOf(f) {
+  if (!f.beat) return 0;
+  return f.beatStrength > 0 ? f.beatStrength : 1;
 }
 
 /** AudioFeatures.motionImpulse, verbatim. */
@@ -56,6 +69,16 @@ export function steadyTone({ level = 0.45, bassBias = 1.1, trebleBias = 0.6 } = 
     for (let i = 0; i < WAVEFORM; i++) {
       f.waveform[i] = level * Math.sin((i / WAVEFORM) * Math.PI * 8 + t * 6);
     }
+    // A chromagram reading, as AudioFeatures documents it: 12 bins, largest
+    // scaled to 1. A C-major-ish triad with a slow wobble stands in for real
+    // harmony - without it the ACID family's chroma-mandala source (uChroma)
+    // would preview as silence-black, which the app only shows when no
+    // chromagram ran at all.
+    f.chroma = new Float32Array(12);
+    for (let i = 0; i < 12; i++) f.chroma[i] = 0.06 + 0.05 * Math.sin(t * 0.7 + i * 2.1);
+    f.chroma[0] = 1;
+    f.chroma[4] = 0.8 + 0.15 * Math.sin(t * 0.5);
+    f.chroma[7] = 0.9;
     return f;
   };
 }

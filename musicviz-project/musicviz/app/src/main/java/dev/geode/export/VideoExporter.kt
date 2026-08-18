@@ -108,8 +108,8 @@ class VideoExporter(
          * Whether the export fades the canvas instead of hard-clearing it.
          * Live twin: VisualizerRenderer's `persists` gate - Curl Flow and the
          * beam persist regardless of the Trails toggle (their looks are
-         * DEFINED by canvas echo). The particle family is deliberately absent:
-         * EmergenceScene runs its own feedback loop internally, so a composite
+         * DEFINED by canvas echo). The field-sim families are deliberately
+         * absent: each runs its own feedback loop internally, so a composite
          * echo on top would double every trail.
          */
         fun canvasPersists(
@@ -450,7 +450,6 @@ class VideoExporter(
             scene.init()
             scene.resize(aspect.width, aspect.height)
             GLES30.glViewport(0, 0, aspect.width, aspect.height)
-            val isParticle = scene is dev.geode.render.scene.EmergenceScene
             val isShaderScene = scene is dev.geode.render.scene.ShaderScene
             // Milkdrop grades (and mirrors/inverts) in pm_post_frag, so the
             // composite must send it the neutral identity like the live path.
@@ -500,12 +499,7 @@ class VideoExporter(
             // allocating one the take toggles on mid-song (and maybe off
             // again before the end) silently drops the effect from the video.
             val effectUse = scanEffectUse(paramsAt, sceneParams, totalFrames, fps)
-            // A field-defined particle style needs the service allocated even
-            // with Flow off, or its export would be the one place the style
-            // renders as a dead screen.
-            val styleNeedsFlowField =
-                (scene as? dev.geode.render.scene.EmergenceScene)?.requiresFlowField == true
-            val usesFlowField = effectUse.flowField || styleNeedsFlowField
+            val usesFlowField = effectUse.flowField
             val usesRippleOverlay = effectUse.rippleOverlay
             val exportFluidScene = scene as? dev.geode.render.fluid.FluidScene
             val flowField =
@@ -624,55 +618,19 @@ class VideoExporter(
                         .applyBandGains(features, p),
                     1f / fps,
                 )
-                // A field-defined particle style runs the service whatever the
-                // Flow toggle says, exactly as the live renderer does - the
-                // exported clip has to be the style the user approved.
-                val sceneNeedsFlow =
-                    (scene as? dev.geode.render.scene.EmergenceScene)?.requiresFlowField == true
-                // Two-way coupling's return leg, drained after the update that
-                // produced the kicks and before the step that consumes them.
-                if (flowField != null && flowField.available && isParticle) {
-                    val kicks = (scene as dev.geode.render.scene.EmergenceScene).flowKicks
-                    for (i in 0 until kicks.size) {
-                        flowField.queueKick(kicks.x[i], kicks.y[i], kicks.vx[i], kicks.vy[i], kicks.radius[i])
-                    }
-                    kicks.clear()
-                }
-                if ((p.flowEnabled || sceneNeedsFlow) && flowField != null && flowField.available) {
+                if (p.flowEnabled && flowField != null && flowField.available) {
                     // Steps into the FlowField's own FBOs, before the scene
-                    // target is bound.
-                    //
-                    // KNOWN DIVERGENCE, deliberate and not yet decided: the live
-                    // renderer steps the field BEFORE scene.update, so a kick
-                    // the scene queues this frame is consumed by the NEXT
-                    // frame's step ("one frame of latency", VisualizerRenderer).
-                    // Here the drain above happens after the update that
-                    // produced the kicks and before the step that consumes them,
-                    // so the coupling closes within a single frame. Both are
-                    // self-consistent; they are not the same, and a
-                    // field-defined style (Inkflow) therefore renders one frame
-                    // of coupling phase away from what the screen showed.
-                    // Aligning them changes rendered output, so it wants a
-                    // golden-frame comparison rather than a quiet edit.
+                    // target is bound - mirroring the live renderer's order.
                     flowField.step(
                         dev.geode.render.scene
                             .applyBandGains(features, p),
                         1f / fps,
                         p,
                     )
-                }
-                // FlowField consumers, mirroring the live renderer: CPU grid
-                // for particle scenes ("Particles ride the field"), uFlow
-                // sampler for shader scenes. Without this, exported particles
-                // ignored the field and shader-scene flow distortion was 0.
-                if ((p.flowEnabled || sceneNeedsFlow) && flowField != null && flowField.available) {
-                    if (isParticle && (p.flowAdvectParticles || sceneNeedsFlow)) {
-                        flowField.readback(flowField.velocityTex, flowField.flowScale, flowField.aspect)
-                        (scene as dev.geode.render.scene.EmergenceScene).flowGrid = flowField.cpuGrid
-                    } else if (isParticle) {
-                        (scene as dev.geode.render.scene.EmergenceScene).flowGrid = null
-                    }
-                    if (scene is dev.geode.render.scene.ShaderScene && p.flowEnabled) {
+                    // FlowField consumer, mirroring the live renderer: the
+                    // uFlow sampler for shader scenes. Without this, exported
+                    // shader-scene flow distortion was 0.
+                    if (scene is dev.geode.render.scene.ShaderScene) {
                         scene.setFlow(flowField.velocityTex, p.flowStrength)
                     }
                 }
@@ -728,7 +686,6 @@ class VideoExporter(
                     // delta - 1/60 would spin a 30 fps render at half speed.
                     dtSeconds = 1f / fps,
                     features = features,
-                    isParticle = isParticle,
                     isShaderScene = isShaderScene,
                     isProjectM = isProjectM,
                     params = p,

@@ -666,24 +666,29 @@ private fun StylesTab(
             }
         }
         CrystalTabs(
-            // Cymatics and Hyperspace are each their own family, neither a
-            // fluid style nor a shader one. Cymatics is the style whose
-            // picture IS the sound (a Chladni plate) rather than a look driven
-            // by it; Hyperspace is the only raymarched one - a room of 3D
-            // fractals, each alive on its own clock, walking a five-act story;
-            // Beam is the oscilloscope, whose trace is the waveform itself.
-            titles = listOf("Particles", "Shaders", "Fluid", "Cymatics", "Hyperspace", "Beam", "MilkDrop"),
+            // Each tab is one engine family. Silk is field-advected luminous
+            // dye (strange-attractor flows, no particles anywhere); Life is
+            // continuous cellular matter (Lenia species and Gray-Scott
+            // organisms); Mycelium is a Physarum trail ecology (the network
+            // is drawn, never the agents); Acid is a video-synth feedback
+            // loop. Cymatics is the style whose picture IS the sound (a
+            // Chladni plate); Hyperspace the raymarched fractal room; Beam
+            // the oscilloscope, whose trace is the waveform itself.
+            titles = listOf("Silk", "Life", "Mycelium", "Acid", "Shaders", "Fluid", "Cymatics", "Hyperspace", "Beam", "MilkDrop"),
             selected = sub,
             onSelect = { sub = it },
         )
         when (sub) {
-            0 -> SceneList(VisualizerRenderer.PARTICLE_SCENES, viz.sceneId, pickScene)
-            1 -> SceneList(VisualizerRenderer.SHADER_SCENES.keys.toList(), viz.sceneId, pickScene)
-            2 -> SceneList(listOf(SceneIds.FLUID, SceneIds.CURLFLOW, SceneIds.WATER), viz.sceneId, pickScene)
-            3 -> SceneList(VisualStyleCatalog.cymaticsIds, viz.sceneId, pickScene)
-            4 -> SceneList(VisualStyleCatalog.hyperspaceIds, viz.sceneId, pickScene)
-            5 -> SceneList(listOf(SceneIds.BEAM), viz.sceneId, pickScene)
-            6 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
+            0 -> SceneList(VisualStyleCatalog.silkIds, viz.sceneId, pickScene)
+            1 -> SceneList(VisualStyleCatalog.lifeIds, viz.sceneId, pickScene)
+            2 -> SceneList(VisualStyleCatalog.mycoIds, viz.sceneId, pickScene)
+            3 -> SceneList(VisualStyleCatalog.acidIds, viz.sceneId, pickScene)
+            4 -> SceneList(VisualizerRenderer.SHADER_SCENES.keys.toList(), viz.sceneId, pickScene)
+            5 -> SceneList(listOf(SceneIds.FLUID, SceneIds.CURLFLOW, SceneIds.WATER), viz.sceneId, pickScene)
+            6 -> SceneList(VisualStyleCatalog.cymaticsIds, viz.sceneId, pickScene)
+            7 -> SceneList(VisualStyleCatalog.hyperspaceIds, viz.sceneId, pickScene)
+            8 -> SceneList(listOf(SceneIds.BEAM), viz.sceneId, pickScene)
+            9 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
         }
     }
 }
@@ -952,20 +957,13 @@ internal fun isShaderLookSceneId(sceneId: String): Boolean = sceneId in Visualiz
 
 /**
  * Styles that draw a particle sprite, i.e. the readers of BOTH `particleShape`
- * and `particleSize`. Two families, one look: the CPU styles in
- * [VisualizerRenderer.PARTICLE_SCENES] (`EmergenceScene.drawSprites` uploads
- * `uShape` and `uSize`) and the GPU lifecycle layer the fluid styles run
+ * and `particleSize`: the GPU lifecycle layer the fluid styles run
  * (`FluidScene` folds `particleSize` into `pointScale` and passes
  * `particleShape` straight through to `FluidParticles.draw`, `CurlFlowScene`
- * likewise). The fluid half is exactly [isParticleLayerSceneId] - the same
- * FluidParticles layer that reads `fluidParticleDrag` - so this composes from
- * it rather than restating FLUID/CURLFLOW a third time; if the layer ever
- * gains or loses a style, everything moves together.
- *
- * Shape used to be a NARROWER gate than size, because the fluid layer had no
- * shape uniform and drew round dots only. Both families now shade through the
- * same `lib_particle_shade.glsl`, so the chip row is live wherever the slider is
- * and the two gates collapsed into this one.
+ * likewise). Exactly [isParticleLayerSceneId] - the same FluidParticles layer
+ * that reads `fluidParticleDrag` - so this composes from it rather than
+ * restating FLUID/CURLFLOW a second time; if the layer ever gains or loses a
+ * style, everything moves together.
  *
  * Note FLUID can switch its point layer off (`fluidParticlesEnabled`), which
  * makes these controls *temporarily* inert there. That is deliberately NOT
@@ -973,8 +971,7 @@ internal fun isShaderLookSceneId(sceneId: String): Boolean = sceneId in Visualiz
  * the user can revive with one checkbox should not vanish from a different tab
  * with no visible cause. The Shape tab says so instead.
  */
-internal fun isPointSpriteSceneId(sceneId: String): Boolean =
-    sceneId in VisualizerRenderer.PARTICLE_SCENES || isParticleLayerSceneId(sceneId)
+internal fun isPointSpriteSceneId(sceneId: String): Boolean = isParticleLayerSceneId(sceneId)
 
 /**
  * The Customize panel: the scene-parameter tabs plus the tools that act on
@@ -1051,7 +1048,6 @@ internal fun CustomizePanel(
                             isPointSpriteScene = isPointSpriteSceneId(viz.sceneId),
                             particleLayerOff = isFluidSceneId(viz.sceneId) && !p.fluidParticlesEnabled,
                             isBeamScene = isBeamSceneId(viz.sceneId),
-                            isEmergenceScene = viz.sceneId == dev.geode.render.scene.SceneIds.EMERGENCE,
                         )
                     CustomizeTab.BEHAVIOR ->
                         BehaviorTab(

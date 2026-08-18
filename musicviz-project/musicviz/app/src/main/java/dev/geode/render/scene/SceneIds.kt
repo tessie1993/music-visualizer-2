@@ -2,7 +2,12 @@ package dev.geode.render.scene
 
 /** Stable identifiers shared by renderer, presets and the intelligence layer. */
 object SceneIds {
-    const val EMERGENCE: String = "emergence"
+    /**
+     * The style a fresh install (or a stale persisted id) lands on. A catalog
+     * substyle id, not a constant of its own family, so it lives here where
+     * every fallback reads it.
+     */
+    const val DEFAULT: String = "silk_web"
     const val JULIA: String = "julia"
     const val TUNNEL: String = "tunnel"
     const val BARS: String = "bars"

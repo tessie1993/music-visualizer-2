@@ -780,7 +780,7 @@ object BuiltInPresets {
         )
 
     val ALL: List<Preset> =
-        (VisualizerRenderer.PARTICLE_SCENES + VisualizerRenderer.SHADER_SCENES.keys).flatMap { id ->
+        VisualizerRenderer.SHADER_SCENES.keys.flatMap { id ->
             LOOKS.map { look ->
                 Preset(
                     name = "$id · ${look.name}",

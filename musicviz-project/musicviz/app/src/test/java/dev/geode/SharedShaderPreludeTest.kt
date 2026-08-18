@@ -1,10 +1,6 @@
 package dev.geode
 
-import dev.geode.analysis.AudioFeatures
 import dev.geode.render.CompositeGrade
-import dev.geode.render.fluid.FlowField
-import dev.geode.render.scene.EmergenceField
-import dev.geode.render.scene.EmergenceSim
 import dev.geode.render.scene.SceneParams
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -244,71 +240,6 @@ class SharedShaderPreludeTest {
         assertTrue("the narrow built-ins this guards against are gone: $narrow", narrow.size >= 4)
     }
 
-    @Test
-    fun theParticleFamilyLeavesMirrorToTheComposite() {
-        // Mirror shares one gate component with invert, and no particle
-        // pipeline can invert - so the composite has to own the pair, and
-        // owning it means owning it alone. The population mirror that used to
-        // run in postProcess folded about a DIFFERENT axis (pre-rotation NDC,
-        // where particle_vert rotates afterwards), so with Rotation up the
-        // pairs missed the composite's fold and read as ghost duplicates, and
-        // at Rotation 0 they landed exactly on it and were thrown away.
-        assertTrue(
-            "the composite no longer owns mirror for the particle family",
-            CompositeGrade.gateFor(CompositeGrade.SceneFamily.PARTICLE).mirrorInvert,
-        )
-        val applyPalette =
-            ParamSurface
-                .source("render/scene/EmergenceScene.kt")
-                .substringAfter("private fun applyPalette(p: SceneParams) {")
-                .substringBefore("\n    }")
-        assertTrue("EmergenceScene mirrors the population as well as the composite", !applyPalette.contains("mirror"))
-    }
-
-    @Test
-    fun theFlowFieldCarriesParticlesFromOneFrameToTheNext() {
-        // The advection used to be written straight into vertexData, which
-        // every style overwrites from its own state on the next frame, so
-        // "Particles ride the field" displaced nothing at all: the offset
-        // never compounded and the +-1.2 rail was unreachable by construction.
-        // Stepped headlessly against a uniform rightward current, where the
-        // answer is arithmetic. Both scenes are seeded identically and driven
-        // identically, so the field is the ONLY difference between them.
-        val free = EmergenceSim(count = 200, seed = 11L)
-        val ridden = EmergenceSim(count = 200, seed = 11L)
-        listOf(free, ridden).forEach {
-            it.field = EmergenceField.THOMAS
-            it.flowStrength = 1f
-        }
-        ridden.flowGrid = uniformField(vx = 0.6f, vy = 0f)
-        repeat(120) {
-            free.step(features(), FRAME)
-            ridden.step(features(), FRAME)
-        }
-        val travelled = meanX(ridden) - meanX(free)
-        assertTrue("the field displaced the population by $travelled - it is being discarded again", travelled > 0.08f)
-        rowsOf(ridden).forEachIndexed { i, r ->
-            assertTrue(
-                "particle $i left the world at ${r[0]}, ${r[1]}",
-                abs(r[0]) <= EmergenceSim.RESPAWN_EDGE && abs(r[1]) <= EmergenceSim.RESPAWN_EDGE,
-            )
-        }
-        // ...and letting go has to give the population back, rather than
-        // parking every particle wherever the current left it.
-        ridden.flowStrength = 0f
-        repeat(900) {
-            free.step(features(), FRAME)
-            ridden.step(features(), FRAME)
-        }
-        assertTrue(
-            "the field never let go: the ridden population is still parked off-centre at ${meanX(ridden)}",
-            abs(meanX(ridden)) < 0.15f,
-        )
-    }
-
-    // ---- helpers -------------------------------------------------------
-
-    /** `view()`'s beat swell, as the shared prelude computes it. */
     private fun shaderPulse(
         slider: Float,
         envelope: Float,
@@ -324,38 +255,6 @@ class SharedShaderPreludeTest {
         val phase = (distance * 0.25f + 0.25f).let { it - floor(it) }
         return 1f - 2f * abs(2f * phase - 1f)
     }
-
-    /** A CpuGrid whose velocity is the same everywhere, in clip units/second. */
-    private fun uniformField(
-        vx: Float,
-        vy: Float,
-    ): FlowField.CpuGrid =
-        FlowField.CpuGrid().apply {
-            scale = 1f
-            aspect = 1f
-            for (cell in 0 until FlowField.CPU_GRID * FlowField.CPU_GRID) {
-                data[cell * 4] = vx
-                data[cell * 4 + 1] = vy
-            }
-        }
-
-    private fun features() =
-        AudioFeatures(
-            bands = FloatArray(64) { 0.2f },
-            waveform = FloatArray(64),
-            rms = 0.3f,
-            bass = 0.3f,
-            mid = 0.3f,
-            treble = 0.2f,
-        )
-
-    private fun rowsOf(sim: EmergenceSim): List<FloatArray> {
-        val data = sim.records
-        val stride = EmergenceSim.FLOATS_PER_PARTICLE
-        return (0 until data.size / stride).map { i -> data.copyOfRange(i * stride, i * stride + stride) }
-    }
-
-    private fun meanX(sim: EmergenceSim): Float = rowsOf(sim).map { it[0] }.average().toFloat()
 
     /**
      * A top-level function body, from its signature to the closing brace.

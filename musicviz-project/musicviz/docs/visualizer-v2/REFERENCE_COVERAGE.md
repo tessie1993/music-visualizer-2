@@ -91,13 +91,13 @@ the owning family's slices land.
 | Audio Web | `velo-visualiser` | `bebf723` | STUDY | — | **MERGE** | Coverage question only. Velo is GPL-3.0, so the concept is implemented from published mathematics inside the named family and no Velo code or shader is read into it. | — | — | — |
 | Firefly Sync | `swissgl` | `489dfcf` | ADAPT | — | **PORT** | §7.4 phase-coupled oscillators. | — | — | — |
 | Murmur | `fosfora` | `09132c0` | STUDY | — | **MERGE** | §7.4 lists Murmur as a recipe (murmuration/boids). | — | — | — |
-| Mycelium | `fosfora` | `09132c0` | STUDY | — | **MERGE** | §7.4 lists Mycelium as a recipe. | — | — | — |
+| Mycelium | `fosfora` | `09132c0` | STUDY | myco_silkroad | **MERGE** | §7.4 lists Mycelium as a recipe. Shipped as the Mycelium family (MycoScene), ten trail-ecology styles. | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
 | network graph | `threelab` | `9b37d76` | REIMPLEMENT | — | **MERGE** | Threelab is MIT but a web application; the mathematics is reimplemented inside the named family. | — | — | — |
 | Particle Life | `swissgl` | `489dfcf` | ADAPT | — | **PORT** | §7.4 species attraction matrix; its own kernel, field-approximated at low tiers. | — | — | — |
-| Physarum | `swissgl` | `489dfcf` | ADAPT | — | **PORT** | §7.4 sensor/turn/deposit/decay; the SoA agent kernel. | — | — | — |
-| Physarum | `threelab` | `9b37d76` | REIMPLEMENT | — | **PORT** | Threelab is MIT but a web application; the mathematics is reimplemented inside the named family. | — | — | — |
-| Polycephalum | `fosfora` | `09132c0` | STUDY | — | **MERGE** | §7.4 lists Polycephalum; Physarum is its engine. | — | — | — |
-| Symbiosis | `fosfora` | `09132c0` | STUDY | — | **MERGE** | §7.4 lists Symbiosis. | — | — | — |
+| Physarum | `swissgl` | `489dfcf` | ADAPT | myco_polycephalum | **PORT** | §7.4 sensor/turn/deposit/decay; the SoA agent kernel. Reimplemented (not adapted): the published sense/turn/deposit/decay machine in myco_agent/deposit/blur/show shaders; two-species matrices from the threelab study. | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
+| Physarum | `threelab` | `9b37d76` | REIMPLEMENT | myco_polycephalum | **PORT** | Threelab is MIT but a web application; the mathematics is reimplemented inside the named family. Sense-matrix banks (rivals/symbiosis/predator) inform the MycoStyle tables; engine reimplemented. | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
+| Polycephalum | `fosfora` | `09132c0` | STUDY | myco_polycephalum | **MERGE** | §7.4 lists Polycephalum; Physarum is its engine. Shipped as the Mycelium family flagship style. | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
+| Symbiosis | `fosfora` | `09132c0` | STUDY | myco_symbiosis | **MERGE** | §7.4 lists Symbiosis. Shipped as the two-species cross-attraction matrix style. | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
 
 ### `living-matter` — Living Matter (§7.3)
 
@@ -110,16 +110,16 @@ the owning family's slices land.
 | cellular automata | `threelab` | `9b37d76` | REIMPLEMENT | — | **MERGE** | Threelab is MIT but a web application; the mathematics is reimplemented inside the named family. | — | — | — |
 | Chunky | `fosfora` | `09132c0` | STUDY | — | **MERGE** | A lattice CA rule preset. | — | — | — |
 | Clouds | `fosfora` | `09132c0` | STUDY | — | **MERGE** | §7.3 names Clouds among the CA variants. | — | — | — |
-| Frost | `fosfora` | `09132c0` | STUDY | — | **MERGE** | §7.3 lists Frost as a recipe of the reaction-diffusion/CA engine. | — | — | — |
+| Frost | `fosfora` | `09132c0` | STUDY | life_worms | **MERGE** | §7.3 lists Frost as a recipe of the reaction-diffusion/CA engine. Frost concept folded into the Life family; the anisotropic frost look lives on in myco_frostvein. | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
 | Neural CA | `swissgl` | `489dfcf` | ADAPT | — | **DEFER** | §7.3 admits neural CA presets only after independent implementation and device proof. | — | — | — |
 | Particle Lenia | `swissgl` | `489dfcf` | ADAPT | — | **PORT** | §7.3 Particle Lenia Garden; its own kernel. | — | — | — |
 | Pulse (CA) | `fosfora` | `09132c0` | STUDY | — | **MERGE** | A lattice CA rule preset; distinct from the Fosfora shader of the same name. | — | — | — |
 | Pyroclastic | `fosfora` | `09132c0` | STUDY | — | **MERGE** | §7.3 lists Neural Pyroclastic, gated on independent neural-CA implementation. | — | — | — |
-| Reaction Diffusion | `swissgl` | `489dfcf` | ADAPT | — | **PORT** | §7.3 Gray–Scott; the shared stencil/convolution engine. | — | — | — |
-| Reaction Diffusion | `velo-visualiser` | `bebf723` | STUDY | — | **MERGE** | Coverage question only. Velo is GPL-3.0, so the concept is implemented from published mathematics inside the named family and no Velo code or shader is read into it. | — | — | — |
-| reaction-diffusion | `threelab` | `9b37d76` | REIMPLEMENT | — | **PORT** | Threelab is MIT but a web application; the mathematics is reimplemented inside the named family. | — | — | — |
+| Reaction Diffusion | `swissgl` | `489dfcf` | ADAPT | life_mitosis | **PORT** | §7.3 Gray–Scott; the shared stencil/convolution engine. Reimplemented: Gray-Scott rule in life_step_frag with curated (f,k) organisms as styles. | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
+| Reaction Diffusion | `velo-visualiser` | `bebf723` | STUDY | life_coral | **MERGE** | Coverage question only. Velo is GPL-3.0, so the concept is implemented from published mathematics inside the named family and no Velo code or shader is read into it. Covered by the Life family styles. | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
+| reaction-diffusion | `threelab` | `9b37d76` | REIMPLEMENT | life_labyrinth | **PORT** | Threelab is MIT but a web application; the mathematics is reimplemented inside the named family. Gray-Scott presets from the study inform the LifeStyle (f,k) table; engine reimplemented. | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
 | Shells | `fosfora` | `09132c0` | STUDY | — | **MERGE** | §7.3 names Shell among the CA variants. | — | — | — |
-| Turing | `fosfora` | `09132c0` | STUDY | — | **MERGE** | §7.3 lists Turing Veil; Gray–Scott is its engine. | — | — | — |
+| Turing | `fosfora` | `09132c0` | STUDY | life_labyrinth | **MERGE** | §7.3 lists Turing Veil; Gray–Scott is its engine. Turing-pattern coverage ships through the Gray-Scott rule of LifeScene. | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
 
 ### `overlays` — Overlay instruments (§7.11)
 
@@ -141,11 +141,11 @@ the owning family's slices land.
 | upstream name | source | commit | tier | recipe | disposition | rationale | tests | captures | shipped |
 |---|---|---|---|---|---|---|---|---|---|
 | Chromatic Dots | `velo-visualiser` | `bebf723` | STUDY | — | **MERGE** | Coverage question only. Velo is GPL-3.0, so the concept is implemented from published mathematics inside the named family and no Velo code or shader is read into it. | — | — | — |
-| glitch post effect | `vgalizer` | `faa19ee` | REIMPLEMENT | — | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. | — | — | — |
+| glitch post effect | `vgalizer` | `faa19ee` | REIMPLEMENT | acid_mosh | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. Beat-gated block displacement ships inside acid_step_frag. | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
 | mirror post effect | `vgalizer` | `faa19ee` | REIMPLEMENT | — | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. | — | — | — |
 | Prism | `fosfora` | `09132c0` | STUDY | — | **MERGE** | §6.6 already requires chromatic split, prism and lens dispersion as post nodes. | — | — | — |
 | rotation post effect | `vgalizer` | `faa19ee` | REIMPLEMENT | — | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. | — | — | — |
-| scanline post effect | `vgalizer` | `faa19ee` | REIMPLEMENT | — | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. | — | — | — |
+| scanline post effect | `vgalizer` | `faa19ee` | REIMPLEMENT | acid_scan | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. Scanline shear + CRT dressing ship in the Acid family. | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
 | strobe-safe post effect | `vgalizer` | `faa19ee` | REIMPLEMENT | — | **PORT** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. | — | — | — |
 | trail post effect | `vgalizer` | `faa19ee` | REIMPLEMENT | — | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. | — | — | — |
 | VGA post effect | `vgalizer` | `faa19ee` | REIMPLEMENT | — | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. | — | — | — |
@@ -154,7 +154,7 @@ the owning family's slices land.
 
 | upstream name | source | commit | tier | recipe | disposition | rationale | tests | captures | shipped |
 |---|---|---|---|---|---|---|---|---|---|
-| attractors | `threelab` | `9b37d76` | REIMPLEMENT | — | **PORT** | Threelab is MIT but a web application; the mathematics is reimplemented inside the named family. | — | — | — |
+| attractors | `threelab` | `9b37d76` | REIMPLEMENT | silk_web | **PORT** | Threelab is MIT but a web application; the mathematics is reimplemented inside the named family. Attractor coverage ships as the Silk family fields (Thomas-form cyclic sines, curl, poles). | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
 | Aurora Drift | `velo-visualiser` | `bebf723` | STUDY | — | **MERGE** | Coverage question only. Velo is GPL-3.0, so the concept is implemented from published mathematics inside the named family and no Velo code or shader is read into it. | — | — | — |
 | Beat Fireworks | `velo-visualiser` | `bebf723` | STUDY | — | **MERGE** | Coverage question only. Velo is GPL-3.0, so the concept is implemented from published mathematics inside the named family and no Velo code or shader is read into it. | — | — | — |
 | Chaos | `fosfora` | `09132c0` | STUDY | — | **MERGE** | Chaotic attractors are the §7.1 field library's core. | — | — | — |
@@ -163,7 +163,7 @@ the owning family's slices land.
 | magnetic pendulum | `threelab` | `9b37d76` | REIMPLEMENT | — | **MERGE** | Threelab is MIT but a web application; the mathematics is reimplemented inside the named family. | — | — | — |
 | Morph | `fosfora` | `09132c0` | STUDY | — | **MERGE** | Field morphing without particle reset is the §7.1 thesis. | — | — | — |
 | Phyllotaxis | `velo-visualiser` | `bebf723` | STUDY | — | **MERGE** | Coverage question only. Velo is GPL-3.0, so the concept is implemented from published mathematics inside the named family and no Velo code or shader is read into it. | — | — | — |
-| Strange Attractor | `velo-visualiser` | `bebf723` | STUDY | — | **MERGE** | Coverage question only. Velo is GPL-3.0, so the concept is implemented from published mathematics inside the named family and no Velo code or shader is read into it. | — | — | — |
+| Strange Attractor | `velo-visualiser` | `bebf723` | STUDY | silk_web | **MERGE** | Coverage question only. Velo is GPL-3.0, so the concept is implemented from published mathematics inside the named family and no Velo code or shader is read into it. Covered by the Silk family: ten attractor velocity fields rendered as advected dye. | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
 
 ### `fluid-flow` — Fluid and flow (§7.5)
 
@@ -182,14 +182,14 @@ the owning family's slices land.
 |---|---|---|---|---|---|---|---|---|---|
 | domain warping | `threelab` | `9b37d76` | REIMPLEMENT | — | **MERGE** | Threelab is MIT but a web application; the mathematics is reimplemented inside the named family. | — | — | — |
 | hyperspace | `vgalizer` | `faa19ee` | REIMPLEMENT | — | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. | — | — | — |
-| kaleido warp | `vgalizer` | `faa19ee` | REIMPLEMENT | — | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. | — | — | — |
-| kaleidoscope | `vgalizer` | `faa19ee` | REIMPLEMENT | — | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. | — | — | — |
+| kaleido warp | `vgalizer` | `faa19ee` | REIMPLEMENT | acid_kaleid | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. Shipped as the Kaleido Melt style. | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
+| kaleidoscope | `vgalizer` | `faa19ee` | REIMPLEMENT | acid_kaleid | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. Kaleidoscope coverage ships in the Acid family (six-fold wedge fold in the feedback loop). | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
 | Mandala Pulse | `velo-visualiser` | `bebf723` | STUDY | — | **MERGE** | Coverage question only. Velo is GPL-3.0, so the concept is implemented from published mathematics inside the named family and no Velo code or shader is read into it. | — | — | — |
 | Möbius grid | `vgalizer` | `faa19ee` | REIMPLEMENT | — | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. | — | — | — |
 | Reliquary | `fosfora` | `09132c0` | STUDY | — | **MERGE** | §7.7 lists Reliquary; an existing Hyperspace look carries the name. | — | — | — |
 | Tunnel | `fosfora` | `09132c0` | STUDY | — | **MERGE** | §7.7 Living Tunnel; existing `tunnel` scene ID migrates here. | — | — | — |
 | Tunnel | `velo-visualiser` | `bebf723` | STUDY | — | **MERGE** | Coverage question only. Velo is GPL-3.0, so the concept is implemented from published mathematics inside the named family and no Velo code or shader is read into it. | — | — | — |
-| TV acid | `vgalizer` | `faa19ee` | REIMPLEMENT | — | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. | — | — | — |
+| TV acid | `vgalizer` | `faa19ee` | REIMPLEMENT | acid_tv | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. Shipped in the Acid family: wraparound overdrive + liquid field + hue-rotating feedback. | ShaderSyntaxTest; RendererWiringTest; SceneDisplayLabelTest; shaderpreview harness | — | — |
 | warp grid | `vgalizer` | `faa19ee` | REIMPLEMENT | — | **MERGE** | vgalizer is MIT but Rust/wgpu; the recipe is reimplemented inside the named family. | — | — | — |
 
 ### `cymatic-matter` — Cymatic and Acoustic Matter (§7.2)

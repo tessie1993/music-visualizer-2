@@ -32,7 +32,7 @@ class FluidTabGatingTest {
             SceneIds.FLUID,
             SceneIds.CURLFLOW,
             SceneIds.WATER,
-            SceneIds.EMERGENCE,
+            SceneIds.DEFAULT,
             SceneIds.MILKDROP,
             SceneIds.PLASMA,
         )
@@ -70,7 +70,7 @@ class FluidTabGatingTest {
         assertTrue(isJourneySceneId(SceneIds.FLUID))
         assertTrue(isJourneySceneId(SceneIds.CURLFLOW))
         assertTrue(isJourneySceneId(SceneIds.WATER))
-        assertFalse(isJourneySceneId(SceneIds.EMERGENCE))
+        assertFalse(isJourneySceneId(SceneIds.DEFAULT))
     }
 
     @Test
@@ -82,7 +82,7 @@ class FluidTabGatingTest {
 
     @Test
     fun nonFluidStylesSeeOnlyTheSharedSections() {
-        listOf(SceneIds.EMERGENCE, SceneIds.MILKDROP, SceneIds.PLASMA).forEach { id ->
+        listOf(SceneIds.DEFAULT, SceneIds.MILKDROP, SceneIds.PLASMA).forEach { id ->
             assertFalse(id, isFluidSceneId(id))
             assertFalse(id, isEmitterSceneId(id))
             assertFalse(id, isJourneySceneId(id))

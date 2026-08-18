@@ -44,12 +44,10 @@ object ParamSurface {
     val FAMILIES: List<Pair<String, List<String>>> =
         listOf(
             "Shader" to listOf("render/scene/ShaderScene.kt"),
-            "Particle" to
-                listOf(
-                    "render/scene/EmergenceScene.kt",
-                    "render/scene/EmergenceSim.kt",
-                    "render/scene/EmergenceField.kt",
-                ),
+            "Silk" to listOf("render/scene/SilkScene.kt"),
+            "Life" to listOf("render/scene/LifeScene.kt"),
+            "Mycelium" to listOf("render/scene/MycoScene.kt"),
+            "Acid" to listOf("render/scene/AcidScene.kt"),
             "MilkDrop" to listOf("render/scene/ProjectMScene.kt"),
             "Fluid" to listOf("render/fluid/FluidScene.kt"),
             "Curl Flow" to listOf("render/fluid/CurlFlowScene.kt"),

@@ -35,10 +35,6 @@ internal object CompositeGrade {
         /** `ShaderScene`: `view()` + `grade()` do everything in-shader. */
         SHADER,
 
-        /** `ParticleSceneBase`: `particle_vert` / `particle_frag` (instanced
-         *  billboards; grades and tone-maps in its own fragment stage). */
-        PARTICLE,
-
         /** `ProjectMScene`: `pm_post_frag` grades and zooms but never pulses. */
         MILKDROP,
 
@@ -89,15 +85,15 @@ internal object CompositeGrade {
      * compositor so a rendered clip matches the screen.
      *
      * Each group is owned by the composite exactly when the family applies it
-     * nowhere else: shader scenes apply everything themselves; particle scenes
-     * grade and pulse but need mirror/invert and the screen-space geometry;
-     * milkdrop grades and zooms in `pm_post_frag` but never pulses; the fluid
-     * family applies nothing at all.
+     * nowhere else: shader scenes apply everything themselves; milkdrop grades
+     * and zooms in `pm_post_frag` but never pulses; the fluid family - which
+     * is also every field-sim scene without a grading pass of its own - applies
+     * nothing at all.
      */
     fun gateFor(family: SceneFamily): Gate =
         Gate(
             geo = family != SceneFamily.SHADER,
-            mirrorInvert = family == SceneFamily.PARTICLE || family == SceneFamily.FLUID,
+            mirrorInvert = family == SceneFamily.FLUID,
             grade = family == SceneFamily.FLUID,
             pulse = family == SceneFamily.MILKDROP || family == SceneFamily.FLUID,
         )

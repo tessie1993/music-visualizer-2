@@ -132,16 +132,15 @@ class CompositeGradeTest {
     @Test
     fun everyFamilyOnlyGetsTheGroupsItDoesNotApplyItself() {
         val shader = CompositeGrade.gateFor(CompositeGrade.SceneFamily.SHADER)
-        val particle = CompositeGrade.gateFor(CompositeGrade.SceneFamily.PARTICLE)
         val milkdrop = CompositeGrade.gateFor(CompositeGrade.SceneFamily.MILKDROP)
         val fluid = CompositeGrade.gateFor(CompositeGrade.SceneFamily.FLUID)
         // Shader scenes do the lot in view()/grade().
         assertEquals(CompositeGrade.Gate(geo = false, mirrorInvert = false, grade = false, pulse = false), shader)
-        // The fluid family applies nothing of its own.
+        // The fluid family - and every field-sim scene without a grading pass
+        // of its own - applies nothing itself.
         assertEquals(CompositeGrade.Gate(geo = true, mirrorInvert = true, grade = true, pulse = true), fluid)
-        // Particles grade and pulse themselves; milkdrop grades and zooms in
-        // pm_post_frag but nothing in it reads `pulse`.
-        assertEquals(CompositeGrade.Gate(geo = true, mirrorInvert = true, grade = false, pulse = false), particle)
+        // Milkdrop grades and zooms in pm_post_frag but nothing in it reads
+        // `pulse`.
         assertEquals(CompositeGrade.Gate(geo = true, mirrorInvert = false, grade = false, pulse = true), milkdrop)
         // Nobody but the fluid family may be graded by the composite, or the
         // grade lands twice (squared brightness, doubled contrast).

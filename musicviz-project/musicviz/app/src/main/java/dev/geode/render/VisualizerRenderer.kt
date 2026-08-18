@@ -8,11 +8,13 @@ import dev.geode.R
 import dev.geode.analysis.AudioFeatures
 import dev.geode.export.VideoExporter
 import dev.geode.render.fluid.CurlFlowMath
+import dev.geode.render.scene.AcidScene
 import dev.geode.render.scene.BeamScene
 import dev.geode.render.scene.CymaticsScene
-import dev.geode.render.scene.EmergenceScene
 import dev.geode.render.scene.GlUtil
 import dev.geode.render.scene.HyperspaceScene
+import dev.geode.render.scene.LifeScene
+import dev.geode.render.scene.MycoScene
 import dev.geode.render.scene.PcmChunk
 import dev.geode.render.scene.PcmSink
 import dev.geode.render.scene.ProjectMScene
@@ -20,6 +22,7 @@ import dev.geode.render.scene.Scene
 import dev.geode.render.scene.SceneIds
 import dev.geode.render.scene.SceneParams
 import dev.geode.render.scene.ShaderScene
+import dev.geode.render.scene.SilkScene
 import dev.geode.render.scene.VisualStyleCatalog
 import dev.musicviz.render.scene.PMBridge
 import java.io.File
@@ -86,7 +89,6 @@ class VisualizerRenderer(
                 SceneIds.WINTER to R.raw.winter_frag,
                 SceneIds.LAVA to R.raw.lava_frag,
             )
-        val PARTICLE_SCENES: List<String> = listOf(SceneIds.EMERGENCE)
 
         /** Fingertip footprint for the touch smear, in sim units. */
         private const val TOUCH_RADIUS = 0.11f
@@ -208,7 +210,7 @@ class VisualizerRenderer(
     var features: AudioFeatures = AudioFeatures.empty()
 
     @Volatile
-    var requestedSceneId: String = SceneIds.EMERGENCE
+    var requestedSceneId: String = SceneIds.DEFAULT
 
     @Volatile
     var sceneParams: SceneParams = SceneParams.DEFAULT
@@ -290,8 +292,8 @@ class VisualizerRenderer(
     /** Composite-pass beat envelope (1 on a beat, decaying), the source of the
      *  "Beat pulse" swell for the scenes that don't pulse themselves. The
      *  shader's own `uBeat` is a per-frame boolean, so a pulse driven from it
-     *  would be a single-frame pop; this is the same decaying envelope
-     *  ShaderScene/EmergenceScene keep. */
+     *  would be a single-frame pop; this is the same decaying envelope every
+     *  self-pulsing scene keeps. */
     private var postBeatPulse = 0f
 
     private fun gainAdjusted(
@@ -622,7 +624,10 @@ class VisualizerRenderer(
      */
     fun availableSceneIds(): List<String> =
         buildList {
-            addAll(PARTICLE_SCENES)
+            addAll(VisualStyleCatalog.silkIds)
+            addAll(VisualStyleCatalog.lifeIds)
+            addAll(VisualStyleCatalog.mycoIds)
+            addAll(VisualStyleCatalog.acidIds)
             addAll(SHADER_SCENES.keys)
             if (PMBridge.available) add(SceneIds.MILKDROP)
             add(SceneIds.FLUID)
@@ -655,13 +660,14 @@ class VisualizerRenderer(
      */
     private fun createScene(
         id: String,
-        particleShaders: EmergenceScene.Shaders,
         quadVert: String,
         export: Boolean = false,
     ): Scene {
-        SHADER_SCENES[id]?.let { res ->
+        // One elvis chain, first match wins: catalog families resolve by id,
+        // the fixed styles by the trailing `when`.
+        return SHADER_SCENES[id]?.let { res ->
             val frag = if (export) activeCustomShaders[id] ?: GlUtil.loadShader(context, res) else GlUtil.loadShader(context, res)
-            return ShaderScene(
+            ShaderScene(
                 id,
                 quadVert,
                 frag,
@@ -671,46 +677,65 @@ class VisualizerRenderer(
                 onUserSourceCompiled = { compiled -> activeCustomShaders[id] = compiled },
             )
         }
-        VisualStyleCatalog.cymatics(id)?.let { style ->
-            return CymaticsScene(context, style).also { plate ->
-                plate.onShaderError = { onShaderError(it) }
+            ?: VisualStyleCatalog.cymatics(id)?.let { style ->
+                CymaticsScene(context, style).also { plate ->
+                    plate.onShaderError = { onShaderError(it) }
+                }
             }
-        }
-        VisualStyleCatalog.hyperspace(id)?.let { style ->
-            return HyperspaceScene(context, style).also { hyper ->
-                hyper.onShaderError = { onShaderError(it) }
+            ?: VisualStyleCatalog.silk(id)?.let { style ->
+                SilkScene(context, style).also { scene ->
+                    scene.onShaderError = { onShaderError(it) }
+                }
             }
-        }
-        return when (id) {
-            SceneIds.EMERGENCE -> EmergenceScene(particleShaders)
-            SceneIds.FLUID ->
-                dev.geode.render.fluid.FluidScene(context).also { fluid ->
-                    fluid.onShaderError = { onShaderError(it) }
+            ?: VisualStyleCatalog.life(id)?.let { style ->
+                LifeScene(context, style).also { scene ->
+                    scene.onShaderError = { onShaderError(it) }
                 }
-            SceneIds.CURLFLOW ->
-                dev.geode.render.fluid
-                    .CurlFlowScene(context)
-            SceneIds.WATER ->
-                dev.geode.render.fluid.WaterScene(context).also { water ->
-                    water.onShaderError = { onShaderError(it) }
+            }
+            ?: VisualStyleCatalog.acid(id)?.let { style ->
+                AcidScene(context, style).also { scene ->
+                    scene.onShaderError = { onShaderError(it) }
                 }
-            SceneIds.BEAM ->
-                BeamScene(context).also { beam ->
-                    beam.onShaderError = { onShaderError(it) }
+            }
+            ?: VisualStyleCatalog.myco(id)?.let { style ->
+                MycoScene(context, style).also { scene ->
+                    scene.onShaderError = { onShaderError(it) }
                 }
-            SceneIds.MILKDROP ->
-                // PCM now arrives through the shared PcmSink fan-out; export
-                // delivers none and the scene falls back to the timeline's
-                // per-frame waveform in update().
-                ProjectMScene(
-                    postVertexSrc = GlUtil.loadShader(context, R.raw.fade_vert),
-                    postFragmentSrc = GlUtil.loadShader(context, R.raw.pm_post_frag),
-                    sharedTextureDir = File(context.filesDir, "milk/textures").absolutePath,
-                    onError = { onShaderError(it) },
-                    onPresetLoaded = { onMilkPresetLoaded(it) },
-                )
-            else -> error("availableSceneIds offers \"$id\" but createScene cannot build it")
-        }
+            }
+            ?: VisualStyleCatalog.hyperspace(id)?.let { style ->
+                HyperspaceScene(context, style).also { hyper ->
+                    hyper.onShaderError = { onShaderError(it) }
+                }
+            }
+            ?: when (id) {
+                SceneIds.FLUID ->
+                    dev.geode.render.fluid.FluidScene(context).also { fluid ->
+                        fluid.onShaderError = { onShaderError(it) }
+                    }
+                SceneIds.CURLFLOW ->
+                    dev.geode.render.fluid
+                        .CurlFlowScene(context)
+                SceneIds.WATER ->
+                    dev.geode.render.fluid.WaterScene(context).also { water ->
+                        water.onShaderError = { onShaderError(it) }
+                    }
+                SceneIds.BEAM ->
+                    BeamScene(context).also { beam ->
+                        beam.onShaderError = { onShaderError(it) }
+                    }
+                SceneIds.MILKDROP ->
+                    // PCM now arrives through the shared PcmSink fan-out;
+                    // export delivers none and the scene falls back to the
+                    // timeline's per-frame waveform in update().
+                    ProjectMScene(
+                        postVertexSrc = GlUtil.loadShader(context, R.raw.fade_vert),
+                        postFragmentSrc = GlUtil.loadShader(context, R.raw.pm_post_frag),
+                        sharedTextureDir = File(context.filesDir, "milk/textures").absolutePath,
+                        onError = { onShaderError(it) },
+                        onPresetLoaded = { onMilkPresetLoaded(it) },
+                    )
+                else -> error("availableSceneIds offers \"$id\" but createScene cannot build it")
+            }
     }
 
     /**
@@ -754,7 +779,7 @@ class VisualizerRenderer(
      * loop over a registry that was assumed to hold everything.
      */
     private fun buildScene(id: String): Scene {
-        val scene = createScene(id, particleShaderSources(context), GlUtil.loadShader(context, R.raw.quad_vert))
+        val scene = createScene(id, GlUtil.loadShader(context, R.raw.quad_vert))
         // Before init(), so a driver-rejected shader has an error channel to
         // report on. wireScene also binds the palette LUT once it exists.
         wireScene(scene)
@@ -792,9 +817,6 @@ class VisualizerRenderer(
      * re-broadcasts the fresh texture to every shader scene afterwards.
      */
     private fun wireScene(scene: Scene) {
-        if (scene is EmergenceScene) {
-            scene.onShaderError = { onShaderError(it) }
-        }
         if (scene is ShaderScene && paletteLutTex != 0) {
             scene.setPaletteLut(paletteLutTex)
         }
@@ -876,7 +898,7 @@ class VisualizerRenderer(
         // time it is selected, including every restore the old context lost -
         // see its docs for what building all of them up front cost.
         if (fluidForceSrc != null || fluidDyeSrc != null) fluidInjectionDirty = true
-        activeScene = sceneFor(requestedSceneId) ?: sceneFor(SceneIds.EMERGENCE)
+        activeScene = sceneFor(requestedSceneId) ?: sceneFor(SceneIds.DEFAULT)
         outgoingScene = null
         outgoingParams = null
 
@@ -1068,11 +1090,6 @@ class VisualizerRenderer(
         // params handed to step(); they are applied there, not here.
         val ff = flowField
         val fluidActive = scene is dev.geode.render.fluid.FluidScene
-        // A field-DEFINED particle style (Inkflow) runs the service whatever
-        // the Flow toggle says: `flowEnabled` ships off, and a style that
-        // renders a frozen screen until the user finds a checkbox in another
-        // tab would read as broken, not as opt-in.
-        val sceneNeedsFlow = (scene as? EmergenceScene)?.requiresFlowField == true
         // Layers and transitions both want FBO B, so a transition WINS: it is
         // brief and it is the thing the user just asked for, while the layer is
         // a standing setting that can resume a second later. Resolved every
@@ -1090,8 +1107,8 @@ class VisualizerRenderer(
                     ?.let { sceneFor(it) }
                     ?.takeIf { it !== activeScene }
             }
-        val layerNeedsFlow = (layerScene as? EmergenceScene)?.requiresFlowField == true
-        if ((p.flowEnabled || sceneNeedsFlow || layerNeedsFlow) && ff != null && ff.available && !fluidActive) {
+        val wantsFlow = p.flowEnabled && !fluidActive
+        if (wantsFlow && ff != null && ff.available) {
             ff.step(gainAdjusted(features, p), dt, p)
         }
         // F2 ripple overlay: advance the shared heightfield (its own tiny
@@ -1145,7 +1162,6 @@ class VisualizerRenderer(
         var progress = 1f
         val outgoing = outgoingScene
         val layer = layerScene
-        var flowGridFresh = false
         if (layer != null) {
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboB.fbo)
             GLES30.glViewport(0, 0, renderWidth, renderHeight)
@@ -1154,13 +1170,12 @@ class VisualizerRenderer(
             // the active scene that no control could clear.
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
             // The layer is a full scene render, so it gets the FlowField
-            // plumbing the active scene gets - wired before its update, drained
-            // after it, exactly as the active scene's own sequence below.
-            flowGridFresh = wireFlowConsumers(layer, ff, p, layerNeedsFlow, flowGridFresh)
+            // plumbing the active scene gets - wired before its update,
+            // exactly as the active scene's own sequence below.
+            wireFlowConsumers(layer, ff, p)
             layer.setParams(p)
             (layer as? PcmSink)?.let { deliverPcm(it) }
             layer.update(gainAdjusted(features, p), dt)
-            drainFlowKicks(layer, ff, fluidActive)
             layer.draw(timeSeconds)
         }
         if (outgoing != null) {
@@ -1218,11 +1233,10 @@ class VisualizerRenderer(
         } else {
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
         }
-        wireFlowConsumers(scene, ff, p, sceneNeedsFlow, flowGridFresh)
+        wireFlowConsumers(scene, ff, p)
         scene.setParams(p)
         (scene as? PcmSink)?.let { deliverPcm(it) }
         scene.update(gainAdjusted(features, p), dt)
-        drainFlowKicks(scene, ff, fluidActive)
         scene.draw(timeSeconds)
 
         // Composite to screen.
@@ -1485,49 +1499,13 @@ class VisualizerRenderer(
         target: Scene,
         ff: dev.geode.render.fluid.FlowField?,
         p: SceneParams,
-        targetNeedsFlow: Boolean,
-        gridFresh: Boolean,
-    ): Boolean {
-        var fresh = gridFresh
-        if ((p.flowEnabled || targetNeedsFlow) && ff != null) {
-            if (target is EmergenceScene && (p.flowAdvectParticles || targetNeedsFlow) && ff.available) {
-                if (!fresh) {
-                    ff.readback(ff.velocityTex, ff.flowScale, ff.aspect)
-                    fresh = true
-                }
-                target.flowGrid = ff.cpuGrid
-            } else if (target is EmergenceScene) {
-                target.flowGrid = null
-            }
-            if (target is ShaderScene && p.flowEnabled) {
-                target.setFlow(if (ff.available) ff.velocityTex else zeroTex, p.flowStrength)
-            }
-        } else {
-            (target as? EmergenceScene)?.flowGrid = null
-            (target as? ShaderScene)?.setFlow(zeroTex, 0f)
-        }
-        return fresh
-    }
-
-    /**
-     * Two-way coupling, the return leg: a particle style that rides the field
-     * can also push into it. Called right after the update that produced the
-     * kicks, so they are queued before the next frame's step() consumes them -
-     * one frame of latency, and the field carries a trace of where the
-     * population has been. The layer scene pushes exactly as the active one
-     * does: ink layered under another style still stirs the water it rides.
-     */
-    private fun drainFlowKicks(
-        target: Scene,
-        ff: dev.geode.render.fluid.FlowField?,
-        fluidActive: Boolean,
     ) {
-        if (ff == null || !ff.available || fluidActive || target !is EmergenceScene) return
-        val kicks = target.flowKicks
-        for (i in 0 until kicks.size) {
-            ff.queueKick(kicks.x[i], kicks.y[i], kicks.vx[i], kicks.vy[i], kicks.radius[i])
+        if (target !is ShaderScene) return
+        if (p.flowEnabled && ff != null) {
+            target.setFlow(if (ff.available) ff.velocityTex else zeroTex, p.flowStrength)
+        } else {
+            target.setFlow(zeroTex, 0f)
         }
-        kicks.clear()
     }
 
     /**
@@ -1540,7 +1518,6 @@ class VisualizerRenderer(
     private fun compositeFamily(scene: Scene?): CompositeGrade.SceneFamily =
         when (scene) {
             is ShaderScene -> CompositeGrade.SceneFamily.SHADER
-            is EmergenceScene -> CompositeGrade.SceneFamily.PARTICLE
             is ProjectMScene -> CompositeGrade.SceneFamily.MILKDROP
             else -> CompositeGrade.SceneFamily.FLUID
         }
@@ -1631,7 +1608,7 @@ class VisualizerRenderer(
         object : VideoExporter.SceneFactory {
             override fun create(): Scene {
                 val quadVert = GlUtil.loadShader(context, R.raw.quad_vert)
-                val scene = createScene(sceneId, particleShaderSources(context), quadVert, export = true)
+                val scene = createScene(sceneId, quadVert, export = true)
                 // State the live registry applies through channels the export
                 // context never sees (the fluidInjectionDirty flag drained in
                 // onDrawFrame, onSurfaceCreated's preset re-queue). Queued
@@ -1646,6 +1623,4 @@ class VisualizerRenderer(
                 return scene
             }
         }
-
-    private fun particleShaderSources(context: Context): EmergenceScene.Shaders = EmergenceScene.Shaders.load(context)
 }

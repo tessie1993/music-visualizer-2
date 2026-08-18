@@ -1,6 +1,5 @@
 package dev.geode
 
-import dev.geode.render.VisualizerRenderer
 import dev.geode.render.scene.ParamRandomizer
 import dev.geode.render.scene.SceneIds
 import dev.geode.ui.isParticleLayerSceneId
@@ -20,17 +19,10 @@ import java.io.File
  * [FluidTabGatingTest] / [ShaderLookGatingTest].
  *
  * `particleShape` and `particleSize` share one reader set, and this pins what
- * it is. Both are uploaded by `ParticleSceneBase.draw` for the CPU styles
- * ([VisualizerRenderer.PARTICLE_SCENES]) and by `FluidParticles.draw` for the
- * GPU lifecycle layer FLUID and CURLFLOW run - two families, one
- * `lib_particle_shade.glsl`. Every other style - MilkDrop, Water, the shader
- * family, and whatever lands next - draws no sprite at all, so both controls
- * stay hidden there.
- *
- * That was two gates until the two families were unified: the fluid layer had
- * no shape uniform, so its sprites were always round and the chip row was dead
- * on FLUID/CURLFLOW while the size slider worked. If the two ever diverge
- * again, this file is where it has to be said out loud.
+ * it is: `FluidParticles.draw` for the GPU lifecycle layer FLUID and CURLFLOW
+ * run, shading through `lib_particle_shade.glsl`. Every other style -
+ * MilkDrop, Water, the shader family, the field-sim families, and whatever
+ * lands next - draws no sprite at all, so both controls stay hidden there.
  *
  * [exactlyTheParticleControlsAreGated] reads the gating back out of
  * `CustomizeTabs.kt`, so over-gating - sweeping a control that DOES work
@@ -60,17 +52,16 @@ class ParticleGatingTest {
             }
 
     @Test
-    fun theSpriteGateIsTheParticleFamilyPlusTheFluidPointLayer() {
-        assertTrue("no particle scenes registered", VisualizerRenderer.PARTICLE_SCENES.isNotEmpty())
+    fun theSpriteGateIsTheFluidPointLayer() {
         assertEquals(
-            VisualizerRenderer.PARTICLE_SCENES.toSet() + setOf(SceneIds.FLUID, SceneIds.CURLFLOW),
+            setOf(SceneIds.FLUID, SceneIds.CURLFLOW),
             allStyles.filter { isPointSpriteSceneId(it) }.toSet(),
         )
     }
 
     @Test
     fun theControlsDoNotReachMilkDropWaterOrTheShaderStyles() {
-        val sprite = VisualizerRenderer.PARTICLE_SCENES.toSet() + setOf(SceneIds.FLUID, SceneIds.CURLFLOW)
+        val sprite = setOf(SceneIds.FLUID, SceneIds.CURLFLOW)
         val dead = allStyles.filterNot { it in sprite }
         assertTrue("no styles left to check - is the reflection over SceneIds still working?", dead.size > 5)
         dead.forEach { assertFalse(it, isPointSpriteSceneId(it)) }
@@ -82,11 +73,7 @@ class ParticleGatingTest {
         // FluidParticles layer; composing rather than restating FLUID/CURLFLOW
         // keeps them from drifting if that layer ever gains a style.
         allStyles.forEach {
-            assertEquals(
-                it,
-                it in VisualizerRenderer.PARTICLE_SCENES || isParticleLayerSceneId(it),
-                isPointSpriteSceneId(it),
-            )
+            assertEquals(it, isParticleLayerSceneId(it), isPointSpriteSceneId(it))
         }
     }
 

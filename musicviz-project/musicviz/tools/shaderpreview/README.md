@@ -31,9 +31,12 @@ node preview.mjs --scene hyperspace --frames 8 --audio beat --out out/hs
 # one of the 22 fragment styles
 node preview.mjs --scene shader --shader julia --frames 4 --audio tone
 
-# Emergence, the style that replaced the CPU particle family - sprites plus
-# the acid echo pass; read the standIns in report.json before trusting a frame
-node preview.mjs --scene emergence --frames 4 --count 1200 --out out/em
+# the four field-sim families (SILK / LIFE / ACID / MYCO): the app's own
+# step/show (or agent/deposit/blur/show) fragment shaders run as a generic
+# multipass ping-pong pipeline. Give the sims frames to develop - warmup
+# steps the state without paying for the present pass.
+node preview.mjs --scene silk --style silk_web --warmup 88 --frames 2 --audio beat
+node preview.mjs --scene myco --style myco_rivals --warmup 118 --frames 2 --field-stats
 
 # a minute of steady music, sampled every 5 s, with fluid-field statistics
 node preview.mjs --scene hyperspace --frames 13 --every 300 --audio tone --field-stats
@@ -58,9 +61,9 @@ node preview.mjs --scene hyperspace --composite --param zoom=3 --frames 1
 
 | flag | meaning |
 | --- | --- |
-| `--scene hyperspace \| shader \| emergence` | which driver to use |
+| `--scene hyperspace \| shader \| silk \| life \| acid \| myco` | which driver to use |
 | `--shader <id>` | style id for `--scene shader` (see `--list`) |
-| `--count N` | particle population for `--scene emergence` (default 2600) |
+| `--style <id>` | style id for the four field-sim families (default = the family's first style; see `--list`) |
 | `--frames N` | frames to **capture** |
 | `--every N` | simulate N frames per captured frame |
 | `--warmup N` | simulate N frames before capturing anything |
@@ -221,26 +224,27 @@ Also, more mundanely but just as capable of misleading you:
    light. It is a good relative measure and a poor absolute one; use it to
    compare runs, not to make a claim about perceived brightness.
 
-9. **Three scene families are wired up**: `HyperspaceScene`, the 22
-   `ShaderScene` styles, and `EmergenceScene`. The fluid family's own
-   display passes, WATER, CYMATICS, BEAM and MILKDROP have their own uniform
-   contracts and are not covered. Adding one means adding a driver to
-   `lib/scenes.mjs` — and the audit will tell you when you have not finished.
+9. **Seven scene families are wired up**: `HyperspaceScene`, the 22
+   `ShaderScene` styles and the four field-sim families
+   `SilkScene`, `LifeScene`, `AcidScene` and `MycoScene` (10 styles each,
+   `--style`). The fluid family's own display passes, WATER, CYMATICS, BEAM
+   and MILKDROP have their own uniform contracts and are not covered. Adding
+   one means adding a driver to `lib/scenes.mjs` — and the audit will tell
+   you when you have not finished.
 
-10. **`--scene emergence` previews the style's RENDER, not its simulation.**
-    `EmergenceSim.step()` is pure CPU and is already covered on the JVM by
-    `EmergenceSimTest` through the records it publishes. What this driver
-    covers is what those tests cannot see without a GL context: the instanced
-    attribute layout, the billboard and stretch maths in
-    `lib_particle_common`, the shading in `lib_particle_shade`, the
-    palette/density post-process, the sprite program's thirteen-uniform
-    contract, and the acid echo's six. The population it feeds them is a
-    **named stand-in** — a deterministic orbit field spanning the full
-    size/speed/hue range, with every 64th particle dead so the `vFade <= 0`
-    discard path runs every frame — and the beat envelope stands in for
-    `sim.beatEnvelope()`. Any claim about how the sim MOVES is not a valid
-    finding from this driver.
-
+   The field-sim scenes run as a PASS LIST the driver emits per frame -
+   named programs, named ping-pong targets (formats chosen by the same
+   renderability probe as `FluidBuffers`, falling RGBA16F→RGBA8, RG16F→
+   RGBA16F→RGBA8, RGBA32F→RGBA16F→RGBA8), the myco deposit as additive
+   GL_POINTS into the trail's READ side, exactly as the Kotlin sequences
+   its passes. Their sim passes step on every frame; only the present obeys
+   `--every`/`--warmup`. Named stand-ins: the PCM strike envelope runs on
+   the audio MODEL's waveform rather than the app's raw PCM tap, and the
+   acid family's `uChroma` comes from the model's synthetic triad
+   chromagram (the app sends zeros only when no chromagram ran).
+   `LifeScene`'s 4-second liveness census is mirrored through a per-frame
+   readback of the state's centre texel (float, quantized to the app's
+   8-bit steps driver-side).
 11. **The sprite pass clears the target only when the echo is off.** With
     Trails on, the echo blit is the background exactly as `drawWithEcho()`
     sequences it — previous frame warped, decayed and redrawn under the new
@@ -257,9 +261,12 @@ lib/kotlin.mjs          uniform names scraped from Kotlin; the three-way audit
 lib/audio.mjs           AudioFeatures models + the 64x2 uAudioTex rows
 lib/hyperspace-math.mjs JS port of HyperspaceMath.kt / MeltMath / FluidHue
 lib/emitters.mjs        JS port of the FluidEmitters paths MeltField enables
-lib/scenes.mjs          per-frame uniform plans, mirroring the Kotlin draw()s
+lib/scenes.mjs          per-frame uniform plans, mirroring the Kotlin draw()s,
+                        plus the silk/life/acid/myco style tables (verbatim
+                        VisualStyleCatalog.kt mirrors) and pass-list drivers
 lib/composite.mjs       the same, for VisualizerRenderer's composite_frag pass
-page/harness.html       WebGL2: compile, upload, run the fluid passes, measure
+page/harness.html       WebGL2: compile, upload, run the fluid passes and the
+                        field-sim pass lists, measure
 ```
 
 ### Why CDP and not Playwright
