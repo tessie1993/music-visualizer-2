@@ -1,14 +1,9 @@
 # Provenance of the prebuilt libraries committed in this directory.
 #
-# They are produced by .github/workflows/native-libs.yml (manual dispatch):
-# projectM at the tag named in the run, patched with
-# tools/projectm-v417-render-fbo-backport.patch, plus the JNI bridge
-# tools/pm_jni.c. When committing rebuilt .so files, commit the SHA256SUMS
-# from the same workflow artifact - it carries the run URL and source SHA,
-# which is what lets this repo prove the blobs match the sources.
-# android.yml verifies these hashes on every pull request.
-#
-# Build run: unknown (these blobs predate provenance tracking; tools/pm_jni.c
-# has been hardened since - rebuild via native-libs.yml at the next release).
-5dee4cacbefe5d324cbdf05f6281daa629586a6e0c3ed1a52d2eef4e328f136f  libprojectM-4.so
-2aa9031982edc116bf1d4be93f1d44bbc6716225953d617e1c76b0643235b252  libprojectmjni.so
+# Built by native-libs.yml run: https://github.com/tessie1993/music-visualizer-2/actions/runs/32192185854
+# projectM v4.1.7 + tools/projectm-v417-render-fbo-backport.patch;
+# JNI bridge tools/pm_jni.c at f513317afbc4c05b28a583d499c266c853045a87.
+# Commit this file alongside the .so files it describes;
+# android.yml verifies the hashes on every pull request.
+ca56cb2ed10473d217ba32eb35d440cd5b065b9f1be000b263931d3ac2977327  libprojectM-4.so
+8884cb113fc90bd7cb82f33802b8b30497f5f9e5b3573d4b27efa9af2851217f  libprojectmjni.so
