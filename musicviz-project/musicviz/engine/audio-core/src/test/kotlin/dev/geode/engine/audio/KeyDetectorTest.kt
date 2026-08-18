@@ -1,4 +1,4 @@
-package dev.geode.analysis
+package dev.geode.engine.audio
 
 import org.junit.Assert.assertEquals
 import org.junit.Test

@@ -196,6 +196,7 @@ class ReactiveAnalyzer(
 
     private var levelPeak = 0f
     private var lastFrameSilent = true
+    private var silentSeconds = 0f
 
     /**
      * Analyzes one window of mono samples, advancing every stateful node by
@@ -216,11 +217,24 @@ class ReactiveAnalyzer(
             // up where they left off after a gap between tracks, rather than
             // spending the first bar re-learning the range from nothing.
             lastFrameSilent = true
+            // Stability is the one rhythm output that must MOVE through
+            // sustained silence: its contract is that the next track does
+            // not inherit this one's certainty. But a window-level rest is
+            // MUSICAL - a sparse kick pattern is silent between its hits -
+            // so the drain waits out rest-length gaps before starting. The
+            // bar and beat state hold throughout: the grid is not advancing,
+            // and a bar phase that drifted on its own would be an invention.
+            silentSeconds += dtSeconds
+            if (silentSeconds > STABILITY_SILENCE_HOLD_SECONDS) {
+                stability.step(0f)
+                tempoStability = stability.value
+            }
             silenceOutputs()
             return
         }
 
         lastFrameSilent = false
+        silentSeconds = 0f
         window.applyInto(samples, 0, windowed)
         spectrum.compute(windowed)
 
@@ -292,6 +306,7 @@ class ReactiveAnalyzer(
         smoothingState.fill(0f)
         bands.fill(0f)
         levelPeak = 0f
+        silentSeconds = 0f
         rms = 0f
         bass = 0f
         mid = 0f
@@ -464,6 +479,14 @@ class ReactiveAnalyzer(
 
         /** Low-band weight in the bar's accent evidence; see the [bar] step. */
         private const val KICK_ACCENT_WEIGHT = 0.5f
+
+        /**
+         * Continuous silence before tempo stability starts draining. Long
+         * enough that a rest, a breakdown bar or a sparse kick pattern's
+         * gaps hold their certainty; short enough that a real between-track
+         * gap arrives at the next track with nothing inherited.
+         */
+        private const val STABILITY_SILENCE_HOLD_SECONDS = 2f
 
         /**
          * Window RMS below which the input is silence rather than quiet music.

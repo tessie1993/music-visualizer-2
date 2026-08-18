@@ -14,6 +14,137 @@ Newest slice first.
 
 ---
 
+## V2-3-05c: move the harmony nodes home to audio-core
+
+State: COMPLETE
+
+Goal: architecture movement only — `Chromagram` and `KeyDetector` from `app`'s
+`dev.geode.analysis` into `:engine:audio-core`'s `dev.geode.engine.audio`, now that
+V2-3-05b's ground-truth proof travels with them. Both are pure JVM already; this is the
+§4.1 module boundary catching up with the code.
+
+User-visible effect: none. No behavior change of any kind; the proof is that every moved
+and every consuming test passes unchanged.
+
+In scope: the two source files and their two unit-test files move modules verbatim (package
+line and imports aside); consumers (`AnalysisEngine`, `OfflineAnalyzer`, `KeyPalette`,
+`LibraryScreen`, `AudioFeatures` KDoc, `HarmonyOracleTest`) update imports; two stale KDoc
+references to classes deleted in V2-3-03b (`FftProcessor`, `FeatureExtractor`) are fixed in
+the moved copy rather than carried.
+
+Out of scope: any behavior or signature change; the ABI; the device benchmark — **carried.**
+
+Files expected to change: `engine/audio-core/src/{main,test}/kotlin/dev/geode/engine/audio/{Chromagram,KeyDetector}{,Test}.kt`
+(new), their app-side originals (deleted), and the six consumer files' imports.
+
+Compatibility contract: byte-for-byte behavior. Serialized nothing; UI strings via
+`KeyDetector.compact` unchanged.
+
+External source/provenance entries: none — no new code.
+
+Tests written first: not applicable (movement); the existing suites are the net. Per the
+source-text-gate rule, no gate test hard-codes these paths (verified by grep before the
+move).
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: an import missed in a rarely-built target; `./gradlew check`-breadth gates cover it.
+
+Commands and results: `:engine:audio-core:test` (167 tests, the two moved suites among
+them), `:engine:audio-core:ktlintCheck`, `:app:testDebugUnitTest`, `:app:ktlintCheck`,
+`:app:lintDebug` all green.
+
+Review findings: one relocation inside the move — `ChromagramTest` carried a test asserting
+`AudioFeatures.hasChroma`, which tests the app's ABI marker, not the chromagram; it moved to
+`HarmonyOracleTest` instead of dragging an app dependency into `audio-core`. The moved
+KDoc's references to `FftProcessor`/`FeatureExtractor` (deleted in V2-3-03b) were fixed
+rather than carried. A transient app compile error mid-verification did not reproduce on a
+clean re-run and the final gate pass is what is recorded.
+
+Commit: `refactor(analysis): move Chromagram and KeyDetector into audio-core`.
+
+Next slice: the owed device benchmark when hardware exists; otherwise V2-3-06 (stereo,
+HPSS-like balance and structure) per the plan.
+
+---
+
+## V2-3-05b: chroma, pitch and key, against musical ground truth
+
+State: COMPLETE
+
+Goal: the harmony half of V2-3-05 — prove the app-side incumbents (`Chromagram`,
+`KeyDetector`) against fixtures whose right answers are known by construction, before any
+migration moves them. Numeric parity with librosa's chroma is deliberately NOT the bar:
+its filterbank is an implementation, not a definition. What a chromagram owes the product
+is musical: a C major triad reads C-E-G, an A stays A, a drum track earns no confidence.
+
+User-visible effect: the tests DID surface defects, so there is one: harmony visuals now
+follow sustained mid-register chords they previously ignored (a clean triad scored 0.19
+confidence, under the 0.35 follow threshold), and the key badge stops calling A minor
+"F major". Both had one root cause — the chromagram folded every bin at its rounded pitch
+class, and the window mainlobe is wider than a semitone through the middle register, so a
+third of every note's energy voted for classes nobody played (E4's mainlobe painted a fake
+F). `Chromagram.foldPeaks` now folds parabolically-refined LOCAL PEAKS only, shared by the
+key detector; sidelobes sit below the 0.05 peak floor.
+
+In scope: corpus generator version 4 with pitched fixtures — equal-tempered `triad_c_major`
+(C4+E4+G4), `triad_a_minor` (A3+C4+E4), and `arpeggio_g_major` (the G major scale, one
+octave, 10 ms raised-cosine note joins so the splices do not become percussion) — plus
+ground-truth `expected` blocks (dominant pitch classes, key strings) on the new fixtures and
+`tone_440`; `HarmonyOracleTest` driving the incumbents over corpus frames; small typed
+accessors on the test-side `Corpus.Fixture` for string/array expectations.
+
+Out of scope: moving `Chromagram`/`KeyDetector` into `audio-core` (a later slice, now with
+this proof to carry); numeric chroma parity with any library; hysteresis changes unless a
+test forces one; the device benchmark — **still carried.**
+
+Files expected to change: `tools/oracle/generate_corpus.py`,
+`app/src/test/resources/corpus/*` (three new .pcm files; existing ones byte-identical),
+`app/src/test/java/dev/geode/analysis/{Corpus,HarmonyOracleTest}.kt`.
+
+Compatibility contract: the chromagram's values change (sharper class separation, higher
+confidence on pitched material); its shape, normalization and confidence semantics do not.
+Every pre-existing `ChromagramTest`/`KeyDetectorTest`/`KeyPaletteTest` case passes
+unchanged. The raw-PCM `PcmSink` fan-out is untouched.
+
+External source/provenance entries: none new. The key profiles under test are
+Krumhansl-Schmuckler, already in the incumbent; fixtures are pure synthesised sine sums
+(no harmonics, so leakage is the only cross-bin energy and the expected answers are
+unambiguous).
+
+Tests written first: yes — `HarmonyOracleTest` fails on the missing fixtures before the
+generator learns them.
+
+Benchmark or visual evidence: not applicable.
+
+Rollback: revert the one commit.
+
+Risks: at the corpus STFT (1024-point, 22.05 kHz) adjacent semitones near middle C are
+inside one bin's width, so the assertions test pitch-CLASS dominance, not transcription —
+which is also all the incumbent claims. New fixtures also flow through the existing
+descriptor and timbre sweeps; a noisy note-join frame could trip the measured tolerances,
+which is why the joins are faded.
+
+Commands and results: `:app:testDebugUnitTest` (HarmonyOracleTest 6/6 plus all existing
+chroma/key/palette suites), `:app:ktlintCheck`, `:app:lintDebug` green. Corpus regenerated:
+three new .pcm fixtures, existing ones byte-identical.
+
+Review findings: the RED run was the review. Both planned "prove the incumbents" tests
+failed for real reasons (0.19 triad confidence; A minor read F major), traced to one cause
+(rounded-bin folding under a mainlobe wider than a semitone), fixed with the peak fold, and
+the pre-existing suites confirmed the fix changes values without changing contracts. The
+fake-F mechanism is worth remembering: it is not noise, it is the window physically putting
+E4 energy on an F-centred bin — no tolerance tuning could have fixed it.
+
+Commit: `fix(analysis): fold spectral peaks into chroma, not every smeared bin`.
+
+Next slice: the audio-core migration of the harmony nodes carrying this proof, or the owed
+device benchmark, whichever the environment allows.
+
+---
+
 ## V2-3-05a: MFCC, spectral contrast and timbre flux, against the oracle
 
 State: COMPLETE
@@ -168,6 +299,20 @@ roughly a third of the kicks as beats (warmup plus off-grid suppression); the en
 assertions are written against that measured behaviour, not the idealised count.
 
 Commit: `feat(audio-core): downbeat, bar phase and tempo stability`.
+
+### Post-completion: two findings from external PR review, fixed in a follow-up commit
+
+**A consistently early player never got a downbeat.** The accent histogram credited a
+pre-wrap beat to the next slot (correctly — it is that beat arriving early) while the
+downbeat flag checked the current one, so a player who leads the grid trained the histogram
+one position ahead of the flag. The flag now fires from the same slot the accent used; the
+bar-phase ramp stays continuous. Pinned by `a player who leads the grid still gets downbeats`.
+
+**Tempo stability froze through silence, against its own contract — and the first fix was
+wrong too.** Draining on every window-silent frame killed stability on any sparse kick
+pattern, because a rest is musical, not a track boundary. The drain now waits out two
+seconds of continuous silence before starting. The failing four-on-the-floor tests are what
+caught the bad first fix.
 
 Next slice: V2-3-05 (harmony, pitch and timbre) or the owed device benchmark, whichever the
 session's environment allows.

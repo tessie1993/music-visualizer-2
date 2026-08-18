@@ -1,4 +1,4 @@
-package dev.geode.analysis
+package dev.geode.engine.audio
 
 import kotlin.math.ceil
 import kotlin.math.exp
@@ -49,7 +49,7 @@ class Chromagram(
     /**
      * Energy per pitch class, index 0 = C, scaled so the largest bin is 1.
      * Normalised rather than absolute because every consumer wants the SHAPE
-     * of the harmony; loudness is already available as [AudioFeatures.rms] and
+     * of the harmony; loudness is already published as the RMS feature and
      * folding it in here would make a chord look different at two volumes.
      */
     val bins: FloatArray = FloatArray(12)
@@ -75,14 +75,14 @@ class Chromagram(
     private val scratch = FloatArray(12)
 
     // Asymmetric so a chord change registers promptly but a gap between
-    // strums does not blank the reading. Same shape as FeatureExtractor's
-    // treble smoother, for the same reason.
+    // strums does not blank the reading. Same asymmetry the analyzer's
+    // band smoothing uses, for the same reason.
     private val attack = poleFor(attackSeconds)
     private val release = poleFor(releaseSeconds)
 
     private fun poleFor(seconds: Float): Float = if (seconds <= 0f) 1f else 1f - exp(-1f / (seconds * hopRateHz).coerceAtLeast(1e-3f))
 
-    /** Forgets one piece of audio; see [FeatureExtractor.reset]. */
+    /** Forgets one piece of audio; call on a track change or a seek. */
     fun reset() {
         java.util.Arrays.fill(bins, 0f)
         java.util.Arrays.fill(raw, 0.0)
@@ -93,7 +93,7 @@ class Chromagram(
     /**
      * Folds one FFT magnitude frame into the running chromagram.
      *
-     * [magnitudes] is the half-spectrum [FftProcessor] computes; it is read,
+     * [magnitudes] is the half-spectrum [ReactiveAnalyzer.spectrumInto] serves; read,
      * never retained.
      */
     fun step(
@@ -101,22 +101,11 @@ class Chromagram(
         sampleRateHz: Int,
         fftSize: Int,
     ) {
-        java.util.Arrays.fill(raw, 0.0)
         // The window is narrower at the bottom than KeyDetector's 60 Hz. That
         // detector averages a whole track, so unresolved low bins wash out;
         // here they would be a per-frame error, and every note below the floor
         // is represented by its harmonics above it anyway.
-        val minBin = ceil(MIN_HZ * fftSize / sampleRateHz).toInt().coerceAtLeast(1)
-        val maxBin = (MAX_HZ * fftSize / sampleRateHz).toInt().coerceAtMost(magnitudes.size - 1)
-        var total = 0.0
-        for (k in minBin..maxBin) {
-            val f = k.toFloat() * sampleRateHz / fftSize
-            val midi = 69.0 + 12.0 * log2(f / 440.0)
-            val pc = ((midi.roundToInt() % 12) + 12) % 12
-            val m = magnitudes[k].toDouble()
-            raw[pc] += m
-            total += m
-        }
+        val total = foldPeaks(magnitudes, sampleRateHz, fftSize, MIN_HZ, MAX_HZ, raw)
 
         if (total <= SILENCE) {
             // Silence must not renormalise noise up to a full-scale chord.
@@ -180,6 +169,66 @@ class Chromagram(
     companion object {
         /** 0 = C, matching [KeyDetector]'s naming. */
         val NAMES = arrayOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+
+        /**
+         * Folds a magnitude spectrum's LOCAL PEAKS into pitch classes,
+         * writing per-class energy into [out] (cleared first) and returning
+         * the total that was folded.
+         *
+         * Peaks, not every bin, because the window's mainlobe is wider than
+         * a semitone through the middle register — at a 1024-point FFT and
+         * 22.05 kHz a single C4 puts real energy on bins whose CENTRES round
+         * to A#, C, C# and D, and folding all of them credited a third of
+         * every note to classes nobody played. The corpus caught both
+         * symptoms: a clean triad scored 0.19 confidence, and the fake F
+         * that E4's mainlobe painted turned A minor into F major. A local
+         * maximum, parabolically refined between its neighbours, is one
+         * vote at (approximately) the true frequency instead.
+         *
+         * [PEAK_FLOOR] keeps sidelobes out: Hann's first sidelobe is -31 dB
+         * (0.028 of the peak), under the floor, so a sine's sidelobes do
+         * not vote. Broadband noise still produces peaks everywhere, which
+         * is exactly the flat, unconfident chromagram it should.
+         */
+        fun foldPeaks(
+            magnitudes: FloatArray,
+            sampleRateHz: Int,
+            fftSize: Int,
+            minHz: Float,
+            maxHz: Float,
+            out: DoubleArray,
+        ): Double {
+            java.util.Arrays.fill(out, 0.0)
+            val minBin = ceil(minHz * fftSize / sampleRateHz).toInt().coerceAtLeast(1)
+            val maxBin = (maxHz * fftSize / sampleRateHz).toInt().coerceAtMost(magnitudes.size - 2)
+            var frameMax = 0f
+            for (k in minBin..maxBin) if (magnitudes[k] > frameMax) frameMax = magnitudes[k]
+            if (frameMax <= 0f) return 0.0
+            val floor = frameMax * PEAK_FLOOR
+            var total = 0.0
+            for (k in minBin..maxBin) {
+                val mid = magnitudes[k]
+                if (mid < floor || mid <= magnitudes[k - 1] || mid < magnitudes[k + 1]) continue
+                val left = magnitudes[k - 1].toDouble()
+                val right = magnitudes[k + 1].toDouble()
+                val denominator = left - 2.0 * mid + right
+                val offset =
+                    if (denominator < -1e-12) {
+                        (0.5 * (left - right) / denominator).coerceIn(-0.5, 0.5)
+                    } else {
+                        0.0
+                    }
+                val f = (k + offset) * sampleRateHz.toDouble() / fftSize
+                val midi = 69.0 + 12.0 * log2(f / 440.0)
+                val pc = ((midi.roundToInt() % 12) + 12) % 12
+                out[pc] += mid.toDouble()
+                total += mid.toDouble()
+            }
+            return total
+        }
+
+        /** Fraction of the frame's loudest in-range bin a peak must reach. */
+        const val PEAK_FLOOR = 0.05f
 
         /**
          * Bottom of the analysis window. Below about C4 a 2048-point FFT at

@@ -291,6 +291,40 @@ class ReactiveAnalyzerTest {
     }
 
     @Test
+    fun `silence drains tempo stability instead of freezing it`() {
+        // 1800 frames, not fewer: the resonator bank spends its first
+        // seconds on the half tempo, and that octave revision costs the
+        // stability node a full re-earn on material that is window-silent
+        // between kicks. The settling itself is pinned by the accented test;
+        // this one is about what SILENCE does to a settled value.
+        val analyzer = analyzer()
+        val buffer = FloatArray(fftSize)
+        var sampleClock = 0
+        repeat(1800) {
+            System.arraycopy(buffer, hopSamples, buffer, 0, fftSize - hopSamples)
+            for (i in fftSize - hopSamples until fftSize) {
+                val phase = sampleClock % (sampleRate / 2)
+                buffer[i] =
+                    if (phase < 4000) {
+                        0.9f * sin(2.0 * PI * 60.0 * phase / sampleRate).toFloat() * exp(-phase / 1500.0).toFloat()
+                    } else {
+                        0f
+                    }
+                sampleClock++
+            }
+            analyzer.analyze(buffer, dt)
+        }
+        val settled = analyzer.tempoStability
+        assertTrue("tempo never settled: $settled", settled > 0.5f)
+        buffer.fill(0f)
+        repeat(300) { analyzer.analyze(buffer, dt) }
+        assertTrue(
+            "silence held stability at ${analyzer.tempoStability} (was $settled)",
+            analyzer.tempoStability < 0.3f,
+        )
+    }
+
+    @Test
     fun `reset returns the analyzer to a fresh state`() {
         val analyzer = analyzer()
         val pink = Pink(3)
