@@ -46,10 +46,6 @@ data class SceneParams(
     val posterize: Float = 0f,
     val particleShape: Int = 0,
     val particleSize: Float = 1f,
-    val emergenceField: Int = 0,
-    val emergenceSwarm: Float = 0.6f,
-    val emergenceGrowth: Float = 0.5f,
-    val emergenceAcid: Float = 0.35f,
     val tile: Float = 1f,
     val twist: Float = 0f,
     // Color
@@ -222,8 +218,6 @@ data class SceneParams(
     val flowForce: Float = 1f,
     // 0..50
     val flowCurl: Float = 25f,
-    // particle scenes ride the field
-    val flowAdvectParticles: Boolean = true,
     // Water (WATER scene; wave character shared with the ripple overlay)
     // 0.2..2
     val waterWaveSpeed: Float = 1f,
@@ -416,9 +410,6 @@ data class SceneParams(
 
         /** Particle shape names for the shape selector. */
         val PARTICLE_SHAPES: List<String> = listOf("Dot", "Ring", "Star", "Square", "Spark", "Hex", "Bubble")
-
-        /** Emergence flow-field names; index 0 audio-morphs between the rest. */
-        val EMERGENCE_FIELDS: List<String> = listOf("Auto", "Thomas", "De Jong", "Clifford", "Bloom")
 
         /** Symmetry fold options; 0 = off. */
         val SYMMETRY_FOLDS: List<Int> = listOf(0, 2, 3, 4, 5, 6, 7, 8, 9, 12, 16)

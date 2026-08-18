@@ -70,7 +70,7 @@ data class PlayerUiState(
 )
 
 data class VizUiState(
-    val sceneId: String = SceneIds.EMERGENCE,
+    val sceneId: String = SceneIds.DEFAULT,
     val intelligenceMode: IntelligenceMode = IntelligenceMode.MANUAL,
     val suggestedSceneId: String? = null,
     val attack: Float = 0.6f,

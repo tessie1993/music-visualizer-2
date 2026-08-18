@@ -1,8 +1,5 @@
 package dev.geode
 
-import dev.geode.analysis.AudioFeatures
-import dev.geode.render.scene.EmergenceField
-import dev.geode.render.scene.EmergenceSim
 import dev.geode.render.scene.PcmRow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -11,7 +8,6 @@ import java.io.File
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
-import kotlin.math.sqrt
 
 /**
  * The raw-PCM feed every style now shares with MilkDrop.
@@ -24,7 +20,6 @@ import kotlin.math.sqrt
  */
 class PcmFanoutTest {
     private companion object {
-        const val FRAME = 1f / 60f
     }
 
     // ---- PcmRow: the shared decimation every drawing consumer uses ----
@@ -62,36 +57,6 @@ class PcmFanoutTest {
         assertTrue("the tail of the row was left empty", abs(row.last()) > 0.2f)
     }
 
-    // ---- Emergence: PCM transients add motion beyond the analysed bands ----
-
-    @Test
-    fun `a pcm transient shakes the emergence population`() {
-        val features =
-            AudioFeatures(bands = FloatArray(64) { 0.2f }, waveform = FloatArray(64), rms = 0.3f, bass = 0.3f)
-        val quiet = EmergenceSim(count = 300, seed = 4L).also { it.field = EmergenceField.THOMAS }
-        val struck = EmergenceSim(count = 300, seed = 4L).also { it.field = EmergenceField.THOMAS }
-        repeat(120) {
-            quiet.step(features, FRAME)
-            struck.acceptPcm(FloatArray(512) { s -> if (s % 7 == 0) 1.2f else 0f }, 512)
-            struck.step(features, FRAME)
-        }
-
-        fun speed(sim: EmergenceSim): Float {
-            val stride = EmergenceSim.FLOATS_PER_PARTICLE
-            var sum = 0.0
-            for (i in 0 until sim.count) {
-                val vx = sim.records[i * stride + EmergenceSim.VELOCITY_OFFSET]
-                val vy = sim.records[i * stride + EmergenceSim.VELOCITY_OFFSET + 1]
-                sum += sqrt((vx * vx + vy * vy).toDouble())
-            }
-            return (sum / sim.count).toFloat()
-        }
-        assertTrue(
-            "raw PCM must add motion the 64-band features cannot carry",
-            speed(struck) > speed(quiet) * 1.05f,
-        )
-    }
-
     // ---- Source gates: membership and the single drain ----
 
     private val moduleRoot: File =
@@ -107,7 +72,10 @@ class PcmFanoutTest {
             "render/scene/ProjectMScene.kt",
             "render/scene/BeamScene.kt",
             "render/scene/ShaderScene.kt",
-            "render/scene/EmergenceScene.kt",
+            "render/scene/SilkScene.kt",
+            "render/scene/LifeScene.kt",
+            "render/scene/MycoScene.kt",
+            "render/scene/AcidScene.kt",
             "render/scene/HyperspaceScene.kt",
             "render/scene/CymaticsScene.kt",
             "render/fluid/FluidScene.kt",

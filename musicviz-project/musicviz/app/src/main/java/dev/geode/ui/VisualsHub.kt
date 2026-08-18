@@ -957,20 +957,13 @@ internal fun isShaderLookSceneId(sceneId: String): Boolean = sceneId in Visualiz
 
 /**
  * Styles that draw a particle sprite, i.e. the readers of BOTH `particleShape`
- * and `particleSize`. Two families, one look: the CPU styles in
- * [VisualizerRenderer.PARTICLE_SCENES] (`EmergenceScene.drawSprites` uploads
- * `uShape` and `uSize`) and the GPU lifecycle layer the fluid styles run
+ * and `particleSize`: the GPU lifecycle layer the fluid styles run
  * (`FluidScene` folds `particleSize` into `pointScale` and passes
  * `particleShape` straight through to `FluidParticles.draw`, `CurlFlowScene`
- * likewise). The fluid half is exactly [isParticleLayerSceneId] - the same
- * FluidParticles layer that reads `fluidParticleDrag` - so this composes from
- * it rather than restating FLUID/CURLFLOW a third time; if the layer ever
- * gains or loses a style, everything moves together.
- *
- * Shape used to be a NARROWER gate than size, because the fluid layer had no
- * shape uniform and drew round dots only. Both families now shade through the
- * same `lib_particle_shade.glsl`, so the chip row is live wherever the slider is
- * and the two gates collapsed into this one.
+ * likewise). Exactly [isParticleLayerSceneId] - the same FluidParticles layer
+ * that reads `fluidParticleDrag` - so this composes from it rather than
+ * restating FLUID/CURLFLOW a second time; if the layer ever gains or loses a
+ * style, everything moves together.
  *
  * Note FLUID can switch its point layer off (`fluidParticlesEnabled`), which
  * makes these controls *temporarily* inert there. That is deliberately NOT
@@ -978,8 +971,7 @@ internal fun isShaderLookSceneId(sceneId: String): Boolean = sceneId in Visualiz
  * the user can revive with one checkbox should not vanish from a different tab
  * with no visible cause. The Shape tab says so instead.
  */
-internal fun isPointSpriteSceneId(sceneId: String): Boolean =
-    sceneId in VisualizerRenderer.PARTICLE_SCENES || isParticleLayerSceneId(sceneId)
+internal fun isPointSpriteSceneId(sceneId: String): Boolean = isParticleLayerSceneId(sceneId)
 
 /**
  * The Customize panel: the scene-parameter tabs plus the tools that act on
@@ -1056,7 +1048,6 @@ internal fun CustomizePanel(
                             isPointSpriteScene = isPointSpriteSceneId(viz.sceneId),
                             particleLayerOff = isFluidSceneId(viz.sceneId) && !p.fluidParticlesEnabled,
                             isBeamScene = isBeamSceneId(viz.sceneId),
-                            isEmergenceScene = viz.sceneId == dev.geode.render.scene.SceneIds.EMERGENCE,
                         )
                     CustomizeTab.BEHAVIOR ->
                         BehaviorTab(

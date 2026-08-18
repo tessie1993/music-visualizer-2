@@ -252,7 +252,6 @@ internal fun ShapeTab(
     isPointSpriteScene: Boolean,
     particleLayerOff: Boolean = false,
     isBeamScene: Boolean = false,
-    isEmergenceScene: Boolean = false,
 ) {
     Column {
         if (isBeamScene) {
@@ -301,9 +300,9 @@ internal fun ShapeTab(
         LabeledSlider("Posterize", p.posterize, 0f..1f) { onChange(p.copy(posterize = it)) }
         if (isPointSpriteScene) {
             SectionHeader("Particles")
-            // uShape reaches both families: EmergenceScene.drawSprites uploads
-            // it, FluidParticles.draw does for the fluid layer, and
-            // lib_particle_common.glsl's ptShapeField is the single reader.
+            // uShape's single reader is lib_particle_common.glsl's
+            // ptShapeField, uploaded by FluidParticles.draw for the fluid
+            // styles' lifecycle layer.
             LockableChipLabel("Particle shape")
             ChipRow(SceneParams.PARTICLE_SHAPES, p.particleShape) { onChange(p.copy(particleShape = it)) }
             LabeledSlider("Particle size", p.particleSize, 0.3f..2.5f) { onChange(p.copy(particleSize = it)) }
@@ -313,18 +312,6 @@ internal fun ShapeTab(
                         "sprites to scale until you switch it back on.",
                 )
             }
-        }
-        if (isEmergenceScene) {
-            SectionHeader("Emergence")
-            LockableChipLabel("Emergence field")
-            ChipRow(SceneParams.EMERGENCE_FIELDS, p.emergenceField) { onChange(p.copy(emergenceField = it)) }
-            LabeledSlider("Field current", p.emergenceSwarm, 0.1f..1.5f) { onChange(p.copy(emergenceSwarm = it)) }
-            LabeledSlider("Growth tuning", p.emergenceGrowth, 0f..1f) { onChange(p.copy(emergenceGrowth = it)) }
-            LabeledSlider("Acid warp", p.emergenceAcid, 0f..1f) { onChange(p.copy(emergenceAcid = it)) }
-            ControlHint(
-                "Growth tuning sets which crowd density feels alive: low starves " +
-                    "the colonies apart, high packs them into dense cells.",
-            )
         }
     }
 }
@@ -1046,7 +1033,6 @@ internal fun FluidTab(
             LabeledSlider("Flow strength", p.flowStrength, 0f..1f) { onChange(p.copy(flowStrength = it)) }
             LabeledSlider("Flow force", p.flowForce, 0f..3f) { onChange(p.copy(flowForce = it)) }
             LabeledSlider("Flow curl", p.flowCurl, 0f..50f) { onChange(p.copy(flowCurl = it)) }
-            CheckRow("Particles ride the field", p.flowAdvectParticles) { onChange(p.copy(flowAdvectParticles = it)) }
         }
         SectionHeader("Water ripples (all styles)")
         ControlHint(

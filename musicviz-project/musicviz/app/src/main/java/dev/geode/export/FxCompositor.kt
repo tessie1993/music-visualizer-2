@@ -331,7 +331,6 @@ internal class FxCompositor(
         timeSeconds: Float,
         dtSeconds: Float,
         features: AudioFeatures,
-        isParticle: Boolean,
         isShaderScene: Boolean,
         isProjectM: Boolean,
         params: SceneParams,
@@ -362,7 +361,6 @@ internal class FxCompositor(
         val family =
             when {
                 isShaderScene -> CompositeGrade.SceneFamily.SHADER
-                isParticle -> CompositeGrade.SceneFamily.PARTICLE
                 isProjectM -> CompositeGrade.SceneFamily.MILKDROP
                 else -> CompositeGrade.SceneFamily.FLUID
             }

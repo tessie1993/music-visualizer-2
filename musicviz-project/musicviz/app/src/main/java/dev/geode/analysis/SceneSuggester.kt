@@ -22,9 +22,16 @@ object SceneSuggester {
     // Aliases of the renderer's stable ids, NOT free literals: a renamed scene
     // id must fail to compile here rather than silently suggest a scene the
     // renderer no longer knows.
-    const val SCENE_EMERGENCE = SceneIds.EMERGENCE
     const val SCENE_JULIA = SceneIds.JULIA
     const val SCENE_TUNNEL = SceneIds.TUNNEL
+
+    /**
+     * Catalog substyles have no [SceneIds] constant, so the alias resolves
+     * through the catalog and fails at class-init - caught by any test that
+     * touches this object - if the style is ever renamed.
+     */
+    val SCENE_MYCELIUM: String =
+        requireNotNull(dev.geode.render.scene.VisualStyleCatalog.myco("myco_polycephalum")).id
 
     /**
      * How strongly a scene wants each measurable character of the music.
@@ -76,15 +83,25 @@ object SceneSuggester {
             // Bright.
             Affinity(SceneIds.TUNNEL, tempoBpm = 90f..160f, energy = 0.15f..0.4f, brightness = 0.45f..1f),
             Affinity(SceneIds.HYPERSPACE, tempoBpm = 120f..200f, energy = 0.2f..0.5f, brightness = 0.4f..1f, percussiveBias = 0.2f),
-            // Loud, percussive: the emergence colonies scatter and re-form on
-            // every hit, which is the character percussive material rewards.
+            // Loud, percussive: the mycelium network reorganizes on every
+            // hit (the beat breathes its sensors and scatters spores), which
+            // is the character percussive material rewards.
             Affinity(
-                SceneIds.EMERGENCE,
+                SCENE_MYCELIUM,
                 tempoBpm = 95f..200f,
                 energy = 0.16f..0.7f,
                 brightness = 0.1f..0.75f,
                 percussiveBias = 0.6f,
                 widthBias = 0.2f,
+            ),
+            // Flowing, wide: the silk filaments stretch with sustained energy
+            // and paint the stereo width into their band lanes.
+            Affinity(
+                SceneIds.DEFAULT,
+                tempoBpm = 60f..128f,
+                energy = 0.08f..0.5f,
+                brightness = 0.15f..0.8f,
+                widthBias = 0.5f,
             ),
         )
 

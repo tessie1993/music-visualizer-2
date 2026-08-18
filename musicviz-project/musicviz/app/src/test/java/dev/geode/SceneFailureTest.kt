@@ -27,7 +27,7 @@ import java.io.File
 class SceneFailureTest {
     private companion object {
         /** The two that used to throw; named so a rewrite cannot lose them. */
-        val ONCE_BROKEN = listOf("EmergenceScene.kt", "ProjectMScene.kt")
+        val ONCE_BROKEN = listOf("SilkScene.kt", "ProjectMScene.kt")
 
         /** How many code lines a `draw` may spend before it checks itself. */
         const val GUARD_WINDOW = 3

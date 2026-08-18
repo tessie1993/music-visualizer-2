@@ -37,11 +37,11 @@ import java.io.File
 class VisualsHubLogicTest {
     private fun preset(
         name: String,
-        sceneId: String = SceneIds.EMERGENCE,
+        sceneId: String = SceneIds.DEFAULT,
     ) = Preset(name = name, sceneId = sceneId, attack = 0.5f, decay = 0.2f)
 
     private fun entry(presetName: String?) =
-        VizPlaylistEntry(sceneId = SceneIds.EMERGENCE, presetName = presetName, label = presetName ?: "step")
+        VizPlaylistEntry(sceneId = SceneIds.DEFAULT, presetName = presetName, label = presetName ?: "step")
 
     // ---- Heart = membership toggle (finding 3) ----
 
@@ -179,14 +179,14 @@ class VisualsHubLogicTest {
         val cymaticsSub = VisualStyleCatalog.cymaticsIds.first { it != SceneIds.CYMATICS }
         assertFalse(builtInPresetMatchesScene(SceneIds.CYMATICS, hyperSub))
         assertFalse(builtInPresetMatchesScene(SceneIds.HYPERSPACE, cymaticsSub))
-        assertFalse(builtInPresetMatchesScene(SceneIds.EMERGENCE, hyperSub))
+        assertFalse(builtInPresetMatchesScene(SceneIds.DEFAULT, hyperSub))
     }
 
     @Test
     fun nonSubstyleScenesKeepExactMatching() {
-        assertEquals(SceneIds.EMERGENCE, builtInPresetSceneFamily(SceneIds.EMERGENCE))
-        assertTrue(builtInPresetMatchesScene(SceneIds.EMERGENCE, SceneIds.EMERGENCE))
-        assertFalse(builtInPresetMatchesScene(SceneIds.PLASMA, SceneIds.EMERGENCE))
+        assertEquals(SceneIds.DEFAULT, builtInPresetSceneFamily(SceneIds.DEFAULT))
+        assertTrue(builtInPresetMatchesScene(SceneIds.DEFAULT, SceneIds.DEFAULT))
+        assertFalse(builtInPresetMatchesScene(SceneIds.PLASMA, SceneIds.DEFAULT))
         // BEAM has no built-in looks yet (accepted gap): its family is itself,
         // so nothing foreign shows up on it either.
         assertEquals(SceneIds.BEAM, builtInPresetSceneFamily(SceneIds.BEAM))
@@ -197,7 +197,7 @@ class VisualsHubLogicTest {
 
     @Test
     fun noSuggestionMeansNoChip() {
-        assertNull(suggestedSceneToOffer(null, SceneIds.EMERGENCE))
+        assertNull(suggestedSceneToOffer(null, SceneIds.DEFAULT))
     }
 
     @Test
@@ -207,7 +207,7 @@ class VisualsHubLogicTest {
 
     @Test
     fun aDifferingSuggestionIsOffered() {
-        assertEquals(SceneIds.FLUID, suggestedSceneToOffer(SceneIds.FLUID, SceneIds.EMERGENCE))
+        assertEquals(SceneIds.FLUID, suggestedSceneToOffer(SceneIds.FLUID, SceneIds.DEFAULT))
     }
 
     // ---- Wiring: the formerly dead APIs now have hub callers ----

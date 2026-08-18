@@ -37,13 +37,19 @@ class SceneSuggesterIdsTest {
     fun everySuggestionIsAnIdTheRendererKnows() {
         val suggestions =
             setOf(
-                SceneSuggester.SCENE_EMERGENCE,
                 SceneSuggester.SCENE_JULIA,
                 SceneSuggester.SCENE_TUNNEL,
             )
         for (id in suggestions) {
             assertTrue("SceneSuggester suggests \"$id\", which SceneIds does not declare", id in sceneIdValues)
         }
+        // Catalog substyles have no SceneIds constant; their alias resolves
+        // through the catalog and must land on a real style.
+        assertTrue(
+            "SCENE_MYCELIUM is not a catalog style",
+            dev.geode.render.scene.VisualStyleCatalog
+                .label(SceneSuggester.SCENE_MYCELIUM) != SceneSuggester.SCENE_MYCELIUM,
+        )
     }
 
     @Test

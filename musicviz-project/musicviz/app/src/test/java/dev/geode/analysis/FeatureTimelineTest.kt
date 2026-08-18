@@ -293,7 +293,7 @@ class FeatureTimelineTest {
         // intent (fast+loud lands percussive, quiet+dark lands ambient, ...)
         // rather than one exact id - retuning a profile inside the same
         // character must not fail the build; changing the character must.
-        val percussive = setOf(dev.geode.render.scene.SceneIds.EMERGENCE)
+        val percussive = setOf(SceneSuggester.SCENE_MYCELIUM)
         val ambient =
             setOf(
                 dev.geode.render.scene.SceneIds.AURORA,

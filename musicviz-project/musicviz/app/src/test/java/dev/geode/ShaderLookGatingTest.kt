@@ -3,6 +3,7 @@ package dev.geode
 import dev.geode.render.VisualizerRenderer
 import dev.geode.render.scene.ParamRandomizer
 import dev.geode.render.scene.SceneIds
+import dev.geode.render.scene.VisualStyleCatalog
 import dev.geode.ui.isJourneySceneId
 import dev.geode.ui.isShaderLookSceneId
 import org.junit.Assert.assertEquals
@@ -53,7 +54,10 @@ class ShaderLookGatingTest {
     @Test
     fun noOtherStyleReadsThem() {
         val others =
-            VisualizerRenderer.PARTICLE_SCENES +
+            VisualStyleCatalog.silkIds +
+                VisualStyleCatalog.lifeIds +
+                VisualStyleCatalog.mycoIds +
+                VisualStyleCatalog.acidIds +
                 listOf(SceneIds.MILKDROP, SceneIds.FLUID, SceneIds.CURLFLOW, SceneIds.WATER)
         others.forEach { assertFalse(it, isShaderLookSceneId(it)) }
     }

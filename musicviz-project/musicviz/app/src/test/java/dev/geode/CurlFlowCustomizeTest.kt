@@ -236,7 +236,7 @@ class CurlFlowCustomizeTest {
         assertTrue(isParticleLayerSceneId(SceneIds.CURLFLOW))
         assertTrue(isParticleLayerSceneId(SceneIds.FLUID))
         assertFalse("WATER has no particle layer", isParticleLayerSceneId(SceneIds.WATER))
-        assertFalse(isParticleLayerSceneId(SceneIds.EMERGENCE))
+        assertFalse(isParticleLayerSceneId(SceneIds.DEFAULT))
         assertTrue("CurlFlow reads drag unconditionally", dragRowVisible(SceneIds.CURLFLOW, particlesEnabled = false))
         assertTrue(dragRowVisible(SceneIds.CURLFLOW, particlesEnabled = true))
         assertTrue(dragRowVisible(SceneIds.FLUID, particlesEnabled = true))
