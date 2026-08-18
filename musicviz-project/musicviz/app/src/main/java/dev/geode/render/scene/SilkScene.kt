@@ -47,6 +47,14 @@ internal class SilkScene(
         /** Sim short side, texels. The dye is soft by nature; 320 is plenty. */
         const val SIM_RES = 320
 
+        /**
+         * Dye range packed into RGBA8 on devices whose driver refuses
+         * half-float render targets (optional in core GLES 3.0, per §6.3).
+         * The step and show shaders divide on write and multiply on read by
+         * `uStateScale`, so the same HDR math runs on both paths.
+         */
+        const val BYTE_STATE_SCALE = 8f
+
         /** Scene clock wrap (`sin(TAU * time / period)` is what reads it). */
         const val TIME_WRAP_SECONDS = 628.31853f
 
@@ -83,6 +91,7 @@ internal class SilkScene(
 
     private var formats: FluidBuffers.Formats? = null
     private var dye: FluidBuffers.DoubleFbo? = null
+    private var byteDye = false
 
     private val pcmPulse = PcmPulse()
     private var pcmStrike = 0f
@@ -158,15 +167,26 @@ internal class SilkScene(
     private fun ensureDye(): FluidBuffers.DoubleFbo? {
         dye?.let { return it }
         val fmt = formats ?: FluidBuffers.probeFormats().also { formats = it }
+        // Half-float render targets are OPTIONAL in core GLES 3.0; without
+        // the fallback this family rendered black on exactly the devices
+        // §6.3 warns about. RGBA8 carries the dye pre-scaled instead.
+        byteDye = !fmt.ok
+        val texFmt =
+            if (byteDye) {
+                FluidBuffers.TexFormat(GLES30.GL_RGBA8, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE)
+            } else {
+                fmt.rgba
+            }
         val (w, h) = FluidBuffers.resolution(SIM_RES, width, height)
-        val next = FluidBuffers.DoubleFbo(w, h, fmt.rgba, linear = true)
+        val next = FluidBuffers.DoubleFbo(w, h, texFmt, linear = true)
         next.create()
-        if (!next.ok) {
+        return if (next.ok) {
+            dye = next
+            next
+        } else {
             next.release()
-            return null
+            null
         }
-        dye = next
-        return next
     }
 
     private fun slew(
@@ -245,6 +265,7 @@ internal class SilkScene(
         GLES30.glUniform1f(stepLocs.loc("uBeat"), beatPulse)
         GLES30.glUniform1f(stepLocs.loc("uStrike"), pcmStrike.coerceIn(0f, 1.5f))
         GLES30.glUniform1f(stepLocs.loc("uBeatRing"), ringRadius)
+        GLES30.glUniform1f(stepLocs.loc("uStateScale"), if (byteDye) BYTE_STATE_SCALE else 1f)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         field.swap()
 
@@ -262,6 +283,7 @@ internal class SilkScene(
         GLES30.glUniform1i(showLocs.loc("uFold"), style.fold)
         GLES30.glUniform1f(showLocs.loc("uFoldPhase"), foldPhase)
         GLES30.glUniform1f(showLocs.loc("uEnergy"), f.rms.coerceIn(0f, 1.5f))
+        GLES30.glUniform1f(showLocs.loc("uStateScale"), if (byteDye) BYTE_STATE_SCALE else 1f)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)
         GLES30.glUseProgram(0)

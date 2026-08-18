@@ -127,7 +127,8 @@ internal class MycoScene(
                 GlUtil.loadShader(context, dev.geode.engine.scenes.R.raw.myco_show_frag),
                 fail("present"),
             )
-        if (agentProgram == 0 || depositProgram == 0 || blurProgram == 0 || showProgram == 0) return
+        val programs = intArrayOf(agentProgram, depositProgram, blurProgram, showProgram)
+        if (programs.any { it == 0 }) return
         agentLocs = GlUtil.UniformCache(agentProgram)
         depositLocs = GlUtil.UniformCache(depositProgram)
         blurLocs = GlUtil.UniformCache(blurProgram)
@@ -178,14 +179,14 @@ internal class MycoScene(
             val agentFmt = fmt.rgba32 ?: fmt.rgba
             val next = FluidBuffers.DoubleFbo(style.agentRes, style.agentRes, agentFmt, linear = false)
             next.create()
-            if (!next.ok) {
+            if (next.ok) {
+                agents = next
+                agentsSeeded = false
+            } else {
                 next.release()
-                return false
             }
-            agents = next
-            agentsSeeded = false
         }
-        if (trail == null) {
+        if (agents != null && trail == null) {
             val (w, h) = FluidBuffers.resolution(TRAIL_RES, width, height)
             byteTrail = !fmt.ok
             val trailFmt =
@@ -196,13 +197,9 @@ internal class MycoScene(
                 }
             val next = FluidBuffers.DoubleFbo(w, h, trailFmt, linear = true)
             next.create()
-            if (!next.ok) {
-                next.release()
-                return false
-            }
-            trail = next
+            if (next.ok) trail = next else next.release()
         }
-        return true
+        return agents != null && trail != null
     }
 
     private fun slew(
@@ -217,9 +214,10 @@ internal class MycoScene(
     override fun draw(timeSeconds: Float) {
         if (!programOk) return
         GlUtil.resetFrameState()
+        // ensureBuffers() == true guarantees both; checkNotNull documents it.
         if (!ensureBuffers()) return
-        val colony = agents ?: return
-        val field = trail ?: return
+        val colony = checkNotNull(agents)
+        val field = checkNotNull(trail)
         val p = params
         val dt = lastDt.coerceIn(0f, 1f / 15f)
         val f = pendingFeatures ?: silence

@@ -663,9 +663,11 @@ class VisualizerRenderer(
         quadVert: String,
         export: Boolean = false,
     ): Scene {
-        SHADER_SCENES[id]?.let { res ->
+        // One elvis chain, first match wins: catalog families resolve by id,
+        // the fixed styles by the trailing `when`.
+        return SHADER_SCENES[id]?.let { res ->
             val frag = if (export) activeCustomShaders[id] ?: GlUtil.loadShader(context, res) else GlUtil.loadShader(context, res)
-            return ShaderScene(
+            ShaderScene(
                 id,
                 quadVert,
                 frag,
@@ -675,65 +677,65 @@ class VisualizerRenderer(
                 onUserSourceCompiled = { compiled -> activeCustomShaders[id] = compiled },
             )
         }
-        VisualStyleCatalog.cymatics(id)?.let { style ->
-            return CymaticsScene(context, style).also { plate ->
-                plate.onShaderError = { onShaderError(it) }
-            }
-        }
-        VisualStyleCatalog.silk(id)?.let { style ->
-            return SilkScene(context, style).also { scene ->
-                scene.onShaderError = { onShaderError(it) }
-            }
-        }
-        VisualStyleCatalog.life(id)?.let { style ->
-            return LifeScene(context, style).also { scene ->
-                scene.onShaderError = { onShaderError(it) }
-            }
-        }
-        VisualStyleCatalog.acid(id)?.let { style ->
-            return AcidScene(context, style).also { scene ->
-                scene.onShaderError = { onShaderError(it) }
-            }
-        }
-        VisualStyleCatalog.myco(id)?.let { style ->
-            return MycoScene(context, style).also { scene ->
-                scene.onShaderError = { onShaderError(it) }
-            }
-        }
-        VisualStyleCatalog.hyperspace(id)?.let { style ->
-            return HyperspaceScene(context, style).also { hyper ->
-                hyper.onShaderError = { onShaderError(it) }
-            }
-        }
-        return when (id) {
-            SceneIds.FLUID ->
-                dev.geode.render.fluid.FluidScene(context).also { fluid ->
-                    fluid.onShaderError = { onShaderError(it) }
+            ?: VisualStyleCatalog.cymatics(id)?.let { style ->
+                CymaticsScene(context, style).also { plate ->
+                    plate.onShaderError = { onShaderError(it) }
                 }
-            SceneIds.CURLFLOW ->
-                dev.geode.render.fluid
-                    .CurlFlowScene(context)
-            SceneIds.WATER ->
-                dev.geode.render.fluid.WaterScene(context).also { water ->
-                    water.onShaderError = { onShaderError(it) }
+            }
+            ?: VisualStyleCatalog.silk(id)?.let { style ->
+                SilkScene(context, style).also { scene ->
+                    scene.onShaderError = { onShaderError(it) }
                 }
-            SceneIds.BEAM ->
-                BeamScene(context).also { beam ->
-                    beam.onShaderError = { onShaderError(it) }
+            }
+            ?: VisualStyleCatalog.life(id)?.let { style ->
+                LifeScene(context, style).also { scene ->
+                    scene.onShaderError = { onShaderError(it) }
                 }
-            SceneIds.MILKDROP ->
-                // PCM now arrives through the shared PcmSink fan-out; export
-                // delivers none and the scene falls back to the timeline's
-                // per-frame waveform in update().
-                ProjectMScene(
-                    postVertexSrc = GlUtil.loadShader(context, R.raw.fade_vert),
-                    postFragmentSrc = GlUtil.loadShader(context, R.raw.pm_post_frag),
-                    sharedTextureDir = File(context.filesDir, "milk/textures").absolutePath,
-                    onError = { onShaderError(it) },
-                    onPresetLoaded = { onMilkPresetLoaded(it) },
-                )
-            else -> error("availableSceneIds offers \"$id\" but createScene cannot build it")
-        }
+            }
+            ?: VisualStyleCatalog.acid(id)?.let { style ->
+                AcidScene(context, style).also { scene ->
+                    scene.onShaderError = { onShaderError(it) }
+                }
+            }
+            ?: VisualStyleCatalog.myco(id)?.let { style ->
+                MycoScene(context, style).also { scene ->
+                    scene.onShaderError = { onShaderError(it) }
+                }
+            }
+            ?: VisualStyleCatalog.hyperspace(id)?.let { style ->
+                HyperspaceScene(context, style).also { hyper ->
+                    hyper.onShaderError = { onShaderError(it) }
+                }
+            }
+            ?: when (id) {
+                SceneIds.FLUID ->
+                    dev.geode.render.fluid.FluidScene(context).also { fluid ->
+                        fluid.onShaderError = { onShaderError(it) }
+                    }
+                SceneIds.CURLFLOW ->
+                    dev.geode.render.fluid
+                        .CurlFlowScene(context)
+                SceneIds.WATER ->
+                    dev.geode.render.fluid.WaterScene(context).also { water ->
+                        water.onShaderError = { onShaderError(it) }
+                    }
+                SceneIds.BEAM ->
+                    BeamScene(context).also { beam ->
+                        beam.onShaderError = { onShaderError(it) }
+                    }
+                SceneIds.MILKDROP ->
+                    // PCM now arrives through the shared PcmSink fan-out;
+                    // export delivers none and the scene falls back to the
+                    // timeline's per-frame waveform in update().
+                    ProjectMScene(
+                        postVertexSrc = GlUtil.loadShader(context, R.raw.fade_vert),
+                        postFragmentSrc = GlUtil.loadShader(context, R.raw.pm_post_frag),
+                        sharedTextureDir = File(context.filesDir, "milk/textures").absolutePath,
+                        onError = { onShaderError(it) },
+                        onPresetLoaded = { onMilkPresetLoaded(it) },
+                    )
+                else -> error("availableSceneIds offers \"$id\" but createScene cannot build it")
+            }
     }
 
     /**
@@ -1105,7 +1107,8 @@ class VisualizerRenderer(
                     ?.let { sceneFor(it) }
                     ?.takeIf { it !== activeScene }
             }
-        if (p.flowEnabled && ff != null && ff.available && !fluidActive) {
+        val wantsFlow = p.flowEnabled && !fluidActive
+        if (wantsFlow && ff != null && ff.available) {
             ff.step(gainAdjusted(features, p), dt, p)
         }
         // F2 ripple overlay: advance the shared heightfield (its own tiny

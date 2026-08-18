@@ -21,6 +21,7 @@ uniform float uExposure;
 uniform int uFold;        // mirror folds; 0 = none
 uniform float uFoldPhase; // slow fold rotation, radians
 uniform float uEnergy;    // overall level, lifts the floor glow
+uniform float uStateScale; // 1 on float targets; the RGBA8 fallback's dye range
 
 const float TAU = 6.2831853;
 
@@ -42,7 +43,7 @@ vec2 foldUv(vec2 uv) {
 }
 
 void main() {
-    vec3 lanes = texture(uField, foldUv(vUv)).rgb;
+    vec3 lanes = texture(uField, foldUv(vUv)).rgb * uStateScale;
 
     float span = uHueSpan * 0.18;
     vec3 cBass = hsv2rgb(vec3(fract(uBaseHue), 0.85, 1.0));

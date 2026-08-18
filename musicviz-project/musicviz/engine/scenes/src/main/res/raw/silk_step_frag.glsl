@@ -43,6 +43,7 @@ uniform float uTreble;
 uniform float uBeat;       // graded beat envelope, 0..1.5
 uniform float uStrike;     // raw-PCM transient, 0..1.5
 uniform float uBeatRing;   // expanding ring radius since the last beat, <0 = none
+uniform float uStateScale; // 1 on float targets; the RGBA8 fallback's dye range
 
 const float TAU = 6.2831853;
 
@@ -159,7 +160,8 @@ void main() {
     v += normalize(q + vec2(1e-4)) * uBeat * 0.35;
 
     vec2 back = uv - v * uAdvect / vec2(aspect, 1.0);
-    vec3 prev = texture(uPrev, back).rgb;
+    // uStateScale unpacks the RGBA8 fallback's pre-scaled dye; 1 on float.
+    vec3 prev = texture(uPrev, back).rgb * uStateScale;
     // Sanitize the loop: a NaN or runaway would persist forever.
     prev = clamp(prev, vec3(0.0), vec3(8.0));
     prev = mix(prev, vec3(dot(prev, vec3(0.3333))), 0.012); // slow desaturate
@@ -175,5 +177,5 @@ void main() {
     }
 
     vec3 color = max(prev, add) + add * 0.3;
-    fragColor = vec4(min(color, vec3(8.0)), 1.0);
+    fragColor = vec4(min(color, vec3(8.0)) / uStateScale, 1.0);
 }

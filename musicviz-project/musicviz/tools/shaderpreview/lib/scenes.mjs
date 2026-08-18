@@ -834,7 +834,7 @@ export function createSilkDriver({ style, params, width, height }) {
     // step
     'uPrev', 'uRes', 'uField', 'uB', 'uAdvect', 'uDecay', 'uFieldScale', 'uSwirl',
     'uSlabX', 'uSlabY', 'uSeedEpoch', 'uDrift', 'uStrokes', 'uElong', 'uDrive',
-    'uBass', 'uMid', 'uTreble', 'uBeat', 'uStrike', 'uBeatRing',
+    'uBass', 'uMid', 'uTreble', 'uBeat', 'uStrike', 'uBeatRing', 'uStateScale',
     // show (uField/uRes recur with different meanings; the audit is by name)
     'uBaseHue', 'uHueSpan', 'uExposure', 'uFold', 'uFoldPhase', 'uEnergy',
   ]);
@@ -898,6 +898,9 @@ export function createSilkDriver({ style, params, width, height }) {
       uBeat: { t: '1f', v: beatPulse },
       uStrike: { t: '1f', v: clamp(pcmStrike, 0, 1.5) },
       uBeatRing: { t: '1f', v: ringRadius },
+      // The app sends BYTE_STATE_SCALE = 8 only on its RGBA8 fallback path;
+      // the harness always renders the float target, so the scale is 1.
+      uStateScale: { t: '1f', v: 1 },
     };
     const showU = {
       uField: { t: 'tex', v: 0 },
@@ -908,6 +911,7 @@ export function createSilkDriver({ style, params, width, height }) {
       uFold: { t: '1i', v: style.fold },
       uFoldPhase: { t: '1f', v: foldPhase },
       uEnergy: { t: '1f', v: clamp(f.rms, 0, 1.5) },
+      uStateScale: { t: '1f', v: 1 },
     };
 
     return {
@@ -995,15 +999,15 @@ export function createLifeDriver({ style, params, width, height }) {
 
   /**
    * LifeScene.census(), fed by the page's probe of the state's centre texel.
-   * The app reads GL_UNSIGNED_BYTE; the harness reads float and quantizes to
-   * the same 8-bit steps. (Note: reading UNSIGNED_BYTE from the RGBA16F FBO
-   * the app allocates is only guaranteed for normalized formats by ES 3.0 -
-   * see the report - so the float probe is arguably the intended value.)
+   * The app reads GL_FLOAT at a five-probe cross (quarter points + centre)
+   * and calls the world starved only when the LIVEST probe is dead, overgrown
+   * only when the DIMMEST is saturated. The harness's probe channel carries
+   * one texel - the centre, the app's probe [2,2] - so this mirror is the
+   * app's census degenerated to that probe (max = min = centre); see standIns.
    */
   function census(probe) {
-    const q = (v) => Math.round(clamp(v, 0, 1) * 255) / 255;
-    const a = q(probe[0]);
-    const v = q(probe[1]);
+    const a = probe[0];
+    const v = probe[1];
     const live = style.rule === 0 ? a : v;
     // STARVED = 0.004, OVERGROWN = 0.985
     const starving = live < 0.004 && (style.rule === 1 ? a > 0.9 : true);
@@ -1127,8 +1131,9 @@ export function createLifeDriver({ style, params, width, height }) {
     fieldTargets: { state: { width: simW, height: simH, format: 'rgba16f', filter: 'linear' } },
     standIns: [
       'uSprinkle\'s PCM strike is a stand-in: PcmPulse fed the audio model\'s waveform',
-      'the 4-second liveness census reads the harness\'s float probe quantized to bytes; '
-      + 'the app reads GL_UNSIGNED_BYTE from its RGBA16F state (see report note)',
+      'the 4-second liveness census reads only the centre texel (the app\'s probe [2,2]); '
+      + 'the app reads a five-probe cross, so the harness reseeds a sparse-but-alive '
+      + 'world the app would spare',
     ],
   };
 }

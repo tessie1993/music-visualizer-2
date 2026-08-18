@@ -57,6 +57,9 @@ internal class LifeScene(
         const val STARVED = 0.004f
         const val OVERGROWN = 0.985f
 
+        /** Quarter-point cross of census probes, as (x, y) in quarters. */
+        val CENSUS_PROBES = arrayOf(intArrayOf(1, 2), intArrayOf(3, 2), intArrayOf(2, 1), intArrayOf(2, 3), intArrayOf(2, 2))
+
         const val ENV_RISE_PER_SEC = 9f
         const val ENV_FALL_PER_SEC = 2.4f
     }
@@ -77,6 +80,7 @@ internal class LifeScene(
     private var vao = 0
     private var formats: FluidBuffers.Formats? = null
     private var state: FluidBuffers.DoubleFbo? = null
+    private var byteState = false
 
     private val pcmPulse = PcmPulse()
     private var pcmStrike = 0f
@@ -160,15 +164,26 @@ internal class LifeScene(
     private fun ensureState(): FluidBuffers.DoubleFbo? {
         state?.let { return it }
         val fmt = formats ?: FluidBuffers.probeFormats().also { formats = it }
+        // Half-float render targets are OPTIONAL in core GLES 3.0. The state
+        // is 0..1 by construction, so the RGBA8 fallback carries it directly -
+        // quantized, but alive rather than black (§6.3's named-fallback rule).
+        byteState = !fmt.ok
+        val texFmt =
+            if (byteState) {
+                FluidBuffers.TexFormat(GLES30.GL_RGBA8, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE)
+            } else {
+                fmt.rgba
+            }
         val (w, h) = FluidBuffers.resolution(SIM_RES, width, height)
-        val next = FluidBuffers.DoubleFbo(w, h, fmt.rgba, linear = true)
+        val next = FluidBuffers.DoubleFbo(w, h, texFmt, linear = true)
         next.create()
-        if (!next.ok) {
+        return if (next.ok) {
+            state = next
+            next
+        } else {
             next.release()
-            return null
+            null
         }
-        state = next
-        return next
     }
 
     private fun slew(
@@ -181,36 +196,48 @@ internal class LifeScene(
     }
 
     /**
-     * Reads one state texel every few seconds. Not a real census - one texel
-     * is a coin flip - but starvation and total overgrowth are UNIFORM states,
-     * exactly the two this must catch, and one texel identifies a uniform
-     * field with certainty. Reseeds by restarting the seeding envelope.
+     * Reads five spread texels every few seconds - quarter points and centre.
+     * One texel was a coin flip against a healthy but SPARSE world (an
+     * organism away from the centre read as global starvation, and the world
+     * reseeded every four seconds); five probes only call the world starved
+     * when the LIVEST of them is dead, and overgrown when the DIMMEST is
+     * saturated. Reseeds by restarting the seeding envelope.
      */
     private fun census(field: FluidBuffers.DoubleFbo) {
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, field.read.fbo)
-        // The state is a float target, and ES 3.0 only guarantees readback in
-        // the framebuffer's implementation-preferred format - FluidSim's
-        // pattern. A byte read here would be undefined, and an undefined read
-        // that leaves the buffer zeroed would reseed a healthy world forever.
+        // ES 3.0 only guarantees readback in the framebuffer's
+        // implementation-preferred format (FluidSim's pattern); a mismatched
+        // read is undefined, and an undefined read that leaves the buffer
+        // zeroed would reseed a healthy world forever. So: verify, or skip.
         GLES30.glGetIntegerv(GLES30.GL_IMPLEMENTATION_COLOR_READ_FORMAT, readbackFormat, 0)
         GLES30.glGetIntegerv(GLES30.GL_IMPLEMENTATION_COLOR_READ_TYPE, readbackFormat, 1)
         if (readbackFormat[0] != GLES30.GL_RGBA || readbackFormat[1] != GLES30.GL_FLOAT) return
-        censusBuf.clear()
-        GLES30.glReadPixels(
-            field.width / 2,
-            field.height / 2,
-            1,
-            1,
-            GLES30.GL_RGBA,
-            GLES30.GL_FLOAT,
-            censusBuf,
-        )
-        val a = censusBuf.get(0)
-        val v = censusBuf.get(1)
-        if (!a.isFinite() || !v.isFinite()) return
-        val live = if (style.rule == 0) a else v
-        val starving = live < STARVED && (if (style.rule == 1) a > 0.9f else true)
-        if (starving || live > OVERGROWN) seedRemain = SEED_SECONDS
+        var maxA = 0f
+        var maxV = 0f
+        var minLive = Float.MAX_VALUE
+        var sane = true
+        for (probe in CENSUS_PROBES) {
+            censusBuf.clear()
+            GLES30.glReadPixels(
+                field.width * probe[0] / 4,
+                field.height * probe[1] / 4,
+                1,
+                1,
+                GLES30.GL_RGBA,
+                GLES30.GL_FLOAT,
+                censusBuf,
+            )
+            val a = censusBuf.get(0)
+            val v = censusBuf.get(1)
+            sane = sane && a.isFinite() && v.isFinite()
+            maxA = max(maxA, a)
+            maxV = max(maxV, v)
+            minLive = minOf(minLive, if (style.rule == 0) a else v)
+        }
+        if (!sane) return
+        val maxLive = if (style.rule == 0) maxA else maxV
+        val starving = maxLive < STARVED && (if (style.rule == 1) maxA > 0.9f else true)
+        if (starving || minLive > OVERGROWN) seedRemain = SEED_SECONDS
     }
 
     override fun draw(timeSeconds: Float) {

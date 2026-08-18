@@ -19,9 +19,6 @@ import kotlin.math.sin
  * anywhere, just a style that stops being audio-reactive.
  */
 class PcmFanoutTest {
-    private companion object {
-    }
-
     // ---- PcmRow: the shared decimation every drawing consumer uses ----
 
     @Test

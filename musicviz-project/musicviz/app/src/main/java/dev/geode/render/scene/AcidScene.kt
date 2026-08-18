@@ -153,12 +153,13 @@ internal class AcidScene(
         val (w, h) = FluidBuffers.resolution(SIM_RES, width, height)
         val next = FluidBuffers.DoubleFbo(w, h, fmt, linear = true)
         next.create()
-        if (!next.ok) {
+        return if (next.ok) {
+            state = next
+            next
+        } else {
             next.release()
-            return null
+            null
         }
-        state = next
-        return next
     }
 
     private fun slew(
