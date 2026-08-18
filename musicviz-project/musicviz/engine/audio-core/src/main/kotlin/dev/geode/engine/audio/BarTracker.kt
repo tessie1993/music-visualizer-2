@@ -70,20 +70,27 @@ class BarTracker {
         }
         prevPhase = phase
 
+        // A beat accepted late in its slot (the grid tolerates ±0.12 of a
+        // period) is the NEXT beat arriving early, not this one again — so
+        // its accent AND its downbeat decision both belong to that slot, or
+        // a track whose player leads the grid would train the histogram one
+        // position ahead of the flag and never fire a downbeat at all.
+        var beatSlot = beatIndex
         if (beat && accent > 0f) {
-            // A beat accepted late in its slot (the grid tolerates ±0.12 of
-            // a period) is the NEXT beat arriving early, not this one again.
-            val slot = if (phase > 0.5f) (beatIndex + 1) % BEATS_PER_BAR else beatIndex
-            scores[slot] += accent
+            if (phase > 0.5f) beatSlot = (beatIndex + 1) % BEATS_PER_BAR
+            scores[beatSlot] += accent
             if (beatsSeen < BEATS_PER_BAR) beatsSeen++
             elect()
         }
 
+        // The continuous ramp keeps the pre-wrap index: an early beat may
+        // FIRE against the next slot, but the bar phase itself must not jump
+        // a whole beat forward and snap back at the wrap.
         beatInBar = (beatIndex - downbeatPos + BEATS_PER_BAR) % BEATS_PER_BAR
         barPhase = (beatInBar + phase.coerceIn(0f, 1f)) / BEATS_PER_BAR
         // The very first beats a cold tracker hears would elect themselves;
         // a downbeat is a CLAIM, and it waits for a bar of evidence.
-        downbeat = beat && beatInBar == 0 && beatsSeen >= BEATS_PER_BAR
+        downbeat = beat && beatSlot == downbeatPos && beatsSeen >= BEATS_PER_BAR
         confidence = if (locked) clarity() else 0f
     }
 

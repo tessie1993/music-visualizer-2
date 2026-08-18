@@ -146,6 +146,32 @@ class BarTrackerTest {
     }
 
     @Test
+    fun `a player who leads the grid still gets downbeats`() {
+        // Every beat is accepted one frame BEFORE its wrap (phase ~0.97) -
+        // human timing that consistently leads. The accent histogram and the
+        // downbeat flag must agree on which slot such a beat belongs to.
+        val tracker = BarTracker()
+        var phase = 0f
+        var downbeats = 0
+        repeat(12 * periodFrames * 4) { frame ->
+            phase += 1f / periodFrames
+            var beat = false
+            var accent = 0f
+            if (phase >= 1f) {
+                phase -= 1f
+            } else if (phase >= 1f - 1.5f / periodFrames) {
+                // The frame just before the wrap: the early beat, graded by
+                // the same true position its on-time twin would carry.
+                beat = true
+                accent = if ((frame / periodFrames) % 4 == 0) 1f else 0.4f
+            }
+            tracker.step(phase = phase, beat = beat, locked = true, accent = accent)
+            if (tracker.downbeat) downbeats++
+        }
+        assertTrue("early beats fired only $downbeats downbeats", downbeats >= 8)
+    }
+
+    @Test
     fun `reset forgets the learned bar`() {
         val tracker = BarTracker()
         drive(tracker, bars = 12)
