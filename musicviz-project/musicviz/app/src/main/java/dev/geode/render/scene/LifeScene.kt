@@ -92,12 +92,11 @@ internal class LifeScene(
     private var kickX = 0.5f
     private var kickY = 0.5f
     private var censusAge = 0f
-    private val censusBuf =
+    private val censusBytes =
         java.nio.ByteBuffer
             .allocateDirect(16)
             .order(java.nio.ByteOrder.nativeOrder())
-            .asFloatBuffer()
-    private val readbackFormat = IntArray(2)
+    private val censusBuf = censusBytes.asFloatBuffer()
 
     private val prevFbo = IntArray(1)
     private val prevViewport = IntArray(4)
@@ -202,38 +201,51 @@ internal class LifeScene(
      * reseeded every four seconds); five probes only call the world starved
      * when the LIVEST of them is dead, and overgrown when the DIMMEST is
      * saturated. Reseeds by restarting the seeding envelope.
+     *
+     * Reads through GL_READ_FRAMEBUFFER only, and restores it: binding
+     * GL_FRAMEBUFFER here (both targets) redirected the present pass into
+     * the simulation state it was sampling - a black composite frame and a
+     * corrupted organism, every census. [restoreFbo] is the draw target the
+     * caller already captured.
+     *
+     * Formats are the always-legal pairs of ES 3.0 §4.3.2 - RGBA/FLOAT for a
+     * float color buffer, RGBA/UNSIGNED_BYTE for a normalized one - NOT the
+     * IMPLEMENTATION_COLOR_READ pair, which is an additional option, not a
+     * requirement. Gating on it left this census (and with it the reseed
+     * safety net) dead on every byte-fallback device, where the preferred
+     * type is never FLOAT and a starved world stayed black forever.
      */
-    private fun census(field: FluidBuffers.DoubleFbo) {
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, field.read.fbo)
-        // ES 3.0 only guarantees readback in the framebuffer's
-        // implementation-preferred format (FluidSim's pattern); a mismatched
-        // read is undefined, and an undefined read that leaves the buffer
-        // zeroed would reseed a healthy world forever. So: verify, or skip.
-        GLES30.glGetIntegerv(GLES30.GL_IMPLEMENTATION_COLOR_READ_FORMAT, readbackFormat, 0)
-        GLES30.glGetIntegerv(GLES30.GL_IMPLEMENTATION_COLOR_READ_TYPE, readbackFormat, 1)
-        if (readbackFormat[0] != GLES30.GL_RGBA || readbackFormat[1] != GLES30.GL_FLOAT) return
+    private fun census(
+        field: FluidBuffers.DoubleFbo,
+        restoreFbo: Int,
+    ) {
+        GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, field.read.fbo)
         var maxA = 0f
         var maxV = 0f
         var minLive = Float.MAX_VALUE
         var sane = true
         for (probe in CENSUS_PROBES) {
-            censusBuf.clear()
-            GLES30.glReadPixels(
-                field.width * probe[0] / 4,
-                field.height * probe[1] / 4,
-                1,
-                1,
-                GLES30.GL_RGBA,
-                GLES30.GL_FLOAT,
-                censusBuf,
-            )
-            val a = censusBuf.get(0)
-            val v = censusBuf.get(1)
+            val x = field.width * probe[0] / 4
+            val y = field.height * probe[1] / 4
+            val a: Float
+            val v: Float
+            if (byteState) {
+                censusBytes.clear()
+                GLES30.glReadPixels(x, y, 1, 1, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, censusBytes)
+                a = (censusBytes.get(0).toInt() and 0xFF) / 255f
+                v = (censusBytes.get(1).toInt() and 0xFF) / 255f
+            } else {
+                censusBuf.clear()
+                GLES30.glReadPixels(x, y, 1, 1, GLES30.GL_RGBA, GLES30.GL_FLOAT, censusBuf)
+                a = censusBuf.get(0)
+                v = censusBuf.get(1)
+            }
             sane = sane && a.isFinite() && v.isFinite()
             maxA = max(maxA, a)
             maxV = max(maxV, v)
             minLive = minOf(minLive, if (style.rule == 0) a else v)
         }
+        GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, restoreFbo)
         if (!sane) return
         val maxLive = if (style.rule == 0) maxA else maxV
         val starving = maxLive < STARVED && (if (style.rule == 1) maxA > 0.9f else true)
@@ -243,6 +255,12 @@ internal class LifeScene(
     override fun draw(timeSeconds: Float) {
         if (!programOk) return
         GlUtil.resetFrameState()
+        // Captured BEFORE ensureState() and the census: allocation leaves
+        // framebuffer 0 bound, and the census reads the state FBO, so a
+        // capture taken after either aims the show pass at the wrong target
+        // and the composite presents black (see FieldSimFboContractTest).
+        GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
+        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
         val field = ensureState() ?: return
         val p = params
         val dt = lastDt.coerceIn(0f, 1f / 15f)
@@ -266,13 +284,11 @@ internal class LifeScene(
         censusAge += dt
         if (censusAge >= CENSUS_SECONDS) {
             censusAge = 0f
-            census(field)
+            census(field, prevFbo[0])
         }
 
         val substeps = (style.substeps * speed).roundToInt().coerceIn(1, 8)
 
-        GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
-        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
         GLES30.glBindVertexArray(vao)

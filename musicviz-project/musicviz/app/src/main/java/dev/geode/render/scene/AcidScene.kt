@@ -174,6 +174,12 @@ internal class AcidScene(
     override fun draw(timeSeconds: Float) {
         if (!programOk) return
         GlUtil.resetFrameState()
+        // Captured BEFORE ensureState(): allocation leaves framebuffer 0
+        // bound, so a later capture aims the show pass at the screen on the
+        // frame that allocates and the composite presents black (see
+        // FieldSimFboContractTest).
+        GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
+        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
         val loop = ensureState() ?: return
         val p = params
         val dt = lastDt.coerceIn(0f, 1f / 15f)
@@ -221,8 +227,6 @@ internal class AcidScene(
         val rotate = style.rotate * frames * speed
         val hueShift = style.hueRate * dt * speed
 
-        GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
-        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
         GLES30.glBindVertexArray(vao)
