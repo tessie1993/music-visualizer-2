@@ -443,6 +443,43 @@ window.__init = function init(cfg) {
       if (!state.sceneFbo.ok) return fail('the composite scene target was incomplete');
     }
 
+    // The acid echo: EmergenceScene.ensureEcho()'s two RGBA8 ping-pong
+    // targets (cleared to transparent black, as the app clears them) plus the
+    // echo program. Its uniforms join activeUniforms so the audit's
+    // dead-strip check covers this program too.
+    state.echo = null;
+    if (cfg.echoShaders) {
+      let echoProg;
+      try {
+        echoProg = buildProgram(gl, cfg.echoShaders.vert, cfg.echoShaders.frag);
+      } catch (e) {
+        return fail('echo shader: ' + e.message);
+      }
+      const targets = [
+        new Fbo(gl, cfg.width, cfg.height, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, true),
+        new Fbo(gl, cfg.width, cfg.height, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, true),
+      ];
+      if (!targets[0].ok || !targets[1].ok) return fail('an echo target was incomplete');
+      for (const t of targets) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      const locs = new Map();
+      state.echo = {
+        prog: echoProg,
+        targets,
+        read: 0,
+        vao: gl.createVertexArray(),
+        loc(name) {
+          if (!locs.has(name)) locs.set(name, gl.getUniformLocation(echoProg, name));
+          return locs.get(name);
+        },
+      };
+      for (const n of activeUniformsOf(gl, echoProg)) active.add(n);
+    }
+
     state.melt = null;
     let meltReport = { enabled: false };
     if (cfg.meltConfig && cfg.meltConfig.enabled) {
@@ -518,6 +555,23 @@ function uploadUniforms(gl, plan, locOf) {
   return skipped;
 }
 
+/** EmergenceScene.drawEcho(), one invocation. Blend stays off, as there. */
+function drawEchoPass(gl, echo, srcTex, u) {
+  gl.disable(gl.BLEND);
+  gl.useProgram(echo.prog);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, srcTex);
+  gl.uniform1i(echo.loc('uPrev'), 0);
+  gl.uniform1f(echo.loc('uDecay'), Math.min(Math.max(u.decay, 0), 1));
+  gl.uniform1f(echo.loc('uZoomWarp'), u.zoomWarp);
+  gl.uniform1f(echo.loc('uRotWarp'), u.rotWarp);
+  gl.uniform1f(echo.loc('uHueRot'), u.hueRot);
+  gl.uniform1f(echo.loc('uChroma'), u.chroma);
+  gl.bindVertexArray(echo.vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindVertexArray(null);
+}
+
 window.__frame = function frame(job) {
   try {
     const gl = state.gl;
@@ -567,16 +621,25 @@ window.__frame = function frame(job) {
     const skipped = uploadUniforms(gl, job.uniforms, uniformLoc);
 
     if (job.particles) {
-      // The particle family draws SPRITES onto a target, not a fullscreen
-      // quad, so unlike every other scene here it does not cover what was
-      // already in the buffer. VisualizerRenderer either clears FBO A or fades
-      // it for trails; trails are a RENDERER feature, not a scene one, so the
-      // non-trail case is what a scene-only preview should show. Without this
-      // the additive blend would accumulate every frame of the run into one
-      // ever-brightening image and `deltaMeanLuma` would be meaningless.
-      gl.clearColor(0, 0, 0, 1);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-      // ParticleSceneBase.draw(): premultiplied-alpha additive.
+      // Sprites do not cover what was already in the buffer the way a
+      // fullscreen quad does. With the echo on, the previous frame - warped,
+      // decayed - IS the background, sequenced exactly as drawWithEcho():
+      // echo into the write target, sprites on top, unity blit to the scene
+      // target, swap. With it off, EmergenceScene.draw() falls through to
+      // drawSprites() on a renderer-cleared target, so a clear stands in.
+      const echo = state.echo && job.echo ? state.echo : null;
+      let echoWrite = 0;
+      if (echo) {
+        echoWrite = 1 - echo.read;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, echo.targets[echoWrite].fbo);
+        gl.viewport(0, 0, state.canvas.width, state.canvas.height);
+        drawEchoPass(gl, echo, echo.targets[echo.read].tex, job.echo);
+        gl.useProgram(state.program);
+      } else {
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+      // EmergenceScene.drawSprites(): premultiplied-alpha additive.
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       const p = state.particles;
@@ -589,6 +652,13 @@ window.__frame = function frame(job) {
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, drawCount);
       gl.bindVertexArray(null);
       gl.disable(gl.BLEND);
+      if (echo) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, sceneTarget ? sceneTarget.fbo : null);
+        gl.viewport(0, 0, state.canvas.width, state.canvas.height);
+        drawEchoPass(gl, echo, echo.targets[echoWrite].tex,
+          { decay: 1, zoomWarp: 0, rotWarp: 0, hueRot: 0, chroma: 0 });
+        echo.read = echoWrite;
+      }
     } else {
       gl.bindVertexArray(state.vao);
       gl.drawArrays(gl.TRIANGLES, 0, 3);

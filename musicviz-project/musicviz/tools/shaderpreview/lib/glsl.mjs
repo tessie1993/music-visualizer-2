@@ -39,18 +39,32 @@ export function parseIncludeRegistry(glUtilPath) {
   return names;
 }
 
+/**
+ * Raw resource roots may be several: the app merges `res/raw` from :app and
+ * from :engine:scenes into one namespace at build time, so a shader in either
+ * (and an include crossing between them) is one flat name to the app. This
+ * mirrors that merge the only way a file loader can - by searching the roots
+ * in order.
+ */
+export function shaderFile(rawDirs, resourceName) {
+  const dirs = Array.isArray(rawDirs) ? rawDirs : [rawDirs];
+  for (const d of dirs) {
+    const f = path.join(d, `${resourceName}.glsl`);
+    if (fs.existsSync(f)) return f;
+  }
+  throw new Error(`no such shader: ${resourceName}.glsl (searched ${dirs.join(', ')})`);
+}
+
 /** Also mirrors GlUtil: unknown include is a hard error, not an empty expansion. */
-export function resolveIncludes(source, registry, rawDir) {
+export function resolveIncludes(source, registry, rawDirs) {
   return source.replace(INCLUDE_PATTERN, (_all, name) => {
     if (!registry.has(name)) throw new Error(`unknown shader include '${name}'`);
-    return fs.readFileSync(path.join(rawDir, `${name}.glsl`), 'utf8');
+    return fs.readFileSync(shaderFile(rawDirs, name), 'utf8');
   });
 }
 
-export function loadShader(rawDir, resourceName, registry) {
-  const file = path.join(rawDir, `${resourceName}.glsl`);
-  if (!fs.existsSync(file)) throw new Error(`no such shader: ${file}`);
-  return resolveIncludes(fs.readFileSync(file, 'utf8'), registry, rawDir);
+export function loadShader(rawDirs, resourceName, registry) {
+  return resolveIncludes(fs.readFileSync(shaderFile(rawDirs, resourceName), 'utf8'), registry, rawDirs);
 }
 
 /** Strips comments so a commented-out `uniform` is not read as a declaration. */

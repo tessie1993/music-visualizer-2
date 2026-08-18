@@ -498,44 +498,50 @@ export function createShaderSceneDriver({ params, width, height }) {
 }
 
 // ---------------------------------------------------------------------------
-// PARTICLES - render/scene/ParticleSceneBase.kt
+// EMERGENCE - render/scene/EmergenceScene.kt
 // ---------------------------------------------------------------------------
 //
-// The nine CPU particle styles (nebula, bursts, swarm, fountain, orbits,
-// galaxy, attractor, storm, inkflow) share ONE render path: `update()` fills a
-// packed record per particle, and `draw()` uploads it as instance data behind
-// particle_vert.glsl + particle_frag.glsl. Before this driver that path had no
-// off-device coverage at all.
+// The style that replaced the nine CPU particle scenes. Its render path is
+// two programs: instanced billboards behind emergence_vert/frag.glsl (the
+// shared lib_particle look), and the acid ECHO - the previous frame redrawn
+// slightly zoomed, rotated, hue-rotated and chroma-fringed under the new
+// sprites (emergence_echo_vert/frag.glsl, ping-ponged exactly as
+// drawWithEcho() sequences it). Without this driver neither program has any
+// off-device coverage.
 //
 // WHAT THIS DRIVER DOES AND DOES NOT COVER - read before trusting a frame.
 //
-// It covers the half that is shared and that no other test can see: the
-// instanced attribute layout, the billboard/stretch maths in
-// lib_particle_common, the shading in lib_particle_shade, the palette and
-// density post-process, the beat-driven size and zoom swell, and the full
-// 13-uniform contract of `draw()` under the same three-way audit as every
-// other scene here.
+// It covers the render halves no JVM test can see: the instanced attribute
+// layout, the billboard/stretch maths in lib_particle_common, the shading in
+// lib_particle_shade, the palette and density post-process, the beat-driven
+// size and zoom swell, the echo warp/decay/fringe chain, and the full uniform
+// contract of BOTH programs under the same three-way audit as every other
+// scene here.
 //
-// It does NOT cover any individual style's `simulate()`. Those are pure Kotlin
-// with no GL - which is exactly why they are already covered on the JVM by
-// ParticleStyleTest, NewParticleStylesTest and ParticleGatingTest, through the
-// `particleRecords()` hook that exists for them. Re-implementing nine
-// simulations in JS would add a second thing to be wrong about and would drift
-// silently; the one thing this tool could never check without a GL context is
-// the render, so the render is what it checks.
+// It does NOT cover EmergenceSim.step(). That is pure Kotlin with no GL -
+// which is exactly why it is already covered on the JVM by EmergenceSimTest
+// through the records it publishes. Re-implementing the sim in JS would add
+// a second thing to be wrong about and would drift silently; the one thing
+// this tool could never check without a GL context is the render, so the
+// render is what it checks.
 //
 // The population is therefore a NAMED STAND-IN, in the same sense as the
 // harness's 1x1 black FlowField texture: a deterministic field chosen to
-// exercise the shading corners rather than to imitate any style. It carries
+// exercise the shading corners rather than to imitate the sim. It carries
 // the full range of sizes (including dead particles at size 0, so the
 // `vFade <= 0.0` discard path is exercised), speeds from stationary to fully
-// stretched, and the whole hue and energy range.
+// stretched, and the whole hue and energy range. sim.beatEnvelope() is
+// likewise stood in by a decaying motionImpulse envelope.
 
-/** ParticleSceneBase.FLOATS_PER_PARTICLE. */
+/** EmergenceSim.FLOATS_PER_PARTICLE. */
 const PARTICLE_FLOATS = 7;
 
 /** ParticleLook.STRETCH_SECONDS. */
 const STRETCH_SECONDS = 0.0025;
+
+/** EmergenceScene.STRETCH_SCALE / STRETCH_MAX. */
+const EMERGENCE_STRETCH_SCALE = 1.4;
+const EMERGENCE_STRETCH_MAX = 2.6;
 
 /** ParticleLook.glow: GLOW_BASE + clamp(bloom) * GLOW_PER_BLOOM. */
 function particleGlow(bloom) {
@@ -552,17 +558,18 @@ const PARTICLE_DEFAULTS = {
   saturation: 1, brightness: 1, intensity: 1, contrast: 1, gamma: 1,
   particleShape: 0, particleSize: 6, density: 1, bloom: 0, pulse: 0,
   beatResponse: 1, colorShift: 0, hueRange: 1, paletteBase: 0, paletteRange: 1,
+  audioDrive: 1,
+  // The echo. Trails default ON here because the echo pass is half of what
+  // this driver exists to exercise; `--param trails=false` previews the
+  // sprites-only path the app takes when the user turns Trails off.
+  trails: true, trailLength: 0.5, trailZoom: 0, trailWarp: 0, emergenceAcid: 0.35,
 };
 
 /**
- * @param count      population size; the app's styles range from 512 to 4096.
- * @param stretchScale/stretchMax  ParticleSceneBase's open vals. The defaults
- *        are the base class's (1 and 2); StormScene is the style that raises
- *        them, so passing its values is how you preview a rain-like streak.
+ * @param count  population size; the default is EmergenceSim.DEFAULT_COUNT.
  */
-export function createParticleDriver({
-  params, width, height, count = 2048, seed = 12345,
-  stretchScale = 1, stretchMax = 2,
+export function createEmergenceDriver({
+  params, width, height, count = 2600, seed = 12345,
 }) {
   const p = { ...PARTICLE_DEFAULTS, ...params };
   const data = new Float32Array(count * PARTICLE_FLOATS);
@@ -581,7 +588,7 @@ export function createParticleDriver({
     seedSpeed[i] = 0.15 + rnd() * 1.35;
     seedRadius[i] = 0.1 + rnd() * 0.85;
     // Every 64th particle is dead, so the size-0 -> vFade 0 -> discard branch
-    // in particle_vert/particle_frag is exercised on every frame.
+    // in emergence_vert/emergence_frag is exercised on every frame.
     seedSize[i] = i % 64 === 0 ? 0 : 0.35 + rnd() * 1.3;
     seedHue[i] = rnd();
   }
@@ -590,11 +597,13 @@ export function createParticleDriver({
   let rotationAngle = 0;
   let cyclePhase = 0;
   let beatPulse = 0;
+  let lastTreble = 0;
 
-  // ParticleSceneBase.draw()'s loc("uX") calls, all thirteen.
+  // EmergenceScene's loc("uX") calls: thirteen sprite uniforms, six echo.
   const supplies = new Set([
     'uViewport', 'uZoom', 'uRotation', 'uSat', 'uBright', 'uContrast', 'uGamma',
     'uShape', 'uStretch', 'uStretchMax', 'uGlow', 'uTime', 'uSize',
+    'uPrev', 'uDecay', 'uZoomWarp', 'uRotWarp', 'uHueRot', 'uChroma',
   ]);
 
   /** The stand-in population: orbiting tracers, published with velocity. */
@@ -621,7 +630,7 @@ export function createParticleDriver({
     }
   }
 
-  /** ParticleSceneBase.postProcess(), verbatim. */
+  /** EmergenceScene.applyPalette(), verbatim. */
   function postProcess() {
     const drawCount = clamp(Math.trunc(count * p.density), 1, count);
     const hueBase = p.paletteBase + p.colorShift + cyclePhase;
@@ -634,15 +643,16 @@ export function createParticleDriver({
   }
 
   function step(f, dt) {
-    // ParticleSceneBase.update(), in order.
+    // EmergenceScene.update(), in order. beatPulse stands in for
+    // sim.beatEnvelope() - a decaying impulse envelope of the same shape.
     time += dt;
-    rotationAngle += p.rotation * dt;
+    rotationAngle = (rotationAngle + p.rotation * dt) % (Math.PI * 2);
     if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * dt) % 1;
+    lastTreble = clamp(f.treble * p.audioDrive, 0, 1.5);
     beatPulse = Math.max(0, Math.max(motionImpulse(f), beatPulse - dt * 3));
     simulate(f, dt);
-    // applyFlowField is skipped deliberately: with no FlowField bound the app
-    // takes its `k <= 0 && !advecting` early return on every frame, which is
-    // the state being previewed here.
+    // No FlowField is bound, so sim-side advection is the flowStrength=0
+    // state - the same as Particles-ride-field off.
     const drawCount = postProcess();
 
     const u = (name, v) => ({ [name]: { t: '1f', v } });
@@ -655,20 +665,34 @@ export function createParticleDriver({
       u('uContrast', p.contrast),
       u('uGamma', p.gamma),
       u('uShape', p.particleShape),
-      u('uStretch', STRETCH_SECONDS * stretchScale),
-      u('uStretchMax', stretchMax),
+      u('uStretch', STRETCH_SECONDS * EMERGENCE_STRETCH_SCALE),
+      u('uStretchMax', EMERGENCE_STRETCH_MAX),
       u('uGlow', particleGlow(p.bloom)),
       // draw(timeSeconds) is handed the RENDERER's clock, not a scene clock.
       u('uTime', time),
       u('uSize', p.particleSize * dpiScale(height) * (1 + beatPulse * p.pulse * 0.8)),
       { uViewport: { t: '2f', v: [width, height] } },
     );
+
+    // drawEcho()'s first (warped, decayed) invocation; the harness hard-codes
+    // the second unity blit the way drawWithEcho() does.
+    const acid = p.emergenceAcid;
+    const echo = p.trails
+      ? {
+        decay: 0.82 + 0.155 * clamp(p.trailLength, 0, 1),
+        zoomWarp: acid * (0.012 + beatPulse * 0.02) + p.trailZoom * 0.02,
+        rotWarp: acid * (0.01 + lastTreble * 0.03) + p.trailWarp * 0.02,
+        hueRot: acid * (0.15 + lastTreble * 0.5),
+        chroma: acid * 0.35,
+      }
+      : null;
     return {
       uniforms,
       audioTex: null,
       melt: null,
       particles: { data: Array.from(data), drawCount },
-      debug: { time, beatPulse, drawCount },
+      echo,
+      debug: { time, beatPulse, drawCount, echoOn: !!echo },
     };
   }
 
@@ -680,7 +704,7 @@ export function createParticleDriver({
   }
 
   return {
-    id: 'particles', supplies, step, jumpClock,
+    id: 'emergence', supplies, step, jumpClock,
     meltConfig: { enabled: false },
     particleConfig: { count, floatsPerParticle: PARTICLE_FLOATS },
   };

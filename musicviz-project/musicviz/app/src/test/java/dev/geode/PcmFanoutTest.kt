@@ -108,6 +108,11 @@ class PcmFanoutTest {
             "render/scene/BeamScene.kt",
             "render/scene/ShaderScene.kt",
             "render/scene/EmergenceScene.kt",
+            "render/scene/HyperspaceScene.kt",
+            "render/scene/CymaticsScene.kt",
+            "render/fluid/FluidScene.kt",
+            "render/fluid/CurlFlowScene.kt",
+            "render/fluid/WaterScene.kt",
         )) {
             assertTrue("$scene dropped off the raw-PCM feed", source(scene).contains("PcmSink"))
         }

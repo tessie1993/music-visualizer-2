@@ -5,6 +5,8 @@ import android.opengl.GLES30
 import dev.geode.R
 import dev.geode.analysis.AudioFeatures
 import dev.geode.render.scene.GlUtil
+import dev.geode.render.scene.PcmPulse
+import dev.geode.render.scene.PcmSink
 import dev.geode.render.scene.Scene
 import dev.geode.render.scene.SceneIds
 import dev.geode.render.scene.SceneParams
@@ -34,7 +36,8 @@ import kotlin.math.abs
  */
 internal class WaterScene(
     private val context: Context,
-) : Scene {
+) : Scene,
+    PcmSink {
     override val id: String = SceneIds.WATER
 
     private companion object {
@@ -64,6 +67,9 @@ internal class WaterScene(
 
     /** "Audio drive": one master reactivity gain for everything below. */
     private val audioDrive = FluidAudioDrive()
+
+    private val pcmPulse = PcmPulse()
+    private var pcmStrike = 0f
 
     private var params = SceneParams()
     private var time = 0f
@@ -141,6 +147,11 @@ internal class WaterScene(
         sim.resize(width, height)
     }
 
+    override fun acceptPcm(
+        samples: FloatArray,
+        count: Int,
+    ) = pcmPulse.accept(samples, count)
+
     override fun update(
         features: AudioFeatures,
         dt: Float,
@@ -153,6 +164,7 @@ internal class WaterScene(
         // so every term lands back on its own phase at the wrap.
         time = (time + dt) % TIME_WRAP_SECONDS
         lastDt = dt
+        pcmStrike = pcmPulse.tick(dt)
         pendingFeatures = features
         lastFeatures = features
         featuresAgeSec = 0f
@@ -353,6 +365,7 @@ internal class WaterScene(
 
         val simDt = lastDt.coerceIn(0f, 1f / 30f)
         choreography.tick(f, simDt, sim.aspect)
+        val pcmKick = pcmStrike.coerceIn(0f, 1f)
         val rippleStrength = p.waterRippleStrength.coerceIn(0f, 2f)
         val catchRadius = WaterMath.catchWellRadius(p.fluidCatchRadius)
         // Palette identity only. Hue shift rides the composite pass' uPostHue
@@ -384,7 +397,7 @@ internal class WaterScene(
             // carries over tightened. Stirrer splats arrive every frame from
             // moving anchors, so their small drops naturally trail into
             // wakes that flow across the pool.
-            val amp = (0.06f + 0.5f * speed.coerceAtMost(2f)) * rippleStrength
+            val amp = (0.06f + 0.5f * speed.coerceAtMost(2f)) * rippleStrength * (1f + pcmKick * 0.6f)
             // The splat's own palette colour goes in with the ring: the film
             // is coloured by the same emitter schedule that shapes the waves,
             // which is what makes the pool read as the visual gone liquid
@@ -412,7 +425,7 @@ internal class WaterScene(
         GLES30.glUniform1f(dLoc("uSpecular"), p.waterSpecular.coerceIn(0f, 1f))
         GLES30.glUniform1f(dLoc("uFlowDrift"), p.waterFlow.coerceIn(0f, 1f))
         GLES30.glUniform1f(dLoc("uRefract"), 0.9f)
-        GLES30.glUniform1f(dLoc("uTreble"), f.treble.coerceIn(0f, 2f))
+        GLES30.glUniform1f(dLoc("uTreble"), (f.treble + pcmKick * 0.5f).coerceIn(0f, 2f))
         // Neutral on purpose - see WaterMath.DISPLAY_BRIGHTNESS. Brightness
         // and Intensity are Color-tab grading params and the composite pass
         // owns them for every scene that doesn't grade itself, WATER included.

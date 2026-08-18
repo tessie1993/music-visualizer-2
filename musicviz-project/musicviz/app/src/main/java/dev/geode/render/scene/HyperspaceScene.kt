@@ -56,7 +56,8 @@ internal class HyperspaceScene(
     private val context: Context,
     private val style: VisualStyleCatalog.HyperspaceStyle =
         requireNotNull(VisualStyleCatalog.hyperspace(SceneIds.HYPERSPACE)),
-) : Scene {
+) : Scene,
+    PcmSink {
     override val id: String = style.id
 
     private companion object {
@@ -166,6 +167,7 @@ internal class HyperspaceScene(
     private var programOk = false
     private var vao = 0
 
+    private val pcmPulse = PcmPulse()
     private var beatPulse = 0f
     private var idleBlend = 0f
     private var idlePhase = 0f
@@ -258,6 +260,11 @@ internal class HyperspaceScene(
         strength: Float,
     ) = melt.queueTouchStroke(nx, ny, ndx, ndy, strength)
 
+    override fun acceptPcm(
+        samples: FloatArray,
+        count: Int,
+    ) = pcmPulse.accept(samples, count)
+
     override fun update(
         features: AudioFeatures,
         dt: Float,
@@ -315,7 +322,8 @@ internal class HyperspaceScene(
         slewBass = HyperspaceMath.slewLimit(slewBass, f.bass, dt, SLEW_RISE_PER_SEC, SLEW_FALL_PER_SEC)
         slewMid = HyperspaceMath.slewLimit(slewMid, f.mid, dt, SLEW_RISE_PER_SEC, SLEW_FALL_PER_SEC)
         spectral.advance(f.bands, dt)
-        stylePhase = (stylePhase + dt * pace * (style.phaseRate + style.phaseBassRate * slewBass)) % 1f
+        val pcmKick = pcmPulse.tick(dt).coerceIn(0f, 1f)
+        stylePhase = (stylePhase + dt * pace * (style.phaseRate + style.phaseBassRate * slewBass) * (1f + pcmKick * 0.35f)) % 1f
         // Beat choreography (spawns, the neon flash) is gated by the beat
         // tracker's own confidence, per its KDoc: a low-confidence grid gets
         // a reduced - never zero - weight instead of strobing false beats.
@@ -328,7 +336,7 @@ internal class HyperspaceScene(
         // of seconds, so an idle app still fills instead of holding whatever
         // was alive when the music stopped.
         idleImpulseAge += dt
-        var impulse = (f.motionImpulse * beatWeight * p.beatResponse.coerceIn(0f, 2f)).coerceIn(0f, 1.5f)
+        var impulse = ((f.motionImpulse * beatWeight + pcmKick * 0.5f) * p.beatResponse.coerceIn(0f, 2f)).coerceIn(0f, 1.5f)
         if (idleBlend > 0.5f && idleImpulseAge >= IDLE_IMPULSE_SECONDS) {
             impulse = max(impulse, IDLE_IMPULSE)
             idleImpulseAge = 0f
@@ -414,7 +422,7 @@ internal class HyperspaceScene(
         farPlane = HyperspaceLook.farPlane(camDistance, spread)
 
         beatPulse =
-            maxOf(f.motionImpulse * beatWeight * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f)
+            maxOf((f.motionImpulse * beatWeight + pcmKick * 0.6f) * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f)
                 .coerceIn(0f, 1.5f)
         val budget = MarchBudget.forDetail(p.hyperDetail)
 

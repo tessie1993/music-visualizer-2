@@ -11,16 +11,20 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { launch } from './lib/cdp.mjs';
-import { parseIncludeRegistry, loadShader, parseUniforms } from './lib/glsl.mjs';
+import { parseIncludeRegistry, loadShader, parseUniforms, shaderFile } from './lib/glsl.mjs';
 import { extractUploadedUniforms, auditUniforms } from './lib/kotlin.mjs';
 import { MODELS } from './lib/audio.mjs';
-import { createHyperspaceDriver, createParticleDriver, createShaderSceneDriver } from './lib/scenes.mjs';
+import { createHyperspaceDriver, createEmergenceDriver, createShaderSceneDriver } from './lib/scenes.mjs';
 import { createCompositeDriver } from './lib/composite.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP = path.resolve(HERE, '../../app/src/main');
+// Both raw roots the build merges into one namespace: the app's, and
+// :engine:scenes where the V2 plan homes new GLSL (emergence lives there).
 const RAW = path.join(APP, 'res/raw');
-const JAVA = path.join(APP, 'java/dev/musicviz');
+const ENGINE_RAW = path.resolve(HERE, '../../engine/scenes/src/main/res/raw');
+const RAWS = [RAW, ENGINE_RAW];
+const JAVA = path.join(APP, 'java/dev/geode');
 const GLUTIL = path.join(JAVA, 'render/scene/GlUtil.kt');
 
 /**
@@ -121,7 +125,7 @@ function makeDriver(args) {
       ignoreUploaded: [],
       standIns: [],
       // CompositeGrade.SceneFamily: HyperspaceScene is none of ShaderScene,
-      // ParticleSceneBase or ProjectMScene, so it lands in the else branch.
+      // EmergenceScene or ProjectMScene, so it lands in the else branch.
       family: 'FLUID',
     };
   }
@@ -144,32 +148,34 @@ function makeDriver(args) {
       family: 'SHADER',
     };
   }
-  if (args.scene === 'particles') {
+  if (args.scene === 'emergence') {
     return {
-      driver: createParticleDriver({
+      driver: createEmergenceDriver({
         params: args.params, width: args.width, height: args.height,
         count: args.count, seed: args.seed,
-        stretchScale: args.stretchScale, stretchMax: args.stretchMax,
       }),
-      // The only scene here with a vertex shader of its own: the billboard and
-      // the stretch are vertex-stage work, so half the uniform contract lives
-      // there and the audit has to read both stages.
-      vertResource: 'particle_vert',
-      fragResource: 'particle_frag',
-      kotlinPath: path.join(JAVA, 'render/scene/ParticleSceneBase.kt'),
+      // A scene with a vertex shader of its own: the billboard and the
+      // stretch are vertex-stage work, so half the uniform contract lives
+      // there and the audit has to read both stages - and the acid echo is a
+      // second program again, so its two stages are audited too.
+      vertResource: 'emergence_vert',
+      fragResource: 'emergence_frag',
+      echoVertResource: 'emergence_echo_vert',
+      echoFragResource: 'emergence_echo_frag',
+      kotlinPath: path.join(JAVA, 'render/scene/EmergenceScene.kt'),
       ignoreUploaded: [],
       standIns: [
-        'the particle POPULATION is a stand-in, not any style\'s simulate(): a deterministic ' +
-        'orbit field spanning the full size/speed/hue range (every 64th particle dead, so the ' +
-        'vFade<=0 discard path runs). The nine simulate()s are pure CPU and are covered on the ' +
-        'JVM by ParticleStyleTest/NewParticleStylesTest via particleRecords().',
-        'no FlowField is bound, so applyFlowField takes its early return - the same state as a ' +
-        'style with flowEnabled off',
+        'the particle POPULATION is a stand-in, not EmergenceSim.step(): a deterministic orbit ' +
+        'field spanning the full size/speed/hue range (every 64th particle dead, so the ' +
+        'vFade<=0 discard path runs). The sim is pure CPU and is covered on the JVM by ' +
+        'EmergenceSimTest through the records it publishes.',
+        'the beat envelope is a stand-in decay of motionImpulse, not sim.beatEnvelope()',
+        'no FlowField is bound - the same state as Particles-ride-field off',
       ],
       family: 'PARTICLE',
     };
   }
-  throw new Error(`unknown --scene '${args.scene}' (hyperspace | shader | particles)`);
+  throw new Error(`unknown --scene '${args.scene}' (hyperspace | shader | emergence)`);
 }
 
 async function main() {
@@ -181,10 +187,10 @@ async function main() {
     console.log(`includes registered in GlUtil: ${[...registry].join(', ')}`);
     console.log('\nscenes:');
     console.log('  hyperspace                 (HyperspaceScene.kt + hyperspace_frag.glsl)');
-    console.log('  particles                  (ParticleSceneBase.kt + particle_vert/frag.glsl)');
-    console.log('                             the SHARED render path of the nine CPU particle');
-    console.log('                             styles, with a stand-in population - see --json');
-    console.log('                             standIns. Flags: --count --stretch-scale --stretch-max');
+    console.log('  emergence                  (EmergenceScene.kt + emergence_vert/frag.glsl');
+    console.log('                             + the emergence_echo acid-trail pass), with a');
+    console.log('                             stand-in population - see --json standIns.');
+    console.log('                             Flags: --count --param trails=false');
     console.log('  shader --shader <id>       (ShaderScene.kt), one of:');
     for (const [id, res] of map) console.log(`    ${id.padEnd(12)} -> ${res}.glsl`);
     console.log(`\naudio models: ${Object.keys(MODELS).join(', ')}`);
@@ -194,16 +200,29 @@ async function main() {
   const {
     driver, fragResource, kotlinPath, ignoreUploaded, standIns, family,
     vertResource = 'quad_vert',
+    echoVertResource = null,
+    echoFragResource = null,
   } = makeDriver(args);
 
-  const vertSrc = loadShader(RAW, vertResource, registry);
-  const fragSrc = loadShader(RAW, fragResource, registry);
-  // Uniforms from BOTH stages. quad_vert declares none, so this is a no-op for
-  // every fullscreen style; particle_vert declares six of the thirteen, and
-  // auditing only the fragment stage would have silently excused all six.
+  const vertSrc = loadShader(RAWS, vertResource, registry);
+  const fragSrc = loadShader(RAWS, fragResource, registry);
+  const echoShaders = echoVertResource
+    ? {
+      vert: loadShader(RAWS, echoVertResource, registry),
+      frag: loadShader(RAWS, echoFragResource, registry),
+    }
+    : null;
+  // Uniforms from EVERY stage the scene's Kotlin uploads to. quad_vert
+  // declares none, so this is a no-op for every fullscreen style;
+  // emergence_vert declares six of the thirteen, and the echo pass is a
+  // second program whose six would otherwise be audited against nothing.
   const declared = (() => {
     const byName = new Map();
-    for (const d of [...parseUniforms(vertSrc), ...parseUniforms(fragSrc)]) {
+    const stages = [
+      ...parseUniforms(vertSrc), ...parseUniforms(fragSrc),
+      ...(echoShaders ? [...parseUniforms(echoShaders.vert), ...parseUniforms(echoShaders.frag)] : []),
+    ];
+    for (const d of stages) {
       if (!byName.has(d.name)) byName.set(d.name, d);
     }
     return [...byName.values()];
@@ -230,8 +249,8 @@ async function main() {
       layer: args.layer,
     });
     compositeShaders = {
-      vert: loadShader(RAW, 'fade_vert', registry),
-      frag: loadShader(RAW, 'composite_frag', registry),
+      vert: loadShader(RAWS, 'fade_vert', registry),
+      frag: loadShader(RAWS, 'composite_frag', registry),
     };
     const compositeDeclared = parseUniforms(compositeShaders.frag);
     const compositeUploaded = extractUploadedUniforms(path.join(JAVA, 'render/VisualizerRenderer.kt'));
@@ -259,7 +278,7 @@ async function main() {
     composite: args.composite ? `composite_frag.glsl, gate ${family}` : null,
     shader: `${fragResource}.glsl`,
     kotlin: path.relative(path.resolve(HERE, '../..'), kotlinPath),
-    includesResolved: (fs.readFileSync(path.join(RAW, `${fragResource}.glsl`), 'utf8')
+    includesResolved: (fs.readFileSync(shaderFile(RAWS, fragResource), "utf8")
       .match(/^[ \t]*\/\/#include[ \t]+(\w+)[ \t]*$/gm) || []).map((s) => s.trim()),
     uniformAudit: {
       shaderDeclares: declared.length,
@@ -283,16 +302,16 @@ async function main() {
 
   const meltShaders = args.scene === 'hyperspace' && args.hasMelt
     ? {
-      vert: loadShader(RAW, 'fluid_base_vert', registry),
+      vert: loadShader(RAWS, 'fluid_base_vert', registry),
       frags: {
-        splat: loadShader(RAW, 'fluid_splat_frag', registry),
-        advect: loadShader(RAW, 'fluid_advect_frag', registry),
-        curl: loadShader(RAW, 'fluid_curl_frag', registry),
-        vorticity: loadShader(RAW, 'fluid_vorticity_frag', registry),
-        divergence: loadShader(RAW, 'fluid_divergence_frag', registry),
-        pressure: loadShader(RAW, 'fluid_pressure_frag', registry),
-        gradient: loadShader(RAW, 'fluid_gradient_frag', registry),
-        clear: loadShader(RAW, 'fluid_clear_frag', registry),
+        splat: loadShader(RAWS, 'fluid_splat_frag', registry),
+        advect: loadShader(RAWS, 'fluid_advect_frag', registry),
+        curl: loadShader(RAWS, 'fluid_curl_frag', registry),
+        vorticity: loadShader(RAWS, 'fluid_vorticity_frag', registry),
+        divergence: loadShader(RAWS, 'fluid_divergence_frag', registry),
+        pressure: loadShader(RAWS, 'fluid_pressure_frag', registry),
+        gradient: loadShader(RAWS, 'fluid_gradient_frag', registry),
+        clear: loadShader(RAWS, 'fluid_clear_frag', registry),
       },
     }
     : null;
@@ -316,6 +335,7 @@ async function main() {
       meltShaders,
       compositeShaders,
       particles: driver.particleConfig || null,
+      echoShaders,
     });
     if (!init.ok) {
       console.error('harness init failed: ' + init.error);
@@ -376,6 +396,7 @@ async function main() {
         melt: plan.melt,
         audioTex: plan.audioTex,
         particles: plan.particles || null,
+        echo: plan.echo || null,
         capture: isCapture && !!outDir,
         wantFieldStats: isCapture && args.fieldStats,
         skipRender: !isCapture,

@@ -5,6 +5,8 @@ import android.opengl.GLES30
 import dev.geode.R
 import dev.geode.analysis.AudioFeatures
 import dev.geode.render.scene.GlUtil
+import dev.geode.render.scene.PcmPulse
+import dev.geode.render.scene.PcmSink
 import dev.geode.render.scene.Scene
 import dev.geode.render.scene.SceneIds
 import dev.geode.render.scene.SceneParams
@@ -35,7 +37,8 @@ import dev.geode.render.scene.SceneParams
  */
 internal class CurlFlowScene(
     private val context: Context,
-) : Scene {
+) : Scene,
+    PcmSink {
     override val id: String = SceneIds.CURLFLOW
 
     private companion object {
@@ -71,6 +74,8 @@ internal class CurlFlowScene(
 
     /** [beatEnv] after "Beat response" - the value both beat terms ride. */
     private var beatDrive = 0f
+    private val pcmPulse = PcmPulse()
+    private var pcmKick = 0f
     private var aspect = 1f
     private var available = false
 
@@ -122,12 +127,18 @@ internal class CurlFlowScene(
         this.params = params
     }
 
+    override fun acceptPcm(
+        samples: FloatArray,
+        count: Int,
+    ) = pcmPulse.accept(samples, count)
+
     override fun update(
         features: AudioFeatures,
         dt: Float,
     ) {
         pending = features
         lastDt = dt.coerceIn(0f, 1f / 30f)
+        pcmKick = pcmPulse.tick(dt).coerceIn(0f, 1f)
     }
 
     private fun loc(name: String): Int = fieldUniforms.loc(name)
@@ -171,8 +182,8 @@ internal class CurlFlowScene(
             GLES30.glUniform1f(loc("uAspect"), aspect)
             GLES30.glUniform1f(loc("uTime"), noiseTime)
             GLES30.glUniform1f(loc("uFreq"), 1.2f * (0.5f + params.turbulence.coerceIn(0.1f, 2f)))
-            GLES30.glUniform1f(loc("uDetail"), (f.treble * 3f).coerceIn(0f, 1.5f))
-            GLES30.glUniform1f(loc("uAmp"), CurlFlowMath.fieldAmp(params.audioDrive, beatDrive))
+            GLES30.glUniform1f(loc("uDetail"), (f.treble * 3f + pcmKick * 0.8f).coerceIn(0f, 1.5f))
+            GLES30.glUniform1f(loc("uAmp"), CurlFlowMath.fieldAmp(params.audioDrive, beatDrive) * (1f + pcmKick * 0.35f))
             // 0 = aperiodic. A whole number of cells here would make the
             // field tile exactly, which is how a seamless loop is built.
             GLES30.glUniform2f(loc("uPeriod"), 0f, 0f)

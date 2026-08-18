@@ -65,7 +65,8 @@ internal class CymaticsScene(
     private val context: Context,
     private val style: VisualStyleCatalog.CymaticsStyle =
         requireNotNull(VisualStyleCatalog.cymatics(SceneIds.CYMATICS)),
-) : Scene {
+) : Scene,
+    PcmSink {
     override val id: String = style.id
 
     private companion object {
@@ -136,6 +137,8 @@ internal class CymaticsScene(
          * user's palette choice.
          */
         const val CHROMA_HUE_SPAN = 0.05f
+
+        const val PCM_STRIKE_GAIN = 0.6f
     }
 
     private val plate = CymaticsPlate()
@@ -161,6 +164,9 @@ internal class CymaticsScene(
 
     /** Decaying beat envelope, so a hit flares the filigree instead of popping. */
     private var beatPulse = 0f
+
+    private val pcmPulse = PcmPulse()
+    private var pcmStrike = 0f
 
     /** Integrated field rotation, radians, wrapped to one turn. */
     private var swirlPhase = 0f
@@ -224,6 +230,11 @@ internal class CymaticsScene(
         this.height = max(height, 1)
     }
 
+    override fun acceptPcm(
+        samples: FloatArray,
+        count: Int,
+    ) = pcmPulse.accept(samples, count)
+
     override fun update(
         features: AudioFeatures,
         dt: Float,
@@ -232,6 +243,7 @@ internal class CymaticsScene(
         // and every shader consumer of uTime is periodic in TIME_WRAP_SECONDS.
         time = (time + dt) % TIME_WRAP_SECONDS
         lastDt = dt
+        pcmStrike = pcmPulse.tick(dt)
         pendingFeatures = features
     }
 
@@ -252,7 +264,7 @@ internal class CymaticsScene(
             bands = driveSpectrum(f, dt),
             dt = dt,
             fundamentalHz = p.cymaticsFundamental,
-            drive = DRIVE_GAIN * CymaticsMath.safeDrive(p.audioDrive),
+            drive = DRIVE_GAIN * CymaticsMath.safeDrive(p.audioDrive) * (1f + PCM_STRIKE_GAIN * pcmStrike),
             ringSeconds = CymaticsMath.ringSeconds(p.cymaticsRing),
             focus = p.cymaticsFocus,
         )

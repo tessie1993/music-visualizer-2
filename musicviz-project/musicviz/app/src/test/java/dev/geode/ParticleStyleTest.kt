@@ -8,9 +8,9 @@ import org.junit.Test
 import java.io.File
 
 /**
- * The CPU/GPU contract of the particle styles, which nothing else can catch:
- * a mismatch between `ParticleSceneBase`'s vertex layout and
- * `particle_vert.glsl`'s attribute declarations, or a uniform name that no
+ * The CPU/GPU contract of the particle-look styles, which nothing else can
+ * catch: a mismatch between `EmergenceScene`'s vertex layout and
+ * `emergence_vert.glsl`'s attribute declarations, or a uniform name that no
  * shader declares, produces NO GL error at all. The attributes simply read
  * garbage and `glGetUniformLocation` quietly returns -1, so the style renders
  * wrong (or not at all) on a device with a green build behind it.
