@@ -61,6 +61,9 @@ class ReactiveAnalyzer(
     /** Band-limited onset channels; see [kick]. */
     private var drums = DrumChannels(bandCount, hopRateHz, sampleRateHz)
 
+    private val structure = StructureTracker(bandCount, hopRateHz)
+    private val harmonic = HarmonicBalance(fftSize / 2 + 1, hopRateHz)
+
     /** Smoothed band levels, the array a scene reads. Valid after [analyze]. */
     val bands: FloatArray = FloatArray(bandCount)
     private val smoothingState = FloatArray(bandCount)
@@ -191,6 +194,30 @@ class ReactiveAnalyzer(
     var hat: Float = 0f
         private set
 
+    /** How much the band profile is changing right now, 0..1; see [StructureTracker]. */
+    var novelty: Float = 0f
+        private set
+
+    /** Whether this frame crossed a section boundary; see [StructureTracker]. */
+    var sectionBoundary: Boolean = false
+        private set
+
+    /** EXPERIMENTAL: sustained energy rise, 0..1; see [StructureTracker]. */
+    var buildup: Float = 0f
+        private set
+
+    /** EXPERIMENTAL: buildup-dip-slam event; see [StructureTracker]. */
+    var drop: Boolean = false
+        private set
+
+    /** EXPERIMENTAL: energy returning after a long quiet; see [StructureTracker]. */
+    var arrival: Boolean = false
+        private set
+
+    /** Harmonic against percussive, 0..1; see [HarmonicBalance]. */
+    var harmonicity: Float = HarmonicBalance.UNDECIDED
+        private set
+
     /** 0..1 while the adaptive range is still learning this track's dynamics. */
     val warmup: Float get() = range.warmup
 
@@ -282,6 +309,15 @@ class ReactiveAnalyzer(
         beatInBar = bar.beatInBar
         downbeat = bar.downbeat
         downbeatConfidence = bar.confidence
+
+        structure.step(bands, rms, onset)
+        novelty = structure.novelty
+        sectionBoundary = structure.sectionBoundary
+        buildup = structure.buildup
+        drop = structure.drop
+        arrival = structure.arrival
+        harmonic.step(spectrum.magnitudes)
+        harmonicity = harmonic.balance
     }
 
     /**
@@ -302,6 +338,8 @@ class ReactiveAnalyzer(
         grid.reset()
         stability.reset()
         bar.reset()
+        structure.reset()
+        harmonic.reset()
         drums.reset()
         smoothingState.fill(0f)
         bands.fill(0f)
@@ -325,6 +363,12 @@ class ReactiveAnalyzer(
         beatInBar = 0
         downbeat = false
         downbeatConfidence = 0f
+        novelty = 0f
+        sectionBoundary = false
+        buildup = 0f
+        drop = false
+        arrival = false
+        harmonicity = HarmonicBalance.UNDECIDED
         macroEnergy = 0f
         kick = 0f
         snare = 0f
@@ -372,6 +416,9 @@ class ReactiveAnalyzer(
         beatStrength = 0f
         transient = 0f
         downbeat = false
+        sectionBoundary = false
+        drop = false
+        arrival = false
         macroEnergy = 0f
         kick = 0f
         snare = 0f

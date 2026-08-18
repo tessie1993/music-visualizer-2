@@ -14,6 +14,75 @@ Newest slice first.
 
 ---
 
+## V2-3-06b: causal structure and harmonic-percussive evidence
+
+State: COMPLETE
+
+Goal: V2-3-06's second half. Two nodes in `audio-core`, both causal, both stepped per
+analysis hop, wired as `ReactiveAnalyzer` outputs. `StructureTracker`: novelty (fast versus
+slow band-profile EMAs, robustly normalized), causal section-boundary events (novelty
+standing above its own trailing statistics, refractory-gated), buildup (a sustained energy
+and onset-density rise), and the drop/arrival event pair. `HarmonicBalance`: the
+harmonic-versus-percussive balance through the HPSS intuition made causal — energy that
+persists in time is harmonic, energy that just appeared is percussive — as per-bin
+`min(now, history)` against positive change over the magnitude spectrum.
+
+User-visible effect: none yet; outputs exist on the analyzer with no production consumer.
+Per the plan's own instruction, **buildup, drop and arrival are marked EXPERIMENTAL** — the
+thresholds are heuristics validated against constructed scenarios, not a labeled corpus of
+real arrangements, and their ABI slots say so.
+
+In scope: the two nodes, their tests (constructed scenarios: a profile change fires exactly
+one section; flat material fires none; a ramp raises buildup; ramp-dip-slam fires one drop;
+quiet-then-recovery fires one arrival; a tone outranks noise outranks clicks on harmonic
+balance), analyzer wiring with reset/silence semantics matching the rhythm channels, range
+checks in the end-to-end suite.
+
+Out of scope: consumer wiring and the `AudioFeatures` ABI; a labeled real-music validation
+corpus (needed before these leave EXPERIMENTAL); the device benchmark — **carried.**
+
+Files expected to change: `engine/audio-core/.../{StructureTracker,HarmonicBalance}.kt`,
+their tests, `ReactiveAnalyzer{,Test}.kt`.
+
+Compatibility contract: purely additive; every existing output keeps its value.
+
+External source/provenance entries: none new. The HPSS temporal-persistence intuition is
+Fitzgerald's median-filtering formulation (DAFx 2010) made causal without copying anything;
+the novelty formulation is the same band-profile distance the offline
+`FeatureTimeline.detectSections` already uses, made causal.
+
+Tests written first: yes, before either node compiles.
+
+Benchmark or visual evidence: not applicable pre-wiring.
+
+Rollback: revert the one commit.
+
+Risks: the experimental trio will false-positive on material outside their heuristics —
+that is WHY they are marked experimental, and their confidence-free boolean form is
+deliberately conservative (refractory-gated, evidence-thresholded). Cost unmeasured in
+situ, as with every node this phase.
+
+Commands and results: `:engine:audio-core:test` (192 tests), `:engine:audio-core:ktlintCheck`,
+`:app:testDebugUnitTest`, `:app:ktlintCheck`, `:app:lintDebug` all green.
+
+Review findings: two, both caught by the constructed-scenario tests.
+
+**Cold-start EMA convergence read as buildup.** A fast average converging ahead of a slow
+one from zero looks exactly like a riser, so every track's first seconds would have read
+0.35 buildup on steady material. Both averages now seed AT the first frame's energy —
+buildup measures rise, never warmup.
+
+**The click-train absolute threshold was arbitrary, and the test said so by failing at
+0.458 against 0.45.** The node's documented contract is the RANKING — tone above noise
+above clicks — plus "leans percussive"; the assertion now states exactly that instead of a
+tuned constant.
+
+Commit: `feat(audio-core): causal structure and harmonic-percussive evidence`.
+
+Next slice: V2-3-07 — the time-addressed feature/event ring.
+
+---
+
 ## V2-3-06a: stereo pan, and the stereo field moves home
 
 State: COMPLETE
