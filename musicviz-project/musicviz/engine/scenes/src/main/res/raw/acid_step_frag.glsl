@@ -42,7 +42,6 @@ uniform float uDrive;
 uniform float uChroma[12]; // pitch-class energies, 0..1
 uniform float uBaseHue;
 uniform float uHueSpan;
-uniform float uOverdrive; // wraparound gain: fract(c * alpha) neon banding
 uniform float uLiquid;    // sine-field liquid warp amount
 
 const float TAU = 6.2831853;
@@ -201,15 +200,11 @@ void main() {
         prev = texture(uPrev, backUv).rgb;
     }
     prev = clamp(prev, vec3(0.0), vec3(1.0));
-    // Wraparound overdrive: gain past 1 folds back through fract instead of
-    // clipping, so hot areas band into neon contours - the acid signature.
-    // The gain breathes on a slow triangle plus the strike, never a strobe.
-    if (uOverdrive > 0.0) {
-        float tri = abs(fract(uTime * 0.05) * 2.0 - 1.0);
-        float alpha = 1.0 + uOverdrive * (0.35 + 0.9 * tri + 0.5 * uStrike);
-        vec3 driven = fract(prev * alpha);
-        prev = mix(prev, driven, min(uOverdrive, 1.0) * 0.85);
-    }
+    // Black pedestal: the loop lives in 8 bits, and per-frame hue rotation
+    // walks quantization error into full-field grey shimmer if the smallest
+    // values are allowed to persist. Crushing them costs nothing visible -
+    // real content is orders of magnitude above it - and the shimmer dies.
+    prev = max(prev - vec3(0.0045), vec3(0.0));
     prev = hueRotate(prev, uHueShift);
 
     // Solar substyle: fold the feedback around mid-grey before it decays -

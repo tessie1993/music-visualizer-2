@@ -21,7 +21,6 @@ out vec4 fragColor;
 
 uniform sampler2D uAgents;
 uniform sampler2D uTrail;
-uniform vec2 uAgentRes;
 uniform vec2 uTrailRes;
 uniform float uSensorDist;   // texels of trail space
 uniform float uSensorAngle;  // radians
@@ -50,7 +49,12 @@ vec2 hash2(vec2 q) {
 
 float senseAt(vec2 pos, float species) {
     vec2 t = texture(uTrail, fract(pos)).rg;
-    t = 1.0 - exp(-2.6 * t); // compressed sensing
+    // Compressed sensing, tuned to the field's real levels: steady trunks sit
+    // in the tens after additive deposit, and a constant that saturates there
+    // makes every probe read alike - all ties, all agents walking straight,
+    // and the network hardens into a rectangular grid. At 0.18 the trunks
+    // still differ from the veins and the turning stays organic.
+    t = 1.0 - exp(-0.18 * t);
     return species < 0.5 ? dot(t, uMatrix.xy) : dot(t, uMatrix.zw);
 }
 
@@ -81,14 +85,19 @@ void main() {
     float sR = senseAt(pos + rgt * stretch * dist * texel, species);
 
     float rnd = hash1(vUv * 977.0 + fract(uTime) * 61.7 + species);
+    // Per-agent turn personality: identical turn angles synchronize the
+    // whole population onto one heading lattice, and the network crystallizes
+    // into right angles. A fixed +-20% spread per agent keeps the machine
+    // deterministic per agent while the colony stays organic.
+    float turn = uTurnAngle * (0.8 + 0.4 * hash1(vUv * 57.31));
     if (sC >= sL && sC >= sR) {
         // straight on
     } else if (sC < sL && sC < sR) {
-        heading += (rnd < 0.5 ? -1.0 : 1.0) * uTurnAngle;
+        heading += (rnd < 0.5 ? -1.0 : 1.0) * turn;
     } else if (sL > sR) {
-        heading += uTurnAngle;
+        heading += turn;
     } else {
-        heading -= uTurnAngle;
+        heading -= turn;
     }
     heading += (rnd - 0.5) * uJitter;
 

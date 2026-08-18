@@ -15,13 +15,17 @@ uniform float uDecay; // survival per frame, < 1
 
 void main() {
     vec2 texel = 1.0 / uTrailRes;
+    // Gaussian-weighted 3x3, not a box: a box diffuses further along the
+    // axes than the diagonals, and the network slowly aligns itself to that
+    // anisotropy - organic veins harden into a rectilinear circuit.
     vec2 sum = vec2(0.0);
     for (int y = -1; y <= 1; y++) {
         for (int x = -1; x <= 1; x++) {
-            sum += texture(uTrail, fract(vUv + vec2(float(x), float(y)) * texel)).rg;
+            float w = (x == 0 ? 2.0 : 1.0) * (y == 0 ? 2.0 : 1.0);
+            sum += w * texture(uTrail, fract(vUv + vec2(float(x), float(y)) * texel)).rg;
         }
     }
-    vec2 blurred = sum / 9.0 * uDecay;
+    vec2 blurred = sum / 16.0 * uDecay;
     // Sanitize the loop: additive deposits + feedback must never keep a NaN.
     blurred = clamp(blurred, vec2(0.0), vec2(64.0));
     fragColor = vec4(blurred, 0.0, 1.0);

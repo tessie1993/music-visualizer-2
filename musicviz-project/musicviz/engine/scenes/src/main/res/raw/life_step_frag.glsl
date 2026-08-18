@@ -91,8 +91,10 @@ void main() {
     float newV = c.g;
 
     if (uRule == 0) {
-        // Disc sampling: 6 radii x 10 angles, kernel weight from the ring
-        // formula at each tap. Enough radial resolution for 3-ring species.
+        // Disc sampling: 6 radii x 12 angles, kernel weight from the ring
+        // formula at each tap, ring phases staggered so no radial spoke
+        // pattern imprints on the organisms. Enough resolution for the
+        // 3-ring species; linear filtering widens each tap to a 2x2 mean.
         float sum = 0.0;
         float norm = 0.0;
         float rings = float(uRings);
@@ -103,8 +105,8 @@ void main() {
             float w = kernelCore(fract(br)) * (idx == 0 ? uB.x : (idx == 1 ? uB.y : uB.z));
             if (w <= 0.0) continue;
             float rad = rf * uRadius;
-            for (int ai = 0; ai < 10; ai++) {
-                float a = TAU * (float(ai) + 0.35 * float(ri)) / 10.0;
+            for (int ai = 0; ai < 12; ai++) {
+                float a = TAU * (float(ai) + 0.41 * float(ri)) / 12.0;
                 sum += w * texture(uPrev, uv + rad * vec2(cos(a), sin(a)) * texel).r;
                 norm += w;
             }
@@ -150,17 +152,22 @@ void main() {
         vec2 dpos = (uv - uKickPos) * vec2(aspect, 1.0);
         float blob = exp(-dot(dpos, dpos) * 900.0) * uKick;
         if (uRule == 0) {
-            newA = clamp(newA + blob, 0.0, 1.0);
+            // Half strength: a saturated disc every beat floods a Lenia world
+            // into one mass; a soft lump buds a new organism instead.
+            newA = clamp(newA + blob * 0.5, 0.0, 1.0);
         } else {
             newV = clamp(newV + blob, 0.0, 1.0);
         }
     }
     if (uSprinkle > 0.0) {
         vec2 h = hash2(floor(uv * uRes * 0.5) + fract(uTime) * 61.7);
-        float sp = step(1.0 - uSprinkle * 0.004, h.x);
         if (uRule == 0) {
-            newA = max(newA, sp * 0.8);
+            // Lenia metabolizes seeds slowly, so sprinkle sparsely and softly
+            // or the treble reads as static instead of as new spores.
+            float sp = step(1.0 - uSprinkle * 0.0012, h.x);
+            newA = max(newA, sp * 0.5);
         } else {
+            float sp = step(1.0 - uSprinkle * 0.004, h.x);
             newV = max(newV, sp * 0.7);
         }
     }

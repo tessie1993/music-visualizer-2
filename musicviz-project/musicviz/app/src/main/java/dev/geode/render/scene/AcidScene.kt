@@ -191,10 +191,25 @@ internal class AcidScene(
             glitchEpoch = (glitchEpoch + 1f) % 1024f
         }
         glitch = (glitch - dt * GLITCH_DECAY).coerceAtLeast(0f)
-        if (f.hasChroma) {
+        if (f.hasChroma && f.chromaConfidence > 0.1f) {
             for (i in 0 until 12) chroma[i] = f.chroma[i].coerceIn(0f, 1f)
         } else {
-            for (i in 0 until 12) chroma[i] = 0f
+            // No harmony evidence (unpitched material, or the analyzer is
+            // still warming): synthesize a slow-turning three-spoke mandala
+            // from the band envelopes so the chroma-drawn sources never go
+            // dark mid-track. Turns at a musical pace, not per frame.
+            val spin = (time * 0.05f) % 1f
+            for (i in 0 until 12) {
+                val angle = (i / 12f - spin + 2f) % 1f
+                val spoke = (1f - kotlin.math.abs(angle - 0.5f) * 2f)
+                val band =
+                    when (i % 3) {
+                        0 -> envBass
+                        1 -> envMid
+                        else -> envTreble
+                    }
+                chroma[i] = (spoke * spoke * band).coerceIn(0f, 1f)
+            }
         }
 
         // Frame-rate-compensated loop constants: survival, zoom and rotation
@@ -237,7 +252,6 @@ internal class AcidScene(
         GLES30.glUniform1fv(stepLocs.loc("uChroma"), 12, chroma, 0)
         GLES30.glUniform1f(stepLocs.loc("uBaseHue"), FluidHue.base(p.paletteBase) + style.hueOffset)
         GLES30.glUniform1f(stepLocs.loc("uHueSpan"), FluidHue.span(p.hueRange, p.paletteRange) * style.hueSpan)
-        GLES30.glUniform1f(stepLocs.loc("uOverdrive"), style.overdrive)
         GLES30.glUniform1f(stepLocs.loc("uLiquid"), style.liquid + p.turbulence.coerceIn(0f, 1f) * 0.6f)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         loop.swap()
@@ -252,7 +266,9 @@ internal class AcidScene(
         GLES30.glUniform1f(showLocs.loc("uScanline"), style.scanline)
         GLES30.glUniform1f(showLocs.loc("uCurve"), style.curve)
         GLES30.glUniform1f(showLocs.loc("uSat"), style.saturation)
-        GLES30.glUniform1f(showLocs.loc("uEnergy"), f.rms.coerceIn(0f, 1.5f))
+        GLES30.glUniform1f(showLocs.loc("uFloorHue"), FluidHue.base(p.paletteBase) + style.hueOffset)
+        GLES30.glUniform1f(showLocs.loc("uOverdrive"), style.overdrive)
+        GLES30.glUniform1f(showLocs.loc("uHit"), (pcmStrike + 0.5f * beatPulse).coerceIn(0f, 1f))
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)
         GLES30.glUseProgram(0)

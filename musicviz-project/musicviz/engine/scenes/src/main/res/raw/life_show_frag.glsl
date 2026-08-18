@@ -51,10 +51,18 @@ void main() {
 
     vec3 color;
     if (uLook == 0) {
-        float glow = smoothstep(0.05, 0.7, v);
-        float hue = uBaseHue + uHueSpan * (0.12 * age + 0.1 * v);
-        color = hsv2rgb(vec3(fract(hue), 0.75, 1.0)) * glow * (0.8 + 0.4 * uEnergy);
-        color += hsv2rgb(vec3(fract(hue + 0.5), 0.5, 1.0)) * slope * 2.2;
+        // Glow shaped by the field's own value, saturated in the body and
+        // brightening only toward genuine peaks - a flat organism must not
+        // wash to white, or every species reads as the same bright blob.
+        float glow = smoothstep(0.05, 0.85, v);
+        float hue = uBaseHue + uHueSpan * (0.12 * age + 0.18 * v);
+        float sat = 0.85 - 0.25 * smoothstep(0.9, 1.0, v);
+        color = hsv2rgb(vec3(fract(hue), sat, 0.25 + 0.75 * glow)) * glow * (0.75 + 0.4 * uEnergy);
+        // Edge light, BOUNDED: in a dense colony nearly every texel is an
+        // edge, and an unbounded gradient term paints the whole organism
+        // white. Saturating it keeps the rim a rim.
+        float rim = smoothstep(0.08, 0.5, slope) * 0.3;
+        color += hsv2rgb(vec3(fract(hue + 0.5), 0.65, 1.0)) * rim;
     } else if (uLook == 1) {
         vec3 paper = hsv2rgb(vec3(fract(uBaseHue), 0.12, 0.92));
         vec3 pigment = hsv2rgb(vec3(fract(uBaseHue + 0.45 * uHueSpan), 0.65, 0.28));

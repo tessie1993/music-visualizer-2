@@ -88,7 +88,12 @@ internal class LifeScene(
     private var kickX = 0.5f
     private var kickY = 0.5f
     private var censusAge = 0f
-    private val censusBuf = java.nio.ByteBuffer.allocateDirect(4).order(java.nio.ByteOrder.nativeOrder())
+    private val censusBuf =
+        java.nio.ByteBuffer
+            .allocateDirect(16)
+            .order(java.nio.ByteOrder.nativeOrder())
+            .asFloatBuffer()
+    private val readbackFormat = IntArray(2)
 
     private val prevFbo = IntArray(1)
     private val prevViewport = IntArray(4)
@@ -182,19 +187,27 @@ internal class LifeScene(
      * field with certainty. Reseeds by restarting the seeding envelope.
      */
     private fun census(field: FluidBuffers.DoubleFbo) {
-        censusBuf.clear()
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, field.read.fbo)
+        // The state is a float target, and ES 3.0 only guarantees readback in
+        // the framebuffer's implementation-preferred format - FluidSim's
+        // pattern. A byte read here would be undefined, and an undefined read
+        // that leaves the buffer zeroed would reseed a healthy world forever.
+        GLES30.glGetIntegerv(GLES30.GL_IMPLEMENTATION_COLOR_READ_FORMAT, readbackFormat, 0)
+        GLES30.glGetIntegerv(GLES30.GL_IMPLEMENTATION_COLOR_READ_TYPE, readbackFormat, 1)
+        if (readbackFormat[0] != GLES30.GL_RGBA || readbackFormat[1] != GLES30.GL_FLOAT) return
+        censusBuf.clear()
         GLES30.glReadPixels(
             field.width / 2,
             field.height / 2,
             1,
             1,
             GLES30.GL_RGBA,
-            GLES30.GL_UNSIGNED_BYTE,
+            GLES30.GL_FLOAT,
             censusBuf,
         )
-        val a = (censusBuf.get(0).toInt() and 0xFF) / 255f
-        val v = (censusBuf.get(1).toInt() and 0xFF) / 255f
+        val a = censusBuf.get(0)
+        val v = censusBuf.get(1)
+        if (!a.isFinite() || !v.isFinite()) return
         val live = if (style.rule == 0) a else v
         val starving = live < STARVED && (if (style.rule == 1) a > 0.9f else true)
         if (starving || live > OVERGROWN) seedRemain = SEED_SECONDS

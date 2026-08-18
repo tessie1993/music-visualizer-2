@@ -49,8 +49,11 @@ void main() {
 
     vec3 color;
     if (uLook == 0) {
-        color = mixed * tone * (0.85 + 0.35 * uEnergy);
-        color += mixed * pow(tone, 4.0) * 0.7; // hot cores on the trunks
+        // Sharpened body: the diffusion halo around every trunk must fall
+        // away on display or thin veins read as fat tubes.
+        float body = pow(tone, 1.8);
+        color = mixed * body * (0.85 + 0.35 * uEnergy);
+        color += mixed * pow(tone, 5.0) * 0.7; // hot cores on the trunks
     } else if (uLook == 1) {
         float thread = pow(tone, 2.2);
         color = mix(vec3(0.004, 0.006, 0.01), mixed, thread) * (0.4 + 1.4 * thread);

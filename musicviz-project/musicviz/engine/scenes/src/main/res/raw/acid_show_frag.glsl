@@ -16,7 +16,14 @@ uniform vec2 uRes;
 uniform float uScanline;  // 0..1 scanline mask strength
 uniform float uCurve;     // 0..1 CRT barrel amount
 uniform float uSat;       // saturation shape
-uniform float uEnergy;
+uniform float uFloorHue;  // ambient floor tint, turns - silence is deep, not void
+uniform float uOverdrive; // wraparound display gain: fract folds into neon contours
+uniform float uHit;       // strike + beat envelope driving the fold, 0..1
+
+vec3 hsv2rgb(vec3 c) {
+    vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+    return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+}
 
 void main() {
     vec2 uv = vUv;
@@ -32,6 +39,16 @@ void main() {
     }
     vec3 color = texture(uState, uv).rgb;
 
+    // Wraparound overdrive, applied on DISPLAY only: gain past 1 folds back
+    // through fract into neon contour bands - the acid signature - and
+    // because nothing here feeds back, the fold can never compound into
+    // static. It breathes on the transient envelope instead of free-running.
+    if (uOverdrive > 0.0) {
+        float alpha = 1.0 + uOverdrive * (0.4 + 1.6 * uHit);
+        vec3 driven = fract(color * alpha);
+        color = mix(color, driven, uOverdrive * (0.25 + 0.75 * uHit));
+    }
+
     // Gentle S-shape: lifts mids of the echo tails without crushing black.
     color = color * color * (3.0 - 2.0 * color);
 
@@ -44,7 +61,11 @@ void main() {
     }
 
     vec2 q = (uv - 0.5) * vec2(aspect, 1.0);
-    color *= 1.0 - 0.4 * dot(q, q);
+    float vig = 1.0 - 0.4 * dot(q, q);
+    color *= vig;
+    // A whisper of ambient floor so an empty loop is a deep field, not a
+    // dead screen - the convention every family keeps for silence.
+    color += hsv2rgb(vec3(fract(uFloorHue), 0.6, 1.0)) * 0.012 * vig;
 
     fragColor = vec4(color, 1.0);
 }

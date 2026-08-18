@@ -250,7 +250,6 @@ internal class MycoScene(
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, field.read.tex)
         GLES30.glUniform1i(agentLocs.loc("uAgents"), 0)
         GLES30.glUniform1i(agentLocs.loc("uTrail"), 1)
-        GLES30.glUniform2f(agentLocs.loc("uAgentRes"), colony.width.toFloat(), colony.height.toFloat())
         GLES30.glUniform2f(agentLocs.loc("uTrailRes"), field.width.toFloat(), field.height.toFloat())
         GLES30.glUniform1f(agentLocs.loc("uInit"), if (agentsSeeded) 0f else 1f)
         GLES30.glUniform1f(agentLocs.loc("uSpeciesMix"), style.speciesMix)
