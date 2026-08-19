@@ -132,6 +132,21 @@ class MilkdropIntegrationTest {
     }
 
     @Test
+    fun `the copy restores the read framebuffer it borrowed`() {
+        val draw = scene.substringAfter("override fun draw(")
+        val copy = draw.indexOf("glCopyTexSubImage2D")
+        val capture = draw.indexOf("GL_READ_FRAMEBUFFER_BINDING")
+        val restore = draw.indexOf("GL_READ_FRAMEBUFFER, prevReadFbo[0]")
+        assertTrue("the READ binding must be captured before the copy borrows it", capture in 0 until copy)
+        assertTrue(
+            "the READ binding must be restored after the copy: the persistence pass and " +
+                "the field sims read through GL_READ_FRAMEBUFFER later in the same frame, " +
+                "and leaving it on 0 points them at the window",
+            restore > copy,
+        )
+    }
+
+    @Test
     fun `the scene drains latched GL errors after the native render`() {
         val draw = scene.substringAfter("override fun draw(")
         val render = draw.indexOf("nativeRender(")
