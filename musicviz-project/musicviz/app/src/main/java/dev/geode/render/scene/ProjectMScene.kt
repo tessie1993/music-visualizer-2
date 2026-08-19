@@ -295,8 +295,22 @@ class ProjectMScene(
         // renderer had bound (the transition pipeline may be targeting an FBO).
         val prevFbo = IntArray(1)
         GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
+        // Known draw-buffer state before handing GL to the engine: its GLES
+        // path issues a glDrawBuffers(GL_BACK) after binding [pmFbo], which is
+        // only legal for the default framebuffer (the render-to-FBO backport
+        // owns the real fix - tools/projectm-v417-render-fbo-backport.patch).
+        // Establishing COLOR_ATTACHMENT0 here costs nothing and removes any
+        // dependence on what an earlier frame left in the FBO's state.
+        GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, pmFbo)
+        GLES30.glDrawBuffers(1, intArrayOf(GLES30.GL_COLOR_ATTACHMENT0), 0)
         PMBridge.nativeRenderToFbo(handle, pmFbo)
         PMBridge.nativeGetLastError()?.let(onError)
+        // Drain latched GL errors: an engine built from a pre-fix patch latches
+        // GL_INVALID_OPERATION every frame on the GL_BACK call above, and a
+        // latched error is indistinguishable from one raised by whatever this
+        // frame checks next. Bounded, because glGetError can queue several.
+        var drained = 0
+        while (GLES30.glGetError() != GLES30.GL_NO_ERROR && drained < 8) drained++
         // The native preset pipeline can leave scissor/masks/blend-equation
         // dirty; re-establish the contract before anything else draws this
         // frame (post pass here, plus any transition co-scene + composite).

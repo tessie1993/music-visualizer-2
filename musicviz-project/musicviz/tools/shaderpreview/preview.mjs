@@ -59,6 +59,7 @@ function parseArgs(argv) {
     everyFrame: 1,
     clockJump: 0,
     hasMelt: true,
+    floatSim: true,
     count: 2048,
     stretchScale: 1,
     stretchMax: 2,
@@ -88,6 +89,7 @@ function parseArgs(argv) {
       case '--every': a.everyFrame = Number(next()); break;
       case '--clock-jump': a.clockJump = Number(next()); break;
       case '--no-melt': a.hasMelt = false; break;
+      case '--no-float-sim': a.floatSim = false; break;
       case '--count': a.count = Number(next()); break;
       case '--stretch-scale': a.stretchScale = Number(next()); break;
       case '--stretch-max': a.stretchMax = Number(next()); break;
@@ -363,7 +365,7 @@ async function main() {
       compositeShaders,
       particles: driver.particleConfig || null,
       echoShaders,
-      fieldSim: fieldShaders ? { programs: fieldShaders, targets: driver.fieldTargets } : null,
+      fieldSim: fieldShaders ? { programs: fieldShaders, targets: driver.fieldTargets, forceByte: !args.floatSim } : null,
     });
     if (!init.ok) {
       console.error('harness init failed: ' + init.error);

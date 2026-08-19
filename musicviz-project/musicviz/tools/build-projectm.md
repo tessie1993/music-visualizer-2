@@ -59,20 +59,27 @@ ninja -C build-android
 $NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang \
   -shared -fPIC -O2 -o libprojectmjni.so \
   musicviz-project/musicviz/tools/pm_jni.c \
-  -I projectm/src/api/include -L. -lprojectM-4 -llog \
+  -I projectm/src/api/include -I build-android/src/api/include -L. -lprojectM-4 -llog \
   -Wl,-z,max-page-size=16384,-z,common-page-size=16384
 ```
 
-## Which patch
+## The patch
 
-`tools/` holds two FBO patches and only one of them works.
+`tools/projectm-v417-render-fbo-backport.patch` is the one true FBO backport,
+and the one the workflow applies. It patches `ProjectMCWrapper.cpp` as well as
+the header, so `projectm_opengl_render_frame_fbo` is actually defined - an
+earlier draft that declared the function without defining it built fine and
+then failed at JNI link time, which is why this section exists.
 
-- **`projectm-v417-render-fbo-backport.patch`** — the one to use, and the one
-  the workflow applies. It patches `ProjectMCWrapper.cpp` as well as the header,
-  so `projectm_opengl_render_frame_fbo` is actually defined.
-- **`projectm-4.1.7-fbo-backport.patch`** — an incomplete earlier draft. It
-  declares that function without defining it, so the build succeeds and the JNI
-  link fails. It is a trap, not a backup; never apply it.
+The patch also owns the GLES draw-buffer fix: upstream sets `GL_BACK` after
+its final framebuffer bind, which is only legal for the DEFAULT framebuffer.
+With the backport binding a framebuffer OBJECT there instead, a conformant
+driver rejects `GL_BACK` (latching `GL_INVALID_OPERATION` every frame) and a
+lenient one redirects the final copy away from the caller's texture - MilkDrop
+permanently black while every other style works. The patched block selects
+`GL_COLOR_ATTACHMENT0` whenever the target is an FBO. A shipped `.so` built
+from a pre-fix patch carries the bug; rebuild via the workflow after any
+change here.
 
 ## Adding an ABI
 

@@ -101,8 +101,42 @@ object GlUtil {
         val program: Int,
     ) {
         private val locations = HashMap<String, Int>()
+        private val arraySizes = HashMap<String, Int>()
 
         fun loc(name: String): Int = locations.getOrPut(name) { GLES30.glGetUniformLocation(program, name) }
+
+        /**
+         * How many elements of the uniform array [name] this LINK actually
+         * kept, at most [declared].
+         *
+         * A `glUniform*v` whose count exceeds the array's active size is
+         * rejected whole - `GL_INVALID_OPERATION`, zero elements written -
+         * and a driver whose compiler trims an array it can bound leaves the
+         * shader reading all zeros with no error surfaced anywhere: a black
+         * field that only exists on that driver. Uploading the active count
+         * instead degrades to the elements the link kept. An array the
+         * linker dropped entirely reports [declared]; its location is -1 and
+         * the upload is already a defined no-op.
+         */
+        fun arrayCount(
+            name: String,
+            declared: Int,
+        ): Int =
+            arraySizes
+                .getOrPut(name) {
+                    val index = IntArray(1)
+                    GLES30.glGetUniformIndices(program, arrayOf("$name[0]"), index, 0)
+                    if (index[0] == GLES30.GL_INVALID_INDEX) {
+                        GLES30.glGetUniformIndices(program, arrayOf(name), index, 0)
+                    }
+                    if (index[0] == GLES30.GL_INVALID_INDEX) {
+                        declared
+                    } else {
+                        val size = IntArray(1)
+                        GLES30.glGetActiveUniformsiv(program, 1, index, 0, GLES30.GL_UNIFORM_SIZE, size, 0)
+                        size[0].coerceAtLeast(1)
+                    }
+                }.coerceAtMost(declared)
     }
 
     /**

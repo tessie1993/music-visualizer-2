@@ -433,10 +433,14 @@ internal class HyperspaceScene(
         GLES30.glUniform2f(loc("uResolution"), width.toFloat(), height.toFloat())
         GLES30.glUniform1f(loc("uTime"), time)
         GLES30.glUniform1i(loc("uBloomCount"), bloomCount)
-        GLES30.glUniform4fv(loc("uBloomPos"), HyperspaceMath.MAX_BLOOMS, bloomPos, 0)
-        GLES30.glUniform4fv(loc("uBloomShape"), HyperspaceMath.MAX_BLOOMS, bloomShape, 0)
-        GLES30.glUniform4fv(loc("uBloomLook"), HyperspaceMath.MAX_BLOOMS, bloomLook, 0)
-        GLES30.glUniformMatrix3fv(loc("uBloomRot"), HyperspaceMath.MAX_BLOOMS, false, bloomRot, 0)
+        // Counts clamped to the link's ACTIVE array sizes: a driver that trims
+        // an array rejects an oversized upload whole (GL_INVALID_OPERATION,
+        // nothing written) and the room renders empty black on exactly that
+        // driver - see GlUtil.UniformCache.arrayCount.
+        GLES30.glUniform4fv(loc("uBloomPos"), uniforms.arrayCount("uBloomPos", HyperspaceMath.MAX_BLOOMS), bloomPos, 0)
+        GLES30.glUniform4fv(loc("uBloomShape"), uniforms.arrayCount("uBloomShape", HyperspaceMath.MAX_BLOOMS), bloomShape, 0)
+        GLES30.glUniform4fv(loc("uBloomLook"), uniforms.arrayCount("uBloomLook", HyperspaceMath.MAX_BLOOMS), bloomLook, 0)
+        GLES30.glUniformMatrix3fv(loc("uBloomRot"), uniforms.arrayCount("uBloomRot", HyperspaceMath.MAX_BLOOMS), false, bloomRot, 0)
         GLES30.glUniform3f(loc("uCamPos"), camera.position[0], camera.position[1], camera.position[2])
         GLES30.glUniformMatrix3fv(loc("uCamBasis"), 1, false, camera.basis, 0)
         GLES30.glUniform1f(loc("uFov"), FOV)
@@ -450,7 +454,7 @@ internal class HyperspaceScene(
         GLES30.glUniform1f(loc("uSlewBass"), slewBass)
         GLES30.glUniform1f(loc("uSlewMid"), slewMid)
         GLES30.glUniform1f(loc("uStylePhase"), stylePhase)
-        GLES30.glUniform1fv(loc("uBands"), SpectralSummary.SIZE, spectral.levels, 0)
+        GLES30.glUniform1fv(loc("uBands"), uniforms.arrayCount("uBands", SpectralSummary.SIZE), spectral.levels, 0)
         GLES30.glUniform1i(loc("uSteps"), budget.steps)
         GLES30.glUniform1i(loc("uIters"), budget.iterations)
         GLES30.glUniform1i(loc("uBulbIters"), budget.bulbIterations)

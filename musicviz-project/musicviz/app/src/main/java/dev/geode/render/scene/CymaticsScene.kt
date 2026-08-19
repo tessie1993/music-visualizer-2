@@ -313,7 +313,11 @@ internal class CymaticsScene(
         GLES30.glUniform2f(loc("uResolution"), width.toFloat(), height.toFloat())
         GLES30.glUniform1f(loc("uTime"), time)
         GLES30.glUniform1i(loc("uStyle"), style.shaderStyle)
-        GLES30.glUniform4fv(loc("uModes"), CymaticsMath.MAX_RENDERED_MODES, modes, 0)
+        // Count clamped to the link's ACTIVE array size: a driver that trims
+        // the array rejects an oversized upload whole (GL_INVALID_OPERATION,
+        // nothing written) and the field renders flat black on exactly that
+        // driver - see GlUtil.UniformCache.arrayCount.
+        GLES30.glUniform4fv(loc("uModes"), uniforms.arrayCount("uModes", CymaticsMath.MAX_RENDERED_MODES), modes, 0)
         GLES30.glUniform1i(loc("uModeCount"), modeCount)
         val geometry = style.geometryOverride ?: p.cymaticsGeometry
         GLES30.glUniform1f(loc("uGeometry"), if (geometry == 1) 1f else 0f)
@@ -328,7 +332,7 @@ internal class CymaticsScene(
         GLES30.glUniform1f(loc("uSwirlPhase"), swirlPhase)
         GLES30.glUniform1f(loc("uTravelPhase"), travelPhase)
         GLES30.glUniform1f(loc("uDriftShift"), driftShift)
-        GLES30.glUniform4fv(loc("uDrops"), CymaticsDrops.SLOTS, drops.packed, 0)
+        GLES30.glUniform4fv(loc("uDrops"), uniforms.arrayCount("uDrops", CymaticsDrops.SLOTS), drops.packed, 0)
         GLES30.glUniform1f(loc("uBaseHue"), FluidHue.base(p.paletteBase) + style.hueOffset + chromaNudge)
         GLES30.glUniform1f(loc("uHueSpan"), FluidHue.span(p.hueRange, p.paletteRange) * style.hueSpan)
         GLES30.glUniform1f(loc("uEnergy"), f.rms.coerceIn(0f, 1.5f))

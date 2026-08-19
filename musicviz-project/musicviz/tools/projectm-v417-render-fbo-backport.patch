@@ -1,8 +1,8 @@
 diff --git a/src/api/include/projectM-4/render_opengl.h b/src/api/include/projectM-4/render_opengl.h
-index 0a061f7..e29c568 100644
+index 0a061f7..88cba5d 100644
 --- a/src/api/include/projectM-4/render_opengl.h
 +++ b/src/api/include/projectM-4/render_opengl.h
-@@ -41,6 +41,18 @@ extern "C" {
+@@ -41,6 +41,12 @@ extern "C" {
   */
  PROJECTM_EXPORT void projectm_opengl_render_frame(projectm_handle instance);
  
@@ -12,17 +12,11 @@ index 0a061f7..e29c568 100644
 + */
 +PROJECTM_EXPORT void projectm_opengl_render_frame_fbo(projectm_handle instance, uint32_t framebuffer_object_id);
 +
-+/**
-+ * Backported from newer projectM: renders into the given framebuffer object
-+ * instead of the default framebuffer.
-+ */
-+PROJECTM_EXPORT void projectm_opengl_render_frame_fbo(projectm_handle instance, uint32_t framebuffer_object_id);
-+
  #ifdef __cplusplus
  } // extern "C"
  #endif
 diff --git a/src/libprojectM/ProjectM.cpp b/src/libprojectM/ProjectM.cpp
-index 88fa014..0354757 100644
+index 88fa014..dde479e 100644
 --- a/src/libprojectM/ProjectM.cpp
 +++ b/src/libprojectM/ProjectM.cpp
 @@ -90,7 +90,7 @@ void ProjectM::ResetTextures()
@@ -34,7 +28,7 @@ index 88fa014..0354757 100644
  {
      // Don't render if window area is zero.
      if (m_windowWidth == 0 || m_windowHeight == 0)
-@@ -167,7 +167,7 @@ void ProjectM::RenderFrame()
+@@ -167,14 +167,21 @@ void ProjectM::RenderFrame()
      m_activePreset->RenderFrame(audioData, renderContext);
  
      // ToDo: Allow external apps to provide a custom target framebuffer.
@@ -43,6 +37,21 @@ index 88fa014..0354757 100644
      glViewport(0, 0, renderContext.viewportSizeX, renderContext.viewportSizeY);
  
  #ifdef USE_GLES
+     // On WebGL2 / Chrome ANGLE, the default framebuffer's draw buffer must
+     // be explicitly set to GL_BACK after preset rendering, which may leave
+     // per-FBO draw buffer state that leaks into FBO 0 on some drivers.
+-    GLenum backBuf = GL_BACK;
++    //
++    // GL_BACK is only legal for the DEFAULT framebuffer. With the render-to-
++    // FBO backport a framebuffer object may be bound here instead, where the
++    // legal enums are GL_NONE/GL_COLOR_ATTACHMENTi: a conformant driver
++    // rejects GL_BACK with GL_INVALID_OPERATION (latching an error every
++    // frame), and a lenient one redirects the final copy away from the
++    // caller's texture - a permanently black output. Select per target.
++    GLenum backBuf = targetFramebufferObject == 0 ? GL_BACK : GL_COLOR_ATTACHMENT0;
+     glDrawBuffers(1, &backBuf);
+ #endif
+ 
 diff --git a/src/libprojectM/ProjectM.hpp b/src/libprojectM/ProjectM.hpp
 index b84e293..8445971 100644
 --- a/src/libprojectM/ProjectM.hpp

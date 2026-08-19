@@ -176,7 +176,19 @@ internal class MycoScene(
             // Positions need real precision: half-float texels quantize a
             // slow walk into visible stalls. Full float where the driver
             // renders it, half otherwise - the walk jitter hides the rest.
-            val agentFmt = fmt.rgba32 ?: fmt.rgba
+            // Where NO float format renders (fmt.ok false and no rgba32),
+            // positions ride RGBA8 at 1/255 steps: coarse, but §6.3's rule is
+            // a named fallback rather than a black frame, and without this
+            // every Myco style was permanently black on exactly those
+            // devices - fmt.rgba is the RGBA16F descriptor even when the
+            // probe just proved it unrenderable.
+            val agentFmt =
+                fmt.rgba32
+                    ?: if (fmt.ok) {
+                        fmt.rgba
+                    } else {
+                        FluidBuffers.TexFormat(GLES30.GL_RGBA8, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE)
+                    }
             val next = FluidBuffers.DoubleFbo(style.agentRes, style.agentRes, agentFmt, linear = false)
             next.create()
             if (next.ok) {
@@ -214,6 +226,12 @@ internal class MycoScene(
     override fun draw(timeSeconds: Float) {
         if (!programOk) return
         GlUtil.resetFrameState()
+        // Captured BEFORE ensureBuffers(): allocation and the format probe
+        // leave framebuffer 0 bound, so a later capture aims the present pass
+        // at the screen on the frame that allocates and the composite
+        // presents black (see FieldSimFboContractTest).
+        GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
+        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
         // ensureBuffers() == true guarantees both; checkNotNull documents it.
         if (!ensureBuffers()) return
         val colony = checkNotNull(agents)
@@ -232,8 +250,6 @@ internal class MycoScene(
                 .coerceIn(0f, 1.5f)
         reaim = if (f.beatImpulse * p.beatResponse > BEAT_THRESHOLD) style.reaim else 0f
 
-        GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
-        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
         GLES30.glBindVertexArray(vao)

@@ -348,12 +348,17 @@ class FieldSim {
     // internal formats are even color-renderable (EXT_color_buffer_float for
     // 32F+16F, EXT_color_buffer_half_float for 16F), and the 4x4 attach test
     // below is the same empirical check FluidBuffers runs per format.
-    const halfOk = colorBufferFloat || !!gl.getExtension('EXT_color_buffer_half_float');
+    // --no-float-sim forces the whole float family off, the same world a
+    // device without renderable float targets presents (FluidBuffers'
+    // fmt.ok false / rgba32 null): every target lands on RGBA8, which is
+    // the app's named-fallback path and otherwise never runs here, because
+    // SwiftShader always has EXT_color_buffer_float.
+    const halfOk = !cfg.forceByte && (colorBufferFloat || !!gl.getExtension('EXT_color_buffer_half_float'));
     const CANDIDATES = {
       rgba8: { internal: gl.RGBA8, format: gl.RGBA, type: gl.UNSIGNED_BYTE, label: 'rgba8', gated: true },
       rgba16f: { internal: gl.RGBA16F, format: gl.RGBA, type: gl.HALF_FLOAT, label: 'rgba16f', gated: halfOk },
       rg16f: { internal: gl.RG16F, format: gl.RG, type: gl.HALF_FLOAT, label: 'rg16f', gated: halfOk },
-      rgba32f: { internal: gl.RGBA32F, format: gl.RGBA, type: gl.FLOAT, label: 'rgba32f', gated: colorBufferFloat },
+      rgba32f: { internal: gl.RGBA32F, format: gl.RGBA, type: gl.FLOAT, label: 'rgba32f', gated: !cfg.forceByte && colorBufferFloat },
     };
     // Fallback chains, mirroring the app: FluidBuffers falls RG16F back to
     // RGBA16F (fmt.rg), the whole float family back to RGBA8 (byteTrail),

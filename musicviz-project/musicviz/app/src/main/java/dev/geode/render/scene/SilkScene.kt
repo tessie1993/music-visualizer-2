@@ -202,6 +202,14 @@ internal class SilkScene(
     override fun draw(timeSeconds: Float) {
         if (!programOk) return
         GlUtil.resetFrameState()
+        // The renderer's scene target, captured BEFORE ensureDye(): the format
+        // probe and FBO allocation both leave framebuffer 0 bound, so a
+        // capture taken after them aims the show pass at the screen on
+        // exactly the frames that allocate - a black frame per style entry
+        // and per resize, because the composite then presents an unwritten
+        // scene target.
+        GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
+        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
         val field = ensureDye() ?: return
         val p = params
         val dt = lastDt.coerceIn(0f, 1f / 15f)
@@ -232,8 +240,6 @@ internal class SilkScene(
         if (p.trails) decay += (1f - decay) * 0.6f * p.trailLength.coerceIn(0f, 1f)
         val frameDecay = decay.pow(dt * 60f)
 
-        GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
-        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
         GLES30.glBindVertexArray(vao)
