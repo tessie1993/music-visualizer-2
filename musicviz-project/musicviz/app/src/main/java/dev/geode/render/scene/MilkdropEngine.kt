@@ -27,6 +27,24 @@ package dev.geode.render.scene
  * caller framebuffer object, and a stale or incomplete patch shipped a
  * permanently black MilkDrop twice; the stock engine plus a copy has no
  * patch to go stale.
+ *
+ * ## Upstream API deliberately NOT wired (checked against v4.1.7 sources)
+ *
+ * - `projectm_touch*`: the whole touch API is `// UNIMPLEMENTED` stubs in
+ *   the v4.1.7 core — wiring it would draw nothing. Revisit on a release
+ *   where `ProjectM::Touch` has a body.
+ * - Hard cuts / auto preset switching (`projectm_set_hard_cut_*`,
+ *   `preset_duration`, the switch-requested callback): the app owns preset
+ *   choreography in AutoVisualsController (switch on musical moments,
+ *   Random mode), so the engine stays locked on one preset; two switchers
+ *   would fight.
+ * - Stereo PCM (`PROJECTM_STEREO`): the tap ring is mono end-to-end because
+ *   the analyzer consumes the same ring (docs/AUDIO_CHAIN.md). Presets'
+ *   left/right reactivity is the known upgrade if the ring ever grows a
+ *   stereo lane.
+ * - `projectm_load_preset_data`: nothing feeds presets as strings today;
+ *   add alongside the feature that needs it (JniAbiTest fails orphan
+ *   exports, so speculative bridge functions are a cost, not a reserve).
  */
 object MilkdropEngine {
     /**
@@ -80,6 +98,12 @@ object MilkdropEngine {
     )
 
     external fun nativeGetLastError(): String?
+
+    /** Rescans the texture search paths (projectm_reset_textures). GL thread. */
+    external fun nativeResetTextures(handle: Long)
+
+    /** The engine's own version string, for diagnostics and About. */
+    external fun nativeGetVersion(): String?
 
     external fun nativeSetBeatSensitivity(
         handle: Long,

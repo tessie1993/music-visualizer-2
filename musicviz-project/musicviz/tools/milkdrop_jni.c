@@ -120,6 +120,23 @@ Java_dev_geode_render_scene_MilkdropEngine_nativeLoadPreset(JNIEnv *env, jobject
     }
 }
 
+JNIEXPORT void JNICALL
+Java_dev_geode_render_scene_MilkdropEngine_nativeResetTextures(JNIEnv *env, jobject thiz, jlong handle) {
+    /* Official rescan of the texture search paths: after the user imports a
+     * texture pack, presets pick the new files up without re-parsing. GL
+     * thread only - it recreates the engine's TextureManager. */
+    if (handle) projectm_reset_textures((projectm_handle) handle);
+}
+
+JNIEXPORT jstring JNICALL
+Java_dev_geode_render_scene_MilkdropEngine_nativeGetVersion(JNIEnv *env, jobject thiz) {
+    char *v = projectm_get_version_string();
+    if (!v) return NULL;
+    jstring result = (*env)->NewStringUTF(env, v);
+    projectm_free_string(v);
+    return result;
+}
+
 JNIEXPORT jstring JNICALL
 Java_dev_geode_render_scene_MilkdropEngine_nativeGetLastError(JNIEnv *env, jobject thiz) {
     if (g_last_error[0] == '\0') return NULL;

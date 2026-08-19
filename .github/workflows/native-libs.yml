@@ -107,7 +107,8 @@ jobs:
           cat exported.txt
           for m in nativeCreate nativeDestroy nativeResize nativeAddPcmMono \
                    nativeRender nativeSetTexturePaths nativeLoadPreset \
-                   nativeGetLastError nativeSetBeatSensitivity nativeSetPresetLocked; do
+                   nativeGetLastError nativeSetBeatSensitivity nativeSetPresetLocked \
+                   nativeResetTextures nativeGetVersion; do
             grep -qx "Java_dev_geode_render_scene_MilkdropEngine_$m" exported.txt || {
               echo "::error::missing JNI export: $m"; exit 1; }
           done

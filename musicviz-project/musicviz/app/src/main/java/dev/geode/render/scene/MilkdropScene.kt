@@ -132,6 +132,10 @@ class MilkdropScene(
     @Volatile
     private var pendingPresetPath: String? = null
 
+    /** Set off-thread by [reloadCurrent]; consumed on the GL thread in [draw]. */
+    @Volatile
+    private var pendingTextureRescan = false
+
     /** Last successfully queued preset; re-applied when the engine is recreated. */
     @Volatile
     private var lastPresetPath: String? = null
@@ -147,6 +151,12 @@ class MilkdropScene(
 
     /** Re-queues the currently loaded preset (e.g. after textures change). */
     fun reloadCurrent() {
+        // The official rescan first (projectm_reset_textures recreates the
+        // engine's texture manager from the search paths), consumed on the GL
+        // thread; the re-parse below then re-binds the preset to the fresh
+        // set. Without the rescan a texture REPLACED under the same name kept
+        // its stale pixels until the engine was recreated.
+        pendingTextureRescan = true
         lastPresetPath?.let {
             pendingPresetPath = it
             // Bypass the load debounce: a texture change is an explicit user
@@ -328,6 +338,10 @@ class MilkdropScene(
         ensureEngine()
         ensureFrameTexture()
         if (handle == 0L || frameTex == 0) return
+        if (pendingTextureRescan) {
+            pendingTextureRescan = false
+            MilkdropEngine.nativeResetTextures(handle)
+        }
         val now = SystemClock.elapsedRealtime()
         pendingPresetPath?.let { path ->
             if (now - lastLoadMs >= LOAD_DEBOUNCE_MS) {
@@ -462,7 +476,8 @@ class MilkdropScene(
             onError(
                 "MilkDrop diagnostic: the engine painted a black frame for " +
                     "$DIAG_FRAMES frames at ${texWidth}x$texHeight " +
-                    "(preset=${lastPresetPath?.substringAfterLast('/') ?: "idle"}). " +
+                    "(preset=${lastPresetPath?.substringAfterLast('/') ?: "idle"}, " +
+                    "projectM ${MilkdropEngine.nativeGetVersion() ?: "?"}). " +
                     "adb logcat -s milkdrop-jni for the native side.",
             )
         }
