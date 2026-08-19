@@ -17,7 +17,7 @@ import java.io.File
  * One particle shader that some GPU dislikes is therefore not one dead style -
  * it is a visualizer that crashes on every launch, taking the other
  * thirty-five with it. Ten scenes wrote the catch by hand and two
- * (ParticleSceneBase, ProjectMScene) did not; this file is what makes the
+ * (ParticleSceneBase, the MilkDrop scene) did not; this file is what makes the
  * omission fail the build instead of a stranger's phone.
  *
  * Source-level, because a unit test has no GL context to reject anything with:
@@ -27,7 +27,7 @@ import java.io.File
 class SceneFailureTest {
     private companion object {
         /** The two that used to throw; named so a rewrite cannot lose them. */
-        val ONCE_BROKEN = listOf("SilkScene.kt", "ProjectMScene.kt")
+        val ONCE_BROKEN = listOf("SilkScene.kt", "MilkdropScene.kt")
 
         /** How many code lines a `draw` may spend before it checks itself. */
         const val GUARD_WINDOW = 3

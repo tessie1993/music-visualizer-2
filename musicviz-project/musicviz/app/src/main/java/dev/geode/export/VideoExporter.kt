@@ -453,7 +453,7 @@ class VideoExporter(
             val isShaderScene = scene is dev.geode.render.scene.ShaderScene
             // Milkdrop grades (and mirrors/inverts) in pm_post_frag, so the
             // composite must send it the neutral identity like the live path.
-            val isProjectM = scene is dev.geode.render.scene.ProjectMScene
+            val isProjectM = scene is dev.geode.render.scene.MilkdropScene
             // Curl Flow's look is DEFINED by canvas persistence (live renderer
             // forces it regardless of the trails toggle); a hard-cleared export
             // reads as strobing dots instead of streams.

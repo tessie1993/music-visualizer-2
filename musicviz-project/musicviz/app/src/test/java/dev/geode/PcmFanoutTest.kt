@@ -66,7 +66,7 @@ class PcmFanoutTest {
     @Test
     fun `every signal-drawing scene stays on the feed`() {
         for (scene in listOf(
-            "render/scene/ProjectMScene.kt",
+            "render/scene/MilkdropScene.kt",
             "render/scene/BeamScene.kt",
             "render/scene/ShaderScene.kt",
             "render/scene/SilkScene.kt",
@@ -106,7 +106,7 @@ class PcmFanoutTest {
     @Test
     fun `every sink copies instead of aliasing the shared buffer`() {
         for (scene in listOf(
-            "render/scene/ProjectMScene.kt",
+            "render/scene/MilkdropScene.kt",
             "render/scene/BeamScene.kt",
             "render/scene/ShaderScene.kt",
         )) {

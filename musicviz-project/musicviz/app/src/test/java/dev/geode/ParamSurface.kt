@@ -48,7 +48,7 @@ object ParamSurface {
             "Life" to listOf("render/scene/LifeScene.kt"),
             "Mycelium" to listOf("render/scene/MycoScene.kt"),
             "Acid" to listOf("render/scene/AcidScene.kt"),
-            "MilkDrop" to listOf("render/scene/ProjectMScene.kt"),
+            "MilkDrop" to listOf("render/scene/MilkdropScene.kt"),
             "Fluid" to listOf("render/fluid/FluidScene.kt"),
             "Curl Flow" to listOf("render/fluid/CurlFlowScene.kt"),
             "Water" to listOf("render/fluid/WaterScene.kt"),

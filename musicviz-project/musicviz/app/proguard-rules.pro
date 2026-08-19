@@ -6,15 +6,15 @@
 # cannot see from bytecode alone.
 
 # ---------------------------------------------------------------------------
-# JNI bridge to libprojectmjni.so
+# JNI bridge to libmilkdropjni.so
 # ---------------------------------------------------------------------------
-# pm_jni.c uses static symbol registration
-# (Java_dev_geode_render_scene_PMBridge_nativeCreate, ...), so both the
+# milkdrop_jni.c uses static symbol registration
+# (Java_dev_geode_render_scene_MilkdropEngine_nativeCreate, ...), so both the
 # class name and the method names have to survive minification exactly.
--keepclasseswithmembernames,includedescriptorclasses class dev.geode.render.scene.PMBridge {
+-keepclasseswithmembernames,includedescriptorclasses class dev.geode.render.scene.MilkdropEngine {
     native <methods>;
 }
--keep class dev.geode.render.scene.PMBridge { *; }
+-keep class dev.geode.render.scene.MilkdropEngine { *; }
 
 # Belt and braces for anything else that grows a native method later.
 -keepclasseswithmembernames,includedescriptorclasses class * {

@@ -518,7 +518,7 @@ internal fun ColorTab(
         }
         // MilkDrop is the one style that authors its own colours, so the
         // palette reaches it as an opt-in blend rather than as the colour
-        // itself (ProjectMScene's post pass, uPalTint). The label names the
+        // itself (MilkdropScene's post pass, uPalTint). The label names the
         // style - as "Trails (particle scenes)" and "Glow (fluid)" do -
         // because ColorTab has no MilkDrop predicate to gate on.
         ControlHint(
