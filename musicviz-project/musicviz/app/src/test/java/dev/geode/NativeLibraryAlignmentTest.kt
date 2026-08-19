@@ -28,17 +28,16 @@ class NativeLibraryAlignmentTest {
     private val required = 16384L
 
     /**
-     * Libraries known to be 4 KB aligned at the time of writing, with no
-     * rebuild yet run.
+     * Libraries known to be misaligned, kept so a regression is told apart
+     * from a leftover.
      *
-     * This set must shrink to empty, and a passing build is not evidence that
-     * it has - it is evidence that nothing NEW broke. Rebuilding is the
-     * `native-libs.yml` workflow's job: NDK r28 plus
-     * `-Wl,-z,max-page-size=16384`, which cannot be done from a unit test.
-     * When a rebuild lands, this set empties and the assertion below starts
-     * proving the real thing.
+     * EMPTY since the native-libs.yml rebuild landed (run 32192185854: NDK
+     * r28 plus `-Wl,-z,max-page-size=16384`): both shipped libraries are now
+     * 16 KB aligned and the assertion below proves the real thing. A name
+     * only ever returns here alongside a written reason a rebuild cannot be
+     * aligned - it is not a snooze button.
      */
-    private val knownUnaligned = setOf("libprojectM-4.so", "libprojectmjni.so")
+    private val knownUnaligned = emptySet<String>()
 
     private val jniLibs = File(ParamSurface.moduleRoot, "app/src/main/jniLibs")
 
