@@ -22,7 +22,7 @@ reach every style through the composite pass, which is its own column.
 | **Life** | `LifeScene` |
 | **Mycelium** | `MycoScene` |
 | **Acid** | `AcidScene` |
-| **MilkDrop** | `ProjectMScene` |
+| **MilkDrop** | `MilkdropScene` |
 | **Fluid** | `FluidScene` |
 | **Curl Flow** | `CurlFlowScene` |
 | **Water** | `WaterScene` |

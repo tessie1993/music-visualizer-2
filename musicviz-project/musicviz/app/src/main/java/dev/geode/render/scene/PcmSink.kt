@@ -22,3 +22,9 @@ interface PcmSink {
         count: Int,
     )
 }
+
+/** A chunk of fresh mono PCM samples; [count] entries of [data] are valid. */
+class PcmChunk(
+    val data: FloatArray,
+    val count: Int,
+)

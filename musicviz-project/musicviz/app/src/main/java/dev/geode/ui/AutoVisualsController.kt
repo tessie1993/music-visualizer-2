@@ -3,9 +3,9 @@ package dev.geode.ui
 import dev.geode.analysis.AudioFeatures
 import dev.geode.data.PaletteStore
 import dev.geode.data.Preset
+import dev.geode.render.scene.MilkdropEngine
 import dev.geode.render.scene.SceneIds
 import dev.geode.render.scene.SceneParams
-import dev.musicviz.render.scene.PMBridge
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -301,7 +301,7 @@ internal class AutoVisualsController(
         if (s.randomIncludePresets) {
             s.presets.forEach { choices += VizPlaylistEntry(sceneId = it.sceneId, presetName = it.name, label = it.name) }
         }
-        if (s.randomIncludeMilk && PMBridge.available) {
+        if (s.randomIncludeMilk && MilkdropEngine.available) {
             cachedMilkFiles.forEach {
                 choices += VizPlaylistEntry(sceneId = SceneIds.MILKDROP, milkPath = it.path, label = it.name)
             }

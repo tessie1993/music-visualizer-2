@@ -4,33 +4,38 @@ import android.opengl.GLES30
 import android.os.SystemClock
 import dev.geode.analysis.AudioFeatures
 import dev.geode.render.CompositeGrade
-import dev.musicviz.render.scene.PMBridge
 import java.io.File
 
-/** A chunk of fresh mono PCM samples; [count] entries of [data] are valid. */
-class PcmChunk(
-    val data: FloatArray,
-    val count: Int,
-)
-
 /**
- * MilkDrop-compatible scene backed by libprojectM (v4.1.7 with a backported
- * render-to-FBO API). The engine renders into a scene-owned texture, which is
- * then drawn through a post-processing shader - this is what makes the whole
- * Customize panel (zoom, rotation, mirror, endless zoom, hue/saturation/
- * brightness/contrast/gamma/invert, intensity) work on .milk presets too.
- * Beat response maps to projectM's own beat sensitivity.
+ * MilkDrop-compatible scene backed by STOCK libprojectM v4.1.7 — no engine
+ * patches. Upstream ends every frame on the DEFAULT framebuffer (the only
+ * target where its `glDrawBuffers(GL_BACK)` is legal), so this scene lets it:
+ * the engine renders onto framebuffer 0 at the real surface size, the frame
+ * is copied off with `glCopyTexSubImage2D` into a scene-owned texture, and
+ * the texture is drawn through the post-processing shader into whatever
+ * framebuffer the renderer had bound. The mid-frame scribble on the window's
+ * back buffer is invisible: the composite pass repaints the whole surface
+ * before it is ever swapped.
  *
- * The same pass is where the Palettes card reaches MilkDrop: see [draw] for
- * why the palette can only ever TINT a .milk preset, never replace its
- * colours.
+ * The previous integration instead backported a render-to-FBO API onto the
+ * engine, and the patch went stale twice — once linking against an undefined
+ * symbol, once leaving `GL_BACK` set on a framebuffer object — each time
+ * shipping a permanently black MilkDrop. A copy off framebuffer 0 costs one
+ * screen-size blit and has no patch to go stale.
  *
- * "Audio drive" is deliberately NOT wired here - see [update] for why.
+ * The post pass is what makes the whole Customize panel (zoom, rotation,
+ * mirror, endless zoom, hue/saturation/brightness/contrast/gamma/invert,
+ * intensity) work on .milk presets too. Beat response maps to projectM's own
+ * beat sensitivity. The same pass is where the Palettes card reaches
+ * MilkDrop: see [draw] for why the palette can only ever TINT a .milk
+ * preset, never replace its colours.
  *
- * Preset loads are debounced on the GL thread; file I/O happens off-thread in
- * the ViewModel before paths reach this class.
+ * "Audio drive" is deliberately NOT wired here — see [update] for why.
+ *
+ * Preset loads are debounced on the GL thread; file I/O happens off-thread
+ * in the ViewModel before paths reach this class.
  */
-class ProjectMScene(
+class MilkdropScene(
     private val postVertexSrc: String,
     private val postFragmentSrc: String,
     /** Extra shared texture directory (e.g. filesDir/milk/textures). */
@@ -40,7 +45,7 @@ class ProjectMScene(
      * Fires on the GL thread with the path of a preset the engine actually
      * accepted. The ViewModel records the active .milk from here rather than
      * at pick time, because a preset that failed to parse used to be noted as
-     * active anyway - and then copied verbatim into every preset the user
+     * active anyway — and then copied verbatim into every preset the user
      * saved, persisting the broken file forever.
      */
     private val onPresetLoaded: (String) -> Unit = {},
@@ -73,13 +78,26 @@ class ProjectMScene(
     }
 
     private var handle: Long = 0
+
+    /** Output size: the framebuffer the renderer hands [draw] (supersampled
+     *  live, export-sized on the encoder surface). From [resize]. */
     private var width = 0
     private var height = 0
+
+    /** The DEFAULT framebuffer's real size — the engine renders at this and
+     *  the copy reads exactly this many pixels off framebuffer 0. Set by the
+     *  renderer via [setWindowSize]; 0 until then, falling back to the
+     *  [resize] size, which is correct wherever the two coincide (export
+     *  renders scenes at the encoder surface's own size). */
+    private var windowWidth = 0
+    private var windowHeight = 0
+
     private var reportedCreateFailure = false
-    private var pmFbo = 0
-    private var pmTex = 0
-    private var fboWidth = 0
-    private var fboHeight = 0
+    private var frameTex = 0
+    private var texWidth = 0
+    private var texHeight = 0
+    private var engineWidth = 0
+    private var engineHeight = 0
     private var postProgram = 0
     private var postProgramOk = false
 
@@ -120,6 +138,20 @@ class ProjectMScene(
         }
     }
 
+    /**
+     * The surface's true pixel size, i.e. framebuffer 0's. The live renderer
+     * calls this from onSurfaceChanged, because what [resize] receives there
+     * is the SUPERSAMPLED scene-FBO size — larger than the window, and pixels
+     * outside the window do not exist on framebuffer 0 to be copied.
+     */
+    fun setWindowSize(
+        width: Int,
+        height: Int,
+    ) {
+        windowWidth = width
+        windowHeight = height
+    }
+
     override fun init() {
         release()
         reportedCreateFailure = false
@@ -147,32 +179,46 @@ class ProjectMScene(
     ) {
         this.width = width
         this.height = height
-        if (handle != 0L) PMBridge.nativeResize(handle, width, height) else ensureCreated()
-        ensureFbo()
     }
 
-    private fun ensureCreated() {
-        if (handle != 0L || width <= 1 || height <= 1) return
-        handle = PMBridge.nativeCreate()
+    private fun effectiveWindowWidth(): Int = if (windowWidth > 1) windowWidth else width
+
+    private fun effectiveWindowHeight(): Int = if (windowHeight > 1) windowHeight else height
+
+    private fun ensureEngine() {
+        val w = effectiveWindowWidth()
+        val h = effectiveWindowHeight()
+        if (w <= 1 || h <= 1) return
         if (handle == 0L) {
-            if (!reportedCreateFailure) {
-                reportedCreateFailure = true
-                onError("projectM engine failed to initialize (adb logcat -s projectM-jni)")
+            handle = MilkdropEngine.nativeCreate()
+            if (handle == 0L) {
+                if (!reportedCreateFailure) {
+                    reportedCreateFailure = true
+                    onError("projectM engine failed to initialize (adb logcat -s milkdrop-jni)")
+                }
+                return
             }
-            return
+            lastPresetPath?.let { pendingPresetPath = it }
+            engineWidth = 0
         }
-        PMBridge.nativeResize(handle, width, height)
-        lastPresetPath?.let { pendingPresetPath = it }
+        if (engineWidth != w || engineHeight != h) {
+            MilkdropEngine.nativeResize(handle, w, h)
+            engineWidth = w
+            engineHeight = h
+        }
     }
 
-    private fun ensureFbo() {
-        if (width <= 1 || height <= 1) return
-        if (pmFbo != 0 && fboWidth == width && fboHeight == height) return
-        releaseFbo()
+    /** The texture the frame is copied into: plain RGBA8, engine-sized. */
+    private fun ensureFrameTexture() {
+        val w = engineWidth
+        val h = engineHeight
+        if (w <= 1 || h <= 1) return
+        if (frameTex != 0 && texWidth == w && texHeight == h) return
+        releaseFrameTexture()
         val ids = IntArray(1)
         GLES30.glGenTextures(1, ids, 0)
-        pmTex = ids[0]
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, pmTex)
+        frameTex = ids[0]
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, frameTex)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
@@ -181,26 +227,16 @@ class ProjectMScene(
             GLES30.GL_TEXTURE_2D,
             0,
             GLES30.GL_RGBA8,
-            width,
-            height,
+            w,
+            h,
             0,
             GLES30.GL_RGBA,
             GLES30.GL_UNSIGNED_BYTE,
             null,
         )
-        GLES30.glGenFramebuffers(1, ids, 0)
-        pmFbo = ids[0]
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, pmFbo)
-        GLES30.glFramebufferTexture2D(
-            GLES30.GL_FRAMEBUFFER,
-            GLES30.GL_COLOR_ATTACHMENT0,
-            GLES30.GL_TEXTURE_2D,
-            pmTex,
-            0,
-        )
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
-        fboWidth = width
-        fboHeight = height
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
+        texWidth = w
+        texHeight = h
     }
 
     /**
@@ -208,13 +244,13 @@ class ProjectMScene(
      *
      * WHY "Audio drive" HAS NO READER HERE (and should not get one): every
      * other style consumes the analysed features, so a master gain on them is
-     * meaningful. MilkDrop does not - the ONLY audio that reaches a .milk
+     * meaningful. MilkDrop does not — the ONLY audio that reaches a .milk
      * preset is the mono PCM below, from which libprojectM runs its own FFT
      * and its own beat detector. That detector is ratio-based (instantaneous
      * band energy against its running average), so a constant gain on the
      * samples cancels out of exactly the quantities presets react to, and the
      * one thing it would NOT cancel out of is the waveform many presets draw
-     * directly - which would clip against the preset's own scaling. The
+     * directly — which would clip against the preset's own scaling. The
      * slider's honest counterpart on this style is projectM's own beat
      * sensitivity, and "Beat response" is already mapped onto it in [draw].
      * Scaling [PcmChunk.data] in place would also corrupt a buffer the tap
@@ -236,37 +272,43 @@ class ProjectMScene(
         beatPulse = maxOf(features.motionImpulse, beatPulse - dt * 3f).coerceAtLeast(0f)
         if (handle == 0L) return
         if (pcmCount > 0) {
-            PMBridge.nativeAddPcmMono(handle, pcmBuffer, pcmCount)
+            MilkdropEngine.nativeAddPcmMono(handle, pcmBuffer, pcmCount)
             pcmCount = 0
         } else {
-            PMBridge.nativeAddPcmMono(handle, features.waveform, features.waveform.size)
+            MilkdropEngine.nativeAddPcmMono(handle, features.waveform, features.waveform.size)
         }
     }
 
     /**
-     * Renders the engine into [pmTex] and draws it through the Customize post
-     * pass.
+     * Renders the engine onto framebuffer 0, copies the frame into
+     * [frameTex], and draws it through the Customize post pass.
      *
-     * WHY THE PALETTE ONLY TINTS HERE: every other style GENERATES its colour,
-     * so `paletteBase`/`paletteRange` simply decide what it emits. A .milk
-     * preset arrives already coloured by its author, so the only honest thing
-     * the palette can do is steer those colours (`uPalTint`, a blend that is 0
-     * - an exact no-op - until the user asks for it). Replacing them outright
-     * would repaint every saved preset and make the whole format read as one
-     * look, which is the opposite of what a MilkDrop collection is for. The
-     * split of labour matches the fluid family's: this stage owns palette
-     * IDENTITY (base hue + span) and runs BEFORE `uHue`, which owns rotation
-     * ("Hue shift" + the colour cycle), so one slider unit turns the wheel
-     * exactly once.
+     * WHY THE PALETTE ONLY TINTS HERE: every other style GENERATES its
+     * colour, so `paletteBase`/`paletteRange` simply decide what it emits. A
+     * .milk preset arrives already coloured by its author, so the only honest
+     * thing the palette can do is steer those colours (`uPalTint`, a blend
+     * that is 0 — an exact no-op — until the user asks for it). Replacing
+     * them outright would repaint every saved preset and make the whole
+     * format read as one look, which is the opposite of what a MilkDrop
+     * collection is for. The split of labour matches the fluid family's:
+     * this stage owns palette IDENTITY (base hue + span) and runs BEFORE
+     * `uHue`, which owns rotation ("Hue shift" + the colour cycle), so one
+     * slider unit turns the wheel exactly once.
      */
     override fun draw(timeSeconds: Float) {
-        // The post pass below is the ONLY path the engine's frame takes to the
-        // screen, so without it there is nothing to show: skip the native
+        // The post pass below is the ONLY path the engine's frame takes to
+        // the screen, so without it there is nothing to show: skip the native
         // render too rather than pay for a frame that cannot be composited.
         if (!postProgramOk) return
-        ensureCreated()
-        ensureFbo()
-        if (handle == 0L || pmFbo == 0) return
+        // The renderer's target, captured BEFORE anything below can bind:
+        // the engine ends its frame on framebuffer 0 and the post pass must
+        // land back on whatever the renderer was filling (its scene FBO, or
+        // a transition target).
+        val prevFbo = IntArray(1)
+        GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
+        ensureEngine()
+        ensureFrameTexture()
+        if (handle == 0L || frameTex == 0) return
         val now = SystemClock.elapsedRealtime()
         pendingPresetPath?.let { path ->
             if (now - lastLoadMs >= LOAD_DEBOUNCE_MS) {
@@ -275,12 +317,12 @@ class ProjectMScene(
                 val dir = File(path).parent ?: "/"
                 val dirs = mutableListOf(dir, "$dir/textures")
                 sharedTextureDir?.let { dirs += it }
-                PMBridge.nativeSetTexturePaths(handle, dirs.toTypedArray())
+                MilkdropEngine.nativeSetTexturePaths(handle, dirs.toTypedArray())
                 // The soft-cut flag libprojectM has always accepted and this
                 // call has always passed as false. Its duration is configured
                 // natively at create time.
-                PMBridge.nativeLoadPreset(handle, path, sceneParams.milkdropBlendPresets)
-                val error = PMBridge.nativeGetLastError()
+                MilkdropEngine.nativeLoadPreset(handle, path, sceneParams.milkdropBlendPresets)
+                val error = MilkdropEngine.nativeGetLastError()
                 onError(error)
                 if (error == null) {
                     lastPresetPath = path
@@ -289,33 +331,33 @@ class ProjectMScene(
             }
         }
         val p = sceneParams
-        PMBridge.nativeSetBeatSensitivity(handle, (0.2f + p.beatResponse).coerceIn(0.2f, 3f))
+        MilkdropEngine.nativeSetBeatSensitivity(handle, (0.2f + p.beatResponse).coerceIn(0.2f, 3f))
 
-        // Render projectM into our texture, preserving whatever framebuffer the
-        // renderer had bound (the transition pipeline may be targeting an FBO).
-        val prevFbo = IntArray(1)
-        GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
-        // Known draw-buffer state before handing GL to the engine: its GLES
-        // path issues a glDrawBuffers(GL_BACK) after binding [pmFbo], which is
-        // only legal for the default framebuffer (the render-to-FBO backport
-        // owns the real fix - tools/projectm-v417-render-fbo-backport.patch).
-        // Establishing COLOR_ATTACHMENT0 here costs nothing and removes any
-        // dependence on what an earlier frame left in the FBO's state.
-        GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, pmFbo)
-        GLES30.glDrawBuffers(1, intArrayOf(GLES30.GL_COLOR_ATTACHMENT0), 0)
-        PMBridge.nativeRenderToFbo(handle, pmFbo)
-        PMBridge.nativeGetLastError()?.let(onError)
-        // Drain latched GL errors: an engine built from a pre-fix patch latches
-        // GL_INVALID_OPERATION every frame on the GL_BACK call above, and a
-        // latched error is indistinguishable from one raised by whatever this
-        // frame checks next. Bounded, because glGetError can queue several.
+        // The engine's whole frame, exactly as upstream runs it: preset
+        // passes into its own internal FBOs, then the final copy onto the
+        // DEFAULT framebuffer at the window size set in ensureEngine().
+        MilkdropEngine.nativeRender(handle)
+        MilkdropEngine.nativeGetLastError()?.let(onError)
+
+        // Lift the frame off framebuffer 0. GL_BACK is framebuffer 0's
+        // default read buffer, but the state is set explicitly so nothing an
+        // earlier pass did to it this frame can redirect the copy. A missing
+        // alpha channel on the surface reads as 1.0 by specification.
+        GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, 0)
+        GLES30.glReadBuffer(GLES30.GL_BACK)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, frameTex)
+        GLES30.glCopyTexSubImage2D(GLES30.GL_TEXTURE_2D, 0, 0, 0, 0, 0, texWidth, texHeight)
+
+        // Drain latched GL errors: a preset can push the engine down paths
+        // that raise recoverable errors, and a latched one is
+        // indistinguishable from one raised by whatever this frame checks
+        // next. Bounded, because glGetError can queue several.
         var drained = 0
         while (GLES30.glGetError() != GLES30.GL_NO_ERROR && drained < 8) drained++
         // The native preset pipeline can leave scissor/masks/blend-equation
         // dirty; re-establish the contract before anything else draws this
         // frame (post pass here, plus any transition co-scene + composite).
-        dev.geode.render.scene.GlUtil
-            .resetFrameState()
+        GlUtil.resetFrameState()
         GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, prevFbo[0])
         GLES30.glViewport(0, 0, width, height)
 
@@ -324,7 +366,7 @@ class ProjectMScene(
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
         GLES30.glUseProgram(postProgram)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, pmTex)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, frameTex)
         setUniform("uTex", 0)
         setUniform1f("uZoom", p.zoom * (1f + beatPulse * p.beatResponse * 0.08f))
         setUniform1f("uRotation", rotationAngle)
@@ -363,21 +405,21 @@ class ProjectMScene(
         GLES30.glUniform1f(postLocs.getOrPut(name) { GLES30.glGetUniformLocation(postProgram, name) }, value)
     }
 
-    private fun releaseFbo() {
-        if (pmFbo != 0) GLES30.glDeleteFramebuffers(1, intArrayOf(pmFbo), 0)
-        if (pmTex != 0) GLES30.glDeleteTextures(1, intArrayOf(pmTex), 0)
-        pmFbo = 0
-        pmTex = 0
-        fboWidth = 0
-        fboHeight = 0
+    private fun releaseFrameTexture() {
+        if (frameTex != 0) GLES30.glDeleteTextures(1, intArrayOf(frameTex), 0)
+        frameTex = 0
+        texWidth = 0
+        texHeight = 0
     }
 
     override fun release() {
         if (handle != 0L) {
-            PMBridge.nativeDestroy(handle)
+            MilkdropEngine.nativeDestroy(handle)
             handle = 0
         }
-        releaseFbo()
+        engineWidth = 0
+        engineHeight = 0
+        releaseFrameTexture()
         if (postProgram != 0) GLES30.glDeleteProgram(postProgram)
         postProgram = 0
         postProgramOk = false

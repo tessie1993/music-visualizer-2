@@ -59,7 +59,7 @@ data class TextureRemoveOutcome(
 
 /**
  * Manages the shared milkdrop texture directory (filesDir/milk/textures),
- * which [dev.geode.render.scene.ProjectMScene] already adds to projectM's
+ * which [dev.geode.render.scene.MilkdropScene] already adds to projectM's
  * texture search paths. Many MilkDrop presets reference external image
  * textures (the classic Milkdrop texture pack, plus per-preset images); by
  * importing images here, presets that reference them by filename can render

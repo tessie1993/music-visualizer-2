@@ -20,7 +20,7 @@ import kotlin.math.sin
  *
  * The "Palette tint" block at the bottom is the one stage that does NOT ride
  * the composite: it is MilkDrop's, and lives in pm_post_frag because that is
- * the pass ProjectMScene owns (it is the reason MilkDrop is excluded from
+ * the pass MilkdropScene owns (it is the reason MilkDrop is excluded from
  * `uPostGrade` in the first place). It is mirrored here anyway rather than in
  * a fourth mirror object, because it is the same kind of colour math the rest
  * of this file pins and it shares [luma] with the grade above it.
@@ -35,7 +35,7 @@ internal object CompositeGrade {
         /** `ShaderScene`: `view()` + `grade()` do everything in-shader. */
         SHADER,
 
-        /** `ProjectMScene`: `pm_post_frag` grades and zooms but never pulses. */
+        /** `MilkdropScene`: `pm_post_frag` grades and zooms but never pulses. */
         MILKDROP,
 
         /**
@@ -148,7 +148,7 @@ internal object CompositeGrade {
     ): Float = (angle + rotation * dt) % TAU
 
     /**
-     * Colour-cycle phase, integrated exactly like ShaderScene/ProjectMScene:
+     * Colour-cycle phase, integrated exactly like ShaderScene/MilkdropScene:
      * it advances only while the toggle is on and holds its value otherwise
      * (so switching the cycle off parks the hue instead of snapping it back).
      */

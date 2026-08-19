@@ -4,14 +4,23 @@
 #include <android/log.h>
 #include <projectM-4/projectM.h>
 
-#define TAG "projectM-jni"
+#define TAG "milkdrop-jni"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
 /*
- * Minimal JNI bridge over the projectM 4 C API. All GL-touching functions
- * (create, render, load, destroy) must run on the GL thread, which also
- * means the error buffer needs no locking.
+ * Minimal JNI bridge over the STOCK projectM 4 C API (v4.1.7, unpatched).
+ *
+ * There is deliberately no render-to-FBO entry point: upstream's
+ * projectm_opengl_render_frame ends its frame on the DEFAULT framebuffer
+ * (where its glDrawBuffers(GL_BACK) is legal), and the Kotlin scene copies
+ * the result off framebuffer 0 into its own texture. Rendering into a
+ * framebuffer object required patching the engine, and a stale or wrong
+ * patch shipped a permanently black MilkDrop twice; the stock engine plus a
+ * copy cannot drift that way.
+ *
+ * All GL-touching functions (create, render, load, destroy) must run on the
+ * GL thread, which also means the error buffer needs no locking.
  */
 
 static char g_last_error[512] = {0};
@@ -24,7 +33,7 @@ static void on_preset_switch_failed(const char *preset_filename, const char *mes
 }
 
 JNIEXPORT jlong JNICALL
-Java_dev_musicviz_render_scene_PMBridge_nativeCreate(JNIEnv *env, jobject thiz) {
+Java_dev_geode_render_scene_MilkdropEngine_nativeCreate(JNIEnv *env, jobject thiz) {
     projectm_handle h = projectm_create();
     if (h) {
         projectm_set_fps(h, 60);
@@ -42,19 +51,19 @@ Java_dev_musicviz_render_scene_PMBridge_nativeCreate(JNIEnv *env, jobject thiz) 
 }
 
 JNIEXPORT void JNICALL
-Java_dev_musicviz_render_scene_PMBridge_nativeDestroy(JNIEnv *env, jobject thiz, jlong handle) {
+Java_dev_geode_render_scene_MilkdropEngine_nativeDestroy(JNIEnv *env, jobject thiz, jlong handle) {
     if (handle) projectm_destroy((projectm_handle) handle);
 }
 
 JNIEXPORT void JNICALL
-Java_dev_musicviz_render_scene_PMBridge_nativeResize(JNIEnv *env, jobject thiz, jlong handle,
-                                                     jint width, jint height) {
+Java_dev_geode_render_scene_MilkdropEngine_nativeResize(JNIEnv *env, jobject thiz, jlong handle,
+                                                        jint width, jint height) {
     if (handle) projectm_set_window_size((projectm_handle) handle, (size_t) width, (size_t) height);
 }
 
 JNIEXPORT void JNICALL
-Java_dev_musicviz_render_scene_PMBridge_nativeAddPcmMono(JNIEnv *env, jobject thiz, jlong handle,
-                                                         jfloatArray samples, jint count) {
+Java_dev_geode_render_scene_MilkdropEngine_nativeAddPcmMono(JNIEnv *env, jobject thiz, jlong handle,
+                                                            jfloatArray samples, jint count) {
     if (!handle || !samples || count <= 0) return;
     /* Clamp to the array's real length: a Java-side caller bug must surface
      * as short audio, not as an out-of-bounds heap read inside projectM. */
@@ -69,13 +78,13 @@ Java_dev_musicviz_render_scene_PMBridge_nativeAddPcmMono(JNIEnv *env, jobject th
 }
 
 JNIEXPORT void JNICALL
-Java_dev_musicviz_render_scene_PMBridge_nativeRender(JNIEnv *env, jobject thiz, jlong handle) {
+Java_dev_geode_render_scene_MilkdropEngine_nativeRender(JNIEnv *env, jobject thiz, jlong handle) {
     if (handle) projectm_opengl_render_frame((projectm_handle) handle);
 }
 
 JNIEXPORT void JNICALL
-Java_dev_musicviz_render_scene_PMBridge_nativeSetTexturePaths(JNIEnv *env, jobject thiz, jlong handle,
-                                                              jobjectArray dirs) {
+Java_dev_geode_render_scene_MilkdropEngine_nativeSetTexturePaths(JNIEnv *env, jobject thiz, jlong handle,
+                                                                 jobjectArray dirs) {
     if (!handle || !dirs) return;
     jsize n = (*env)->GetArrayLength(env, dirs);
     if (n <= 0 || n > 8) return;
@@ -98,14 +107,8 @@ Java_dev_musicviz_render_scene_PMBridge_nativeSetTexturePaths(JNIEnv *env, jobje
 }
 
 JNIEXPORT void JNICALL
-Java_dev_musicviz_render_scene_PMBridge_nativeRenderToFbo(JNIEnv *env, jobject thiz, jlong handle,
-                                                          jint fbo) {
-    if (handle) projectm_opengl_render_frame_fbo((projectm_handle) handle, (uint32_t) fbo);
-}
-
-JNIEXPORT void JNICALL
-Java_dev_musicviz_render_scene_PMBridge_nativeLoadPreset(JNIEnv *env, jobject thiz, jlong handle,
-                                                         jstring path, jboolean smooth) {
+Java_dev_geode_render_scene_MilkdropEngine_nativeLoadPreset(JNIEnv *env, jobject thiz, jlong handle,
+                                                            jstring path, jboolean smooth) {
     if (!handle || !path) return;
     const char *cpath = (*env)->GetStringUTFChars(env, path, NULL);
     if (cpath) {
@@ -118,7 +121,7 @@ Java_dev_musicviz_render_scene_PMBridge_nativeLoadPreset(JNIEnv *env, jobject th
 }
 
 JNIEXPORT jstring JNICALL
-Java_dev_musicviz_render_scene_PMBridge_nativeGetLastError(JNIEnv *env, jobject thiz) {
+Java_dev_geode_render_scene_MilkdropEngine_nativeGetLastError(JNIEnv *env, jobject thiz) {
     if (g_last_error[0] == '\0') return NULL;
     jstring result = (*env)->NewStringUTF(env, g_last_error);
     g_last_error[0] = '\0';
@@ -126,13 +129,13 @@ Java_dev_musicviz_render_scene_PMBridge_nativeGetLastError(JNIEnv *env, jobject 
 }
 
 JNIEXPORT void JNICALL
-Java_dev_musicviz_render_scene_PMBridge_nativeSetBeatSensitivity(JNIEnv *env, jobject thiz,
-                                                                 jlong handle, jfloat value) {
+Java_dev_geode_render_scene_MilkdropEngine_nativeSetBeatSensitivity(JNIEnv *env, jobject thiz,
+                                                                    jlong handle, jfloat value) {
     if (handle) projectm_set_beat_sensitivity((projectm_handle) handle, value);
 }
 
 JNIEXPORT void JNICALL
-Java_dev_musicviz_render_scene_PMBridge_nativeSetPresetLocked(JNIEnv *env, jobject thiz,
-                                                              jlong handle, jboolean locked) {
+Java_dev_geode_render_scene_MilkdropEngine_nativeSetPresetLocked(JNIEnv *env, jobject thiz,
+                                                                 jlong handle, jboolean locked) {
     if (handle) projectm_set_preset_locked((projectm_handle) handle, locked);
 }

@@ -3,8 +3,8 @@
 The two shared objects the MilkDrop style needs live in the repository:
 
 ```
-app/src/main/jniLibs/arm64-v8a/libprojectM-4.so     the engine (LGPL-2.1, dynamically linked)
-app/src/main/jniLibs/arm64-v8a/libprojectmjni.so    the JNI bridge built from tools/pm_jni.c
+app/src/main/jniLibs/arm64-v8a/libprojectM-4.so     the engine (LGPL-2.1, dynamically linked), STOCK v4.1.7
+app/src/main/jniLibs/arm64-v8a/libmilkdropjni.so    the JNI bridge built from tools/milkdrop_jni.c
 ```
 
 The APK ships arm64-v8a only.
@@ -27,6 +27,22 @@ The APK ships arm64-v8a only.
 > A fresh engine build is not a repackage: run the MilkDrop items in
 > `docs/DEVICE_CHECKS.md` (1-4, 33) afterwards.
 
+## The engine is stock — no patches
+
+The engine is built from the upstream release tag exactly as shipped.
+`projectm_opengl_render_frame` ends its frame on the DEFAULT framebuffer (the
+only target where upstream's `glDrawBuffers(GL_BACK)` is legal), and
+`MilkdropScene` copies the frame off framebuffer 0 into its own texture for
+the post/composite pipeline.
+
+An earlier integration patched a render-to-FBO API onto the engine
+(`projectm_opengl_render_frame_fbo`), and the patch went stale twice — once
+declaring the symbol without defining it (JNI link death on a device), once
+leaving `GL_BACK` set on a framebuffer object (MilkDrop permanently black on
+conformant drivers). The rebuild's premise is that there is no patch to go
+stale; `MilkdropIntegrationTest` fails the build if a `.patch` reappears in
+`tools/` or an apply step reappears in the workflow.
+
 ## The recipe the workflow implements
 
 ```
@@ -38,11 +54,6 @@ The APK ships arm64-v8a only.
 git clone --branch v4.1.7 --depth 1 --recurse-submodules \
   https://github.com/projectM-visualizer/projectm.git
 
-# The render-to-FBO backport. projectM 4.1.7 renders to the default framebuffer;
-# every scene here draws into one of the engine's own FBOs, and the composite
-# pass needs the result as a texture.
-cd projectm && git apply ../musicviz-project/musicviz/tools/projectm-v417-render-fbo-backport.patch
-
 cmake -B build-android -S projectm \
   -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake \
   -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 \
@@ -51,35 +62,20 @@ cmake -B build-android -S projectm \
   -G Ninja
 ninja -C build-android
 
-# The bridge. Its exported symbols are exactly what PMBridge.kt declares as
-# external fun (nativeCreate/Destroy, nativeResize, nativeAddPcmMono,
-# nativeRender, nativeRenderToFbo, nativeSetTexturePaths, nativeLoadPreset,
-# nativeGetLastError, nativeSetBeatSensitivity, nativeSetPresetLocked); a
-# missing one is an UnsatisfiedLinkError at first use, not at build time.
+# The bridge. Its exported symbols are exactly what MilkdropEngine.kt declares
+# as external fun (nativeCreate/Destroy, nativeResize, nativeAddPcmMono,
+# nativeRender, nativeSetTexturePaths, nativeLoadPreset, nativeGetLastError,
+# nativeSetBeatSensitivity, nativeSetPresetLocked); a missing one is an
+# UnsatisfiedLinkError at first use, not at build time — the workflow checks
+# the exports with llvm-nm, and JniAbiTest re-checks the committed binary.
+# The second -I is for the CMake-GENERATED projectM_export.h, which lives in
+# the build tree, not the source tree.
 $NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang \
-  -shared -fPIC -O2 -o libprojectmjni.so \
-  musicviz-project/musicviz/tools/pm_jni.c \
+  -shared -fPIC -O2 -o libmilkdropjni.so \
+  musicviz-project/musicviz/tools/milkdrop_jni.c \
   -I projectm/src/api/include -I build-android/src/api/include -L. -lprojectM-4 -llog \
   -Wl,-z,max-page-size=16384,-z,common-page-size=16384
 ```
-
-## The patch
-
-`tools/projectm-v417-render-fbo-backport.patch` is the one true FBO backport,
-and the one the workflow applies. It patches `ProjectMCWrapper.cpp` as well as
-the header, so `projectm_opengl_render_frame_fbo` is actually defined - an
-earlier draft that declared the function without defining it built fine and
-then failed at JNI link time, which is why this section exists.
-
-The patch also owns the GLES draw-buffer fix: upstream sets `GL_BACK` after
-its final framebuffer bind, which is only legal for the DEFAULT framebuffer.
-With the backport binding a framebuffer OBJECT there instead, a conformant
-driver rejects `GL_BACK` (latching `GL_INVALID_OPERATION` every frame) and a
-lenient one redirects the final copy away from the caller's texture - MilkDrop
-permanently black while every other style works. The patched block selects
-`GL_COLOR_ATTACHMENT0` whenever the target is an FBO. A shipped `.so` built
-from a pre-fix patch carries the bug; rebuild via the workflow after any
-change here.
 
 ## Adding an ABI
 

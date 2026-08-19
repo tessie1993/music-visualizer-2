@@ -13,7 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import dev.geode.R
-import dev.musicviz.render.scene.PMBridge
+import dev.geode.render.scene.MilkdropEngine
 import kotlin.math.roundToInt
 
 /** Slider range shared with the setters' clamps and the persistence store. */
@@ -106,7 +106,7 @@ internal fun AutoVisualsGroup(viewModel: PlayerViewModel) {
         // The engine drops .milk picks when libprojectM is missing, so on a
         // device without it the switch would be a control that changes
         // nothing - say so rather than offering it.
-        if (PMBridge.available) {
+        if (MilkdropEngine.available) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.autoviz_pick_milk), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 Switch(checked = viz.randomIncludeMilk, onCheckedChange = viewModel::setRandomIncludeMilk)

@@ -23,8 +23,10 @@ import java.io.File
  * different thing - ping-pong pairs and MRT at probed half-float formats, with
  * an empirical renderability cascade - and folding two unrelated allocators into
  * one would be the shallow-module coupling the repo's own rules warn about.
- * `FlowField` and `ProjectMScene` each own a single special-purpose target and
- * are listed as known exceptions rather than silently ignored.
+ * `FlowField` owns a single special-purpose target and is listed as a known
+ * exception rather than silently ignored. (The MilkDrop scene no longer
+ * allocates a framebuffer at all: the stock engine renders on framebuffer 0
+ * and the scene copies the frame into a plain texture.)
  */
 class RenderTargetOwnershipTest {
     private companion object {
@@ -39,7 +41,6 @@ class RenderTargetOwnershipTest {
                 "render/fluid/FluidBuffers.kt" to
                     "ping-pong and MRT at probed half-float formats - a different allocator, not this one",
                 "render/fluid/FlowField.kt" to "its own velocity-field ping-pong at field resolution",
-                "render/scene/ProjectMScene.kt" to "the FBO handed to libprojectM's native renderer",
                 "render/scene/EmergenceScene.kt" to
                     "the acid feedback ping-pong: its history must survive the composite's own clears",
             )

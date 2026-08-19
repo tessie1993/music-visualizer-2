@@ -86,7 +86,7 @@ data class SceneParams(
     val paletteLut: Int = NO_PALETTE_LUT,
     val customPalette2Id: String = NO_CUSTOM_PALETTE,
     // How far MilkDrop's own colours are steered toward the palette above, 0..1
-    // (read by ProjectMScene's post pass as `uPalTint`; every other family
+    // (read by MilkdropScene's post pass as `uPalTint`; every other family
     // renders the palette directly and ignores this).
     //
     // 0 IS THE DEFAULT AND IS AN EXACT NO-OP, deliberately: a .milk preset

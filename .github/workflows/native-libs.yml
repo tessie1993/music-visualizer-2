@@ -9,8 +9,12 @@ name: Rebuild native libs (16 KB aligned)
 # Run this manually, download the artifact, drop both .so AND the SHA256SUMS
 # file into app/src/main/jniLibs/arm64-v8a/ and commit them together: the
 # SHA256SUMS carries the run URL and source SHA that let the repo prove the
-# committed blobs match tools/pm_jni.c and the projectM tag. android.yml
+# committed blobs match tools/milkdrop_jni.c and the projectM tag. android.yml
 # verifies the hashes on every pull request.
+#
+# The engine is built STOCK — no patches. It renders to the default
+# framebuffer exactly as upstream ships it; the app copies the frame off
+# framebuffer 0 (see MilkdropScene.kt).
 
 on:
   workflow_dispatch:
@@ -53,13 +57,6 @@ jobs:
           git clone --branch "${{ inputs.projectm_tag }}" --depth 1 --recurse-submodules \
             https://github.com/projectM-visualizer/projectm.git projectm
 
-      - name: Apply render-to-FBO backport
-        working-directory: projectm
-        run: |
-          set -euo pipefail
-          git apply --verbose \
-            ../musicviz-project/musicviz/tools/projectm-v417-render-fbo-backport.patch
-
       - name: Build libprojectM-4.so
         run: |
           set -euo pipefail
@@ -74,7 +71,7 @@ jobs:
             -G Ninja
           ninja -C build-android
 
-      - name: Build libprojectmjni.so
+      - name: Build libmilkdropjni.so
         run: |
           set -euo pipefail
           mkdir -p out
@@ -82,12 +79,26 @@ jobs:
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
           "$TOOLCHAIN/bin/aarch64-linux-android$API-clang" \
             -shared -fPIC -O2 \
-            -o out/libprojectmjni.so \
-            musicviz-project/musicviz/tools/pm_jni.c \
+            -o out/libmilkdropjni.so \
+            musicviz-project/musicviz/tools/milkdrop_jni.c \
             -I projectm/src/api/include \
             -I build-android/src/api/include \
             -L out -lprojectM-4 -llog \
             $PAGE_FLAGS
+
+      - name: Verify the bridge exports every MilkdropEngine symbol
+        run: |
+          set -euo pipefail
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          "$TOOLCHAIN/bin/llvm-nm" -D --defined-only out/libmilkdropjni.so \
+            | awk '{print $NF}' | grep '^Java_' | sort > exported.txt
+          cat exported.txt
+          for m in nativeCreate nativeDestroy nativeResize nativeAddPcmMono \
+                   nativeRender nativeSetTexturePaths nativeLoadPreset \
+                   nativeGetLastError nativeSetBeatSensitivity nativeSetPresetLocked; do
+            grep -qx "Java_dev_geode_render_scene_MilkdropEngine_$m" exported.txt || {
+              echo "::error::missing JNI export: $m"; exit 1; }
+          done
 
       - name: Verify 16 KB alignment
         run: |
@@ -113,8 +124,8 @@ jobs:
             echo "# Provenance of the prebuilt libraries committed in this directory."
             echo "#"
             echo "# Built by native-libs.yml run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            echo "# projectM ${{ inputs.projectm_tag }} + tools/projectm-v417-render-fbo-backport.patch;"
-            echo "# JNI bridge tools/pm_jni.c at ${GITHUB_SHA}."
+            echo "# projectM ${{ inputs.projectm_tag }}, stock (no patches);"
+            echo "# JNI bridge tools/milkdrop_jni.c at ${GITHUB_SHA}."
             echo "# Commit this file alongside the .so files it describes;"
             echo "# android.yml verifies the hashes on every pull request."
             sha256sum *.so

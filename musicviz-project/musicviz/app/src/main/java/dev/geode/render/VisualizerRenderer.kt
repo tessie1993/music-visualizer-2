@@ -14,17 +14,17 @@ import dev.geode.render.scene.CymaticsScene
 import dev.geode.render.scene.GlUtil
 import dev.geode.render.scene.HyperspaceScene
 import dev.geode.render.scene.LifeScene
+import dev.geode.render.scene.MilkdropEngine
+import dev.geode.render.scene.MilkdropScene
 import dev.geode.render.scene.MycoScene
 import dev.geode.render.scene.PcmChunk
 import dev.geode.render.scene.PcmSink
-import dev.geode.render.scene.ProjectMScene
 import dev.geode.render.scene.Scene
 import dev.geode.render.scene.SceneIds
 import dev.geode.render.scene.SceneParams
 import dev.geode.render.scene.ShaderScene
 import dev.geode.render.scene.SilkScene
 import dev.geode.render.scene.VisualStyleCatalog
-import dev.musicviz.render.scene.PMBridge
 import java.io.File
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
@@ -368,7 +368,7 @@ class VisualizerRenderer(
      * preceded the dropped queue is guaranteed visible to that re-queue.
      */
     @Volatile
-    private var milkdropScene: ProjectMScene? = null
+    private var milkdropScene: MilkdropScene? = null
     private val activeCustomShaders = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     /** User fluid force/dye injection sources (extension points), retained
@@ -467,7 +467,7 @@ class VisualizerRenderer(
         if (chunk.count > 0) sink.acceptPcm(chunk.data, chunk.count)
     }
 
-    val milkdropAvailable: Boolean get() = PMBridge.available
+    val milkdropAvailable: Boolean get() = MilkdropEngine.available
 
     /**
      * The scene registry, GL THREAD ONLY: [onSurfaceCreated] clears and
@@ -629,7 +629,7 @@ class VisualizerRenderer(
             addAll(VisualStyleCatalog.mycoIds)
             addAll(VisualStyleCatalog.acidIds)
             addAll(SHADER_SCENES.keys)
-            if (PMBridge.available) add(SceneIds.MILKDROP)
+            if (MilkdropEngine.available) add(SceneIds.MILKDROP)
             add(SceneIds.FLUID)
             add(SceneIds.CURLFLOW)
             add(SceneIds.WATER)
@@ -728,7 +728,7 @@ class VisualizerRenderer(
                     // PCM now arrives through the shared PcmSink fan-out;
                     // export delivers none and the scene falls back to the
                     // timeline's per-frame waveform in update().
-                    ProjectMScene(
+                    MilkdropScene(
                         postVertexSrc = GlUtil.loadShader(context, R.raw.fade_vert),
                         postFragmentSrc = GlUtil.loadShader(context, R.raw.pm_post_frag),
                         sharedTextureDir = File(context.filesDir, "milk/textures").absolutePath,
@@ -791,8 +791,12 @@ class VisualizerRenderer(
         scene.resize(renderWidth, renderHeight)
         // User GLSL for this style, which outlived the context that compiled it.
         activeCustomShaders[id]?.let { (scene as? ShaderScene)?.setFragmentSource(it) }
-        if (scene is ProjectMScene) {
+        if (scene is MilkdropScene) {
             milkdropScene = scene
+            // The engine renders on framebuffer 0 and the scene copies the
+            // frame off it, so it must know the surface's TRUE size — the
+            // resize() above handed it the supersampled scene-FBO size.
+            scene.setWindowSize(width, height)
             // Re-queued here rather than at surface creation: loadMilkPreset
             // records the path before it queues, precisely so a preset chosen
             // while this scene did not exist is still applied when it does.
@@ -982,6 +986,9 @@ class VisualizerRenderer(
         renderWidth = (width * ss).toInt()
         renderHeight = (height * ss).toInt()
         scenes.values.forEach { it.resize(renderWidth, renderHeight) }
+        // MilkDrop's engine renders on framebuffer 0, so it needs the TRUE
+        // surface size alongside the supersampled scene-FBO size above.
+        milkdropScene?.setWindowSize(width, height)
         flowField?.resize(renderWidth, renderHeight)
         rippleOverlay?.resize(renderWidth, renderHeight)
         fboA.ensure(renderWidth, renderHeight)
@@ -1400,7 +1407,7 @@ class VisualizerRenderer(
         // "Beat pulse": gate component w, a DIFFERENT set from the grade on
         // purpose. Only two scene families read SceneParams.pulse themselves -
         // ShaderScene (uPulse, folded into view()'s zoom) and the particle
-        // pipeline (a uSize swell). ProjectMScene is in the grading exclusion
+        // pipeline (a uSize swell). MilkdropScene is in the grading exclusion
         // set but NOT this one: the milkdrop post pass grades and zooms, yet
         // nothing in it or in pm_post_frag reads pulse, so before this upload
         // the slider was inert on MilkDrop exactly as on the fluid family.
@@ -1519,7 +1526,7 @@ class VisualizerRenderer(
     private fun compositeFamily(scene: Scene?): CompositeGrade.SceneFamily =
         when (scene) {
             is ShaderScene -> CompositeGrade.SceneFamily.SHADER
-            is ProjectMScene -> CompositeGrade.SceneFamily.MILKDROP
+            is MilkdropScene -> CompositeGrade.SceneFamily.MILKDROP
             else -> CompositeGrade.SceneFamily.FLUID
         }
 
@@ -1615,7 +1622,7 @@ class VisualizerRenderer(
                 // onDrawFrame, onSurfaceCreated's preset re-queue). Queued
                 // before init() exactly as the inline switch this replaces did.
                 (scene as? dev.geode.render.fluid.FluidScene)?.setInjectionShaders(fluidForceSrc, fluidDyeSrc)
-                (scene as? ProjectMScene)?.let { pm ->
+                (scene as? MilkdropScene)?.let { pm ->
                     // Without this the export renders projectM's default idle
                     // preset instead of what's on screen.
                     lastMilkPreset?.let { pm.queuePreset(it) }

@@ -157,7 +157,7 @@ vec2 geo(vec2 uv, vec4 gate) {
     // Rotation and sway share one angle, exactly like plasma_frag's view()
     // (a = uRotation + uSway * 0.35 * sin(uTime * 0.7)). uPostRotation is an
     // angle, not a rate: the renderer integrates rotation * dt so the slider
-    // stays a SPEED here, matching ShaderScene/ParticleSceneBase/ProjectMScene.
+    // stays a SPEED here, matching ShaderScene/ParticleSceneBase/MilkdropScene.
     float sa = gradeOn ? uPostRotation : 0.0;
     if (geoOn && abs(uPostSway) > 0.001) sa += uPostSway * 0.35 * sin(uTime * 0.7);
     if (abs(sa) > 0.0001) {

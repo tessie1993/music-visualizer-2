@@ -130,7 +130,7 @@ function makeDriver(args) {
       ignoreUploaded: [],
       standIns: [],
       // CompositeGrade.SceneFamily: HyperspaceScene is none of ShaderScene,
-      // EmergenceScene or ProjectMScene, so it lands in the else branch.
+      // EmergenceScene or MilkdropScene, so it lands in the else branch.
       family: 'FLUID',
     };
   }
@@ -175,7 +175,7 @@ function makeDriver(args) {
       ignoreUploaded: [],
       standIns: [...driver.standIns],
       // VisualizerRenderer.compositeFamily(): not ShaderScene, not
-      // ProjectMScene, so the else branch - FLUID gates.
+      // MilkdropScene, so the else branch - FLUID gates.
       family: 'FLUID',
     };
   }
