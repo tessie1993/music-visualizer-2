@@ -64,7 +64,11 @@ android {
         // exist. CI runs them; see .github/workflows/android.yml.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            abiFilters += "arm64-v8a"
+            // arm64-v8a is what phones run; x86_64 exists so emulators (the
+            // CI instrumented suite included) can load libprojectM and
+            // actually exercise MilkDrop - without it the engine probe fails
+            // there and the whole pipeline is untestable off a phone.
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
 

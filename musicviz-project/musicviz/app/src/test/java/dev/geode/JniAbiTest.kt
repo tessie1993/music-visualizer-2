@@ -37,6 +37,17 @@ class JniAbiTest {
             .firstOrNull { File(it, "app/src/main/res/values/strings.xml").isFile }
             ?: error("module root not found from ${File("").absolutePath}")
 
+    /** Every shipped copy of the bridge — arm64-v8a for devices, x86_64 for
+     *  emulators (the CI instrumented suite loads that one). Each must export
+     *  the same symbol set; a drift on either ABI is a hidden MilkDrop there. */
+    private val libraries: List<File> =
+        File(moduleRoot, "app/src/main/jniLibs")
+            .listFiles { f: File -> f.isDirectory }
+            .orEmpty()
+            .map { File(it, "libmilkdropjni.so") }
+            .filter { it.isFile }
+            .sortedBy { it.parentFile?.name.orEmpty() }
+
     private val library = File(moduleRoot, "app/src/main/jniLibs/arm64-v8a/libmilkdropjni.so")
 
     private val bridgeSource: File =
@@ -49,13 +60,13 @@ class JniAbiTest {
         method: String,
     ): String = "Java_${packageName.replace(".", "_")}_${className}_$method"
 
-    private fun exportedSymbols(): List<String>? {
+    private fun exportedSymbols(of: File = library): List<String>? {
         val nm =
             listOf("/usr/bin/nm", "/usr/local/bin/nm", "nm")
                 .firstOrNull { runCatching { ProcessBuilder(it, "--version").start().waitFor() == 0 }.getOrDefault(false) }
                 ?: return null
         val process =
-            ProcessBuilder(nm, "-D", "--defined-only", library.absolutePath)
+            ProcessBuilder(nm, "-D", "--defined-only", of.absolutePath)
                 .redirectErrorStream(true)
                 .start()
         val output = process.inputStream.bufferedReader().readText()
@@ -95,21 +106,24 @@ class JniAbiTest {
     }
 
     @Test
-    fun `every external fun resolves to a symbol the library exports`() {
-        val exported = exportedSymbols()
-        org.junit.Assume.assumeTrue("no nm on this toolchain", exported != null)
-        assertTrue("the prebuilt library is missing", library.isFile)
+    fun `every external fun resolves to a symbol each shipped library exports`() {
+        org.junit.Assume.assumeTrue("no nm on this toolchain", exportedSymbols() != null)
+        assertTrue("the prebuilt arm64 library is missing", library.isFile)
         val natives = declaredNatives()
         assertTrue("MilkdropEngine declares no external functions at all", natives.isNotEmpty())
-        val missing =
-            natives
-                .map { expectedSymbol(declaredPackage(), "MilkdropEngine", it) }
-                .filterNot { it in exported!! }
-        assertEquals(
-            "these would throw UnsatisfiedLinkError on a device, on the GL thread, with no UI to explain it",
-            emptyList<String>(),
-            missing,
-        )
+        for (lib in libraries) {
+            val exported = exportedSymbols(lib).orEmpty()
+            val missing =
+                natives
+                    .map { expectedSymbol(declaredPackage(), "MilkdropEngine", it) }
+                    .filterNot { it in exported }
+            assertEquals(
+                "${lib.parentFile?.name}/${lib.name}: these would throw UnsatisfiedLinkError " +
+                    "on that ABI, on the GL thread, with no UI to explain it",
+                emptyList<String>(),
+                missing,
+            )
+        }
     }
 
     /**
