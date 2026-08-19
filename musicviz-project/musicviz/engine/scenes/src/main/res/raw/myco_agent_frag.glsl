@@ -2,7 +2,12 @@
 precision highp float;
 
 // MYCELIUM - the agent pass. One texel = one agent: (x, y, heading, species),
-// positions in [0,1) toroidal trail space.
+// positions in [0,1) toroidal trail space. The heading is STORED AS A TURN
+// (heading / TAU, in [0,1)) rather than in radians: the agent texture rides
+// RGBA8 on devices with no renderable float format, where a normalized
+// texel clamps to [0,1] and a radian heading above 1 collapsed the whole
+// population onto one bearing. Every channel now fits any format by
+// construction; the pass decodes to radians on read and encodes on write.
 //
 // The rule is the published Physarum machine, reimplemented: sense the trail
 // at three probes (ahead, +/- sensor angle at sensor distance), turn by the
@@ -63,14 +68,15 @@ void main() {
         // Fresh population: uniform positions, uniform headings, species by
         // the declared mix - the reference machine's uniform-noise start.
         vec2 h = hash2(vUv * 719.7);
-        float heading0 = hash1(vUv * 149.3) * TAU;
+        // Already a turn in [0,1): the storage encoding, no TAU here.
+        float heading0 = hash1(vUv * 149.3);
         float species0 = step(1.0 - uSpeciesMix, hash1(vUv * 449.1 + 3.3));
         fragColor = vec4(h, heading0, species0);
         return;
     }
     vec4 a = texture(uAgents, vUv);
     vec2 pos = a.xy;
-    float heading = a.z;
+    float heading = a.z * TAU; // stored as a turn; the math runs in radians
     float species = a.w;
 
     vec2 texel = 1.0 / uTrailRes;
@@ -113,5 +119,7 @@ void main() {
 
     pos = fract(pos + vec2(cos(heading), sin(heading)) * uMoveStep * texel);
 
-    fragColor = vec4(pos, heading, species);
+    // Encode back to a turn: mod above keeps heading / TAU inside [0,1), so
+    // the write survives a normalized RGBA8 target unclamped.
+    fragColor = vec4(pos, heading / TAU, species);
 }
