@@ -205,11 +205,14 @@ object StudioClips {
                 val resolver = context.contentResolver
                 val direct = runCatching { resolver.update(parsed, displayName(display), null, null) }
                 log.append("; direct=").append(direct.exceptionOrNull()?.toString() ?: direct.getOrNull())
-                var after = settledName(context, parsed, display)
+                // A short probe only: this wait exists to notice the versions
+                // where the plain update is enough, not to give a no-op its
+                // full hearing before the fallback that actually works runs.
+                var after = settledName(context, parsed, display, DIRECT_SETTLE_ATTEMPTS)
                 log.append(" now='").append(after).append('\'')
                 if (after != display) {
                     renameWhilePending(context, parsed, display, log)
-                    after = settledName(context, parsed, display)
+                    after = settledName(context, parsed, display, SETTLE_ATTEMPTS)
                     log.append("; final='").append(after).append('\'')
                 }
                 after == display
@@ -270,23 +273,71 @@ object StudioClips {
      * during the pending flip the row is hidden and reads as null. Both were
      * observed on the API 30 emulator - the same rename passing one run and
      * failing the next, decided by who won the race - so the verdict waits
-     * briefly for the store instead of trusting the first read. Callers run
-     * on Dispatchers.IO, where a short poll is cheap.
+     * for the store instead of trusting the first read. Callers run on
+     * Dispatchers.IO, where a short poll is cheap, and the window is only
+     * paid in full on the failure path.
+     *
+     * A plain read is not enough on its own: the row can STAY hidden for
+     * hundreds of milliseconds after IS_PENDING is set back to 0 (CI's API 30
+     * emulator burned a whole 400 ms window reading null after a publish that
+     * reported success - `pend=1 upd=1 pub=1; final='null'`), so a poll that
+     * only asks the plain query is blind exactly while the answer is being
+     * written. Each attempt therefore also asks the pending-inclusive query,
+     * which sees the row through the flip; a rename that landed is recognized
+     * whichever side of the visibility boundary the store is on.
      */
     private fun settledName(
         context: Context,
         uri: Uri,
         display: String,
+        attempts: Int,
     ): String? {
         var name: String? = null
-        repeat(SETTLE_ATTEMPTS) {
-            name = currentName(context, uri)
+        repeat(attempts) {
+            name = currentName(context, uri) ?: pendingVisibleName(context, uri)
             if (name == display) return name
             android.os.SystemClock.sleep(SETTLE_STEP_MS)
         }
         return name
     }
 
-    private const val SETTLE_ATTEMPTS = 10
-    private const val SETTLE_STEP_MS = 40L
+    /**
+     * The row's name as the pending-inclusive query reports it, or null.
+     *
+     * Only meaningful on Q+ (below Q nothing here ever marks a row pending);
+     * API 29 spells the request [MediaStore.setIncludePending], 30+ a query-
+     * args bundle. Used by [settledName] to keep sight of a row that a plain
+     * query hides while its pending flip settles.
+     */
+    private fun pendingVisibleName(
+        context: Context,
+        uri: Uri,
+    ): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        val projection = arrayOf(MediaStore.Video.Media.DISPLAY_NAME)
+        return runCatching {
+            val cursor =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    val args =
+                        android.os.Bundle().apply {
+                            putInt(MediaStore.QUERY_ARG_MATCH_PENDING, MediaStore.MATCH_INCLUDE)
+                        }
+                    context.contentResolver.query(uri, projection, args, null)
+                } else {
+                    @Suppress("DEPRECATION")
+                    context.contentResolver.query(MediaStore.setIncludePending(uri), projection, null, null, null)
+                }
+            cursor?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        }.getOrNull()
+    }
+
+    /** The final verdict's window: a cold CI emulator was seen holding a
+     *  published row hidden past 400 ms, so this waits out 1.2 s worst-case.
+     *  Success returns early; the full window is only paid to say "failed". */
+    private const val SETTLE_ATTEMPTS = 24
+
+    /** The direct-update probe's window: just enough to notice the versions
+     *  where the plain update lands, before the pending fallback runs. */
+    private const val DIRECT_SETTLE_ATTEMPTS = 6
+    private const val SETTLE_STEP_MS = 50L
 }
