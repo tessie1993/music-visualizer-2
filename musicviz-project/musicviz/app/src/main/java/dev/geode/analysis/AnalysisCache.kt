@@ -142,8 +142,8 @@ object AnalysisCache {
                     // from the same header and go straight into FloatArray(),
                     // so a file truncated by a crash or a full disk reads a
                     // garbage count and asks for gigabytes before the entry is
-                    // dropped. The bounds sit far above any real
-                    // [FftProcessor] band count or waveform size.
+                    // dropped. The bounds sit far above any realistic
+                    // band count or waveform size.
                     if (bandCount < 0 || bandCount > 4_096) return@runCatching null
                     if (waveSize < 0 || waveSize > 65_536) return@runCatching null
                     val frames = ArrayList<TimelineFrame>(frameCount)

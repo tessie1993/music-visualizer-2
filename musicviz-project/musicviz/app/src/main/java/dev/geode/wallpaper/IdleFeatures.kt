@@ -39,8 +39,8 @@ class IdleFeatures(
     fun tick(dt: Float): AudioFeatures {
         phase += dt
         val t = phase
-        // Fresh arrays per tick, the same answer the live path reached with
-        // `bands.copyOf()` in [dev.geode.analysis.FeatureExtractor]:
+        // Fresh arrays per tick, the same answer the live analysis path
+        // reaches by never reusing its output buffers:
         // [AudioFeatures] is an immutable snapshot, and the GL thread keeps
         // reading the bands and waveform of whatever frame it grabbed for as
         // long as that frame takes to draw - routinely longer than the 16 ms

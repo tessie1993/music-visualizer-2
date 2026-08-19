@@ -174,7 +174,7 @@ internal object CompositeGrade {
     ): Float = maxOf(impulse, (envelope - dt * BEAT_DECAY)).coerceAtLeast(0f)
 
     /** Boolean convenience for callers without a graded impulse: a beat is a
-     *  full-strength kick, exactly the pre-[PulseTracker] behavior. */
+     *  full-strength kick, the ungraded behavior from before beat grading. */
     fun integrateBeatPulse(
         envelope: Float,
         beat: Boolean,

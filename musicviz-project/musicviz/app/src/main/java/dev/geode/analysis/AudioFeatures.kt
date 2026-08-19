@@ -26,13 +26,13 @@ data class AudioFeatures(
     /** Total detected sections for the track (0 = no offline analysis). */
     val sectionCount: Int = 0,
     /** Raw weighted spectral-flux onset strength for this frame - the quantity
-     *  [FeatureExtractor.BeatGate] thresholds to produce [beat]. Carried through
+     *  the onset peak picker thresholds to produce [beat]. Carried through
      *  the timeline and the on-disk analysis cache so the beat decision can be
      *  re-made later at whatever sensitivity the user has set, without
      *  re-analysing the track. 0 for live scene fallbacks that never ran a
      *  flux calculation. */
     val flux: Float = 0f,
-    /** Graded weight of this frame's beat from [PulseTracker], 0..1: how hard
+    /** Graded weight of this frame's beat from the pulse engine, 0..1: how hard
      *  the hit was relative to the track's own dynamics. 0 between beats and
      *  on features that predate the tracker - consumers should read
      *  [beatImpulse], which folds that legacy case back to full strength. */
@@ -42,14 +42,14 @@ data class AudioFeatures(
      *  motion can anticipate and land on beats instead of only reacting to
      *  them. 0 when no beat grid is known. */
     val beatPhase: Float = 0f,
-    /** Graded transient impulse from [PulseTracker], 0..1: fires for EVERY
+    /** Graded transient impulse from the pulse engine, 0..1: fires for EVERY
      *  detected onset - including the off-grid ones the beat grid holds back
      *  - with its size following the hit's own amplitude, damped and metered
      *  by a per-beat budget so dense runs taper off instead of strobing. The
      *  "the player actually hit something there" texture channel; on beat
      *  frames it mirrors [beatStrength]. */
     val transient: Float = 0f,
-    /** [PulseTracker]'s confidence that its beat grid matches the music,
+    /** The beat tracker's confidence that its grid matches the music,
      *  0..1. Low on ambient/rubato material - scenes wanting tempo-synced
      *  choreography should fall back to energy-driven motion below ~0.5. */
     val pulseConfidence: Float = 0f,
@@ -60,13 +60,14 @@ data class AudioFeatures(
     val macroEnergy: Float = 0f,
     /**
      * Graded 0..1 impulse for a low-band (kick-range) onset this frame, 0
-     * otherwise. See [DrumChannels] for what these three do and do not claim:
+     * otherwise. See [dev.geode.engine.audio.DrumChannels] for what these
+     * three do and do not claim:
      * they are band-activity channels named after what usually dominates them,
      * not a drum classifier.
      *
      * Same one-frame contract as [beatStrength] - consumers build their own
-     * envelope. 0 on synthesised features and on any frame no [DrumChannels]
-     * ran over, which is indistinguishable from "no hit" and is the correct
+     * envelope. 0 on synthesised features and on any frame the drum channels
+     * never ran over, which is indistinguishable from "no hit" and is the correct
      * degradation: a scene reading these gets stillness, never a false trigger.
      */
     val kick: Float = 0f,

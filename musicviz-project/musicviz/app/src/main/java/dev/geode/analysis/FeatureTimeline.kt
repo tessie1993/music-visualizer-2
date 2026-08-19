@@ -183,7 +183,7 @@ class FeatureTimeline(
      * A consumer that samples this 60 Hz timeline at a LOWER rate - an export
      * at 24 or 30 fps - only ever looks at every second or third frame, and
      * `AudioFeatures.beat` is exactly ONE frame wide by construction
-     * ([FeatureExtractor.BeatGate] raises it for a single frame per onset). A
+     * (the onset peak picker raises it for a single frame per onset). A
      * 30 fps export therefore never observed about half the track's beats: no
      * `uBeat`, no flash/shake, and no "Beat pulse" envelope on those. Passing
      * the exported frame's own duration as [spanMs] fixes that - the flag is
