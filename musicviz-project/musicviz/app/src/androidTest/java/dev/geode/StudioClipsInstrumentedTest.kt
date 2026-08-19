@@ -82,12 +82,26 @@ class StudioClipsInstrumentedTest {
     @Test
     fun renaming_a_clip_changes_its_display_name_and_keeps_the_extension() {
         val uri = inserted!!
+        val before = displayNameOf(uri)
         val renamed = StudioClips.rename(context, uri.toString(), "sunset drop")
         assertTrue("rename reported failure: ${StudioClips.lastRenameDiagnostic}", renamed)
-        val name = displayNameOf(uri)
-        assertNotNull(name)
-        assertTrue("name did not change: $name", name!!.startsWith("sunset drop"))
-        assertTrue("extension was lost: $name", name.endsWith(".mp4"))
+        // The answer is read from the COLLECTION, not the seeded uri:
+        // MediaStore may honour a rename by re-identifying the row (observed
+        // on the API 30 emulator - the old _ID dies with the old path), and
+        // the Studio itself refreshes its listing after a rename for exactly
+        // that reason. The uri-stability claim would be a claim about
+        // MediaStore's internals, not about this app's feature.
+        val clips = StudioClips.list(context)
+        val renamedClip = clips.firstOrNull { it.name.startsWith("sunset drop") }
+        assertNotNull("renamed clip missing from the listing of ${clips.size}", renamedClip)
+        assertTrue("extension was lost: ${renamedClip!!.name}", renamedClip.name.endsWith(".mp4"))
+        assertFalse(
+            "the old name survived the rename",
+            clips.any { it.name == before },
+        )
+        // Tear down the row wherever the rename left it - the seeded uri may
+        // no longer resolve if the row was re-identified.
+        inserted = Uri.parse(renamedClip.uri)
     }
 
     @Test

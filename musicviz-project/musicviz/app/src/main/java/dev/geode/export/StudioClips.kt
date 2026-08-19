@@ -215,7 +215,27 @@ object StudioClips {
                     after = settledName(context, parsed, display, SETTLE_ATTEMPTS)
                     log.append("; final='").append(after).append('\'')
                 }
-                after == display
+                var ok = after == display
+                if (!ok) {
+                    // MediaStore can answer a rename by RE-IDENTIFYING the row:
+                    // the file moves, the old _ID dies, and no read through the
+                    // original uri ever confirms anything again - observed on
+                    // the API 30 emulator as final='null' outliving every
+                    // settle window while pend/upd/pub all reported success.
+                    // The collection is the surviving truth: the rename
+                    // happened exactly when a row carries the new name and
+                    // none still carries the old. Callers already refresh
+                    // their listing on success, so a new _ID is picked up.
+                    val newRow = rowIdByName(context, display)
+                    val oldRow = before?.let { rowIdByName(context, it) }
+                    log
+                        .append("; byName new=")
+                        .append(newRow ?: "none")
+                        .append(" old=")
+                        .append(oldRow ?: "none")
+                    ok = newRow != null && oldRow == null
+                }
+                ok
             }.getOrElse {
                 log.append("; threw=").append(it)
                 false
@@ -254,6 +274,28 @@ object StudioClips {
             log.append(" pub=").append(p3.exceptionOrNull()?.toString() ?: p3.getOrNull())
         }
     }
+
+    /**
+     * The _ID of the video row named exactly [display], or null.
+     *
+     * The verdict of last resort for [rename]: a row that was re-identified
+     * mid-rename is unreachable through the uri the caller holds, but its
+     * file - old name or new - is still one name-equality query away.
+     */
+    private fun rowIdByName(
+        context: Context,
+        display: String,
+    ): Long? =
+        runCatching {
+            context.contentResolver
+                .query(
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                    arrayOf(MediaStore.Video.Media._ID),
+                    "${MediaStore.Video.Media.DISPLAY_NAME} = ?",
+                    arrayOf(display),
+                    null,
+                )?.use { c -> if (c.moveToFirst()) c.getLong(0) else null }
+        }.getOrNull()
 
     private fun currentName(
         context: Context,
