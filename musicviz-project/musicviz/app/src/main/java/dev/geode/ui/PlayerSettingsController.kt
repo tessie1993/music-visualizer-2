@@ -9,7 +9,6 @@ import dev.geode.analysis.AnalysisEngine
 import dev.geode.analysis.PlaybackMath
 import dev.geode.audio.AudioFxController
 import dev.geode.audio.AudioFxState
-import dev.geode.data.GeodePrefsFiles
 import dev.geode.data.PlayerPrefs
 import dev.geode.data.PlayerPrefsRepository
 import dev.geode.ui.theme.ThemePack
@@ -20,7 +19,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(UnstableApi::class)
 internal class PlayerSettingsController(
-    prefsFiles: GeodePrefsFiles,
+    private val userData: UserDataRepository,
     private val playerPrefsRepository: PlayerPrefsRepository,
     private val scope: CoroutineScope,
     private val player: ExoPlayer,
@@ -34,13 +33,9 @@ internal class PlayerSettingsController(
         fun refreshUi()
     }
 
-    private val themeStore = ThemeStore(prefsFiles.general)
+    val theme: StateFlow<ThemePack> = userData.theme
 
-    private val _theme = MutableStateFlow(themeStore.load())
-    val theme: StateFlow<ThemePack> = _theme
-
-    private val _guiPrefs = MutableStateFlow(themeStore.loadGui())
-    val guiPrefs: StateFlow<GuiPrefs> = _guiPrefs
+    val guiPrefs: StateFlow<GuiPrefs> = userData.guiPrefs
 
     val playerPrefs: StateFlow<PlayerPrefs> = playerPrefsRepository.prefs
 
@@ -50,9 +45,8 @@ internal class PlayerSettingsController(
     val audioFxState: StateFlow<AudioFxState> = _audioFxState
 
     fun setGuiPrefs(prefs: GuiPrefs) {
-        val previous = _guiPrefs.value
-        themeStore.saveGui(prefs)
-        _guiPrefs.value = prefs
+        val previous = guiPrefs.value
+        scope.launch { userData.setGuiPrefs(prefs) }
         engine.beatSensitivity = prefs.beatSensitivity
         engine.beatMinIntervalMs = prefs.effectiveBeatMinIntervalMs
         val sensitivityChanged =
@@ -62,8 +56,7 @@ internal class PlayerSettingsController(
     }
 
     fun setTheme(theme: ThemePack) {
-        themeStore.save(theme)
-        _theme.value = theme
+        scope.launch { userData.setTheme(theme) }
     }
 
     fun setPlayerPrefs(prefs: PlayerPrefs) {

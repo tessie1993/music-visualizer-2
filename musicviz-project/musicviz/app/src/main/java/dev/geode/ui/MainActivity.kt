@@ -32,7 +32,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
+        installSplashScreen().setKeepOnScreenCondition { !viewModel.userDataLoaded.value }
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {

@@ -22,7 +22,6 @@ import dev.geode.data.FavouritesRepository
 import dev.geode.data.FilePresetRepository
 import dev.geode.data.FileSessionRepository
 import dev.geode.data.FileTakeRepository
-import dev.geode.data.GeodePrefsFiles
 import dev.geode.data.LfoStore
 import dev.geode.data.MilkPackImporter
 import dev.geode.data.MilkTexture
@@ -42,6 +41,7 @@ import dev.geode.export.ExportAspect
 import dev.geode.export.ExportRange
 import dev.geode.export.StudioClip
 import dev.geode.export.VideoExporter
+import dev.geode.geodeContainer
 import dev.geode.playback.PlaybackEngine
 import dev.geode.playback.PlaybackErrors
 import dev.geode.playback.PlaybackService
@@ -82,7 +82,9 @@ class PlayerViewModel(
     @OptIn(ExperimentalCoroutinesApi::class)
     private val storeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
 
-    private val prefsFiles = GeodePrefsFiles(application)
+    private val container = application.geodeContainer
+
+    private val prefsFiles = container.prefsFiles
 
     private val playerPrefsRepository: PlayerPrefsRepository =
         SharedPrefsPlayerPrefsRepository(PlayerPrefsStore(prefsFiles.player), storeScope)
@@ -160,9 +162,9 @@ class PlayerViewModel(
 
     private val settings: PlayerSettingsController =
         PlayerSettingsController(
-            prefsFiles,
+            container.userData,
             playerPrefsRepository,
-            storeScope,
+            container.appScope,
             playback.player,
             engine,
             playback.audioFx,
@@ -208,6 +210,8 @@ class PlayerViewModel(
     val library: StateFlow<LibraryState> get() = musicLibrary.library
 
     val trackOverrides: StateFlow<Map<String, LibraryTrack>> get() = musicLibrary.trackOverrides
+
+    val userDataLoaded: StateFlow<Boolean> get() = container.userData.loaded
 
     val theme: StateFlow<dev.geode.ui.theme.ThemePack> get() = settings.theme
 

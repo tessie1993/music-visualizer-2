@@ -4,6 +4,8 @@ import android.app.Application
 import java.io.File
 
 class GeodeApp : Application() {
+    val container: GeodeContainer by lazy { GeodeContainer(this) }
+
     override fun onCreate() {
         super.onCreate()
         RingLog.echo = { tag, line -> android.util.Log.w(tag, line) }
