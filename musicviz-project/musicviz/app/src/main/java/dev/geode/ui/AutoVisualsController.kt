@@ -224,7 +224,7 @@ internal class AutoVisualsController(
                 dev.geode.render.scene.VisualStyleCatalog.lifeIds +
                 dev.geode.render.scene.VisualStyleCatalog.mycoIds +
                 dev.geode.render.scene.VisualStyleCatalog.acidIds +
-                dev.geode.render.VisualizerRenderer.SHADER_SCENES.keys
+                dev.geode.render.scene.SceneCapabilities.SHADER_SCENES.keys
         if (s.randomIncludeStyles) sceneIds.forEach { choices += VizPlaylistEntry(sceneId = it, label = it) }
         if (s.randomIncludePresets) {
             s.presets.forEach { choices += VizPlaylistEntry(sceneId = it.sceneId, presetName = it.name, label = it.name) }

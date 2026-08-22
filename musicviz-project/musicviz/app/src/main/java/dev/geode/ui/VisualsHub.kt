@@ -52,9 +52,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.geode.data.Preset
-import dev.geode.render.VisualizerRenderer
 import dev.geode.render.VisualizerView
 import dev.geode.render.scene.CustomizeTab
+import dev.geode.render.scene.SceneCapabilities
 import dev.geode.render.scene.SceneIds
 import dev.geode.render.scene.VisualStyleCatalog
 import dev.geode.ui.theme.StoneIcon
@@ -555,7 +555,7 @@ private fun StylesTab(
             1 -> SceneList(VisualStyleCatalog.lifeIds, viz.sceneId, pickScene)
             2 -> SceneList(VisualStyleCatalog.mycoIds, viz.sceneId, pickScene)
             3 -> SceneList(VisualStyleCatalog.acidIds, viz.sceneId, pickScene)
-            4 -> SceneList(VisualizerRenderer.SHADER_SCENES.keys.toList(), viz.sceneId, pickScene)
+            4 -> SceneList(SceneCapabilities.SHADER_SCENES.keys.toList(), viz.sceneId, pickScene)
             5 -> SceneList(listOf(SceneIds.FLUID, SceneIds.CURLFLOW, SceneIds.WATER), viz.sceneId, pickScene)
             6 -> SceneList(VisualStyleCatalog.cymaticsIds, viz.sceneId, pickScene)
             7 -> SceneList(VisualStyleCatalog.hyperspaceIds, viz.sceneId, pickScene)
@@ -721,29 +721,6 @@ private fun selectMilk(
     visualizerView.visualizerRenderer.loadMilkPreset(path)
 }
 
-internal fun isFluidSceneId(sceneId: String): Boolean = sceneId == SceneIds.FLUID
-
-internal fun isJourneySceneId(sceneId: String): Boolean =
-    sceneId == SceneIds.FLUID ||
-        sceneId == SceneIds.CURLFLOW ||
-        sceneId == SceneIds.WATER
-
-internal fun isEmitterSceneId(sceneId: String): Boolean = sceneId == SceneIds.FLUID || sceneId == SceneIds.WATER
-
-internal fun isWaterSceneId(sceneId: String): Boolean = sceneId == SceneIds.WATER
-
-internal fun isBeamSceneId(sceneId: String): Boolean = sceneId == SceneIds.BEAM
-
-internal fun isCymaticsSceneId(sceneId: String): Boolean = VisualStyleCatalog.isCymatics(sceneId)
-
-internal fun isHyperspaceSceneId(sceneId: String): Boolean = VisualStyleCatalog.isHyperspace(sceneId)
-
-internal fun isParticleLayerSceneId(sceneId: String): Boolean = sceneId == SceneIds.FLUID || sceneId == SceneIds.CURLFLOW
-
-internal fun isShaderLookSceneId(sceneId: String): Boolean = sceneId in VisualizerRenderer.SHADER_SCENES
-
-internal fun isPointSpriteSceneId(sceneId: String): Boolean = isParticleLayerSceneId(sceneId)
-
 @Composable
 internal fun CustomizePanel(
     viewModel: PlayerViewModel,
@@ -751,9 +728,9 @@ internal fun CustomizePanel(
 ) {
     val viz by viewModel.vizState.collectAsState()
     var sub by rememberSaveable { mutableStateOf(0) }
-    val isShader = isShaderLookSceneId(viz.sceneId)
-    val isCymatics = isCymaticsSceneId(viz.sceneId)
-    val isHyperspace = isHyperspaceSceneId(viz.sceneId)
+    val isShader = SceneCapabilities.hasShaderLook(viz.sceneId)
+    val isCymatics = SceneCapabilities.isCymatics(viz.sceneId)
+    val isHyperspace = SceneCapabilities.isHyperspace(viz.sceneId)
     val tabs: List<CustomizeTab?> =
         CustomizeTab.entries.filter {
             when (it) {
@@ -795,9 +772,9 @@ internal fun CustomizePanel(
                             p,
                             onChange,
                             isShaderLookScene = isShader,
-                            isPointSpriteScene = isPointSpriteSceneId(viz.sceneId),
-                            particleLayerOff = isFluidSceneId(viz.sceneId) && !p.fluidParticlesEnabled,
-                            isBeamScene = isBeamSceneId(viz.sceneId),
+                            isPointSpriteScene = SceneCapabilities.usesPointSprites(viz.sceneId),
+                            particleLayerOff = SceneCapabilities.isFluid(viz.sceneId) && !p.fluidParticlesEnabled,
+                            isBeamScene = SceneCapabilities.isBeam(viz.sceneId),
                         )
                     CustomizeTab.BEHAVIOR ->
                         BehaviorTab(
@@ -838,12 +815,12 @@ internal fun CustomizePanel(
                         FluidTab(
                             p,
                             onChange,
-                            isFluidScene = isFluidSceneId(viz.sceneId),
-                            isJourneyScene = isJourneySceneId(viz.sceneId),
-                            isWaterScene = isWaterSceneId(viz.sceneId),
-                            isEmitterScene = isEmitterSceneId(viz.sceneId),
-                            isParticleLayerScene = isParticleLayerSceneId(viz.sceneId),
-                            injectionError = if (isFluidSceneId(viz.sceneId)) viz.shaderError else null,
+                            isFluidScene = SceneCapabilities.isFluid(viz.sceneId),
+                            isJourneyScene = SceneCapabilities.hasJourney(viz.sceneId),
+                            isWaterScene = SceneCapabilities.isWater(viz.sceneId),
+                            isEmitterScene = SceneCapabilities.hasEmitters(viz.sceneId),
+                            isParticleLayerScene = SceneCapabilities.hasParticleLayer(viz.sceneId),
+                            injectionError = if (SceneCapabilities.isFluid(viz.sceneId)) viz.shaderError else null,
                             onApplyInjectionShaders = { force, dye ->
                                 visualizerView.visualizerRenderer.submitFluidInjectionShaders(force, dye)
                             },

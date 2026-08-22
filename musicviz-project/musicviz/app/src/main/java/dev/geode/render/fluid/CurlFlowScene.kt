@@ -5,16 +5,12 @@ import android.opengl.GLES30
 import dev.geode.R
 import dev.geode.analysis.AudioFeatures
 import dev.geode.render.scene.GlUtil
-import dev.geode.render.scene.PcmPulse
-import dev.geode.render.scene.PcmSink
-import dev.geode.render.scene.Scene
+import dev.geode.render.scene.ParticleLook
 import dev.geode.render.scene.SceneIds
-import dev.geode.render.scene.SceneParams
 
 internal class CurlFlowScene(
     private val context: Context,
-) : Scene,
-    PcmSink {
+) : FluidSceneBase(WALL_WRAP_SECONDS) {
     override val id: String = SceneIds.CURLFLOW
 
     private companion object {
@@ -24,15 +20,11 @@ internal class CurlFlowScene(
     }
 
     private val particles = FluidParticles(context)
-    private val choreography = FluidChoreography()
     private lateinit var formats: FluidBuffers.Formats
     private var field: FluidBuffers.Fbo? = null
     private var fieldProgram = 0
     private var fieldUniforms = GlUtil.UniformCache(0)
     private val quad = GlUtil.FullscreenTriangle()
-    private var params = SceneParams()
-    private var pending: AudioFeatures? = null
-    private var lastDt = 1f / 60f
 
     private var noiseTime = 0f
 
@@ -40,17 +32,9 @@ internal class CurlFlowScene(
     private var beatEnv = 0f
 
     private var beatDrive = 0f
-    private val pcmPulse = PcmPulse()
     private var pcmKick = 0f
     private var aspect = 1f
     private var available = false
-
-    private val spawnPack = FloatArray(FluidChoreography.MAX_SPAWN * 4)
-    private val catchPack = FloatArray(FluidChoreography.MAX_CATCH * 4)
-    private val prevFbo = IntArray(1)
-    private val prevViewport = IntArray(4)
-
-    var onShaderError: (String?) -> Unit = {}
 
     override fun init() {
         release()
@@ -95,32 +79,29 @@ internal class CurlFlowScene(
         particles.invalidateSeed()
     }
 
-    override fun setParams(params: SceneParams) {
-        this.params = params
-    }
-
-    override fun acceptPcm(
-        samples: FloatArray,
-        count: Int,
-    ) = pcmPulse.accept(samples, count)
-
     override fun update(
         features: AudioFeatures,
         dt: Float,
     ) {
-        pending = features
+        pendingFeatures = features
         lastDt = dt.coerceIn(0f, 1f / 30f)
-        pcmKick = pcmPulse.tick(dt).coerceIn(0f, 1f)
+        pcmKick = tickPcm(dt).coerceIn(0f, 1f)
     }
+
+    override fun idleFeatures(dt: Float): AudioFeatures = idleAudioFeatures(0f, 0f, 0f, 0f)
+
+    override fun onApplyQualityTier(
+        index: Int,
+        userChanged: Boolean,
+    ) = Unit
 
     private fun loc(name: String): Int = fieldUniforms.loc(name)
 
     override fun draw(timeSeconds: Float) {
         if (!available) return
         val fld = field ?: return
-        val f = pending
-        GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, prevFbo, 0)
-        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
+        val f = pendingFeatures
+        saveFramebufferAndViewport()
 
         if (f != null) {
             wallTime = (wallTime + lastDt) % WALL_WRAP_SECONDS
@@ -129,11 +110,7 @@ internal class CurlFlowScene(
             noiseTime = (noiseTime + lastDt * (0.15f + f.mid * 1.4f) * FluidChoreography.sceneSpeed(params.speed)) %
                 NOISE_WRAP_SECONDS
 
-            choreography.path = params.fluidSpawnPath.coerceIn(0, FluidChoreography.PATH_LABELS.size - 1)
-            choreography.spawnCount = params.fluidSpawnPoints.coerceIn(1, FluidChoreography.MAX_SPAWN)
-            choreography.catchCount = params.fluidCatchPoints.coerceIn(0, FluidChoreography.MAX_CATCH)
-            choreography.progressionAmount = params.fluidSpawnProgress.coerceIn(0f, 1f)
-            choreography.speed = FluidChoreography.sceneSpeed(params.speed)
+            configureChoreography()
             choreography.tick(f, lastDt, aspect)
 
             GLES30.glDisable(GLES30.GL_BLEND)
@@ -151,30 +128,20 @@ internal class CurlFlowScene(
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
             quad.unbind()
 
-            particles.drag = params.fluidParticleDrag.coerceIn(0.02f, 1f)
-            particles.life = params.fluidParticleLife.coerceIn(1f, 20f)
-            choreography.packSpawns(spawnPack)
-            choreography.packCatches(
-                catchPack,
-                pull = params.fluidCatchPull.coerceIn(0f, 3f),
-                captureRadius = params.fluidCatchRadius.coerceIn(0.03f, 0.3f),
-            )
-            particles.setChoreography(spawnPack, choreography.spawnCount, catchPack, choreography.catchCount)
+            applyChoreographyTo(particles)
             particles.step(lastDt, fld.tex, aspect, 1f, timeSeconds = wallTime)
-            pending = null
+            pendingFeatures = null
         }
 
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
-        GLES30.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3])
-        val dpiScale = (prevViewport[3].coerceAtLeast(1) / 1080f).coerceIn(0.75f, 2.5f)
+        restoreFramebufferAndViewport()
         particles.draw(
             aspect,
-            params.particleSize.coerceIn(0.4f, 4f) * dpiScale,
+            params.particleSize.coerceIn(0.4f, 4f) * viewportDpiScale(),
             params.paletteBase,
             FluidHue.span(params.hueRange, params.paletteRange),
             CurlFlowMath.particleBrightness(beatDrive),
             shape = params.particleShape.toFloat(),
-            glow = dev.geode.render.scene.ParticleLook.glow(params.bloom),
+            glow = ParticleLook.glow(params.bloom),
             timeSeconds = wallTime,
         )
     }

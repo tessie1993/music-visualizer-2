@@ -1,6 +1,7 @@
 package dev.geode.render.fluid
 
 import dev.geode.analysis.AudioFeatures
+import dev.geode.render.scene.SceneParams
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.exp
@@ -53,6 +54,19 @@ internal class FluidEmitters(
 
     var beatEnv = 0f
         private set
+
+    fun applyParams(p: SceneParams) {
+        beatPattern = p.fluidBeatPattern.coerceIn(0, 3)
+        beatSplats = p.fluidBeatSplats.coerceIn(0, 8)
+        stirrers = p.fluidStirrers.coerceIn(0, 4)
+        stirrerSpeed = p.fluidStirrerSpeed.coerceIn(0f, 2f) * FluidChoreography.sceneSpeed(p.speed)
+        bassPump = p.fluidBassPump
+        sparkle = p.fluidSparkle
+        splatRadius = p.fluidSplatRadius.coerceIn(0.02f, 0.4f)
+        radiusPulse = p.fluidRadiusPulse.coerceIn(0f, 1f)
+        catchSuction = p.fluidCatchPull.coerceIn(0f, 3f)
+        beatResponse = p.beatResponse
+    }
 
     private var beatEnvRaw = 0f
 
