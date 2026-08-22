@@ -271,14 +271,17 @@ internal class SceneRegistry(
             else -> error("availableSceneIds offers \"$id\" but createScene cannot build it")
         }
 
-    fun exportScene(sceneId: String): Scene {
+    fun exportScene(
+        sceneId: String,
+        params: SceneParams,
+    ): Scene {
         val quadVert = GlUtil.loadShader(context, R.raw.quad_vert)
         val scene = createScene(sceneId, quadVert, export = true)
         (scene as? FluidScene)?.setInjectionShaders(fluidForceSrc, fluidDyeSrc)
         (scene as? MilkdropScene)?.let { pm ->
             lastMilkPreset?.let { pm.queuePreset(it) }
         }
-        scene.setParams(sceneParams)
+        scene.setParams(params)
         return scene
     }
 }

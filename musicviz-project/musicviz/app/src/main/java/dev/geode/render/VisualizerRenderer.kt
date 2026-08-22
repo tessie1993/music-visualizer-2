@@ -571,10 +571,7 @@ class VisualizerRenderer(
 
     fun exportSceneFactory(sceneId: String): VideoExporter.SceneFactory =
         object : VideoExporter.SceneFactory {
-            override fun create(): Scene {
-                registry.sceneParams = sceneParams
-                return registry.exportScene(sceneId)
-            }
+            override fun create(): Scene = registry.exportScene(sceneId, sceneParams)
         }
 }
 
