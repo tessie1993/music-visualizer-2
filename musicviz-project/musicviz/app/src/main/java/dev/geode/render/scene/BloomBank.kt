@@ -32,6 +32,7 @@ class BloomBank(
         sinceImpulse = 0f
     }
 
+    @Suppress("NestedBlockDepth", "LoopWithTooManyJumpStatements")
     fun advance(
         dt: Float,
         target: Int,
@@ -85,6 +86,7 @@ class BloomBank(
         }
     }
 
+    @Suppress("LoopWithTooManyJumpStatements")
     fun snapshot(
         fold: Float,
         pos: FloatArray,

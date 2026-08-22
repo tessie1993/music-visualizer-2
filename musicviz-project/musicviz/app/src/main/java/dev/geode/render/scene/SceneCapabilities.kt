@@ -39,8 +39,7 @@ object SceneCapabilities {
 
     fun isHyperspace(sceneId: String): Boolean = VisualStyleCatalog.isHyperspace(sceneId)
 
-    fun hasJourney(sceneId: String): Boolean =
-        sceneId == SceneIds.FLUID || sceneId == SceneIds.CURLFLOW || sceneId == SceneIds.WATER
+    fun hasJourney(sceneId: String): Boolean = sceneId == SceneIds.FLUID || sceneId == SceneIds.CURLFLOW || sceneId == SceneIds.WATER
 
     fun hasEmitters(sceneId: String): Boolean = sceneId == SceneIds.FLUID || sceneId == SceneIds.WATER
 

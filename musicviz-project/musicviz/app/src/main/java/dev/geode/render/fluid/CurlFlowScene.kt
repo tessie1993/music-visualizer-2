@@ -93,8 +93,7 @@ internal class CurlFlowScene(
     override fun onApplyQualityTier(
         index: Int,
         userChanged: Boolean,
-    ) {
-    }
+    ) = Unit
 
     private fun loc(name: String): Int = fieldUniforms.loc(name)
 
