@@ -197,6 +197,14 @@ internal class CaptureController(
             return null
         }
         if (micCapture.active) return null
+        // One ring, one source - in BOTH directions. startPlaybackCapture
+        // stops the microphone before it starts; this is the mirror, and it
+        // lives HERE rather than at the call sites because one of them
+        // (ExternalAudioSettings' "use the mic instead" button) remembering
+        // to stop the capture first was the only thing keeping two producers
+        // off the single-writer ring. Interleaved, the two corrupt the ring's
+        // write index and flip SampleRing's channel count mid-epoch.
+        if (playbackCapture.active || _externalAudio.value.active) stopExternalAudio()
         host.pausePlayback()
         val failure = micCapture.start { rate -> host.setAnalysisRate(rate) }
         if (failure != null) {

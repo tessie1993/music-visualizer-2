@@ -159,11 +159,41 @@ class PlaybackCaptureContractTest {
         )
     }
 
-    private fun source(name: String): String {
+    /**
+     * The exclusivity that keeps the single-writer ring single-writer, in
+     * the direction that had no owner. [CaptureController.startPlaybackCapture]
+     * stops the microphone before it starts; the mic switch has to do the
+     * mirror - stop a running external capture BEFORE the recorder opens -
+     * inside setMicEnabled itself, not at whichever call sites remember.
+     * Interleaved, the two producers corrupt PcmRingBuffer's non-atomic
+     * write index and flip SampleRing's source channel count mid-epoch.
+     * Behavioural coverage is out of reach for the same reason as the rest
+     * of this file: Robolectric cannot mint the MediaProjection a running
+     * external capture needs.
+     */
+    @Test
+    fun `enabling the mic stops a running external capture before the recorder opens`() {
+        val enableBranch =
+            mainSource("ui/CaptureController.kt")
+                .substringAfter("fun setMicEnabled")
+                .substringBefore("fun hasMicPermission")
+        val stop = enableBranch.indexOf("stopExternalAudio()")
+        val start = enableBranch.indexOf("micCapture.start")
+        assertTrue("setMicEnabled never starts the microphone?", start >= 0)
+        assertTrue(
+            "setMicEnabled does not stop the external capture before starting the mic; " +
+                "two producers interleave on the single-writer ring",
+            stop in 0 until start,
+        )
+    }
+
+    private fun source(name: String): String = mainSource("audio/$name")
+
+    private fun mainSource(pkgPath: String): String {
         val relatives =
             listOf(
-                "src/main/java/dev/geode/audio/$name",
-                "app/src/main/java/dev/geode/audio/$name",
+                "src/main/java/dev/geode/$pkgPath",
+                "app/src/main/java/dev/geode/$pkgPath",
             )
         var dir: File? = File("").absoluteFile
         while (dir != null) {
@@ -173,7 +203,7 @@ class PlaybackCaptureContractTest {
             }
             dir = dir.parentFile
         }
-        fail("$name not found from ${File("").absolutePath}")
+        fail("$pkgPath not found from ${File("").absolutePath}")
         error("unreachable")
     }
 }
