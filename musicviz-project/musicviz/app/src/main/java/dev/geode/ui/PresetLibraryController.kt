@@ -14,7 +14,7 @@ import kotlinx.coroutines.withContext
 internal class PresetLibraryController(
     private val application: Application,
     private val scope: CoroutineScope,
-    private val storeWriter: java.util.concurrent.ExecutorService,
+    private val storeScope: CoroutineScope,
     private val host: Host,
 ) {
     interface Host {
@@ -44,7 +44,7 @@ internal class PresetLibraryController(
         name: String,
         folder: String,
     ) {
-        storeWriter.execute {
+        storeScope.launch {
             store.moveToFolder(name, folder)
             mirrorPresetToChosenFolder(name)
             relistPresets()
@@ -86,7 +86,7 @@ internal class PresetLibraryController(
         val name = name.replace(" · ", " - ").trim().ifEmpty { "Preset" }
         val s = host.vizState.value
         val milkPath = host.activeMilkPath
-        storeWriter.execute {
+        storeScope.launch {
             val milkSource =
                 if (s.sceneId == SceneIds.MILKDROP) {
                     milkPath?.let { src -> runCatching { java.io.File(src).readText() }.getOrNull() }
@@ -183,7 +183,7 @@ internal class PresetLibraryController(
         }
         val preset = incoming.copy(name = name)
         host.updatePresets { it + preset }
-        storeWriter.execute {
+        storeScope.launch {
             store.save(preset)
             relistPresets()
         }
@@ -195,7 +195,7 @@ internal class PresetLibraryController(
     fun deletePreset(name: String) {
         if (BuiltInPresets.isBuiltIn(name)) return
         host.updatePresets { presets -> presets.filterNot { it.name == name } }
-        storeWriter.execute {
+        storeScope.launch {
             removeMirroredPreset(store.fileOf(name)?.name, milkFileFor(name).name)
             store.delete(name)
             relistPresets()

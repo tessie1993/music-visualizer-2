@@ -35,18 +35,23 @@ import dev.geode.render.TransitionStyle
 import dev.geode.render.scene.CustomizeTab
 import dev.geode.render.scene.PcmChunk
 import dev.geode.render.scene.SceneParams
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 @OptIn(UnstableApi::class)
 class PlayerViewModel(
@@ -57,6 +62,9 @@ class PlayerViewModel(
     private val ring = playback.ring
 
     private val engine = playback.analysis
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val storeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
 
     private val captureController: CaptureController =
         CaptureController(
@@ -105,7 +113,7 @@ class PlayerViewModel(
         PresetLibraryController(
             application,
             viewModelScope,
-            storeWriter,
+            storeScope,
             object : PresetLibraryController.Host {
                 override val vizState: StateFlow<VizUiState> get() = _vizState
 
@@ -304,7 +312,7 @@ class PlayerViewModel(
     private val listening: ListeningTracker =
         ListeningTracker(
             application,
-            storeWriter,
+            storeScope,
             object : ListeningTracker.Host {
                 override val player: Player get() = this@PlayerViewModel.player
                 override val currentUri: Uri? get() = this@PlayerViewModel.currentUri
@@ -323,7 +331,7 @@ class PlayerViewModel(
         TakeController(
             application,
             viewModelScope,
-            storeWriter,
+            storeScope,
             object : TakeController.Host {
                 override val vizState: StateFlow<VizUiState> get() = _vizState
                 override val activeMilkPath: String? get() = vizStateStore.activeMilkPath.value
@@ -816,7 +824,11 @@ class PlayerViewModel(
     fun applyPreset(preset: Preset) = visual.applyPreset(preset)
 
     internal fun awaitStoreWrites(timeoutMs: Long = STORE_FLUSH_BUDGET_MS) {
-        runCatching { storeWriter.submit {}.get(timeoutMs.coerceAtLeast(0L), TimeUnit.MILLISECONDS) }
+        runBlocking {
+            withTimeoutOrNull(timeoutMs.coerceAtLeast(0L)) {
+                storeScope.coroutineContext.job.children.toList().joinAll()
+            }
+        }
     }
 
     fun savePreset(
@@ -939,6 +951,7 @@ class PlayerViewModel(
         if (sleepTimer.onFadeVolume === fades.sleepFadeHook) sleepTimer.onFadeVolume = null
         if (!playback.playbackWanted) PlaybackService.stop(getApplication())
         PlaybackEngine.releaseUi()
+        storeScope.cancel()
     }
 
     init {
@@ -1063,11 +1076,6 @@ class PlayerViewModel(
     }
 
     private companion object {
-        val storeWriter: ExecutorService =
-            Executors.newSingleThreadExecutor { r ->
-                Thread(r, "geode-stores").apply { isDaemon = true }
-            }
-
         const val STORE_FLUSH_BUDGET_MS = 2_000L
     }
 }

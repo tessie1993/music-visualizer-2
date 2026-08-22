@@ -7,14 +7,15 @@ import androidx.media3.common.Player
 import dev.geode.data.FavouritesStore
 import dev.geode.data.HistoryStore
 import dev.geode.data.SessionStore
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
-import java.util.concurrent.ExecutorService
+import kotlinx.coroutines.launch
 
 internal class ListeningTracker(
     application: Application,
-    private val storeWriter: ExecutorService,
+    private val storeScope: CoroutineScope,
     private val host: Host,
 ) {
     interface Host {
@@ -130,7 +131,7 @@ internal class ListeningTracker(
                     artist = item.mediaMetadata.artist?.toString().orEmpty(),
                 )
             }
-        storeWriter.execute { sessionStore.save(SessionStore.Saved(tracks, index, position)) }
+        storeScope.launch { sessionStore.save(SessionStore.Saved(tracks, index, position)) }
     }
 
     private companion object {

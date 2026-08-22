@@ -32,7 +32,7 @@ data class TakeUiState(
 internal class TakeController(
     application: Application,
     private val scope: CoroutineScope,
-    private val storeWriter: java.util.concurrent.Executor,
+    private val storeScope: CoroutineScope,
     private val host: Host,
 ) {
     interface Host {
@@ -166,7 +166,7 @@ internal class TakeController(
 
     fun deleteTake(name: String) {
         if (_state.value.replaying == name) stopReplay()
-        storeWriter.execute {
+        storeScope.launch {
             store.delete(name)
             val listed = store.list()
             _state.update { it.copy(takes = listed) }
