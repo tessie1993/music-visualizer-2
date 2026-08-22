@@ -1,12 +1,10 @@
 package dev.geode.data
 
-import android.content.Context
+import android.content.SharedPreferences
 
 class FavouritesStore(
-    context: Context,
+    private val prefs: SharedPreferences,
 ) {
-    private val prefs = context.getSharedPreferences("geode-favourites", Context.MODE_PRIVATE)
-
     private val uris: LinkedHashSet<String> =
         LinkedHashSet(
             prefs

@@ -1,6 +1,5 @@
 package dev.geode.ui
 
-import android.app.Application
 import androidx.annotation.OptIn
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -10,6 +9,7 @@ import dev.geode.analysis.AnalysisEngine
 import dev.geode.analysis.PlaybackMath
 import dev.geode.audio.AudioFxController
 import dev.geode.audio.AudioFxState
+import dev.geode.data.GeodePrefsFiles
 import dev.geode.data.PlayerPrefs
 import dev.geode.data.PlayerPrefsStore
 import dev.geode.ui.theme.ThemePack
@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 
 @OptIn(UnstableApi::class)
 internal class PlayerSettingsController(
-    application: Application,
+    prefsFiles: GeodePrefsFiles,
     private val player: ExoPlayer,
     private val engine: AnalysisEngine,
     private val audioFx: AudioFxController,
@@ -30,8 +30,8 @@ internal class PlayerSettingsController(
         fun refreshUi()
     }
 
-    private val themeStore = ThemeStore(application)
-    private val playerPrefsStore = PlayerPrefsStore(application)
+    private val themeStore = ThemeStore(prefsFiles.general)
+    private val playerPrefsStore = PlayerPrefsStore(prefsFiles.player)
 
     private val _theme = MutableStateFlow(themeStore.load())
     val theme: StateFlow<ThemePack> = _theme

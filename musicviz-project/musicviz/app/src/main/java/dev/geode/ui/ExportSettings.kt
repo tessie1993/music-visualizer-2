@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import dev.geode.R
 import dev.geode.data.ExportDefaults
 import dev.geode.data.ExportPrefsStore
+import dev.geode.data.GeodePrefsFiles
 import dev.geode.data.exportQualityLabel
 import dev.geode.export.ExportPresets
 import dev.geode.export.ExportQuality
@@ -34,7 +35,7 @@ internal fun ExportSettingsTab(
     onOpenExport: () -> Unit,
 ) {
     val context = LocalContext.current
-    val store = remember { ExportPrefsStore(context) }
+    val store = remember { ExportPrefsStore(GeodePrefsFiles(context).general) }
     var defaults by remember { mutableStateOf(store.load()) }
     LaunchedEffect(exportOpen) { if (!exportOpen) defaults = store.load() }
     val update: (ExportDefaults) -> Unit = {

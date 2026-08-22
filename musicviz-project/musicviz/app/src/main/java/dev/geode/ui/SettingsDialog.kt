@@ -31,6 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.R
 import dev.geode.data.ExportDefaults
 import dev.geode.data.ExportPrefsStore
+import dev.geode.data.GeodePrefsFiles
 import dev.geode.data.exportQualityLabel
 import dev.geode.export.ExportAspect
 import dev.geode.export.ExportQuality
@@ -52,7 +53,7 @@ fun SettingsDialog(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    val exportPrefs = remember { ExportPrefsStore(context) }
+    val exportPrefs = remember { ExportPrefsStore(GeodePrefsFiles(context).general) }
     val defaults = remember { exportPrefs.load() }
     var quality by remember { mutableStateOf(defaults.quality) }
     var ratio by remember { mutableStateOf(defaults.ratio) }

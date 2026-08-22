@@ -1,6 +1,7 @@
 package dev.geode.ui
 
 import android.app.Application
+import android.content.SharedPreferences
 import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -15,6 +16,7 @@ import kotlinx.coroutines.launch
 
 internal class ListeningTracker(
     application: Application,
+    favouritesPrefs: SharedPreferences,
     private val storeScope: CoroutineScope,
     private val host: Host,
 ) {
@@ -29,7 +31,7 @@ internal class ListeningTracker(
 
     private val historyStore = HistoryStore(application)
     private val sessionStore = SessionStore(application)
-    private val favouritesStore = FavouritesStore(application)
+    private val favouritesStore = FavouritesStore(favouritesPrefs)
 
     private val _historyTick = MutableStateFlow(0)
     val historyTick: StateFlow<Int> = _historyTick

@@ -1,6 +1,6 @@
 package dev.geode.data
 
-import android.content.Context
+import android.content.SharedPreferences
 
 data class PlayerPrefs(
     val shuffle: Boolean = false,
@@ -21,10 +21,8 @@ data class PlayerPrefs(
 }
 
 class PlayerPrefsStore(
-    context: Context,
+    private val prefs: SharedPreferences,
 ) {
-    private val prefs = context.getSharedPreferences("geode-player", Context.MODE_PRIVATE)
-
     fun load(): PlayerPrefs =
         PlayerPrefs(
             shuffle = prefs.getBoolean(KEY_SHUFFLE, false),

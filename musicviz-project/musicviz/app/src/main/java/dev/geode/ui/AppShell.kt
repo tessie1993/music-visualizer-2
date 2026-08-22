@@ -51,6 +51,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.R
 import dev.geode.analysis.SearchMatcher
+import dev.geode.data.BootAnimationStore
+import dev.geode.data.GeodePrefsFiles
 import dev.geode.render.VisualSafetyChoice
 import dev.geode.render.VisualizerView
 import dev.geode.ui.theme.StoneIcon
@@ -79,12 +81,7 @@ fun AppRoot(viewModel: PlayerViewModel) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var bootDone by rememberSaveable { mutableStateOf(false) }
-    val bootAnimEnabled =
-        remember {
-            context
-                .getSharedPreferences("geode-prefs", android.content.Context.MODE_PRIVATE)
-                .getBoolean("boot_anim", true)
-        }
+    val bootAnimEnabled = remember { BootAnimationStore(GeodePrefsFiles(context).general).load() }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val externalDisplay = rememberExternalDisplay()
     val onSecondScreen = gui.secondScreen && externalDisplay != null

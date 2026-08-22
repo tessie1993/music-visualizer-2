@@ -1,6 +1,6 @@
 package dev.geode.data
 
-import android.content.Context
+import android.content.SharedPreferences
 import dev.geode.export.ExportQuality
 import dev.geode.export.ExportRatio
 
@@ -19,10 +19,8 @@ internal fun exportQualityLabel(quality: ExportQuality): String =
     }
 
 class ExportPrefsStore(
-    context: Context,
+    private val prefs: SharedPreferences,
 ) {
-    private val prefs = context.getSharedPreferences("geode-prefs", Context.MODE_PRIVATE)
-
     fun load(): ExportDefaults {
         val d = ExportDefaults()
         return ExportDefaults(

@@ -1,6 +1,6 @@
 package dev.geode.ui
 
-import android.content.Context
+import android.content.SharedPreferences
 import androidx.annotation.StringRes
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -150,10 +150,8 @@ data class GuiPrefs(
 }
 
 class ThemeStore(
-    context: Context,
+    private val prefs: SharedPreferences,
 ) {
-    private val prefs = context.getSharedPreferences("geode-prefs", Context.MODE_PRIVATE)
-
     fun load(): ThemePack = ThemePackCatalog.bySlug(migrateLegacyName(prefs.getString(KEY, null)))
 
     fun save(pack: ThemePack) {

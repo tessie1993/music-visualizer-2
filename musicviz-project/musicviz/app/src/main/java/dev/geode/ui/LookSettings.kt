@@ -35,6 +35,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.R
+import dev.geode.data.BootAnimationStore
+import dev.geode.data.GeodePrefsFiles
 
 @Composable
 internal fun LookSettingsTab(viewModel: PlayerViewModel) {
@@ -264,13 +266,13 @@ private fun LayoutGroup(
 @Composable
 private fun BootAnimationRow() {
     val ctx = LocalContext.current
-    val prefs = remember { ctx.getSharedPreferences("geode-prefs", android.content.Context.MODE_PRIVATE) }
-    var bootAnim by remember { mutableStateOf(prefs.getBoolean("boot_anim", true)) }
+    val store = remember { BootAnimationStore(GeodePrefsFiles(ctx).general) }
+    var bootAnim by remember { mutableStateOf(store.load()) }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(R.string.look_boot_animation), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
         Switch(checked = bootAnim, onCheckedChange = {
             bootAnim = it
-            prefs.edit().putBoolean("boot_anim", it).apply()
+            store.save(it)
         })
     }
 }

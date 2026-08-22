@@ -2,6 +2,7 @@ package dev.geode.ui
 
 import android.app.Application
 import android.content.ContentUris
+import android.content.SharedPreferences
 import android.net.Uri
 import android.provider.MediaStore
 import dev.geode.data.MusicPlaylist
@@ -38,6 +39,7 @@ private val AUDIO_EXTS = setOf("mp3", "wav", "flac", "ogg", "m4a", "aac", "opus"
 
 internal class MusicLibraryController(
     private val application: Application,
+    private val libraryPrefs: SharedPreferences,
     private val scope: CoroutineScope,
 ) {
     private val trackLibrary = TrackLibrary(application)
@@ -291,11 +293,8 @@ internal class MusicLibraryController(
         }
     }
 
-    private fun libraryPrefs(): android.content.SharedPreferences =
-        application.getSharedPreferences("geode-library", android.content.Context.MODE_PRIVATE)
-
     private val _mediaRoots =
-        MutableStateFlow<Set<String>>(libraryPrefs().getStringSet("roots", emptySet()) ?: emptySet())
+        MutableStateFlow<Set<String>>(libraryPrefs.getStringSet("roots", emptySet()) ?: emptySet())
 
     val mediaRoots: StateFlow<Set<String>> = _mediaRoots
 
@@ -310,7 +309,7 @@ internal class MusicLibraryController(
             )
         }
         _mediaRoots.update { it + treeUri.toString() }
-        libraryPrefs().edit().putStringSet("roots", _mediaRoots.value).apply()
+        libraryPrefs.edit().putStringSet("roots", _mediaRoots.value).apply()
         scope.launch(Dispatchers.IO) {
             _libraryScanning.value = true
             try {
@@ -323,7 +322,7 @@ internal class MusicLibraryController(
 
     fun removeMediaRoot(uriStr: String) {
         _mediaRoots.update { it - uriStr }
-        libraryPrefs().edit().putStringSet("roots", _mediaRoots.value).apply()
+        libraryPrefs.edit().putStringSet("roots", _mediaRoots.value).apply()
     }
 
     fun rescanMediaRoots() {

@@ -1,6 +1,5 @@
 package dev.geode.audio
 
-import android.content.Context
 import android.content.SharedPreferences
 import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
@@ -57,11 +56,8 @@ object AudioFxFormat {
 }
 
 class AudioFxController(
-    context: Context,
+    private val prefs: SharedPreferences,
 ) {
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences("geode-audiofx", Context.MODE_PRIVATE)
-
     private var equalizer: Equalizer? = null
     private var bassBoost: BassBoost? = null
     private var loudness: LoudnessEnhancer? = null

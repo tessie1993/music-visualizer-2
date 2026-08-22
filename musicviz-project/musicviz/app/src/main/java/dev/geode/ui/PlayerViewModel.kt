@@ -18,6 +18,8 @@ import dev.geode.analysis.LiveInputProfile
 import dev.geode.audio.AudioBus
 import dev.geode.audio.AudioFxState
 import dev.geode.audio.MicCapture
+import dev.geode.data.GeodePrefsFiles
+import dev.geode.data.LfoStore
 import dev.geode.data.MilkPackImporter
 import dev.geode.data.MilkTexture
 import dev.geode.data.PlayerPrefs
@@ -65,6 +67,8 @@ class PlayerViewModel(
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private val storeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+
+    private val prefsFiles = GeodePrefsFiles(application)
 
     private val captureController: CaptureController =
         CaptureController(
@@ -125,13 +129,13 @@ class PlayerViewModel(
                 override val activeMilkPath: String? get() = vizStateStore.activeMilkPath.value
             },
         )
-    private val autoVisualsPrefsStore = AutoVisualsPrefsStore(application)
-    private val vizStateStore = VizStateStore(application, viewModelScope, autoVisualsPrefsStore)
+    private val autoVisualsPrefsStore = AutoVisualsPrefsStore(prefsFiles.viz)
+    private val vizStateStore = VizStateStore(prefsFiles.viz, viewModelScope, autoVisualsPrefsStore)
     private val audioFxController = playback.audioFx
 
     private val settings: PlayerSettingsController =
         PlayerSettingsController(
-            application,
+            prefsFiles,
             playback.player,
             engine,
             playback.audioFx,
@@ -172,7 +176,7 @@ class PlayerViewModel(
 
     val exportState: StateFlow<ExportUiState> get() = exportController.exportState
 
-    private val musicLibrary = MusicLibraryController(application, viewModelScope)
+    private val musicLibrary = MusicLibraryController(application, prefsFiles.library, viewModelScope)
 
     val library: StateFlow<LibraryState> get() = musicLibrary.library
 
@@ -226,7 +230,8 @@ class PlayerViewModel(
 
     private val modulation: ModulationController =
         ModulationController(
-            application,
+            LfoStore(prefsFiles.general),
+            prefsFiles.modulation,
             object : ModulationController.Host {
                 override val params: SceneParams get() = _vizState.value.params
 
@@ -312,6 +317,7 @@ class PlayerViewModel(
     private val listening: ListeningTracker =
         ListeningTracker(
             application,
+            prefsFiles.favourites,
             storeScope,
             object : ListeningTracker.Host {
                 override val player: Player get() = this@PlayerViewModel.player
