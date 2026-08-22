@@ -30,7 +30,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,8 +65,8 @@ private const val CRASH_REPORT_MAX_BYTES = 64 * 1024
 fun AppRoot(viewModel: PlayerViewModel) {
     val context = LocalContext.current
     val visualizerView = remember { VisualizerView(context) }
-    val themePack by viewModel.theme.collectAsState()
-    val gui by viewModel.guiPrefs.collectAsState()
+    val themePack by viewModel.theme.collectAsStateWithLifecycle()
+    val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
     val systemDark = isSystemInDarkTheme()
     val effectiveTheme =
         if (gui.followSystemDark && !systemDark) {
@@ -86,7 +85,7 @@ fun AppRoot(viewModel: PlayerViewModel) {
                 .getSharedPreferences("geode-prefs", android.content.Context.MODE_PRIVATE)
                 .getBoolean("boot_anim", true)
         }
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val externalDisplay = rememberExternalDisplay()
     val onSecondScreen = gui.secondScreen && externalDisplay != null
     if (onSecondScreen) {
@@ -351,10 +350,10 @@ fun SearchScreen(
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var debounced by rememberSaveable { mutableStateOf("") }
-    val gui by viewModel.guiPrefs.collectAsState()
-    val library by viewModel.library.collectAsState()
-    val viz by viewModel.vizState.collectAsState()
-    val deviceTracks by viewModel.deviceTracks.collectAsState()
+    val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
+    val library by viewModel.library.collectAsStateWithLifecycle()
+    val viz by viewModel.vizState.collectAsStateWithLifecycle()
+    val deviceTracks by viewModel.deviceTracks.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.refreshDeviceTracks() }
     LaunchedEffect(query) {
         if (query.isNotBlank()) delay(250)

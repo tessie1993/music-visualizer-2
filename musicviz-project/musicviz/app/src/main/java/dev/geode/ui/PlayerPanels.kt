@@ -29,7 +29,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +49,7 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.geode.R
 import dev.geode.ui.theme.StoneIcon
@@ -270,7 +270,7 @@ fun QueuePanel(
         }
         return
     }
-    val library by viewModel.library.collectAsState()
+    val library by viewModel.library.collectAsStateWithLifecycle()
     var saving by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val follows = rememberFollowsPlayback(listState)

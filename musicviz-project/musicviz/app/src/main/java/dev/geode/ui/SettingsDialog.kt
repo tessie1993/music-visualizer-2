@@ -18,7 +18,6 @@ import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.R
 import dev.geode.data.ExportDefaults
 import dev.geode.data.ExportPrefsStore
@@ -83,7 +83,7 @@ fun SettingsDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 when {
                     export.running -> {
-                        val run by dev.geode.export.ExportRun.state.collectAsState()
+                        val run by dev.geode.export.ExportRun.state.collectAsStateWithLifecycle()
                         Text(
                             listOfNotNull(
                                 stringResource(R.string.export_rendering_offline),

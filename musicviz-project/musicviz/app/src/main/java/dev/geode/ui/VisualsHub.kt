@@ -38,7 +38,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,6 +50,7 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.data.Preset
 import dev.geode.render.VisualizerView
 import dev.geode.render.scene.CustomizeTab
@@ -69,8 +69,8 @@ fun VisualsHub(
 ) {
     var tab by rememberSaveable { mutableStateOf(0) }
     val tabs = listOf("Presets", "Styles", "Customize", "Textures", "Takes")
-    val gui by viewModel.guiPrefs.collectAsState()
-    val takes by viewModel.takeState.collectAsState()
+    val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
+    val takes by viewModel.takeState.collectAsStateWithLifecycle()
     Box(Modifier.fillMaxSize()) {
         if (liveBackdrop) {
             VisualizerCanvasHost(visualizerView, Modifier.fillMaxSize())
@@ -184,7 +184,7 @@ private fun PresetsTreeTab(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
 ) {
-    val viz by viewModel.vizState.collectAsState()
+    val viz by viewModel.vizState.collectAsStateWithLifecycle()
     var folderRefresh by remember { mutableStateOf(0) }
     val folders = remember(folderRefresh, viz.presets) { viewModel.presetFolders() }
     var newFolder by remember { mutableStateOf("") }
@@ -526,7 +526,7 @@ private fun StylesTab(
     onOpenTextures: () -> Unit,
 ) {
     var sub by rememberSaveable { mutableStateOf(0) }
-    val viz by viewModel.vizState.collectAsState()
+    val viz by viewModel.vizState.collectAsStateWithLifecycle()
     val pickScene: (String) -> Unit = { viewModel.selectScene(it) }
     Column(Modifier.fillMaxSize()) {
         suggestedSceneToOffer(viz.suggestedSceneId, viz.sceneId)?.let { suggested ->
@@ -609,9 +609,9 @@ private fun MilkDropTab(
     onOpenTextures: () -> Unit,
 ) {
     var refresh by remember { mutableStateOf(0) }
-    val viz by viewModel.vizState.collectAsState()
+    val viz by viewModel.vizState.collectAsStateWithLifecycle()
     val milkFiles = remember(refresh) { viewModel.userMilkPresets() }
-    val loaded by viewModel.activeMilkPath.collectAsState()
+    val loaded by viewModel.activeMilkPath.collectAsStateWithLifecycle()
     var packReport by remember { mutableStateOf<dev.geode.data.MilkPackImporter.Report?>(null) }
     var singleMissesTexture by remember { mutableStateOf(false) }
     val milkFolderPicker =
@@ -726,7 +726,7 @@ internal fun CustomizePanel(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
 ) {
-    val viz by viewModel.vizState.collectAsState()
+    val viz by viewModel.vizState.collectAsStateWithLifecycle()
     var sub by rememberSaveable { mutableStateOf(0) }
     val isShader = SceneCapabilities.hasShaderLook(viz.sceneId)
     val isCymatics = SceneCapabilities.isCymatics(viz.sceneId)
@@ -758,13 +758,13 @@ internal fun CustomizePanel(
         )
         CustomizeToolbar(viewModel, viz.params, tabs.getOrNull(sub))
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-            val locked by viewModel.lockedParams.collectAsState()
+            val locked by viewModel.lockedParams.collectAsStateWithLifecycle()
             androidx.compose.runtime.CompositionLocalProvider(
                 LocalParamLocks provides (locked to viewModel::toggleParamLock),
             ) {
                 val p = viz.params
                 val onChange: (dev.geode.render.scene.SceneParams) -> Unit = { viewModel.setSceneParams(it) }
-                val lfos by viewModel.lfos.collectAsState()
+                val lfos by viewModel.lfos.collectAsStateWithLifecycle()
                 when (tabs.getOrNull(sub)) {
                     CustomizeTab.MOTION -> MotionTab(p, onChange)
                     CustomizeTab.SHAPE ->
@@ -791,7 +791,7 @@ internal fun CustomizePanel(
                             onIntelligenceModeChange = viewModel::setIntelligenceMode,
                         )
                     CustomizeTab.COLOR -> {
-                        val artNote by viewModel.artPaletteNote.collectAsState()
+                        val artNote by viewModel.artPaletteNote.collectAsStateWithLifecycle()
                         ColorTab(
                             p,
                             onChange,
@@ -801,7 +801,7 @@ internal fun CustomizePanel(
                         )
                     }
                     CustomizeTab.FX -> {
-                        val adsrs by viewModel.adsrs.collectAsState()
+                        val adsrs by viewModel.adsrs.collectAsStateWithLifecycle()
                         FxTab(
                             p,
                             onChange,
@@ -908,7 +908,7 @@ private fun formatTakeTime(ms: Long): String {
 
 @Composable
 private fun TakesTab(viewModel: PlayerViewModel) {
-    val takes by viewModel.takeState.collectAsState()
+    val takes by viewModel.takeState.collectAsStateWithLifecycle()
     var renaming by remember { mutableStateOf<String?>(null) }
     var renameText by remember { mutableStateOf("") }
     var deleting by remember { mutableStateOf<String?>(null) }
@@ -1059,7 +1059,7 @@ private fun TexturesHubTab(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
 ) {
-    val textures by viewModel.textures.collectAsState()
+    val textures by viewModel.textures.collectAsStateWithLifecycle()
     var deletingTexture by remember { mutableStateOf<String?>(null) }
     val picker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -1118,7 +1118,7 @@ private fun GlslHubTab(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
 ) {
-    val viz by viewModel.vizState.collectAsState()
+    val viz by viewModel.vizState.collectAsStateWithLifecycle()
     var source by rememberSaveable(viz.sceneId, stateSaver = ShaderDraftSaver) {
         mutableStateOf(visualizerView.visualizerRenderer.customShaderFor(viz.sceneId) ?: "")
     }

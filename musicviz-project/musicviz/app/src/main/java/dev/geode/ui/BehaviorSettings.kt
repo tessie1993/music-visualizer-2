@@ -7,13 +7,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.R
 import dev.geode.render.VisualSafety
 import dev.geode.render.VisualSafetyChoice
@@ -21,7 +21,7 @@ import kotlin.math.roundToInt
 
 @Composable
 internal fun BehaviorSettingsTab(viewModel: PlayerViewModel) {
-    val gui by viewModel.guiPrefs.collectAsState()
+    val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
     SettingsTabColumn {
         item { SettingsGroup(stringResource(R.string.behavior_group_touch)) { TouchGroup(viewModel, gui) } }
         item { SettingsGroup(stringResource(R.string.behavior_group_display)) { ConnectedDisplayGroup(viewModel, gui) } }

@@ -23,7 +23,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +37,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.analysis.IntelligenceMode
 import dev.geode.render.BlendMode
 import dev.geode.render.EnvBand
@@ -463,9 +463,9 @@ internal fun FxTab(
 
 @Composable
 private fun LayersSection() {
-    val layers by LayersBus.state.collectAsState()
-    val layerScenes by LayersBus.availableScenes.collectAsState()
-    val activeScene by LayersBus.activeSceneId.collectAsState()
+    val layers by LayersBus.state.collectAsStateWithLifecycle()
+    val layerScenes by LayersBus.availableScenes.collectAsStateWithLifecycle()
+    val activeScene by LayersBus.activeSceneId.collectAsStateWithLifecycle()
     SectionHeader("Layers (second style)")
     ControlHint(
         "Renders a second style every frame and blends it under the active " +

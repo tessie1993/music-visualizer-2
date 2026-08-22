@@ -40,7 +40,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -64,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.R
 import dev.geode.data.MusicPlaylist
 import dev.geode.ui.theme.StoneIcon
@@ -86,7 +86,7 @@ fun LibraryScreen(
     val permLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     var reloadKey by remember { mutableStateOf(0) }
-    val tracks by viewModel.deviceTracks.collectAsState()
+    val tracks by viewModel.deviceTracks.collectAsStateWithLifecycle()
     LaunchedEffect(granted, reloadKey) { if (granted) viewModel.refreshDeviceTracks() }
     var tab by rememberSaveable { mutableStateOf(0) }
     val tabs =
@@ -167,7 +167,7 @@ private fun TrackRow(
     subtitleOverride: String? = null,
     queue: List<QueueTrack> = emptyList(),
 ) {
-    val overrides by viewModel.trackOverrides.collectAsState()
+    val overrides by viewModel.trackOverrides.collectAsStateWithLifecycle()
     val stored = overrides[t.uri]
     val title = stored?.title?.ifBlank { null } ?: t.title
     val analyzed = stored?.takeIf { it.analyzed }
@@ -242,7 +242,7 @@ private fun AddToPlaylistDialog(
     viewModel: PlayerViewModel,
     onDismiss: () -> Unit,
 ) {
-    val library by viewModel.library.collectAsState()
+    val library by viewModel.library.collectAsStateWithLifecycle()
     var naming by remember { mutableStateOf(false) }
     if (naming) {
         PlaylistNameDialog(
@@ -379,7 +379,7 @@ private fun GroupList(
 
 @Composable
 private fun PlaylistsTab(viewModel: PlayerViewModel) {
-    val library by viewModel.library.collectAsState()
+    val library by viewModel.library.collectAsStateWithLifecycle()
     var expanded by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf<String?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -598,8 +598,8 @@ private fun FoldersTab(
     folders: Map<String, List<DeviceTrack>>,
     viewModel: PlayerViewModel,
 ) {
-    val roots by viewModel.mediaRoots.collectAsState()
-    val scanning by viewModel.libraryScanning.collectAsState()
+    val roots by viewModel.mediaRoots.collectAsStateWithLifecycle()
+    val scanning by viewModel.libraryScanning.collectAsStateWithLifecycle()
     val folderPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) viewModel.importFolder(uri)

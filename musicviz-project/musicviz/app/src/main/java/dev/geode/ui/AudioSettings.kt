@@ -12,7 +12,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.R
 import dev.geode.analysis.BeatTuning
 import kotlin.math.roundToInt
@@ -38,7 +38,7 @@ internal fun AudioSettingsTab(viewModel: PlayerViewModel) {
 
 @Composable
 private fun AnalysisGroup(viewModel: PlayerViewModel) {
-    val gui by viewModel.guiPrefs.collectAsState()
+    val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
     Column {
         Text(
             stringResource(R.string.audio_beat_sensitivity, "%.1f".format(gui.beatSensitivity)),
@@ -114,7 +114,7 @@ private fun AnalysisGroup(viewModel: PlayerViewModel) {
 
 @Composable
 private fun LiveInputGroup(viewModel: PlayerViewModel) {
-    val mic by viewModel.micState.collectAsState()
+    val mic by viewModel.micState.collectAsStateWithLifecycle()
     var denied by remember { mutableStateOf(false) }
     val micPermission =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->

@@ -27,7 +27,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +38,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.R
 import dev.geode.export.ClipEdit
 import dev.geode.export.ClipLook
@@ -50,7 +50,7 @@ import kotlin.math.roundToInt
 @Composable
 fun StudioScreen(viewModel: PlayerViewModel) {
     val context = LocalContext.current
-    val studio by viewModel.studio.collectAsState()
+    val studio by viewModel.studio.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<StudioClip?>(null) }
     LaunchedEffect(Unit) { viewModel.refreshStudioClips() }
 

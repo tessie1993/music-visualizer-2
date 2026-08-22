@@ -2,8 +2,8 @@ package dev.geode.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.render.BlendMode
 import dev.geode.render.TransitionCatalog
 import dev.geode.render.VisualSafety
@@ -30,12 +30,12 @@ fun VisualizerEngineBindings(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
 ) {
-    val viz by viewModel.vizState.collectAsState()
-    val lfos by viewModel.lfos.collectAsState()
-    val adsrs by viewModel.adsrs.collectAsState()
-    val playerPrefs by viewModel.playerPrefs.collectAsState()
-    val gui by viewModel.guiPrefs.collectAsState()
-    val layers by LayersBus.state.collectAsState()
+    val viz by viewModel.vizState.collectAsStateWithLifecycle()
+    val lfos by viewModel.lfos.collectAsStateWithLifecycle()
+    val adsrs by viewModel.adsrs.collectAsStateWithLifecycle()
+    val playerPrefs by viewModel.playerPrefs.collectAsStateWithLifecycle()
+    val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
+    val layers by LayersBus.state.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         visualizerView.visualizerRenderer.onShaderError = viewModel::reportShaderError

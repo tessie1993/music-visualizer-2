@@ -3,12 +3,12 @@ package dev.geode.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.export.ExportAspect
 import dev.geode.export.ExportRange
 import dev.geode.render.VisualizerView
@@ -64,9 +64,9 @@ fun ExportHost(
     visualizerView: VisualizerView,
     onDismiss: () -> Unit,
 ) {
-    val state by viewModel.uiState.collectAsState()
-    val viz by viewModel.vizState.collectAsState()
-    val export by viewModel.exportState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val viz by viewModel.vizState.collectAsStateWithLifecycle()
+    val export by viewModel.exportState.collectAsStateWithLifecycle()
 
     var pendingExport by rememberSaveable(stateSaver = PendingExportSaver) {
         mutableStateOf<PendingExport?>(null)
@@ -95,7 +95,7 @@ fun ExportHost(
                 )
             }
         }
-    val takes by viewModel.takeState.collectAsState()
+    val takes by viewModel.takeState.collectAsStateWithLifecycle()
     SettingsDialog(
         export = export,
         hasMedia = state.hasMedia,
