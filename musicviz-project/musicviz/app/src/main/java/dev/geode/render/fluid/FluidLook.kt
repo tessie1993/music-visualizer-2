@@ -196,17 +196,19 @@ internal class FluidLook(
         viewportH: Int,
     ) {
         if (!available) return
+        val bloom = bloomResult
+        val rays = sunrays
         val flags =
             (if (shadingOn) 1 else 0) or
-                (if (bloomOn && bloomMips.size >= 2 && bloomResult != null) 2 else 0) or
-                (if (sunraysOn && sunrays != null) 4 else 0)
+                (if (bloomOn && bloomMips.size >= 2 && bloom != null) 2 else 0) or
+                (if (sunraysOn && rays != null) 4 else 0)
         val program = displayPrograms.getValue(flags)
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         use(program, 1f / viewportW, 1f / viewportH)
         bindTex(program, "uDye", dyeTex, 0)
-        if (flags and 2 != 0) bindTex(program, "uBloom", bloomResult!!.tex, 1)
-        if (flags and 4 != 0) bindTex(program, "uSunrays", sunrays!!.tex, 2)
+        if (bloom != null && flags and 2 != 0) bindTex(program, "uBloom", bloom.tex, 1)
+        if (rays != null && flags and 4 != 0) bindTex(program, "uSunrays", rays.tex, 2)
         bindTex(program, "uDither", ditherTex, 3)
         GLES30.glUniform2f(
             loc(program, "uDitherScale"),

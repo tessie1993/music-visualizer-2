@@ -148,8 +148,8 @@ class AudioTranscoder(
                     }
                     progressed = true
                 }
-                if (pcmCarry != null) {
-                    val carry = pcmCarry!!
+                val carry = pcmCarry
+                if (carry != null) {
                     val inIndex = encoder.dequeueInputBuffer(10_000)
                     if (inIndex >= 0) {
                         val inBuf = checkNotNull(encoder.getInputBuffer(inIndex)) { "encoder input buffer null (codec error state)" }

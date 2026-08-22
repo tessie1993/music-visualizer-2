@@ -176,10 +176,10 @@ class ThemeStore(
             }
         return GuiPrefs(
             playerPosition =
-                runCatching { PlayerPosition.valueOf(prefs.getString(KEY_POS, PlayerPosition.BOTTOM.name)!!) }
+                runCatching { PlayerPosition.valueOf(prefs.getString(KEY_POS, null) ?: PlayerPosition.BOTTOM.name) }
                     .getOrDefault(PlayerPosition.BOTTOM),
             cornerStyle =
-                runCatching { CornerStyle.valueOf(prefs.getString(KEY_CORNER, CornerStyle.ROUNDED.name)!!) }
+                runCatching { CornerStyle.valueOf(prefs.getString(KEY_CORNER, null) ?: CornerStyle.ROUNDED.name) }
                     .getOrDefault(CornerStyle.ROUNDED),
             barOpacity = prefs.getFloat(KEY_OPACITY, 0.72f),
             beatSensitivity =
