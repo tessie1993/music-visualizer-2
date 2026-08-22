@@ -18,12 +18,20 @@ import dev.geode.analysis.LiveInputProfile
 import dev.geode.audio.AudioBus
 import dev.geode.audio.AudioFxState
 import dev.geode.audio.MicCapture
+import dev.geode.data.FavouritesRepository
+import dev.geode.data.FileSessionRepository
 import dev.geode.data.GeodePrefsFiles
 import dev.geode.data.LfoStore
 import dev.geode.data.MilkPackImporter
 import dev.geode.data.MilkTexture
 import dev.geode.data.PlayerPrefs
+import dev.geode.data.PlayerPrefsRepository
+import dev.geode.data.PlayerPrefsStore
 import dev.geode.data.Preset
+import dev.geode.data.SessionRepository
+import dev.geode.data.SessionStore
+import dev.geode.data.SharedPrefsFavouritesRepository
+import dev.geode.data.SharedPrefsPlayerPrefsRepository
 import dev.geode.export.ExportAspect
 import dev.geode.export.ExportRange
 import dev.geode.export.StudioClip
@@ -69,6 +77,14 @@ class PlayerViewModel(
     private val storeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
 
     private val prefsFiles = GeodePrefsFiles(application)
+
+    private val playerPrefsRepository: PlayerPrefsRepository =
+        SharedPrefsPlayerPrefsRepository(PlayerPrefsStore(prefsFiles.player), storeScope)
+
+    private val favouritesRepository: FavouritesRepository =
+        SharedPrefsFavouritesRepository(prefsFiles.favourites, storeScope)
+
+    private val sessionRepository: SessionRepository = FileSessionRepository(SessionStore(application))
 
     private val captureController: CaptureController =
         CaptureController(
@@ -136,6 +152,8 @@ class PlayerViewModel(
     private val settings: PlayerSettingsController =
         PlayerSettingsController(
             prefsFiles,
+            playerPrefsRepository,
+            storeScope,
             playback.player,
             engine,
             playback.audioFx,
@@ -317,7 +335,8 @@ class PlayerViewModel(
     private val listening: ListeningTracker =
         ListeningTracker(
             application,
-            prefsFiles.favourites,
+            favouritesRepository,
+            sessionRepository,
             storeScope,
             object : ListeningTracker.Host {
                 override val player: Player get() = this@PlayerViewModel.player
@@ -967,7 +986,14 @@ class PlayerViewModel(
         presetLibrary.refreshInitial()
         musicLibrary.refresh()
         textureController.refresh()
-        val pp = settings.playerPrefs.value
+        viewModelScope.launch {
+            attachPlayback()
+            pollPlaybackState()
+        }
+    }
+
+    private suspend fun attachPlayback() {
+        val pp = settings.loadedPlayerPrefs()
         player.shuffleModeEnabled = pp.shuffle
         player.repeatMode = pp.repeatMode
         settings.applyPlaybackPrefs(pp)
@@ -1063,25 +1089,27 @@ class PlayerViewModel(
         audioFxController.attach(player.audioSessionId)
         settings.refreshAudioFx()
         if (alreadyLoaded) onTrackChanged()
-        viewModelScope.launch {
-            while (true) {
-                refresh()
-                listening.accrueListenTime()
-                queueController.enforceAbLoop()
-                queueController.refreshQueue()
-                captureController.refreshExternalAudio()
-                captureController.refreshMicState()
-                analysis.applyIntelligence()
-                autoVisuals.advanceVizPlaylist()
-                autoVisuals.advanceRandomMode()
-                autoVisuals.advanceSectionStaging()
-                listening.persistSession()
-                delay(500)
-            }
+    }
+
+    private suspend fun pollPlaybackState(): Nothing {
+        while (true) {
+            refresh()
+            listening.accrueListenTime()
+            queueController.enforceAbLoop()
+            queueController.refreshQueue()
+            captureController.refreshExternalAudio()
+            captureController.refreshMicState()
+            analysis.applyIntelligence()
+            autoVisuals.advanceVizPlaylist()
+            autoVisuals.advanceRandomMode()
+            autoVisuals.advanceSectionStaging()
+            listening.persistSession()
+            delay(POLL_INTERVAL_MS)
         }
     }
 
     private companion object {
         const val STORE_FLUSH_BUDGET_MS = 2_000L
+        const val POLL_INTERVAL_MS = 500L
     }
 }

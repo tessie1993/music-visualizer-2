@@ -11,14 +11,18 @@ import dev.geode.audio.AudioFxController
 import dev.geode.audio.AudioFxState
 import dev.geode.data.GeodePrefsFiles
 import dev.geode.data.PlayerPrefs
-import dev.geode.data.PlayerPrefsStore
+import dev.geode.data.PlayerPrefsRepository
 import dev.geode.ui.theme.ThemePack
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
 @OptIn(UnstableApi::class)
 internal class PlayerSettingsController(
     prefsFiles: GeodePrefsFiles,
+    private val playerPrefsRepository: PlayerPrefsRepository,
+    private val scope: CoroutineScope,
     private val player: ExoPlayer,
     private val engine: AnalysisEngine,
     private val audioFx: AudioFxController,
@@ -31,7 +35,6 @@ internal class PlayerSettingsController(
     }
 
     private val themeStore = ThemeStore(prefsFiles.general)
-    private val playerPrefsStore = PlayerPrefsStore(prefsFiles.player)
 
     private val _theme = MutableStateFlow(themeStore.load())
     val theme: StateFlow<ThemePack> = _theme
@@ -39,8 +42,9 @@ internal class PlayerSettingsController(
     private val _guiPrefs = MutableStateFlow(themeStore.loadGui())
     val guiPrefs: StateFlow<GuiPrefs> = _guiPrefs
 
-    private val _playerPrefs = MutableStateFlow(playerPrefsStore.load())
-    val playerPrefs: StateFlow<PlayerPrefs> = _playerPrefs
+    val playerPrefs: StateFlow<PlayerPrefs> = playerPrefsRepository.prefs
+
+    suspend fun loadedPlayerPrefs(): PlayerPrefs = playerPrefsRepository.loaded()
 
     private val _audioFxState = MutableStateFlow(audioFx.snapshot())
     val audioFxState: StateFlow<AudioFxState> = _audioFxState
@@ -63,14 +67,8 @@ internal class PlayerSettingsController(
     }
 
     fun setPlayerPrefs(prefs: PlayerPrefs) {
-        val p =
-            prefs.copy(
-                speed = prefs.speed.coerceIn(0.5f, 2f),
-                pitchSemitones = prefs.pitchSemitones.coerceIn(-6f, 6f),
-                sleepTimerMinutes = prefs.sleepTimerMinutes.coerceAtLeast(0),
-            )
-        _playerPrefs.value = p
-        playerPrefsStore.save(p)
+        val p = prefs.coerced()
+        scope.launch { playerPrefsRepository.update { p } }
         applyPlaybackPrefs(p)
     }
 
@@ -81,9 +79,11 @@ internal class PlayerSettingsController(
     }
 
     private fun persistPlayerOptions() {
-        val p = _playerPrefs.value.copy(shuffle = player.shuffleModeEnabled, repeatMode = player.repeatMode)
-        _playerPrefs.value = p
-        playerPrefsStore.save(p)
+        val shuffle = player.shuffleModeEnabled
+        val repeatMode = player.repeatMode
+        scope.launch {
+            playerPrefsRepository.update { it.copy(shuffle = shuffle, repeatMode = repeatMode) }
+        }
     }
 
     fun toggleShuffle() {
