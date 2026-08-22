@@ -79,12 +79,20 @@ class ExportService : Service() {
     /**
      * The mediaProcessing budget is spent. Cancel the render and stop —
      * there are only seconds before this becomes an ANR.
+     *
+     * [ExportRun.requestCancel], not [ExportRun.finish]: finish() only
+     * resets the published state, which left the encoder coroutine rendering
+     * on with no foreground service protecting the process and publish()
+     * silently dropping its progress. The request reaches the render's own
+     * isCancelled check at its next frame; its teardown then runs the normal
+     * cancelled path, and its `finally` calls finish() once everything is
+     * released.
      */
     override fun onTimeout(
         startId: Int,
         fgsType: Int,
     ) {
-        ExportRun.finish()
+        ExportRun.requestCancel()
         stopSelf()
     }
 

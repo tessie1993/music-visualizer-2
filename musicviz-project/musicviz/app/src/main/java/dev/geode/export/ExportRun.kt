@@ -57,9 +57,30 @@ object ExportRun {
 
     val running: Boolean get() = _state.value.running
 
+    /**
+     * Set when something OUTSIDE the render needs it to stop - today
+     * [ExportService.onTimeout], where the mediaProcessing budget is spent
+     * and an ANR is seconds away. The render's `isCancelled` lambda reads it
+     * between frames, so the request lands within milliseconds; [begin]
+     * clears it so one run's timeout cannot bleed into the next. This is a
+     * flag rather than a scope cancel because the render's teardown (muxer
+     * stop, temp-file cleanup, MediaStore finalize) must run - a hard
+     * coroutine cancel mid-encode is exactly what its finally blocks and
+     * Result.Cancelled path exist to avoid.
+     */
+    @Volatile
+    var cancelRequested: Boolean = false
+        private set
+
+    /** Asks the running render to stop at its next frame. Idempotent. */
+    fun requestCancel() {
+        cancelRequested = true
+    }
+
     /** Marks a render as started. [label] names the track in the notification. */
     fun begin(label: String) {
         eta.reset()
+        cancelRequested = false
         _state.value = State(running = true, progress = null, label = label)
     }
 

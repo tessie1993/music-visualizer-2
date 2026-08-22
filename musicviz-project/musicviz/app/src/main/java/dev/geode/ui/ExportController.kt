@@ -280,7 +280,11 @@ internal class ExportController(
                                 _exportState.update { it.copy(progress = overall) }
                                 ExportRun.publish(overall)
                             },
-                            isCancelled = { exportCancelled },
+                            // The local flag is the user's own Cancel; the
+                            // process-wide one is ExportService.onTimeout,
+                            // whose request has no other way to reach a
+                            // render owned by an earlier screen's controller.
+                            isCancelled = { exportCancelled || ExportRun.cancelRequested },
                         )
                     _exportState.value = exportUiStateFor(result, customDestination = destination != null)
                 } catch (t: Throwable) {
