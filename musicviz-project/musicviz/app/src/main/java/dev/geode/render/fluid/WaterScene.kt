@@ -5,17 +5,13 @@ import android.opengl.GLES30
 import dev.geode.R
 import dev.geode.analysis.AudioFeatures
 import dev.geode.render.scene.GlUtil
-import dev.geode.render.scene.PcmPulse
-import dev.geode.render.scene.PcmSink
-import dev.geode.render.scene.Scene
 import dev.geode.render.scene.SceneIds
 import dev.geode.render.scene.SceneParams
 import kotlin.math.abs
 
 internal class WaterScene(
     private val context: Context,
-) : Scene,
-    PcmSink {
+) : FluidSceneBase(TIME_WRAP_SECONDS) {
     override val id: String = SceneIds.WATER
 
     private companion object {
@@ -29,40 +25,13 @@ internal class WaterScene(
     }
 
     private val sim = RippleSim(context).also { it.inkEnabled = true }
-    private val choreography = FluidChoreography()
     private val emitters = FluidEmitters().also { it.choreography = choreography }
-    private val monitor = PerformanceMonitor()
 
-    private val audioDrive = FluidAudioDrive()
-
-    private val pcmPulse = PcmPulse()
-    private var pcmStrike = 0f
-
-    private var params = SceneParams()
-    private var time = 0f
-    private var lastDt = 1f / 60f
-    private var pendingFeatures: AudioFeatures? = null
-
-    private var lastFeatures: AudioFeatures? = null
-    private var featuresAgeSec = 0f
-    private var width = 1
-    private var height = 1
+    private val splats = ArrayList<FluidSim.Splat>()
 
     private var displayProgram = 0
     private var displayUniforms = GlUtil.UniformCache(0)
     private var displayOk = false
-
-    private var autoDowngrade = 0
-    private var lastUserQuality = -1
-    private var appliedTier = -1
-
-    private val prevFbo = IntArray(1)
-    private val prevViewport = IntArray(4)
-    private val prevBlendFunc = IntArray(4)
-
-    private val splats = ArrayList<FluidSim.Splat>()
-
-    var onShaderError: (String?) -> Unit = {}
 
     override fun init() {
         quad.forget()
@@ -91,34 +60,11 @@ internal class WaterScene(
         applyQualityTier()
     }
 
-    override fun setParams(params: SceneParams) {
-        this.params = params
-    }
-
     override fun resize(
         width: Int,
         height: Int,
     ) {
-        this.width = width
-        this.height = height
         sim.resize(width, height)
-    }
-
-    override fun acceptPcm(
-        samples: FloatArray,
-        count: Int,
-    ) = pcmPulse.accept(samples, count)
-
-    override fun update(
-        features: AudioFeatures,
-        dt: Float,
-    ) {
-        time = (time + dt) % TIME_WRAP_SECONDS
-        lastDt = dt
-        pcmStrike = pcmPulse.tick(dt)
-        pendingFeatures = features
-        lastFeatures = features
-        featuresAgeSec = 0f
     }
 
     private fun gridResFor(tierIndex: Int): Int =
@@ -130,42 +76,24 @@ internal class WaterScene(
             else -> 192
         }
 
-    private fun applyQualityTier() {
-        if (!sim.available) return
-        val userChanged = params.fluidQuality != lastUserQuality
-        if (userChanged) {
-            lastUserQuality = params.fluidQuality
-            autoDowngrade = 0
-            monitor.reset()
-        }
-        val idx = FluidQuality.effectiveIndex(params.fluidQuality, if (params.fluidAutoQuality) autoDowngrade else 0)
-        if (idx == appliedTier) return
-        appliedTier = idx
-        sim.applyResolution(gridResFor(idx))
+    override fun onApplyQualityTier(
+        index: Int,
+        userChanged: Boolean,
+    ) {
+        sim.applyResolution(gridResFor(index))
     }
 
     private var idlePhase = 0f
     private var rainAccum = 0f
 
-    private val idleBands = FloatArray(16)
-    private val idleWaveform = FloatArray(64)
-
-    private fun idleFeatures(dt: Float): AudioFeatures {
+    override fun idleFeatures(dt: Float): AudioFeatures {
         idlePhase = (idlePhase + dt) % TIME_WRAP_SECONDS
         val t = idlePhase
         val bass = 0.16f + 0.10f * kotlin.math.sin(t * 0.6f)
         val mid = 0.13f + 0.09f * kotlin.math.sin(t * 1.0f + 1.7f)
         val treble = 0.05f + 0.04f * kotlin.math.sin(t * 1.8f + 3.1f)
-        for (i in idleBands.indices) idleBands[i] = 0.1f + 0.07f * kotlin.math.sin(t * (0.5f + i * 0.13f))
-        return AudioFeatures(
-            bands = idleBands,
-            waveform = idleWaveform,
-            rms = 0.18f,
-            bass = bass.coerceAtLeast(0f),
-            mid = mid.coerceAtLeast(0f),
-            treble = treble.coerceAtLeast(0f),
-            beat = false,
-        )
+        fillIdleBands(t, 0.07f)
+        return idleAudioFeatures(bass, mid, treble, rms = 0.18f)
     }
 
     private fun queueIdleRain(dt: Float) {
@@ -219,55 +147,22 @@ internal class WaterScene(
         if (!sim.available || !displayOk) return
         GlUtil.resetFrameState()
         val p = params
-        featuresAgeSec = (featuresAgeSec + lastDt).coerceAtMost(1f)
-        val idle = pendingFeatures == null && featuresAgeSec >= 0.25f
-        val f =
-            audioDrive.scaled(
-                pendingFeatures
-                    ?: lastFeatures.takeIf { featuresAgeSec < 0.25f }
-                    ?: idleFeatures(lastDt),
-                p.audioDrive,
-            )
+        val f = scaledFeatures()
+        val idle = isIdle
 
-        GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, prevFbo, 0)
-        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
-        GLES30.glGetIntegerv(GLES30.GL_BLEND_SRC_RGB, prevBlendFunc, 0)
-        GLES30.glGetIntegerv(GLES30.GL_BLEND_DST_RGB, prevBlendFunc, 1)
-        GLES30.glGetIntegerv(GLES30.GL_BLEND_SRC_ALPHA, prevBlendFunc, 2)
-        GLES30.glGetIntegerv(GLES30.GL_BLEND_DST_ALPHA, prevBlendFunc, 3)
-        val blendWas = GLES30.glIsEnabled(GLES30.GL_BLEND)
+        saveGlState()
 
-        if (p.fluidAutoQuality) {
-            val severity = monitor.onFrame(lastDt)
-            if (severity > 0) {
-                autoDowngrade += severity
-                monitor.reset()
-            }
-        }
-        applyQualityTier()
+        autoQualityTick()
 
         sim.waveSpeed = 1.2f * p.waterWaveSpeed.coerceIn(0.2f, 2f)
         sim.damping = p.waterDamping.coerceIn(0.9f, 0.999f)
         sim.inkFlow = p.waterLiquidFlow.coerceIn(0f, 4f)
         sim.inkDissipation = p.waterLiquidFade.coerceIn(0f, 2f)
 
-        choreography.path = p.fluidSpawnPath.coerceIn(0, FluidChoreography.PATH_LABELS.size - 1)
-        choreography.spawnCount = p.fluidSpawnPoints.coerceIn(1, FluidChoreography.MAX_SPAWN)
-        choreography.catchCount = p.fluidCatchPoints.coerceIn(0, FluidChoreography.MAX_CATCH)
-        choreography.progressionAmount = p.fluidSpawnProgress.coerceIn(0f, 1f)
-        choreography.speed = FluidChoreography.sceneSpeed(p.speed)
+        configureChoreography()
 
-        emitters.beatPattern = p.fluidBeatPattern.coerceIn(0, 3)
-        emitters.beatSplats = p.fluidBeatSplats.coerceIn(0, 8)
-        emitters.stirrers = p.fluidStirrers.coerceIn(0, 4)
-        emitters.stirrerSpeed = p.fluidStirrerSpeed.coerceIn(0f, 2f) * FluidChoreography.sceneSpeed(p.speed)
-        emitters.bassPump = p.fluidBassPump
-        emitters.sparkle = p.fluidSparkle
-        emitters.splatRadius = p.fluidSplatRadius.coerceIn(0.02f, 0.4f)
-        emitters.radiusPulse = p.fluidRadiusPulse.coerceIn(0f, 1f)
-        emitters.catchSuction = p.fluidCatchPull.coerceIn(0f, 3f)
+        emitters.applyParams(p)
         emitters.forceScale = p.fluidSplatForce.coerceIn(0f, 3f)
-        emitters.beatResponse = p.beatResponse
 
         val simDt = lastDt.coerceIn(0f, 1f / 30f)
         choreography.tick(f, simDt, sim.aspect)
@@ -294,8 +189,7 @@ internal class WaterScene(
         sim.step(simDt)
         pendingFeatures = null
 
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
-        GLES30.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3])
+        restoreFramebufferAndViewport()
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glUseProgram(displayProgram)
         GLES30.glUniform2f(dLoc("uInvRes"), sim.texelW, sim.texelH)
@@ -319,8 +213,7 @@ internal class WaterScene(
         quad.draw()
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
 
-        if (blendWas) GLES30.glEnable(GLES30.GL_BLEND) else GLES30.glDisable(GLES30.GL_BLEND)
-        GLES30.glBlendFuncSeparate(prevBlendFunc[0], prevBlendFunc[1], prevBlendFunc[2], prevBlendFunc[3])
+        restoreBlend()
     }
 
     private val quad = GlUtil.FullscreenTriangle()
@@ -336,39 +229,4 @@ internal class WaterScene(
         quad.release()
         appliedTier = -1
     }
-}
-
-internal object WaterMath {
-    const val MIN_CATCH_RADIUS = 0.03f
-    const val MAX_CATCH_RADIUS = 0.3f
-
-    const val REF_CATCH_RADIUS = 0.12f
-
-    private const val MIN_SPREAD = 0.4f
-    private const val MAX_SPREAD = 2.5f
-
-    fun isCatchWell(
-        r: Float,
-        g: Float,
-        b: Float,
-    ): Boolean = maxOf(r, g, b) <= 0f
-
-    fun catchWellRadius(catchRadius: Float): Float = catchRadius.coerceIn(MIN_CATCH_RADIUS, MAX_CATCH_RADIUS)
-
-    fun catchWellAmplitude(
-        speed: Float,
-        catchRadius: Float,
-        rippleStrength: Float,
-    ): Float {
-        val r = catchWellRadius(catchRadius)
-        val spread = (REF_CATCH_RADIUS / r).coerceIn(MIN_SPREAD, MAX_SPREAD)
-        return -(0.06f + 0.5f * speed.coerceIn(0f, 2f)) * spread * rippleStrength.coerceIn(0f, 2f)
-    }
-
-    const val DISPLAY_BRIGHTNESS = 1f
-
-    fun effectiveBrightness(
-        brightness: Float,
-        intensity: Float,
-    ): Float = DISPLAY_BRIGHTNESS * brightness * intensity
 }
