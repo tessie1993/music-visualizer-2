@@ -88,7 +88,7 @@ internal class ExportController(
 
         fun adsrConfigs(): List<dev.geode.render.AdsrConfig>
 
-        fun loadExportTake(): PerformanceTake.Timeline?
+        suspend fun loadExportTake(): PerformanceTake.Timeline?
 
         fun publishSections(
             uri: Uri,

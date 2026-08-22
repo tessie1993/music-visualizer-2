@@ -1,19 +1,16 @@
 package dev.geode.ui
 
-import android.app.Application
 import dev.geode.data.PerformanceTake
 import dev.geode.data.TakeInfo
-import dev.geode.data.TakeStore
+import dev.geode.data.TakeRepository
 import dev.geode.render.scene.SceneParams
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 private const val TAKE_REPLAY_HZ = 30L
 
@@ -30,7 +27,7 @@ data class TakeUiState(
 )
 
 internal class TakeController(
-    application: Application,
+    private val takes: TakeRepository,
     private val scope: CoroutineScope,
     private val storeScope: CoroutineScope,
     private val host: Host,
@@ -52,8 +49,6 @@ internal class TakeController(
             sceneId: String,
         )
     }
-
-    private val store = TakeStore(application)
 
     private val _state = MutableStateFlow(TakeUiState())
 
@@ -115,15 +110,15 @@ internal class TakeController(
         }
         val trackUri = host.trackUri
         val requested = name?.takeIf { it.isNotBlank() }
-        scope.launch(Dispatchers.IO) {
+        storeScope.launch {
             val label = requested ?: defaultTakeName()
-            store.save(label, rec.finish(label, trackUri, durationMs, recordTrackOffsetMs))
+            takes.save(label, rec.finish(label, trackUri, durationMs, recordTrackOffsetMs))
             refresh()
         }
     }
 
-    private fun defaultTakeName(): String {
-        val taken = store.list().map { it.name }.toSet()
+    private suspend fun defaultTakeName(): String {
+        val taken = takes.list().map { it.name }.toSet()
         var n = 1
         while ("Take $n" in taken) n++
         return "Take $n"
@@ -134,7 +129,7 @@ internal class TakeController(
         stopReplay()
         replayJob =
             scope.launch {
-                val timeline = withContext(Dispatchers.IO) { store.load(name) } ?: return@launch
+                val timeline = takes.load(name) ?: return@launch
                 if (timeline.isEmpty) return@launch
                 val endMs = maxOf(timeline.lastEventMs(), timeline.durationMs)
                 _state.update { it.copy(replaying = name, replayMs = 0L, replayEndMs = endMs) }
@@ -167,8 +162,8 @@ internal class TakeController(
     fun deleteTake(name: String) {
         if (_state.value.replaying == name) stopReplay()
         storeScope.launch {
-            store.delete(name)
-            val listed = store.list()
+            takes.delete(name)
+            val listed = takes.list()
             _state.update { it.copy(takes = listed) }
         }
     }
@@ -176,19 +171,18 @@ internal class TakeController(
     fun renameTake(
         from: String,
         to: String,
-    ): Boolean {
-        val renamed = store.rename(from, to)
-        if (renamed) {
+    ) {
+        storeScope.launch {
+            if (!takes.rename(from, to)) return@launch
             if (_state.value.replaying == from) stopReplay()
             refresh()
         }
-        return renamed
     }
 
     fun refresh() {
-        scope.launch(Dispatchers.IO) {
-            val listed = store.list()
-            withContext(Dispatchers.Main) { _state.update { it.copy(takes = listed) } }
+        scope.launch {
+            val listed = takes.list()
+            _state.update { it.copy(takes = listed) }
         }
     }
 
@@ -196,9 +190,9 @@ internal class TakeController(
         _state.update { it.copy(exportTake = name) }
     }
 
-    fun loadExportTake(): PerformanceTake.Timeline? =
+    suspend fun loadExportTake(): PerformanceTake.Timeline? =
         _state.value.exportTake
-            ?.let { store.load(it) }
+            ?.let { takes.load(it) }
             ?.takeUnless { it.isEmpty }
 
     private companion object {

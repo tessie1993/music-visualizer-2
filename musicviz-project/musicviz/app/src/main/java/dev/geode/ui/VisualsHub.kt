@@ -185,8 +185,8 @@ private fun PresetsTreeTab(
     visualizerView: VisualizerView,
 ) {
     val viz by viewModel.vizState.collectAsStateWithLifecycle()
-    var folderRefresh by remember { mutableStateOf(0) }
-    val folders = remember(folderRefresh, viz.presets) { viewModel.presetFolders() }
+    val presetFolders by viewModel.presetFolders.collectAsStateWithLifecycle()
+    val folders = presetFolders.folders
     var newFolder by remember { mutableStateOf("") }
     var saveName by remember { mutableStateOf("") }
     var saveFolder by rememberSaveable { mutableStateOf("") }
@@ -196,7 +196,7 @@ private fun PresetsTreeTab(
     var deletingPreset by remember { mutableStateOf<String?>(null) }
     var replacingPreset by remember { mutableStateOf<String?>(null) }
     val userPresets = viz.presets.filterNot { BuiltInPresets.isBuiltIn(it.name) }.distinctBy { it.name }
-    val byFolder = userPresets.groupBy { viewModel.presetFolderOf(it.name) }
+    val byFolder = userPresets.groupBy { presetFolders.folderOf(it.name) }
     val context = androidx.compose.ui.platform.LocalContext.current
     var importNote by remember { mutableStateOf<String?>(null) }
     val presetFilePicker =
@@ -245,7 +245,6 @@ private fun PresetsTreeTab(
                     if (newFolder.isNotBlank()) {
                         viewModel.addPresetFolder(newFolder.trim())
                         newFolder = ""
-                        folderRefresh++
                     }
                 }) { Text("Add") }
             }
@@ -398,14 +397,13 @@ private fun PresetsTreeTab(
                     viewModel.renamePresetFolder(old, proposed)
                     if (saveFolder == old) saveFolder = proposed
                     renamingFolder = null
-                    folderRefresh++
                 }) { Text("Rename") }
             },
             dismissButton = { TextButton(onClick = { renamingFolder = null }) { Text("Cancel") } },
         )
     }
     movingPreset?.let { name ->
-        val current = viewModel.presetFolderOf(name)
+        val current = presetFolders.folderOf(name)
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { movingPreset = null },
             title = { Text("Move \"$name\"") },
@@ -418,7 +416,6 @@ private fun PresetsTreeTab(
                         CrystalButton(compact = true, filled = f == current, onClick = {
                             viewModel.movePresetToFolder(name, f)
                             movingPreset = null
-                            folderRefresh++
                         }) { Text(f.ifEmpty { "root" }, style = MaterialTheme.typography.bodySmall) }
                     }
                 }

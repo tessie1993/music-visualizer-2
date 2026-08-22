@@ -3,6 +3,8 @@ package dev.geode.ui
 import android.app.Application
 import android.net.Uri
 import dev.geode.data.Preset
+import dev.geode.data.PresetFolders
+import dev.geode.data.PresetRepository
 import dev.geode.data.PresetStore
 import dev.geode.render.scene.SceneIds
 import kotlinx.coroutines.CoroutineScope
@@ -13,6 +15,7 @@ import kotlinx.coroutines.withContext
 
 internal class PresetLibraryController(
     private val application: Application,
+    private val presets: PresetRepository,
     private val scope: CoroutineScope,
     private val storeScope: CoroutineScope,
     private val host: Host,
@@ -27,25 +30,25 @@ internal class PresetLibraryController(
         val activeMilkPath: String?
     }
 
-    private val store = PresetStore(application)
+    val folders: StateFlow<PresetFolders> = presets.folders
 
-    fun presetFolders(): List<String> = store.folders()
-
-    fun presetFolderOf(name: String): String = store.folderOf(name)
-
-    fun addPresetFolder(path: String) = store.addFolder(path)
+    fun addPresetFolder(path: String) {
+        storeScope.launch { presets.addFolder(path) }
+    }
 
     fun renamePresetFolder(
         from: String,
         to: String,
-    ) = store.renameFolder(from, to)
+    ) {
+        storeScope.launch { presets.renameFolder(from, to) }
+    }
 
     fun movePresetToFolder(
         name: String,
         folder: String,
     ) {
         storeScope.launch {
-            store.moveToFolder(name, folder)
+            presets.moveToFolder(name, folder)
             mirrorPresetToChosenFolder(name)
             relistPresets()
         }
@@ -62,18 +65,17 @@ internal class PresetLibraryController(
     }
 
     fun refreshInitial() {
-        scope.launch(Dispatchers.IO) {
-            val listed = store.list()
-            withContext(Dispatchers.Main) {
-                host.updatePresets { current ->
-                    if (current !== BuiltInPresets.ALL) current else BuiltInPresets.ALL + listed
-                }
+        scope.launch {
+            val listed = presets.list()
+            host.updatePresets { current ->
+                if (current !== BuiltInPresets.ALL) current else BuiltInPresets.ALL + listed
             }
+            presets.refreshFolders()
         }
     }
 
-    private fun relistPresets() {
-        val listed = BuiltInPresets.ALL + store.list()
+    private suspend fun relistPresets() {
+        val listed = BuiltInPresets.ALL + presets.list()
         host.updatePresets { listed }
     }
 
@@ -93,8 +95,8 @@ internal class PresetLibraryController(
                 } else {
                     null
                 }
-            milkSource?.let { source -> store.materializeMilk(name, source) }
-            store.save(Preset(name, s.sceneId, s.attack, s.decay, customShader, s.params, milkSource), folder)
+            milkSource?.let { source -> presets.materializeMilk(name, source) }
+            presets.save(Preset(name, s.sceneId, s.attack, s.decay, customShader, s.params, milkSource), folder)
             mirrorPresetToChosenFolder(name)
             relistPresets()
         }
@@ -120,7 +122,7 @@ internal class PresetLibraryController(
                         src.inputStream().use { it.copyTo(out) }
                     }
                 }
-                store.fileOf(name)?.let { copyInto(it, "application/json") }
+                presets.fileOf(name)?.let { copyInto(it, "application/json") }
                 milkFileFor(name).let { copyInto(it, "text/plain") }
             }
         }
@@ -134,7 +136,7 @@ internal class PresetLibraryController(
 
     fun milkPresetPathFor(preset: Preset): String? {
         if (preset.sceneId != SceneIds.MILKDROP) return null
-        return store.materializeMilk(preset.name, preset.milkPreset)
+        return presets.materializeMilk(preset.name, preset.milkPreset)
     }
 
     fun presetShareLink(name: String): String? {
@@ -184,20 +186,20 @@ internal class PresetLibraryController(
         val preset = incoming.copy(name = name)
         host.updatePresets { it + preset }
         storeScope.launch {
-            store.save(preset)
+            presets.save(preset)
             relistPresets()
         }
         return name
     }
 
-    fun presetFile(name: String): java.io.File? = store.fileOf(name)
+    fun presetFile(name: String): java.io.File? = presets.fileOf(name)
 
     fun deletePreset(name: String) {
         if (BuiltInPresets.isBuiltIn(name)) return
         host.updatePresets { presets -> presets.filterNot { it.name == name } }
         storeScope.launch {
-            removeMirroredPreset(store.fileOf(name)?.name, milkFileFor(name).name)
-            store.delete(name)
+            removeMirroredPreset(presets.fileOf(name)?.name, milkFileFor(name).name)
+            presets.delete(name)
             relistPresets()
         }
     }

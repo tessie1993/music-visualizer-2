@@ -19,7 +19,9 @@ import dev.geode.audio.AudioBus
 import dev.geode.audio.AudioFxState
 import dev.geode.audio.MicCapture
 import dev.geode.data.FavouritesRepository
+import dev.geode.data.FilePresetRepository
 import dev.geode.data.FileSessionRepository
+import dev.geode.data.FileTakeRepository
 import dev.geode.data.GeodePrefsFiles
 import dev.geode.data.LfoStore
 import dev.geode.data.MilkPackImporter
@@ -28,10 +30,14 @@ import dev.geode.data.PlayerPrefs
 import dev.geode.data.PlayerPrefsRepository
 import dev.geode.data.PlayerPrefsStore
 import dev.geode.data.Preset
+import dev.geode.data.PresetFolders
+import dev.geode.data.PresetRepository
+import dev.geode.data.PresetStore
 import dev.geode.data.SessionRepository
 import dev.geode.data.SessionStore
 import dev.geode.data.SharedPrefsFavouritesRepository
 import dev.geode.data.SharedPrefsPlayerPrefsRepository
+import dev.geode.data.TakeStore
 import dev.geode.export.ExportAspect
 import dev.geode.export.ExportRange
 import dev.geode.export.StudioClip
@@ -86,6 +92,8 @@ class PlayerViewModel(
 
     private val sessionRepository: SessionRepository = FileSessionRepository(SessionStore(application))
 
+    private val presetRepository: PresetRepository = FilePresetRepository(PresetStore(application))
+
     private val captureController: CaptureController =
         CaptureController(
             application,
@@ -132,6 +140,7 @@ class PlayerViewModel(
     private val presetLibrary: PresetLibraryController =
         PresetLibraryController(
             application,
+            presetRepository,
             viewModelScope,
             storeScope,
             object : PresetLibraryController.Host {
@@ -354,7 +363,7 @@ class PlayerViewModel(
 
     private val takeController: TakeController =
         TakeController(
-            application,
+            FileTakeRepository(TakeStore(application)),
             viewModelScope,
             storeScope,
             object : TakeController.Host {
@@ -701,9 +710,7 @@ class PlayerViewModel(
         playAll(listening.recentlyPlayed(100).map { QueueTrack(it.uri, it.title) }, shuffled = true)
     }
 
-    fun presetFolders(): List<String> = presetLibrary.presetFolders()
-
-    fun presetFolderOf(name: String): String = presetLibrary.presetFolderOf(name)
+    val presetFolders: StateFlow<PresetFolders> get() = presetLibrary.folders
 
     fun addPresetFolder(path: String) = presetLibrary.addPresetFolder(path)
 
@@ -816,7 +823,7 @@ class PlayerViewModel(
     fun renameTake(
         from: String,
         to: String,
-    ): Boolean = takeController.renameTake(from, to)
+    ) = takeController.renameTake(from, to)
 
     fun setExportTake(name: String?) = takeController.setExportTake(name)
 
@@ -906,7 +913,7 @@ class PlayerViewModel(
 
                 override fun adsrConfigs() = modulation.adsrs.value
 
-                override fun loadExportTake() = takeController.loadExportTake()
+                override suspend fun loadExportTake() = takeController.loadExportTake()
 
                 override fun publishSections(
                     uri: Uri,
