@@ -9,7 +9,6 @@ kotlin {
 }
 
 dependencies {
-    testImplementation(libs.junit)
     implementation(libs.ktlint.gradle)
     implementation(libs.kotlin.gradle.plugin)
     implementation(libs.android.gradle.plugin)
