@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -155,15 +156,26 @@ internal class ExportController(
         // A render started before this controller existed - the user left the
         // app mid-export and came back - is adopted rather than ignored, so the
         // UI shows progress instead of an idle dialog over a running encoder.
+        //
+        // Bounded to the ADOPTED run: takeWhile completes the collection at
+        // the run's end. The previous `return@collect` ended one emission,
+        // not the collection, so this collector lived for the whole screen
+        // and kept mirroring every LATER export too - and its two-field
+        // state overwrote what startExport had just written, resetting
+        // customDestination mid-render. The mirror also copies rather than
+        // replaces for the same reason.
         if (ExportRun.running) {
             scope.launch {
-                ExportRun.state.collect { run ->
-                    if (!run.running) {
-                        if (_exportState.value.running) _exportState.value = ExportUiState(running = false)
-                        return@collect
+                ExportRun.state
+                    .takeWhile { it.running }
+                    .collect { run ->
+                        _exportState.update { it.copy(running = true, progress = run.progress ?: 0f) }
                     }
-                    _exportState.value = ExportUiState(running = true, progress = run.progress ?: 0f)
-                }
+                // The adopted run is over; its outcome was published to the
+                // screen that started it and is unknowable from here. Back
+                // to idle - unless a new export has already begun on THIS
+                // controller, whose state is startExport's to write.
+                if (!ExportRun.running) _exportState.value = ExportUiState(running = false)
             }
         }
     }
