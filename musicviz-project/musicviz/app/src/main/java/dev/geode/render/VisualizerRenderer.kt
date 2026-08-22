@@ -176,6 +176,13 @@ class VisualizerRenderer(
          * cached Field array with getFloat/setFloat boxes nothing and
          * allocates nothing beyond the one copy() the hand-written form
          * already made.
+         *
+         * The name match below is a RELEASE-BUILD contract: R8 must keep
+         * SceneParams' field names (`-keepclassmembernames` in
+         * proguard-rules.pro) or [NOT_FADED] matches nothing and the
+         * UNSET_OVERRIDE sentinels get lerped through zero - in the minified
+         * build only, where no JVM test can see it. ReleaseMinifyContractTest
+         * pins the rule to this list.
          */
         private val LERPED_FLOATS: Array<java.lang.reflect.Field> =
             SceneParams::class.java
