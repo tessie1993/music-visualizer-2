@@ -93,185 +93,185 @@ object ParamRandomizer {
         }
 
         section(CustomizeTab.MOTION)
-        r("Speed") { it.copy(speed = f(0.2f, 2.5f)) }
-        r("Zoom") { it.copy(zoom = f(0.6f, 2f)) }
-        r("Rotation") { it.copy(rotation = f(-1.5f, 1.5f)) }
-        r("Sway") { it.copy(sway = sometimes(0.5f, 0.1f, 0.8f)) }
-        r("Drift X") { it.copy(driftX = sometimes(0.3f, -0.5f, 0.5f)) }
-        r("Drift Y") { it.copy(driftY = sometimes(0.3f, -0.5f, 0.5f)) }
-        r("Beat pulse") { it.copy(pulse = sometimes(0.6f, 0.15f, 0.9f)) }
-        r("Beat shake") { it.copy(shake = sometimes(0.3f, 0.1f, 0.6f)) }
-        r("Endless zoom") { it.copy(endlessZoom = chance(0.2f)) }
-        r("Dive speed") { it.copy(endlessZoomSpeed = f(0.1f, 0.8f)) }
+        r(ParamKeys.SPEED) { it.copy(speed = f(0.2f, 2.5f)) }
+        r(ParamKeys.ZOOM) { it.copy(zoom = f(0.6f, 2f)) }
+        r(ParamKeys.ROTATION) { it.copy(rotation = f(-1.5f, 1.5f)) }
+        r(ParamKeys.SWAY) { it.copy(sway = sometimes(0.5f, 0.1f, 0.8f)) }
+        r(ParamKeys.DRIFT_X) { it.copy(driftX = sometimes(0.3f, -0.5f, 0.5f)) }
+        r(ParamKeys.DRIFT_Y) { it.copy(driftY = sometimes(0.3f, -0.5f, 0.5f)) }
+        r(ParamKeys.BEAT_PULSE) { it.copy(pulse = sometimes(0.6f, 0.15f, 0.9f)) }
+        r(ParamKeys.BEAT_SHAKE) { it.copy(shake = sometimes(0.3f, 0.1f, 0.6f)) }
+        r(ParamKeys.ENDLESS_ZOOM) { it.copy(endlessZoom = chance(0.2f)) }
+        r(ParamKeys.DIVE_SPEED) { it.copy(endlessZoomSpeed = f(0.1f, 0.8f)) }
 
         section(CustomizeTab.SHAPE)
-        r("XY plot") { it.copy(beamXy = chance(0.35f)) }
-        r("Beam width") { it.copy(beamWidth = f(0.4f, 2.5f)) }
-        r("Beam brightness") { it.copy(beamIntensity = f(0.5f, 2f)) }
-        r("Beam tail") { it.copy(beamTail = f(0.05f, 0.8f)) }
-        r("Domain warp") { it.copy(warp = sometimes(0.5f, 0.1f, 0.8f)) }
-        r("Ripple") { it.copy(ripple = sometimes(0.4f, 0.1f, 0.8f)) }
-        r("Morph") { it.copy(morph = sometimes(0.5f, 0.1f, 0.8f)) }
-        r("Twist") { it.copy(twist = sometimes(0.4f, -0.8f, 0.8f)) }
-        r("Kaleidoscope") {
+        r(ParamKeys.XY_PLOT) { it.copy(beamXy = chance(0.35f)) }
+        r(ParamKeys.BEAM_WIDTH) { it.copy(beamWidth = f(0.4f, 2.5f)) }
+        r(ParamKeys.BEAM_BRIGHTNESS) { it.copy(beamIntensity = f(0.5f, 2f)) }
+        r(ParamKeys.BEAM_TAIL) { it.copy(beamTail = f(0.05f, 0.8f)) }
+        r(ParamKeys.DOMAIN_WARP) { it.copy(warp = sometimes(0.5f, 0.1f, 0.8f)) }
+        r(ParamKeys.RIPPLE) { it.copy(ripple = sometimes(0.4f, 0.1f, 0.8f)) }
+        r(ParamKeys.MORPH) { it.copy(morph = sometimes(0.5f, 0.1f, 0.8f)) }
+        r(ParamKeys.TWIST) { it.copy(twist = sometimes(0.4f, -0.8f, 0.8f)) }
+        r(ParamKeys.KALEIDOSCOPE) {
             val on = chance(0.3f)
             it.copy(kaleidoscope = on, symmetry = if (on) folds.random(rng) else it.symmetry)
         }
-        r("Tile") { it.copy(tile = if (chance(0.25f)) f(2f, 4f) else 1f) }
-        r("Pixelate") { it.copy(pixelate = sometimes(0.15f, 0.2f, 0.6f)) }
-        r("Posterize") { it.copy(posterize = sometimes(0.15f, 0.2f, 0.6f)) }
-        r("Particle shape") { it.copy(particleShape = rng.nextInt(SceneParams.PARTICLE_SHAPES.size)) }
-        r("Particle size") { it.copy(particleSize = f(0.5f, 1.8f)) }
+        r(ParamKeys.TILE) { it.copy(tile = if (chance(0.25f)) f(2f, 4f) else 1f) }
+        r(ParamKeys.PIXELATE) { it.copy(pixelate = sometimes(0.15f, 0.2f, 0.6f)) }
+        r(ParamKeys.POSTERIZE) { it.copy(posterize = sometimes(0.15f, 0.2f, 0.6f)) }
+        r(ParamKeys.PARTICLE_SHAPE) { it.copy(particleShape = rng.nextInt(SceneParams.PARTICLE_SHAPES.size)) }
+        r(ParamKeys.PARTICLE_SIZE) { it.copy(particleSize = f(0.5f, 1.8f)) }
 
         section(CustomizeTab.BEHAVIOR)
-        r("Audio drive") { it.copy(audioDrive = f(0.6f, 1.8f)) }
-        r("Beat response") { it.copy(beatResponse = f(0.3f, 2f)) }
-        r("Beat flash") { it.copy(flash = sometimes(0.5f, 0.1f, 0.6f)) }
-        r("Blend preset changes") { it.copy(milkdropBlendPresets = chance(0.35f)) }
-        r("Bass gain") { it.copy(bassGain = f(0.8f, 1.4f)) }
-        r("Mid gain") { it.copy(midGain = f(0.8f, 1.4f)) }
-        r("Treble gain") { it.copy(trebGain = f(0.8f, 1.4f)) }
-        r("Turbulence") { it.copy(turbulence = sometimes(0.5f, 0.1f, 1f)) }
-        r("Density") { it.copy(density = f(0.4f, 1f)) }
-        r("Mirror") { it.copy(mirror = chance(0.15f)) }
-        r("Trails (particle scenes)") { it.copy(trails = chance(0.4f)) }
-        r("Trail length") { it.copy(trailLength = f(0.3f, 0.9f)) }
-        r("Trail zoom (echo in/out)") { it.copy(trailZoom = sometimes(0.3f, -0.3f, 0.3f)) }
-        r("Trail warp (liquid echo)") { it.copy(trailWarp = sometimes(0.3f, 0.1f, 0.6f)) }
+        r(ParamKeys.AUDIO_DRIVE) { it.copy(audioDrive = f(0.6f, 1.8f)) }
+        r(ParamKeys.BEAT_RESPONSE) { it.copy(beatResponse = f(0.3f, 2f)) }
+        r(ParamKeys.BEAT_FLASH) { it.copy(flash = sometimes(0.5f, 0.1f, 0.6f)) }
+        r(ParamKeys.BLEND_PRESET_CHANGES) { it.copy(milkdropBlendPresets = chance(0.35f)) }
+        r(ParamKeys.BASS_GAIN) { it.copy(bassGain = f(0.8f, 1.4f)) }
+        r(ParamKeys.MID_GAIN) { it.copy(midGain = f(0.8f, 1.4f)) }
+        r(ParamKeys.TREBLE_GAIN) { it.copy(trebGain = f(0.8f, 1.4f)) }
+        r(ParamKeys.TURBULENCE) { it.copy(turbulence = sometimes(0.5f, 0.1f, 1f)) }
+        r(ParamKeys.DENSITY) { it.copy(density = f(0.4f, 1f)) }
+        r(ParamKeys.MIRROR) { it.copy(mirror = chance(0.15f)) }
+        r(ParamKeys.TRAILS_PARTICLE_SCENES) { it.copy(trails = chance(0.4f)) }
+        r(ParamKeys.TRAIL_LENGTH) { it.copy(trailLength = f(0.3f, 0.9f)) }
+        r(ParamKeys.TRAIL_ZOOM_ECHO_IN_OUT) { it.copy(trailZoom = sometimes(0.3f, -0.3f, 0.3f)) }
+        r(ParamKeys.TRAIL_WARP_LIQUID_ECHO) { it.copy(trailWarp = sometimes(0.3f, 0.1f, 0.6f)) }
 
         section(CustomizeTab.COLOR)
-        r("Palette") {
+        r(ParamKeys.PALETTE) {
             it.copy(palette = rng.nextInt(SceneParams.PALETTES.size)).withoutCustomPalette()
         }
-        r("Colour map") {
+        r(ParamKeys.COLOUR_MAP) {
             it.copy(
                 paletteLut =
                     if (chance(0.25f)) rng.nextInt(SceneParams.CYCLIC_PALETTES.size) else SceneParams.NO_PALETTE_LUT,
             )
         }
-        r("Palette 2") {
+        r(ParamKeys.PALETTE_2) {
             it.copy(palette2 = rng.nextInt(SceneParams.PALETTES.size)).withoutCustomPalette(second = true)
         }
-        r("Palette blend") { it.copy(paletteMix = sometimes(0.5f, 0.2f, 0.8f)) }
-        r("MilkDrop palette tint") { it.copy(milkdropPaletteTint = sometimes(0.4f, 0.2f, 0.9f)) }
-        r("Hue shift") { it.copy(colorShift = f(0f, 1f)) }
-        r("Hue range") { it.copy(hueRange = f(0.5f, 1.5f)) }
-        r("Color cycle") { it.copy(colorCycle = chance(0.3f)) }
-        r("Cycle speed") { it.copy(cycleSpeed = f(0.02f, 0.3f)) }
-        r("Saturation") { it.copy(saturation = f(0.4f, 1.4f)) }
-        r("Brightness") { it.copy(brightness = f(0.7f, 1.3f)) }
-        r("Contrast") { it.copy(contrast = f(0.8f, 1.4f)) }
-        r("Gamma") { it.copy(gamma = f(0.8f, 1.3f)) }
-        r("Intensity") { it.copy(intensity = f(0.7f, 1.4f)) }
-        r("Temperature") { it.copy(temperature = sometimes(0.4f, -0.6f, 0.6f)) }
-        r("Bloom") { it.copy(bloom = sometimes(0.5f, 0.1f, 0.7f)) }
-        r("Duotone") { it.copy(duotone = chance(0.1f)) }
-        r("Solarize") { it.copy(solarize = chance(0.05f)) }
-        r("Invert") { it.copy(invert = chance(0.03f)) }
+        r(ParamKeys.PALETTE_BLEND) { it.copy(paletteMix = sometimes(0.5f, 0.2f, 0.8f)) }
+        r(ParamKeys.MILKDROP_PALETTE_TINT) { it.copy(milkdropPaletteTint = sometimes(0.4f, 0.2f, 0.9f)) }
+        r(ParamKeys.HUE_SHIFT) { it.copy(colorShift = f(0f, 1f)) }
+        r(ParamKeys.HUE_RANGE) { it.copy(hueRange = f(0.5f, 1.5f)) }
+        r(ParamKeys.COLOR_CYCLE) { it.copy(colorCycle = chance(0.3f)) }
+        r(ParamKeys.CYCLE_SPEED) { it.copy(cycleSpeed = f(0.02f, 0.3f)) }
+        r(ParamKeys.SATURATION) { it.copy(saturation = f(0.4f, 1.4f)) }
+        r(ParamKeys.BRIGHTNESS) { it.copy(brightness = f(0.7f, 1.3f)) }
+        r(ParamKeys.CONTRAST) { it.copy(contrast = f(0.8f, 1.4f)) }
+        r(ParamKeys.GAMMA) { it.copy(gamma = f(0.8f, 1.3f)) }
+        r(ParamKeys.INTENSITY) { it.copy(intensity = f(0.7f, 1.4f)) }
+        r(ParamKeys.TEMPERATURE) { it.copy(temperature = sometimes(0.4f, -0.6f, 0.6f)) }
+        r(ParamKeys.BLOOM) { it.copy(bloom = sometimes(0.5f, 0.1f, 0.7f)) }
+        r(ParamKeys.DUOTONE) { it.copy(duotone = chance(0.1f)) }
+        r(ParamKeys.SOLARIZE) { it.copy(solarize = chance(0.05f)) }
+        r(ParamKeys.INVERT) { it.copy(invert = chance(0.03f)) }
 
         section(CustomizeTab.FX)
-        r("Chromatic aberration") { it.copy(chromaAb = sometimes(0.4f, 0.1f, 0.5f)) }
-        r("Vignette") { it.copy(vignette = sometimes(0.5f, 0.1f, 0.6f)) }
-        r("Scanlines") { it.copy(scanlines = sometimes(0.25f, 0.15f, 0.5f)) }
-        r("Film grain") { it.copy(grain = sometimes(0.3f, 0.1f, 0.4f)) }
-        r("Glitch") { it.copy(glitch = sometimes(0.2f, 0.1f, 0.4f)) }
-        r("Fisheye") { it.copy(fisheye = sometimes(0.25f, -0.5f, 0.5f)) }
-        r("Strobe") { it.copy(strobe = sometimes(0.08f, 0.15f, 0.4f)) }
+        r(ParamKeys.CHROMATIC_ABERRATION) { it.copy(chromaAb = sometimes(0.4f, 0.1f, 0.5f)) }
+        r(ParamKeys.VIGNETTE) { it.copy(vignette = sometimes(0.5f, 0.1f, 0.6f)) }
+        r(ParamKeys.SCANLINES) { it.copy(scanlines = sometimes(0.25f, 0.15f, 0.5f)) }
+        r(ParamKeys.FILM_GRAIN) { it.copy(grain = sometimes(0.3f, 0.1f, 0.4f)) }
+        r(ParamKeys.GLITCH) { it.copy(glitch = sometimes(0.2f, 0.1f, 0.4f)) }
+        r(ParamKeys.FISHEYE) { it.copy(fisheye = sometimes(0.25f, -0.5f, 0.5f)) }
+        r(ParamKeys.STROBE) { it.copy(strobe = sometimes(0.08f, 0.15f, 0.4f)) }
 
         section(CustomizeTab.FLUID)
-        r("Solver iterations") { it.copy(fluidIterations = n(12, 28)) }
-        r("Pressure") { it.copy(fluidPressure = f(0.5f, 0.95f)) }
+        r(ParamKeys.SOLVER_ITERATIONS) { it.copy(fluidIterations = n(12, 28)) }
+        r(ParamKeys.PRESSURE) { it.copy(fluidPressure = f(0.5f, 0.95f)) }
 
-        r("Fluid curl") { it.copy(fluidCurl = f(5f, 45f)) }
-        r("Motion fade") { it.copy(fluidVelocityDissipation = f(0.02f, 0.6f)) }
-        r("Fluid fade") { it.copy(fluidDensityDissipation = f(0.2f, 2.2f)) }
-        r("Chromatic aging") { it.copy(fluidChromaticAging = f(0f, 0.8f)) }
+        r(ParamKeys.FLUID_CURL) { it.copy(fluidCurl = f(5f, 45f)) }
+        r(ParamKeys.MOTION_FADE) { it.copy(fluidVelocityDissipation = f(0.02f, 0.6f)) }
+        r(ParamKeys.FLUID_FADE) { it.copy(fluidDensityDissipation = f(0.2f, 2.2f)) }
+        r(ParamKeys.CHROMATIC_AGING) { it.copy(fluidChromaticAging = f(0f, 0.8f)) }
 
-        r("Beat pattern") { it.copy(fluidBeatPattern = rng.nextInt(SceneParams.FLUID_PATTERNS.size)) }
-        r("Beat splats") { it.copy(fluidBeatSplats = n(1, 6)) }
-        r("Stirrers") { it.copy(fluidStirrers = n(0, 3)) }
-        r("Stirrer speed") { it.copy(fluidStirrerSpeed = f(0.3f, 1.6f)) }
-        r("Fluid splat radius") { it.copy(fluidSplatRadius = f(0.05f, 0.25f)) }
-        r("Fluid splat force") { it.copy(fluidSplatForce = f(0.5f, 2f)) }
-        r("Bass pump") { it.copy(fluidBassPump = chance(0.25f)) }
-        r("Treble sparkle") { it.copy(fluidSparkle = chance(0.7f)) }
-        r("Palette cycle") { it.copy(fluidPaletteCycleSpeed = f(0f, 1.2f)) }
+        r(ParamKeys.BEAT_PATTERN) { it.copy(fluidBeatPattern = rng.nextInt(SceneParams.FLUID_PATTERNS.size)) }
+        r(ParamKeys.BEAT_SPLATS) { it.copy(fluidBeatSplats = n(1, 6)) }
+        r(ParamKeys.STIRRERS) { it.copy(fluidStirrers = n(0, 3)) }
+        r(ParamKeys.STIRRER_SPEED) { it.copy(fluidStirrerSpeed = f(0.3f, 1.6f)) }
+        r(ParamKeys.FLUID_SPLAT_RADIUS) { it.copy(fluidSplatRadius = f(0.05f, 0.25f)) }
+        r(ParamKeys.FLUID_SPLAT_FORCE) { it.copy(fluidSplatForce = f(0.5f, 2f)) }
+        r(ParamKeys.BASS_PUMP) { it.copy(fluidBassPump = chance(0.25f)) }
+        r(ParamKeys.TREBLE_SPARKLE) { it.copy(fluidSparkle = chance(0.7f)) }
+        r(ParamKeys.PALETTE_CYCLE) { it.copy(fluidPaletteCycleSpeed = f(0f, 1.2f)) }
 
-        r("Path") { it.copy(fluidSpawnPath = rng.nextInt(SceneParams.FLUID_PATHS.size)) }
-        r("Spawn points") { it.copy(fluidSpawnPoints = n(2, 5)) }
-        r("Catch points") { it.copy(fluidCatchPoints = n(0, 3)) }
-        r("Catch pull") { it.copy(fluidCatchPull = f(0.4f, 1.8f)) }
-        r("Catch radius") { it.copy(fluidCatchRadius = f(0.06f, 0.2f)) }
-        r("Particle life (s)") { it.copy(fluidParticleLife = f(3f, 12f)) }
+        r(ParamKeys.PATH) { it.copy(fluidSpawnPath = rng.nextInt(SceneParams.FLUID_PATHS.size)) }
+        r(ParamKeys.SPAWN_POINTS) { it.copy(fluidSpawnPoints = n(2, 5)) }
+        r(ParamKeys.CATCH_POINTS) { it.copy(fluidCatchPoints = n(0, 3)) }
+        r(ParamKeys.CATCH_PULL) { it.copy(fluidCatchPull = f(0.4f, 1.8f)) }
+        r(ParamKeys.CATCH_RADIUS) { it.copy(fluidCatchRadius = f(0.06f, 0.2f)) }
+        r(ParamKeys.PARTICLE_LIFE_S) { it.copy(fluidParticleLife = f(3f, 12f)) }
 
-        r("Particle drag") { it.copy(fluidParticleDrag = f(0.15f, 0.9f)) }
-        r("Particle brightness") { it.copy(fluidParticleBrightness = f(0.6f, 1.6f)) }
-        r("Shading (embossed ink)") { it.copy(fluidShading = chance(0.7f)) }
-        r("Glow (fluid)") { it.copy(fluidBloom = chance(0.8f)) }
-        r("Fluid glow") { it.copy(fluidBloomIntensity = f(0.4f, 1.4f)) }
-        r("Glow threshold") { it.copy(fluidBloomThreshold = f(0.4f, 0.8f)) }
-        r("Sunrays") { it.copy(fluidSunrays = chance(0.7f)) }
-        r("Sunrays weight") { it.copy(fluidSunraysWeight = f(0.4f, 1f)) }
+        r(ParamKeys.PARTICLE_DRAG) { it.copy(fluidParticleDrag = f(0.15f, 0.9f)) }
+        r(ParamKeys.PARTICLE_BRIGHTNESS) { it.copy(fluidParticleBrightness = f(0.6f, 1.6f)) }
+        r(ParamKeys.SHADING_EMBOSSED_INK) { it.copy(fluidShading = chance(0.7f)) }
+        r(ParamKeys.GLOW_FLUID) { it.copy(fluidBloom = chance(0.8f)) }
+        r(ParamKeys.FLUID_GLOW) { it.copy(fluidBloomIntensity = f(0.4f, 1.4f)) }
+        r(ParamKeys.GLOW_THRESHOLD) { it.copy(fluidBloomThreshold = f(0.4f, 0.8f)) }
+        r(ParamKeys.SUNRAYS) { it.copy(fluidSunrays = chance(0.7f)) }
+        r(ParamKeys.SUNRAYS_WEIGHT) { it.copy(fluidSunraysWeight = f(0.4f, 1f)) }
 
-        r("Curl from mids") { it.copy(fluidCurlAudio = f(0.1f, 0.9f)) }
-        r("Glow from loudness") { it.copy(fluidBloomAudio = f(0.1f, 0.9f)) }
-        r("Fade when quiet") { it.copy(fluidFadeAudio = f(0.2f, 0.9f)) }
-        r("Radius on beat") { it.copy(fluidRadiusPulse = f(0f, 0.8f)) }
+        r(ParamKeys.CURL_FROM_MIDS) { it.copy(fluidCurlAudio = f(0.1f, 0.9f)) }
+        r(ParamKeys.GLOW_FROM_LOUDNESS) { it.copy(fluidBloomAudio = f(0.1f, 0.9f)) }
+        r(ParamKeys.FADE_WHEN_QUIET) { it.copy(fluidFadeAudio = f(0.2f, 0.9f)) }
+        r(ParamKeys.RADIUS_ON_BEAT) { it.copy(fluidRadiusPulse = f(0f, 0.8f)) }
 
-        r("Flow strength") { it.copy(flowStrength = f(0.1f, 0.7f)) }
-        r("Flow force") { it.copy(flowForce = f(0.4f, 2f)) }
-        r("Flow curl") { it.copy(flowCurl = f(5f, 40f)) }
+        r(ParamKeys.FLOW_STRENGTH) { it.copy(flowStrength = f(0.1f, 0.7f)) }
+        r(ParamKeys.FLOW_FORCE) { it.copy(flowForce = f(0.4f, 2f)) }
+        r(ParamKeys.FLOW_CURL) { it.copy(flowCurl = f(5f, 40f)) }
 
-        r("Wave speed") { it.copy(waterWaveSpeed = f(0.5f, 1.6f)) }
-        r("Damping") { it.copy(waterDamping = f(0.96f, 0.995f)) }
-        r("Ripple strength") { it.copy(waterRippleStrength = f(0.5f, 1.6f)) }
-        r("Depth") { it.copy(waterDepth = f(0.3f, 0.9f)) }
-        r("Specular") { it.copy(waterSpecular = f(0.3f, 0.9f)) }
-        r("Flow drift") { it.copy(waterFlow = f(0.05f, 0.6f)) }
-        r("Liquid") { it.copy(waterLiquid = f(0.4f, 1f)) }
-        r("Liquid flow") { it.copy(waterLiquidFlow = f(0.6f, 2.6f)) }
-        r("Liquid fade") { it.copy(waterLiquidFade = f(0.1f, 1.2f)) }
-        r("Ripple overlay strength") { it.copy(rippleOverlayStrength = f(0.15f, 0.7f)) }
-        r("Ripple glint") { it.copy(rippleOverlaySpecular = f(0.1f, 0.6f)) }
+        r(ParamKeys.WAVE_SPEED) { it.copy(waterWaveSpeed = f(0.5f, 1.6f)) }
+        r(ParamKeys.DAMPING) { it.copy(waterDamping = f(0.96f, 0.995f)) }
+        r(ParamKeys.RIPPLE_STRENGTH) { it.copy(waterRippleStrength = f(0.5f, 1.6f)) }
+        r(ParamKeys.DEPTH) { it.copy(waterDepth = f(0.3f, 0.9f)) }
+        r(ParamKeys.SPECULAR) { it.copy(waterSpecular = f(0.3f, 0.9f)) }
+        r(ParamKeys.FLOW_DRIFT) { it.copy(waterFlow = f(0.05f, 0.6f)) }
+        r(ParamKeys.LIQUID) { it.copy(waterLiquid = f(0.4f, 1f)) }
+        r(ParamKeys.LIQUID_FLOW) { it.copy(waterLiquidFlow = f(0.6f, 2.6f)) }
+        r(ParamKeys.LIQUID_FADE) { it.copy(waterLiquidFade = f(0.1f, 1.2f)) }
+        r(ParamKeys.RIPPLE_OVERLAY_STRENGTH) { it.copy(rippleOverlayStrength = f(0.15f, 0.7f)) }
+        r(ParamKeys.RIPPLE_GLINT) { it.copy(rippleOverlaySpecular = f(0.1f, 0.6f)) }
 
         section(CustomizeTab.CYMATICS)
-        r("Geometry") { it.copy(cymaticsGeometry = rng.nextInt(SceneParams.CYMATICS_GEOMETRIES.size)) }
-        r("Fundamental (Hz)") { it.copy(cymaticsFundamental = f(55f, 260f)) }
-        r("Standing waves") { it.copy(cymaticsModes = n(2, CymaticsMath.MAX_RENDERED_MODES)) }
-        r("Tonal focus") { it.copy(cymaticsFocus = f(0.35f, 1f)) }
-        r("Plate ring") { it.copy(cymaticsRing = f(0.15f, 0.8f)) }
-        r("Field scale") { it.copy(cymaticsScale = f(1.6f, 5.5f)) }
-        r("Wave flow") { it.copy(cymaticsFlow = f(0.05f, 0.8f)) }
-        r("Field swirl") { it.copy(cymaticsSwirl = f(-0.3f, 0.3f)) }
-        r("Fill") { it.copy(cymaticsFill = f(0.05f, 1f)) }
-        r("Nodal lines") { it.copy(cymaticsLine = f(0.4f, 1.7f)) }
-        r("Nodal glow") { it.copy(cymaticsGlow = f(0.3f, 1.7f)) }
-        r("Iridescence") { it.copy(cymaticsIridescence = f(0f, 1f)) }
-        r("Caustic sheen") { it.copy(cymaticsCaustic = f(0.2f, 1.3f)) }
+        r(ParamKeys.GEOMETRY) { it.copy(cymaticsGeometry = rng.nextInt(SceneParams.CYMATICS_GEOMETRIES.size)) }
+        r(ParamKeys.FUNDAMENTAL_HZ) { it.copy(cymaticsFundamental = f(55f, 260f)) }
+        r(ParamKeys.STANDING_WAVES) { it.copy(cymaticsModes = n(2, CymaticsMath.MAX_RENDERED_MODES)) }
+        r(ParamKeys.TONAL_FOCUS) { it.copy(cymaticsFocus = f(0.35f, 1f)) }
+        r(ParamKeys.PLATE_RING) { it.copy(cymaticsRing = f(0.15f, 0.8f)) }
+        r(ParamKeys.FIELD_SCALE) { it.copy(cymaticsScale = f(1.6f, 5.5f)) }
+        r(ParamKeys.WAVE_FLOW) { it.copy(cymaticsFlow = f(0.05f, 0.8f)) }
+        r(ParamKeys.FIELD_SWIRL) { it.copy(cymaticsSwirl = f(-0.3f, 0.3f)) }
+        r(ParamKeys.FILL) { it.copy(cymaticsFill = f(0.05f, 1f)) }
+        r(ParamKeys.NODAL_LINES) { it.copy(cymaticsLine = f(0.4f, 1.7f)) }
+        r(ParamKeys.NODAL_GLOW) { it.copy(cymaticsGlow = f(0.3f, 1.7f)) }
+        r(ParamKeys.IRIDESCENCE) { it.copy(cymaticsIridescence = f(0f, 1f)) }
+        r(ParamKeys.CAUSTIC_SHEEN) { it.copy(cymaticsCaustic = f(0.2f, 1.3f)) }
 
         section(CustomizeTab.HYPERSPACE)
-        r("Act") { it.copy(hyperAct = rng.nextInt(HyperspaceMath.ACTS.size)) }
-        r("Act length (s)") { it.copy(hyperCycleSeconds = f(12f, 90f)) }
-        r("Fractal") { it.copy(hyperSpecies = rng.nextInt(SceneParams.HYPERSPACE_SPECIES.size)) }
-        r("Bodies") { it.copy(hyperBodies = f(0.5f, 1.6f)) }
-        r("Body life (s)") { it.copy(hyperLifetime = f(6f, 30f)) }
-        r("Body spin") { it.copy(hyperSpin = f(0.3f, 2f)) }
-        r("Orbit drift") { it.copy(hyperOrbit = f(0.3f, 2f)) }
-        r("Camera drift") { it.copy(hyperCamera = f(0.3f, 2f)) }
-        r("Fold") { it.copy(hyperFold = f(0.15f, 0.9f)) }
-        r("Body glow") { it.copy(hyperGlow = f(0.4f, 1.6f)) }
-        r("Neon rim") { it.copy(hyperNeon = f(0.3f, 1.8f)) }
-        r("Filigree") { it.copy(hyperField = f(0.2f, 1.6f)) }
-        r("Haze") { it.copy(hyperHaze = f(0.2f, 1.4f)) }
-        r("Mirror folds") { it.copy(hyperMirrorFolds = n(3, 12)) }
-        r("Colour banding") { it.copy(hyperTrap = f(0.2f, 1.3f)) }
-        r("Melt") { it.copy(hyperMelt = f(0.15f, 1.1f)) }
-        r("Ink stain") { it.copy(hyperStain = f(0.15f, 1.1f)) }
-        r("Liquid light") { it.copy(hyperLiquid = f(0.1f, 1.1f)) }
-        r("Ridges") { it.copy(hyperRidges = f(0f, 0.9f)) }
-        r("Stir") { it.copy(hyperStir = f(0.4f, 2f)) }
-        r("Vorticity") { it.copy(hyperSwirl = f(8f, 42f)) }
-        r("Flow fade") { it.copy(hyperFlowFade = f(0.1f, 1.2f)) }
+        r(ParamKeys.ACT) { it.copy(hyperAct = rng.nextInt(HyperspaceMath.ACTS.size)) }
+        r(ParamKeys.ACT_LENGTH_S) { it.copy(hyperCycleSeconds = f(12f, 90f)) }
+        r(ParamKeys.FRACTAL) { it.copy(hyperSpecies = rng.nextInt(SceneParams.HYPERSPACE_SPECIES.size)) }
+        r(ParamKeys.BODIES) { it.copy(hyperBodies = f(0.5f, 1.6f)) }
+        r(ParamKeys.BODY_LIFE_S) { it.copy(hyperLifetime = f(6f, 30f)) }
+        r(ParamKeys.BODY_SPIN) { it.copy(hyperSpin = f(0.3f, 2f)) }
+        r(ParamKeys.ORBIT_DRIFT) { it.copy(hyperOrbit = f(0.3f, 2f)) }
+        r(ParamKeys.CAMERA_DRIFT) { it.copy(hyperCamera = f(0.3f, 2f)) }
+        r(ParamKeys.FOLD) { it.copy(hyperFold = f(0.15f, 0.9f)) }
+        r(ParamKeys.BODY_GLOW) { it.copy(hyperGlow = f(0.4f, 1.6f)) }
+        r(ParamKeys.NEON_RIM) { it.copy(hyperNeon = f(0.3f, 1.8f)) }
+        r(ParamKeys.FILIGREE) { it.copy(hyperField = f(0.2f, 1.6f)) }
+        r(ParamKeys.HAZE) { it.copy(hyperHaze = f(0.2f, 1.4f)) }
+        r(ParamKeys.MIRROR_FOLDS) { it.copy(hyperMirrorFolds = n(3, 12)) }
+        r(ParamKeys.COLOUR_BANDING) { it.copy(hyperTrap = f(0.2f, 1.3f)) }
+        r(ParamKeys.MELT) { it.copy(hyperMelt = f(0.15f, 1.1f)) }
+        r(ParamKeys.INK_STAIN) { it.copy(hyperStain = f(0.15f, 1.1f)) }
+        r(ParamKeys.LIQUID_LIGHT) { it.copy(hyperLiquid = f(0.1f, 1.1f)) }
+        r(ParamKeys.RIDGES) { it.copy(hyperRidges = f(0f, 0.9f)) }
+        r(ParamKeys.STIR) { it.copy(hyperStir = f(0.4f, 2f)) }
+        r(ParamKeys.VORTICITY) { it.copy(hyperSwirl = f(8f, 42f)) }
+        r(ParamKeys.FLOW_FADE) { it.copy(hyperFlowFade = f(0.1f, 1.2f)) }
 
         return s
     }
