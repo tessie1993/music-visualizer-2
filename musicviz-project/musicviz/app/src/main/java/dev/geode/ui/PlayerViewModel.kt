@@ -8,7 +8,6 @@ import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.PlaybackException
-import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -16,14 +15,12 @@ import dev.geode.analysis.AudioFeatures
 import dev.geode.analysis.FeatureTimeline
 import dev.geode.analysis.IntelligenceMode
 import dev.geode.analysis.LiveInputProfile
-import dev.geode.analysis.PlaybackMath
 import dev.geode.audio.AudioBus
 import dev.geode.audio.AudioFxState
 import dev.geode.audio.MicCapture
 import dev.geode.data.MilkPackImporter
 import dev.geode.data.MilkTexture
 import dev.geode.data.PlayerPrefs
-import dev.geode.data.PlayerPrefsStore
 import dev.geode.data.Preset
 import dev.geode.export.ExportAspect
 import dev.geode.export.ExportRange
@@ -34,16 +31,12 @@ import dev.geode.playback.PlaybackErrors
 import dev.geode.playback.PlaybackService
 import dev.geode.render.AdsrConfig
 import dev.geode.render.LfoConfig
-import dev.geode.render.TransitionCatalog
 import dev.geode.render.TransitionStyle
 import dev.geode.render.scene.CustomizeTab
 import dev.geode.render.scene.PcmChunk
-import dev.geode.render.scene.SceneIds
 import dev.geode.render.scene.SceneParams
-import dev.geode.render.scene.TouchTransform
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -55,78 +48,6 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-data class PlayerUiState(
-    val isPlaying: Boolean = false,
-    val positionMs: Long = 0,
-    val durationMs: Long = 0,
-    val title: String? = null,
-    val artist: String? = null,
-    val hasMedia: Boolean = false,
-    val queueSize: Int = 0,
-    val queueIndex: Int = 0,
-    val shuffle: Boolean = false,
-    val repeatMode: Int = Player.REPEAT_MODE_OFF,
-)
-
-data class VizUiState(
-    val sceneId: String = SceneIds.DEFAULT,
-    val intelligenceMode: IntelligenceMode = IntelligenceMode.MANUAL,
-    val suggestedSceneId: String? = null,
-    val attack: Float = 0.6f,
-    val decay: Float = 0.12f,
-    val analyzing: Boolean = false,
-    val analysisProgress: Float = 0f,
-    val bpm: Float = 0f,
-    val sections: List<Long> = emptyList(),
-    val shaderError: String? = null,
-    val presets: List<Preset> = emptyList(),
-    val params: SceneParams = SceneParams.DEFAULT,
-    val vizPlaylist: List<VizPlaylistEntry> = emptyList(),
-    val vizPlaylistEnabled: Boolean = false,
-    val vizPlaylistIntervalSec: Int = 30,
-    val vizPlaylistIntelligent: Boolean = false,
-    val transitionStyle: TransitionStyle = TransitionStyle.FADE,
-    val transitionId: String = TransitionStyle.FADE.name.lowercase(),
-    val transitionDurationSec: Float = 1.2f,
-    val randomEnabled: Boolean = false,
-    val randomIntervalSec: Int = 20,
-    val randomOnBeat: Boolean = true,
-    val randomIncludeStyles: Boolean = true,
-    val randomIncludePresets: Boolean = true,
-    val randomIncludeMilk: Boolean = false,
-    val randomizeColors: Boolean = false,
-    val sectionStaging: Boolean = false,
-)
-
-data class VizPlaylistEntry(
-    val sceneId: String,
-    val presetName: String? = null,
-    val milkPath: String? = null,
-    val label: String,
-)
-
-data class VizApply(
-    val milkPath: String? = null,
-    val customShader: String? = null,
-    val sceneId: String? = null,
-)
-
-data class MilkFile(
-    val name: String,
-    val path: String,
-)
-
-data class QueueTrack(
-    val uri: String,
-    val title: String = "",
-    val artist: String = "",
-)
-
-data class QueueUiState(
-    val tracks: List<QueueTrack> = emptyList(),
-    val index: Int = 0,
-)
-
 @OptIn(UnstableApi::class)
 class PlayerViewModel(
     application: Application,
@@ -137,7 +58,7 @@ class PlayerViewModel(
 
     private val engine = playback.analysis
 
-    private val captureController =
+    private val captureController: CaptureController =
         CaptureController(
             application,
             viewModelScope,
@@ -155,7 +76,7 @@ class PlayerViewModel(
                 }
 
                 override fun setMicReactivePref(on: Boolean) {
-                    setGuiPrefs(_guiPrefs.value.copy(micReactive = on))
+                    setGuiPrefs(guiPrefs.value.copy(micReactive = on))
                 }
             },
         )
@@ -176,22 +97,11 @@ class PlayerViewModel(
 
     fun notificationAccessIntent(): Intent = captureController.notificationAccessIntent()
 
-    fun applyLiveInputProfile(profile: LiveInputProfile) {
-        setGuiPrefs(
-            _guiPrefs.value.copy(
-                beatSensitivity = profile.beatSigma,
-                beatMinIntervalMs = profile.beatIntervalMs,
-            ),
-        )
-        setReactivity(profile.attack, profile.decay)
-        setSceneParams(profile.apply(_vizState.value.params))
-    }
-
     init {
         playback.onAudioFormat = captureController.audioFormatHook
     }
 
-    private val presetLibrary =
+    private val presetLibrary: PresetLibraryController =
         PresetLibraryController(
             application,
             viewModelScope,
@@ -203,15 +113,39 @@ class PlayerViewModel(
                     _vizState.update { it.copy(presets = transform(it.presets)) }
                 }
 
-                override val presetMirrorUri: String? get() = _guiPrefs.value.presetMirrorUri
+                override val presetMirrorUri: String? get() = guiPrefs.value.presetMirrorUri
                 override val activeMilkPath: String? get() = vizStateStore.activeMilkPath.value
             },
         )
-    private val themeStore = ThemeStore(application)
-    private val playerPrefsStore = PlayerPrefsStore(application)
     private val autoVisualsPrefsStore = AutoVisualsPrefsStore(application)
     private val vizStateStore = VizStateStore(application, viewModelScope, autoVisualsPrefsStore)
     private val audioFxController = playback.audioFx
+
+    private val settings: PlayerSettingsController =
+        PlayerSettingsController(
+            application,
+            playback.player,
+            engine,
+            playback.audioFx,
+            object : PlayerSettingsController.Host {
+                override fun redecideCachedBeats(prefs: GuiPrefs) = analysis.redecideCachedBeats(prefs)
+
+                override fun refreshUi() = refresh()
+            },
+        )
+
+    private val visual: VisualSettingsController =
+        VisualSettingsController(
+            engine,
+            vizStateStore,
+            object : VisualSettingsController.Host {
+                override val guiPrefs: GuiPrefs get() = settings.guiPrefs.value
+
+                override fun setGuiPrefs(prefs: GuiPrefs) = settings.setGuiPrefs(prefs)
+
+                override fun milkPathFor(preset: Preset): String? = presetLibrary.milkPresetPathFor(preset)
+            },
+        )
 
     val player: ExoPlayer = playback.player
 
@@ -221,6 +155,13 @@ class PlayerViewModel(
     private val _vizState get() = vizStateStore.state
     val vizState: StateFlow<VizUiState> get() = vizStateStore.state
 
+    init {
+        engine.beatSensitivity = settings.guiPrefs.value.beatSensitivity
+        engine.beatMinIntervalMs = settings.guiPrefs.value.effectiveBeatMinIntervalMs
+        engine.attack = _vizState.value.attack
+        engine.decay = _vizState.value.decay
+    }
+
     val exportState: StateFlow<ExportUiState> get() = exportController.exportState
 
     private val musicLibrary = MusicLibraryController(application, viewModelScope)
@@ -229,102 +170,40 @@ class PlayerViewModel(
 
     val trackOverrides: StateFlow<Map<String, LibraryTrack>> get() = musicLibrary.trackOverrides
 
-    private val _theme = MutableStateFlow(themeStore.load())
-    val theme: StateFlow<dev.geode.ui.theme.ThemePack> = _theme
+    val theme: StateFlow<dev.geode.ui.theme.ThemePack> get() = settings.theme
 
-    private val _guiPrefs = MutableStateFlow(themeStore.loadGui())
+    val guiPrefs: StateFlow<GuiPrefs> get() = settings.guiPrefs
 
-    init {
-        engine.beatSensitivity = _guiPrefs.value.beatSensitivity
-        engine.beatMinIntervalMs = _guiPrefs.value.effectiveBeatMinIntervalMs
-        engine.attack = _vizState.value.attack
-        engine.decay = _vizState.value.decay
-    }
+    val playerPrefs: StateFlow<PlayerPrefs> get() = settings.playerPrefs
 
-    val guiPrefs: StateFlow<GuiPrefs> = _guiPrefs
+    val audioFx: StateFlow<AudioFxState> get() = settings.audioFxState
 
-    fun setGuiPrefs(prefs: GuiPrefs) {
-        val previous = _guiPrefs.value
-        themeStore.saveGui(prefs)
-        _guiPrefs.value = prefs
-        engine.beatSensitivity = prefs.beatSensitivity
-        engine.beatMinIntervalMs = prefs.effectiveBeatMinIntervalMs
-        val sensitivityChanged =
-            previous.beatSensitivity != prefs.beatSensitivity ||
-                previous.effectiveBeatMinIntervalMs != prefs.effectiveBeatMinIntervalMs
-        if (sensitivityChanged) analysis.redecideCachedBeats(prefs)
-    }
+    fun setGuiPrefs(prefs: GuiPrefs) = settings.setGuiPrefs(prefs)
 
-    fun setTheme(theme: dev.geode.ui.theme.ThemePack) {
-        themeStore.save(theme)
-        _theme.value = theme
-    }
+    fun setTheme(theme: dev.geode.ui.theme.ThemePack) = settings.setTheme(theme)
 
-    private val _playerPrefs = MutableStateFlow(playerPrefsStore.load())
+    fun setPlayerPrefs(prefs: PlayerPrefs) = settings.setPlayerPrefs(prefs)
 
-    val playerPrefs: StateFlow<PlayerPrefs> = _playerPrefs
-
-    fun setPlayerPrefs(prefs: PlayerPrefs) {
-        val p =
-            prefs.copy(
-                speed = prefs.speed.coerceIn(0.5f, 2f),
-                pitchSemitones = prefs.pitchSemitones.coerceIn(-6f, 6f),
-                sleepTimerMinutes = prefs.sleepTimerMinutes.coerceAtLeast(0),
-            )
-        _playerPrefs.value = p
-        playerPrefsStore.save(p)
-        applyPlaybackPrefs(p)
-    }
-
-    private fun applyPlaybackPrefs(p: PlayerPrefs) {
-        player.playbackParameters = PlaybackParameters(p.speed, PlaybackMath.semitonesToRatio(p.pitchSemitones))
-        player.skipSilenceEnabled = p.skipSilence
-        player.setHandleAudioBecomingNoisy(p.pauseOnNoisy)
-    }
-
-    private fun persistPlayerOptions() {
-        val p = _playerPrefs.value.copy(shuffle = player.shuffleModeEnabled, repeatMode = player.repeatMode)
-        _playerPrefs.value = p
-        playerPrefsStore.save(p)
-    }
-
-    private val _audioFx = MutableStateFlow(audioFxController.snapshot())
-
-    val audioFx: StateFlow<AudioFxState> = _audioFx
-
-    private fun refreshAudioFx() {
-        _audioFx.value = audioFxController.snapshot()
-    }
-
-    fun setAudioFxEnabled(enabled: Boolean) {
-        audioFxController.setEnabled(enabled)
-        refreshAudioFx()
-    }
+    fun setAudioFxEnabled(enabled: Boolean) = settings.setAudioFxEnabled(enabled)
 
     fun setAudioFxBand(
         band: Int,
         levelMb: Int,
-    ) {
-        audioFxController.setBandLevel(band, levelMb)
-        refreshAudioFx()
-    }
+    ) = settings.setAudioFxBand(band, levelMb)
 
-    fun useAudioFxPreset(index: Int) {
-        audioFxController.usePreset(index)
-        refreshAudioFx()
-    }
+    fun useAudioFxPreset(index: Int) = settings.useAudioFxPreset(index)
 
-    fun setAudioFxBassBoost(strength: Int) {
-        audioFxController.setBassBoost(strength)
-        refreshAudioFx()
-    }
+    fun setAudioFxBassBoost(strength: Int) = settings.setAudioFxBassBoost(strength)
 
-    fun setAudioFxLoudness(gainMb: Int) {
-        audioFxController.setLoudness(gainMb)
-        refreshAudioFx()
-    }
+    fun setAudioFxLoudness(gainMb: Int) = settings.setAudioFxLoudness(gainMb)
 
-    private val textureController =
+    fun toggleShuffle() = settings.toggleShuffle()
+
+    fun cycleRepeatMode() = settings.cycleRepeatMode()
+
+    fun applyLiveInputProfile(profile: LiveInputProfile) = visual.applyLiveInputProfile(profile)
+
+    private val textureController: TextureController =
         TextureController(
             application,
             viewModelScope,
@@ -337,13 +216,13 @@ class PlayerViewModel(
 
     val textures: StateFlow<List<MilkTexture>> get() = textureController.textures
 
-    private val modulation =
+    private val modulation: ModulationController =
         ModulationController(
             application,
             object : ModulationController.Host {
                 override val params: SceneParams get() = _vizState.value.params
 
-                override fun setSceneParams(params: SceneParams) = this@PlayerViewModel.setSceneParams(params)
+                override fun setSceneParams(params: SceneParams) = visual.setSceneParams(params)
             },
         )
 
@@ -422,7 +301,7 @@ class PlayerViewModel(
 
     private var currentUri: Uri? = null
 
-    private val listening =
+    private val listening: ListeningTracker =
         ListeningTracker(
             application,
             storeWriter,
@@ -440,7 +319,7 @@ class PlayerViewModel(
 
     val favourites: StateFlow<Set<String>> get() = listening.favourites
 
-    private val takeController =
+    private val takeController: TakeController =
         TakeController(
             application,
             viewModelScope,
@@ -453,16 +332,14 @@ class PlayerViewModel(
                 override val trackPositionMs: Long
                     get() = runCatching { player.currentPosition }.getOrDefault(0L)
 
-                override fun selectScene(sceneId: String) = this@PlayerViewModel.selectScene(sceneId)
+                override fun selectScene(sceneId: String) = visual.selectScene(sceneId)
 
-                override fun setSceneParams(params: SceneParams) = this@PlayerViewModel.setSceneParams(params)
+                override fun setSceneParams(params: SceneParams) = visual.setSceneParams(params)
 
                 override fun applyMilk(
                     path: String,
                     sceneId: String,
-                ) {
-                    _vizApply.tryEmit(VizApply(milkPath = path, sceneId = sceneId))
-                }
+                ) = visual.emitApply(VizApply(milkPath = path, sceneId = sceneId))
             },
         )
 
@@ -471,20 +348,20 @@ class PlayerViewModel(
     private val _presetLocked = MutableStateFlow(false)
     val presetLocked: StateFlow<Boolean> = _presetLocked
 
-    private val trackColor =
+    private val trackColor: TrackColorController =
         TrackColorController(
             application,
             viewModelScope,
             object : TrackColorController.Host {
                 override val currentUri: Uri? get() = this@PlayerViewModel.currentUri
-                override val keyColorEnabled: Boolean get() = _guiPrefs.value.keyColor
+                override val keyColorEnabled: Boolean get() = guiPrefs.value.keyColor
                 override val params: SceneParams get() = _vizState.value.params
                 override val currentTrackKey: String? get() = currentTrackKey()
 
-                override fun setSceneParams(params: SceneParams) = this@PlayerViewModel.setSceneParams(params)
+                override fun setSceneParams(params: SceneParams) = visual.setSceneParams(params)
 
                 override fun persistKeyColorPref(enabled: Boolean) {
-                    setGuiPrefs(_guiPrefs.value.copy(keyColor = enabled))
+                    setGuiPrefs(guiPrefs.value.copy(keyColor = enabled))
                 }
             },
         )
@@ -505,13 +382,13 @@ class PlayerViewModel(
             ?.takeIf { it.isNotBlank() }
     }
 
-    private val analysis =
+    private val analysis: TrackAnalysisController =
         TrackAnalysisController(
             application,
             viewModelScope,
             object : TrackAnalysisController.Host {
                 override val currentUri: Uri? get() = this@PlayerViewModel.currentUri
-                override val guiPrefs: GuiPrefs get() = _guiPrefs.value
+                override val guiPrefs: GuiPrefs get() = settings.guiPrefs.value
                 override val vizState: MutableStateFlow<VizUiState> get() = _vizState
                 override val playerPositionMs: Long get() = player.currentPosition
                 override val presetLocked: Boolean get() = _presetLocked.value
@@ -572,31 +449,14 @@ class PlayerViewModel(
             )
     }
 
-    fun toggleShuffle() {
-        player.shuffleModeEnabled = !player.shuffleModeEnabled
-        persistPlayerOptions()
-        refresh()
-    }
-
-    fun cycleRepeatMode() {
-        player.repeatMode =
-            when (player.repeatMode) {
-                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-                Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-                else -> Player.REPEAT_MODE_OFF
-            }
-        persistPlayerOptions()
-        refresh()
-    }
-
     private val sleepTimer = playback.sleepTimer
 
-    private val fades =
+    private val fades: PlaybackFades =
         PlaybackFades(
             viewModelScope,
             object : PlaybackFades.Host {
                 override val player: Player get() = this@PlayerViewModel.player
-                override val fadeMs: Int get() = _playerPrefs.value.fadeMs
+                override val fadeMs: Int get() = settings.playerPrefs.value.fadeMs
 
                 override fun stopLiveInput() {
                     if (captureController.micActive) setMicEnabled(false)
@@ -611,23 +471,19 @@ class PlayerViewModel(
             cancelSleepTimer()
             return
         }
-        setPlayerPrefs(_playerPrefs.value.copy(sleepTimerMinutes = minutes))
-        sleepTimer.start(minutes, _playerPrefs.value.sleepFinishTrack)
+        setPlayerPrefs(settings.playerPrefs.value.copy(sleepTimerMinutes = minutes))
+        sleepTimer.start(minutes, settings.playerPrefs.value.sleepFinishTrack)
     }
 
     fun cancelSleepTimer() {
         sleepTimer.cancel()
     }
 
-    private val _vizApply = MutableSharedFlow<VizApply>(extraBufferCapacity = 8)
+    val vizApply: SharedFlow<VizApply> get() = visual.vizApply
 
-    val vizApply: SharedFlow<VizApply> = _vizApply
+    val morphFade: SharedFlow<Float> get() = visual.morphFade
 
-    private val _morphFade = MutableSharedFlow<Float>(extraBufferCapacity = 4)
-
-    val morphFade: SharedFlow<Float> = _morphFade
-
-    private val autoVisuals =
+    private val autoVisuals: AutoVisualsController =
         AutoVisualsController(
             autoVisualsPrefsStore,
             object : AutoVisualsController.Host {
@@ -642,18 +498,16 @@ class PlayerViewModel(
 
                 override val presetLocked: Boolean get() = _presetLocked.value
 
-                override fun selectScene(sceneId: String) = this@PlayerViewModel.selectScene(sceneId)
+                override fun selectScene(sceneId: String) = visual.selectScene(sceneId)
 
-                override fun applyPreset(preset: Preset) = this@PlayerViewModel.applyPreset(preset)
+                override fun applyPreset(preset: Preset) = visual.applyPreset(preset)
 
                 override fun applyMilk(
                     path: String,
                     sceneId: String,
-                ) {
-                    _vizApply.tryEmit(VizApply(milkPath = path, sceneId = sceneId))
-                }
+                ) = visual.emitApply(VizApply(milkPath = path, sceneId = sceneId))
 
-                override fun analyzeCurrentTrack() = this@PlayerViewModel.analyzeCurrentTrack()
+                override fun analyzeCurrentTrack() = analysis.analyzeCurrentTrack()
 
                 override fun milkFilesAsync(onDone: (List<MilkFile>) -> Unit) = milkPresetFilesAsync(onDone)
             },
@@ -668,29 +522,6 @@ class PlayerViewModel(
     fun setVizPlaylistIntelligent(enabled: Boolean) = autoVisuals.setVizPlaylistIntelligent(enabled)
 
     fun setVizPlaylistInterval(seconds: Int) = autoVisuals.setVizPlaylistInterval(seconds)
-
-    fun applyCustomShader(source: String) {
-        val sceneId = _vizState.value.sceneId
-        _vizState.update { it.copy(shaderError = null) }
-        _vizApply.tryEmit(VizApply(customShader = source, sceneId = sceneId))
-    }
-
-    fun setTransitionStyle(style: TransitionStyle) {
-        _vizState.update { it.copy(transitionStyle = style, transitionId = style.name.lowercase()) }
-    }
-
-    fun setTransitionId(id: String) {
-        _vizState.update {
-            it.copy(
-                transitionId = id,
-                transitionStyle = TransitionCatalog.builtIn(id) ?: it.transitionStyle,
-            )
-        }
-    }
-
-    fun setTransitionDuration(seconds: Float) {
-        _vizState.update { it.copy(transitionDurationSec = seconds.coerceIn(0.3f, 5f)) }
-    }
 
     fun setRandomEnabled(enabled: Boolean) = autoVisuals.setRandomEnabled(enabled)
 
@@ -855,7 +686,7 @@ class PlayerViewModel(
 
     fun userMilkPresets(): List<File> = presetLibrary.userMilkPresets()
 
-    private val queueController =
+    private val queueController: QueueController =
         QueueController(
             application,
             object : QueueController.Host {
@@ -902,7 +733,7 @@ class PlayerViewModel(
 
     fun togglePlayPause() {
         if (!player.isPlaying && captureController.micActive) setMicEnabled(false)
-        if (_playerPrefs.value.fadeMs > 0) {
+        if (settings.playerPrefs.value.fadeMs > 0) {
             togglePlayPauseFaded()
         } else if (player.isPlaying) {
             player.pause()
@@ -956,44 +787,33 @@ class PlayerViewModel(
 
     fun setExportTake(name: String?) = takeController.setExportTake(name)
 
-    fun selectScene(sceneId: String) {
-        _vizState.update { it.copy(sceneId = sceneId) }
-        vizStateStore.persist()
-    }
+    fun selectScene(sceneId: String) = visual.selectScene(sceneId)
 
     fun setReactivity(
         attack: Float,
         decay: Float,
-    ) {
-        engine.attack = attack
-        engine.decay = decay
-        _vizState.update { it.copy(attack = attack, decay = decay) }
-        vizStateStore.persist()
-    }
+    ) = visual.setReactivity(attack, decay)
 
-    fun setSceneParams(params: SceneParams) {
-        _vizState.update { it.copy(params = params) }
-        vizStateStore.persist()
-    }
+    fun setSceneParams(params: SceneParams) = visual.setSceneParams(params)
 
-    fun resetSceneParams() = setSceneParams(SceneParams.DEFAULT)
+    fun resetSceneParams() = visual.resetSceneParams()
 
     fun nudgeTransform(
         zoomFactor: Float,
         rotationDegrees: Float,
-    ) {
-        val p = _vizState.value.params
-        val next =
-            p.copy(
-                zoom = TouchTransform.zoom(p.zoom, zoomFactor),
-                rotation = TouchTransform.rotation(p.rotation, rotationDegrees),
-            )
-        if (next != p) setSceneParams(next)
-    }
+    ) = visual.nudgeTransform(zoomFactor, rotationDegrees)
 
-    fun reportShaderError(error: String?) {
-        _vizState.update { it.copy(shaderError = error) }
-    }
+    fun reportShaderError(error: String?) = visual.reportShaderError(error)
+
+    fun applyCustomShader(source: String) = visual.applyCustomShader(source)
+
+    fun setTransitionStyle(style: TransitionStyle) = visual.setTransitionStyle(style)
+
+    fun setTransitionId(id: String) = visual.setTransitionId(id)
+
+    fun setTransitionDuration(seconds: Float) = visual.setTransitionDuration(seconds)
+
+    fun applyPreset(preset: Preset) = visual.applyPreset(preset)
 
     internal fun awaitStoreWrites(timeoutMs: Long = STORE_FLUSH_BUDGET_MS) {
         runCatching { storeWriter.submit {}.get(timeoutMs.coerceAtLeast(0L), TimeUnit.MILLISECONDS) }
@@ -1011,34 +831,6 @@ class PlayerViewModel(
 
     fun noteMilkPreset(path: String) = vizStateStore.noteMilkPreset(path)
 
-    private fun emitPresetMorph() {
-        val beats = _guiPrefs.value.morphBeats
-        if (beats <= 0) return
-        val bpm = features.value.bpm.takeIf { it > 40f } ?: 120f
-        _morphFade.tryEmit(beats * 60f / bpm)
-    }
-
-    fun applyPreset(preset: Preset) {
-        engine.attack = preset.attack
-        engine.decay = preset.decay
-        _vizState.update {
-            it.copy(
-                sceneId = preset.sceneId,
-                params = preset.params,
-                attack = preset.attack,
-                decay = preset.decay,
-            )
-        }
-        vizStateStore.persist()
-        emitPresetMorph()
-        preset.customShader?.let {
-            _vizApply.tryEmit(VizApply(customShader = it, sceneId = preset.sceneId))
-        }
-        milkPresetPathFor(preset)?.let {
-            _vizApply.tryEmit(VizApply(milkPath = it, sceneId = preset.sceneId))
-        }
-    }
-
     fun presetShareLink(name: String): String? = presetLibrary.presetShareLink(name)
 
     fun importPresetLink(text: String): String? = presetLibrary.importPresetLink(text)
@@ -1052,7 +844,7 @@ class PlayerViewModel(
 
     fun deletePreset(name: String) = presetLibrary.deletePreset(name)
 
-    private val exportController =
+    private val exportController: ExportController =
         ExportController(
             application,
             viewModelScope,
@@ -1069,7 +861,7 @@ class PlayerViewModel(
                     onProgress: (Float) -> Unit,
                 ): FeatureTimeline = analysis.analyzeCached(uri, onProgress)
 
-                override val guiPrefs: GuiPrefs get() = _guiPrefs.value
+                override val guiPrefs: GuiPrefs get() = settings.guiPrefs.value
                 override val sceneId: String get() = _vizState.value.sceneId
                 override val sceneParams get() = _vizState.value.params
 
@@ -1156,10 +948,10 @@ class PlayerViewModel(
         presetLibrary.refreshInitial()
         musicLibrary.refresh()
         textureController.refresh()
-        val pp = _playerPrefs.value
+        val pp = settings.playerPrefs.value
         player.shuffleModeEnabled = pp.shuffle
         player.repeatMode = pp.repeatMode
-        applyPlaybackPrefs(pp)
+        settings.applyPlaybackPrefs(pp)
         val alreadyLoaded = player.currentMediaItem != null
         if (alreadyLoaded) {
             currentUri = player.currentMediaItem?.localConfiguration?.uri
@@ -1209,7 +1001,7 @@ class PlayerViewModel(
 
                 override fun onAudioSessionIdChanged(audioSessionId: Int) {
                     audioFxController.attach(audioSessionId)
-                    refreshAudioFx()
+                    settings.refreshAudioFx()
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
@@ -1250,7 +1042,7 @@ class PlayerViewModel(
         player.addListener(listener)
         sleepTimer.onFadeVolume = fades.sleepFadeHook
         audioFxController.attach(player.audioSessionId)
-        refreshAudioFx()
+        settings.refreshAudioFx()
         if (alreadyLoaded) onTrackChanged()
         viewModelScope.launch {
             while (true) {
