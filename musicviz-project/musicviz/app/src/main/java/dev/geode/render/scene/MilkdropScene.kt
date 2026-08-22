@@ -123,6 +123,15 @@ class MilkdropScene(
     private var diagFrames = 0
     private var diagDone = false
 
+    /**
+     * Scratch for [draw]'s two glGetIntegerv binding captures. Fields, not
+     * locals: the only per-frame allocations left anywhere in `render/`, and
+     * both are dead by the next frame - the values are consumed inside the
+     * same [draw] call that fills them.
+     */
+    private val prevFbo = IntArray(1)
+    private val prevReadFbo = IntArray(1)
+
     /** Two RGBA probe pixels for [diagnoseBlackFrame]; allocated once. */
     private val diagPixels: java.nio.ByteBuffer =
         java.nio.ByteBuffer
@@ -323,7 +332,6 @@ class MilkdropScene(
         // the engine ends its frame on framebuffer 0 and the post pass must
         // land back on whatever the renderer was filling (its scene FBO, or
         // a transition target).
-        val prevFbo = IntArray(1)
         GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
         ensureEngine()
         ensureFrameTexture()
@@ -365,7 +373,6 @@ class MilkdropScene(
         // renderer's READ binding is captured and restored: the persistence
         // pass and the field sims read through GL_READ_FRAMEBUFFER later this
         // frame, and leaving it on 0 would point them at the window.
-        val prevReadFbo = IntArray(1)
         GLES30.glGetIntegerv(GLES30.GL_READ_FRAMEBUFFER_BINDING, prevReadFbo, 0)
         GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, 0)
         GLES30.glReadBuffer(GLES30.GL_BACK)
