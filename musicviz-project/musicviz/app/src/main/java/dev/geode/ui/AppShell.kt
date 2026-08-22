@@ -191,7 +191,7 @@ fun AppRoot(viewModel: PlayerViewModel) {
                                 onOpenNowPlaying = { expanded = true },
                                 liveBackdrop = gui.clearVisualsMenu && !expanded && !onSecondScreen,
                             )
-                        3 -> StudioScreen(viewModel)
+                        3 -> StudioRoute()
                         4 -> SettingsScreen(viewModel, visualizerView)
                     }
                 }

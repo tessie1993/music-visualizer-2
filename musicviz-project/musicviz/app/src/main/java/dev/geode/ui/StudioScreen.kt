@@ -30,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,15 +49,49 @@ import dev.geode.export.StudioClip
 import kotlin.math.roundToInt
 
 @Composable
-fun StudioScreen(viewModel: PlayerViewModel) {
-    val context = LocalContext.current
+fun StudioRoute(viewModel: StudioViewModel = geodeViewModel()) {
     val studio by viewModel.studio.collectAsStateWithLifecycle()
-    var editing by remember { mutableStateOf<StudioClip?>(null) }
     LaunchedEffect(Unit) { viewModel.refreshStudioClips() }
+    StudioScreen(
+        state = studio,
+        onDescribe = viewModel::describeStudioClip,
+        onRename = viewModel::renameStudioClip,
+        onDelete = viewModel::deleteStudioClip,
+        onExport = viewModel::startStudioExport,
+        onCancelExport = viewModel::cancelStudioExport,
+        onClearResult = viewModel::clearStudioResult,
+    )
+}
+
+@Composable
+internal fun StudioScreen(
+    state: StudioUiState,
+    onDescribe: (Uri, (StudioClip) -> Unit) -> Unit,
+    onRename: (String, String, (Boolean) -> Unit) -> Unit,
+    onDelete: (String, (Boolean) -> Unit) -> Unit,
+    onExport: (StudioClip, ClipEdit) -> Unit,
+    onCancelExport: () -> Unit,
+    onClearResult: () -> Unit,
+) {
+    val context = LocalContext.current
+    var editingUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var editing by remember { mutableStateOf<StudioClip?>(null) }
+    LaunchedEffect(editingUri) {
+        val wanted: String? = editingUri
+        when {
+            wanted == null -> editing = null
+            editing?.uri != wanted -> onDescribe(Uri.parse(wanted)) { editing = it }
+        }
+    }
 
     val picker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            if (uri != null) viewModel.describeStudioClip(uri) { editing = it }
+            if (uri != null) {
+                onDescribe(uri) {
+                    editing = it
+                    editingUri = it.uri
+                }
+            }
         }
 
     val chooserTitle = stringResource(R.string.studio_share_chooser)
@@ -70,21 +105,26 @@ fun StudioScreen(viewModel: PlayerViewModel) {
         val clip = editing
         if (clip == null) {
             ClipLibrary(
-                studio = studio,
-                onOpen = { editing = it },
+                studio = state,
+                onOpen = {
+                    editing = it
+                    editingUri = it.uri
+                },
                 onPick = { picker.launch(arrayOf("video/*")) },
                 onShare = { context.shareVideo(it, chooserTitle) },
-                onRename = { clip, name, done -> viewModel.renameStudioClip(clip.uri, name, done) },
-                onDelete = { clip, done -> viewModel.deleteStudioClip(clip.uri, done) },
+                onRename = { target, name, done -> onRename(target.uri, name, done) },
+                onDelete = { target, done -> onDelete(target.uri, done) },
             )
         } else {
             ClipEditor(
-                viewModel = viewModel,
                 clip = clip,
-                studio = studio,
+                studio = state,
+                onExport = onExport,
+                onCancelExport = onCancelExport,
+                onClearResult = onClearResult,
                 onClose = {
-                    viewModel.clearStudioResult()
-                    editing = null
+                    onClearResult()
+                    editingUri = null
                 },
             )
         }
@@ -243,9 +283,11 @@ private fun ClipLibrary(
 @Composable
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 private fun ClipEditor(
-    viewModel: PlayerViewModel,
     clip: StudioClip,
     studio: StudioUiState,
+    onExport: (StudioClip, ClipEdit) -> Unit,
+    onCancelExport: () -> Unit,
+    onClearResult: () -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -427,7 +469,7 @@ private fun ClipEditor(
                         )
                         CrystalButton(
                             filled = false,
-                            onClick = viewModel::cancelStudioExport,
+                            onClick = onCancelExport,
                         ) { Text(stringResource(R.string.action_cancel)) }
                     }
                     studio.resultUri != null -> {
@@ -440,7 +482,7 @@ private fun ClipEditor(
                                 filled = false,
                                 onClick = { context.viewVideo(studio.resultUri!!) },
                             ) { Text(stringResource(R.string.studio_play)) }
-                            TextButton(onClick = viewModel::clearStudioResult) { Text(stringResource(R.string.studio_edit_again)) }
+                            TextButton(onClick = onClearResult) { Text(stringResource(R.string.studio_edit_again)) }
                         }
                         Text(
                             stringResource(R.string.studio_send_explainer),
@@ -455,7 +497,7 @@ private fun ClipEditor(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             CrystalButton(
                                 enabled = edit.trimmedMs(duration) > 0,
-                                onClick = { viewModel.startStudioExport(clip, edit) },
+                                onClick = { onExport(clip, edit) },
                             ) { Text(stringResource(R.string.studio_render)) }
                             TextButton(onClick = { edit = ClipEdit() }) { Text(stringResource(R.string.studio_reset)) }
                         }

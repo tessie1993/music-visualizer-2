@@ -19,7 +19,6 @@ import dev.geode.data.Preset
 import dev.geode.data.PresetFolders
 import dev.geode.export.ExportAspect
 import dev.geode.export.ExportRange
-import dev.geode.export.StudioClip
 import dev.geode.export.VideoExporter
 import dev.geode.render.AdsrConfig
 import dev.geode.render.LfoConfig
@@ -438,8 +437,6 @@ class PlayerViewModel(
 
     fun deletePreset(name: String) = session.deletePreset(name)
 
-    val studio: StateFlow<StudioUiState> get() = session.studio
-
     fun startExport(
         aspect: ExportAspect,
         fps: Int,
@@ -453,33 +450,6 @@ class PlayerViewModel(
     fun cancelExport() = session.cancelExport()
 
     fun resetExportState() = session.resetExportState()
-
-    fun refreshStudioClips() = session.refreshStudioClips()
-
-    fun deleteStudioClip(
-        uri: String,
-        onResult: (Boolean) -> Unit,
-    ) = session.deleteStudioClip(uri, onResult)
-
-    fun renameStudioClip(
-        uri: String,
-        name: String,
-        onResult: (Boolean) -> Unit,
-    ) = session.renameStudioClip(uri, name, onResult)
-
-    fun describeStudioClip(
-        uri: Uri,
-        onReady: (StudioClip) -> Unit,
-    ) = session.describeStudioClip(uri, onReady)
-
-    fun startStudioExport(
-        clip: StudioClip,
-        edit: dev.geode.export.ClipEdit,
-    ) = session.startStudioExport(clip, edit)
-
-    fun cancelStudioExport() = session.cancelStudioExport()
-
-    fun clearStudioResult() = session.clearStudioResult()
 
     override fun onCleared() {
         PlayerSession.release()
