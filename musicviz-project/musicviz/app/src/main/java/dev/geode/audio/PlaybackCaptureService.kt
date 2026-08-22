@@ -16,37 +16,12 @@ import android.os.Looper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-/**
- * The foreground service the platform requires before one app may look at
- * another app's audio.
- *
- * It exists for exactly two reasons, and does nothing else:
- *
- *  1. `getMediaProjection` must be called while a foreground service with
- *     `mediaProjection` type is already running. On Android 14 that is
- *     enforced with a `SecurityException`; on 10-13 the capture is torn down
- *     shortly after the app leaves the foreground without one.
- *  2. Screen and audio capture must be visible to the user for as long as it
- *     lasts. The notification is not decoration - it is the honest statement
- *     that this app can currently hear the device, and tapping it stops.
- *
- * The projection itself is published on [MediaProjectionHolder] rather than
- * bound to: the reader is a ViewModel that owns the ring buffer, and a bound
- * connection would add a lifecycle to get wrong for a value that is either
- * present or absent.
- *
- * Not annotated `@RequiresApi`: a manifest-declared component is instantiated
- * by the system on every API level the app runs on, so the version gate has to
- * live in [start] and in the branches below rather than on the class.
- */
 class PlaybackCaptureService : Service() {
     private var projection: MediaProjection? = null
 
     private val projectionCallback =
         object : MediaProjection.Callback() {
             override fun onStop() {
-                // The user revoked capture from the system UI. Tear down here
-                // rather than waiting for the app to notice a dead projection.
                 MediaProjectionHolder.publish(null)
                 stopSelf()
             }
@@ -59,14 +34,6 @@ class PlaybackCaptureService : Service() {
         flags: Int,
         startId: Int,
     ): Int {
-        // Promotion first, before ANY branch that can stopSelf(): started via
-        // startForegroundService(), a service that stops without ever reaching
-        // startForeground() dies with RemoteServiceException - so a malformed
-        // start intent was a crash, not a clean refusal. On the normal stop
-        // path the service is already foreground and re-posting the same
-        // notification is a no-op; a promotion that itself throws falls
-        // through to getMediaProjection, whose failure funnel below already
-        // ends in noteStartFailure + stopSelf.
         runCatching { startForegroundNotification() }
         if (intent?.action == ACTION_STOP) {
             stopSelf()
@@ -83,28 +50,14 @@ class PlaybackCaptureService : Service() {
         val mp =
             runCatching { manager.getMediaProjection(resultCode, data) }.getOrNull()
         if (mp == null) {
-            // Dying silently here is what left the ViewModel's "waiting for
-            // the capture permission…" state stuck forever: with no projection
-            // ever published, [MediaProjectionHolder.projection] never emits
-            // (it is usually already null, and a StateFlow will not repeat a
-            // value), so nothing downstream learned the start had failed. The
-            // failure tick is the signal that cannot be conflated away.
             MediaProjectionHolder.noteStartFailure()
             stopSelf()
             return START_NOT_STICKY
         }
-        // A second start intent - consent granted again while a capture is
-        // already up - must not leak the projection it replaces: unstopped,
-        // the old one keeps the capture privilege alive with nothing owning
-        // it. Unregistered first, because Callback.onStop fires on a
-        // programmatic stop() too, and left registered it would
-        // publish(null)/stopSelf() over the projection replacing it.
         projection?.let {
             runCatching { it.unregisterCallback(projectionCallback) }
             runCatching { it.stop() }
         }
-        // registerCallback is mandatory since Android 14; the handler must be
-        // one with a live looper, and the main one always is.
         mp.registerCallback(projectionCallback, Handler(Looper.getMainLooper()))
         projection = mp
         MediaProjectionHolder.publish(mp)
@@ -169,7 +122,6 @@ class PlaybackCaptureService : Service() {
         }
     }
 
-    /** Kept out of the class body so the deprecated getter has one home. */
     private object IntentCompat {
         @Suppress("DEPRECATION")
         fun projectionData(intent: Intent): Intent? =
@@ -187,7 +139,6 @@ class PlaybackCaptureService : Service() {
         private const val EXTRA_RESULT_CODE = "resultCode"
         private const val EXTRA_RESULT_DATA = "resultData"
 
-        /** Starts capture with the consent the user just gave. */
         fun start(
             context: Context,
             resultCode: Int,
@@ -207,44 +158,20 @@ class PlaybackCaptureService : Service() {
     }
 }
 
-/**
- * The live [MediaProjection], published for whoever needs it.
- *
- * A projection is a process-wide capability with exactly one owner (the
- * service) and one consumer (the ViewModel that holds the ring buffer), and
- * the two have unrelated lifecycles - the same shape as [AudioBus], and
- * solved the same way rather than with a binder.
- */
 object MediaProjectionHolder {
     private val _projection = MutableStateFlow<MediaProjection?>(null)
 
-    /** Non-null while the user has granted capture and the service is up. */
     val projection: StateFlow<MediaProjection?> = _projection
 
     private val _startFailures = MutableStateFlow(0)
 
-    /**
-     * Ticks once for every service start that could not produce a projection
-     * (malformed intent, or `getMediaProjection` refusing the consent it was
-     * handed). A separate signal because [projection] cannot carry it: on a
-     * failed *first* start the StateFlow already holds null and will not
-     * re-emit it, so a consumer waiting on consent would wait forever.
-     *
-     * The value is a wrapping counter - only *changes* mean anything, the
-     * count itself is not a statistic. Consumers should `drop(1)` (or compare
-     * against the value they subscribed at) and treat each change as "the
-     * start you were waiting for is not coming".
-     */
     val startFailures: StateFlow<Int> = _startFailures
 
     fun publish(projection: MediaProjection?) {
         _projection.value = projection
     }
 
-    /** Called by the service on every start attempt that produced no projection. */
     fun noteStartFailure() {
-        // Deliberate wrap-on-overflow: an Int StateFlow used as a tick, never
-        // summed, never persisted.
         _startFailures.value += 1
     }
 }

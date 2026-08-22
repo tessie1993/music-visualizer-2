@@ -5,25 +5,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/** A named, ordered music playlist referencing tracks by uri. */
 data class MusicPlaylist(
     val name: String,
     val trackUris: List<String> = emptyList(),
 )
 
-/**
- * JSON-file persistence for user music playlists (one file per playlist).
- * Track order is the list order; reordering rewrites the file.
- *
- * Every mutator below is a read-modify-write of one whole file, so two things
- * have to hold or a playlist quietly loses its tracks. The write goes through
- * [AtomicWrite] rather than `File.writeText`, which truncates to zero first -
- * process death inside that window used to leave invalid JSON that [list]
- * silently skips. And a file that is present but unreadable is NOT treated as
- * an absent playlist (see [readable]), because the fallback for absent is a
- * fresh empty [MusicPlaylist] and saving that is what turns a damaged file
- * into a one-track one.
- */
 class MusicPlaylistStore(
     context: Context,
 ) {
@@ -33,13 +19,6 @@ class MusicPlaylistStore(
         migrateLegacyFileNames()
     }
 
-    /**
-     * One-time rename of files saved under the pre-hash sanitizer (see
-     * [PresetStore.safeFileName]): [fileOf] resolves through the hashed stem
-     * now, so a playlist left under its old stem would be unreachable by
-     * every mutator. A taken target keeps the old file in place, unrenamed
-     * rather than destroyed.
-     */
     private fun migrateLegacyFileNames() {
         dir
             .listFiles { f -> f.extension == "json" }
@@ -68,7 +47,6 @@ class MusicPlaylistStore(
         fileOf(name).delete()
     }
 
-    /** Appends a track uri if not already present. */
     fun addTrack(
         name: String,
         uri: String,
@@ -80,25 +58,17 @@ class MusicPlaylistStore(
         return updated
     }
 
-    /**
-     * Renames a playlist, refusing a blank or already-taken name so the file
-     * on disk can never be orphaned or overwritten. Returns whether it ran.
-     */
     fun rename(
         oldName: String,
         newName: String,
     ): Boolean {
         val current = list().firstOrNull { it.name == oldName } ?: return false
         if (newName.isBlank() || list().any { it.name == newName }) return false
-        // The old file is only removed once the new one is whole on disk.
-        // Deleting first, or deleting after a write that failed, is the one
-        // way this method can destroy a playlist rather than move it.
         if (!AtomicWrite.text(fileOf(newName), toJson(current.copy(name = newName)))) return false
         if (sanitize(oldName) != sanitize(newName)) delete(oldName)
         return true
     }
 
-    /** Moves the track at [from] to [to], clamping to valid bounds. */
     fun move(
         name: String,
         from: Int,
@@ -125,29 +95,15 @@ class MusicPlaylistStore(
         return updated
     }
 
-    /**
-     * The playlist a mutator should start from, or null when it must not
-     * write at all.
-     *
-     * An absent playlist is a real case - "add to playlist" on a name that
-     * does not exist yet creates it - so it answers with a fresh empty one.
-     * A file that IS there and did not read back is not that case: [list]
-     * skips it, so the mutator would compute its update from an empty base
-     * and [save] would replace fifty tracks with the one being added. The
-     * caller keeps whatever it is already showing instead, and the bytes stay
-     * on disk where a later read (or the user) can still recover them.
-     */
     private fun current(name: String): MusicPlaylist? {
         list().firstOrNull { it.name == name }?.let { return it }
         return if (readable(fileOf(name))) MusicPlaylist(name) else null
     }
 
-    /** True when [f] holds nothing, or holds a playlist that parses. */
     private fun readable(f: File): Boolean = !f.exists() || runCatching { fromJson(f.readText()) }.isSuccess
 
     private fun fileOf(name: String): File = File(dir, sanitize(name) + ".json")
 
-    // The shared collision-free scheme: distinct names must never share a file.
     private fun sanitize(name: String): String = PresetStore.safeFileName(name)
 
     private fun toJson(p: MusicPlaylist): String {

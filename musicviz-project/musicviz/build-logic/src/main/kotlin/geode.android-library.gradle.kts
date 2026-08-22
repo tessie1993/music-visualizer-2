@@ -1,5 +1,3 @@
-// An Android engine module: GLES, Media3 and the platform types the JVM
-// modules are forbidden from touching.
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")

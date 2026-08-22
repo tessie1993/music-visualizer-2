@@ -1,43 +1,22 @@
 package dev.geode.render.fluid
 
-// Ported in part from WebGL-Fluid-Simulation - MIT License,
-// Copyright (c) 2017 Pavel Dobryakov. Architecture upgrades (sim-space
-// coordinates, boundary sampling, alpha=-dx^2 Jacobi, capsule emitters with
-// velocity blending) implemented clean-room from the FLUID_SIM v2 spec /
-// GPU Gems ch. 38.
-
 import android.content.Context
 import android.opengl.GLES30
 import dev.geode.R
 import dev.geode.render.scene.GlUtil
 
-/**
- * Stam "stable fluids" on GLES3: velocity/dye/pressure grids in half-float
- * ping-pong FBOs, one fullscreen pass per operator. Pure simulation - no
- * audio, no UI. Callers queue [Splat]s, then [step]; [dyeTex]/[velocityTex]
- * expose the fields. All methods run on the GL thread.
- *
- * The force and dye injection passes are EXTENSION POINTS:
- * [setInjectionShaders] installs user fragment sources in place
- * of the built-in capsule splat; a failed compile keeps the last good
- * program and reports through [onShaderError].
- */
 internal class FluidSim(
     private val context: Context,
-    /** Velocity-only mode for the FlowField service: no dye grid, no dye passes. */
     private val velocityOnly: Boolean = false,
 ) {
-    /** Capsule injection request; positions/radius in sim space (y in [-1,1]). */
     class Splat(
         val prevX: Float,
         val prevY: Float,
         val curX: Float,
         val curY: Float,
         val radius: Float,
-        // Velocity target (grid units) for the velocity pass:
         val velX: Float,
         val velY: Float,
-        // Dye color (HDR-friendly):
         val r: Float,
         val g: Float,
         val b: Float,
@@ -51,32 +30,10 @@ internal class FluidSim(
     var pressureIterations = 20
     var curlStrength = 30f
 
-    /**
-     * The most ink a dye texel may hold, per channel, enforced at INJECTION.
-     *
-     * That is the whole field, not just one pass: advection is a bilinear
-     * resample - a convex combination, never above its own maximum - divided
-     * by a decay of at least one, so injection is the only operator that can
-     * raise the field's largest value. Bound it and the field is bounded for
-     * as long as the sim runs.
-     *
-     * Zero is no ceiling, and is the default, so this is an exact no-op for
-     * every caller that does not ask: the FLUID style grades its dye through a
-     * tone map of its own and wants the headroom, and a large-but-finite
-     * default would have quietly shaved a shipped look. [MeltField] sets a
-     * real one, because `hyperspace_frag.glsl` reads the dye as radiance with
-     * nothing after it.
-     */
     var dyeCeiling = 0f
 
-    /**
-     * Chromatic aging: spreads the per-channel dye decay so
-     * fading ink drifts in hue (G fades fastest -> warm splats cool toward
-     * magenta/blue). 0 = identical rates (pure fade, opt-in).
-     */
     var chromaticAging = 0f
 
-    /** Audio context for user injection shaders (extension points). */
     var audioBass = 0f
     var audioMid = 0f
     var audioTreble = 0f
@@ -91,10 +48,6 @@ internal class FluidSim(
     var aspect = 1f
         private set
 
-    // Grid scale: dx is the physical (sim-space) width of one velocity-grid
-    // cell - domain height is 2 sim units, so dx = 2/gridHeight. Deriving it
-    // from the allocated grid (alpha = -dx^2) is what decouples
-    // sim resolution from visual character.
     private var cellSize = 2f / 128f
     private var rdx = 1f / cellSize
     private var halfRdx = 0.5f / cellSize
@@ -109,20 +62,11 @@ internal class FluidSim(
 
     private val quad = GlUtil.FullscreenTriangle()
 
-    /**
-     * Linear sampler object for the dye-advection velocity read: the
-     * velocity texture itself is NEAREST (the velocity self-advect does
-     * manual bilerp), but the dye grid is up to 4x finer, so a NEAREST
-     * back-trace direction staircases. Half-float LINEAR filtering is core
-     * ES 3.0; a sampler object overrides the texture's filter for this one
-     * bind point only.
-     */
     private var linearSampler = 0
     private var baseVertSrc = ""
     private val programs = HashMap<Int, GlUtil.UniformCache>()
     private val pending = ArrayList<Splat>()
 
-    /** User injection programs (program + uniform cache), or null. */
     private var customForce: GlUtil.UniformCache? = null
     private var customDye: GlUtil.UniformCache? = null
     private var pendingForceSrc: String? = null
@@ -132,13 +76,8 @@ internal class FluidSim(
     var available = false
         private set
 
-    /** Resolved texture formats from the probe, for sibling GPU layers. */
     val texFormats: FluidBuffers.Formats get() = formats
 
-    /**
-     * Converts fluid grid velocity into sim-space units per second for the
-     * particle layer: UV displacement/s = v * rdx * texel; sim height = 2.
-     */
     val flowScale: Float get() = 2f * rdx / (velocity?.height ?: 128)
 
     fun create() {
@@ -152,9 +91,6 @@ internal class FluidSim(
         linearSampler = ids[0]
         GLES30.glSamplerParameteri(linearSampler, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
         GLES30.glSamplerParameteri(linearSampler, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
-        // A bound sampler overrides ALL of the texture's sampling state and
-        // its wrap defaults are GL_REPEAT - without these two lines the dye
-        // back-trace would wrap edge reads to the OPPOSITE screen edge.
         GLES30.glSamplerParameteri(linearSampler, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glSamplerParameteri(linearSampler, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
         val frags =
@@ -171,9 +107,6 @@ internal class FluidSim(
                 R.raw.fluid_display_frag,
             )
         baseVertSrc = GlUtil.loadShader(context, R.raw.fluid_base_vert)
-        // A driver-rejected shader must degrade the style to "unavailable",
-        // never crash the GL thread: headless validation cannot guarantee
-        // every device driver accepts these sources.
         try {
             for (f in frags) {
                 programs[f] = GlUtil.UniformCache(GlUtil.buildProgram(baseVertSrc, GlUtil.loadShader(context, f)))
@@ -184,11 +117,9 @@ internal class FluidSim(
             release()
             return
         }
-        // Re-apply any user injection shaders after a context loss.
         injectionDirty = pendingForceSrc != null || pendingDyeSrc != null
     }
 
-    /** Returns true when the surface dimensions actually changed. */
     fun resize(
         w: Int,
         h: Int,
@@ -202,11 +133,6 @@ internal class FluidSim(
         return true
     }
 
-    /**
-     * Applies new grid resolutions / iteration count (quality tier change).
-     * Reallocates only when the values actually changed; fluid contents are
-     * preserved through the copy-resize path. Call at a frame boundary.
-     */
     fun applyResolution(
         newSimRes: Int,
         newDyeRes: Int,
@@ -220,10 +146,6 @@ internal class FluidSim(
     }
 
     private fun allocGrids(preserve: Boolean) {
-        // resize() runs OUTSIDE the scene's draw snapshot; the preserve-copy
-        // below rebinds framebuffer + viewport, so restore both on exit or
-        // the engine's next pass renders into a fluid grid (screen flashing
-        // after rotation / quality change).
         val prevFbo = IntArray(1)
         val prevVp = IntArray(4)
         GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, prevFbo, 0)
@@ -232,18 +154,10 @@ internal class FluidSim(
         val (dw, dh) = FluidBuffers.resolution(dyeRes, width, height)
         val oldVelocity = velocity
         val oldDye = dye
-        // Free small helpers + pressure FIRST: the pressure copy was only a
-        // Jacobi warm start (one frame of extra convergence), not worth
-        // doubling the largest allocation window. Then each grid is copied
-        // and its old counterpart released immediately, so peak GPU memory
-        // during an Ultra-tier reallocation is ~1x the new grids + one old
-        // grid instead of a full 2x (the "crashes on quality change /
-        // rotation on tight-memory GPUs" fix).
         pressure?.release()
         pressure = null
         divergence?.release()
         curl?.release()
-        // Velocity NEAREST (manual bilerp in advection); dye LINEAR for display.
         velocity = FluidBuffers.DoubleFbo(sw, sh, formats.rg, linear = false).also { it.create() }
         if (preserve && oldVelocity != null) {
             velocity?.let { if (it.ok && oldVelocity.ok) copyInto(oldVelocity.read, it.read) }
@@ -293,10 +207,6 @@ internal class FluidSim(
         quad.unbind()
     }
 
-    /**
-     * Installs user force/dye injection fragment sources (null = built-in
-     * capsule splat). Thread-safe; compiled on the GL thread in [step].
-     */
     @Synchronized
     fun setInjectionShaders(
         forceSrc: String?,
@@ -314,10 +224,6 @@ internal class FluidSim(
                 injectionDirty = false
                 pendingForceSrc to pendingDyeSrc
             }
-        // Collect BOTH results before reporting: a successful dye compile
-        // must not clear the error from a failed force compile (or vice
-        // versa) - the user would lose the only message telling them why
-        // their shader isn't running.
         var firstError: String? = null
         customForce =
             compileCustom(force, customForce) { firstError = firstError ?: it }
@@ -336,15 +242,12 @@ internal class FluidSim(
             return null
         }
         val p = GlUtil.buildProgramReporting(baseVertSrc, src, reportError)
-        // Keep the last good program rather than dropping to black.
         if (p == 0) return current
         current?.let { GLES30.glDeleteProgram(it.program) }
         return GlUtil.UniformCache(p)
     }
 
     fun queueSplat(s: Splat) {
-        // step() never runs while unavailable, so queued splats would only
-        // accumulate; drop them instead of leaking.
         if (!available) return
         pending.add(s)
     }
@@ -353,11 +256,8 @@ internal class FluidSim(
     val velocityTex: Int get() = velocity?.read?.tex ?: 0
     val velocityGridHeight: Int get() = velocity?.height ?: 128
 
-    /** v2 pass order: advect vel -> forces -> curl -> vorticity -> project -> dye. */
     fun step(dtRaw: Float) {
         if (!available) return
-        // Grids exist only after the first resize(); queued splats from
-        // before that point must not accumulate and all fire in one burst.
         val vel =
             velocity ?: run {
                 pending.clear()
@@ -378,9 +278,6 @@ internal class FluidSim(
                 pending.clear()
                 return
             }
-        // Cap at 1/30 s: semi-Lagrangian advection stays stable, and 30-60fps
-        // devices keep real-time fluid speed instead of a permanent slow-mo
-        // that desynchronized from the (real-dt) emitters.
         val dt = dtRaw.coerceIn(0f, 1f / 30f)
         compileInjectionIfNeeded()
         GLES30.glDisable(GLES30.GL_BLEND)
@@ -388,7 +285,6 @@ internal class FluidSim(
         val velInvW = 1f / vel.width
         val velInvH = 1f / vel.height
 
-        // 1. Advect velocity (velocity is both field and carrier).
         useProgram(R.raw.fluid_advect_frag, vel.width, vel.height)
         bindTex("uVelocity", vel.read.tex, 0, R.raw.fluid_advect_frag)
         bindTex("uSource", vel.read.tex, 0, R.raw.fluid_advect_frag)
@@ -401,11 +297,8 @@ internal class FluidSim(
         blit(vel.write)
         vel.swap()
 
-        // 2. Forces: capsule velocity splats (blend toward target), or the
-        //    user force shader when one is installed (extension point).
         runInjection(vel, mode = 0, custom = customForce, dt = dt)
 
-        // 3-4. Curl + vorticity confinement.
         useProgram(R.raw.fluid_curl_frag, crl.width, crl.height)
         bindTex("uVelocity", vel.read.tex, 0, R.raw.fluid_curl_frag)
         set1f(R.raw.fluid_curl_frag, "uHalfRdx", halfRdx)
@@ -419,7 +312,6 @@ internal class FluidSim(
         blit(vel.write)
         vel.swap()
 
-        // 5-7. Projection: divergence -> damped warm start -> Jacobi -> subtract.
         useProgram(R.raw.fluid_divergence_frag, div.width, div.height)
         bindTex("uVelocity", vel.read.tex, 0, R.raw.fluid_divergence_frag)
         set1f(R.raw.fluid_divergence_frag, "uHalfRdx", halfRdx)
@@ -447,13 +339,11 @@ internal class FluidSim(
         blit(vel.write)
         vel.swap()
 
-        // 8. Dye injection (additive / user shader), 9. dye advection.
         val dyeB = dye
         if (!velocityOnly && dyeB != null) {
             runInjection(dyeB, mode = 1, custom = customDye, dt = dt)
             useProgram(R.raw.fluid_advect_frag, dyeB.width, dyeB.height)
             bindTex("uVelocity", vel.read.tex, 0, R.raw.fluid_advect_frag)
-            // Smooth back-trace direction at the finer dye resolution.
             GLES30.glBindSampler(0, linearSampler)
             bindTex("uSource", dyeB.read.tex, 1, R.raw.fluid_advect_frag)
             set2f(R.raw.fluid_advect_frag, "uSrcInvRes", 1f / dyeB.width, 1f / dyeB.height)
@@ -473,7 +363,6 @@ internal class FluidSim(
         quad.unbind()
     }
 
-    /** One injection pass per queued splat, via the built-in or user program. */
     private fun runInjection(
         target: FluidBuffers.DoubleFbo,
         mode: Int,
@@ -499,7 +388,6 @@ internal class FluidSim(
             GLES30.glUniform1i(cache.loc("uMode"), mode)
             GLES30.glUniform1f(cache.loc("uCeiling"), dyeCeiling)
             if (custom != null) {
-                // Extension-point context (same set the scene shaders get).
                 GLES30.glUniform1f(cache.loc("uDt"), dt)
                 GLES30.glUniform1f(cache.loc("uDx"), cellSize)
                 GLES30.glUniform1f(cache.loc("uTime"), timeSeconds)
@@ -514,7 +402,6 @@ internal class FluidSim(
         }
     }
 
-    /** Plain dye presentation fallback (no look chain), into the bound FBO. */
     fun drawDisplay() {
         if (!available) return
         val d = dye ?: return
@@ -530,11 +417,6 @@ internal class FluidSim(
         quad.unbind()
     }
 
-    /**
-     * One-time diagnostic: reads a few dye texels (implementation-preferred
-     * format) and reports the max channel value - splits "sim is dead" from
-     * "display path loses the ink" in a single logcat line.
-     */
     fun probeDyeMax(): String {
         val d = dye ?: return "no dye buffer"
         return runCatching {
@@ -596,7 +478,6 @@ internal class FluidSim(
         available = false
     }
 
-    // ---- helpers ----
     private fun useProgram(
         fragId: Int,
         gridW: Int,

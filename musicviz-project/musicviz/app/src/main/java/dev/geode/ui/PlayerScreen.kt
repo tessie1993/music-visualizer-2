@@ -45,18 +45,6 @@ import dev.geode.ui.theme.StoneIcon
 import dev.geode.ui.theme.StoneIconArt
 import kotlinx.coroutines.delay
 
-/**
- * Player: dest 0 is the now-playing screen itself. Deliberately not a
- * dashboard: the first thing the app shows is the thing it is for - what
- * is making sound right now, and the
- * controls for it. The fullscreen visualizer stays one tap away (the hero,
- * the queue preview), and the mini-player is not shown on this tab because
- * this tab IS the player.
- *
- * The hero follows the same precedence rules the fullscreen player uses:
- * another app's captured audio outranks the microphone, which outranks our
- * own track - the hero describes what is actually feeding the analyzer.
- */
 @Composable
 fun PlayerScreen(
     viewModel: PlayerViewModel,
@@ -75,8 +63,6 @@ fun PlayerScreen(
     val favourites by viewModel.favourites.collectAsState()
     val tick by viewModel.historyTick.collectAsState()
     val sleepRemainingMs by viewModel.sleepTimerRemainingMs.collectAsState()
-    // Shuffle-all draws on history, so it is re-checked when history moves,
-    // not on every frame of playback.
     val canShuffle = remember(tick) { viewModel.recentlyPlayed().isNotEmpty() }
     var showQueue by rememberSaveable { mutableStateOf(true) }
     val upNext = remember(queue) { queue.tracks.drop(queue.index + 1).take(3) }
@@ -158,20 +144,6 @@ fun PlayerScreen(
     }
 }
 
-/**
- * The hero: large artwork, what is playing, the current scene, and the
- * favourite heart. Tapping it opens the fullscreen visualizer - the artwork
- * is the door to the visuals, exactly like the mini-player on other tabs.
- *
- * With no source at all it becomes the empty state: a placeholder tile and
- * the two ways back into sound (resume what was last playing, or go pick
- * something in the library).
- *
- * [canResume] is the same listening-history predicate the "Shuffle all"
- * quick action gates on: [PlayerViewModel.resumeLastPlayed] returns silently
- * on an empty history, so on a fresh install one of the empty state's two
- * buttons did nothing at all, forever, with no toast and no navigation.
- */
 @Composable
 private fun PlayerHero(
     viewModel: PlayerViewModel,
@@ -186,9 +158,6 @@ private fun PlayerHero(
     modifier: Modifier = Modifier,
 ) {
     val uri = remember(state.title, state.artist) { viewModel.currentTrackUri() }
-    // What the hero is about, most specific first: another app's audio
-    // outranks our own paused track, because it is what is making sound
-    // right now.
     val foreign = external.active
     val foreignTrack = external.nowPlaying?.takeIf { it.title.isNotBlank() }
     val hasSource = foreign || micActive || state.hasMedia
@@ -301,7 +270,6 @@ private fun PlayerHero(
     }
 }
 
-/** The current visual style, worn as a small glass chip on the hero. */
 @Composable
 private fun SceneChip(label: String) {
     Box(
@@ -323,15 +291,6 @@ private fun SceneChip(label: String) {
     }
 }
 
-/**
- * Seek + transport, wired the same way the fullscreen player wires them: the
- * waveform seek bar with the A-B loop tint, the five-button transport, and
- * the compact row of mode controls (A-B, auto-visuals, queue preview).
- *
- * Always composed, disabled without media, so the screen reads as a player
- * even before anything is loaded - controls that appear only sometimes are
- * worse than controls that are briefly grey.
- */
 @Composable
 private fun TransportCard(
     viewModel: PlayerViewModel,
@@ -419,8 +378,6 @@ private fun TransportCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            // A-B: one control, three states. The label says which one you
-            // are in rather than leaving it to a colour.
             TextButton(onClick = viewModel::cycleAbLoop, enabled = state.hasMedia) {
                 Text(
                     when {
@@ -469,11 +426,6 @@ private fun TransportCard(
     }
 }
 
-/**
- * The next few queue entries, titles only. The full queue - reorder, remove,
- * jump - lives in the fullscreen player's queue panel, so every affordance
- * here simply expands the player rather than rebuilding that panel.
- */
 @Composable
 private fun QueuePreview(
     upNext: List<QueueTrack>,
@@ -511,14 +463,6 @@ private fun QueuePreview(
     }
 }
 
-/**
- * A 24-bar reduction of the analyzer's 64 bands, sampled on its own clock.
- *
- * Deliberately not collected as ordinary state: the analyzer emits at the FFT
- * hop rate, and recomposing the Player on every hop would make scrolling
- * stutter for a decoration. 20 Hz is well past the point where the bars read
- * as smooth.
- */
 @Composable
 private fun LiveSpectrum(
     viewModel: PlayerViewModel,
@@ -539,8 +483,6 @@ private fun LiveSpectrum(
             )
         for (i in 0 until BARS) {
             val v = bars.getOrElse(i) { 0f }.coerceIn(0f, 1f)
-            // A floor so the row reads as a control rather than vanishing in
-            // silence; the bars still visibly rest when nothing is playing.
             val h = (size.height * (0.06f + 0.94f * v)).coerceAtLeast(2f)
             drawRoundRect(
                 brush = brush,
@@ -554,25 +496,8 @@ private fun LiveSpectrum(
 
 internal const val BARS = 24
 
-/** How often [driveSpectrum] publishes a row while something is playing. */
 internal const val SPECTRUM_TICK_MS = 50L
 
-/**
- * The spectrum row's sampler: reduces [bands] to [BARS] every
- * [SPECTRUM_TICK_MS] and hands each row to [emit], until cancelled.
- *
- * RETURNS IMMEDIATELY when [live] is false, after one resting row. That early
- * return is the whole point of the function existing outside the composable:
- * every tick publishes a FRESH FloatArray, and Compose's default state policy
- * compares by reference, so a run of the loop with nothing playing invalidated
- * and redrew the Canvas twenty times a second, forever, on the app's default
- * tab. The loop must not run when there is no audio to sample - and "must not
- * run" is a property of this function, which a test can simply call and watch
- * return.
- *
- * Extracted rather than left inline for that reason alone; the composable owns
- * the `live` key and the state, this owns the sampling.
- */
 internal suspend fun driveSpectrum(
     live: Boolean,
     bands: () -> FloatArray,
@@ -590,15 +515,12 @@ internal suspend fun driveSpectrum(
                 if (current.isEmpty()) {
                     0f
                 } else {
-                    // Each bar averages its slice of the band array, so the
-                    // shape survives a change in band count.
                     val from = i * current.size / BARS
                     val to = ((i + 1) * current.size / BARS).coerceAtLeast(from + 1)
                     var acc = 0f
                     for (b in from until minOf(to, current.size)) acc += current[b]
                     acc / (minOf(to, current.size) - from)
                 }
-            // Fast up, slow down: peaks stay legible between samples.
             smoothed[i] =
                 if (target > smoothed[i]) target else smoothed[i] + (target - smoothed[i]) * 0.35f
         }
@@ -607,7 +529,6 @@ internal suspend fun driveSpectrum(
     }
 }
 
-/** The four things worth one tap from the Player. */
 @Composable
 private fun QuickActions(
     viewModel: PlayerViewModel,
@@ -621,8 +542,6 @@ private fun QuickActions(
         androidx.activity.compose.rememberLauncherForActivityResult(
             androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
         ) { granted -> if (granted) viewModel.setMicEnabled(true) }
-    // "Visualize whatever is playing" is worth one tap from the Player, so
-    // the consent plumbing lives here too rather than only in Settings.
     val projectionLauncher =
         androidx.activity.compose.rememberLauncherForActivityResult(
             androidx.activity.result.contract.ActivityResultContracts
@@ -712,7 +631,6 @@ private fun QuickActions(
     }
 }
 
-/** Quick action carrying one of the pack's own icons. */
 @Composable
 private fun QuickAction(
     icon: StoneIcon,
@@ -722,10 +640,6 @@ private fun QuickAction(
     onClick: () -> Unit,
 ) = QuickActionShell(label, enabled, active, onClick) { StoneIconArt(icon, null, Modifier.size(22.dp), tint = it) }
 
-/**
- * Quick action for the few affordances the packs ship no icon for (casting,
- * sleep timer). Material carries those rather than inventing pack art for them.
- */
 @Composable
 private fun QuickAction(
     icon: ImageVector,
@@ -775,17 +689,6 @@ private fun QuickActionShell(
     }
 }
 
-/**
- * A clock label for a position or duration.
- *
- * Internal rather than private because the seek bar announces the same figure
- * to screen readers and must not drift from what is drawn beside it.
- *
- * Hours are only shown once there are any: a three-minute song reads "3:24",
- * not "0:03:24". Without the hour field a two-hour mix used to read "126:07",
- * which is a number rather than a time — mixes and audiobooks are exactly the
- * material people scrub through most.
- */
 internal fun formatClock(ms: Long): String {
     val total = (ms / 1000).coerceAtLeast(0)
     val hours = total / 3600

@@ -87,8 +87,6 @@ fun LibraryScreen(
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     var reloadKey by remember { mutableStateOf(0) }
     val tracks by viewModel.deviceTracks.collectAsState()
-    // The MediaStore query lives in the ViewModel (Dispatchers.IO) so first
-    // composition of this tab no longer blocks on the content resolver.
     LaunchedEffect(granted, reloadKey) { if (granted) viewModel.refreshDeviceTracks() }
     var tab by rememberSaveable { mutableStateOf(0) }
     val tabs =
@@ -109,12 +107,6 @@ fun LibraryScreen(
             IconButton(onClick = onOpenSearch) { StoneIconArt(StoneIcon.SEARCH, stringResource(R.string.action_search)) }
         }
         if (!granted) {
-            // Android stops delivering the system dialog after two refusals, so
-            // re-launching the request is the "dead button" failure this app
-            // prides itself on fixing elsewhere: the user taps and nothing at
-            // all happens, forever. shouldShowRequestPermissionRationale is
-            // false both before the first ask and after a permanent denial, so
-            // asking-once is what distinguishes them.
             val activity = LocalActivity.current
             var asked by rememberSaveable { mutableStateOf(false) }
             val canAskAgain =
@@ -161,8 +153,6 @@ private fun TrackList(
     tracks: List<DeviceTrack>,
     viewModel: PlayerViewModel,
 ) {
-    // The visible ordering IS the queue a tap opens, so Next walks the list
-    // the user is looking at rather than running out after one track.
     val queue = remember(tracks) { tracks.map(PlaybackQueue::queueTrack) }
     LazyColumn(Modifier.fillMaxSize()) {
         items(tracks, key = { it.uri }) { t -> TrackRow(t, viewModel, queue = queue) }
@@ -177,14 +167,9 @@ private fun TrackRow(
     subtitleOverride: String? = null,
     queue: List<QueueTrack> = emptyList(),
 ) {
-    // Analysis results (key/BPM) and user-edited metadata overrides live in
-    // the library store keyed by uri; join them onto the device row.
     val overrides by viewModel.trackOverrides.collectAsState()
     val stored = overrides[t.uri]
     val title = stored?.title?.ifBlank { null } ?: t.title
-    // Analysis is reported by the chip below, not as another subtitle field:
-    // a well-tagged track fills that one line with artist/album/genre and
-    // ellipsises the tail away, which is exactly where the BPM used to sit.
     val analyzed = stored?.takeIf { it.analyzed }
     val subtitle =
         subtitleOverride
@@ -251,13 +236,6 @@ private fun TrackRow(
     }
 }
 
-/**
- * Where a track row's "Add to playlist" lands: the existing playlists by
- * name, plus a "New playlist…" branch into the shared naming dialog. Picking
- * an existing playlist appends through [MusicPlaylistStore.addTrack], which
- * skips a uri already present - adding a track twice is a no-op, not a
- * duplicate entry.
- */
 @Composable
 private fun AddToPlaylistDialog(
     uri: String,
@@ -283,8 +261,6 @@ private fun AddToPlaylistDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.action_add_to_playlist)) },
         text = {
-            // Scrolls on its own: the dialog caps its height well before a
-            // long-standing user's playlist collection runs out.
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 library.playlists.forEach { pl ->
                     Text(
@@ -311,17 +287,6 @@ private fun AddToPlaylistDialog(
     )
 }
 
-/**
- * The "this track has been analysed" marker: a crystal chip carrying the gem
- * and, when analysis found one, the BPM.
- *
- * It has to be a chip rather than one more `·`-separated subtitle field, and
- * it has to live outside the weighted title column. As a subtitle field it
- * was the LAST field, on a single ellipsised line, so every well-tagged track
- * hid the one fact the user cannot read off the file itself — whether we have
- * analysed it. Here the row gives the chip its intrinsic width first and the
- * title truncates instead.
- */
 @Composable
 private fun AnalyzedBadge(
     bpm: Float,
@@ -342,8 +307,6 @@ private fun AnalyzedBadge(
             .background(cs.primary.copy(alpha = 0.16f))
             .border(1.dp, cs.primary.copy(alpha = 0.45f), shape)
             .padding(horizontal = 7.dp, vertical = 3.dp)
-            // The gem is decoration a screen reader cannot see, so the whole
-            // chip announces itself as one phrase.
             .semantics { contentDescription = spoken },
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -355,7 +318,6 @@ private fun AnalyzedBadge(
     }
 }
 
-/** Albums/Artists/Folders share this two-level drill-in list. */
 @Composable
 private fun GroupList(
     groups: Map<String, List<DeviceTrack>>,
@@ -363,8 +325,6 @@ private fun GroupList(
 ) {
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     val sel = open
-    // System back mirrors the on-screen "‹ Back": pop the drill-in level
-    // before falling through to the shell's tab/exit handling.
     androidx.activity.compose.BackHandler(enabled = sel != null) { open = null }
     if (sel != null && groups.containsKey(sel)) {
         Column {
@@ -457,8 +417,6 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
                         IconButton(onClick = { viewModel.playPlaylist(pl.name) }) {
                             StoneIconArt(StoneIcon.PLAY, stringResource(R.string.action_play))
                         }
-                        // Behind a confirm: this row's other taps are all
-                        // recoverable, deleting a playlist is not.
                         IconButton(onClick = { deleting = pl.name }) {
                             StoneIconArt(StoneIcon.CLOSE, stringResource(R.string.playlist_delete_title))
                         }
@@ -502,11 +460,6 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
         )
     }
     renaming?.let { old ->
-        // MusicPlaylistStore.rename refuses a blank or already-taken name by
-        // returning false, and a dialog that closed on any confirm was a
-        // rename that silently never happened. Gated here on the same
-        // playlistNameAccepted check the create dialog uses, minus `old`
-        // itself so renaming to the name already being edited is allowed.
         val proposed = renameText.trim()
         val otherNames = library.playlists.map { it.name }.filterNot { it == old }.toSet()
         val nameOk = playlistNameAccepted(proposed, otherNames)
@@ -540,14 +493,6 @@ private fun PlaylistsTab(viewModel: PlayerViewModel) {
     }
 }
 
-/**
- * Where a row picked up at [from] is dropped after the finger has carried it
- * [offsetPx] down (negative is up) a list of [count] rows, each [rowHeightPx]
- * tall. Rows in this list are uniform, so the drop is just how many whole
- * rows the finger travelled: rounded, so a row changes places once it has
- * passed the halfway mark of its neighbour, and clamped, so dragging beyond
- * either end parks there rather than wrapping around.
- */
 internal fun playlistDropIndex(
     from: Int,
     offsetPx: Float,
@@ -555,18 +500,10 @@ internal fun playlistDropIndex(
     count: Int,
 ): Int {
     if (count <= 0) return from
-    // Before the first layout pass we do not know the row height; refusing to
-    // move is the only safe answer, dividing by it would not be.
     if (rowHeightPx <= 0) return from.coerceIn(0, count - 1)
     return (from + (offsetPx / rowHeightPx).roundToInt()).coerceIn(0, count - 1)
 }
 
-/**
- * How far the row at [index] slides, in whole rows, while a row picked up at
- * [from] hovers over [to]: everything the dragged row has passed shuffles one
- * place the other way to open the gap it will drop into. The dragged row
- * itself is 0 — it follows the finger, not this offset.
- */
 internal fun playlistRowShift(
     index: Int,
     from: Int,
@@ -579,28 +516,6 @@ internal fun playlistRowShift(
         else -> 0
     }
 
-/**
- * The expanded playlist's tracks, reordered by long-pressing a row and
- * dragging it where it belongs. Sending track 50 to the top used to be 49
- * taps of the up arrow; [MusicPlaylistStore.move] has always accepted an
- * arbitrary from/to, so only the gesture was missing.
- *
- * No reorderable-list library is on the classpath and this does not warrant
- * adding one: the rows are a plain uniform-height Column, which reduces the
- * whole gesture to a drag distance in rows (see [playlistDropIndex]) plus an
- * animated offset on the rows it passes (see [playlistRowShift]). The drag
- * starts on a LONG press specifically so the enclosing LazyColumn keeps its
- * ordinary scroll, and the pick-up is anywhere on the row rather than on the
- * handle alone, which is far more forgiving on a row this short.
- *
- * The up/down buttons stay. They do not compete for the gesture — they only
- * claim their own taps — and they are the only way through this list for
- * anyone using a switch, a screen reader, or one hand on a moving train.
- *
- * A drag does not scroll the enclosing list, so a destination off-screen
- * needs the list scrolled to it first; the rows are the tracks of ONE
- * expanded playlist, so that is a screenful or two, not the whole library.
- */
 @Composable
 private fun PlaylistTracks(
     playlist: MusicPlaylist,
@@ -608,8 +523,6 @@ private fun PlaylistTracks(
     viewModel: PlayerViewModel,
 ) {
     val count = playlist.trackUris.size
-    // Keyed on the name so collapsing one playlist and opening another cannot
-    // leave a half-finished drag pointing at a row that is no longer there.
     var dragFrom by remember(playlist.name) { mutableIntStateOf(-1) }
     var dragOffset by remember(playlist.name) { mutableFloatStateOf(0f) }
     var rowHeight by remember(playlist.name) { mutableIntStateOf(0) }
@@ -625,9 +538,6 @@ private fun PlaylistTracks(
         Row(
             Modifier
                 .fillMaxWidth()
-                // The lifted row draws over its neighbours, and reads the
-                // offsets inside the layer block so following the finger costs
-                // a redraw rather than a recomposition of the whole list.
                 .zIndex(if (dragging) 1f else 0f)
                 .graphicsLayer { translationY = if (dragging) dragOffset else shift }
                 .then(if (dragging) Modifier.background(liftTint) else Modifier)
@@ -639,8 +549,6 @@ private fun PlaylistTracks(
                             dragOffset = 0f
                         },
                         onDragEnd = {
-                            // Recomputed from this row's own index: the state
-                            // read here must not depend on which row recomposed.
                             val to = playlistDropIndex(i, dragOffset, rowHeight, count)
                             if (to != i) viewModel.moveMusicPlaylistTrack(playlist.name, i, to)
                             dragFrom = -1
@@ -657,8 +565,6 @@ private fun PlaylistTracks(
                 }.padding(start = 28.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Affordance only: the gesture is on the whole row, so announcing
-            // this as a control would promise a target that is not special.
             Icon(
                 Icons.Filled.DragHandle,
                 null,
@@ -741,10 +647,6 @@ private fun FoldersTab(
                 Text(stringResource(if (scanning) R.string.folders_scanning else R.string.folders_rescan))
             }
         }
-        // Device folders is the whole story, not the first half of one: the
-        // app holds no INTERNET permission (AndroidManifest.xml), so a cloud
-        // source is not a feature that has not been built yet - it is one the
-        // architecture rules out.
         Text(
             stringResource(R.string.folders_device),
             Modifier.padding(horizontal = 16.dp, vertical = 4.dp),

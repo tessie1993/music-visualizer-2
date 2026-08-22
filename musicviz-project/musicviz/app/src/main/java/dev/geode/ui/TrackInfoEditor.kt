@@ -25,24 +25,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.geode.R
 
-/**
- * Suggestion chips for the genre field.
- *
- * Deliberately NOT localized: tapping one writes that exact word into the
- * track's genre, which is stored and matched against the tags already on the
- * files. Translating them would make the same chip save a different value per
- * device language, so a library tagged on a French phone would not group with
- * the same music tagged on an English one.
- */
 private val COMMON_GENRES =
     listOf("Electronic", "Rock", "Pop", "Hip-Hop", "Jazz", "Classical", "Ambient", "Other")
 
-/**
- * Per-track metadata editor. Prefills from the stored app-side override when
- * one exists, else from the file's embedded tags, and saves through
- * [PlayerViewModel.saveTrackInfo] — edits live only in the app's own store;
- * audio files are never touched.
- */
 @Composable
 fun TrackInfoEditor(
     uri: String,
@@ -51,7 +36,6 @@ fun TrackInfoEditor(
 ) {
     var loaded by remember(uri) { mutableStateOf<LibraryTrack?>(null) }
     LaunchedEffect(uri) { loaded = viewModel.trackInfoFor(uri) }
-    // Hold the dialog until the prefill resolves (retriever runs on IO).
     val initial = loaded ?: return
 
     var title by remember(initial) { mutableStateOf(initial.title) }

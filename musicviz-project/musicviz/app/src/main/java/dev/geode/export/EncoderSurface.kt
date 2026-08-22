@@ -8,10 +8,6 @@ import android.opengl.EGLExt
 import android.opengl.EGLSurface
 import android.view.Surface
 
-/**
- * EGL context bound to a MediaCodec input surface so scenes can render
- * straight into the video encoder (Big Flake EncodeAndMux pattern).
- */
 class EncoderSurface(
     surface: Surface,
 ) {
@@ -71,12 +67,6 @@ class EncoderSurface(
             EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
             EGL14.eglDestroySurface(display, eglSurface)
             EGL14.eglDestroyContext(display, context)
-            // Deliberately NOT eglTerminate: the default display is process-
-            // global and unrefcounted, and the live GLSurfaceView renderer
-            // (and a wallpaper engine in the same process) share it -
-            // terminating it here is the canonical "visualizer black after
-            // export" on strict drivers. The display is process-lifetime;
-            // only what this object created is destroyed.
             EGL14.eglReleaseThread()
         }
         display = EGL14.EGL_NO_DISPLAY

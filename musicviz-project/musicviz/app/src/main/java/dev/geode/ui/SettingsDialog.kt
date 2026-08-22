@@ -37,16 +37,6 @@ import dev.geode.export.ExportQuality
 import dev.geode.export.ExportRange
 import dev.geode.export.ExportRatio
 
-/**
- * Video export dialog: quality tier, frame rate, aspect ratio, render, and
- * share/upload (system share sheet, which includes Google Drive when
- * installed) for the finished file. All other settings live in the Settings
- * destination (AppShell.SettingsScreen).
- *
- * The choices start from the persisted [ExportDefaults] (edited in
- * Settings › Export) and every change is written back as the new default, so
- * the dialog always opens the way the last render was set up.
- */
 @Composable
 fun SettingsDialog(
     export: ExportUiState,
@@ -54,9 +44,7 @@ fun SettingsDialog(
     takes: List<String>,
     selectedTake: String?,
     onSelectTake: (String?) -> Unit,
-    /** Detected tempo, so the dialog can say whether a bar trim is possible. */
     bpm: Float,
-    /** Length of the loaded track, so a segment can be chosen inside it. */
     trackDurationMs: Long,
     onStart: (ExportAspect, Int, Boolean, ExportRange?) -> Unit,
     onStartToDestination: (ExportAspect, Int, Boolean, ExportRange?) -> Unit,
@@ -69,13 +57,9 @@ fun SettingsDialog(
     var quality by remember { mutableStateOf(defaults.quality) }
     var ratio by remember { mutableStateOf(defaults.ratio) }
     var fps by remember { mutableStateOf(defaults.fps) }
-    // A stored loop-safe default only holds when this track has a tempo -
-    // the same gate the chip below applies to a tap.
     var loopSafe by remember {
         mutableStateOf(defaults.loopSafe && dev.geode.analysis.BarTrim.barDurationUs(bpm) != null)
     }
-    // Whole track by default: that is what every render did before segments
-    // existed, and it is the only choice that needs no decision from the user.
     var segment by remember { mutableStateOf(false) }
     var rangeStart by remember { mutableFloatStateOf(0f) }
     var rangeEnd by remember { mutableFloatStateOf(1f) }
@@ -90,8 +74,6 @@ fun SettingsDialog(
             )
         }
 
-    // Written back after every change below, so the next export - and the
-    // Settings › Export tab - start from what was chosen here.
     fun persistDefaults() = exportPrefs.save(ExportDefaults(quality, fps, ratio, loopSafe))
     val chooserTitle = stringResource(R.string.export_upload_share_to)
     AlertDialog(
@@ -101,9 +83,6 @@ fun SettingsDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 when {
                     export.running -> {
-                        // The estimate comes from the run itself, so the dialog
-                        // and the notification cannot disagree about how long
-                        // is left.
                         val run by dev.geode.export.ExportRun.state.collectAsState()
                         Text(
                             listOfNotNull(

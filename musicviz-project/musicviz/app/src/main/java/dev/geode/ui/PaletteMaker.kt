@@ -36,17 +36,6 @@ import dev.geode.data.CustomPalette
 import dev.geode.data.PaletteStore
 import dev.geode.render.scene.SceneParams
 
-/*
- * Customize -> Color: the gradient maker and the saved-palette library.
- *
- * Saved palettes are appended to the same chip row as the built-ins, so
- * picking one is the same gesture as picking "Neon". Selecting a built-in
- * clears the slot's override (back to SceneParams.UNSET_OVERRIDE) and
- * selecting a saved palette writes base/span into the override fields, which
- * every scene family already reads through paletteBase/paletteRange.
- */
-
-/** Observable snapshot of [PaletteStore] so the chip rows refresh after a save or delete. */
 @Stable
 internal class SavedPalettes(
     private val store: PaletteStore,
@@ -72,12 +61,6 @@ internal fun rememberSavedPalettes(): SavedPalettes {
     return remember(context) { SavedPalettes(PaletteStore(context)) }
 }
 
-/**
- * Chip index for a palette slot: the built-ins occupy 0 until
- * `SceneParams.PALETTES.size`, saved palettes follow. Returns -1 (nothing
- * highlighted) when the slot runs a one-off gradient or points at an id that
- * is no longer on disk.
- */
 internal fun paletteChipIndex(
     p: SceneParams,
     saved: List<CustomPalette>,
@@ -90,12 +73,6 @@ internal fun paletteChipIndex(
     return if (index < 0) -1 else SceneParams.PALETTES.size + index
 }
 
-/**
- * Params after chip [index] is tapped. Picking a built-in must DROP the slot's
- * override rather than merely renumber it - an active override outranks the
- * PALETTES table, so a plain `copy(palette = index)` would leave the custom
- * hues on screen while the UI highlighted a built-in chip.
- */
 internal fun paletteChipSelected(
     p: SceneParams,
     saved: List<CustomPalette>,
@@ -110,7 +87,6 @@ internal fun paletteChipSelected(
     }
 }
 
-/** Built-in + saved palette chips for one slot. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun PaletteSlotSelector(
@@ -138,7 +114,6 @@ internal fun PaletteSlotSelector(
     )
 }
 
-/** Horizontal swatch of the hue gradient a (base, span) pair produces. */
 @Composable
 internal fun GradientPreview(
     baseHue: Float,
@@ -154,12 +129,6 @@ internal fun GradientPreview(
     )
 }
 
-/**
- * The maker itself: two sliders (where the gradient starts, how far it
- * sweeps), a live swatch, audition-without-saving, and the saved library with
- * edit/delete. Deleting the palette a slot is using keeps the hues on screen
- * and only drops the dangling id - see [PaletteStore.forgetDeleted].
- */
 @Composable
 internal fun PaletteMakerCard(
     p: SceneParams,
@@ -249,7 +218,6 @@ internal fun PaletteMakerCard(
     }
 }
 
-/** Colour stops for the preview swatch; hues come from [PaletteStore.sampleHue] so previews match. */
 private fun gradientColors(
     baseHue: Float,
     hueSpan: Float,

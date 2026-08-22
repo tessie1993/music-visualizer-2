@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** One row of the device music index (MediaStore). */
 data class DeviceTrack(
     val uri: String,
     val title: String,
@@ -25,11 +24,9 @@ data class DeviceTrack(
     val album: String,
     val folder: String,
     val durationMs: Long,
-    /** MediaStore DATE_ADDED, in SECONDS since the epoch; 0 when unknown. */
     val addedSec: Long = 0L,
 )
 
-/** Music library + playlists + batch-analysis progress. */
 data class LibraryState(
     val tracks: List<LibraryTrack> = emptyList(),
     val playlists: List<MusicPlaylist> = emptyList(),
@@ -39,13 +36,6 @@ data class LibraryState(
 
 private val AUDIO_EXTS = setOf("mp3", "wav", "flac", "ogg", "m4a", "aac", "opus", "wma", "aiff")
 
-/**
- * The music library - imported tracks, SAF folder roots, the device
- * MediaStore index, tag metadata and the music playlists - extracted from
- * [PlayerViewModel]. Fully self-contained: everything here is data-layer
- * coordination (stores + content resolvers) published as state flows, which
- * is why it is the one controller with no Host at all.
- */
 internal class MusicLibraryController(
     private val application: Application,
     private val scope: CoroutineScope,
@@ -53,21 +43,9 @@ internal class MusicLibraryController(
     private val trackLibrary = TrackLibrary(application)
     private val musicPlaylists = MusicPlaylistStore(application)
 
-    /**
-     * Starts empty and is filled by [refresh]: the library file is one JSON
-     * document covering every imported track and the playlists are a file
-     * each, which is not work to make the first frame wait for. Every screen
-     * that reads this already renders an empty list as "nothing here yet" for
-     * the seconds before a device scan returns.
-     */
     private val _library = MutableStateFlow(LibraryState())
     val library: StateFlow<LibraryState> = _library
 
-    /**
-     * App-side metadata overrides keyed by uri, derived from [library].
-     * Screens (and search) join device/MediaStore rows against this map;
-     * every [saveTrackInfo]/import/analysis pass bumps it.
-     */
     val trackOverrides: StateFlow<Map<String, LibraryTrack>> =
         _library
             .map { st -> st.tracks.associateBy { it.uri } }
@@ -77,12 +55,6 @@ internal class MusicLibraryController(
                 _library.value.tracks.associateBy { it.uri },
             )
 
-    /**
-     * Reads the imported-track library and the playlists off the main thread,
-     * once, to fill the initial value. Skips if anything has published a list
-     * meanwhile - an import or a playlist edit re-lists synchronously, and this
-     * listing may have begun before it.
-     */
     fun refresh() {
         scope.launch(Dispatchers.IO) {
             val tracks = trackLibrary.list()
@@ -95,11 +67,6 @@ internal class MusicLibraryController(
         }
     }
 
-    /**
-     * Embedded-tag metadata read from a file; fields blank/zero when absent.
-     * [fileName]/[sizeBytes] are not tags but the provider's view of the file
-     * itself, carried here because they are what identifies it in the library.
-     */
     private data class FileMeta(
         val title: String,
         val artist: String = "",
@@ -113,22 +80,14 @@ internal class MusicLibraryController(
 
     private val _deviceTracks = MutableStateFlow<List<DeviceTrack>>(emptyList())
 
-    /** Device music index (MediaStore); refreshed on demand from the UI. */
     val deviceTracks: StateFlow<List<DeviceTrack>> = _deviceTracks
 
-    /**
-     * Re-queries the MediaStore device index on IO. Safe to call from any
-     * screen: without the audio permission it just publishes an empty list.
-     * (The query used to run synchronously inside LibraryScreen composition,
-     * janking the first frame of the Library tab on large collections.)
-     */
     fun refreshDeviceTracks() {
         scope.launch(Dispatchers.IO) {
             _deviceTracks.value = queryDeviceTracksBlocking()
         }
     }
 
-    /** Full MediaStore music query; call on Dispatchers.IO. */
     private fun queryDeviceTracksBlocking(): List<DeviceTrack> {
         val permission =
             if (android.os.Build.VERSION.SDK_INT >= 33) {
@@ -187,12 +146,6 @@ internal class MusicLibraryController(
         return out
     }
 
-    /**
-     * Resolves tag metadata the way real media players do: embedded tags
-     * first (MediaMetadataRetriever), then the provider's display name, and
-     * only then the URI path - so content URIs never surface as bare
-     * document numbers. Call on Dispatchers.IO; the retriever hits disk.
-     */
     private fun metadataFor(uri: Uri): FileMeta {
         var title: String? = null
         var artist: String? = null
@@ -210,7 +163,6 @@ internal class MusicLibraryController(
                 artist = tag(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST)
                 album = tag(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: ""
                 genre = tag(android.media.MediaMetadataRetriever.METADATA_KEY_GENRE) ?: ""
-                // Year tags arrive as "1997" or full dates; track numbers as "3" or "3/12".
                 year =
                     tag(android.media.MediaMetadataRetriever.METADATA_KEY_YEAR)
                         ?.filter { it.isDigit() }
@@ -239,14 +191,6 @@ internal class MusicLibraryController(
         )
     }
 
-    /**
-     * The provider's display name and byte size for [uri], blank/zero when it
-     * reports neither. This is the library's dedup identity (see
-     * [LibraryTrack.fileName]), so it is queried for every file rather than
-     * only as a title fallback: SAF and MediaStore hand out different uris
-     * for the same file but the same DISPLAY_NAME/SIZE. One cursor next to
-     * the retriever above, whose disk I/O dwarfs it.
-     */
     private fun openableInfoFor(uri: Uri): Pair<String, Long> =
         runCatching {
             val cols = arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE)
@@ -279,11 +223,8 @@ internal class MusicLibraryController(
             sizeBytes = m.sizeBytes,
         )
 
-    /** Imports picked audio files into the library (persist read permission first). */
     fun importTracks(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        // metadataFor() runs a content-resolver metadata query per file; a
-        // large multi-select would jank/ANR the main thread, so do it on IO.
         scope.launch(Dispatchers.IO) {
             val tracks =
                 uris.map { uri ->
@@ -295,31 +236,17 @@ internal class MusicLibraryController(
                     }
                     libraryTrackFor(uri.toString(), metadataFor(uri))
                 }
-            // A null result means the store was unreadable and nothing was
-            // written, so leave the on-screen list exactly as it is rather
-            // than publishing a list that does not reflect the disk.
             trackLibrary.addAll(tracks)?.let { merged -> _library.update { it.copy(tracks = merged) } }
         }
     }
 
-    /** The stored library/override entry for [uri], if any (imported or user-edited). */
     fun trackOverride(uri: String): LibraryTrack? = _library.value.tracks.firstOrNull { it.uri == uri }
 
-    /**
-     * Track-info-editor prefill: the stored override when one exists, else
-     * the file's embedded tags (retriever runs on IO).
-     */
     suspend fun trackInfoFor(uriStr: String): LibraryTrack =
         trackOverride(uriStr) ?: withContext(Dispatchers.IO) {
             libraryTrackFor(uriStr, metadataFor(Uri.parse(uriStr)))
         }
 
-    /**
-     * Saves user-edited track info into the app-side store. Upserts, so it
-     * works for MediaStore tracks that were never imported; the audio file
-     * itself is never modified. Publishing through [library] (and thus
-     * [trackOverrides]) is what refreshes every observing screen.
-     */
     fun saveTrackInfo(
         uri: String,
         title: String,
@@ -336,12 +263,6 @@ internal class MusicLibraryController(
         }
     }
 
-    /**
-     * Records a finished offline analysis against the track's library row
-     * (duration, bpm, key), creating the row from its tags when the track was
-     * never imported. Call on a background dispatcher - the title fallback
-     * reads the file's tags.
-     */
     fun noteAnalysis(
         uri: Uri,
         timeline: dev.geode.analysis.FeatureTimeline,
@@ -351,11 +272,6 @@ internal class MusicLibraryController(
             ?.let { merged -> _library.update { it.copy(tracks = merged) } }
     }
 
-    /**
-     * One-shot repair for library entries imported before tag reading:
-     * anything titled like a bare document number gets re-resolved from
-     * its embedded tags / display name.
-     */
     fun refreshNumericTitles() {
         scope.launch(Dispatchers.IO) {
             val bad =
@@ -381,7 +297,6 @@ internal class MusicLibraryController(
     private val _mediaRoots =
         MutableStateFlow<Set<String>>(libraryPrefs().getStringSet("roots", emptySet()) ?: emptySet())
 
-    /** Persistent library folders (SAF tree URIs); rescanned on demand. */
     val mediaRoots: StateFlow<Set<String>> = _mediaRoots
 
     private val _libraryScanning = MutableStateFlow(false)
@@ -411,7 +326,6 @@ internal class MusicLibraryController(
         libraryPrefs().edit().putStringSet("roots", _mediaRoots.value).apply()
     }
 
-    /** Re-walks every registered folder; existing entries keep their analysis. */
     fun rescanMediaRoots() {
         if (_libraryScanning.value) return
         scope.launch(Dispatchers.IO) {
@@ -426,7 +340,6 @@ internal class MusicLibraryController(
         }
     }
 
-    /** Recursive SAF walk (VLC-mirror: full tree, hidden dirs skipped). */
     private suspend fun scanTreeBlocking(treeUri: Uri) {
         val found = mutableListOf<LibraryTrack>()
         runCatching {
@@ -468,12 +381,6 @@ internal class MusicLibraryController(
         _library.update { it.copy(playlists = musicPlaylists.list()) }
     }
 
-    /**
-     * Renames a music playlist, surfacing [MusicPlaylistStore.rename]'s
-     * answer instead of dropping it - a caller that cannot see a false here
-     * closes over a rename that never happened (see TakeController.renameTake,
-     * which this mirrors).
-     */
     fun renameMusicPlaylist(
         oldName: String,
         newName: String,

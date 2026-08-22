@@ -5,7 +5,6 @@ import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.sin
 
-/** Waveforms available to an LFO. */
 enum class LfoWave(
     val label: String,
 ) {
@@ -16,11 +15,6 @@ enum class LfoWave(
     RANDOM("S&H"),
 }
 
-/**
- * Parameters an LFO can modulate. Includes chain targets: an LFO may drive
- * the rate or depth of a HIGHER-numbered LFO (evaluation runs in index
- * order, so chains flow 1 -> 2 -> 3 without feedback loops).
- */
 enum class LfoTarget(
     val label: String,
 ) {
@@ -71,22 +65,16 @@ enum class LfoTarget(
     LFO3_DEPTH("LFO3 depth"),
 }
 
-/** One LFO's configuration. Rate is Hz, or a beat division when [beatSync]. */
 data class LfoConfig(
     val enabled: Boolean = false,
     val target: LfoTarget = LfoTarget.NONE,
     val wave: LfoWave = LfoWave.SINE,
     val rateHz: Float = 0.5f,
     val beatSync: Boolean = false,
-    /** Cycle length in beats when beat-synced (0.25 = 16th ... 8 = 2 bars). */
     val beatDiv: Float = 1f,
     val depth: Float = 0.3f,
 )
 
-/**
- * Evaluates up to three chained LFOs each frame on the GL thread. Chain
- * targets modify later LFOs' rate/depth for the current frame only.
- */
 class LfoEngine {
     @Volatile
     var configs: List<LfoConfig> = List(3) { LfoConfig() }
@@ -94,37 +82,13 @@ class LfoEngine {
     private val phases = FloatArray(3)
     private val sampleHold = FloatArray(3)
 
-    /** S&H cycle counter, wrapped to [SH_PHASE_WRAP] - see that constant. */
     private val totalPhase = FloatArray(3)
     private val lastCycle = IntArray(3) { -1 }
 
-    /**
-     * Per-tick scratch, reused instead of reallocated every frame: this runs
-     * in the draw path sixty times a second. Safe to reuse because [tick]
-     * overwrites all three slots of each array before reading them and
-     * nothing outside this class ever sees them - the chain targets mutate
-     * [rateAdd]/[depthAdd] only within one call, and [out] is the value the
-     * caller consumes before the next tick.
-     *
-     * [out] follows [AdsrEngine.tick], which already returns a reused array.
-     * The contract that comes with that: the returned array is this frame's
-     * view, not a snapshot, so a caller that wants to keep values across
-     * ticks must copy them.
-     */
     private val out = FloatArray(3)
     private val rateAdd = FloatArray(3)
     private val depthAdd = FloatArray(3)
 
-    /**
-     * Advances phases and returns each LFO's bipolar output value.
-     *
-     * [safety] caps the rate of any LFO pointed at a full-frame luminance
-     * param. Clamping the VALUES afterwards (which `VisualSafety.apply` does)
-     * bounds where the oscillation goes but not how fast it gets there, and a
-     * square-wave LFO swinging brightness at the 30 Hz ceiling below is the
-     * worst flash the app can produce - reachable by rate-chaining, or by the
-     * randomizer rolling an LFO onto Brightness.
-     */
     fun tick(
         dt: Float,
         bpm: Float,
@@ -133,10 +97,6 @@ class LfoEngine {
         safety: VisualSafety.SafetyConfig = VisualSafety.SafetyConfig.OFF,
     ): FloatArray {
         val cfgs = configs
-        // Seed with external offsets (ADSR envelopes driving LFO rate/depth).
-        // Copied in rather than aliased: the chain targets below add into
-        // these, and the caller's arrays must not come back mutated (that was
-        // `copyOf(3)`'s job, kept here without the two allocations).
         for (i in 0 until 3) {
             out[i] = 0f
             rateAdd[i] = if (extRateAdd != null && i < extRateAdd.size) extRateAdd[i] else 0f
@@ -168,10 +128,6 @@ class LfoEngine {
                     LfoWave.SAW -> ph * 2f - 1f
                     LfoWave.SQUARE -> if (ph < 0.5f) 1f else -1f
                     LfoWave.RANDOM -> {
-                        // One new random value per full LFO cycle (the labeled
-                        // rate), counted on [totalPhase] so the %1f wrap of
-                        // [phases] can't retrigger or skip samples. Its own
-                        // wrap is boundary-aligned: see [SH_PHASE_WRAP].
                         val cycle = floor(totalPhase[i]).toInt()
                         if (cycle != lastCycle[i]) {
                             lastCycle[i] = cycle
@@ -194,33 +150,8 @@ class LfoEngine {
     }
 
     companion object {
-        /**
-         * Wrap period for [totalPhase], the S&H wave's cycle counter - the
-         * float-absorption threat `VisualizerRenderer.TIME_WRAP_SEC`
-         * documents, on the one accumulator in this engine that grows for
-         * the life of the process. Unwrapped, an S&H LFO at the 30 Hz rate
-         * ceiling crosses 2^23 after ~3 days of wallpaper uptime, where the
-         * float32 ULP (1.0) starts absorbing a 60 fps frame's 0.5 advance;
-         * past 2^24 (~a week) the advance is under half an ULP, the
-         * accumulator stops moving, and the "random" wave holds one value
-         * forever.
-         *
-         * Any whole-number period is invisible to the consumer: it compares
-         * consecutive `floor()`s for INEQUALITY only, and the held value is
-         * a fresh draw per transition rather than a hash of the cycle index,
-         * so the 63 -> 0 step at the wrap is exactly the one transition that
-         * cycle boundary owes anyway (a fractional period would put the wrap
-         * mid-cycle and fire a spurious extra sample). 64 leaves margin both
-         * ways: a single tick advances at most 30 Hz * 0.1 s (the renderer's
-         * dt clamp) = 3, so no tick can lap the period; and the ULP just
-         * below 64 (2^-18 ~ 3.8e-6) keeps even the smallest advance
-         * (0.01 Hz at the renderer's 1 ms dt floor = 1e-5) above the
-         * absorption threshold, so the counter cannot stall just beneath
-         * the wrap the way it stalled at 2^24.
-         */
         internal const val SH_PHASE_WRAP = 64f
 
-        /** Applies LFO outputs onto [p], returning the modulated params. */
         fun apply(
             p: SceneParams,
             cfgs: List<LfoConfig>,
@@ -235,20 +166,6 @@ class LfoEngine {
             return r
         }
 
-        /**
-         * One modulator's contribution to one target: the whole
-         * target -> field -> clamp table, in one place.
-         *
-         * Split out of [apply] so [AdsrEngine.apply] can route a target
-         * through it directly. That used to go the long way round - a
-         * throwaway `LfoConfig`, a `listOf` and a `floatArrayOf` per envelope
-         * target per frame, just to describe a single (target, value) pair to
-         * [apply]. Same arithmetic, same clamp order, three fewer objects per
-         * target on every frame of a continuously-rendering loop.
-         *
-         * The `r.copy(...)` per call stays: see [AdsrEngine.apply] for why
-         * the result has to be a fresh immutable snapshot.
-         */
         internal fun applyTarget(
             r: SceneParams,
             target: LfoTarget,

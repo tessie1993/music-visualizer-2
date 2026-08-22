@@ -3,21 +3,7 @@ package dev.geode.engine.audio
 import kotlin.math.exp
 import kotlin.math.max
 
-/**
- * Re-decides a whole track's rhythm from a stored onset curve.
- *
- * This is why an analysis cache stores the raw flux rather than the decided
- * beats: changing "Beat sensitivity" or "Minimum gap between beats" then
- * applies to already-analysed tracks immediately, without decoding them again.
- *
- * The guarantee that matters is that it is the *same* decision. [decide] drives
- * the same [OnsetPeakPicker], [TempoTracker] and [BeatGrid] the live path
- * drives, in the same order, from the same cold start — so live playback, a
- * cached timeline and an exported video cannot disagree about where the beats
- * are.
- */
 object PulseReplay {
-    /** Per-frame rhythm curves, all the same length as the input. */
     class Result(
         val beat: BooleanArray,
         val strength: FloatArray,
@@ -27,14 +13,6 @@ object PulseReplay {
         val energy: FloatArray,
     )
 
-    /**
-     * @param flux the per-frame onset evidence, in order, as produced by
-     *   [ReactiveAnalyzer.fluxValue].
-     * @param rms the per-frame level curve, used only to regrade [Result.energy];
-     *   may be empty, in which case that curve is all zero.
-     * @param hopRateHz the rate the curves were produced at — the refractory,
-     *   the resonator periods and the beat grid are all measured in frames.
-     */
     fun decide(
         flux: FloatArray,
         rms: FloatArray,
@@ -72,6 +50,5 @@ object PulseReplay {
         return Result(beat, strength, transient, phase, confidence, energy)
     }
 
-    /** Must match [ReactiveAnalyzer]'s macro-energy memory, or export drifts. */
     private const val MACRO_PEAK_SECONDS = 20f
 }

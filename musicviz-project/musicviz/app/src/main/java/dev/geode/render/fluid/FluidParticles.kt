@@ -5,27 +5,11 @@ import android.opengl.GLES30
 import dev.geode.R
 import dev.geode.render.scene.GlUtil
 
-/**
- * Rebuilt GPU particle layer with a full spawn -> flow -> catch -> respawn
- * lifecycle. State lives in an MRT ping-pong pair:
- * attachment A = (pos.xy, vel.xy), attachment B = (age, ttl, emitterIndex,
- * seed). One fullscreen quad advances every particle; a static VBO of texel
- * coordinates drives a GL_POINTS render whose vertex stage fetches state.
- *
- * The layer renders whatever choreography it is given: [setChoreography]
- * uploads the current spawn/catch point arrays (packed by
- * [FluidChoreography]), and every recycle - capture by a catch point or ttl
- * expiry - re-births the particle at a CURRENT spawn point, so the
- * population physically migrates as the choreography progresses through the
- * track. Drag-based inertia (v += (flow - v) * k) is what turns tracer dots
- * into streaming light trails. All methods run on the GL thread.
- */
 internal class FluidParticles(
     private val context: Context,
 ) {
     var drag = 0.5f
 
-    /** Base particle lifetime in seconds; per-particle ttl varies 0.6-1.4x. */
     var life = 6f
 
     private var side = 0
@@ -49,8 +33,6 @@ internal class FluidParticles(
         private set
 
     init {
-        // A single centered default spawn keeps the layer usable before the
-        // first choreography upload (and in tests of the seed math).
         spawnData[2] = 1f
         spawnData[3] = 0.35f
     }
@@ -62,12 +44,6 @@ internal class FluidParticles(
         release()
         side = FluidMath.stateSide(particleCount)
         count = side * side
-        // Positions in 16F quantise as particles cluster: use
-        // full-float state when the device can render to it. The meta
-        // attachment needs it too: age accumulates dt every frame, and at
-        // age >= 16 s a half-float ULP (15.6 ms) exceeds a 144 Hz frame -
-        // round-to-nearest freezes aging and long-lived particles would
-        // never expire or fade. 16F fallback stays correct at 60 Hz.
         val stateFmt = formats.rgba32 ?: formats.rgba
         state = FluidBuffers.DoubleMrt(side, side, stateFmt, stateFmt).also { it.create() }
         if (state?.ok != true) {
@@ -76,17 +52,10 @@ internal class FluidParticles(
             return
         }
 
-        // create() also runs mid-draw on quality-tier changes; a compile
-        // failure must disable the layer, never throw on the GL thread.
         try {
             val vert = GlUtil.loadShader(context, R.raw.fluid_base_vert)
             seedProgram = GlUtil.buildProgram(vert, GlUtil.loadShader(context, R.raw.fluid_particle_seed_frag))
             updateProgram = GlUtil.buildProgram(vert, GlUtil.loadShader(context, R.raw.fluid_particle_update_frag))
-            // The app-wide particle look, the same libraries the CPU styles'
-            // shaders include: constants and shapes in both stages, the
-            // fwidth-based shading in the fragment stage only. Each shader
-            // names its own, so this path and ParticleSceneBase's cannot end
-            // up assembling different looks out of the same files.
             renderProgram =
                 GlUtil.buildProgram(
                     GlUtil.loadShader(context, R.raw.fluid_particle_vert),
@@ -101,10 +70,8 @@ internal class FluidParticles(
         uniforms[updateProgram] = GlUtil.UniformCache(updateProgram)
         uniforms[renderProgram] = GlUtil.UniformCache(renderProgram)
 
-        // Fullscreen triangle for the state passes.
         quad.create()
 
-        // Static texel-coordinate VBO: one vec2 per particle, never changes.
         val ids = IntArray(1)
         val texels = FloatArray(count * 2)
         var k = 0
@@ -128,11 +95,6 @@ internal class FluidParticles(
         available = true
     }
 
-    /**
-     * Uploads this frame's choreography (packed by
-     * [FluidChoreography.packSpawns]/[FluidChoreography.packCatches]).
-     * The arrays are copied; safe to reuse the caller's buffers.
-     */
     fun setChoreography(
         spawns: FloatArray,
         spawnPoints: Int,
@@ -145,7 +107,6 @@ internal class FluidParticles(
         catchCount = catchPoints.coerceIn(0, FluidChoreography.MAX_CATCH)
     }
 
-    /** Seeds/advances all particles; call between sim.step and drawing. */
     fun step(
         dt: Float,
         velocityTex: Int,
@@ -180,10 +141,6 @@ internal class FluidParticles(
         GLES30.glUniform1f(loc(updateProgram, "uDt"), dt)
         GLES30.glUniform1f(loc(updateProgram, "uDrag"), drag.coerceIn(0.02f, 1f))
         GLES30.glUniform1f(loc(updateProgram, "uFlowScale"), flowScale)
-        // Wrapped: the respawn hash multiplies time by ~440 and fract()s it;
-        // past ~2 h the float32 ULP exceeds the fract precision and recycle
-        // positions collapse onto a coarse lattice. 256 s of unique phase is
-        // plenty for a visual hash and never degrades.
         GLES30.glUniform1f(loc(updateProgram, "uTime"), timeSeconds % 256f)
         GLES30.glUniform1f(loc(updateProgram, "uLife"), life.coerceIn(1f, 30f))
         GLES30.glUniform4fv(loc(updateProgram, "uSpawns"), FluidChoreography.MAX_SPAWN, spawnData, 0)
@@ -195,14 +152,6 @@ internal class FluidParticles(
         quad.unbind()
     }
 
-    /**
-     * Draws additively into the currently bound framebuffer/viewport.
-     *
-     * [shape] is `SceneParams.particleShape` and [glow] the aura weight, both
-     * fed straight to the shared look in `lib_particle_shade.glsl`; [timeSeconds]
-     * drives its twinkle. They are the reason Particle shape is live on the
-     * fluid styles rather than a dead chip row.
-     */
     fun draw(
         aspect: Float,
         pointScale: Float,
@@ -237,7 +186,6 @@ internal class FluidParticles(
         GLES30.glDisable(GLES30.GL_BLEND)
     }
 
-    /** Positions are seeded in sim space; call when the aspect changes. */
     fun invalidateSeed() {
         seeded = false
     }

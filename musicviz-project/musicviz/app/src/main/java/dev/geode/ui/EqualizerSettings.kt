@@ -16,26 +16,6 @@ import dev.geode.R
 import dev.geode.audio.AudioFxFormat
 import dev.geode.audio.AudioFxState
 
-/**
- * "Equalizer" group: one crystal card ([SettingsGroup], same material as the
- * rest of the Settings tabs - the stock Material Card it used to ride on was
- * the one flat-grey surface in the shell). The master switch sits on the
- * card's own header row, then device preset chips, one horizontal slider per
- * band (vertical sliders are awkward in plain Compose), plus bass boost and
- * loudness. Everything greys out while the chain is off.
- *
- * Three states, not two. `available` alone cannot tell "the device refused
- * the effect" apart from "there is no audio session to attach to yet", and
- * the second is EVERY cold start: ExoPlayer's session id is UNSET until its
- * sink first initializes, so before a single note has played `attach()`
- * returns early, there is no Equalizer, and the card used to declare the
- * device unsupported and disable itself. [AudioFxState.attached] is the
- * distinction, and it is why it exists.
- *
- * The three effects are also independent grants - a device may hand out a
- * BassBoost and refuse an Equalizer - so each control follows its own flag
- * rather than all three riding on the equalizer's.
- */
 @Composable
 fun EqualizerSettings(viewModel: PlayerViewModel) {
     val fx by viewModel.audioFx.collectAsState()
@@ -49,15 +29,6 @@ fun EqualizerSettings(viewModel: PlayerViewModel) {
     )
 }
 
-/**
- * The card itself, over a plain [AudioFxState].
- *
- * Split from the ViewModel binding above so the three states can be composed
- * and read back: which one is showing depends on flags a test cannot make a
- * real device produce (a session id of 0 exists only before the audio sink
- * has ever initialised, and no shadow reproduces a device that grants a
- * BassBoost while refusing an Equalizer).
- */
 @Composable
 internal fun EqualizerCard(
     fx: AudioFxState,

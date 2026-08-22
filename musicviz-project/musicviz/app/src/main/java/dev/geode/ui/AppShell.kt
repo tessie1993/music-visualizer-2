@@ -60,18 +60,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-/** Crash reports are for copy-pasting into a bug report; 64 KB is plenty. */
 private const val CRASH_REPORT_MAX_BYTES = 64 * 1024
 
-/**
- * App shell: bottom nav (Player / Library / Visuals / Studio / Settings)
- * with a mini-player docked above it on every tab except the Player tab
- * (which IS the player), and the fullscreen visualizer (Now Playing) as an
- * overlay expanded from the mini-player.
- * The single VisualizerView is owned here so renderer state (custom shaders,
- * milk preset, params) survives collapse/expand; on re-expand the EGL restore
- * path rebuilds GL state.
- */
 @Composable
 fun AppRoot(viewModel: PlayerViewModel) {
     val context = LocalContext.current
@@ -79,8 +69,6 @@ fun AppRoot(viewModel: PlayerViewModel) {
     val themePack by viewModel.theme.collectAsState()
     val gui by viewModel.guiPrefs.collectAsState()
     val systemDark = isSystemInDarkTheme()
-    // Follow-system-dark: when the OS is in light mode, swap to the lightest
-    // shipped pack; otherwise keep the user's picked stone.
     val effectiveTheme =
         if (gui.followSystemDark && !systemDark) {
             dev.geode.ui.theme.ThemePackCatalog.all
@@ -91,8 +79,6 @@ fun AppRoot(viewModel: PlayerViewModel) {
     var dest by rememberSaveable { mutableStateOf(0) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
-    // rememberSaveable: rotation/config changes must not replay the intro;
-    // only a fresh process start does.
     var bootDone by rememberSaveable { mutableStateOf(false) }
     val bootAnimEnabled =
         remember {
@@ -101,18 +87,12 @@ fun AppRoot(viewModel: PlayerViewModel) {
                 .getBoolean("boot_anim", true)
         }
     val state by viewModel.uiState.collectAsState()
-    // Second screen. The canvas is MOVED to the external display rather than
-    // duplicated, so the screens below must not try to host it at the same
-    // time - a View has one parent.
     val externalDisplay = rememberExternalDisplay()
     val onSecondScreen = gui.secondScreen && externalDisplay != null
     if (onSecondScreen) {
         SecondScreenCanvas(externalDisplay, visualizerView)
     }
 
-    // Crash-report read happens off the main thread — first composition is
-    // on the startup path — and is capped so a runaway report can't balloon
-    // memory. The dialog simply appears a beat later.
     var crashText by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         crashText =
@@ -135,11 +115,6 @@ fun AppRoot(viewModel: PlayerViewModel) {
             }
     }
     VisualizerEngineBindings(viewModel, visualizerView)
-    // System back: other tabs return to the Player tab (dest 0) before the
-    // app exits. Composed FIRST so handlers composed later (library drill-in,
-    // search overlay, expanded visualizer) take priority - Compose gives the
-    // back event to the last-composed enabled handler, unwinding overlays in
-    // the right order: visualizer > search > drill-in > tab > exit.
     androidx.activity.compose.BackHandler(enabled = dest != 0) { dest = 0 }
     CrystalMaterialTheme(
         pack = effectiveTheme,
@@ -169,21 +144,10 @@ fun AppRoot(viewModel: PlayerViewModel) {
             )
         }
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-            // Nebula + star-field backdrop behind every shell tab; the
-            // Scaffold goes transparent so the glow shows through the glass.
-            // Transparent has no `contentColorFor` role, so the writing colour
-            // it derives is whatever LocalContentColor holds - Material's own
-            // default for that is BLACK, and [CrystalMaterialTheme] is what
-            // provides the theme's onBackground in its place. Setting it here
-            // as well would be a second copy of the same decision.
             CrystalBackground(Modifier.fillMaxSize(), reducedMotion = gui.reducedMotion)
             Scaffold(
                 containerColor = Color.Transparent,
                 topBar = {
-                    // hasMedia guard: an empty statusBarsPadding box would
-                    // still reserve inset height with nothing playing.
-                    // dest 0 guard: the Player tab IS the player, so the
-                    // mini-player only docks on the other tabs.
                     if (gui.playerPosition == PlayerPosition.TOP && state.hasMedia && dest != 0) {
                         Box(Modifier.statusBarsPadding()) { miniPlayer() }
                     }
@@ -191,8 +155,6 @@ fun AppRoot(viewModel: PlayerViewModel) {
                 bottomBar = {
                     Column {
                         if (gui.playerPosition == PlayerPosition.BOTTOM && dest != 0) miniPlayer()
-                        // Luminous accent hairline along the top edge of the
-                        // nav glass, per the mockups' "stroked" bottom nav.
                         Box(
                             Modifier
                                 .fillMaxWidth()
@@ -231,9 +193,6 @@ fun AppRoot(viewModel: PlayerViewModel) {
                                 viewModel,
                                 visualizerView,
                                 onOpenNowPlaying = { expanded = true },
-                                // The single GL view can't live in two parents:
-                                // only host it here while Now Playing is closed
-                                // and it has not been sent to a second screen.
                                 liveBackdrop = gui.clearVisualsMenu && !expanded && !onSecondScreen,
                             )
                         3 -> StudioScreen(viewModel)
@@ -281,8 +240,6 @@ fun AppRoot(viewModel: PlayerViewModel) {
                     },
                 )
             }
-            // Above the app, below the boot intro: the question is asked once
-            // the intro has finished playing, not over the top of it.
             if ((!bootAnimEnabled || bootDone) && gui.safetyChoice == VisualSafetyChoice.UNKNOWN) {
                 SafetyConsent(
                     onChoose = { choice, limited ->
@@ -290,7 +247,6 @@ fun AppRoot(viewModel: PlayerViewModel) {
                     },
                 )
             }
-            // Last overlay in the Box so it draws above everything else.
             if (bootAnimEnabled && !bootDone) {
                 BootIntro(onDone = { bootDone = true })
             }
@@ -344,9 +300,6 @@ private fun MiniPlayer(
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyMedium,
             )
-            // Previous sits next to Next here too: with the queue now built
-            // from the list a track was played from, both directions mean
-            // something from the mini-player, not only in Now Playing.
             IconButton(onClick = onPrevious) { StoneIconArt(StoneIcon.PREVIOUS, stringResource(R.string.action_previous)) }
             IconButton(onClick = onPlayPause) {
                 StoneIconArt(
@@ -365,17 +318,6 @@ private fun MiniPlayer(
     }
 }
 
-/**
- * Settings as a nav destination: the header, then [AppSettingsTab]'s
- * category tabs (Look / Audio / Export / Folders / Behavior / About).
- *
- * The old second "Customize" tab is gone: scene parameters belong to the
- * Visuals hub, which already mounts the same [CustomizePanel] as its own
- * tab - one panel, one door, no copy that can drift.
- *
- * Export renders through the export dialog ([ExportHost]), opened from the
- * Export tab; its standing defaults live there too.
- */
 @Composable
 fun SettingsScreen(
     viewModel: PlayerViewModel,
@@ -394,7 +336,6 @@ fun SettingsScreen(
     }
 }
 
-/** One merged track result row (device index or imported library). */
 private data class SearchTrackRow(
     val uri: String,
     val title: String,
@@ -414,16 +355,11 @@ fun SearchScreen(
     val library by viewModel.library.collectAsState()
     val viz by viewModel.vizState.collectAsState()
     val deviceTracks by viewModel.deviceTracks.collectAsState()
-    // The device index may be empty when search opens before the Library tab
-    // has loaded it; refresh is a no-op without the audio permission.
     LaunchedEffect(Unit) { viewModel.refreshDeviceTracks() }
-    // 250 ms debounce: filtering runs once per typing pause, not per
-    // keystroke. Clearing the field takes effect immediately.
     LaunchedEffect(query) {
         if (query.isNotBlank()) delay(250)
         debounced = query
     }
-    // Back closes the search overlay instead of exiting the app.
     androidx.activity.compose.BackHandler { onClose() }
 
     val terms = remember(debounced) { SearchMatcher.terms(debounced) }
@@ -465,9 +401,6 @@ fun SearchScreen(
             viz.presets.filter { SearchMatcher.matches(terms, listOf(it.name)) }
         }
 
-    // Search floats over a full content screen: it gets its own opaque
-    // nebula backdrop so results always read, and the field itself is cut
-    // in the shard silhouette.
     Box(Modifier.fillMaxSize()) {
         CrystalBackground(Modifier.fillMaxSize(), reducedMotion = gui.reducedMotion)
         Column(
@@ -510,8 +443,6 @@ fun SearchScreen(
                                 Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        // The result list is the queue, so Next
-                                        // walks the search hits.
                                         viewModel.playFrom(
                                             trackResults.map { r -> QueueTrack(r.uri, r.title, r.subtitle) },
                                             t.uri,
@@ -601,18 +532,6 @@ fun SearchScreen(
     }
 }
 
-/**
- * The "that track would not play" banner.
- *
- * Overlaid at the top of whatever screen is showing rather than owned by one
- * of them, because the failure arrives from the player and can land while the
- * user is anywhere in the app — including on a tab that has no transport on it
- * at all.
- *
- * Dismisses itself after [NOTICE_VISIBLE_MS]. A skipped track is information,
- * not a decision: making the user tap it away would put a modal in the path of
- * a queue that has already recovered on its own.
- */
 @Composable
 private fun PlaybackNoticeBanner(viewModel: PlayerViewModel) {
     val notice by viewModel.playbackNotice.collectAsStateWithLifecycle()
@@ -657,5 +576,4 @@ private fun PlaybackNoticeBanner(viewModel: PlayerViewModel) {
     }
 }
 
-/** How long a playback notice stays up before clearing itself. */
 private const val NOTICE_VISIBLE_MS = 8_000L

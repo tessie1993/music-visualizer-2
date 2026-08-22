@@ -11,22 +11,12 @@ plugins {
     alias(libs.plugins.detekt)
 }
 
-// Static analysis tuned for this codebase: MagicNumber is graphics tuning
-// here (thousands of shader/scene constants), Compose functions are
-// PascalCase by convention, and the bug-finding rule sets stay on. Current
-// findings are baselined; new SwallowedException/UnusedParameter-class bugs
-// fail the build from now on.
 detekt {
     config.setFrom(rootProject.file("config/detekt/detekt.yml"))
     baseline = file("detekt-baseline.xml")
     buildUponDefaultConfig = true
 }
 
-// Upload-key material for the Play Store build. Resolved from (in order):
-//   1) keystore.properties next to settings.gradle.kts (local dev; git-ignored)
-//   2) GEODE_KEYSTORE / _PASSWORD / _KEY_ALIAS / _KEY_PASSWORD env vars (CI)
-// When neither is present, the release build type is left unsigned so that
-// `assembleRelease` still works for local smoke tests.
 val keystoreProps =
     Properties().apply {
         val f = rootProject.file("keystore.properties")
@@ -59,10 +49,6 @@ android {
         versionCode = 31
         versionName = "1.7.0"
         ndk {
-            // arm64-v8a is what phones run; x86_64 exists so emulators (the
-            // CI instrumented suite included) can load libprojectM and
-            // actually exercise MilkDrop - without it the engine probe fails
-            // there and the whole pipeline is untestable off a phone.
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
@@ -93,24 +79,17 @@ android {
             if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
         }
         debug {
-            // Keep debug installable next to a Play build of the same app.
             isMinifyEnabled = false
         }
     }
 
     packaging {
         jniLibs {
-            // Uncompressed + page-aligned .so in the APK/AAB. Required for the
-            // 16 KB page-size devices Play mandates support for; also lets the
-            // loader mmap libprojectM instead of extracting it.
             useLegacyPackaging = false
         }
     }
 
     bundle {
-        // Geode ships a single locale and its own GL assets; splitting by
-        // language/density only adds ways for a device to end up missing
-        // resources at runtime.
         language {
             enableSplit = false
         }
@@ -121,7 +100,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     lint {
-        // A release upload that fails lint is a wasted review cycle.
         checkReleaseBuilds = true
         abortOnError = true
     }
@@ -132,11 +110,6 @@ android {
     }
 }
 
-// LGPL-2.1 (libprojectM) requires the notice to reach the user, not just sit in
-// the repository, so app/src/main/assets/third_party_notices.txt ships a copy of
-// the root THIRD_PARTY_NOTICES for the in-app "Open source licenses" screen.
-// This task refreshes that copy; `checkThirdPartyNotices` (also run in CI)
-// fails the build if the two ever drift.
 tasks.register<Copy>("syncThirdPartyNotices") {
     description = "Refreshes the bundled copy of THIRD_PARTY_NOTICES."
     from(rootProject.file("THIRD_PARTY_NOTICES")) {
@@ -162,13 +135,6 @@ tasks.register("checkThirdPartyNotices") {
 
 tasks.named("check") { dependsOn("checkThirdPartyNotices") }
 
-// --- 16 KB page-size gate on the packaged artifact ----------------------------
-//
-// Android 15 ships devices with 16 KB memory pages, and a library laid out for
-// 4 KB pages will not load there. native-libs.yml verifies what it builds; this
-// verifies what actually got packaged, which is the part that ships. Wired to
-// the release outputs rather than to `check`, because a debug build on a 4 KB
-// emulator is still a legitimate thing to produce while the rebuild is pending.
 val checkNativePageAlignment =
     tasks.register("checkNativePageAlignment") {
         description = "Fails if a packaged .so is not 16 KB page aligned."
@@ -205,7 +171,6 @@ val checkNativePageAlignment =
         }
     }
 
-/** Largest `p_align` across the ELF64 PT_LOAD segments, or 0 if not an ELF64. */
 fun maxLoadAlignment(bytes: ByteArray): Long {
     if (bytes.size < 0x40 || bytes[0] != 0x7F.toByte() || bytes[4].toInt() != 2) return 0
     val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
@@ -226,19 +191,12 @@ listOf("assembleRelease", "bundleRelease").forEach { name ->
 }
 
 dependencies {
-    // The only engine edge :app is allowed (§4.1). Empty today; the seams move
-    // across it one slice at a time.
     implementation(project(":engine:runtime"))
 
     implementation(libs.core.splashscreen)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.common)
-    // Background playback: the MediaSession is what the lock screen, the
-    // notification transport, headset and Bluetooth buttons all talk to, and
-    // MediaSessionService is what keeps the player alive with no Activity.
     implementation(libs.media3.session)
-    // Export Studio: trim, effects and re-encode over the same MediaCodec
-    // stack the visualizer exporter already uses.
     implementation(libs.media3.transformer)
     implementation(libs.media3.effect)
     implementation(libs.documentfile)

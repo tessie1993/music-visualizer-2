@@ -1,37 +1,21 @@
 package dev.geode.engine.runtime
 
-/** The six lifetimes of MASTER_PLAN §4.3, by what they own. */
 enum class LifetimeId {
-    /** Source registry, shader cache, capability database, recipe catalogue. */
     PROCESS,
 
-    /** PCM ring, analysis graph, sample clock, normalization state, feature ring. */
     PLAYBACK_SESSION,
 
-    /** Scene instances, simulation and modulation state, transitions, seed. */
     VISUAL_SESSION,
 
-    /** Programs, FBOs, textures, buffers, timer queries, pools. */
     GL_CONTEXT,
 
-    /** EGL surface, viewport, output policy, presentation schedule. */
     OUTPUT,
 
-    /** Deterministic frame schedule, fixed quality, encoder bridge. */
     EXPORT,
 }
 
-/** Where a lifetime is. `CLOSED` is terminal. */
 enum class LifetimePhase { IDLE, RUNNING, CLOSED }
 
-/**
- * Something that acquires resources, can be returned to a known state, and
- * releases them exactly once.
- *
- * Written once rather than six times because the failure it prevents already
- * happened here: V2-0-01 fixed a player released while a live consumer still
- * pointed at it, two owners having disagreed about who was last.
- */
 interface EngineLifetime {
     val id: LifetimeId
     val phase: LifetimePhase
@@ -43,14 +27,6 @@ interface EngineLifetime {
     fun close()
 }
 
-/**
- * The transition rules, so an owner writes only what it acquires and releases.
- *
- * `close` is idempotent because teardown races are ordinary - a surface goes
- * away while an export is finishing - and the second close should be boring.
- * `start` after `close` is not: that is a use after free, and returning
- * quietly would hand back an object that looks alive and owns nothing.
- */
 abstract class ManagedLifetime(
     final override val id: LifetimeId,
 ) : EngineLifetime {
@@ -63,12 +39,6 @@ abstract class ManagedLifetime(
         try {
             onStart()
         } catch (t: Throwable) {
-            // A failed acquire leaves no known state to return to, so the
-            // only honest phase is the terminal one: left IDLE, the owner
-            // could retry start() over a half-acquired carcass, and a later
-            // close() would report success while releasing nothing.
-            // [onClose] is NOT called - unwinding a partial acquire belongs
-            // to the thrower, the same contract a failing constructor has.
             phase = LifetimePhase.CLOSED
             throw t
         }
@@ -87,12 +57,9 @@ abstract class ManagedLifetime(
         if (acquired) onClose()
     }
 
-    /** Acquire. Called once, on the first [start]. */
     protected open fun onStart() = Unit
 
-    /** Return to a known state without releasing. Called only while running. */
     protected open fun onReset() = Unit
 
-    /** Release. Called once, and only if [onStart] ran. */
     protected open fun onClose() = Unit
 }

@@ -4,15 +4,6 @@ import dev.geode.data.Preset
 import dev.geode.render.VisualizerRenderer
 import dev.geode.render.scene.SceneParams
 
-/**
- * Bundled presets: a set of strongly-differentiated Customize bundles applied
- * to every scene, so each visual style ships with ready-made looks that each
- * exercise a distinct combination of motion, shape, color and screen-FX
- * parameters. They appear next to the user's saved presets and can be applied,
- * added to the visual playlist, and picked by Random mode. Names use the
- * "scene · Look" pattern; the separator never appears in user preset
- * filenames, so they can't clash.
- */
 object BuiltInPresets {
     private data class Look(
         val name: String,
@@ -222,21 +213,6 @@ object BuiltInPresets {
             ),
         )
 
-    /**
-     * Launch variants for the two shader styles that are more than a look on a
-     * field, and so want a starting point of their own on top of the twelve
-     * [LOOKS] every shader scene already gets.
-     *
-     * "winter · Flurry" turns the FlowField on. The style itself no longer
-     * samples `uFlow` - the composite pass warps every style through that same
-     * field, and reading it twice is a double-apply - so the toggle is what
-     * makes a finger drag (or the vector field's own drift) blow the snow
-     * around, which is the gesture the style was written for.
-     *
-     * "lava · Lamp" is the style at its own pace: slow clock, long parameter
-     * fade, and a warm two-palette blend, so the 18-40 s rise-and-sink of a
-     * blob reads as a lifecycle rather than as motion.
-     */
     private val SHADER_VARIANTS: List<Preset> =
         listOf(
             Preset(
@@ -289,11 +265,6 @@ object BuiltInPresets {
             ),
         )
 
-    /**
-     * The six fluid launch variants: strongly differentiated starting points
-     * for the FLUID scene, each leaning on a different part of the system
-     * (emitter pattern, particle layer, chromatic aging, look chain).
-     */
     private val FLUID_VARIANTS: List<Preset> =
         listOf(
             Preset(
@@ -315,8 +286,6 @@ object BuiltInPresets {
                         fluidBloomIntensity = 0.5f,
                         fluidParticlesEnabled = false,
                         palette = 5,
-                        // Slow single-spawn drift: ink wells up from one
-                        // wandering source; no catch wells.
                         fluidSpawnPath = 4,
                         fluidSpawnPoints = 1,
                         fluidCatchPoints = 0,
@@ -339,7 +308,6 @@ object BuiltInPresets {
                         fluidParticlesEnabled = true,
                         fluidParticleDrag = 0.35f,
                         palette = 2,
-                        // Orbiting spawns with a strong central drain.
                         fluidSpawnPath = 0,
                         fluidSpawnPoints = 3,
                         fluidCatchPoints = 1,
@@ -388,8 +356,6 @@ object BuiltInPresets {
                         fluidStirrerSpeed = 0.8f,
                         fluidBloomIntensity = 1.1f,
                         palette = 7,
-                        // Pure-particle scene: golden-angle bloom births with
-                        // two gravity wells the streams fall into.
                         fluidSpawnPath = 3,
                         fluidSpawnPoints = 5,
                         fluidParticleLife = 9f,
@@ -456,9 +422,6 @@ object BuiltInPresets {
                 customShader = null,
                 params =
                     SceneParams(
-                        // The progression showcase: everything rides the
-                        // track - spawns weave a rose that blooms outward,
-                        // catches spiral in for the finale drain.
                         fluidSpawnPath = 2,
                         fluidSpawnPoints = 4,
                         fluidSpawnProgress = 1f,
@@ -484,9 +447,6 @@ object BuiltInPresets {
                 customShader = null,
                 params =
                     SceneParams(
-                        // A deep rained-on pool: beats land interfering rings
-                        // from scattered spawns, one slow stirrer carves a
-                        // wake, treble sparkle patters small drops between.
                         waterDepth = 0.7f,
                         waterSpecular = 0.8f,
                         waterRippleStrength = 1.1f,
@@ -511,8 +471,6 @@ object BuiltInPresets {
                 customShader = null,
                 params =
                     SceneParams(
-                        // Curl-noise streams born at lissajous spawns, drawn
-                        // into two drifting wells; trails carry the motion.
                         fluidSpawnPath = 1,
                         fluidSpawnPoints = 3,
                         fluidCatchPoints = 2,
@@ -530,13 +488,6 @@ object BuiltInPresets {
             ),
         )
 
-    /**
-     * Cymatics starting points: one field, three ways of looking at it.
-     * "CymaScope" is the water dish photographed from above - bright nodal
-     * filigree over dark cells, the laboratory reading; "Psychedelic" fills
-     * that same field in and lets the palette band it into iridescent rings;
-     * "Chladni plate" swaps the round dish for the square plate's lattice.
-     */
     private val CYMATICS_VARIANTS: List<Preset> =
         listOf(
             Preset(
@@ -573,8 +524,6 @@ object BuiltInPresets {
                 params =
                     SceneParams(
                         cymaticsGeometry = 0,
-                        // Fewer, longer-ringing modes: the iridescent banding
-                        // reads as one flowing figure rather than as noise.
                         cymaticsFundamental = 90f,
                         cymaticsModes = 3,
                         cymaticsFocus = 0.85f,
@@ -603,8 +552,6 @@ object BuiltInPresets {
                         cymaticsModes = 4,
                         cymaticsFocus = 0.9f,
                         cymaticsRing = 0.5f,
-                        // The square plate's own domain is [-1, 1], so a scale
-                        // near 1 frames one plate rather than tiling several.
                         cymaticsScale = 1.15f,
                         cymaticsFill = 0.3f,
                         cymaticsLine = 1.1f,
@@ -619,19 +566,6 @@ object BuiltInPresets {
             ),
         )
 
-    /**
-     * Hyperspace starting points: the same room of living fractals, entered
-     * three different ways.
-     *
-     * "Breakthrough" is the style with nothing held back - every body, every
-     * species, the widest palette - and it is the one to look at first.
-     * "Chrysanthemum" holds the mirrored act, which is the dense symmetric
-     * fabric rather than a set of objects. "Coral garden" is the slow one: one
-     * species, long-lived bodies, barely any filigree, so the room reads as
-     * something growing instead of something happening. "Molten" turns the
-     * medium all the way up: the fluid pulls the geometry so far out of shape
-     * that the fractals read as something poured rather than something built.
-     */
     private val HYPERSPACE_VARIANTS: List<Preset> =
         listOf(
             Preset(
@@ -683,13 +617,10 @@ object BuiltInPresets {
                         hyperFold = 0.35f,
                         hyperGlow = 1f,
                         hyperNeon = 1.4f,
-                        // The act that IS the fabric: the filigree carries it.
                         hyperField = 1.5f,
                         hyperHaze = 0.5f,
                         hyperMirrorFolds = 6,
                         hyperTrap = 1f,
-                        // The mirror already carries the composition, so the
-                        // medium is a sheen on it rather than a force in it.
                         hyperMelt = 0.3f,
                         hyperStain = 0.45f,
                         hyperLiquid = 0.3f,
@@ -710,10 +641,6 @@ object BuiltInPresets {
                         speed = 0.6f,
                         hyperJourney = dev.geode.render.scene.HyperspaceMath.JOURNEY_CYCLE,
                         hyperCycleSeconds = 55f,
-                        // CORAL is index 4 of HYPERSPACE_SPECIES: "Mixed" plus
-                        // the species in ordinal order, so a species is its
-                        // ordinal + 1. Written as the ordinal rather than as 4
-                        // so appending a species cannot move this preset.
                         hyperSpecies = dev.geode.render.scene.HyperspaceMath.Species.CORAL.ordinal + 1,
                         hyperBodies = 0.8f,
                         hyperLifetime = 30f,
@@ -726,8 +653,6 @@ object BuiltInPresets {
                         hyperField = 0.25f,
                         hyperHaze = 0.9f,
                         hyperTrap = 1.2f,
-                        // Slow water: enough flow to keep the growths swaying,
-                        // long-lived ink so the wakes stay readable.
                         hyperMelt = 0.45f,
                         hyperStain = 0.7f,
                         hyperLiquid = 0.5f,
@@ -759,9 +684,6 @@ object BuiltInPresets {
                         hyperField = 0.5f,
                         hyperHaze = 0.6f,
                         hyperTrap = 0.7f,
-                        // The medium wins. Fewer, larger bodies so there is
-                        // something substantial for it to pull on, and a
-                        // slow-clearing field so the ink builds into strata.
                         hyperMelt = 1.35f,
                         hyperStain = 1f,
                         hyperLiquid = 0.75f,
@@ -769,9 +691,6 @@ object BuiltInPresets {
                         hyperStir = 2f,
                         hyperSwirl = 40f,
                         hyperFlowFade = 0.12f,
-                        // Melt costs frames: two texture reads per march step
-                        // and a shorter step. Trimmed here so the preset that
-                        // uses the most of it still runs at the same rate.
                         hyperDetail = 0.8f,
                         palette = 10,
                         hueRange = 1.1f,

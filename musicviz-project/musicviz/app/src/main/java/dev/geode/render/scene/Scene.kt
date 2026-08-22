@@ -2,17 +2,11 @@ package dev.geode.render.scene
 
 import dev.geode.analysis.AudioFeatures
 
-/**
- * A visualization scene. All methods run on the GL thread. Implementations
- * must (re)create every GL resource in [init]; the context is lost on pause
- * and handles are never valid across lifecycles.
- */
 interface Scene {
     val id: String
 
     fun init()
 
-    /** Applies user parameters; default implementation ignores them. */
     fun setParams(params: SceneParams) {}
 
     fun resize(

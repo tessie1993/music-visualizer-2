@@ -45,31 +45,6 @@ import dev.geode.ui.theme.stoneTypography
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/*
- * Crystal design kit - the tumbled-stone language from the crystal theme
- * packs: photographed mineral surfaces with the light inside the stone,
- * Mali UI type with Mystery Quest display headings, soft settled glows and
- * ambient stone backdrops. Nothing mineral is drawn procedurally any more;
- * the packs' photographed art IS the material (see ui/theme/ThemePack.kt).
- */
-
-/**
- * MaterialTheme plus the selected stone pack. Keeping these together
- * prevents panels from silently falling back to the default pack when a
- * screen is moved or reused elsewhere in the shell.
- *
- * Also the single provider of [LocalFontColor]: the RESOLVED font colour
- * override (null when automatic, or when the light-pack contrast gate in
- * [resolvedFontColor] rejected it), so [accentTextColor] call sites never
- * have to re-derive whether the override is readable.
- *
- * And of [LocalContentColor], which Material does NOT provide: the shell's
- * `Scaffold` deliberately runs `containerColor = Color.Transparent` so the
- * stone backdrop shows through, and `contentColorFor(Transparent)` matches no
- * role and would hand the whole app black-on-near-black. Providing it HERE
- * rather than on the Scaffold covers the overlays composed outside it too
- * (search, the crash dialog, the fullscreen visualizer, the second screen).
- */
 @Composable
 internal fun CrystalMaterialTheme(
     pack: ThemePack,
@@ -97,32 +72,16 @@ internal fun CrystalMaterialTheme(
     }
 }
 
-/**
- * Theme typography: Mali for UI copy, Mystery Quest for display headings,
- * exactly as the packs bundle them. [textScale] (the Appearance "Text size"
- * option, [GuiPrefs.textScale]) multiplies every font size, clamped to the
- * slider's bounds.
- */
 fun crystalTypography(textScale: Float = 1f): Typography =
     stoneTypography(
         textScale.coerceIn(GuiPrefs.TEXT_SCALE_MIN, GuiPrefs.TEXT_SCALE_MAX),
     )
 
-/**
- * Tumbled-pebble silhouette for small controls built without photographed
- * art (text fields, menus). The packs' corner model is a soft tumbled
- * superellipse; a generous rounded corner is its live-layout equivalent -
- * the cut-gem corners of the old kit are gone with the rest of that look.
- */
 fun crystalShardShape(
     cut: Dp = 12.dp,
     minor: Dp = 4.dp,
 ): Shape = RoundedCornerShape((cut + minor) * 1.2f)
 
-/**
- * Small round pebble marker - the kit's selection/indicator glyph, lit from
- * within like the pack contract's "steady low backlight".
- */
 @Composable
 fun CrystalGem(
     color: Color,
@@ -139,9 +98,6 @@ fun CrystalGem(
     )
 }
 
-// ------------------------------------------------------------- text pieces
-
-/** Tracked-caps overline label ("RECENTLY PLAYED", "COLOR PALETTE", …). */
 @Composable
 fun CrystalOverline(
     text: String,
@@ -160,7 +116,6 @@ fun CrystalOverline(
     )
 }
 
-/** Display screen title with the pack's soft glow settled behind the glyphs. */
 @Composable
 fun GlowTitle(
     text: String,
@@ -176,12 +131,6 @@ fun GlowTitle(
     )
 }
 
-// ------------------------------------------------------------- glow drawing
-
-/**
- * Soft radial bloom behind a roughly-circular control (play buttons, dots).
- * Draws outside the layout bounds so keep it on unclipped containers.
- */
 fun Modifier.softGlow(
     color: Color,
     radius: Dp = 16.dp,
@@ -202,18 +151,6 @@ fun Modifier.softGlow(
         )
     }
 
-/**
- * Stone panel: the pack's photographed material tiled behind a translucent
- * surface tint, clipped to a tumbled corner and finished with a settled glow
- * hairline. Replaces the old procedural glass panel; the mineral character
- * now comes from the pack's real texture at its authored `surfaceOpacity`.
- *
- * The signature is unchanged from the old kit so panel call sites carry
- * over: [opacity]/[tint] still shape the glass base, [glow] still colours
- * the edge light ([sheen] joins it when [prismatic] marks a selection), and
- * [facets] now scales the material texture's presence instead of painted
- * glints.
- */
 fun Modifier.crystalPanel(
     opacity: Float,
     tint: Color,
@@ -254,7 +191,6 @@ fun Modifier.crystalPanel(
             .clip(shape)
             .background(tint.copy(alpha = alpha))
             .drawBehind {
-                // Tile the stone texture edge to edge; the art is seamless.
                 if (texAlpha > 0f) {
                     val tw = tile.width
                     val th = tile.height
@@ -280,7 +216,6 @@ fun Modifier.crystalPanel(
             }.border(1.dp, borderBrush, shape)
     }
 
-/** Thin luminous divider line (transparent → glow → transparent). */
 fun Modifier.luminousHairline(glow: Color): Modifier =
     background(
         Brush.horizontalGradient(
@@ -290,17 +225,6 @@ fun Modifier.luminousHairline(glow: Color): Modifier =
         ),
     )
 
-// ------------------------------------------------------------- backdrop
-
-/**
- * The pack's ambient stone photograph behind shell screens, orientation-
- * matched and centre-cropped, with a light wash of the (possibly dimmed)
- * theme background so writing keeps its measured contrast on busy areas of
- * the stone.
- *
- * The art is static by design - the pack contract keeps ambient light
- * settled - so [reducedMotion] needs nothing extra here.
- */
 @Composable
 fun CrystalBackground(
     modifier: Modifier = Modifier,
@@ -328,13 +252,6 @@ fun CrystalBackground(
     }
 }
 
-// ------------------------------------------------------------- canvas host
-
-/**
- * Hosts the shared [VisualizerView] in Compose, detaching it from any
- * previous parent first - the single GL view moves between Now Playing and
- * the clear-overlay Visuals hub, and a view can only have one parent.
- */
 @Composable
 fun VisualizerCanvasHost(
     view: VisualizerView,

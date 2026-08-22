@@ -25,16 +25,6 @@ import dev.geode.R
 import dev.geode.audio.CaptureFailure
 import dev.geode.audio.PlaybackCaptureService
 
-/**
- * "Visualize other apps": the settings half of reading Spotify, YouTube or
- * anything else playing on the device.
- *
- * The screen is mostly honesty. Playback capture is a permission the user is
- * right to be careful with, and it is a feature that will genuinely not work
- * for some apps no matter what anyone does - so this says both things plainly,
- * up front, and offers the microphone as the fallback that always works
- * instead of leaving a switch that appears to do nothing.
- */
 @Composable
 fun ExternalAudioSettings(viewModel: PlayerViewModel) {
     val context = LocalContext.current
@@ -54,9 +44,6 @@ fun ExternalAudioSettings(viewModel: PlayerViewModel) {
         val manager = context.getSystemService(MediaProjectionManager::class.java)
         projectionLauncher.launch(manager.createScreenCaptureIntent())
     }
-    // RECORD_AUDIO is what the capture recorder needs; POST_NOTIFICATIONS is
-    // what lets its ongoing notification actually appear. Asked together so
-    // the user answers once, then meets the system capture dialog.
     val permissions =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
             if (granted[android.Manifest.permission.RECORD_AUDIO] != false) {
@@ -159,14 +146,6 @@ fun ExternalAudioSettings(viewModel: PlayerViewModel) {
     }
 }
 
-/**
- * The Spotify case, spelled out.
- *
- * This is the one failure the feature cannot engineer its way out of, so it
- * gets a real explanation and a working alternative rather than an error
- * string. The microphone hears the same speaker; it is worse, and it is not
- * nothing.
- */
 @Composable
 private fun RefusedNotice(
     viewModel: PlayerViewModel,

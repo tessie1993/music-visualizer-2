@@ -10,7 +10,6 @@ import dev.geode.render.LfoWave
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Persists the three LFO slots in shared preferences as JSON. */
 class LfoStore(
     context: Context,
 ) {

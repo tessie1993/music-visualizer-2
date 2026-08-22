@@ -15,17 +15,8 @@ import androidx.compose.ui.unit.sp
 import dev.geode.R
 import dev.geode.ui.ThemeContrast
 
-/**
- * The active crystal pack. Provided by `CrystalMaterialTheme` at the app
- * root; every stone-painted component reads its art, palette and motion from
- * here rather than from per-call parameters.
- */
 val LocalThemePack = staticCompositionLocalOf { ThemePackCatalog.all.first() }
 
-/**
- * Mali carries all UI copy - the packs bundle it in four weights and name it
- * as the `uiFamily` token.
- */
 val MaliFamily =
     FontFamily(
         Font(R.font.mali_regular, FontWeight.Normal),
@@ -34,19 +25,8 @@ val MaliFamily =
         Font(R.font.mali_bold, FontWeight.Bold),
     )
 
-/**
- * Mystery Quest is the display face. The pack contract reserves it for the
- * product mark and short high-level headings; body copy never uses it.
- */
 val MysteryQuestFamily = FontFamily(Font(R.font.mystery_quest_regular, FontWeight.Normal))
 
-/**
- * Typography from the packs' shared `typography` tokens (`scaleSp`:
- * display 42, headline 30, title 22, body 16, label 14, caption 12).
- *
- * [textScale] is the user's Appearance setting; it multiplies size and line
- * height together so scaled text keeps its rhythm.
- */
 fun stoneTypography(textScale: Float = 1f): Typography {
     fun style(
         family: FontFamily,
@@ -78,16 +58,6 @@ fun stoneTypography(textScale: Float = 1f): Typography {
     )
 }
 
-/**
- * Material [ColorScheme] for a pack, mapping the thirteen authored roles onto
- * Material's slots directly - no anchor lerping. The packs author their
- * palettes against the stone photography and publish the contrast numbers,
- * so derivation would only drift from the design.
- *
- * [accentIntensity] and [backgroundDim] remain the user's Appearance
- * settings and post-process the authored roles; [fontColorOverride] repaints
- * the writing roles when the shell has already resolved it as readable.
- */
 fun ThemePack.colorScheme(
     accentIntensity: Float = 1f,
     backgroundDim: Float = 0f,
@@ -104,10 +74,6 @@ fun ThemePack.colorScheme(
     val surface = p.surface.dimmed()
     val surfaceHigh = p.surfaceHigh.dimmed()
 
-    // Writing roles are authored against the UNDIMMED stone, so each one is
-    // re-checked against the surface it is actually painted on. Undimmed that
-    // is a no-op - every shipped pack clears its bars as authored - and it
-    // only engages once the dim has moved the ground out from under a colour.
     val onBackground = readableOn(p.onBackground, background, ThemeContrast.BODY_CONTRAST_MIN)
     val onSurface = readableOn(p.onSurface, surface, ThemeContrast.BODY_CONTRAST_MIN)
     val base =
@@ -169,30 +135,6 @@ fun ThemePack.colorScheme(
     }
 }
 
-/**
- * The pack's authored writing colour for [surface], pulled toward black or
- * white only as far as it must be to stay readable on it.
- *
- * The packs author each writing role against the stone as photographed, and
- * publish the contrast figures for it - so at the shipped setting this
- * returns [authored] untouched and the design is exactly what the pack says.
- * Background dim (0..0.6) is the one thing that moves the ground afterwards:
- * it darkens background and surfaces while the authored writing stays put,
- * and Clear Quartz crosses from light to dark around a third of the way along
- * the slider. Past that the panels are near-black and near-black writing goes
- * with them - a blank screen, from a slider that only claimed to dim.
- *
- * Two things this deliberately does NOT do:
- *
- *  - switch on the surface's luminance crossing 0.5. The two candidate tones
- *    do not straddle the surface symmetrically, so a midpoint switch puts the
- *    WORST contrast either side of itself; the direction is chosen by which
- *    extreme the surface is further from, which is the same question asked
- *    correctly.
- *  - pull a fixed amount. The pull deepens only until [minRatio] is met, so a
- *    role that has just crossed its bar keeps almost all of its authored
- *    colour instead of being flattened to plain white.
- */
 private fun readableOn(
     authored: Color,
     surface: Color,
@@ -209,7 +151,6 @@ private fun readableOn(
     return tone
 }
 
-/** WCAG contrast ratio between two opaque colours. */
 private fun contrastRatio(
     a: Color,
     b: Color,

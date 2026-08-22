@@ -36,11 +36,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.geode.R
 
-/**
- * LOOK: everything about how the app itself is dressed - the theme stones,
- * the writing (font colour and size), and the layout of the control shell.
- * Every control applies live; nothing here needs a restart.
- */
 @Composable
 internal fun LookSettingsTab(viewModel: PlayerViewModel) {
     val gui by viewModel.guiPrefs.collectAsState()
@@ -105,13 +100,6 @@ internal fun LookSettingsTab(viewModel: PlayerViewModel) {
     }
 }
 
-/**
- * Material-true theme swatches: each chip renders inside a
- * [dev.geode.ui.theme.LocalThemePack] override so [crystalPanel] tiles the
- * CANDIDATE pack's photographed stone rather than the current one's - a tray
- * of material samples, not a row of labeled buttons. Order is the catalog's,
- * which is the pack import order.
- */
 @Composable
 private fun ThemePickerRow(
     viewModel: PlayerViewModel,
@@ -151,13 +139,6 @@ private fun ThemePickerRow(
     }
 }
 
-/**
- * Font colour, as the curated swatch row ([FontColorChoice.CHOICES], Auto
- * first). Applies live through [GuiPrefs.fontColorArgb]. On light themes the
- * swatches that would be unreadable ([AppTheme.fontColorActive] false) are
- * greyed out and inert rather than silently ignored after the tap. The
- * "White" swatch is what the retired white-font switch became.
- */
 @Composable
 private fun FontColorRow(
     viewModel: PlayerViewModel,
@@ -172,9 +153,6 @@ private fun FontColorRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(FontColorChoice.CHOICES) { choice ->
-                // The dim is part of the question: it is what decides whether
-                // this theme is painting a light surface right now, and the
-                // greying here has to agree with what colorScheme will do.
                 val usable = choice.argb == null || appTheme.fontColorActive(choice.argb, gui.backgroundDim)
                 val sel = gui.fontColorArgb == choice.argb
                 val shape = crystalShardShape(8.dp, 3.dp)
@@ -187,9 +165,6 @@ private fun FontColorRow(
                     Modifier
                         .graphicsLayer { alpha = if (usable) 1f else 0.35f }
                         .clickable(enabled = usable) {
-                            // whiteFont is the retired legacy switch; cleared on
-                            // every pick so it can never resurrect an override
-                            // after the user chooses Auto.
                             viewModel.setGuiPrefs(gui.copy(fontColorArgb = choice.argb, whiteFont = false))
                         }.padding(2.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -231,7 +206,6 @@ private fun FontColorRow(
     }
 }
 
-/** The control-shell layout knobs: bars, corners, player placement. */
 @Composable
 private fun LayoutGroup(
     viewModel: PlayerViewModel,
@@ -287,10 +261,6 @@ private fun LayoutGroup(
     BootAnimationRow()
 }
 
-/**
- * Boot animation toggle. Persisted directly rather than through GuiPrefs
- * because AppRoot reads it before any ViewModel exists, at start.
- */
 @Composable
 private fun BootAnimationRow() {
     val ctx = LocalContext.current

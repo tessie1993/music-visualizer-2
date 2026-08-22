@@ -2,6 +2,7 @@ package dev.geode.ui
 
 import android.app.Application
 import android.net.Uri
+import dev.geode.RingLog
 import dev.geode.analysis.AnalysisCache
 import dev.geode.analysis.FeatureTimeline
 import dev.geode.analysis.IntelligenceMode
@@ -108,6 +109,7 @@ internal class TrackAnalysisController(
         if (mode != IntelligenceMode.MANUAL && timeline == null) analyzeCurrentTrack()
     }
 
+    @Suppress("TooGenericExceptionCaught")
     fun analyzeCurrentTrack() {
         val uri = host.currentUri ?: return
         if (analyzingUri == uri) return
@@ -143,8 +145,10 @@ internal class TrackAnalysisController(
                         }
                     }
                 }
+            } catch (c: CancellationException) {
+                throw c
             } catch (t: Throwable) {
-                if (t is CancellationException) throw t
+                RingLog.note("Analysis", "track analysis failed", t)
                 if (analyzingUri == uri) {
                     analyzingUri = null
                     host.vizState.update { it.copy(analyzing = false) }
@@ -153,6 +157,7 @@ internal class TrackAnalysisController(
         }
     }
 
+    @Suppress("ReturnCount")
     fun applyIntelligence() {
         if (host.presetLocked) return
         if (host.vizState.value.intelligenceMode != IntelligenceMode.AUTO) return
@@ -175,6 +180,7 @@ internal class TrackAnalysisController(
         host.vizState.update { if (it.sceneId == suggestion) it else it.copy(sceneId = suggestion) }
     }
 
+    @Suppress("ReturnCount")
     private fun waveformOf(timeline: FeatureTimeline): FloatArray? {
         val frames = timeline.frames
         if (frames.size < WAVEFORM_BUCKETS) return null

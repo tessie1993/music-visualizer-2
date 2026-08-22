@@ -11,17 +11,6 @@ import dev.geode.render.scene.GlUtil
 import dev.geode.render.scene.SceneParams
 import kotlin.math.pow
 
-/**
- * The composite pass' grading uniforms for one frame, in the exact shape
- * `composite_frag.glsl` reads them.
- *
- * [enabled] is load-bearing rather than decorative: the neutral value of the
- * rest of this block is 1.0, not 0.0, so a program that leaves them unset
- * reads GL's default 0 and renders black at 20x zoom. It is the `z` component
- * of the shader's per-texture gate (`CompositeGrade.Gate.grade`); when a scene
- * grades itself the gate is off AND every value here is the identity, so the
- * block is a no-op either way.
- */
 internal data class ExportGradeUniforms(
     val enabled: Boolean,
     val zoom: Float,
@@ -33,45 +22,17 @@ internal data class ExportGradeUniforms(
     val hue: Float,
 )
 
-/**
- * Export-side mirror of the live renderer's composite grading state.
- *
- * Rotation is a SPEED in every scene (`rotationAngle += p.rotation * dt`) and
- * the colour cycle is a phase, so the composite pass integrates both itself
- * instead of feeding the raw sliders through as static offsets. An export
- * renders on its own clock, so [advance] is driven by the export's frame delta
- * (1/fps): ten seconds of exported video then spins and cycles exactly as far
- * as ten seconds of live playback, at any frame rate.
- *
- * Kept out of [FxCompositor] itself (and free of GL calls) so the headless
- * gate can drive it frame by frame - see `ExportCompositeGradeTest`.
- */
 internal class ExportGradeState {
-    /** Integrated rotation angle, in radians, wrapped to +-2*pi. */
     var rotationAngle: Float = 0f
         private set
 
-    /** Integrated colour-cycle phase in [0,1), added to the Hue shift. */
     var cyclePhase: Float = 0f
         private set
 
-    /**
-     * Beat envelope driving the "Beat pulse" swell: a peak-hold of the graded
-     * impulse that decays at [CompositeGrade.BEAT_DECAY]. NOT 1 on every beat
-     * - it rises to how hard the hit actually was, so a soft verse hit leaves
-     * a smaller swell than a drop. [pulseAmount] then SQUARES it.
-     */
     var beatPulse: Float = 0f
 
         private set
 
-    /** Advances one exported frame; [dtSeconds] is the export's 1/fps.
-     *  [impulse] is the exported frame's graded motion impulse - production
-     *  passes [dev.geode.analysis.AudioFeatures.motionImpulse], matching
-     *  `VisualizerRenderer`'s live `postBeatPulse`; it is the beat impulse
-     *  topped up by off-grid transients, so the two differ whenever a
-     *  suppressed transient is present. It decays on the export's own clock so
-     *  a 30 fps and a 60 fps render pulse for the same wall time. */
     fun advance(
         params: SceneParams,
         dtSeconds: Float,
@@ -82,33 +43,17 @@ internal class ExportGradeState {
         beatPulse = CompositeGrade.integrateBeatPulse(beatPulse, impulse, dtSeconds)
     }
 
-    /** Boolean convenience (a beat = a full-strength kick), for callers and
-     *  tests without a graded impulse. */
     fun advance(
         params: SceneParams,
         dtSeconds: Float,
         beat: Boolean = false,
     ) = advance(params, dtSeconds, if (beat) 1f else 0f)
 
-    /**
-     * The value to upload as `uPostPulse`, gated on a DIFFERENT set from
-     * [uniforms]: only ShaderScene (uPulse) and the particle pipeline (a uSize
-     * swell) read `pulse` themselves, so only they are neutralised. MilkDrop
-     * grades itself but never pulses, so it is graded in its own pass yet
-     * pulsed in the composite - see `VisualizerRenderer`'s matching comment.
-     */
     fun pulseAmount(
         params: SceneParams,
         pulsesItself: Boolean,
     ): Float = if (pulsesItself) 0f else CompositeGrade.pulseAmount(params.pulse, beatPulse)
 
-    /**
-     * The uniforms to upload, gated exactly like `VisualizerRenderer`'s
-     * composite pass: scenes that grade themselves (shader, particle,
-     * milkdrop) get the neutral identity and the disable flag, so they stay
-     * bit-identical; only the fluid family (Fluid, Curl Flow, Water), which
-     * grades nothing of its own, is graded here.
-     */
     fun uniforms(
         params: SceneParams,
         gradesItself: Boolean,
@@ -138,18 +83,6 @@ internal class ExportGradeState {
         }
 }
 
-/**
- * Applies Geode's screen-space composite FX chain (geometry, chromatic
- * aberration, vignette, scanlines, grain, glitch, fisheye, strobe, bloom,
- * posterize, invert) plus the universal colour grade / zoom / rotation to an
- * exported frame, exactly as the live renderer does.
- *
- * The scene is drawn into [sceneFbo] instead of straight to the encoder
- * surface; each frame we then draw a fullscreen quad sampling that texture
- * through the composite shader onto the encoder surface. Without this pass,
- * exports would omit every composite-only customization - most visibly on
- * particle scenes, whose own pipeline can't honor shape/color params.
- */
 internal class FxCompositor(
     context: Context,
     val width: Int,
@@ -159,18 +92,8 @@ internal class FxCompositor(
     private val fadeProgram = GlUtil.buildProgram(loadRaw(context, R.raw.fade_vert), loadRaw(context, R.raw.fade_frag))
     private val trailWarpProgram = GlUtil.buildProgram(loadRaw(context, R.raw.fade_vert), loadRaw(context, R.raw.trail_warp_frag))
 
-    /** Feedback buffer for the warp trail; see the live renderer's `trail`. */
     private val trail = dev.geode.render.RenderTarget("exportTrail")
 
-    /**
-     * The export's own rolling flash budget, driven by the export clock.
-     *
-     * The live renderer keeps a second instance. Both apply the same rule to
-     * the same beat grid, so neither can flash at a rate the other would have
-     * refused. Frame-for-frame identical gains need the sample-locked clock
-     * MASTER_PLAN §10.3 is still working toward - live advances on a jittering
-     * wall clock and an export on an exact one.
-     */
     private val flashBudget = dev.geode.render.FlashBudget()
 
     private fun flashGain(
@@ -186,19 +109,15 @@ internal class FxCompositor(
         return if (limitFlashRate) gain else 1f
     }
 
-    /** Blue-noise dither mask, so an exported frame is dithered like the screen. */
     private val noiseTex: Int = dev.geode.render.BlueNoise.createTexture(context)
     private val vao: Int
 
-    /** The target the scene renders into, before the composite pass. */
     private val sceneTarget = dev.geode.render.RenderTarget("exportScene")
 
-    /** The scene target's framebuffer, for the exporter to bind. */
     val sceneFbo: Int
         get() = sceneTarget.fbo
     private val emptyTex: Int
 
-    /** Integrated rotation angle / colour-cycle phase for the grade block. */
     private val grade = ExportGradeState()
 
     init {
@@ -206,26 +125,10 @@ internal class FxCompositor(
         GLES30.glGenVertexArrays(1, ids, 0)
         vao = ids[0]
 
-        // Colour texture the scene renders into. Same shared target type the
-        // live renderer uses, so both paths get the completeness check and the
-        // initial clear rather than two of the four sites having them.
-        //
-        // Checked, and fatal: the export has no degraded mode worth shipping.
-        // Without this target the exporter would bind framebuffer 0 - the
-        // encoder surface - and composite texture 0, writing a black or
-        // scrambled video file and reporting success. Failing construction
-        // surfaces as a failed export instead, which VideoExporter already
-        // propagates.
         check(sceneTarget.ensure(width, height)) {
             "export scene target ${width}x$height is incomplete on this device"
         }
 
-        // A 1x1 texture for the unused second (transition) sampler. Explicitly
-        // zero-filled, like the live renderer's zeroTex: passing null leaves the
-        // contents driver-defined, and this is bound to a live sampler unit on
-        // every exported frame. It is unread today only because the strengths
-        // that would sample it are 0, which makes "undefined" a latent source of
-        // nondeterminism in the one pipeline that must be reproducible.
         GLES30.glGenTextures(1, ids, 0)
         emptyTex = ids[0]
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, emptyTex)
@@ -244,20 +147,11 @@ internal class FxCompositor(
         )
     }
 
-    /** Binds the scene FBO so the next scene.draw() renders into it. */
     fun bindSceneTarget() {
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, sceneFbo)
         GLES30.glViewport(0, 0, width, height)
     }
 
-    /**
-     * Warp-aware trail fade for export parity with the live renderer: fades
-     * the scene FBO toward black instead of clearing it, so particle trails
-     * render in exports exactly like the live view. When trailZoom/trailWarp
-     * are set, the persisted frame is copied aside and redrawn
-     * zoomed/warped/decayed; otherwise the plain alpha fade runs.
-     * [sceneFbo]/[w]/[h] describe the scene target currently being faded.
-     */
     fun fadeSceneTargetWarp(
         params: dev.geode.render.scene.SceneParams,
         sceneFbo: Int,
@@ -284,9 +178,6 @@ internal class FxCompositor(
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, trail.tex)
         GLES30.glUniform1i(GLES30.glGetUniformLocation(trailWarpProgram, "uPrev"), 0)
-        // Same shared decay as the live renderer's drawTrailWarp: the caller
-        // (VideoExporter) hands in trailLength already remapped for styles
-        // with their own persistence band, exactly like the live [retention].
         GLES30.glUniform1f(
             GLES30.glGetUniformLocation(trailWarpProgram, "uDecay"),
             CurlFlowMath.warpDecay(params.trailLength, dtSeconds),
@@ -306,8 +197,6 @@ internal class FxCompositor(
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         GLES30.glUseProgram(fadeProgram)
-        // Retention^(dt*60): matches the live renderer's frame-rate-independent
-        // fade so a 30 fps export decays trails like the 60 Hz live view.
         GLES30.glUniform1f(
             GLES30.glGetUniformLocation(fadeProgram, "uFadeAlpha"),
             (1f - (trailLength * 0.97f).pow(dtSeconds * 60f)).coerceIn(0.02f, 1f),
@@ -318,15 +207,6 @@ internal class FxCompositor(
         GLES30.glDisable(GLES30.GL_BLEND)
     }
 
-    /** Composites the scene texture (with FX) onto the currently-bound surface.
-     *  Call exactly once per exported frame: [dtSeconds] (the export's 1/fps)
-     *  advances the integrated rotation angle and colour-cycle phase, so the
-     *  spin/cycle of a rendered clip matches the same span of live playback.
-     *  [flowTex]/[flowStrength] feed the fluidWarp slot so FlowField bending
-     *  appears in exports exactly like the live view (0 = disabled).
-     *  [rippleTex]/[rippleTexelW]/[rippleTexelH]/[rippleStrength]/
-     *  [rippleSpecular] feed the F2 ripple overlay slot the same way (0 =
-     *  disabled; the 1x1 empty texture keeps the sampler valid). */
     fun composite(
         timeSeconds: Float,
         dtSeconds: Float,
@@ -341,23 +221,10 @@ internal class FxCompositor(
         rippleTexelH: Float = 0f,
         rippleStrength: Float = 0f,
         rippleSpecular: Float = 0f,
-        /** `uStrobeHz`; see `VisualSafety.strobeHz`. The default is the rate
-         *  that used to be a literal in the shader, so an export with safety
-         *  off is unchanged. */
         strobeHz: Float = dev.geode.render.VisualSafety.DEFAULT_STROBE_HZ,
-        /** Whether the rolling flash budget applies; see `FlashBudget`. False
-         *  keeps this pass an exact no-op for a Custom opt-out. */
         limitFlashRate: Boolean = false,
     ) {
-        // Rotation and the colour cycle are SPEEDS: integrate them on the
-        // export's own clock, once per exported frame, exactly as the live
-        // renderer integrates once per displayed frame.
         grade.advance(params, dtSeconds, features.motionImpulse)
-        // Which uPost* groups the composite owns is decided by the gate, not
-        // by neutralising the values: exports never transition, so both gate
-        // slots carry the same scene family, but the two programs must declare
-        // and upload the same uniform set or a later change to one desyncs the
-        // other (an export that no longer matches the screen).
         val family =
             when {
                 isShaderScene -> CompositeGrade.SceneFamily.SHADER
@@ -390,18 +257,7 @@ internal class FxCompositor(
         GLES30.glUniform1f(loc("uRippleStrength"), if (rippleTex != 0) rippleStrength else 0f)
         GLES30.glUniform1f(loc("uRippleSpecular"), if (rippleTex != 0) rippleSpecular else 0f)
         GLES30.glUniform1f(loc("uProgress"), 1f)
-        // The export never transitions - it renders one scene for the whole
-        // clip - so uStyle is always CUT and the spliced-transition path is
-        // unreachable here. uRatio is uploaded regardless so the two composite
-        // call sites stay uniform-for-uniform identical.
         GLES30.glUniform1i(loc("uStyle"), 0)
-        // Layers are a live-only feature (the export renders one scene), so
-        // these two are the neutral values rather than a stack's. They are
-        // uploaded rather than left out because "unreachable" is a property of
-        // uStyle today and not a guarantee: an unset uniform reads GL's zero,
-        // which for uLayerMix is silently "bottom layer only". Parity between
-        // the two call sites is now enforced by CompositeUniformParityTest
-        // instead of promised by the comment above.
         GLES30.glUniform1f(loc("uLayerMix"), 0f)
         GLES30.glUniform1i(loc("uBlendMode"), BlendMode.NORMAL.ordinal)
         GLES30.glUniform1f(loc("uRatio"), width.toFloat() / height.toFloat())
@@ -431,19 +287,8 @@ internal class FxCompositor(
         GLES30.glUniform1f(loc("uPostFlash"), params.flash * flashGain(timeSeconds, params, features, limitFlashRate))
         GLES30.glUniform1f(loc("uPostTemp"), params.temperature)
         GLES30.glUniform1f(loc("uPostSolarize"), if (params.solarize) 1f else 0f)
-        // Match the live renderer: shader scenes AND the milkdrop post pass
-        // apply mirror/invert themselves; everything else needs them here -
-        // particle scenes (whose fragment shader defers invert to this pass)
-        // and the fluid family, which applies neither. (Gate component y.)
         GLES30.glUniform1f(loc("uPostMirror"), if (params.mirror) 1f else 0f)
         GLES30.glUniform1f(loc("uPostInvert"), if (params.invert) 1f else 0f)
-        // Universal grading + zoom/rotation, same gate as the live renderer:
-        // ShaderScene (view()/grade()), the particle pipeline (particle_vert's
-        // uZoom/uRotation, particle_frag's uSat/uBright/uContrast/uGamma) and
-        // the milkdrop post pass grade in their OWN pass and get the neutral
-        // identity here; only the fluid family (Fluid, Curl Flow, Water) is
-        // graded in the composite. Without this block an exported fluid clip
-        // came out ungraded while the live view was graded.
         val gu = grade.uniforms(params, gradesItself = !gate.grade)
         GLES30.glUniform1f(loc("uPostZoom"), gu.zoom)
         GLES30.glUniform1f(loc("uPostRotation"), gu.rotation)
@@ -452,14 +297,7 @@ internal class FxCompositor(
         GLES30.glUniform1f(loc("uPostContrast"), gu.contrast)
         GLES30.glUniform1f(loc("uPostGamma"), gu.gamma)
         GLES30.glUniform1f(loc("uPostHue"), gu.hue)
-        // "Beat pulse": mirrors the live renderer, including its deliberately
-        // different gate - milkdrop is excluded from the grade block above but
-        // pulsed here, because nothing in its pipeline reads `pulse`. Uploaded
-        // unconditionally so exports never diverge from the live view; the
-        // uniform is neutral at 0, so a self-pulsing scene is a no-op.
         GLES30.glUniform1f(loc("uPostPulse"), grade.pulseAmount(params, pulsesItself = !gate.pulse))
-        // Both gate slots carry the same family: an export renders one scene,
-        // never a transition (uProgress = 1, uStyle = 0, so uTexB is unread).
         val gateVec = gate.toVec4()
         GLES30.glUniform4fv(loc("uGateA"), 1, gateVec, 0)
         GLES30.glUniform4fv(loc("uGateB"), 1, gateVec, 0)
@@ -470,8 +308,6 @@ internal class FxCompositor(
     }
 
     fun release() {
-        // Count must match the array: the scene texture moved into sceneTarget,
-        // so this is two, not three.
         val ids = intArrayOf(emptyTex, noiseTex)
         GLES30.glDeleteTextures(ids.size, ids, 0)
         sceneTarget.release()
@@ -486,7 +322,6 @@ internal class FxCompositor(
 
     private fun loc(name: String): Int = uniformLocs.getOrPut(name) { GLES30.glGetUniformLocation(program, name) }
 
-    /** Reads a raw shader, resolving its `//#include` directives. */
     private fun loadRaw(
         context: Context,
         resId: Int,

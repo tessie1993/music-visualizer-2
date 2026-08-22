@@ -4,31 +4,6 @@ import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.sqrt
 
-/**
- * Structural evidence over the analysis stream: novelty, section boundaries,
- * and the EXPERIMENTAL buildup/drop/arrival trio.
- *
- * Novelty is the causal form of the distance the offline
- * `FeatureTimeline.detectSections` measures: a fast and a slow EMA of the
- * band profile, and how far apart they sit — large exactly while the music
- * is BECOMING something else. A section boundary fires when normalized
- * novelty stands above both an absolute floor and its own trailing
- * statistics, once per crossing (hysteresis re-arms below [SECTION_REARM])
- * and never more often than [SECTION_REFRACTORY_SECONDS].
- *
- * Buildup, drop and arrival are heuristics over energy and onset density,
- * validated against constructed scenarios rather than a labeled corpus of
- * real arrangements — which is why the plan marks their ABI slots
- * EXPERIMENTAL and why each is deliberately conservative: refractory-gated,
- * evidence-thresholded, and silent when unsure. Buildup is a sustained rise
- * (fast energy EMA standing above slow). A drop is that buildup, recently, a
- * brief dip, then a slam above the running level. An arrival is energy
- * returning after at least [ARRIVAL_QUIET_SECONDS] of near-quiet — the
- * breakdown ending, distinct from a drop because nothing built up first.
- *
- * Deterministic and ordered: [step] must see every analysis hop, in order.
- * Allocates nothing per frame.
- */
 class StructureTracker(
     private val bandCount: Int,
     private val hopRateHz: Float,
@@ -67,35 +42,24 @@ class StructureTracker(
     private var arrivalArmed = false
     private var warmupSeconds = 0f
 
-    /** How much the band profile is changing right now, 0..1. */
     var novelty: Float = 0f
         private set
 
-    /** Whether this hop crossed a section boundary. */
     var sectionBoundary: Boolean = false
         private set
 
-    /** Boundaries fired since construction or [reset]. */
     var sectionCount: Int = 0
         private set
 
-    /** EXPERIMENTAL: sustained rise in energy and onset density, 0..1. */
     var buildup: Float = 0f
         private set
 
-    /** EXPERIMENTAL: whether this hop is a drop — buildup, dip, slam. */
     var drop: Boolean = false
         private set
 
-    /** EXPERIMENTAL: whether this hop is energy returning after a long quiet. */
     var arrival: Boolean = false
         private set
 
-    /**
-     * Feeds one hop. [bands] are the analyzer's normalized 0..1 band levels;
-     * [rms] and [onset] its instantaneous level and continuous onset
-     * strength, both 0..1.
-     */
     fun step(
         bands: FloatArray,
         rms: Float,
@@ -107,7 +71,6 @@ class StructureTracker(
         sinceDip += dt
         sinceDrop += dt
 
-        // ---- novelty and sections ----------------------------------------
         var distance = 0.0
         for (b in 0 until bandCount) {
             val v = bands[b]
@@ -136,12 +99,8 @@ class StructureTracker(
             sectionArmed = true
         }
 
-        // ---- buildup ------------------------------------------------------
         val energy = 0.5f * rms + 0.5f * onset
         if (!energySeeded) {
-            // Both averages start AT the music, or the fast one converging
-            // ahead of the slow one reads every track's first seconds as a
-            // riser. Buildup measures rise, never warmup.
             energySeeded = true
             fastEnergy = energy
             slowEnergy = energy
@@ -151,7 +110,6 @@ class StructureTracker(
         buildup = ((fastEnergy - slowEnergy) / BUILDUP_SCALE).coerceIn(0f, 1f)
         buildupMemory = max(buildup, buildupMemory * exp(-dt / BUILDUP_MEMORY_SECONDS))
 
-        // ---- the dip the drop lands out of --------------------------------
         if (rms < slowEnergy * DIP_FRACTION) {
             dipSeconds += dt
             if (dipSeconds >= MIN_DIP_SECONDS) sinceDip = 0f
@@ -159,7 +117,6 @@ class StructureTracker(
             dipSeconds = 0f
         }
 
-        // ---- drop ---------------------------------------------------------
         drop = false
         if (warmupSeconds > WARMUP_SECONDS &&
             sinceDrop > DROP_REFRACTORY_SECONDS &&
@@ -170,11 +127,9 @@ class StructureTracker(
         ) {
             drop = true
             sinceDrop = 0f
-            // Consumed: one buildup earns one drop.
             buildupMemory = 0f
         }
 
-        // ---- arrival ------------------------------------------------------
         arrival = false
         if (rms < ARRIVAL_QUIET_LEVEL) {
             quietSeconds += dt
@@ -188,7 +143,6 @@ class StructureTracker(
         }
     }
 
-    /** Forgets one piece of audio; call on a track change or a seek. */
     fun reset() {
         fast.fill(0f)
         slow.fill(0f)
@@ -216,27 +170,20 @@ class StructureTracker(
     }
 
     companion object {
-        /** No structural claim before this much audio has been heard. */
         const val WARMUP_SECONDS = 5f
 
-        /** Normalized novelty a section must clear whatever the statistics say. */
         const val SECTION_FLOOR = 0.5f
 
-        /** Novelty below which the section detector re-arms. */
         const val SECTION_REARM = 0.35f
 
         const val SECTION_REFRACTORY_SECONDS = 8f
 
-        /** Per-hop decay of the novelty normalizer's reference peak (~60 s). */
         const val PEAK_DECAY = 0.9997f
 
-        /** Floor under the reference peak, so noise is not amplified to 1. */
         const val NOVELTY_PEAK_FLOOR = 0.05f
 
-        /** Fast-over-slow energy rise that reads as full buildup. */
         const val BUILDUP_SCALE = 0.3f
 
-        /** How long a finished buildup can still claim its drop. */
         const val BUILDUP_MEMORY_SECONDS = 3f
 
         const val DROP_BUILDUP = 0.4f
@@ -245,7 +192,6 @@ class StructureTracker(
         const val DROP_SLAM_MARGIN = 0.15f
         const val DROP_REFRACTORY_SECONDS = 4f
 
-        /** RMS under this fraction of the running level reads as a dip. */
         const val DIP_FRACTION = 0.35f
 
         const val MIN_DIP_SECONDS = 0.1f

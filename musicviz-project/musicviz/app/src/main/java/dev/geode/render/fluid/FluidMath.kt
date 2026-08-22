@@ -3,35 +3,12 @@ package dev.geode.render.fluid
 import dev.geode.analysis.AudioFeatures
 import kotlin.math.sqrt
 
-/**
- * Pure-Kotlin mirrors of the fluid GLSL math, kept in lockstep with the
- * shaders so the headless gate can validate them.
- * If a formula changes in a shader, change it here too.
- */
 internal object FluidMath {
-    // ---- "Audio drive" (Behavior tab), the master reactivity gain ----
-
-    /** Slider domain, from CustomizeTabs's "Audio drive" range. */
     const val MIN_AUDIO_DRIVE = 0.2f
     const val MAX_AUDIO_DRIVE = 2.5f
 
-    /**
-     * Ceiling a driven feature is allowed to reach, matching the clamp
-     * `ShaderScene` puts on `features.x * audioDrive` (`:125-128`) so one
-     * slider value means the same thing on a shader style and a fluid one.
-     */
     const val DRIVE_CEILING = 1.5f
 
-    /**
-     * Scales one non-negative audio feature by the "Audio drive" slider.
-     *
-     * EXACT identity at the neutral default (1): `value * 1f` is `value`, and
-     * the ceiling is `max(value, DRIVE_CEILING)`, so a feature that already
-     * arrives hotter than the ceiling (loud track plus a raised band gain) is
-     * passed through untouched rather than being clipped by a slider the user
-     * never moved. Above 1 the gain still cannot push a feature past that
-     * ceiling, which is what keeps 2.5x from blowing the sim out.
-     */
     fun driven(
         value: Float,
         audioDrive: Float,
@@ -40,7 +17,6 @@ internal object FluidMath {
         return (value * d).coerceIn(0f, maxOf(value, DRIVE_CEILING))
     }
 
-    // ---- CPU mirror of curl_field_frag.glsl (kept in lockstep for tests) ----
     private fun fract(x: Float) = x - kotlin.math.floor(x)
 
     private fun hash3(
@@ -100,7 +76,6 @@ internal object FluidMath {
         return v
     }
 
-    /** Curl-noise velocity, mirroring the shader (central diff, e = 0.02). */
     fun curlVelocity(
         x: Float,
         y: Float,
@@ -114,14 +89,6 @@ internal object FluidMath {
         return (dpdy / (2f * e)) to (-dpdx / (2f * e))
     }
 
-    /**
-     * CPU mirror of fluid_vorticity_frag's confinement magnitude (GPU Gems
-     * ch.38: f = eps * h * omega, with omega = halfRdx * velDiff from the
-     * curl pass). The eps*h*omega form makes the per-frame velocity change
-     * independent of grid resolution - the property the headless gate
-     * asserts, because omitting the h (= dx) factor made the force ~1/dx
-     * (64-142x) too strong and blew the sim up to NaN/black within frames.
-     */
     fun confinementDeltaV(
         curlStrength: Float,
         dx: Float,
@@ -132,12 +99,6 @@ internal object FluidMath {
         return curlStrength * dx * omega * dt
     }
 
-    /**
-     * CPU mirror of composite_frag's fluidWarp soft limit:
-     * flow * 6/(6+|flow|) - bounded below 6 for any input, ~identity for
-     * small fields, so the 0.015 UV scale can never displace by more than
-     * ~0.09 UV regardless of emitter force.
-     */
     fun softLimitFlow(
         x: Float,
         y: Float,
@@ -147,13 +108,6 @@ internal object FluidMath {
         return (x * k) to (y * k)
     }
 
-    /**
-     * CPU mirror of fluid_gradient_frag's terminal-speed soft cap
-     * (v *= 12/max(12,|v|)): confinement injects energy faster than
-     * dissipation removes it, so uncapped speed grows without bound and the
-     * dye advects off-grid faster than injection - numerically reproduced
-     * as near-black by ~10s and fully black by ~30s in the reference run.
-     */
     fun terminalSpeedCap(
         x: Float,
         y: Float,
@@ -163,20 +117,12 @@ internal object FluidMath {
         return (x * k) to (y * k)
     }
 
-    /** Particle state texture side: smallest square holding [count] texels. */
     fun stateSide(count: Int): Int =
         kotlin.math
             .ceil(kotlin.math.sqrt(count.toDouble()))
             .toInt()
             .coerceAtLeast(2)
 
-    /**
-     * CPU mirror of the particle update kernel's catch-point attraction
-     * (fluid_particle_update_frag): inverse-square pull with softening
-     * epsilon 0.05, then the soft cap f*6/(6+f) - bounded below 6 for ANY
-     * pull/distance, so a close pass swings around the well instead of
-     * exploding across the screen in one frame.
-     */
     fun attractorForce(
         pull: Float,
         dist2: Float,
@@ -185,10 +131,6 @@ internal object FluidMath {
         return f * 6f / (6f + f)
     }
 
-    /**
-     * CPU mirror of the capture predicate: a particle inside the capture
-     * radius of a catch point is recycled to a spawn point.
-     */
     fun isCaptured(
         px: Float,
         py: Float,
@@ -201,12 +143,6 @@ internal object FluidMath {
         return dx * dx + dy * dy < captureRadius * captureRadius
     }
 
-    /**
-     * Point-to-segment distance with fractional projection, mirroring
-     * fluid_splat_frag.glsl's segDist(). Degenerate segments (length below
-     * epsilon) return the point distance with fp = 0 - never a normalize
-     * of a zero-length vector.
-     */
     fun segDist(
         ax: Float,
         ay: Float,
@@ -231,11 +167,6 @@ internal object FluidMath {
         return sqrt(dx * dx + dy * dy) to fp
     }
 
-    /**
-     * CPU mirror of the particle update kernel's inertia term
-     * (fluid_particle_update_frag): frame-rate-independent blend where
-     * [drag] is the per-1/60s factor: k = 1-(1-drag)^(dt*60).
-     */
     fun dragStep(
         v: Float,
         flow: Float,
@@ -246,11 +177,6 @@ internal object FluidMath {
         return v + (flow - v) * k
     }
 
-    /**
-     * Soft-knee bloom prefilter curve, mirroring
-     * fluid_bloom_prefilter_frag.glsl: knee = T*K + 1e-4,
-     * curve = (T - knee, 2*knee, 0.25/knee).
-     */
     fun bloomCurve(
         threshold: Float,
         softKnee: Float,
@@ -259,7 +185,6 @@ internal object FluidMath {
         return Triple(threshold - knee, knee * 2f, 0.25f / knee)
     }
 
-    /** CPU mirror of the prefilter's brightness rescale for a given max-channel. */
     fun bloomPrefilterScale(
         br: Float,
         threshold: Float,
@@ -272,29 +197,7 @@ internal object FluidMath {
     }
 }
 
-/**
- * Applies the "Audio drive" slider to a whole [AudioFeatures] snapshot, once,
- * at the point where a fluid scene starts consuming audio.
- *
- * The slider used to have NO reader on FLUID or WATER: those scenes take the
- * features straight from the renderer (already band-gained) and hand them to
- * the sim, the choreography and the emitters, so the per-band faders worked
- * while the master reactivity slider did nothing at all - the same class of
- * bug as the original "customizations don't work on all styles" report.
- *
- * The gain is deliberately NOT folded into `SceneParams.applyBandGains` /
- * the renderer's `gainAdjusted`: shader scenes (`ShaderScene:125-128`) and
- * every particle scene apply `audioDrive` themselves, so a central multiply
- * would apply it TWICE there - the quadratic-response regression that Water
- * and Curl Flow already had to be rescued from on brightness.
- *
- * One scaled snapshot per frame keeps the sim uniforms, the choreography and
- * the emitter schedule consistent with each other. At the neutral default the
- * ORIGINAL object is returned - no copy, no arithmetic, so saved presets that
- * never touched the slider render bit-identically.
- */
 internal class FluidAudioDrive {
-    /** Reused scaled-band scratch: idling must not allocate an array a frame. */
     private var bands = FloatArray(0)
 
     fun scaled(

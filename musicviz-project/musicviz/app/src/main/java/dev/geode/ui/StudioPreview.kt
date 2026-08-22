@@ -37,20 +37,6 @@ import dev.geode.export.ExportAspect
 import dev.geode.export.StudioClip
 import kotlinx.coroutines.delay
 
-/**
- * Live playback of the edit in progress - the trim as a loop, the grade,
- * speed, rotation, reframe and caption exactly as they will render.
- *
- * Parity is structural, not promised: the trim comes from [ClipEdit.clipping]
- * and the picture from [ClipEdit.videoEffects], the same two calls
- * StudioExporter hands to Transformer. There is no second effect chain to
- * drift out of step.
- *
- * Always muted. The editor lives inside a music player whose session keeps
- * playing while clips are cut; a second audible stream fighting it for focus
- * would be worse than silence, and the decisions made here - where to cut,
- * how it looks - are visual. The export's audio is untouched by this.
- */
 @UnstableApi
 @Composable
 internal fun ClipPreview(
@@ -72,10 +58,6 @@ internal fun ClipPreview(
         onDispose { player.release() }
     }
 
-    // One rebuild path for every change. setVideoEffects has to be in place
-    // before prepare(), so trim and grade edits alike re-prepare the whole
-    // pipeline; the delay turns a slider drag's stream of values into one
-    // rebuild after the hand settles (a new LaunchedEffect cancels the old).
     LaunchedEffect(player, edit) {
         delay(REBUILD_SETTLE_MS)
         player.setVideoEffects(edit.videoEffects())
@@ -95,8 +77,6 @@ internal fun ClipPreview(
         player.playWhenReady = playing
     }
 
-    // The frame the render will have: the reframe's aspect when one is
-    // chosen, the source clip's otherwise.
     val aspect =
         edit.ratio?.let { r ->
             ExportAspect.of(edit.quality, r).let { it.width.toFloat() / it.height }

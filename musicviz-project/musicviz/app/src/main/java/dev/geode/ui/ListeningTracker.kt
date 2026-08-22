@@ -83,6 +83,7 @@ internal class ListeningTracker(
 
     fun awaitHistoryWrites(timeoutMs: Long) = historyStore.awaitWrites(timeoutMs)
 
+    @Suppress("ReturnCount")
     fun prepareLastPlayed(): Uri? {
         val player = host.player
         val saved = sessionStore.load()

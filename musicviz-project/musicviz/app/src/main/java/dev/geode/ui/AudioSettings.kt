@@ -25,17 +25,10 @@ import dev.geode.R
 import dev.geode.analysis.BeatTuning
 import kotlin.math.roundToInt
 
-/**
- * AUDIO: everything about what the app hears and how it plays it - playback
- * shaping, the equalizer chain, the analyser's beat settings, live input from
- * the microphone, and capturing other apps' audio.
- */
 @Composable
 internal fun AudioSettingsTab(viewModel: PlayerViewModel) {
     SettingsTabColumn {
         item { SettingsGroup(stringResource(R.string.audio_group_playback)) { PlaybackSettingsSection(viewModel) } }
-        // Carries its own SettingsGroup card: the master switch lives on the
-        // group header, so the whole card is the control.
         item { EqualizerSettings(viewModel) }
         item { SettingsGroup(stringResource(R.string.audio_group_analysis)) { AnalysisGroup(viewModel) } }
         item { SettingsGroup(stringResource(R.string.source_live_input)) { LiveInputGroup(viewModel) } }
@@ -43,11 +36,6 @@ internal fun AudioSettingsTab(viewModel: PlayerViewModel) {
     }
 }
 
-/**
- * The beat detector and its downstream colour/morph decisions. Slider ranges
- * come from the extractor so they can never saturate against a tighter clamp
- * in AnalysisEngine.
- */
 @Composable
 private fun AnalysisGroup(viewModel: PlayerViewModel) {
     val gui by viewModel.guiPrefs.collectAsState()
@@ -124,12 +112,6 @@ private fun AnalysisGroup(viewModel: PlayerViewModel) {
     }
 }
 
-/**
- * "Live input": drive the visuals from the microphone with nothing playing.
- * The permission is requested at the moment the switch is used, never at
- * launch, and a denial is reported in place rather than leaving a switch
- * that silently springs back.
- */
 @Composable
 private fun LiveInputGroup(viewModel: PlayerViewModel) {
     val mic by viewModel.micState.collectAsState()

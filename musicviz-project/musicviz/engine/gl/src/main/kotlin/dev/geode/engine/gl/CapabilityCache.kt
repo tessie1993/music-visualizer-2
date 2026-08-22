@@ -1,21 +1,5 @@
 package dev.geode.engine.gl
 
-/**
- * Persistence for [GlProbeReport], so startup replays facts instead of
- * re-running the probe battery on every context.
- *
- * Two rules keep it honest. Only *facts* are stored — derivations run fresh on
- * every load, so improving a rule in [GlCapabilities] or [FormatPolicy] is not
- * masked by a cache of yesterday's judgments. And the only failure mode is
- * "re-probe": a schema change, a driver identity change (vendor, renderer, or
- * the version string, which is where a driver update shows), or any corruption
- * decodes to null. The prober then measures again, which is always safe and
- * merely slower.
- *
- * The layout is fixed and owned by [SCHEMA_VERSION]: fields are written and
- * read in one order, and a document that deviates in any way is invalid. New
- * fields mean a version bump, never a lenient parse.
- */
 object CapabilityCache {
     const val SCHEMA_VERSION = 1
 
@@ -46,11 +30,6 @@ object CapabilityCache {
             }
         }
 
-    /**
-     * Decodes [text] against the identity of the context that is about to use
-     * it. [vendor], [renderer] and [versionString] are what `glGetString`
-     * returns *now*; a cache written under any other identity is null.
-     */
     fun decode(
         text: String,
         vendor: String,

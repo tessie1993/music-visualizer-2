@@ -52,22 +52,6 @@ import dev.geode.ui.theme.rememberStoneInteraction
 import dev.geode.ui.theme.rememberStoneState
 import dev.geode.ui.theme.stonePress
 
-/*
- * Crystal interactive controls: tumbled-stone counterparts of Material's
- * Button / Slider / NavigationBar / TabRow / segmented selector. Every touch
- * target is painted from the active pack's photographed component art in its
- * five shipped interaction states - a pressed button shows the pack's
- * pressed photograph, scaled by the pack's own press motion.
- */
-
-// ------------------------------------------------------------- buttons
-
-/**
- * Stone button on the pack's photographed button art. [filled] picks the
- * primary-button surface (the stone with the strongest internal light);
- * un-filled is the quieter secondary-button surface. [compact] uses the
- * compact-button art at a smaller minimum size.
- */
 @Composable
 fun CrystalButton(
     onClick: () -> Unit,
@@ -100,7 +84,6 @@ fun CrystalButton(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            // Writing stays live ink over the stone - never baked into art.
             val label = (LocalFontColor.current ?: cs.onSurface).copy(alpha = if (enabled) 1f else 0.55f)
             CompositionLocalProvider(LocalContentColor provides label) {
                 ProvideTextStyle(MaterialTheme.typography.labelLarge.copy(letterSpacing = 0.8.sp)) {
@@ -111,10 +94,6 @@ fun CrystalButton(
     }
 }
 
-/**
- * The hero transport control: the pack's icon-button pebble at hero size,
- * holding the play/pause icon as live ink over the stone.
- */
 @Composable
 fun CrystalPlayButton(
     icon: StoneIcon,
@@ -143,15 +122,6 @@ fun CrystalPlayButton(
     }
 }
 
-// ------------------------------------------------------------- slider
-
-/**
- * Stone slider: the pack's slider-track art as the groove, its slider-thumb
- * pebble as the handle, and a primary-light fill for the active side.
- * Drop-in for the Material Slider call sites in this app
- * (value/range/steps/enabled only). The custom thumb/track Slider overload
- * is still experimental in Material 3, hence the opt-in.
- */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun CrystalSlider(
@@ -211,7 +181,6 @@ fun CrystalSlider(
                             strokeWidth = 3.5.dp.toPx(),
                             cap = StrokeCap.Round,
                         )
-                        // Soft light spill inside the stone groove.
                         drawLine(
                             color = cs.primary.copy(alpha = 0.20f * dim),
                             start = Offset(0f, y),
@@ -226,20 +195,11 @@ fun CrystalSlider(
     )
 }
 
-// ------------------------------------------------------------- navigation
-
-/** One destination of [CrystalNavBar]. */
 data class CrystalNavItem(
     val label: String,
     val icon: StoneIcon,
 )
 
-/**
- * Bottom navigation on the pack's navigation-bar stone: one continuous
- * tumbled slab, the selected destination marked by a lit gem and label
- * weight. Items expose selectable semantics (Role.Tab) like Material's
- * NavigationBarItem.
- */
 @Composable
 fun CrystalNavBar(
     items: List<CrystalNavItem>,
@@ -257,8 +217,6 @@ fun CrystalNavBar(
                 .height(68.dp)
                 .selectableGroup(),
         ) {
-            // The icon keeps the accent; the LABEL follows accentTextColor() so
-            // "White font" reaches the nav writing too (the icon is not writing).
             val selectedLabel = accentTextColor()
             items.forEachIndexed { i, item ->
                 val sel = i == selected
@@ -297,13 +255,6 @@ fun CrystalNavBar(
     }
 }
 
-/**
- * Tab strip in the stone language: transparent over the ambient backdrop
- * (dense editor screens reserve decorative material for grouping surfaces),
- * a luminous hairline as the divider, and the selected title underscored by
- * a gem instead of a Material indicator. Space for the gem is always
- * reserved so titles do not jump when selection moves.
- */
 @Composable
 fun CrystalTabs(
     titles: List<String>,
@@ -327,8 +278,6 @@ fun CrystalTabs(
             Tab(
                 selected = sel,
                 onClick = { onSelect(i) },
-                // Selection stays legible under "White font" (where both
-                // colours resolve to white) through the gem and the weight.
                 selectedContentColor = accentTextColor(),
                 unselectedContentColor = cs.onSurfaceVariant.copy(alpha = 0.7f),
                 text = {
@@ -350,13 +299,6 @@ fun CrystalTabs(
     }
 }
 
-// ------------------------------------------------------------- segmented
-
-/**
- * Segmented selector as a row of stone chips: each option is the pack's
- * chip pebble, the chosen one showing its selected photograph (the steady
- * low backlight of the pack contract). Replaces the "● label" rows.
- */
 @Composable
 fun CrystalSegmented(
     options: List<String>,

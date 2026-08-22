@@ -4,18 +4,6 @@ import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
 
-/**
- * Triangular mel filters over the power spectrum.
- *
- * The HTK mel formula, `2595 log10(1 + f/700)`, with unit-peak triangles —
- * the corpus oracle's `librosa.filters.mel(htk=True, norm=None)` stated as
- * arithmetic: `melCount + 2` points equally spaced in mel between 0 and
- * Nyquist, converted back to Hz, and filter `m` rising over
- * `[edge(m), edge(m+1)]` and falling over `[edge(m+1), edge(m+2)]`.
- *
- * Weights are precomputed per filter as a dense run of bins, so [power] is
- * one multiply-add per covered bin with no allocation.
- */
 class MelBank(
     fftSize: Int,
     sampleRateHz: Int,
@@ -58,11 +46,6 @@ class MelBank(
             }
     }
 
-    /**
-     * Sums each filter's weighted POWER (magnitude squared) into [out],
-     * which must hold [melCount] values. [magnitudes] is [Spectrum]'s
-     * layout, DC through Nyquist.
-     */
     fun power(
         magnitudes: FloatArray,
         out: FloatArray,

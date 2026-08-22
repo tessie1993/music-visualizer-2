@@ -3,22 +3,7 @@ package dev.geode.data
 import java.io.File
 import java.io.InputStream
 
-/**
- * Bulk import of a MilkDrop pack: every `.milk` (and every texture) under a
- * user-picked folder, in one gesture.
- *
- * Before this the only door was the single-file picker, so a community
- * MegaPack - thousands of presets - meant one system dialog per file. The
- * enumeration side (SAF tree walking) stays in the ViewModel where the
- * resolver lives; everything decidable is here, on plain streams and files,
- * where the headless suite can pin it.
- *
- * Files already present are skipped, never overwritten: a name collision with
- * a preset the user edited must not silently undo their work, the same rule
- * the single-file import and the starter packs follow.
- */
 object MilkPackImporter {
-    /** One file the walker found, name as the provider displays it. */
     class Entry(
         val name: String,
         val open: () -> InputStream?,
@@ -28,12 +13,6 @@ object MilkPackImporter {
         val presets: Int,
         val textures: Int,
         val skipped: Int,
-        /**
-         * Imported presets that reference a sampler texture not present after
-         * the import - the number one "this preset renders black" cause in
-         * community packs, surfaced at import time instead of discovered one
-         * broken preset at a time.
-         */
         val presetsMissingTextures: Int,
     ) {
         val total: Int get() = presets + textures
@@ -41,11 +20,6 @@ object MilkPackImporter {
 
     private val TEXTURE_EXTENSIONS = setOf("png", "jpg", "jpeg", "bmp", "tga", "dds")
 
-    /**
-     * Sampler names projectM provides itself; a reference to one of these is
-     * not a missing file. `main` is the framebuffer, `blur1..3` the blur
-     * chain, and the noise_ variants are generated at runtime.
-     */
     private val BUILTIN_SAMPLERS =
         setOf(
             "main", "blur1", "blur2", "blur3",
@@ -53,7 +27,6 @@ object MilkPackImporter {
             "noisevol_lq", "noisevol_hq",
         )
 
-    /** `sampler_XXX` with an optional wrap/filter prefix (`fw|fc|pw|pc`). */
     private val SAMPLER_REFERENCE = Regex("""\bsampler(?:_(?:fw|fc|pw|pc))?_(\w+)""")
 
     fun import(
@@ -108,12 +81,6 @@ object MilkPackImporter {
             entry.open()?.use { input -> AtomicWrite.stream(target) { out -> input.copyTo(out) } } ?: false
         }.getOrDefault(false)
 
-    /**
-     * Whether [preset] references a sampler texture that neither the shared
-     * textures directory nor the engine's own builtins provide. File checks
-     * are case-insensitive because MilkDrop packs are authored on Windows,
-     * where `Tex.jpg` and `tex.jpg` are the same file.
-     */
     fun missesATexture(
         preset: File,
         textureDir: File,

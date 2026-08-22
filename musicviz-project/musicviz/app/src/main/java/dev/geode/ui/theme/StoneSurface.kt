@@ -19,22 +19,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 
-/**
- * The photographed stone surface behind one control, cross-faded between its
- * five shipped interaction states.
- *
- * This is the heart of the pack design: a pressed button shows the *pressed
- * photograph* - its internal light was brightened by the pack author, not
- * synthesised here. Each state renders its own artwork and the states fade
- * across [StoneMotion]'s timings, so interaction light "settles" the way the
- * pack contract describes instead of looping as an effect.
- *
- * All states' painters stay composed (alpha-faded rather than swapped) so a
- * fast press never pops. The art is premultiplied-alpha WebP with tumbled
- * edges baked in; [ContentScale.FillBounds] stretches it to the control's
- * bounds, which the near-rectangular masters tolerate across the aspect
- * ratios the app actually lays out.
- */
 @Composable
 fun StoneSurfaceArt(
     component: StoneComponent,
@@ -65,8 +49,6 @@ fun StoneSurfaceArt(
     }
 
     Box(modifier = modifier) {
-        // The default surface always underpins the stack so a mid-fade never
-        // shows the screen through the stone.
         Image(
             painter = painterResource(art.default),
             contentDescription = null,
@@ -88,12 +70,6 @@ fun StoneSurfaceArt(
     }
 }
 
-/**
- * Press scale per the pack contract: down to `pressScale` over
- * `pressDurationMs`, spring-settled back over `releaseDurationMs`. Under
- * reduced motion the scale is pinned at 1 and only the state crossfade
- * remains.
- */
 @Composable
 fun Modifier.stonePress(
     interaction: InteractionSource,
@@ -101,10 +77,6 @@ fun Modifier.stonePress(
 ): Modifier {
     val motion = LocalThemePack.current.motion
     val pressed by interaction.collectIsPressedAsState()
-    // "Haptic and sound start together; internal light begins within 16 ms" -
-    // firing on the press edge puts the cue alongside the scale and the state
-    // crossfade rather than after them. Reduced motion silences the movement,
-    // not the touch confirmation.
     val view = LocalView.current
     LaunchedEffect(pressed) {
         if (pressed) view.performStoneHaptic(StoneHapticCue.TAP)
@@ -122,10 +94,6 @@ fun Modifier.stonePress(
     return scale(scale)
 }
 
-/**
- * The interaction state a control should paint, combining its own flags with
- * live press/focus from [interaction].
- */
 @Composable
 fun rememberStoneState(
     interaction: MutableInteractionSource,
@@ -137,6 +105,5 @@ fun rememberStoneState(
     return stoneStateOf(enabled = enabled, pressed = pressed, selected = selected, focused = focused)
 }
 
-/** Shorthand for a remembered [MutableInteractionSource]. */
 @Composable
 fun rememberStoneInteraction(): MutableInteractionSource = remember { MutableInteractionSource() }

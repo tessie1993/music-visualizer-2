@@ -1,17 +1,5 @@
-// GENERATED from the crystal packs' icons/etched/*.svg - DO NOT EDIT BY HAND.
-//
-// Icon geometry is pack-invariant: every shipped pack draws the same 24
-// silhouettes and differs only in the three colours it stacks them in, which
-// already live in each pack's tokens (and so in ThemePackCatalog). That is why
-// this is generated once rather than re-imported per pack - a new crystal drops
-// in with its icons already correct.
-//
-// Coordinates are the packs' own 104x104 icon canvas. The packs express two of
-// these silhouettes' parts as <circle>/<rect>; those are transcribed to the
-// equivalent path data so a single primitive covers every icon.
 package dev.geode.ui.theme
 
-/** Every icon the crystal packs ship, named as the packs name their SVG files. */
 enum class StoneIcon {
     ADD,
     CHECK,
@@ -39,16 +27,11 @@ enum class StoneIcon {
     VISUALIZER,
 }
 
-/**
- * One icon's geometry, split by how the packs paint it: [stroked] parts take
- * the layer's stroke weight, [filled] parts are solid. No icon uses both.
- */
 internal data class StoneIconGlyph(
     val stroked: List<String> = emptyList(),
     val filled: List<String> = emptyList(),
 )
 
-/** The side of the packs' square icon canvas, in its own units. */
 internal const val STONE_ICON_VIEWPORT = 104f
 
 internal val StoneIconGeometry: Map<StoneIcon, StoneIconGlyph> =

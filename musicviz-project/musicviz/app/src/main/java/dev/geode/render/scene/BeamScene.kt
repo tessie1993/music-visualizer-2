@@ -10,37 +10,6 @@ import java.nio.ByteOrder
 import kotlin.math.abs
 import kotlin.math.max
 
-/**
- * The BEAM style: an oscilloscope trace drawn the way a real one is made.
- *
- * The app already had two scope-ish scenes and neither is a scope. `scope` is
- * an `exp()` falloff around a line; `liss` searches 64 taps per pixel for the
- * nearest point of a curve built from ONE waveform plotted against a
- * phase-shifted copy of itself. Both draw a curve of even brightness, which is
- * the one thing a scope trace never is.
- *
- * This draws the beam instead: one quad per waveform segment, with the fragment
- * stage integrating a Gaussian beam along it analytically (`beam_frag.glsl`,
- * ported from woscope). Because a CRT beam deposits energy per unit TIME, the
- * integral is divided by the distance travelled - so the trace brightens
- * exactly where the signal slows and turns, and dims through fast sweeps. That
- * relationship is the whole look, and no distance falloff reproduces it.
- *
- * It is also cheaper than what it sits beside: cost is O(segments) geometry
- * rather than a 64-iteration search at every pixel of the screen.
- *
- * ### Two readings of the same samples
- *
- * - **Sweep** (`cymaticsGeometry`-style toggle, `beamXy = false`): time along
- *   x, amplitude up - the classic waveform.
- * - **XY** (`beamXy = true`): the sample against another a quarter cycle later,
- *   which draws the Lissajous figure of the signal against its own quadrature.
- *   A true XY scope wants two CHANNELS, and the audio path is mono end to end
- *   (`PcmRingBuffer` downmixes at ingest), so this is honest about being a
- *   phase plot rather than pretending to be stereo. Stereo would mean threading
- *   a second channel through the tap, the ring buffer, the offline analyzer and
- *   the exporter - worth doing, but not hidden inside a scene.
- */
 internal class BeamScene(
     private val context: Context,
 ) : Scene,
@@ -48,16 +17,12 @@ internal class BeamScene(
     override val id: String = SceneIds.BEAM
 
     private companion object {
-        /** Waveform samples uploaded per frame; segments = this - 1. */
         const val SAMPLES = 512
 
-        /** Beam width at "Particle size" 1, in normalized units. */
         const val BASE_SIGMA = 0.006f
 
-        /** How far ahead the XY mode reads for its second axis, in samples. */
         const val QUADRATURE = SAMPLES / 4
 
-        /** Trace gain at "Audio drive" 1; the analyzer's waveform is -1..1. */
         const val BASE_GAIN = 0.8f
     }
 
@@ -71,7 +36,6 @@ internal class BeamScene(
     private var width = 1
     private var height = 1
 
-    /** Interleaved sample store, resampled from whatever the analyzer sends. */
     private val samples = FloatArray(SAMPLES)
     private val pcm = FloatArray(SAMPLES * 8)
     private var pcmCount = 0
@@ -88,19 +52,10 @@ internal class BeamScene(
 
     private val upload = ByteBuffer.allocateDirect(SAMPLES * 4).order(ByteOrder.nativeOrder())
 
-    /**
-     * Typed view of [upload], made once instead of once per frame:
-     * `asFloatBuffer()` allocates a fresh DirectFloatBufferU on every call and
-     * this ran in [draw]. Safe to keep because the view is created while
-     * [upload] is at position 0 (so it spans the whole buffer), [upload] is
-     * never re-allocated, and only the GL thread touches either of them.
-     */
     private val uploadFloats = upload.asFloatBuffer()
 
-    /** Scratch for the one HSV->RGB conversion per frame; see [draw]. */
     private val beamRgb = FloatArray(3)
 
-    /** Smoothed peak, so a quiet passage still fills the screen sensibly. */
     private var autoGain = 1f
 
     private var beatPulse = 0f
@@ -127,8 +82,6 @@ internal class BeamScene(
         GLES30.glGenTextures(1, ids, 0)
         waveTex = ids[0]
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, waveTex)
-        // texelFetch only, so filtering never applies - but an incomplete
-        // texture samples as zero, and NEAREST is what makes it complete.
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_NEAREST)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
@@ -152,11 +105,6 @@ internal class BeamScene(
         features: AudioFeatures,
         dt: Float,
     ) {
-        // Raw PCM when the frame delivered any - the trace IS the signal, and
-        // 512 true samples against 64 decimated points is the difference
-        // between an oscilloscope and a bar sketch. The analyzer's waveform
-        // stays as the fallback for export and idle frames; PcmRow scrubs
-        // non-finite samples either way.
         val wave = features.waveform
         if (pcmCount > 0) {
             PcmRow.fill(samples, pcm, pcmCount)
@@ -168,9 +116,6 @@ internal class BeamScene(
         }
         var peak = 0f
         for (i in samples.indices) peak = max(peak, abs(samples[i]))
-        // Auto-gain: a scope with no vertical control is unreadable on
-        // quiet material and clipped on loud. Rises slowly, falls slower,
-        // and never amplifies silence into noise.
         val target = if (peak > 0.02f) (0.85f / peak).coerceIn(0.5f, 6f) else autoGain
         autoGain += (target - autoGain) * (if (target < autoGain) 0.06f else 0.02f)
         beatPulse = max(features.motionImpulse, beatPulse - dt * 3f).coerceIn(0f, 1.5f)
@@ -201,14 +146,9 @@ internal class BeamScene(
             loc("uIntensity"),
             p.beamIntensity.coerceIn(0f, 3f) * (1f + beatPulse * p.beatResponse.coerceIn(0f, 2f) * 0.4f),
         )
-        // Out-param form: the Triple the pure [FluidHue.rgb] returns boxes all
-        // three floats, once per frame, for a value read immediately here.
         FluidHue.rgb(FluidHue.base(p.paletteBase), 1f, beamRgb)
         GLES30.glUniform3f(loc("uColor"), beamRgb[0], beamRgb[1], beamRgb[2])
 
-        // Additive, like light landing on phosphor: overlapping passes of the
-        // beam sum instead of replacing, which is what makes a dense turning
-        // point read as brighter than a single crossing.
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE)
         GLES30.glBindVertexArray(vao)

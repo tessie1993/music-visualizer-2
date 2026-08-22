@@ -28,16 +28,6 @@ import dev.geode.export.ExportPresets
 import dev.geode.export.ExportQuality
 import dev.geode.export.ExportRatio
 
-/**
- * EXPORT: the persisted render defaults ([ExportDefaults]) and the door to
- * the export dialog. The defaults set here are what the dialog opens with;
- * the dialog writes its own changes back, so the two can never disagree for
- * longer than one render.
- *
- * [exportOpen] is whether the dialog is currently up: the stored defaults
- * are re-read when it closes, so a change made inside the dialog shows here
- * immediately.
- */
 @Composable
 internal fun ExportSettingsTab(
     exportOpen: Boolean,
@@ -56,10 +46,6 @@ internal fun ExportSettingsTab(
             SettingsGroup(stringResource(R.string.export_group_defaults)) {
                 Column {
                     Text(stringResource(R.string.export_platform_preset), style = MaterialTheme.typography.labelMedium)
-                    // Six named targets against 36 reachable combinations of the
-                    // four controls below. The row is a shortcut into those
-                    // controls, never a fifth setting: it writes the same
-                    // ExportDefaults and nothing reads it back at render time.
                     Row(Modifier.fillMaxWidth().padding(top = 4.dp).horizontalScroll(rememberScrollState())) {
                         CrystalSegmented(
                             options = ExportPresets.ALL.map { it.name },
@@ -112,8 +98,6 @@ internal fun ExportSettingsTab(
                 }
                 Column {
                     Text(stringResource(R.string.export_aspect_ratio), style = MaterialTheme.typography.labelMedium)
-                    // Six ratios outgrow the width of a phone; the selector
-                    // scrolls rather than squeezing its labels.
                     Row(Modifier.fillMaxWidth().padding(top = 4.dp).horizontalScroll(rememberScrollState())) {
                         CrystalSegmented(
                             options = ExportRatio.entries.map { it.label },
@@ -155,13 +139,6 @@ internal fun ExportSettingsTab(
     }
 }
 
-/**
- * What the preset row is currently describing.
- *
- * Says the settings out loud either way, because the four controls below the row
- * can be moved individually: once they no longer spell any named target the row
- * lights nothing, and a row lighting nothing with no explanation reads as broken.
- */
 @Composable
 private fun presetCaption(
     defaults: ExportDefaults,

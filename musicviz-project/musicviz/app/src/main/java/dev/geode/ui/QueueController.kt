@@ -45,8 +45,7 @@ internal class QueueController(
 
     private var lastBrowseContext: List<QueueTrack> = emptyList()
 
-    fun playTrack(uri: String) =
-        playFrom(PlaybackQueue.contextFor(uri, lastBrowseContext, host.deviceTracks, host.libraryTracks), uri)
+    fun playTrack(uri: String) = playFrom(PlaybackQueue.contextFor(uri, lastBrowseContext, host.deviceTracks, host.libraryTracks), uri)
 
     fun playFrom(
         tracks: List<QueueTrack>,

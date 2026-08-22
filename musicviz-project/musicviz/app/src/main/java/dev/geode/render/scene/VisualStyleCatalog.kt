@@ -1,27 +1,12 @@
 package dev.geode.render.scene
 
-/**
- * Stable, user-facing variants for the two authored visual families.
- *
- * The renderer keeps one implementation per family. A style is therefore a
- * compact recipe: it selects a shader branch and biases the family's existing
- * controls without duplicating the audio plumbing, lifecycle, fluid solver or
- * export path. IDs are persisted by presets, so append new entries and never
- * rename an existing id.
- */
 internal object VisualStyleCatalog {
     data class HyperspaceStyle(
         val id: String,
         val label: String,
         val shaderStyle: Int,
         val bodyScale: Float = 1f,
-        /** Eye distance multiplier. Distance ONLY - the drift rate has its
-         *  own field below, because one number applied to both used to move
-         *  the camera further out AND faster around, coupling two unrelated
-         *  aesthetics. */
         val cameraScale: Float = 1f,
-        /** Camera drift-rate multiplier (the half [cameraScale] used to
-         *  double as). */
         val driftScale: Float = 1f,
         val fieldScale: Float = 1f,
         val glowScale: Float = 1f,
@@ -32,43 +17,13 @@ internal object VisualStyleCatalog {
         val liquidScale: Float = 1f,
         val ridgeScale: Float = 1f,
         val forcedSpecies: Int? = null,
-        /**
-         * Worst-case Jacobian norm of this substyle's `styleBody()` deform,
-         * uploaded as `uLipschitz` and divided into every distance estimate.
-         * The deform runs BEFORE the estimator, so the estimate bounds
-         * distance in the deformed frame; a twist or a shell modulation can
-         * overestimate the marched-space distance by this factor, and a ray
-         * stepping the raw estimate walks through thin geometry (holes and
-         * shimmer, not a visible overshoot). Always >= 1; exactly 1 for
-         * styles that do not deform. `HyperspaceReworkTest` audits the table.
-         */
         val lipschitz: Float = 1f,
-        /**
-         * The substyle's own screen pre-fold, 0 = none. Applied only while
-         * the act's `styleMirror` intent allows it (BREAKTHROUGH releases
-         * every fold - see `HyperspaceMath.ACT_PROFILES`), and rescaled by
-         * the user's Mirror-folds control around its default of 6.
-         */
         val kaleidoFolds: Int = 0,
-        /**
-         * Floor on the substyle signature weight in `styleSky()`. The shared
-         * filigree is gated by Filigree/act field, and at 0 the substyles
-         * used to blank into eleven identical voids; the signature now mixes
-         * by `max(uField, floor)` so identity survives the slider.
-         */
         val signatureFloor: Float = 0.25f,
-        /** Accent hue as an OFFSET from the user's base hue, in turns - the
-         *  per-substyle colour identity, expressed relative to the palette
-         *  so it respects the user's hue controls. */
         val tintHue: Float = 0f,
         val tintSat: Float = 0.7f,
-        /** 0 leaves the palette untouched (the Original's setting). */
         val tintAmount: Float = 0f,
-        /** Base rate of the substyle's CPU-integrated phase (`uStylePhase`,
-         *  wraps at 1), in turns per second before Speed. */
         val phaseRate: Float = 0.05f,
-        /** Extra phase rate at full slew-limited bass: the hex tunnel flies
-         *  and the wormhole lurches on the low end. */
         val phaseBassRate: Float = 0f,
     )
 
@@ -76,7 +31,6 @@ internal object VisualStyleCatalog {
         val id: String,
         val label: String,
         val shaderStyle: Int,
-        /** null keeps the user's geometry choice; 0 dish, 1 plate. */
         val geometryOverride: Int? = null,
         val scale: Float = 1f,
         val fill: Float = 1f,
@@ -86,29 +40,14 @@ internal object VisualStyleCatalog {
         val caustic: Float = 1f,
         val flow: Float = 1f,
         val swirl: Float = 1f,
-        /** Palette identity: added to the family hue ramp's base, in turns.
-         *  Unique per substyle, so each sits at its own point on the user's
-         *  palette instead of all eleven wearing the same tint. */
         val hueOffset: Float = 0f,
-        /** Palette identity: scales the ramp's span (colour-band density). */
         val hueSpan: Float = 1f,
-        /** Cap on superposed modes: a struck drum rings one clean figure, a
-         *  resonant field stacks eight - catalog data, not a parallel list. */
         val modeCap: Int = CymaticsMath.MAX_RENDERED_MODES,
     )
 
     val hyperspace: List<HyperspaceStyle> =
         listOf(
-            // Backwards-compatible original. It remains selectable beside the
-            // ten substyles and keeps every saved v1.4-v1.7 preset valid.
-            // tintAmount 0 and signatureFloor 0: no accent, no substyle sky.
             HyperspaceStyle(SceneIds.HYPERSPACE, "Original · Living Fractals", 0, signatureFloor = 0f),
-            // KIFS breathing cathedral: a three-deep kaleidoscopic IFS
-            // pre-fold over the box species, its fold rotation leaning on the
-            // slewed bass so the architecture visibly breathes on kicks.
-            // lipschitz = 1.24^3 (three uniform scales); bodyScale up from
-            // 0.82 because the pre-fold contracts the visible body by the
-            // same factor.
             HyperspaceStyle(
                 "hyper_polytope",
                 "Polytope",
@@ -126,8 +65,6 @@ internal object VisualStyleCatalog {
                 tintAmount = 0.3f,
                 phaseRate = 0.04f,
             ),
-            // Thin fluid skin: the deform is a travelling wave plus a flatten,
-            // bounded by 1 + 0.13*3.1 before the compression.
             HyperspaceStyle(
                 "hyper_liquid_warp",
                 "Liquid Warp",
@@ -144,10 +81,6 @@ internal object VisualStyleCatalog {
                 tintAmount = 0.25f,
                 phaseRate = 0.06f,
             ),
-            // Double helix: pure axial torsion over the BULB (whose power also
-            // breathes on the slewed bass - the mandelbulb breathing lives at
-            // species level in the shader). lipschitz = 1 + twist * localRadius
-            // = 1 + 0.9 * 1.35, with headroom.
             HyperspaceStyle(
                 "hyper_caduceus",
                 "Caduceus",
@@ -164,7 +97,6 @@ internal object VisualStyleCatalog {
                 tintSat = 0.75f,
                 tintAmount = 0.3f,
             ),
-            // Folded organic ridges (1 + 0.075 * 4.3), synaptic sky.
             HyperspaceStyle(
                 "hyper_cortex",
                 "Cortex",
@@ -180,7 +112,6 @@ internal object VisualStyleCatalog {
                 tintHue = 0.88f,
                 tintAmount = 0.25f,
             ),
-            // Cut facets: abs() and a rotation are isometries, lipschitz 1.
             HyperspaceStyle(
                 "hyper_reliquary",
                 "Reliquary",
@@ -198,10 +129,6 @@ internal object VisualStyleCatalog {
                 tintSat = 0.5f,
                 tintAmount = 0.4f,
             ),
-            // Hex-grid tunnel: identity moved off the body (the old twin
-            // micro-rotations were invisible) and into the spectral hex sky,
-            // which flies on the bass. High signature floor: the tunnel IS
-            // the style.
             HyperspaceStyle(
                 "hyper_moire",
                 "Moiré",
@@ -220,10 +147,6 @@ internal object VisualStyleCatalog {
                 phaseRate = 0.25f,
                 phaseBassRate = 0.45f,
             ),
-            // Apollonian jewels: broad pressure shells over the sphere
-            // packing, swelling on the slewed bass (the fold wobble lives in
-            // the shader's map()). lipschitz = 1 + eps + eps*k*R =
-            // 1 + 0.05 + 0.05*3*1.85.
             HyperspaceStyle(
                 "hyper_foam",
                 "Foam",
@@ -241,10 +164,6 @@ internal object VisualStyleCatalog {
                 tintSat = 0.25f,
                 tintAmount = 0.35f,
             ),
-            // Kaliset star nest: the old 0.022-unit skin displacement sat
-            // below the hit epsilon and was never visible, so the body is
-            // clean (lipschitz 1) and the identity is the nebula sky driven
-            // by slewed bass/mid, plus the treble-lit grain signature.
             HyperspaceStyle(
                 "hyper_dustskin",
                 "Dustskin",
@@ -262,9 +181,6 @@ internal object VisualStyleCatalog {
                 tintAmount = 0.25f,
                 phaseRate = 0.02f,
             ),
-            // Phyllotaxis chrysanthemum: stretched drifting corals under a
-            // golden-angle seed spiral whose seeds are lit by their own
-            // spectrum buckets. lipschitz = (1 + 0.3*2.1) * (1 + 0.07*2.2).
             HyperspaceStyle(
                 "hyper_plume",
                 "Plume",
@@ -289,9 +205,6 @@ internal object VisualStyleCatalog {
                 phaseRate = 0.03f,
                 phaseBassRate = 0.05f,
             ),
-            // Log-polar Droste descent: the endless approach lives in the sky
-            // and the full-frame pulse, so the bodies stay clean (lipschitz
-            // 1) and the zoom lurches on the bass via the phase rate.
             HyperspaceStyle(
                 "hyper_resonant_wormhole",
                 "Resonant Wormhole",
@@ -316,8 +229,6 @@ internal object VisualStyleCatalog {
     val cymatics: List<CymaticsStyle> =
         listOf(
             CymaticsStyle(SceneIds.CYMATICS, "Original · Resonant Field", 0),
-            // Sand on a dark plate: grains gather along the nodal filigree
-            // and the music shakes them loose. Gold, narrow-span palette.
             CymaticsStyle(
                 "chladni_sand",
                 "Chladni Sand",
@@ -333,9 +244,6 @@ internal object VisualStyleCatalog {
                 hueOffset = 0.06f,
                 hueSpan = 0.45f,
             ),
-            // A struck circular membrane: TWO clean Bessel modes at most -
-            // rings crossed by diametral nodes, clamped at a hard rim -
-            // instead of the original's eight-mode interference field.
             CymaticsStyle(
                 "bessel_drum",
                 "Drumhead",
@@ -396,8 +304,6 @@ internal object VisualStyleCatalog {
                 hueOffset = 0.1f,
                 hueSpan = 1.35f,
             ),
-            // Sunlight through rippled water: few, coarse modes make clean
-            // caustic webs (and keep the style's extra curvature taps cheap).
             CymaticsStyle(
                 "caustic_sheet",
                 "Caustic Sheet",
@@ -413,8 +319,6 @@ internal object VisualStyleCatalog {
                 hueSpan = 0.5f,
                 modeCap = 4,
             ),
-            // Acoustic levitation: a few modes give clean antinode shelves
-            // for the droplet lattice to hang from.
             CymaticsStyle(
                 "levitator",
                 "Levitator",
@@ -431,8 +335,6 @@ internal object VisualStyleCatalog {
                 hueSpan = 0.8f,
                 modeCap = 3,
             ),
-            // Room modes: the shader recomposes the first four modes as
-            // product cosines, so the cap documents what is actually drawn.
             CymaticsStyle(
                 "standing_chamber",
                 "Standing Chamber",
@@ -481,22 +383,14 @@ internal object VisualStyleCatalog {
             ),
         )
 
-    /**
-     * SILK - strange-attractor velocity fields rendered as continuous
-     * advected dye ([SilkScene]). A style is a FIELD plus its stroke
-     * geometry; the damping parameter b breathes as b = bBase + bAmp *
-     * sin(TAU * t / bPeriod), the reference behaviour of this field family.
-     */
     data class SilkStyle(
         val id: String,
         val label: String,
-        /** Which velocity field, `fieldAt`/2D branches in silk_step_frag. */
         val field: Int,
         val flow: Float = 1f,
         val fieldScale: Float = 1f,
         val strokes: Float = 1f,
         val elong: Float = 1f,
-        /** Dye survival per 60 Hz frame; the scene compensates frame rate. */
         val decay: Float = 0.985f,
         val fold: Int = 0,
         val swirl: Float = 0.25f,
@@ -506,7 +400,6 @@ internal object VisualStyleCatalog {
         val bBase: Float = 0.17f,
         val bAmp: Float = 0.05f,
         val bPeriod: Float = 37f,
-        /** Slab-orbit rate, turns per second: how fast the 2D slice explores. */
         val slabRate: Float = 0.02f,
     )
 
@@ -561,18 +454,10 @@ internal object VisualStyleCatalog {
             ),
         )
 
-    /**
-     * LIFE - continuous cellular matter ([LifeScene]). A style is a SPECIES:
-     * rule 0 is Lenia (published catalogue parameters, reimplemented engine),
-     * rule 1 is Gray-Scott (curated stable feed/kill organisms). `look`
-     * selects the material in life_show_frag.
-     */
     data class LifeStyle(
         val id: String,
         val label: String,
-        /** 0 Lenia, 1 Gray-Scott. */
         val rule: Int,
-        /** Lenia: 1/T. Gray-Scott: the per-pass integration step. */
         val dt: Float,
         val core: Int = 0,
         val growth: Int = 0,
@@ -586,7 +471,6 @@ internal object VisualStyleCatalog {
         val feed: Float = 0f,
         val kill: Float = 0f,
         val aniso: Float = 0f,
-        /** Sim passes per frame at Speed 1; Gray-Scott wants several. */
         val substeps: Int = 1,
         val look: Int = 0,
         val seedJitter: Float = 9f,
@@ -596,9 +480,7 @@ internal object VisualStyleCatalog {
 
     val life: List<LifeStyle> =
         listOf(
-            // Orbium unicaudatus - the iconic Lenia glider, in soup.
             LifeStyle("life_orbium", "Orbium Drift", 0, dt = 0.1f, mu = 0.15f, sigma = 0.017f, look = 0),
-            // Gyrorbium - curving swimmers.
             LifeStyle(
                 "life_gyre",
                 "Gyre Garden",
@@ -609,28 +491,23 @@ internal object VisualStyleCatalog {
                 look = 3,
                 hueOffset = 0.5f,
             ),
-            // Helicium - rotating spirals.
             LifeStyle(
                 "life_helix", "Helicium Reef", 0, dt = 0.1f, mu = 0.3f, sigma = 0.0505f,
                 look = 2, hueOffset = 0.12f, seedJitter = 7f,
             ),
-            // Circium ventilans - pulsing rings.
             LifeStyle(
                 "life_pulsar", "Pulsar Colony", 0, dt = 0.1f, mu = 0.38f, sigma = 0.07f,
                 look = 0, hueOffset = 0.07f, seedJitter = 6f,
             ),
-            // Hydrogeminium natans - big three-ring swimmer, quad4 kernel.
             LifeStyle(
                 "life_hydro", "Hydrogeminium", 0, dt = 0.1f, core = 1, growth = 1,
                 mu = 0.26f, sigma = 0.036f, radius = 18f, rings = 3, b2 = 1f, b3 = 1f,
                 look = 2, hueOffset = 0.4f, seedJitter = 5f,
             ),
-            // The SmoothLife bug: step kernel, T = 1.
             LifeStyle(
                 "life_bug", "Smooth Bugs", 0, dt = 1f, core = 2, mu = 0.31f, sigma = 0.049f,
                 look = 4, hueOffset = 0.85f, seedJitter = 8f,
             ),
-            // Gray-Scott classes: the (f, k) pair is the organism.
             LifeStyle(
                 "life_mitosis", "Mitosis", 1, dt = 1f, feed = 0.0367f, kill = 0.0649f,
                 substeps = 4, look = 0, hueOffset = 0.6f, seedJitter = 11f,
@@ -649,22 +526,13 @@ internal object VisualStyleCatalog {
             ),
         )
 
-    /**
-     * ACID - the video-synthesis feedback loop ([AcidScene]). A style is a
-     * warp recipe (mode), a source drawing (source), the loop constants and
-     * the CRT dressing. Zoom/rotate/feedback are per-frame at 60 Hz; the
-     * scene compensates frame rate and hard-caps feedback below 1.
-     */
     data class AcidStyle(
         val id: String,
         val label: String,
-        /** Warp recipe in acid_step_frag. */
         val mode: Int,
-        /** Audio source drawing: 0 chroma mandala, 1 rings, 2 bars, 3 orbit. */
         val source: Int,
         val zoom: Float = 1.010f,
         val rotate: Float = 0.0015f,
-        /** Hue rotation, turns per second. */
         val hueRate: Float = 0.04f,
         val feedback: Float = 0.955f,
         val modulate: Float = 0.35f,
@@ -733,12 +601,6 @@ internal object VisualStyleCatalog {
             ),
         )
 
-    /**
-     * MYCELIUM - the Physarum trail ecology ([MycoScene]). A style is a
-     * COLONY: its sensor geometry, stride, deposit/decay metabolism, and -
-     * for two-species styles - the 2x2 sense matrix that makes rivalry,
-     * symbiosis or predation. Angles in radians.
-     */
     data class MycoStyle(
         val id: String,
         val label: String,

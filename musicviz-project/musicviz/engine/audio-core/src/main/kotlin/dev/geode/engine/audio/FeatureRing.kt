@@ -1,50 +1,17 @@
 package dev.geode.engine.audio
 
-/**
- * One acquisition's worth of feature values, preallocated by the reader so
- * [FeatureRing.acquireAt] can fill it without allocating.
- */
 class FeatureFrame(
     continuousSlots: Int,
     eventSlots: Int,
 ) {
-    /** Interpolated continuous values, valid after an OK acquire. */
     val continuous: FloatArray = FloatArray(continuousSlots)
 
-    /** MAX/OR-combined event strengths over the span; 0 means "did not fire". */
     val events: FloatArray = FloatArray(eventSlots)
 
-    /** The epoch the values belong to, set on an OK acquire. */
     var epoch: Int = -1
         internal set
 }
 
-/**
- * A single-writer, multi-reader ring of feature frames addressed by
- * ABSOLUTE SAMPLE INDEX — §5.6's replacement for latest-wins consumption.
- *
- * A renderer that reads a latest-state field misses every event that fired
- * between two of its reads: at 30 fps over a 62.5 Hz analysis hop, half of
- * all one-frame beat flags simply vanish. [acquireAt] answers the question
- * the renderer actually has — "what happened at sample t, and since I last
- * looked?" — with continuous slots LINEARLY INTERPOLATED at `t` and event
- * slots MAX-combined (OR, for flags carried as strengths) over the span.
- *
- * The span's frame selection deliberately mirrors the app's
- * `FeatureTimeline.featuresAt`, the reference implementation this ring must
- * prove itself against before any consumer switches: the base frame is the
- * one NEAREST `t`, the last is the frame nearest `t + span` minus one, and
- * events combine over that inclusive range. The mirror is pinned app-side,
- * event for event, against the timeline itself.
- *
- * Per §5.1's contract there are no silent clamps: a reader ahead of the
- * writer gets [Acquire.NOT_YET_AVAILABLE], one fallen off the back gets
- * [Acquire.GAP], an unstarted epoch [Acquire.EMPTY]. [beginEpoch] restarts
- * the numbering on seek or source change. The writer never blocks on
- * readers; a reader that raced a lapping writer detects it (the same
- * re-check discipline [SampleRing] uses) and reports the gap it actually
- * has. Neither side allocates after construction.
- */
 class FeatureRing(
     val continuousSlots: Int,
     val eventSlots: Int,
@@ -72,26 +39,15 @@ class FeatureRing(
     @Volatile
     private var epochValue: Int = 0
 
-    /** Increments whenever the sample numbering restarts. */
     val epoch: Int get() = epochValue
 
-    /**
-     * Oldest frame a reader can still trust. A quarter of the ring is the
-     * writer's runway, the same proportional headroom [SampleRing] reserves
-     * and for the same published-after-stored reason.
-     */
     private val oldestReadable: Int get() = maxOf(0, written + capacityFrames / 4 - capacityFrames)
 
-    /** Restarts the numbering; call on seek, source or format change. */
     fun beginEpoch() {
         written = 0
         epochValue += 1
     }
 
-    /**
-     * Publishes one frame. Writer thread only; [sampleIndex] must be
-     * strictly greater than the previous frame's within the epoch.
-     */
     fun publish(
         sampleIndex: Long,
         continuous: FloatArray,
@@ -110,11 +66,6 @@ class FeatureRing(
         written = w + 1
     }
 
-    /**
-     * Fills [out] for sample [sampleIndex] with events combined over
-     * `[sampleIndex, sampleIndex + spanSamples]`. Reader-safe; see the
-     * class doc for the outcome contract.
-     */
     fun acquireAt(
         sampleIndex: Long,
         spanSamples: Long,
@@ -147,8 +98,6 @@ class FeatureRing(
             }
         }
 
-        // The writer does not stop for readers: re-check that nothing read
-        // above was overwritten mid-copy, and that the epoch held.
         if (epochValue != epochBefore) return Acquire.DISCONTINUITY
         val writtenNow = written
         val oldestNow = maxOf(0, writtenNow + capacityFrames / 4 - capacityFrames)
@@ -157,7 +106,6 @@ class FeatureRing(
         return Acquire.OK
     }
 
-    /** Frame index (write-order) whose sample is nearest [sampleIndex]. */
     private fun frameNearest(
         sampleIndex: Long,
         first: Int,
@@ -169,7 +117,6 @@ class FeatureRing(
             val mid = (lo + hi + 1) ushr 1
             if (sampleAt[mid and mask] <= sampleIndex) lo = mid else hi = mid - 1
         }
-        // lo is the last frame at-or-before; the next one may be closer.
         if (lo < last) {
             val below = sampleIndex - sampleAt[lo and mask]
             val above = sampleAt[(lo + 1) and mask] - sampleIndex

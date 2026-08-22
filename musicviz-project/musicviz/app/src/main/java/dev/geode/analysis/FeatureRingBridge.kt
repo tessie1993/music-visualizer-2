@@ -3,34 +3,10 @@ package dev.geode.analysis
 import dev.geode.engine.audio.FeatureFrame
 import dev.geode.engine.audio.FeatureRing
 
-/**
- * Maps [AudioFeatures] snapshots into [FeatureRing] rows and back — the
- * legacy bridge §5.6 asks for, so the ring can carry today's features
- * without waiting for the fixed-layout ABI.
- *
- * The ring carries the SCALAR channels and the events. The array channels —
- * bands, waveform, chroma — stay on the snapshot path for now: they are on
- * their way to being GPU resources (§5.4), and a ring row is not where a
- * 64-float array wants to live twice per hop. [snapshot] therefore returns
- * an [AudioFeatures] with empty arrays, which every consumer already treats
- * as "no reading" rather than as silence.
- *
- * Why this exists: a latest-state field loses every event between two
- * reads — at 30 fps over a 62.5 Hz hop, half of all one-frame beat flags.
- * Published through the ring and acquired with the span since the last
- * read, the same renderer sees every one of them exactly once. The span
- * semantics are proven IDENTICAL to `FeatureTimeline.featuresAt`'s
- * peak-hold/OR by `FeatureRingBridgeTest` before any consumer switches;
- * kick/snare/hat additionally get the same max treatment, which the
- * timeline never offered them.
- *
- * One instance per writer; the scratch rows make [publish] allocation-free.
- */
 class FeatureRingBridge {
     private val continuousScratch = FloatArray(CONTINUOUS_SLOTS)
     private val eventScratch = FloatArray(EVENT_SLOTS)
 
-    /** Publishes one snapshot's scalars and events at [sampleIndex]. */
     fun publish(
         ring: FeatureRing,
         sampleIndex: Long,
@@ -61,7 +37,6 @@ class FeatureRingBridge {
         ring.publish(sampleIndex, c, e)
     }
 
-    /** The scalar view of an acquisition; arrays deliberately empty. */
     fun snapshot(frame: FeatureFrame): AudioFeatures {
         val c = frame.continuous
         val e = frame.events
@@ -118,7 +93,6 @@ class FeatureRingBridge {
 
         private val EMPTY = FloatArray(0)
 
-        /** A ring shaped for this bridge's layout. */
         fun newRing(capacityFrames: Int = 512): FeatureRing = FeatureRing(CONTINUOUS_SLOTS, EVENT_SLOTS, capacityFrames)
     }
 }

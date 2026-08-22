@@ -11,26 +11,6 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-/**
- * The LIFE family: continuous cellular matter.
- *
- * One ping-pong state texture holds a living scalar field; `life_step_frag`
- * advances it under one of two rules - continuous Lenia (ring kernel + bell
- * growth, the Chakazul formulation reimplemented) or Gray-Scott
- * reaction-diffusion (curated stable (f,k) organisms) - and `life_show_frag`
- * renders the field as one of six materials. A style is a species: its rule,
- * its kernel/growth or feed/kill numbers, and its material.
- *
- * Species parameters come from the published Lenia catalogue (Orbium,
- * Gyrorbium, Helicium, Circium, Hydrogeminium, the SmoothLife bug) and the
- * standard Gray-Scott classes (mitosis, coral, labyrinth, worms) - see
- * [VisualStyleCatalog.life].
- *
- * Audio is MATTER, never solver constants: beats drop reagent blobs at a
- * golden-angle orbit, treble sprinkles seeds, and silence leaves the organism
- * to live its own life. When the world starves or overgrows into stasis, the
- * seeding lattice recultures it.
- */
 internal class LifeScene(
     private val context: Context,
     private val style: VisualStyleCatalog.LifeStyle,
@@ -39,25 +19,20 @@ internal class LifeScene(
     override val id: String = style.id
 
     private companion object {
-        /** State short side, texels: room for many R=13..20 organisms. */
         const val SIM_RES = 288
 
         const val TIME_WRAP_SECONDS = 628.31853f
 
-        /** Seconds the reset seeding stays active. */
         const val SEED_SECONDS = 0.5f
 
-        /** Golden angle, radians: successive kicks never pile up. */
         const val GOLDEN_ANGLE = 2.399963f
 
         const val BEAT_THRESHOLD = 0.3f
 
-        /** Seconds between liveness checks, and the reseed trigger bounds. */
         const val CENSUS_SECONDS = 4f
         const val STARVED = 0.004f
         const val OVERGROWN = 0.985f
 
-        /** Quarter-point cross of census probes, as (x, y) in quarters. */
         val CENSUS_PROBES = arrayOf(intArrayOf(1, 2), intArrayOf(3, 2), intArrayOf(2, 1), intArrayOf(2, 3), intArrayOf(2, 2))
 
         const val ENV_RISE_PER_SEC = 9f
@@ -163,9 +138,6 @@ internal class LifeScene(
     private fun ensureState(): FluidBuffers.DoubleFbo? {
         state?.let { return it }
         val fmt = formats ?: FluidBuffers.probeFormats().also { formats = it }
-        // Half-float render targets are OPTIONAL in core GLES 3.0. The state
-        // is 0..1 by construction, so the RGBA8 fallback carries it directly -
-        // quantized, but alive rather than black (§6.3's named-fallback rule).
         byteState = !fmt.ok
         val texFmt =
             if (byteState) {
@@ -194,27 +166,6 @@ internal class LifeScene(
         return current + (target - current).coerceIn(-limit * dt, limit * dt)
     }
 
-    /**
-     * Reads five spread texels every few seconds - quarter points and centre.
-     * One texel was a coin flip against a healthy but SPARSE world (an
-     * organism away from the centre read as global starvation, and the world
-     * reseeded every four seconds); five probes only call the world starved
-     * when the LIVEST of them is dead, and overgrown when the DIMMEST is
-     * saturated. Reseeds by restarting the seeding envelope.
-     *
-     * Reads through GL_READ_FRAMEBUFFER only, and restores it: binding
-     * GL_FRAMEBUFFER here (both targets) redirected the present pass into
-     * the simulation state it was sampling - a black composite frame and a
-     * corrupted organism, every census. [restoreFbo] is the draw target the
-     * caller already captured.
-     *
-     * Formats are the always-legal pairs of ES 3.0 §4.3.2 - RGBA/FLOAT for a
-     * float color buffer, RGBA/UNSIGNED_BYTE for a normalized one - NOT the
-     * IMPLEMENTATION_COLOR_READ pair, which is an additional option, not a
-     * requirement. Gating on it left this census (and with it the reseed
-     * safety net) dead on every byte-fallback device, where the preferred
-     * type is never FLOAT and a starved world stayed black forever.
-     */
     private fun census(
         field: FluidBuffers.DoubleFbo,
         restoreFbo: Int,
@@ -255,10 +206,6 @@ internal class LifeScene(
     override fun draw(timeSeconds: Float) {
         if (!programOk) return
         GlUtil.resetFrameState()
-        // Captured BEFORE ensureState() and the census: allocation leaves
-        // framebuffer 0 bound, and the census reads the state FBO, so a
-        // capture taken after either aims the show pass at the wrong target
-        // and the composite presents black (see FieldSimFboContractTest).
         GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
         GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
         val field = ensureState() ?: return
@@ -316,7 +263,6 @@ internal class LifeScene(
             GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, field.read.tex)
             GLES30.glUniform1i(stepLocs.loc("uPrev"), 0)
-            // Injections land once per frame, not once per substep.
             val first = pass == 0
             GLES30.glUniform1f(stepLocs.loc("uSeed"), if (first) (seedRemain / SEED_SECONDS) else 0f)
             GLES30.glUniform1f(stepLocs.loc("uKick"), if (first) kick else 0f)

@@ -23,6 +23,7 @@ internal class MilkImportController(
 
     private fun importDir(): File = File(application.filesDir, "milk")
 
+    @Suppress("TooGenericExceptionCaught")
     fun milkPresetFilesAsync(onDone: (List<MilkFile>) -> Unit) {
         scope.launch(Dispatchers.IO) {
             val files =
@@ -53,6 +54,7 @@ internal class MilkImportController(
         }
     }
 
+    @Suppress("TooGenericExceptionCaught")
     internal fun importMilkPresetBlocking(uri: Uri): String? =
         try {
             val dir = importDir().apply { mkdirs() }

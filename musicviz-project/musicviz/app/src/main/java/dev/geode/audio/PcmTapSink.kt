@@ -7,20 +7,6 @@ import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/**
- * Superseded by `dev.geode.engine.audioandroid.PcmTap`, which is what
- * playback actually uses. Nothing in production constructs this any more.
- *
- * It survives one slice as the oracle `PcmTapParityTest` compares the
- * replacement against - MASTER_PLAN §2.1 rule 7 forbids deleting a legacy seam
- * in the slice that introduces its replacement, and §12 names waveform
- * fixtures as the migration proof. **Do not extend it**; V2-2-03b deletes it.
- *
- * Receives raw PCM from ExoPlayer's audio pipeline via [TeeAudioProcessor].
- * Runs on the playback thread: copy out fast, never block - which it does
- * imperfectly, allocating 120 bytes per callback. That is the defect the
- * replacement exists to fix.
- */
 @OptIn(UnstableApi::class)
 class PcmTapSink(
     private val ring: PcmRingBuffer,

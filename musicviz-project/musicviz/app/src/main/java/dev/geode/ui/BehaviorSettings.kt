@@ -19,11 +19,6 @@ import dev.geode.render.VisualSafety
 import dev.geode.render.VisualSafetyChoice
 import kotlin.math.roundToInt
 
-/**
- * BEHAVIOR: the standing rules for how the visualizer acts - touch gestures,
- * a connected display, the photosensitivity/motion limits, the two modes
- * that change the look by themselves, and the live wallpaper.
- */
 @Composable
 internal fun BehaviorSettingsTab(viewModel: PlayerViewModel) {
     val gui by viewModel.guiPrefs.collectAsState()
@@ -36,7 +31,6 @@ internal fun BehaviorSettingsTab(viewModel: PlayerViewModel) {
     }
 }
 
-/** Finger gestures on the fullscreen canvas: smear, and pinch/twist. */
 @Composable
 private fun TouchGroup(
     viewModel: PlayerViewModel,
@@ -83,7 +77,6 @@ private fun TouchGroup(
     }
 }
 
-/** HDMI/cast: visuals on the big screen, controls on the phone. */
 @Composable
 private fun ConnectedDisplayGroup(
     viewModel: PlayerViewModel,
@@ -110,11 +103,6 @@ private fun ConnectedDisplayGroup(
     }
 }
 
-/**
- * The choices a user can pick, in the order they are offered.
- * [VisualSafetyChoice.UNKNOWN] is deliberately absent: it is a state the app
- * can be in, not one anybody selects.
- */
 private val SAFETY_CHOICES =
     listOf(
         VisualSafetyChoice.SAFE to R.string.behavior_safety_safe,
@@ -122,11 +110,6 @@ private val SAFETY_CHOICES =
         VisualSafetyChoice.CUSTOM to R.string.behavior_safety_custom,
     )
 
-/**
- * Photosensitivity and motion-comfort limits. Kept as its own group, near
- * the top of Behavior, because it is the one settings group a user may be
- * looking for before they let the app draw anything at all.
- */
 @Composable
 private fun VisualSafetyGroup(
     viewModel: PlayerViewModel,
@@ -140,9 +123,6 @@ private fun VisualSafetyGroup(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (gui.safetyChoice == VisualSafetyChoice.UNKNOWN) {
-            // The whole reason the choice has an "unknown" state: until this
-            // is answered the visuals run limited, and the user is told so
-            // rather than left to wonder why the strobe looks tame.
             Text(
                 stringResource(R.string.behavior_safety_unanswered),
                 style = MaterialTheme.typography.bodySmall,
@@ -151,9 +131,6 @@ private fun VisualSafetyGroup(
         }
         CrystalSegmented(
             options = SAFETY_CHOICES.map { stringResource(it.second) },
-            // -1 while the choice is UNKNOWN: nothing is shown selected,
-            // because nothing has been chosen. Presenting Safe as picked
-            // would be the app answering a question asked of the user.
             selected = SAFETY_CHOICES.indexOfFirst { it.first == gui.safetyChoice },
             onSelect = { viewModel.setGuiPrefs(gui.copy(safetyChoice = SAFETY_CHOICES[it].first)) },
             modifier = Modifier.padding(top = 4.dp),
@@ -229,9 +206,6 @@ private fun VisualSafetyGroup(
         }
     }
     if (gui.safetyChoice == VisualSafetyChoice.CUSTOM) {
-        // Only under Custom. Safe and Reduced motion already say what happens
-        // to motion, and a switch that silently does nothing under those two
-        // would be worse than no switch at all.
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.behavior_slow_motion), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
@@ -254,7 +228,6 @@ private fun VisualSafetyGroup(
     )
 }
 
-/** The wallpaper hand-off, with the honest battery note. */
 @Composable
 private fun LiveWallpaperGroup() {
     val ctx = LocalContext.current
@@ -264,9 +237,6 @@ private fun LiveWallpaperGroup() {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     CrystalButton(onClick = {
-        // The direct "change to THIS wallpaper" screen; some launchers do not
-        // implement it, so fall back to the system's live-wallpaper list
-        // rather than doing nothing.
         val direct =
             android.content.Intent(
                 android.app.WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER,
