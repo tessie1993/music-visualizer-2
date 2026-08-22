@@ -1,7 +1,7 @@
 package dev.geode.ui
 
 import dev.geode.data.Preset
-import dev.geode.render.VisualizerRenderer
+import dev.geode.render.scene.SceneCapabilities
 import dev.geode.render.scene.SceneParams
 
 object BuiltInPresets {
@@ -699,7 +699,7 @@ object BuiltInPresets {
         )
 
     val ALL: List<Preset> =
-        VisualizerRenderer.SHADER_SCENES.keys.flatMap { id ->
+        SceneCapabilities.SHADER_SCENES.keys.flatMap { id ->
             LOOKS.map { look ->
                 Preset(
                     name = "$id · ${look.name}",

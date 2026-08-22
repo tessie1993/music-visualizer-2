@@ -20,6 +20,7 @@ import dev.geode.render.scene.MycoScene
 import dev.geode.render.scene.PcmChunk
 import dev.geode.render.scene.PcmSink
 import dev.geode.render.scene.Scene
+import dev.geode.render.scene.SceneCapabilities
 import dev.geode.render.scene.SceneIds
 import dev.geode.render.scene.SceneParams
 import dev.geode.render.scene.ShaderScene
@@ -36,32 +37,6 @@ class VisualizerRenderer(
     private val context: Context,
 ) : GLSurfaceView.Renderer {
     companion object {
-        val SHADER_SCENES: Map<String, Int> =
-            linkedMapOf(
-                SceneIds.JULIA to R.raw.julia_frag,
-                SceneIds.TUNNEL to R.raw.tunnel_frag,
-                SceneIds.MANDEL to R.raw.mandel_frag,
-                SceneIds.KALEIDO to R.raw.kaleido_frag,
-                SceneIds.PLASMA to R.raw.plasma_frag,
-                SceneIds.BARS to R.raw.bars_frag,
-                SceneIds.RING to R.raw.ring_frag,
-                SceneIds.SCOPE to R.raw.scope_frag,
-                SceneIds.LISS to R.raw.liss_frag,
-                SceneIds.WARP to R.raw.warp_frag,
-                SceneIds.GRID to R.raw.grid_frag,
-                SceneIds.VORONOI to R.raw.voronoi_frag,
-                SceneIds.METABALLS to R.raw.metaballs_frag,
-                SceneIds.RIPPLES to R.raw.ripples_frag,
-                SceneIds.STARFIELD to R.raw.starfield_frag,
-                SceneIds.WAVES to R.raw.waves_frag,
-                SceneIds.HEXGRID to R.raw.hexgrid_frag,
-                SceneIds.SPIRAL to R.raw.spiral_frag,
-                SceneIds.AURORA to R.raw.aurora_frag,
-                SceneIds.SOLAR to R.raw.solar_frag,
-                SceneIds.WINTER to R.raw.winter_frag,
-                SceneIds.LAVA to R.raw.lava_frag,
-            )
-
         private const val TOUCH_RADIUS = 0.11f
 
         private const val MAX_TOUCH_BACKLOG = 24
@@ -354,7 +329,7 @@ class VisualizerRenderer(
             addAll(VisualStyleCatalog.lifeIds)
             addAll(VisualStyleCatalog.mycoIds)
             addAll(VisualStyleCatalog.acidIds)
-            addAll(SHADER_SCENES.keys)
+            addAll(SceneCapabilities.SHADER_SCENES.keys)
             if (MilkdropEngine.available) add(SceneIds.MILKDROP)
             add(SceneIds.FLUID)
             add(SceneIds.CURLFLOW)
@@ -369,7 +344,7 @@ class VisualizerRenderer(
         quadVert: String,
         export: Boolean = false,
     ): Scene {
-        return SHADER_SCENES[id]?.let { res ->
+        return SceneCapabilities.SHADER_SCENES[id]?.let { res ->
             val frag = if (export) activeCustomShaders[id] ?: GlUtil.loadShader(context, res) else GlUtil.loadShader(context, res)
             ShaderScene(
                 id,
