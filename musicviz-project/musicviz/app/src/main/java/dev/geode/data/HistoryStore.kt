@@ -188,8 +188,8 @@ class HistoryStore(
      * down, which is the last moment the process is guaranteed to be alive. A
      * write still sitting on [writer] there is a play that never happened.
      */
-    fun awaitWrites() {
-        runCatching { writer.submit {}.get(AWAIT_WRITE_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS) }
+    fun awaitWrites(timeoutMs: Long = AWAIT_WRITE_TIMEOUT_MS) {
+        runCatching { writer.submit {}.get(timeoutMs.coerceAtLeast(0L), java.util.concurrent.TimeUnit.MILLISECONDS) }
     }
 
     @Volatile

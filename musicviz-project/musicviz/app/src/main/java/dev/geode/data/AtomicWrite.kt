@@ -78,7 +78,17 @@ object AtomicWrite {
         val parent = file.parentFile
         // A missing parent is not an error to swallow silently: a store whose
         // directory was removed under it should still be able to save.
-        if (parent != null && !parent.exists() && !parent.mkdirs()) return false
+        // Attempt-then-verify rather than exists-then-mkdirs: mkdirs()
+        // returns false when the directory already exists, so the old order
+        // failed a write whenever another thread created the directory
+        // between the two calls - a race the per-path lock below cannot
+        // cover, because two DIFFERENT files in one new directory lock
+        // separately. isDirectory is the one check that means "writable
+        // home", whoever made it.
+        if (parent != null && !parent.isDirectory) {
+            parent.mkdirs()
+            if (!parent.isDirectory) return false
+        }
         val temp = File(file.absolutePath + TEMP_SUFFIX)
         synchronized(locks.computeIfAbsent(file.absolutePath) { Any() }) {
             val ok =

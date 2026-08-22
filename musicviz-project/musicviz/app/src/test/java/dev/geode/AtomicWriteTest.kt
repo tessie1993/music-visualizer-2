@@ -61,6 +61,30 @@ class AtomicWriteTest {
         assertEquals("{}", f.readText())
     }
 
+    /**
+     * The mkdirs race: two threads writing different files into a missing
+     * store directory can have the loser's mkdirs() return false because the
+     * winner just created it - which is success, not failure. Deterministic
+     * stand-in for the race: a directory that already exists at check time,
+     * where mkdirs() also returns false.
+     */
+    @Test
+    fun a_parent_created_by_someone_else_is_not_a_write_failure() {
+        val parent = File(tempDir(), "music-playlists").apply { check(mkdirs()) }
+        val f = File(parent, "chill.json")
+        assertTrue("an existing parent directory failed the write", AtomicWrite.text(f, "{}"))
+        assertEquals("{}", f.readText())
+    }
+
+    /** The verify half: a parent that exists but is a FILE must fail cleanly. */
+    @Test
+    fun a_parent_that_is_a_plain_file_fails_without_touching_it() {
+        val notADir = File(tempDir(), "music-playlists").apply { writeText("i am a file") }
+        val f = File(notADir, "chill.json")
+        assertFalse(AtomicWrite.text(f, "{}"))
+        assertEquals("i am a file", notADir.readText())
+    }
+
     /** The binary overload, which is how an imported texture is copied in. */
     @Test
     fun the_stream_overload_publishes_the_whole_copy() {
