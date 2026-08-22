@@ -107,6 +107,23 @@ class SessionStoreTest {
         )
     }
 
+    /**
+     * Parsed-but-unusable gets the same treatment: save() never writes an
+     * empty session (that is a delete), so a tracks-less file is damage of a
+     * politer kind - and left in place it was re-read and re-parsed on every
+     * launch for an answer that is always "nothing".
+     */
+    @Test
+    fun `a structurally valid but empty file is quarantined rather than re-read forever`() {
+        file().writeText("""{"version":1,"tracks":[]}""")
+        assertNull(store().load())
+        assertFalse("the unusable file was left in place", file().exists())
+        assertTrue(
+            "nothing was quarantined",
+            context.filesDir.listFiles().orEmpty().any { it.name.startsWith("session.json") },
+        )
+    }
+
     @Test
     fun `a truncated write reads as nothing rather than a wrong position`() {
         file().writeText("""{"version":1,"tracks":[{"uri":"content://a"}""")

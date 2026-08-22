@@ -116,6 +116,49 @@ class ExportRunTest {
     }
 
     @Test
+    fun `a cancel request is visible to the running render`() {
+        ExportRun.begin("track")
+        assertFalse(ExportRun.cancelRequested)
+        ExportRun.requestCancel()
+        assertTrue(ExportRun.cancelRequested)
+    }
+
+    @Test
+    fun `beginning a new run clears the previous run's cancel request`() {
+        ExportRun.begin("first")
+        ExportRun.requestCancel()
+        ExportRun.finish()
+        ExportRun.begin("second")
+        assertFalse("a stale timeout cancel would kill the next render on its first frame", ExportRun.cancelRequested)
+    }
+
+    /**
+     * The wiring the flag is worthless without. onTimeout used to call only
+     * finish() - a StateFlow reset - which left the encoder rendering with no
+     * foreground service protecting the process; and the render can belong to
+     * an earlier screen's controller, so the process-wide flag is the only
+     * channel the request has.
+     */
+    @Test
+    fun `the service timeout cancels the render rather than only the notification`() {
+        val onTimeout =
+            File(repoDir(), "src/main/java/dev/geode/export/ExportService.kt")
+                .readText()
+                .substringAfter("override fun onTimeout")
+                .substringBefore("override fun onDestroy")
+        assertTrue("onTimeout no longer requests a render cancel", "ExportRun.requestCancel()" in onTimeout)
+    }
+
+    @Test
+    fun `the render's own cancel check observes the process-wide request`() {
+        val controller = File(repoDir(), "src/main/java/dev/geode/ui/ExportController.kt").readText()
+        assertTrue(
+            "startExport's isCancelled ignores ExportRun.cancelRequested, so a service timeout cannot stop it",
+            "ExportRun.cancelRequested" in controller,
+        )
+    }
+
+    @Test
     fun `a second export cannot start while one is running`() {
         val controller = File(repoDir(), "src/main/java/dev/geode/ui/ExportController.kt").readText()
         assertTrue(

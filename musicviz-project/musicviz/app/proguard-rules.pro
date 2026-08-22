@@ -55,3 +55,15 @@
 # obfuscating names; the mapping file is uploaded to Play alongside the AAB.
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
+
+# ---------------------------------------------------------------------------
+# SceneParams reflection (the param fade)
+# ---------------------------------------------------------------------------
+# VisualizerRenderer.LERPED_FLOATS walks SceneParams' declared Float fields
+# reflectively and excludes the NOT_FADED entries BY NAME (the UNSET_OVERRIDE
+# sentinels and paramFadeSec). With the fields renamed, that exclusion matches
+# nothing and the sentinels are lerped through zero - every palette-override
+# fade flickers between set and unset, in release builds only, invisible to
+# the JVM test suite. Keeping the NAMES (not the members wholesale) costs no
+# shrinking: the fields are all live anyway.
+-keepclassmembernames class dev.geode.render.scene.SceneParams { <fields>; }

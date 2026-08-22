@@ -70,15 +70,39 @@ internal object CompositeGrade {
         /** Beat pulse (`uPostPulse`), gated apart from [grade] on purpose. */
         val pulse: Boolean,
     ) {
-        /** The uniform as the shader reads it: `vec4(geo, mirror, grade, pulse)`. */
-        fun toVec4(): FloatArray =
+        /**
+         * The uniform as the shader reads it: `vec4(geo, mirror, grade, pulse)`.
+         *
+         * One array per [Gate], built at construction and returned SHARED -
+         * the same contract as the reused buffers [LfoEngine.tick] hands out:
+         * callers upload it and must not write into it. [gateFor]'s gates are
+         * per-family singletons, so this takes the live composite pass from
+         * four allocations per frame (two Gates, two arrays) to none.
+         */
+        private val vec4: FloatArray =
             floatArrayOf(
                 if (geo) 1f else 0f,
                 if (mirrorInvert) 1f else 0f,
                 if (grade) 1f else 0f,
                 if (pulse) 1f else 0f,
             )
+
+        fun toVec4(): FloatArray = vec4
     }
+
+    /**
+     * One [Gate] per family, built once: the mapping is a property of the
+     * scene FAMILY, so building it per frame only cost allocations.
+     */
+    private val GATES: Map<SceneFamily, Gate> =
+        SceneFamily.entries.associateWith { family ->
+            Gate(
+                geo = family != SceneFamily.SHADER,
+                mirrorInvert = family == SceneFamily.FLUID,
+                grade = family == SceneFamily.FLUID,
+                pulse = family == SceneFamily.MILKDROP || family == SceneFamily.FLUID,
+            )
+        }
 
     /**
      * The gate for a [family], identical for the live renderer and the export
@@ -90,13 +114,7 @@ internal object CompositeGrade {
      * is also every field-sim scene without a grading pass of its own - applies
      * nothing at all.
      */
-    fun gateFor(family: SceneFamily): Gate =
-        Gate(
-            geo = family != SceneFamily.SHADER,
-            mirrorInvert = family == SceneFamily.FLUID,
-            grade = family == SceneFamily.FLUID,
-            pulse = family == SceneFamily.MILKDROP || family == SceneFamily.FLUID,
-        )
+    fun gateFor(family: SceneFamily): Gate = GATES.getValue(family)
 
     /** Zoom divisor floor, matching `max(z, 0.05)` in every scene shader. */
     const val MIN_ZOOM: Float = 0.05f

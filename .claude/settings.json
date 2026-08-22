@@ -14,5 +14,17 @@
       "mcp__ccd_session_mgmt__list_events",
       "mcp__36395157-aec5-4485-9dec-4e91ebb38795__search_files"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh"
+          }
+        ]
+      }
+    ]
   }
 }

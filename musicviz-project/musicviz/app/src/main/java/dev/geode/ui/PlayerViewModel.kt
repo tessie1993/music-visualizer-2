@@ -2252,8 +2252,8 @@ class PlayerViewModel(
      * for tests that assert on the files a mutation produces. Same contract
      * as [HistoryStore.awaitWrites].
      */
-    internal fun awaitStoreWrites() {
-        runCatching { storeWriter.submit {}.get(2_000, java.util.concurrent.TimeUnit.MILLISECONDS) }
+    internal fun awaitStoreWrites(timeoutMs: Long = STORE_FLUSH_BUDGET_MS) {
+        runCatching { storeWriter.submit {}.get(timeoutMs.coerceAtLeast(0L), java.util.concurrent.TimeUnit.MILLISECONDS) }
     }
 
     fun savePreset(
@@ -2441,9 +2441,17 @@ class PlayerViewModel(
         // has to be on disk before this method returns - the queued write has
         // no later moment to land in.
         flushListenTime()
-        historyStore.awaitWrites()
+        // ONE flush budget across both store writers, not one each: this
+        // method runs on the main thread during Activity teardown, and the
+        // stacked worst case (2 s history + 2 s presets/takes + the viz
+        // write below) was ANR territory. The writers are separate threads
+        // already draining in parallel, so the second wait normally returns
+        // at once; the deadline only matters when a filesystem is wedged,
+        // where losing the tail of the queue beats freezing the teardown.
+        val flushDeadline = android.os.SystemClock.elapsedRealtime() + STORE_FLUSH_BUDGET_MS
+        historyStore.awaitWrites(STORE_FLUSH_BUDGET_MS)
         // Same rule for a preset or take mutation still queued on the writer.
-        awaitStoreWrites()
+        awaitStoreWrites(flushDeadline - android.os.SystemClock.elapsedRealtime())
         // The debounced live-state write rides viewModelScope, which is
         // cancelled BEFORE onCleared runs, so the last slider the user touched
         // is only on disk if it is written here.
@@ -2734,5 +2742,13 @@ class PlayerViewModel(
          * user let go still comes back to what they left.
          */
         const val VIZ_PERSIST_WINDOW_MS = 400L
+
+        /**
+         * The whole main-thread budget teardown may spend waiting on the two
+         * store writers COMBINED - see onCleared. A write is tens of
+         * kilobytes, so past this the filesystem is wedged and losing the
+         * queue's tail beats freezing an Activity teardown into an ANR.
+         */
+        const val STORE_FLUSH_BUDGET_MS = 2_000L
     }
 }

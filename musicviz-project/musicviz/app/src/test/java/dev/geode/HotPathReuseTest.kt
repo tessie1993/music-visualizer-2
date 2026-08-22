@@ -352,4 +352,23 @@ class HotPathReuseTest {
         assertNotEquals("a modulated SceneParams must not be shared scratch", a, b)
         assertEquals("the source params were mutated in place", before, SceneParams.DEFAULT.brightness, 0f)
     }
+
+    @Test
+    fun theCompositeGatesAreSingletonsAndTheirVec4sStillSayWhatTheGateSays() {
+        // gateFor used to build a Gate plus a FloatArray per call - four
+        // allocations per frame across uGateA/uGateB, in the pass this suite
+        // exists to keep allocation-free. The memoized form must hand back
+        // the same instances (that is the reuse) AND a vec4 that still
+        // matches the gate's own booleans (that is the value parity).
+        for (family in dev.geode.render.CompositeGrade.SceneFamily.entries) {
+            val gate = dev.geode.render.CompositeGrade.gateFor(family)
+            assertSame("gateFor($family) allocates again", gate, dev.geode.render.CompositeGrade.gateFor(family))
+            val vec = gate.toVec4()
+            assertSame("toVec4() allocates again", vec, gate.toVec4())
+            assertEquals("$family geo", if (gate.geo) 1f else 0f, vec[0], 0f)
+            assertEquals("$family mirrorInvert", if (gate.mirrorInvert) 1f else 0f, vec[1], 0f)
+            assertEquals("$family grade", if (gate.grade) 1f else 0f, vec[2], 0f)
+            assertEquals("$family pulse", if (gate.pulse) 1f else 0f, vec[3], 0f)
+        }
+    }
 }

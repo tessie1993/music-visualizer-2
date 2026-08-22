@@ -176,6 +176,13 @@ class VisualizerRenderer(
          * cached Field array with getFloat/setFloat boxes nothing and
          * allocates nothing beyond the one copy() the hand-written form
          * already made.
+         *
+         * The name match below is a RELEASE-BUILD contract: R8 must keep
+         * SceneParams' field names (`-keepclassmembernames` in
+         * proguard-rules.pro) or [NOT_FADED] matches nothing and the
+         * UNSET_OVERRIDE sentinels get lerped through zero - in the minified
+         * build only, where no JVM test can see it. ReleaseMinifyContractTest
+         * pins the rule to this list.
          */
         private val LERPED_FLOATS: Array<java.lang.reflect.Field> =
             SceneParams::class.java
@@ -536,6 +543,23 @@ class VisualizerRenderer(
 
     /** Corpus source of the variant currently bound, for its uniform upload. */
     private var activeTransition: TransitionCatalog.Def? = null
+
+    /**
+     * The (program, def) pair whose parameters are already uploaded, so the
+     * per-frame composite bind re-uploads only when either changes. The
+     * values are vendored defaults - constant per def - and
+     * [TransitionCatalog.uploadParams] resolves every location UNCACHED,
+     * which is exactly the per-frame glGetUniformLocation cost the
+     * [CompositeProgram] cache at the top of this file exists to avoid.
+     *
+     * Keyed on the [CompositeProgram] OBJECT, not its GL name, for the
+     * reason that cache documents: an evicted variant's name can be
+     * reissued to the next link, and an int-keyed memo would then skip the
+     * upload on a program whose uniforms are still at zero. A relink always
+     * makes a new [CompositeProgram], so identity is the correct key.
+     */
+    private var uploadedTransitionFor: CompositeProgram? = null
+    private var uploadedTransitionDef: TransitionCatalog.Def? = null
 
     /** Base composite source, kept so variants can be spliced without a re-read. */
     private var compositeSource: String = ""
@@ -959,6 +983,9 @@ class VisualizerRenderer(
         // their cached locations go with them because they are the same object.
         transitionPrograms.clear()
         activeTransition = null
+        // The upload memo describes programs of the lost context.
+        uploadedTransitionFor = null
+        uploadedTransitionDef = null
         fadeUniforms = GlUtil.UniformCache(fadeProgram)
         trailUniforms = GlUtil.UniformCache(trailWarpProgram)
         val ids = IntArray(1)
@@ -1257,7 +1284,17 @@ class VisualizerRenderer(
         compositeProgram = transitionProgram(transitionId)
         activeTransition = TransitionCatalog.definition(context, transitionId)
         GLES30.glUseProgram(compositeProgram.program)
-        activeTransition?.let { TransitionCatalog.uploadParams(compositeProgram.program, it) }
+        // Once per (program, def), not per frame: the values are constants
+        // and program uniform state persists, so re-uploading was pure
+        // glGetUniformLocation overhead - see [uploadedTransitionFor].
+        val transition = activeTransition
+        if (transition != null &&
+            (compositeProgram !== uploadedTransitionFor || transition !== uploadedTransitionDef)
+        ) {
+            TransitionCatalog.uploadParams(compositeProgram.program, transition)
+            uploadedTransitionFor = compositeProgram
+            uploadedTransitionDef = transition
+        }
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, fboA.tex)
         GLES30.glUniform1i(cLoc("uTexA"), 0)

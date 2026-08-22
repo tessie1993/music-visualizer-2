@@ -74,6 +74,12 @@ class SessionStore(
                 AtomicWrite.quarantine(file)
                 return null
             }
+        // Parsed but unusable - no tracks array, or every row missing its
+        // uri - is quarantined the same way: [save] never writes such a file
+        // (an empty session is a delete), so it is damage of a politer kind,
+        // and left in place it is re-read and re-parsed on every launch for
+        // an answer that is always "nothing".
+        if (parsed == null) AtomicWrite.quarantine(file)
         return parsed
     }
 

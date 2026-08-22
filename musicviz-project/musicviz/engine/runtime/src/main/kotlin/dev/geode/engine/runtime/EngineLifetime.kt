@@ -60,7 +60,18 @@ abstract class ManagedLifetime(
     final override fun start() {
         check(phase != LifetimePhase.CLOSED) { "$id was closed and cannot be started again" }
         if (phase == LifetimePhase.RUNNING) return
-        onStart()
+        try {
+            onStart()
+        } catch (t: Throwable) {
+            // A failed acquire leaves no known state to return to, so the
+            // only honest phase is the terminal one: left IDLE, the owner
+            // could retry start() over a half-acquired carcass, and a later
+            // close() would report success while releasing nothing.
+            // [onClose] is NOT called - unwinding a partial acquire belongs
+            // to the thrower, the same contract a failing constructor has.
+            phase = LifetimePhase.CLOSED
+            throw t
+        }
         phase = LifetimePhase.RUNNING
     }
 
