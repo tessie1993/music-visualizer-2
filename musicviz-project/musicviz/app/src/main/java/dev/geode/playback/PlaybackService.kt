@@ -93,17 +93,22 @@ class PlaybackService : MediaSessionService() {
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
             isForPlayback: Boolean,
-        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
-            val resumption =
-                lastPlayedResumption(context)
-                    // The same refusal Media3's default gives: a failed future
-                    // makes the controller drop the request cleanly, rather
-                    // than "succeeding" with an empty queue.
-                    ?: return Futures.immediateFailedFuture(
-                        UnsupportedOperationException("nothing was ever played"),
-                    )
-            return Futures.immediateFuture(resumption)
-        }
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> =
+            // Computed OFF the main thread: this callback is delivered on
+            // it, and the answer is a file read plus a JSON parse of the
+            // whole saved queue - on the post-reboot path, against a cold
+            // page cache. Returning a future is exactly what the API shape
+            // is for. Throwing inside the callable is the same refusal
+            // Media3's default gives: a failed future makes the controller
+            // drop the request cleanly rather than "succeed" with an empty
+            // queue.
+            Futures.submit(
+                java.util.concurrent.Callable {
+                    lastPlayedResumption(context)
+                        ?: throw UnsupportedOperationException("nothing was ever played")
+                },
+                resumptionExecutor,
+            )
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -149,6 +154,16 @@ class PlaybackService : MediaSessionService() {
     }
 
     companion object {
+        /**
+         * Runs [lastPlayedResumption] for the session callback. Single
+         * thread (requests are rare and must not race each other's reads)
+         * and daemon (a pending lookup must never keep the process up).
+         */
+        private val resumptionExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+                Thread(r, "geode-resumption").apply { isDaemon = true }
+            }
+
         /**
          * The most recently played track as a resumption queue, or null when
          * nothing was ever played. Starts from 0:00 because positions are not
