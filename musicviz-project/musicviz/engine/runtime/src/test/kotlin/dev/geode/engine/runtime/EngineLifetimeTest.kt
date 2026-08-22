@@ -99,6 +99,31 @@ class EngineLifetimeTest {
         assertThrows(IllegalStateException::class.java) { l.start() }
     }
 
+    /**
+     * A throwing acquire must land in the terminal phase. Left IDLE, the
+     * owner could retry start() over a half-acquired carcass, and a later
+     * close() would report success while releasing nothing. onClose stays
+     * un-called: unwinding a partial acquire belongs to the thrower, the
+     * same contract a failing constructor has.
+     */
+    @Test
+    fun `a failed acquire is terminal, not retryable`() {
+        val log = mutableListOf<String>()
+        val l =
+            object : ManagedLifetime(LifetimeId.OUTPUT) {
+                override fun onStart(): Unit = throw IllegalStateException("driver refused the surface")
+
+                override fun onClose() {
+                    log += "close"
+                }
+            }
+        assertThrows(IllegalStateException::class.java) { l.start() }
+        assertEquals(LifetimePhase.CLOSED, l.phase)
+        assertThrows(IllegalStateException::class.java) { l.start() }
+        l.close()
+        assertEquals("nothing was acquired, so nothing may be released", emptyList<String>(), log)
+    }
+
     @Test
     fun `resetting after close is a bug`() {
         val l = lifetime()
