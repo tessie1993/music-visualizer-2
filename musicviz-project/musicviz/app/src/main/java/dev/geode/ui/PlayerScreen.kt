@@ -337,7 +337,7 @@ private fun TransportCard(
     viewModel: PlayerViewModel,
     state: PlayerUiState,
     waveform: FloatArray?,
-    abLoop: PlayerViewModel.AbLoop?,
+    abLoop: AbLoop?,
     autoMode: Int,
     queueSize: Int,
     queueOpen: Boolean,
