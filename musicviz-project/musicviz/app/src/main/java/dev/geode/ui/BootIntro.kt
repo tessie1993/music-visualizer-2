@@ -34,8 +34,6 @@ import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.min
 
-// One-shot timeline (~1.4 s total): rings ripple outward around the wordmark,
-// then the whole overlay fades to reveal the app underneath.
 private const val RING_COUNT = 3
 private const val RING_STAGGER_MS = 160
 private const val RING_TRAVEL_MS = 900
@@ -43,18 +41,11 @@ private const val TEXT_IN_MS = 450
 private const val FADE_START_MS = 1100L
 private const val FADE_OUT_MS = 300
 
-/**
- * Boot intro overlay, shown once per process start on top of the app shell.
- * Pure-Compose animation: the system splash (same #05060B background) hands
- * off to this ripple-rings + "Geode" wordmark motif, which then fades out
- * and calls [onDone]. Tapping anywhere skips immediately.
- */
 @Composable
 fun BootIntro(onDone: () -> Unit) {
     val overlayAlpha = remember { Animatable(1f) }
     val textAlpha = remember { Animatable(0f) }
     val textScale = remember { Animatable(0.7f) }
-    // One Animatable per ring: 0 = not started, 1 = fully expanded/faded.
     val rings = remember { List(RING_COUNT) { Animatable(0f) } }
 
     LaunchedEffect(Unit) {
@@ -72,10 +63,6 @@ fun BootIntro(onDone: () -> Unit) {
     }
 
     val primary = MaterialTheme.colorScheme.primary
-    // Hands off from the system splash (default Clear Quartz stone ground)
-    // and carries the selected stone: a whisper of the theme primary in the
-    // ground, and the marks are the primary pulled toward the readable
-    // extreme for that ground rather than a theme-blind pure white.
     val onBackground = MaterialTheme.colorScheme.onBackground
     val glint = lerp(primary, onBackground, 0.72f)
     val wordmark = LocalFontColor.current ?: glint
@@ -83,9 +70,6 @@ fun BootIntro(onDone: () -> Unit) {
         Modifier
             .fillMaxSize()
             .graphicsLayer { alpha = overlayAlpha.value }
-            // Base matches windowSplashScreenBackground (the default pack's
-            // background) so the system splash hands off without a visible
-            // seam; the tint is faint enough not to read as a jump.
             .background(lerp(Color(0xFFEEEAE3), primary, 0.08f))
             .pointerInput(Unit) { detectTapGestures { onDone() } },
         contentAlignment = Alignment.Center,
@@ -94,8 +78,6 @@ fun BootIntro(onDone: () -> Unit) {
             val startRadius = min(size.width, size.height) * 0.16f
             val endRadius = max(size.width, size.height) * 0.72f
             val strokeWidth = 2.dp.toPx()
-            // Crystalline motif: two nested gem outlines materialize with the
-            // wordmark, settling from a slight over-rotation as they land.
             val gem = textAlpha.value
             if (gem > 0f) {
                 val settle = 1f - textScale.value
@@ -126,8 +108,6 @@ fun BootIntro(onDone: () -> Unit) {
                 if (p > 0f && p < 1f) {
                     val radius = startRadius + (endRadius - startRadius) * p
                     val fade = 1f - p
-                    // Layered strokes fake a luminous bloom around each ring:
-                    // wide faint halo, mid glow, bright core.
                     drawCircle(
                         color = primary.copy(alpha = fade * 0.12f),
                         radius = radius,

@@ -6,14 +6,6 @@ import java.io.DataInputStream
 import java.io.EOFException
 import java.io.InputStream
 
-/**
- * Minimal streaming AIFF/AIFF-C (uncompressed) PCM reader. The platform
- * MediaExtractor/MediaCodec stack has no AIFF support, so playback uses the
- * Media3 [AiffExtractor]; this reader covers the OTHER two decode paths -
- * offline analysis and export transcoding - by reading COMM (channels, bit
- * depth, 80-bit extended sample rate) and streaming SSND PCM (big-endian, or
- * byte-swapped for AIFC "sowt") as 16-bit shorts.
- */
 class AiffPcm private constructor(
     private val input: DataInputStream,
     val channels: Int,
@@ -28,10 +20,6 @@ class AiffPcm private constructor(
 
     val progress: Float get() = if (totalFrames > 0) (framesRead / totalFrames.toFloat()).coerceIn(0f, 1f) else 0f
 
-    /**
-     * Reads up to [out].size samples (interleaved, all channels), converting
-     * to 16-bit. Returns the number of shorts written, or -1 at end of data.
-     */
     fun read(out: ShortArray): Int {
         val bytesPer = bitsPerSample / 8
         var maxSamples = out.size - (out.size % channels)
@@ -54,8 +42,6 @@ class AiffPcm private constructor(
         if (samples == 0) return -1
         for (i in 0 until samples) {
             val o = i * bytesPer
-            // "sowt" is the same PCM byte-swapped, so the two significant
-            // bytes sit at the opposite end of each sample.
             val hi = if (littleEndian) o + bytesPer - 1 else o
             val lo = if (littleEndian) o + bytesPer - 2 else o + 1
             out[i] =
@@ -74,7 +60,6 @@ class AiffPcm private constructor(
     }
 
     companion object {
-        /** Opens [uri] as AIFF, or returns null if it isn't one. */
         fun open(
             context: Context,
             uri: Uri,
@@ -87,7 +72,7 @@ class AiffPcm private constructor(
             val din = DataInputStream(rawStream.buffered(1 shl 16))
             val form = ByteArray(4).also { din.readFully(it) }
             if (String(form) != "FORM") return null
-            din.readInt() // form size
+            din.readInt()
             val kind = ByteArray(4).also { din.readFully(it) }
             val isAiff = String(kind) == "AIFF" || String(kind) == "AIFC"
             if (!isAiff) return null
@@ -113,9 +98,6 @@ class AiffPcm private constructor(
                         rate = readExtended80(din)
                         var consumed = 18
                         if (size > consumed) {
-                            // AIFC compression type: only uncompressed PCM is
-                            // supported - "NONE" (big-endian, like plain AIFF)
-                            // and "sowt" (the same samples byte-swapped).
                             val comp = ByteArray(4).also { din.readFully(it) }
                             consumed += 4
                             when (String(comp)) {
@@ -130,13 +112,8 @@ class AiffPcm private constructor(
                     }
                     "SSND" -> {
                         val offset = din.readInt()
-                        din.readInt() // block size
+                        din.readInt()
                         if (offset > 0) din.skipBytes(offset)
-                        // bits <= 0 alone is not enough: a depth in 1..7
-                        // still passes it but makes bytesPer = bits / 8 == 0
-                        // in read(), dividing by zero on the first call. Only
-                        // the depths this reader actually decodes (the same
-                        // set read()'s `when` branches on) are valid here.
                         if (channels <= 0 || rate <= 0 || bits !in intArrayOf(8, 16, 24, 32)) return null
                         return AiffPcm(din, channels, rate, bits, frames, littleEndian)
                     }
@@ -145,11 +122,10 @@ class AiffPcm private constructor(
             }
         }
 
-        /** 80-bit IEEE-754 extended float -> integer sample rate. */
         private fun readExtended80(din: DataInputStream): Int {
             val exponent = din.readShort().toInt() and 0x7FFF
             val mantissaHigh = din.readInt().toLong() and 0xFFFFFFFFL
-            din.readInt() // mantissa low: irrelevant at audio rates
+            din.readInt()
             if (exponent == 0 && mantissaHigh == 0L) return 0
             val shift = 63 - (exponent - 16383)
             if (shift < 0 || shift > 63) return 0

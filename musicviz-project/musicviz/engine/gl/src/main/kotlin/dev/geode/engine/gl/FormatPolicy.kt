@@ -1,29 +1,13 @@
 package dev.geode.engine.gl
 
-/**
- * How texels in a resolved format are to be read and written.
- *
- * There is deliberately no logarithmic member: §6.3 forbids log-packing any
- * field that receives additive deposits, so the encoding a policy decision can
- * express is the encoding a deposit target is allowed to have.
- */
 enum class TexelEncoding {
-    /** Values stored as-is; the format's own numeric range carries them. */
     LINEAR,
 
-    /** IEEE-754 bits packed into unsigned integer channels; shaders unpack. */
     FLOAT_BITS_IN_UINT,
 
-    /** Values divided by a documented scale into a normalized format. */
     PRE_SCALED,
 }
 
-/**
- * One policy decision: the format a resource role gets on this device, how its
- * texels are encoded, whether hardware filtering may be assumed, and why —
- * the reason feeds the debug capability screen, so a tester on an unfamiliar
- * device can read which probe made the choice.
- */
 data class ResolvedFormat(
     val format: ProbedFormat,
     val encoding: TexelEncoding,
@@ -31,33 +15,14 @@ data class ResolvedFormat(
     val because: String,
 )
 
-/**
- * The per-role outcome of [FormatPolicy.resolve] for one device.
- *
- * Roles, not resources: V2-4-03's pools and V2-4-05's audio textures ask
- * "what does simulation state get here", never "is R16F supported".
- */
 data class FormatPlan(
-    /** Ping-pong simulation state: exact, never filtered. */
     val simulationState: ResolvedFormat,
-    /** Fields sampled with bilinear filtering — velocity, height, flow. */
     val filterableField: ResolvedFormat,
-    /** Additive deposit targets — trails, density, glow accumulation. */
     val linearAccumulation: ResolvedFormat,
-    /** Uploaded audio data — waveform, spectrum, histories. Never rendered to. */
     val audioTexture: ResolvedFormat,
-    /** Intermediate targets for linear-light blending and bloom. */
     val linearColorTarget: ResolvedFormat,
 )
 
-/**
- * §6.3 as a function. Each role walks its own ladder from the preferred
- * format down to `RGBA8`, and a rung is taken only on proven behaviour from
- * the probe report — never on the version string, never on the extension list
- * alone. The bottom rung is unconditional: `RGBA8` renderability is core, and
- * a device that fails even that still gets a named plan rather than a black
- * frame (§9.3).
- */
 object FormatPolicy {
     fun resolve(report: GlProbeReport): FormatPlan =
         FormatPlan(

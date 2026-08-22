@@ -29,10 +29,8 @@ import dev.geode.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Where the privacy policy is published; also linked from the Play listing. */
 const val PRIVACY_POLICY_URL = "https://tessie1993.github.io/music-visualizer-2/privacy-policy.html"
 
-/** ABOUT: the Settings tab around [AboutSection] - version, licenses, privacy. */
 @Composable
 internal fun AboutSettingsTab() {
     SettingsTabColumn {
@@ -40,16 +38,6 @@ internal fun AboutSettingsTab() {
     }
 }
 
-/**
- * "About" block for the Settings screen: version, open-source notices and the
- * privacy policy link.
- *
- * The notices are not decoration — libprojectM ships under LGPL-2.1, which
- * requires the attribution and licence terms to reach the user, not just sit
- * in the repository. app/build.gradle.kts copies the repo's
- * THIRD_PARTY_NOTICES into assets/third_party_notices.txt at build time so
- * there is a single source of truth.
- */
 @Composable
 fun AboutSection() {
     var showLicenses by remember { mutableStateOf(false) }
@@ -78,7 +66,6 @@ fun AboutSection() {
     }
 }
 
-/** Scrollable, verbatim rendering of assets/third_party_notices.txt. */
 @Composable
 private fun LicensesDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current

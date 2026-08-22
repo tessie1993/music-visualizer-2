@@ -1,11 +1,3 @@
-// MASTER_PLAN §3.3: the provenance gate runs on `check`, in every module.
-//
-// "Every module" is the part that matters. The rules used to live in one
-// module's unit test, scanning a hardcoded `app/src/main` - so the day adapted
-// code landed in :engine:scenes the scan would have gone on passing while
-// covering none of it. That is the same failure the repo already has with
-// source-text gates, and applying the plugin per module is what avoids
-// repeating it.
 val provenanceFile = rootProject.file("docs/visualizer-v2/provenance.json")
 val noticesFile = rootProject.file("THIRD_PARTY_NOTICES")
 

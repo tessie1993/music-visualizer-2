@@ -13,7 +13,6 @@ import dev.geode.export.ExportAspect
 import dev.geode.export.ExportRange
 import dev.geode.render.VisualizerView
 
-/** An export request waiting for the user to choose an output file. */
 private data class PendingExport(
     val aspect: ExportAspect,
     val fps: Int,
@@ -22,18 +21,9 @@ private data class PendingExport(
     val rangeStartMs: Long,
     val rangeDurationMs: Long,
 ) {
-    /** Zero duration means the whole track, matching the exporter's null range. */
     val range: ExportRange? get() = if (rangeDurationMs > 0) ExportRange(rangeStartMs, rangeDurationMs) else null
 }
 
-/**
- * Flattens [PendingExport] into saved instance state. The system document
- * picker is a separate activity, so a rotation (or process death) while it is
- * up recreates this composition; a plain `remember` came back null and the
- * picked destination was silently dropped. `null` (no pick in flight) saves as
- * an empty list; restore's `null` falls back to the initializer, which is the
- * same `null`.
- */
 private val PendingExportSaver =
     listSaver<PendingExport?, Any>(
         save = { req ->
@@ -68,7 +58,6 @@ private val PendingExportSaver =
         },
     )
 
-/** Hosts the export dialog from the Settings destination. */
 @Composable
 fun ExportHost(
     viewModel: PlayerViewModel,
@@ -79,19 +68,10 @@ fun ExportHost(
     val viz by viewModel.vizState.collectAsState()
     val export by viewModel.exportState.collectAsState()
 
-    /** Aspect, fps, scene id and the loop-safe choice, held across the picker
-     *  - saveable, because the picker activity outlives a rotation. */
     var pendingExport by rememberSaveable(stateSaver = PendingExportSaver) {
         mutableStateOf<PendingExport?>(null)
     }
 
-    /**
-     * Builds the export scene for an arbitrary scene id, so a chosen take
-     * renders on the style it was recorded on. Guarded against ids the
-     * renderer no longer offers (a take recorded before a style was
-     * removed): `exportSceneFactory` treats an unknown id as a wiring error,
-     * and a stale take must degrade to the live style, not crash the export.
-     */
     val sceneFactoryFor: (String, String) -> dev.geode.export.VideoExporter.SceneFactory =
         { requested, fallback ->
             val renderer = visualizerView.visualizerRenderer

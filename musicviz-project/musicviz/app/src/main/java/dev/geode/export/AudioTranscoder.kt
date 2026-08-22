@@ -11,16 +11,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 
-/**
- * Transcodes any source audio track to AAC-LC so it can be muxed into MP4.
- *
- * MP4 containers cannot carry MP3/Vorbis/FLAC tracks, so passthrough muxing
- * fails for most user files; re-encoding is the universal path.
- *
- * Encoded samples stream to a temp file in app cache (an hour of 192 kbps AAC
- * is ~86 MB - buffering it in RAM caused OOM on long-form exports). Callers
- * must invoke [Result.release] when done to delete the temp file.
- */
 class AudioTranscoder(
     private val context: Context,
 ) {
@@ -29,16 +19,8 @@ class AudioTranscoder(
         val file: File,
         val sampleInfos: List<SampleInfo>,
     ) {
-        /**
-         * Actual duration of the transcoded audio, measured from the last
-         * encoded sample. This - not any metadata or analysis estimate - is
-         * what the exported video length is matched against, so the export
-         * always runs exactly as long as the music.
-         */
         val durationUs: Long =
             sampleInfos.lastOrNull()?.let { last ->
-                // One AAC frame is 1024 PCM samples; extend past the last PTS
-                // so the final frame's own duration is included.
                 last.presentationTimeUs + 24_000L
             } ?: 0L
 
@@ -54,7 +36,6 @@ class AudioTranscoder(
         val flags: Int,
     )
 
-    /** Folds interleaved 16-bit PCM from [srcCh] channels down to [dstCh]. */
     private fun downmix(
         src: ByteBuffer,
         srcCh: Int,
@@ -82,12 +63,6 @@ class AudioTranscoder(
         return out
     }
 
-    /**
-     * AIFF export path: the platform decoder stack can't read AIFF, so PCM
-     * comes straight from [dev.geode.audio.AiffPcm] into the AAC encoder.
-     * Multichannel sources are downmixed with the same fold as the decoder
-     * path (L/R kept, remaining channels folded in at half weight).
-     */
     private fun transcodeAiff(
         aiff: dev.geode.audio.AiffPcm,
         maxDurationMs: Long,
@@ -134,9 +109,6 @@ class AudioTranscoder(
         var fedBytes = 0L
         var progressed = false
         var stallIterations = 0
-        // AiffPcm reads forward only, so a start offset is reached by reading
-        // and discarding. Uncompressed PCM has no sync frames, so this is exact
-        // rather than the nearest-keyframe approximation the codec path needs.
         if (startMs > 0) {
             var toSkip = startMs * aiff.sampleRate / 1000 * aiff.channels
             while (toSkip > 0) {
@@ -228,8 +200,6 @@ class AudioTranscoder(
                         break
                     }
                 }
-                // Same wedge guard as the decoder path: fail loudly instead of
-                // spinning at 10 ms waits until the user cancels.
                 if (progressed) {
                     stallIterations = 0
                 } else if (++stallIterations > STALL_LIMIT) {
@@ -237,10 +207,6 @@ class AudioTranscoder(
                 }
             }
             out.flush()
-            // Inside the try so the catch below deletes the temp file: the AAC
-            // bytes are written whether or not the encoder ever reported its
-            // output format, so failing this check after the finally orphaned
-            // a file that can be the whole ~86 MB stream.
             return Result(requireNotNull(outFormat) { "AAC encoder produced no format" }, outFile, infos)
         } catch (t: Throwable) {
             runCatching { out.close() }
@@ -254,11 +220,6 @@ class AudioTranscoder(
         }
     }
 
-    /**
-     * @param startMs where in the source to begin. The output is rebased to
-     *   zero, so a clip from 1:30 starts at 0:00 in the file it lands in.
-     * @param maxDurationMs how much to take from [startMs]; 0 means "to the end".
-     */
     fun transcode(
         uri: Uri,
         maxDurationMs: Long,
@@ -289,11 +250,6 @@ class AudioTranscoder(
                 } ?: throw IllegalArgumentException("No audio track in source file")
             srcFormat = extractor.getTrackFormat(trackIndex)
             extractor.selectTrack(trackIndex)
-            // SEEK_TO_PREVIOUS_SYNC, not CLOSEST: a decoder needs a sync frame
-            // to start from, so landing before the requested point and dropping
-            // what comes early is the only way to get sample-accurate audio at
-            // an arbitrary offset. Dropping happens on the DECODER's output
-            // below, where timestamps are trustworthy.
             if (startMs > 0) extractor.seekTo(startMs * 1000, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
             val mime = requireNotNull(srcFormat.getString(MediaFormat.KEY_MIME))
             sampleRate = srcFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
@@ -313,14 +269,6 @@ class AudioTranscoder(
             throw t
         }
 
-        // The encoder is NOT configured from the container format: for
-        // HE-AAC v1/v2 the container understates the rate (SBR doubles it)
-        // and Parametric Stereo understates the channels (1 declared, 2
-        // decoded), so an encoder configured up front ran at the wrong rate -
-        // chipmunk or garbled audio in the exported file, silently. It is
-        // created here instead, on the first decoded buffer, from what the
-        // DECODER says it is emitting; the container values above remain only
-        // as the fallback for a stream that dies before producing anything.
         fun ensureEncoder(decoderFormat: MediaFormat?) {
             if (encoder != null) return
             if (decoderFormat != null) {
@@ -350,12 +298,7 @@ class AudioTranscoder(
         var outFormat: MediaFormat? = null
         val maxUs = maxDurationMs * 1000
         val startUs = startMs * 1000
-        // The extractor is compared against an ABSOLUTE end; the encoder is fed
-        // timestamps rebased to zero. Keeping the two apart is what stops a
-        // ranged export from either stopping early or writing negative
-        // timestamps into the muxer.
         val endUs = if (maxUs > 0) startUs + maxUs else 0L
-        // For progress reporting when uncapped, estimate from container metadata.
         val estimatedUs =
             if (maxUs > 0) {
                 maxUs
@@ -431,8 +374,6 @@ class AudioTranscoder(
                                 }
                             val copy: ByteBuffer
                             if (pcmEnc == android.media.AudioFormat.ENCODING_PCM_FLOAT) {
-                                // Some decoders emit float PCM; the AAC encoder (and
-                                // the 2-bytes/sample timestamp math) expects 16-bit.
                                 val fb = buf.order(java.nio.ByteOrder.nativeOrder()).asFloatBuffer()
                                 val n = fb.remaining()
                                 copy = ByteBuffer.allocate(n * 2).order(java.nio.ByteOrder.nativeOrder())
@@ -446,15 +387,6 @@ class AudioTranscoder(
                                 copy.put(buf)
                                 copy.flip()
                             }
-                            // Multichannel sources (5.1 etc.): the AAC encoder
-                            // takes at most 2 channels, but the decoder emits
-                            // ALL source channels interleaved. Feeding that
-                            // stream unchanged garbles the audio and breaks
-                            // the bytes-per-microsecond timestamp math, so
-                            // fold the frames down to the encoder's channel
-                            // count here. The stride comes from THIS buffer's
-                            // format, not the container's - they disagree for
-                            // Parametric Stereo and friends.
                             val bufChannels =
                                 if (outFmt.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
                                     outFmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
@@ -467,9 +399,6 @@ class AudioTranscoder(
                                 } else {
                                     copy
                                 }
-                            // Everything before the requested start decoded only
-                            // so the decoder could reach a sync point; it is not
-                            // part of the clip.
                             if (decInfo.presentationTimeUs + 1000 < startUs) {
                                 decoder.releaseOutputBuffer(outIndex, false)
                                 if (decInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) decoderDone = true
@@ -485,18 +414,11 @@ class AudioTranscoder(
                 if (pcmCarry != null) {
                     feedEncoder()
                 } else if (decoderDone && !eosSent) {
-                    // A stream that died before its first buffer still needs an
-                    // encoder to carry the EOS; container values are all that
-                    // is left to configure it from.
                     ensureEncoder(null)
                     val enc = checkNotNull(encoder)
                     val inIndex = enc.dequeueInputBuffer(10_000)
                     if (inIndex >= 0) {
                         enc.queueInputBuffer(inIndex, 0, 0, carryTimeUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                        // Flag separately instead of clearing decoderDone: that
-                        // hack made every remaining flush iteration block 10 ms
-                        // on the finished decoder's dequeue, dragging out the
-                        // export tail.
                         eosSent = true
                         progressed = true
                     }
@@ -529,10 +451,6 @@ class AudioTranscoder(
                         break
                     }
                 }
-                // A wedged codec used to spin here at 10 ms waits until the
-                // user cancelled; the video side's flush already had a bound,
-                // this loop had none. Every productive iteration resets the
-                // count, so only a codec making NO progress at all trips it.
                 if (progressed) {
                     stallIterations = 0
                 } else if (++stallIterations > STALL_LIMIT) {
@@ -540,9 +458,6 @@ class AudioTranscoder(
                 }
             }
             out.flush()
-            // Inside the try so the catch below deletes the temp file, exactly
-            // as in the AIFF path: the AAC bytes are written whether or not
-            // the encoder ever reported its output format.
             return Result(requireNotNull(outFormat) { "AAC encoder produced no format" }, outFile, infos)
         } catch (t: Throwable) {
             runCatching { out.close() }
@@ -559,11 +474,6 @@ class AudioTranscoder(
     }
 
     private companion object {
-        /**
-         * Consecutive loop iterations with no codec progress (each blocks at
-         * least 10 ms on a dequeue) before the transcode is declared wedged
-         * and fails loudly instead of spinning until the user cancels.
-         */
         const val STALL_LIMIT = 1_000
     }
 }

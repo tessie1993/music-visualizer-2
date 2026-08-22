@@ -3,12 +3,6 @@ package dev.geode.render.fluid
 import android.opengl.GLES30
 import kotlin.math.roundToInt
 
-/**
- * GL buffer plumbing for the fluid simulation:
- * an empirical half-float renderability probe with the R16F -> RG16F ->
- * RGBA16F fallback cascade, single and ping-pong FBOs with copy-preserving
- * resize, and the aspect-correct grid resolution helper.
- */
 internal object FluidBuffers {
     data class TexFormat(
         val internal: Int,
@@ -20,17 +14,10 @@ internal object FluidBuffers {
         val r: TexFormat,
         val rg: TexFormat,
         val rgba: TexFormat,
-        /** Renderable full-float RGBA, or null: used for particle state so
-         *  positions don't quantise into visible clustering. */
         val rgba32: TexFormat?,
         val ok: Boolean,
     )
 
-    /**
-     * ES 3.0 guarantees SAMPLING 16F but not RENDERING to it; probe each
-     * candidate by attaching a 4x4 texture to an FBO and checking
-     * completeness, falling back R16F -> RG16F -> RGBA16F per role.
-     */
     fun probeFormats(): Formats {
         val rgba = TexFormat(GLES30.GL_RGBA16F, GLES30.GL_RGBA, GLES30.GL_HALF_FLOAT)
         val rg = TexFormat(GLES30.GL_RG16F, GLES30.GL_RG, GLES30.GL_HALF_FLOAT)
@@ -87,7 +74,6 @@ internal object FluidBuffers {
         return res
     }
 
-    /** Short side gets [res] texels; long side scales by aspect. */
     fun resolution(
         res: Int,
         width: Int,
@@ -113,7 +99,6 @@ internal object FluidBuffers {
         var tex = 0
             private set
 
-        /** False when the driver refused the attachment (create() self-released). */
         val ok: Boolean get() = fbo != 0 && tex != 0
 
         fun create() {
@@ -156,12 +141,6 @@ internal object FluidBuffers {
         }
     }
 
-    /**
-     * Ping-pong pair of two-attachment MRT framebuffers, for GPGPU state that
-     * needs more than one vec4 per texel (the rebuilt particle layer: pos+vel
-     * in attachment 0, age/ttl/emitter/seed in attachment 1). MRT with two
-     * color attachments is core ES 3.0 (MAX_COLOR_ATTACHMENTS >= 4).
-     */
     internal class DoubleMrt(
         val width: Int,
         val height: Int,

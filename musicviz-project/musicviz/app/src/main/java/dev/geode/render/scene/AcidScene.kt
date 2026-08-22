@@ -9,31 +9,6 @@ import dev.geode.render.fluid.FluidHue
 import kotlin.math.max
 import kotlin.math.pow
 
-/**
- * The ACID family: a video-synthesis feedback loop.
- *
- * One RGBA8 ping-pong at capped resolution. Every frame `acid_step_frag`
- * re-samples the previous frame through a style-owned warp (zoom, rotation,
- * polar folds, log-polar throat, block glitch, mirrors, smear), rotates its
- * hue, attenuates it below unity and adds a live audio-drawn source layer -
- * a chroma mandala, band rings, a coarse circular spectrum or an orbiting
- * ribbon - INTO the loop, where it echoes. The source layer's brightness can
- * also displace where the feedback re-samples, the general video-synth
- * modulation idea, which welds the trails to the music.
- *
- * Ten substyles are ten warp/colour/source recipes ([VisualStyleCatalog.acid]).
- * Everything is reimplemented from the public video-synthesis algebra; no
- * external shader text is used.
- *
- * The "calm body, reactive skin" rule: the loop's slow zoom/rotation never
- * follows raw amplitude - audio reaches the picture through the source layer,
- * the beat-gated glitch window and the strike-lifted treble, so the space
- * feels stable while its skin is alive.
- *
- * SAFETY: feedback survival is hard-capped below 1, the state is clamped both
- * sides of the loop, glitch is an envelope (never a strobe), and the scene
- * runs under the same composite grading and flash budget as every other.
- */
 internal class AcidScene(
     private val context: Context,
     private val style: VisualStyleCatalog.AcidStyle,
@@ -42,18 +17,14 @@ internal class AcidScene(
     override val id: String = style.id
 
     private companion object {
-        /** Feedback short side, texels: echoes soften anyway, full res is waste. */
         const val SIM_RES = 540
 
         const val TIME_WRAP_SECONDS = 628.31853f
 
-        /** Absolute cap on feedback survival, whatever a style declares. */
         const val FEEDBACK_CAP = 0.975f
 
-        /** Beat level that opens the glitch window. */
         const val GLITCH_THRESHOLD = 0.32f
 
-        /** Glitch envelope decay per second. */
         const val GLITCH_DECAY = 2.4f
 
         const val ENV_RISE_PER_SEC = 9f
@@ -147,8 +118,6 @@ internal class AcidScene(
 
     private fun ensureState(): FluidBuffers.DoubleFbo? {
         state?.let { return it }
-        // RGBA8 by design: an echo loop tolerates 8 bits, and the fallback
-        // question float targets pose does not arise at all.
         val fmt = FluidBuffers.TexFormat(GLES30.GL_RGBA8, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE)
         val (w, h) = FluidBuffers.resolution(SIM_RES, width, height)
         val next = FluidBuffers.DoubleFbo(w, h, fmt, linear = true)
@@ -174,10 +143,6 @@ internal class AcidScene(
     override fun draw(timeSeconds: Float) {
         if (!programOk) return
         GlUtil.resetFrameState()
-        // Captured BEFORE ensureState(): allocation leaves framebuffer 0
-        // bound, so a later capture aims the show pass at the screen on the
-        // frame that allocates and the composite presents black (see
-        // FieldSimFboContractTest).
         GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
         GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
         val loop = ensureState() ?: return
@@ -201,10 +166,6 @@ internal class AcidScene(
         if (f.hasChroma && f.chromaConfidence > 0.1f) {
             for (i in 0 until 12) chroma[i] = f.chroma[i].coerceIn(0f, 1f)
         } else {
-            // No harmony evidence (unpitched material, or the analyzer is
-            // still warming): synthesize a slow-turning three-spoke mandala
-            // from the band envelopes so the chroma-drawn sources never go
-            // dark mid-track. Turns at a musical pace, not per frame.
             val spin = (time * 0.05f) % 1f
             for (i in 0 until 12) {
                 val angle = (i / 12f - spin + 2f) % 1f
@@ -219,8 +180,6 @@ internal class AcidScene(
             }
         }
 
-        // Frame-rate-compensated loop constants: survival, zoom and rotation
-        // are per-frame quantities at the authored 60 Hz.
         val frames = dt * 60f
         val feedback = (style.feedback.coerceAtMost(FEEDBACK_CAP)).pow(frames)
         val zoom = style.zoom.pow(frames)

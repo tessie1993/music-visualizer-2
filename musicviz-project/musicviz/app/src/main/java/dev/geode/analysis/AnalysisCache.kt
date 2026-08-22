@@ -7,41 +7,9 @@ import java.io.DataOutputStream
 import java.io.File
 import java.security.MessageDigest
 
-/**
- * Persistent per-track analysis cache: serialized [FeatureTimeline]s in
- * files/analysis/, keyed by a hash of the source URI. A cache hit lets
- * playback intelligence and (especially) video export skip the whole
- * offline-analysis phase. Binary layout, little JVM-default big-endian via
- * DataStreams:
- *
- *   header: magic "MVAC", version, hopMs, hopRateHz, key(UTF), frameCount,
- *           bandCount, waveformSize
- *   frame:  timeMs(Long), bands as Short*bandCount (x8192, clamped),
- *           waveform as Short*waveformSize (x32767), rms/bass/mid/treble/
- *           onset/bpm/centroid as Float, beat as Byte, flux as Float
- *
- * The key is the URI plus the file's current size and mtime, with no beat
- * sensitivity folded in: v2 stores the raw onset curve (`flux`) and [load]
- * re-decides the beats at the caller's current sensitivity, so a single entry
- * stays valid for every setting. Keying on the settings instead would
- * re-analyse the whole track on every slider drag and thrash the 15-entry
- * LRU. The size/mtime stamp is what keeps the entry honest when the CONTENT
- * changes under an unchanged URI - a re-downloaded file, a re-exported mix,
- * a re-tagged MP3 - which previously replayed the old audio's beat grid over
- * the new audio. A provider that reports neither (both read as 0) degrades to
- * the old URI-only behaviour rather than failing.
- *
- * v1 stored only the decided beat flags and no flux, so its entries cannot be
- * re-thresholded; [load] deletes them on sight and the track is re-analysed
- * once.
- *
- * Eviction is LRU by file mtime, capped at [MAX_ENTRIES]. All methods are
- * blocking; call on Dispatchers.IO.
- */
 object AnalysisCache {
-    private const val MAGIC = 0x4D564143 // "MVAC"
+    private const val MAGIC = 0x4D564143
 
-    /** v1: decided beats only. v2: + hopRateHz header and a per-frame flux. */
     private const val VERSION = 2
     private const val MAX_ENTRIES = 15
 
@@ -55,14 +23,6 @@ object AnalysisCache {
         return File(dir(context), cacheKey(uri.toString(), size, mtime) + ".mvac")
     }
 
-    /**
-     * Pure key derivation, split out so it is testable without Android: SHA-1
-     * over the URI string, the source's size/mtime stamp and the
-     * [AnalysisIdentity] of the engine itself. Changing any of them changes
-     * the key, so a stale entry - a re-tagged file OR a rewritten analyzer -
-     * is simply never found again (and ages out of the LRU) rather than
-     * needing explicit invalidation.
-     */
     internal fun cacheKey(
         uriString: String,
         sizeBytes: Long,
@@ -76,12 +36,6 @@ object AnalysisCache {
         return digest.joinToString("") { "%02x".format(it) }
     }
 
-    /**
-     * The (sizeBytes, lastModifiedMs) stamp of what [uri] currently points at,
-     * or (0, 0) for whatever a provider declines to report - the key then
-     * falls back toward URI-only keying instead of throwing. Blocking (one
-     * provider query); every caller is already on Dispatchers.IO.
-     */
     private fun contentStamp(
         context: Context,
         uri: Uri,
@@ -101,8 +55,6 @@ object AnalysisCache {
                             return if (i >= 0 && !c.isNull(i)) c.getLong(i) else 0L
                         }
                         val size = col(android.provider.OpenableColumns.SIZE)
-                        // SAF documents stamp "last_modified" in ms;
-                        // MediaStore rows stamp "date_modified" in seconds.
                         val mtime =
                             col(android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED)
                                 .takeIf { it != 0L }
@@ -113,12 +65,6 @@ object AnalysisCache {
             }
         }.getOrDefault(0L to 0L)
 
-    /**
-     * Reads the cached timeline and decides its beats at the given
-     * sensitivity - the same values the live [AnalysisEngine] is running, so
-     * an export of a cached track matches what playback showed. Returns null
-     * (and drops the file) for a corrupt or pre-v2 entry.
-     */
     fun load(
         context: Context,
         uri: Uri,
@@ -138,12 +84,6 @@ object AnalysisCache {
                     val bandCount = d.readInt()
                     val waveSize = d.readInt()
                     if (frameCount < 0 || frameCount > 1_000_000) return@runCatching null
-                    // The other two lengths need the same guard: they come
-                    // from the same header and go straight into FloatArray(),
-                    // so a file truncated by a crash or a full disk reads a
-                    // garbage count and asks for gigabytes before the entry is
-                    // dropped. The bounds sit far above any real
-                    // [FftProcessor] band count or waveform size.
                     if (bandCount < 0 || bandCount > 4_096) return@runCatching null
                     if (waveSize < 0 || waveSize > 65_536) return@runCatching null
                     val frames = ArrayList<TimelineFrame>(frameCount)
@@ -178,19 +118,14 @@ object AnalysisCache {
                                 ),
                             )
                     }
-                    f.setLastModified(System.currentTimeMillis()) // LRU touch
+                    f.setLastModified(System.currentTimeMillis())
                     FeatureTimeline(frames, hopMs, key, hopRateHz)
                 }
             }.getOrNull()
         if (loaded == null) {
-            // Stale format or damaged file: drop it instead of leaving it to
-            // fail every load until the LRU happens to evict it.
             runCatching { f.delete() }
             return null
         }
-        // The three per-instrument onset channels are derived from the stored
-        // bands rather than serialised, so a v2 entry written before they
-        // existed comes back with them populated and no format bump was needed.
         return loaded
             .withBeatSensitivity(beatSensitivity, beatMinIntervalMs)
             .withDrumChannels()
@@ -236,9 +171,6 @@ object AnalysisCache {
                     d.writeFloat(fe.bpm)
                     d.writeFloat(fe.centroid)
                     d.writeByte(if (fe.beat) 1 else 0)
-                    // Full precision on purpose: the gate compares flux with a
-                    // mean + sigma * std of its own history, so quantising the
-                    // curve would move beats around on reload.
                     d.writeFloat(fe.flux)
                 }
             }

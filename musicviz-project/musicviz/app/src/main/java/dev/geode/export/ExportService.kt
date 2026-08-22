@@ -18,29 +18,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-/**
- * Keeps a video render alive while the app is not in front of the user, and
- * shows how far it has got.
- *
- * The render itself lives in [ExportRun]'s scope, not here. This service exists
- * for the one thing a coroutine cannot do on its own: tell Android the process
- * is doing visible work and must not be reclaimed. Owning the render as well
- * would mean moving an EGL context, a scene and its parameters across a service
- * boundary for no gain.
- *
- * ## The foreground service type
- *
- * `mediaProcessing` — added in Android 15 for exactly this, "time-consuming
- * operations on media assets, like converting media to different formats". It
- * carries a budget of six hours in every twenty-four across all of an app's
- * mediaProcessing services, and when that runs out the system calls
- * [onTimeout], after which there are a few seconds to stop before an ANR. A
- * render that hits a six-hour ceiling is not a render anyone is waiting for, so
- * the response is to cancel it and go, rather than to try to hold on.
- *
- * Below Android 14 the type is not supplied at all, which is what those
- * versions expect.
- */
 class ExportService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var watcher: Job? = null
@@ -49,9 +26,6 @@ class ExportService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        // Posted before anything else can fail: a service started with
-        // startForegroundService() that stops without ever reaching
-        // startForeground() dies with RemoteServiceException.
         runCatching { startForegroundNotification(ExportRun.state.value) }
         watcher =
             scope.launch {
@@ -70,24 +44,9 @@ class ExportService : Service() {
         flags: Int,
         startId: Int,
     ): Int {
-        // Not sticky: a render cannot be resumed from nothing, so a restarted
-        // service with no export behind it would be a notification standing
-        // over no work.
         return START_NOT_STICKY
     }
 
-    /**
-     * The mediaProcessing budget is spent. Cancel the render and stop —
-     * there are only seconds before this becomes an ANR.
-     *
-     * [ExportRun.requestCancel], not [ExportRun.finish]: finish() only
-     * resets the published state, which left the encoder coroutine rendering
-     * on with no foreground service protecting the process and publish()
-     * silently dropping its progress. The request reaches the render's own
-     * isCancelled check at its next frame; its teardown then runs the normal
-     * cancelled path, and its `finally` calls finish() once everything is
-     * released.
-     */
     override fun onTimeout(
         startId: Int,
         fgsType: Int,
@@ -138,9 +97,6 @@ class ExportService : Service() {
                 .setContentIntent(open)
         val progress = state.progress
         if (progress == null) {
-            // Indeterminate until the length is known: a determinate bar frozen
-            // at 0 reads as a hang, which is the complaint the Studio's own
-            // fast-path progress bar already draws.
             builder.setProgress(0, 0, true)
         } else {
             builder.setProgress(PROGRESS_MAX, (progress * PROGRESS_MAX).toInt(), false)
@@ -157,8 +113,6 @@ class ExportService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING
         } else {
-            // 14 has no mediaProcessing type yet; dataSync is the one it
-            // accepts for long-running local work.
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         }
 
@@ -167,17 +121,6 @@ class ExportService : Service() {
         private const val NOTIFICATION_ID = 4711
         private const val PROGRESS_MAX = 1000
 
-        /**
-         * Starts the service for a render that is beginning.
-         *
-         * Call [ExportRun.begin] first: the service reads its first
-         * notification straight out of that state, and a service that starts
-         * against an idle run would stop itself immediately.
-         *
-         * The failure is swallowed for the reason the capture service swallows
-         * its own: the only way to reach it is a start refused because the app
-         * is in the background, and an export only ever begins from a tap.
-         */
         fun start(context: Context) {
             runCatching {
                 val intent = Intent(context, ExportService::class.java)

@@ -1,22 +1,10 @@
 package dev.geode.render.fluid
 
-// Ported from WebGL-Fluid-Simulation - MIT License,
-// Copyright (c) 2017 Pavel Dobryakov (bloom / sunrays / shading / dither
-// look chain, restructured for GLES3 and Geode's FBO plumbing).
-
 import android.content.Context
 import android.opengl.GLES30
 import dev.geode.R
 import dev.geode.render.scene.GlUtil
 
-/**
- * F4 look chain for the FLUID scene: soft-knee HDR bloom through a mip
- * up/down chain (the additive ONE,ONE upsample is what makes it glow),
- * 16-step screen-space sunrays, pseudo-normal shading and noise dither,
- * composited by a keyword-variant display program (SHADING/BLOOM/SUNRAYS
- * #defines, program cache keyed by the flag set - no uniform branching in
- * the hot shader). All methods run on the GL thread.
- */
 internal class FluidLook(
     private val context: Context,
 ) {
@@ -39,7 +27,6 @@ internal class FluidLook(
     private var sunraysProgram = 0
     private var blurProgram = 0
 
-    /** Display program per keyword set (bit0 SHADING, bit1 BLOOM, bit2 SUNRAYS). */
     private val displayPrograms = HashMap<Int, Int>()
     private val uniforms = HashMap<Int, GlUtil.UniformCache>()
 
@@ -59,8 +46,6 @@ internal class FluidLook(
     fun create(fmts: FluidBuffers.Formats) {
         release()
         formats = fmts
-        // Driver-rejected look shaders must not crash the GL thread: on
-        // failure the scene falls back to the sim's plain dye display.
         try {
             val vert = GlUtil.loadShader(context, R.raw.fluid_base_vert)
             prefilterProgram = GlUtil.buildProgram(vert, GlUtil.loadShader(context, R.raw.fluid_bloom_prefilter_frag))
@@ -88,12 +73,6 @@ internal class FluidLook(
         ).forEach { uniforms[it] = GlUtil.UniformCache(it) }
         displayPrograms.values.forEach { uniforms[it] = GlUtil.UniformCache(it) }
 
-        // Ordered-noise dither kills banding in the dark bloom gradients. This
-        // used to generate a hashed WHITE-noise tile "visually equivalent at
-        // +-1/255 amplitude" - it is not: the two carry the same variance but
-        // not in the same frequencies, and white noise puts a share of its
-        // error exactly where the eye is most sensitive. The real blue-noise
-        // mask is 4 KB (see BlueNoise.kt) and shared with the composite pass.
         ditherTex = dev.geode.render.BlueNoise.createTexture(context)
 
         quad.create()
@@ -114,7 +93,6 @@ internal class FluidLook(
         bloomMips = ArrayList()
         var mw = bw
         var mh = bh
-        // >= 2px stop: bloom needs at least 2 mip levels or it early-outs.
         for (i in 0 until BLOOM_MAX_LEVELS) {
             mw = mw shr 1
             mh = mh shr 1
@@ -137,10 +115,6 @@ internal class FluidLook(
         }
     }
 
-    /**
-     * Runs the offscreen bloom + sunrays passes from [dyeTex]. Call while the
-     * sim is in its offscreen phase (caller restores the engine FBO after).
-     */
     fun process(
         dyeTex: Int,
         bloomOn: Boolean,
@@ -157,7 +131,6 @@ internal class FluidLook(
     private fun applyBloom(dyeTex: Int) {
         val result = bloomResult ?: return
         if (bloomMips.size < 2) return
-        // Prefilter into the largest mip.
         val knee = bloomThreshold * bloomKnee + 1e-4f
         var dst = bloomMips[0]
         use(prefilterProgram, 1f / dst.width, 1f / dst.height)
@@ -170,7 +143,6 @@ internal class FluidLook(
         )
         GLES30.glUniform1f(loc(prefilterProgram, "uThreshold"), bloomThreshold)
         blit(dst)
-        // Downsample the chain.
         var last = dst
         for (i in 1 until bloomMips.size) {
             dst = bloomMips[i]
@@ -179,7 +151,6 @@ internal class FluidLook(
             blit(dst)
             last = dst
         }
-        // Additive upsample: this ONE,ONE accumulation is the glow.
         GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE)
         GLES30.glEnable(GLES30.GL_BLEND)
         for (i in bloomMips.size - 2 downTo 0) {
@@ -207,7 +178,6 @@ internal class FluidLook(
         bindTex(sunraysProgram, "uTexture", mask.tex, 0)
         GLES30.glUniform1f(loc(sunraysProgram, "uWeight"), sunraysWeight)
         blit(rays)
-        // One separable 3-fetch blur iteration (a 5-tap Gaussian).
         use(blurProgram, 1f / rays.width, 1f / rays.height)
         bindTex(blurProgram, "uTexture", rays.tex, 0)
         GLES30.glUniform2f(loc(blurProgram, "uDirection"), 1.33333f / rays.width, 0f)
@@ -217,10 +187,6 @@ internal class FluidLook(
         blit(rays)
     }
 
-    /**
-     * Draws the shaded/bloomed/sunlit dye into the currently bound
-     * framebuffer + viewport with ONE, ONE_MINUS_SRC_ALPHA blending.
-     */
     fun drawDisplay(
         dyeTex: Int,
         shadingOn: Boolean,
@@ -302,8 +268,6 @@ internal class FluidLook(
         if (flags and 2 != 0) defines.append("#define BLOOM\n")
         if (flags and 4 != 0) defines.append("#define SUNRAYS\n")
         if (defines.isEmpty()) return src
-        // #defines must land AFTER the #version directive (GLSL ES requires
-        // #version first); find that line rather than assuming it is line 1.
         val vIdx = src.indexOf("#version")
         val nl = src.indexOf('\n', if (vIdx >= 0) vIdx else 0)
         return src.substring(0, nl + 1) + defines + src.substring(nl + 1)

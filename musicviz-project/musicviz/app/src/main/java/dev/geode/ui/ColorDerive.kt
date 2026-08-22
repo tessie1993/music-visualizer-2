@@ -2,14 +2,7 @@ package dev.geode.ui
 
 import kotlin.math.roundToInt
 
-/**
- * Pure ARGB-Int color math used to derive the full Material color scheme of
- * each [AppTheme] from its four anchor colors, and to apply the user's
- * accent-intensity / background-dim appearance preferences. Kept free of any
- * android/androidx types so it runs in the headless JUnit gate.
- */
 object ColorDerive {
-    /** Per-channel linear interpolation from [from] to [to]; [t] is clamped to 0..1. */
     fun lerpArgb(
         from: Int,
         to: Int,
@@ -25,11 +18,6 @@ object ColorDerive {
         return (ch(24) shl 24) or (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
     }
 
-    /**
-     * Scales color saturation around the pixel's luma: factor 1 is identity,
-     * < 1 desaturates toward gray, > 1 pushes channels away from gray
-     * (clamped). Alpha is preserved.
-     */
     fun scaleSaturation(
         argb: Int,
         factor: Float,
@@ -44,7 +32,6 @@ object ColorDerive {
         return (argb and 0xFF000000.toInt()) or (ch(r) shl 16) or (ch(g) shl 8) or ch(b)
     }
 
-    /** Darkens RGB by [amount] (0 = identity, 1 = black); alpha is preserved. */
     fun dim(
         argb: Int,
         amount: Float,

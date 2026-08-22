@@ -1,23 +1,13 @@
 package dev.geode.data
 
-/** The playlist file formats this app can read. */
 enum class PlaylistFormat { M3U, PLS, XSPF }
 
-/**
- * One entry of a playlist file, as written rather than as resolved.
- *
- * [location] is whatever the exporting player put there - an absolute path from
- * another machine, a relative path, a `file://` uri, or an http url. It is not a
- * uri this device can open; [PlaylistFormats.resolve] is what turns it into one.
- */
 data class PlaylistEntry(
     val location: String,
     val title: String = "",
-    /** Milliseconds, whatever unit the file used; [PlaylistFormats.UNKNOWN_DURATION] when it did not say. */
     val durationMs: Long = PlaylistFormats.UNKNOWN_DURATION,
 )
 
-/** The outcome of reading a playlist file: a value, because failing is normal. */
 sealed interface PlaylistParse {
     data class Parsed(
         val format: PlaylistFormat,
@@ -28,45 +18,15 @@ sealed interface PlaylistParse {
     data class Unreadable(val why: String) : PlaylistParse
 }
 
-/**
- * What [PlaylistFormats.resolve] made of a playlist against this device.
- *
- * [missing] and [ambiguous] exist so an import can be reported rather than
- * merely performed: a 200-track playlist that quietly becomes 180 tracks is the
- * failure users notice weeks later, and the caller needs to be able to say which
- * ones and why.
- */
 data class PlaylistResolution(
     val uris: List<String>,
     val missing: List<PlaylistEntry>,
     val ambiguous: List<PlaylistEntry>,
 )
 
-/**
- * Readers for the playlist files other players write, and the matching that
- * turns their paths into this device's uris.
- *
- * Parsing is pure text in, values out - no `Context`, no streams, no exceptions
- * for a malformed file. Reading and decoding the bytes is the caller's job,
- * which also keeps the .m3u-is-often-Latin-1 problem where the charset is known.
- *
- * The formats agree on almost nothing. PLS numbers its entries and may write
- * them in any order. XSPF measures duration in milliseconds where M3U and PLS
- * use seconds. Only M3U can name the playlist itself. All three are lenient
- * about case and whitespace in practice, so this is too - and where a file is
- * self-contradictory the entries win, because losing a track is worse than
- * losing its metadata.
- *
- * The XSPF reader handles the documented shape of the format and refuses a
- * DOCTYPE outright rather than expanding it: an imported playlist is untrusted
- * input, and entity expansion is the one thing in these formats that can read a
- * file the user did not pick.
- */
 object PlaylistFormats {
-    /** A duration the file did not state. Not zero, which would display as 0:00. */
     const val UNKNOWN_DURATION = -1L
 
-    /** Enough of the file to see a header in, however long the file is. */
     private const val DETECT_WINDOW = 512
 
     private const val EXTINF = "#EXTINF:"
@@ -77,36 +37,18 @@ object PlaylistFormats {
     private val trackTag = Regex("<(?:\\w+:)?track\\b[^>]*>(.*?)</(?:\\w+:)?track>", RegexOption.DOT_MATCHES_ALL)
     private val numericEntity = Regex("&#(\\d+);")
 
-    /**
-     * The three `<track>` children this reads, compiled once.
-     *
-     * Built here rather than per call because [childText] runs three times per
-     * track, and a long XSPF is thousands of tracks.
-     */
     private val locationTag = childTag("location")
     private val titleTag = childTag("title")
     private val durationTag = childTag("duration")
 
-    /** `<tag>…</tag>`, with an optional namespace prefix and across newlines. */
     private fun childTag(tag: String): Regex = Regex("<(?:\\w+:)?$tag\\b[^>]*>(.*?)</(?:\\w+:)?$tag>", RegexOption.DOT_MATCHES_ALL)
 
-    /** A run of percent-escapes, taken whole so multi-byte UTF-8 decodes. */
     private val percentRun = Regex("(?:%[0-9A-Fa-f]{2})+")
 
-    /**
-     * Reads [text] as a playlist, using [fileName] only for its extension and as
-     * a fallback name.
-     *
-     * The format is decided by content first and extension second, because
-     * plenty of .m3u files have no `#EXTM3U` header and plenty of playlists
-     * arrive from SAF under a name that says nothing.
-     */
     fun parse(
         fileName: String,
         text: String,
     ): PlaylistParse {
-        // A byte-order mark left on the front of "#EXTM3U" is how an import ends
-        // up with one unplayable track named after the header.
         val body = text.removePrefix("\uFEFF")
         return when (formatOf(fileName, body)) {
             null -> PlaylistParse.Unreadable("not an M3U, PLS or XSPF playlist")
@@ -116,21 +58,6 @@ object PlaylistFormats {
         }
     }
 
-    /**
-     * Matches [entries] against the library, keyed by [baseName].
-     *
-     * Matching cannot use the path. The same physical file reaches this app
-     * under several uri spellings and the playlist was written elsewhere
-     * entirely, so the path identifies a route and the file name is what
-     * survives - the same reasoning as `TrackLibrary.identityKey`, which pairs
-     * the name with the byte size. A playlist file carries no byte size, so this
-     * is that check with its second half missing: when a name matches more than
-     * one track the first is taken and the entry is listed in
-     * [PlaylistResolution.ambiguous], because dropping it would be worse and
-     * choosing silently worse still.
-     *
-     * [urisByFileName] must be keyed by [baseName] or every lookup misses.
-     */
     fun resolve(
         entries: List<PlaylistEntry>,
         urisByFileName: Map<String, List<String>>,
@@ -150,17 +77,7 @@ object PlaylistFormats {
         return PlaylistResolution(uris, missing, ambiguous)
     }
 
-    /**
-     * The lower-cased file name [location] ends in - the key both sides of
-     * [resolve] have to agree on, which is why it is public.
-     *
-     * Percent-escapes are decoded and both separators are honoured, since a
-     * playlist written on Windows uses backslashes and one written by a
-     * browser-based exporter is a `file://` uri.
-     */
     fun baseName(location: String): String {
-        // Only strip a query and fragment from something that is actually a uri:
-        // "track#1.mp3" is a legal file name, and '#' there is not a fragment.
         val path =
             if (location.contains("://")) {
                 location.substringBefore('?').substringBefore('#')
@@ -191,12 +108,6 @@ object PlaylistFormats {
             else -> null
         }
 
-    /**
-     * M3U: a location per line, each optionally preceded by its own `#EXTINF`.
-     *
-     * The metadata is attached to the next location and cleared once used, so a
-     * stray `#EXTINF` with no line after it cannot label an unrelated track.
-     */
     private fun parseM3u(
         fileName: String,
         lines: List<String>,
@@ -221,7 +132,6 @@ object PlaylistFormats {
         return PlaylistParse.Parsed(PlaylistFormat.M3U, name.ifBlank { stemOf(fileName) }, entries)
     }
 
-    /** `#EXTINF:<seconds>,<title>`, either half of which may be missing. */
     private fun extInf(rest: String): Pair<String, Long> {
         val comma = rest.indexOf(',')
         val seconds = (if (comma < 0) rest else rest.substring(0, comma)).trim().toLongOrNull()
@@ -229,13 +139,6 @@ object PlaylistFormats {
         return title to secondsToMs(seconds)
     }
 
-    /**
-     * PLS: `File1=`, `Title1=`, `Length1=`, in any order and any case.
-     *
-     * The number is the order, not the position in the file. `NumberOfEntries`
-     * is deliberately ignored - it is routinely stale, and trusting it truncates
-     * a playlist that is otherwise intact.
-     */
     private fun parsePls(
         fileName: String,
         lines: List<String>,
@@ -245,8 +148,6 @@ object PlaylistFormats {
         val lengths = HashMap<Int, Long>()
         for (line in lines) {
             val eq = line.indexOf('=')
-            // No '=' leaves the key empty, which has no digits to be an index by,
-            // so section headers and Version= fall out with the malformed lines.
             val key = if (eq > 0) line.substring(0, eq).trim().lowercase() else ""
             val index = key.dropWhile { !it.isDigit() }.toIntOrNull() ?: continue
             val value = line.substring(eq + 1).trim()
@@ -263,7 +164,6 @@ object PlaylistFormats {
         return PlaylistParse.Parsed(PlaylistFormat.PLS, stemOf(fileName), entries)
     }
 
-    /** XSPF: `<track>` elements inside `<trackList>`, durations already in ms. */
     private fun parseXspf(
         fileName: String,
         text: String,
@@ -282,13 +182,11 @@ object PlaylistFormats {
         }
     }
 
-    /** The playlist's own `<title>`, which is the one above `<trackList>`. */
     private fun xspfName(
         header: String,
         fileName: String,
     ): String = childText(header, titleTag).ifBlank { stemOf(fileName) }
 
-    /** One `<track>`, or null when it has no location to play. */
     private fun xspfTrack(match: MatchResult): PlaylistEntry? {
         val body = match.groupValues[1]
         val location = childText(body, locationTag)
@@ -304,7 +202,6 @@ object PlaylistFormats {
         }
     }
 
-    /** Text of the first [tag] in [xml], with its entities decoded. */
     private fun childText(
         xml: String,
         tag: Regex,
@@ -320,7 +217,6 @@ object PlaylistFormats {
             String(bytes.toByteArray(), Charsets.UTF_8)
         }
 
-    /** `&amp;` is expanded last, so `&amp;lt;` stays `&lt;` rather than becoming `<`. */
     private fun decodeEntities(text: String): String =
         numericEntity
             .replace(text) { m ->

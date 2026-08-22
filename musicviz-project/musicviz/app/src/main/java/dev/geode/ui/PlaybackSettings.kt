@@ -21,15 +21,8 @@ import dev.geode.R
 import dev.geode.analysis.PlaybackMath
 import dev.geode.data.PlayerPrefs
 
-/** Sleep-timer choices in minutes; 0 renders as "Off". */
 private val SLEEP_TIMER_CHOICES = listOf(0, 15, 30, 45, 60)
 
-/**
- * Playback group for the Settings › Audio tab: speed/pitch sliders, skip
- * silence, pause-on-unplug, keep-screen-on, auto-resume and the sleep timer.
- * Mounted inside a [SettingsGroup] card, which carries the "Playback" header,
- * so this is content only.
- */
 @Composable
 fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
     val prefs by viewModel.playerPrefs.collectAsState()
@@ -69,8 +62,6 @@ fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
             CrystalSlider(
                 value = prefs.fadeMs.toFloat(),
                 onValueChange = {
-                    // Snapped to 250 ms so the slider has landing points and
-                    // "off" is reachable rather than a 3 ms fade.
                     viewModel.setPlayerPrefs(prefs.copy(fadeMs = (PlaybackMath.snap(it, 250f)).toInt()))
                 },
                 valueRange = 0f..PlayerPrefs.MAX_FADE_MS.toFloat(),

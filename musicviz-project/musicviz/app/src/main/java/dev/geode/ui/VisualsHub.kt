@@ -60,16 +60,6 @@ import dev.geode.render.scene.VisualStyleCatalog
 import dev.geode.ui.theme.StoneIcon
 import dev.geode.ui.theme.StoneIconArt
 
-/**
- * The Visuals nav destination: everything visual in one hub. Style/Customize
- * changes apply straight to the shared renderer, so switching to Now Playing
- * shows them live ("same content, two doors").
- *
- * With [liveBackdrop] (Settings › "Clear-overlay Visuals menu", or the
- * layers toggle in the header) the hub hosts the live visualizer canvas
- * fullscreen behind text-only chrome — no panels, just shadowed text — so
- * every adjustment is visible on the visuals while it's being made.
- */
 @Composable
 fun VisualsHub(
     viewModel: PlayerViewModel,
@@ -84,11 +74,6 @@ fun VisualsHub(
     Box(Modifier.fillMaxSize()) {
         if (liveBackdrop) {
             VisualizerCanvasHost(visualizerView, Modifier.fillMaxSize())
-            // A whisper of dim over the whole canvas - the reading plate below
-            // does the legibility work, so this only takes the very brightest
-            // frames off the top rather than greying the visuals down. The
-            // scrim role rather than hardcoded black, so a theme could
-            // legitimately re-tint it.
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.1f)))
         }
         val bodyStyle =
@@ -99,11 +84,6 @@ fun VisualsHub(
             } else {
                 LocalTextStyle.current
             }
-        // Semi-transparent plate under the menu: the visuals read through it,
-        // the text reads on it. Inset so the live canvas frames the panel and
-        // it is obvious the visuals are still running underneath. Its opacity
-        // follows the Settings "Bar opacity" slider like the rest of the
-        // chrome, scaled down because this one has to stay see-through.
         val plate =
             if (liveBackdrop) {
                 Modifier
@@ -136,10 +116,6 @@ fun VisualsHub(
                         )
                         GlowTitle("Visuals")
                     }
-                    // Record sits in the header, not in the Takes tab: a
-                    // performance is made on the Customize and Styles tabs, and
-                    // a control you have to leave the thing you are performing
-                    // on to reach is a control you do not use mid-set.
                     IconButton(onClick = {
                         if (takes.recording) viewModel.stopRecording() else viewModel.startRecording()
                     }) {
@@ -178,28 +154,11 @@ fun VisualsHub(
     }
 }
 
-// ---------------------------------------------------------------- Presets
-
-/**
- * Index of the first visual-playlist entry that carries [presetName], or -1
- * when the preset is not in the playlist. First match on purpose: playlists
- * saved before the heart became a toggle can hold duplicates, and removing by
- * first index drains them one tap at a time instead of skipping or crashing.
- */
 internal fun vizPlaylistIndexOf(
     playlist: List<VizPlaylistEntry>,
     presetName: String,
 ): Int = playlist.indexOfFirst { it.presetName == presetName }
 
-/**
- * The saved USER preset a `savePreset(rawName)` would silently replace, or
- * null when the name is new. Mirrors savePreset's own laundering (" · " is
- * reserved for built-ins, and the store trims) so the answer is about the name
- * that will actually hit disk, and matches exactly - PresetStore.save replaces
- * the file whose stem is derived from the exact name, nothing looser.
- * Built-ins are excluded: they are not on disk and the laundering guarantees a
- * user save can never land on one.
- */
 internal fun presetReplaceTarget(
     rawName: String,
     presets: List<Preset>,
@@ -208,13 +167,6 @@ internal fun presetReplaceTarget(
     return presets.firstOrNull { !BuiltInPresets.isBuiltIn(it.name) && it.name == name }?.name
 }
 
-/**
- * Family id whose built-in presets the Built-in section shows for
- * [activeSceneId]. The hyperspace and cymatics substyles are parameter
- * variations of one scene, and every built-in look for those families is
- * authored against the family's original id - an exact-id filter left the
- * section empty on all of them. Everything else keeps exact matching.
- */
 internal fun builtInPresetSceneFamily(activeSceneId: String): String =
     when {
         VisualStyleCatalog.isHyperspace(activeSceneId) -> SceneIds.HYPERSPACE
@@ -222,7 +174,6 @@ internal fun builtInPresetSceneFamily(activeSceneId: String): String =
         else -> activeSceneId
     }
 
-/** Whether a built-in preset authored for [presetSceneId] belongs in the Built-in section on [activeSceneId]. */
 internal fun builtInPresetMatchesScene(
     presetSceneId: String,
     activeSceneId: String,
@@ -239,25 +190,15 @@ private fun PresetsTreeTab(
     var newFolder by remember { mutableStateOf("") }
     var saveName by remember { mutableStateOf("") }
     var saveFolder by rememberSaveable { mutableStateOf("") }
-    // Which folder the rename dialog is editing, which preset the move dialog
-    // is filing and which the delete dialog is confirming. All three are held
-    // here rather than per row because a LazyColumn row that scrolls off
-    // screen is disposed, and a dialog owned by one would vanish mid-edit.
     var renamingFolder by remember { mutableStateOf<String?>(null) }
     var folderRenameText by remember { mutableStateOf("") }
     var movingPreset by remember { mutableStateOf<String?>(null) }
     var deletingPreset by remember { mutableStateOf<String?>(null) }
-    // The user preset a pending Save would silently replace; non-null while
-    // the confirm-replace dialog is up.
     var replacingPreset by remember { mutableStateOf<String?>(null) }
     val userPresets = viz.presets.filterNot { BuiltInPresets.isBuiltIn(it.name) }.distinctBy { it.name }
     val byFolder = userPresets.groupBy { viewModel.presetFolderOf(it.name) }
     val context = androidx.compose.ui.platform.LocalContext.current
     var importNote by remember { mutableStateOf<String?>(null) }
-    // The file half of Share. A preset that carries a custom shader - or a
-    // .milk, which every MilkDrop preset now does - is too long to travel as a
-    // link, so it is shared as its .json; without this it arrived as a file
-    // nothing could open.
     val presetFilePicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
@@ -269,9 +210,6 @@ private fun PresetsTreeTab(
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         item {
-            // Share and import live at the top of the list, together: a preset
-            // arrives as a message, and the thing you do on receiving one is
-            // paste it, not go looking for a menu.
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 6.dp)) {
                 CrystalButton(compact = true, filled = false, onClick = {
                     val pasted = clipboardText(context)
@@ -328,9 +266,6 @@ private fun PresetsTreeTab(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        // Root is not a directory on disk - it is the absence of
-                        // one - so only a real folder gets the pencil; on
-                        // "Presets" the dialog would have nothing to rename.
                         if (folder.isNotEmpty()) {
                             IconButton(onClick = {
                                 renamingFolder = folder
@@ -349,13 +284,6 @@ private fun PresetsTreeTab(
                     IconButton(onClick = { sharePreset(context, viewModel, p.name) }) {
                         StoneIconArt(StoneIcon.SHARE, "Share this preset")
                     }
-                    // Membership toggle, not an append: the heart reads back
-                    // whether the preset is in the visual playlist (tint) and a
-                    // second tap takes it OUT instead of quietly stacking a
-                    // duplicate the user could not see or remove from here.
-                    // Removal is by first-match index, so a playlist that
-                    // already carries duplicates drains one per tap and the
-                    // heart stays lit until the last copy is gone.
                     val playlistIndex = vizPlaylistIndexOf(viz.vizPlaylist, p.name)
                     val inPlaylist = playlistIndex >= 0
                     IconButton(
@@ -418,10 +346,6 @@ private fun PresetsTreeTab(
                 )
                 CrystalButton(onClick = {
                     if (saveName.isNotBlank()) {
-                        // PresetStore.save replaces by name with no undo, so a
-                        // name that is already a saved user preset asks first
-                        // (built-ins are excluded: savePreset launders " · "
-                        // out of the name, so they can never actually collide).
                         val existing = presetReplaceTarget(saveName, viz.presets)
                         if (existing != null) {
                             replacingPreset = existing
@@ -449,12 +373,6 @@ private fun PresetsTreeTab(
     }
     renamingFolder?.let { old ->
         val proposed = folderRenameText.trim()
-        // A rename onto a folder that already exists is refused rather than
-        // merged: PresetStore.renameFolder is a directory rename, which the
-        // filesystem fails silently once the destination holds presets, so the
-        // user would be told nothing and see nothing move. Case-insensitive
-        // because the folder is a directory name and this is a phone, where
-        // "Chill" and "chill" are the same folder to everyone but the user.
         val collides = !proposed.equals(old, ignoreCase = true) && folders.any { it.equals(proposed, ignoreCase = true) }
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { renamingFolder = null },
@@ -478,9 +396,6 @@ private fun PresetsTreeTab(
             confirmButton = {
                 CrystalButton(enabled = proposed.isNotBlank() && !collides, onClick = {
                     viewModel.renamePresetFolder(old, proposed)
-                    // The Save-into chip row picks a folder by name, so a
-                    // rename has to carry the selection over with it or the
-                    // next Save quietly recreates the old folder.
                     if (saveFolder == old) saveFolder = proposed
                     renamingFolder = null
                     folderRefresh++
@@ -495,11 +410,6 @@ private fun PresetsTreeTab(
             onDismissRequest = { movingPreset = null },
             title = { Text("Move \"$name\"") },
             text = {
-                // The same chip row Save uses to choose a destination, so
-                // filing a preset looks the same whether it happens when it is
-                // saved or afterwards. Root is offered as a destination too:
-                // without it a preset dropped into the wrong folder could never
-                // come back out again.
                 androidx.compose.foundation.layout.FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -508,9 +418,6 @@ private fun PresetsTreeTab(
                         CrystalButton(compact = true, filled = f == current, onClick = {
                             viewModel.movePresetToFolder(name, f)
                             movingPreset = null
-                            // The moved preset keeps its name, so vizState comes
-                            // back equal and the StateFlow conflates the update
-                            // away; only this counter re-groups the list.
                             folderRefresh++
                         }) { Text(f.ifEmpty { "root" }, style = MaterialTheme.typography.bodySmall) }
                     }
@@ -520,9 +427,6 @@ private fun PresetsTreeTab(
         )
     }
     replacingPreset?.let { name ->
-        // Same confirm-before-losing-work rule as Delete: a save onto an
-        // existing name overwrites that preset's look on disk with no undo,
-        // which used to happen silently on a name typed from memory.
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { replacingPreset = null },
             title = { Text("Replace \"$name\"?") },
@@ -547,9 +451,6 @@ private fun PresetsTreeTab(
         )
     }
     deletingPreset?.let { name ->
-        // Delete is the one verb on a preset row with no way back - the .json
-        // is removed from disk and there is no undo store - so it confirms
-        // like Reset does instead of firing on a tap that landed beside Move.
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { deletingPreset = null },
             title = { Text("Delete \"$name\"?") },
@@ -572,7 +473,6 @@ private fun PresetsTreeTab(
     }
 }
 
-/** Clipboard text, or null when the clipboard holds nothing readable. */
 private fun clipboardText(context: android.content.Context): String? =
     runCatching {
         context
@@ -584,10 +484,6 @@ private fun clipboardText(context: android.content.Context): String? =
             ?.toString()
     }.getOrNull()
 
-/**
- * Shares a preset as a link, falling back to its file when the link would be
- * too long to survive a chat app (a preset carrying a custom shader).
- */
 private fun sharePreset(
     context: android.content.Context,
     viewModel: PlayerViewModel,
@@ -602,8 +498,6 @@ private fun sharePreset(
                 putExtra(android.content.Intent.EXTRA_TEXT, link)
             }
         } else {
-            // Too long for a message: send the .json itself, which has no
-            // length limit and is what a shader-carrying preset needs.
             val file = viewModel.presetFile(name) ?: return
             val uri =
                 androidx.core.content.FileProvider
@@ -617,7 +511,6 @@ private fun sharePreset(
     runCatching { context.startActivity(android.content.Intent.createChooser(send, "Share preset")) }
 }
 
-/** Applies a preset; its shader side reaches the renderer via vizApply. */
 private fun applyPresetLive(
     viewModel: PlayerViewModel,
     @Suppress("UNUSED_PARAMETER") visualizerView: VisualizerView,
@@ -625,8 +518,6 @@ private fun applyPresetLive(
 ) {
     viewModel.applyPreset(p)
 }
-
-// ---------------------------------------------------------------- Styles
 
 @Composable
 private fun StylesTab(
@@ -636,19 +527,8 @@ private fun StylesTab(
 ) {
     var sub by rememberSaveable { mutableStateOf(0) }
     val viz by viewModel.vizState.collectAsState()
-    // Single pick path: selectScene updates vizState and the engine bindings
-    // (EnginePlumbing) push requestedSceneId to the renderer. The old code
-    // ALSO wrote requestedSceneId directly here - two writers for the same
-    // renderer field, and the direct write bypassed the transition-aware
-    // state flow. One source of truth is what keeps switching stable.
     val pickScene: (String) -> Unit = { viewModel.selectScene(it) }
     Column(Modifier.fillMaxSize()) {
-        // SceneSuggester's pick, surfaced where styles are chosen. An offer,
-        // not an action: the analysis writes suggestedSceneId and this is the
-        // one place a human sees it, so without this row the whole suggester
-        // ran for nobody. No dismiss affordance on purpose - the chip clears
-        // itself the moment the scene changes (applied or not), and suggestions
-        // are recomputed per track, so it never needs to be put away by hand.
         suggestedSceneToOffer(viz.suggestedSceneId, viz.sceneId)?.let { suggested ->
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
@@ -666,14 +546,6 @@ private fun StylesTab(
             }
         }
         CrystalTabs(
-            // Each tab is one engine family. Silk is field-advected luminous
-            // dye (strange-attractor flows, no particles anywhere); Life is
-            // continuous cellular matter (Lenia species and Gray-Scott
-            // organisms); Mycelium is a Physarum trail ecology (the network
-            // is drawn, never the agents); Acid is a video-synth feedback
-            // loop. Cymatics is the style whose picture IS the sound (a
-            // Chladni plate); Hyperspace the raymarched fractal room; Beam
-            // the oscilloscope, whose trace is the waveform itself.
             titles = listOf("Silk", "Life", "Mycelium", "Acid", "Shaders", "Fluid", "Cymatics", "Hyperspace", "Beam", "MilkDrop"),
             selected = sub,
             onSelect = { sub = it },
@@ -693,23 +565,11 @@ private fun StylesTab(
     }
 }
 
-/**
- * The scene the Suggested chip should offer, or null to render no chip: there
- * is nothing to offer while the analysis has not spoken, and nothing to offer
- * once the active scene IS the suggestion (whether the user tapped the chip or
- * arrived there on their own).
- */
 internal fun suggestedSceneToOffer(
     suggestedSceneId: String?,
     activeSceneId: String,
 ): String? = suggestedSceneId?.takeIf { it != activeSceneId }
 
-/**
- * Human label for a scene id on a style tile. Catalogued substyles carry
- * authored labels ("hyper_liquid_warp" is "Liquid Warp"); ids the catalog does
- * not know fall back to the id itself, title-cased with underscores opened up,
- * so a persistence identifier never reads as one on screen.
- */
 internal fun sceneDisplayLabel(id: String): String {
     val catalogued = VisualStyleCatalog.label(id)
     if (catalogued != id) return catalogued
@@ -742,7 +602,6 @@ private fun SceneList(
     }
 }
 
-/** Dedicated MilkDrop tab: Load .milk, the user's preset list, Textures shortcut. */
 @Composable
 private fun MilkDropTab(
     viewModel: PlayerViewModel,
@@ -752,9 +611,6 @@ private fun MilkDropTab(
     var refresh by remember { mutableStateOf(0) }
     val viz by viewModel.vizState.collectAsState()
     val milkFiles = remember(refresh) { viewModel.userMilkPresets() }
-    // Which one is on screen. Collected rather than read once, so the marker
-    // follows the engine even when a preset apply, a take replay or the random
-    // mode changed the .milk from somewhere else entirely.
     val loaded by viewModel.activeMilkPath.collectAsState()
     var packReport by remember { mutableStateOf<dev.geode.data.MilkPackImporter.Report?>(null) }
     var singleMissesTexture by remember { mutableStateOf(false) }
@@ -815,11 +671,6 @@ private fun MilkDropTab(
                     },
             )
         }
-        // A .milk that fails to parse (or a texture it references that is not
-        // imported) reports through the same channel the GLSL editors use, and
-        // used to land on a screen the user was not on: the engine just kept
-        // showing the previous preset with no clue why the new one never
-        // arrived. It belongs where the file was picked.
         if (viz.sceneId == SceneIds.MILKDROP) {
             viz.shaderError?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
@@ -866,119 +717,33 @@ private fun selectMilk(
     visualizerView: VisualizerView,
     path: String,
 ) {
-    // Scene switch flows through vizState -> EnginePlumbing like every other
-    // pick; only the .milk load itself talks to the renderer directly.
     viewModel.selectScene(SceneIds.MILKDROP)
     visualizerView.visualizerRenderer.loadMilkPreset(path)
 }
 
-// ---------------------------------------------------------------- Customize
-
-// Fluid-tab gating. The fluid styles each read a DIFFERENT slice of the
-// fluid params, so the tab is gated per slice rather than per style:
-// showing a control the active style ignores is as much of a bug as hiding
-// one it reads. Kept as plain functions (not inline expressions) so the
-// slices are unit-testable and documented in one place.
-
-/** Only FluidScene runs the Navier-Stokes solver, dye/ink and its look passes. */
 internal fun isFluidSceneId(sceneId: String): Boolean = sceneId == SceneIds.FLUID
 
-/**
- * Styles driven by FluidChoreography's spawn/catch journey progression.
- * Every control in that section has a reader on all three: `fluidSpawnPath`,
- * `fluidSpawnPoints`, `fluidSpawnProgress` and `fluidCatchPoints` feed
- * `choreography` (`WaterScene.kt:232-235`), `fluidCatchPull` the emitters
- * (`:247`) and `fluidCatchRadius` `WaterMath.catchWellRadius` (`:256`).
- * `fluidParticleLife` does NOT - WaterScene has no particle layer to age -
- * so that slider hangs off [isParticleLayerSceneId] instead.
- */
 internal fun isJourneySceneId(sceneId: String): Boolean =
     sceneId == SceneIds.FLUID ||
         sceneId == SceneIds.CURLFLOW ||
         sceneId == SceneIds.WATER
 
-/**
- * Styles that run the shared FluidEmitters splat schedule and the
- * FluidQuality tiers. WaterScene reuses the emitter schedule verbatim
- * (WaterScene.kt "Emitter schedule reused verbatim") and its own quality
- * tiers key off fluidQuality/fluidAutoQuality, so those controls belong on
- * Water even though the solver ones do not.
- */
 internal fun isEmitterSceneId(sceneId: String): Boolean = sceneId == SceneIds.FLUID || sceneId == SceneIds.WATER
 
-/** Only WaterScene reads the heightfield surface params. */
 internal fun isWaterSceneId(sceneId: String): Boolean = sceneId == SceneIds.WATER
 
-/** Only BeamScene reads the oscilloscope-trace params. */
 internal fun isBeamSceneId(sceneId: String): Boolean = sceneId == SceneIds.BEAM
 
-/**
- * Only CymaticsScene reads the Chladni-plate params, so the whole Cymatics
- * tab appears and disappears with that style - see `CustomizeTabs.CymaticsTab`
- * for why this one is gated as a tab rather than as a section.
- */
 internal fun isCymaticsSceneId(sceneId: String): Boolean = VisualStyleCatalog.isCymatics(sceneId)
 
-/**
- * Only HyperspaceScene reads the fractal-room params, so the whole Hyperspace
- * tab appears and disappears with that style - same rule as the Cymatics tab.
- */
 internal fun isHyperspaceSceneId(sceneId: String): Boolean = VisualStyleCatalog.isHyperspace(sceneId)
 
-/**
- * Styles that run the shared FluidParticles lifecycle layer, i.e. the ones
- * that read `fluidParticleDrag` and `fluidParticleLife` (set on consecutive
- * lines in both scenes). CURLFLOW *is* that layer (CurlFlowScene's
- * "particles.drag = params.fluidParticleDrag"), yet the drag slider used to
- * live in the FLUID-only Particles section AND behind `fluidParticlesEnabled`,
- * a param CurlFlow never reads - so a control the style genuinely consumes was
- * unreachable on it. WATER has no particle layer at all, which is why
- * "Particle life (s)" moved here from the WATER-inclusive Journey section.
- */
 internal fun isParticleLayerSceneId(sceneId: String): Boolean = sceneId == SceneIds.FLUID || sceneId == SceneIds.CURLFLOW
 
-/**
- * Shape/Color gating, same rule as the Fluid tab: a control only shows up on
- * the styles that actually read it.
- *
- * Most of Shape and Color survived the "customizations on every style" work
- * because the COMPOSITE pass re-implements them (`composite_frag.glsl` has
- * uPostWarp / uPostRipple / uPostTwist / uPostKaleido / uPostTile /
- * uPostPixelate / uPostPosterize / uPostBloom / uPostSolarize / uPostInvert /
- * uPostHue / uPostSat ... ), so they bend particles, MilkDrop and the fluid
- * family too. Four do not: `morph`, `paletteMix`, `duotone` and the second
- * palette slot (`palette2`, resolved into `palette2Base`/`palette2Range`).
- * They are uploaded ONLY by `ShaderScene` - uMorph, uPaletteMix, uDuotone,
- * uPal2Base, uPal2Range, declared by every scene fragment shader - and
- * the composite has no counterpart uniform for any of them. On every other
- * style those four sliders move nothing, so they are hidden there.
- */
 internal fun isShaderLookSceneId(sceneId: String): Boolean = sceneId in VisualizerRenderer.SHADER_SCENES
 
-/**
- * Styles that draw a particle sprite, i.e. the readers of BOTH `particleShape`
- * and `particleSize`: the GPU lifecycle layer the fluid styles run
- * (`FluidScene` folds `particleSize` into `pointScale` and passes
- * `particleShape` straight through to `FluidParticles.draw`, `CurlFlowScene`
- * likewise). Exactly [isParticleLayerSceneId] - the same FluidParticles layer
- * that reads `fluidParticleDrag` - so this composes from it rather than
- * restating FLUID/CURLFLOW a second time; if the layer ever gains or loses a
- * style, everything moves together.
- *
- * Note FLUID can switch its point layer off (`fluidParticlesEnabled`), which
- * makes these controls *temporarily* inert there. That is deliberately NOT
- * part of this predicate: gating is about what a style can read, and a control
- * the user can revive with one checkbox should not vanish from a different tab
- * with no visible cause. The Shape tab says so instead.
- */
 internal fun isPointSpriteSceneId(sceneId: String): Boolean = isParticleLayerSceneId(sceneId)
 
-/**
- * The Customize panel: the scene-parameter tabs plus the tools that act on
- * them (Randomize unlocked, Reset). Mounted by the Visuals hub AND by the
- * Settings destination's Customize tab - one panel, two doors, so the two
- * can never drift apart.
- */
 @Composable
 internal fun CustomizePanel(
     viewModel: PlayerViewModel,
@@ -986,18 +751,9 @@ internal fun CustomizePanel(
 ) {
     val viz by viewModel.vizState.collectAsState()
     var sub by rememberSaveable { mutableStateOf(0) }
-    // Shader styles own the GLSL tab AND are the only readers of the
-    // shader-only look params gated out of Shape/Color - one predicate, so
-    // the two can never drift apart.
     val isShader = isShaderLookSceneId(viz.sceneId)
     val isCymatics = isCymaticsSceneId(viz.sceneId)
     val isHyperspace = isHyperspaceSceneId(viz.sceneId)
-    // Tabs are dispatched by the CustomizeTab they carry, not by index: two of
-    // them come and go with the active style, so positions do not identify a
-    // panel. The parameter tabs come from the enum itself so the panel and the
-    // randomizer can never disagree about what a tab is called or contains;
-    // GLSL is appended as a null-tab entry because it edits shader source
-    // rather than SceneParams.
     val tabs: List<CustomizeTab?> =
         CustomizeTab.entries.filter {
             when (it) {
@@ -1007,12 +763,6 @@ internal fun CustomizePanel(
             }
         } + if (isShader) listOf(null) else emptyList()
     val titles = tabs.map { it?.title ?: "GLSL" }
-    // The reset is keyed on tab IDENTITY, not the list's size: a same-size
-    // swap (a Cymatics style straight to a Hyperspace style trades CYMATICS
-    // for HYPERSPACE at the same position) used to keep the index and land
-    // the user on a tab they never chose. Tracking the shown tab's title
-    // catches that; when it moves the selection follows it to its new index,
-    // and only a tab that actually disappeared falls back to the first.
     var shownTitle by rememberSaveable { mutableStateOf(titles.getOrNull(sub)) }
     LaunchedEffect(titles) {
         if (titles.getOrNull(sub) != shownTitle) {
@@ -1098,13 +848,8 @@ internal fun CustomizePanel(
                                 visualizerView.visualizerRenderer.submitFluidInjectionShaders(force, dye)
                             },
                         )
-                    // Both take the live scene id so they can say when the
-                    // active substyle pins their selector (Geometry /
-                    // Fractal) instead of rendering chips the catalog
-                    // override makes no-ops.
                     CustomizeTab.CYMATICS -> CymaticsTab(p, activeSceneId = viz.sceneId, onChange = onChange)
                     CustomizeTab.HYPERSPACE -> HyperspaceTab(p, activeSceneId = viz.sceneId, onChange = onChange)
-                    // The GLSL tab: shader source, not scene parameters.
                     null -> GlslHubTab(viewModel, visualizerView)
                 }
             }
@@ -1112,23 +857,6 @@ internal fun CustomizePanel(
     }
 }
 
-/**
- * The tools that act on the parameters, above the controls they act on: roll
- * this tab's unlocked ones, and put everything back.
- *
- * Randomize is scoped to [tab] and says so on the button. It sits inside a
- * tab, so it acts on that tab: a roll that also moved the other tabs' sliders
- * threw away work the user had just done elsewhere, with no undo. On the GLSL
- * tab ([tab] null) there are no parameters to roll, so it is disabled rather
- * than silently rolling something off-screen.
- *
- * Reset is the deliberate whole-panel counterpart, and is confirmed rather
- * than immediate. It discards every slider in every tab at once, and the panel
- * it sits in exists for people who spend a long time moving those sliders; a
- * mis-tap next to Randomize would be expensive and there is no undo. The row
- * also reports how far the live look has drifted from the defaults, which is
- * the question "should I reset?" answered before it is asked.
- */
 @Composable
 private fun CustomizeToolbar(
     viewModel: PlayerViewModel,
@@ -1147,7 +875,6 @@ private fun CustomizeToolbar(
             enabled = tab != null,
             onClick = { tab?.let(viewModel::randomizeParams) },
         ) {
-            // Decorative next to its own label: a description would make TalkBack name the action twice.
             Icon(Icons.Filled.Casino, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
             Text(if (tab == null) "Randomize" else "Randomize ${tab.title}")
@@ -1184,16 +911,6 @@ private fun CustomizeToolbar(
     }
 }
 
-// ------------------------------------------------------------------ Takes
-
-/**
- * Why the rename dialog's confirm must stay disabled, or null when [proposed]
- * (already trimmed) can be renamed to. Case-insensitive collision like the
- * folder-rename dialog: takes are files, and this is a phone, where "Sunset"
- * and "sunset" are the same take to everyone but the user. Renaming a take to
- * itself (or to its own name in a different case) is allowed - it collides
- * with nothing.
- */
 internal fun takeRenameError(
     from: String,
     proposed: String,
@@ -1207,27 +924,16 @@ internal fun takeRenameError(
         else -> null
     }
 
-/** mm:ss for a take's clock. */
 private fun formatTakeTime(ms: Long): String {
     val total = (ms / 1000).coerceAtLeast(0)
     return "%d:%02d".format(total / 60, total % 60)
 }
 
-/**
- * Saved performance takes: what the visuals were DOING over time, rather than
- * the pixels that came out.
- *
- * Recording is started from the header (a set is performed on the Customize
- * and Styles tabs, so the control cannot live here); this tab is where takes
- * are replayed, renamed, chosen for export and deleted.
- */
 @Composable
 private fun TakesTab(viewModel: PlayerViewModel) {
     val takes by viewModel.takeState.collectAsState()
     var renaming by remember { mutableStateOf<String?>(null) }
     var renameText by remember { mutableStateOf("") }
-    // Held at tab level, not per row, for the same LazyColumn-disposal reason
-    // as the preset dialogs.
     var deleting by remember { mutableStateOf<String?>(null) }
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -1289,9 +995,6 @@ private fun TakesTab(viewModel: PlayerViewModel) {
                 IconButton(onClick = {
                     if (playing) viewModel.stopReplay() else viewModel.playTake(take.name)
                 }) {
-                    // Stop is one of the few affordances the packs ship no icon
-                    // for, so the two states are drawn from different sets
-                    // rather than pinning replay to a Material glyph as well.
                     if (playing) {
                         Icon(Icons.Filled.Stop, "Stop replay", tint = MaterialTheme.colorScheme.primary)
                     } else {
@@ -1328,11 +1031,6 @@ private fun TakesTab(viewModel: PlayerViewModel) {
         }
     }
     renaming?.let { old ->
-        // TakeStore.rename refuses a blank or taken name by returning false,
-        // and the ViewModel drops that result - so a dialog that closed on any
-        // confirm was a rename that silently never happened. The gate lives
-        // here instead: confirm is disabled while the name cannot succeed, and
-        // the inline line says why (the folder-rename dialog's pattern).
         val proposed = renameText.trim()
         val renameError = takeRenameError(old, proposed, takes.takes.map { it.name })
         androidx.compose.material3.AlertDialog(
@@ -1360,9 +1058,6 @@ private fun TakesTab(viewModel: PlayerViewModel) {
         )
     }
     deleting?.let { name ->
-        // A take is a recorded performance: once its file is gone it cannot be
-        // re-made the same way, so - like Reset and preset delete - it asks
-        // first rather than acting on a tap that landed beside Rename.
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { deleting = null },
             title = { Text("Delete take \"$name\"?") },
@@ -1382,16 +1077,12 @@ private fun TakesTab(viewModel: PlayerViewModel) {
     }
 }
 
-// ---------------------------------------------------------------- Textures
-
 @Composable
 private fun TexturesHubTab(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
 ) {
     val textures by viewModel.textures.collectAsState()
-    // Held at tab level, not per row, for the same disposal reason as the
-    // preset and take dialogs.
     var deletingTexture by remember { mutableStateOf<String?>(null) }
     val picker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -1415,10 +1106,6 @@ private fun TexturesHubTab(
         if (textures.isEmpty()) Text("No textures imported yet.", style = MaterialTheme.typography.bodySmall)
     }
     deletingTexture?.let { name ->
-        // A texture delete removes the image file for good and takes any
-        // preset that references it down to noise or black, so - like take and
-        // preset delete - it confirms instead of firing on a tap that landed
-        // beside Use.
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { deletingTexture = null },
             title = { Text("Delete texture \"$name\"?") },
@@ -1441,15 +1128,6 @@ private fun TexturesHubTab(
     }
 }
 
-// ---------------------------------------------------------------- GLSL
-
-/**
- * Saved instance state rides a Binder transaction capped around 1 MB for the
- * whole activity, so `rememberSaveable`-ing an arbitrarily large shader draft
- * risks TransactionTooLargeException on backgrounding. Drafts up to this many
- * chars are worth the budget; anything bigger [ShaderDraftSaver] drops from
- * saved state, and the editor re-seeds from the renderer's committed source.
- */
 private const val MAX_SAVED_SHADER_DRAFT_CHARS = 8 * 1024
 
 private val ShaderDraftSaver =
@@ -1458,19 +1136,12 @@ private val ShaderDraftSaver =
         restore = { it },
     )
 
-/**
- * Shader-scene GLSL editor: seeds from the scene's current custom shader,
- * applies through the ViewModel so the shell-level engine bindings reach
- * the renderer from any screen.
- */
 @Composable
 private fun GlslHubTab(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
 ) {
     val viz by viewModel.vizState.collectAsState()
-    // Saveable so an uncommitted draft survives rotation, but through
-    // [ShaderDraftSaver] so a large source cannot blow the Binder budget.
     var source by rememberSaveable(viz.sceneId, stateSaver = ShaderDraftSaver) {
         mutableStateOf(visualizerView.visualizerRenderer.customShaderFor(viz.sceneId) ?: "")
     }

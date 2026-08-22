@@ -14,15 +14,6 @@ import androidx.media3.extractor.SeekMap
 import androidx.media3.extractor.SeekPoint
 import androidx.media3.extractor.TrackOutput
 
-/**
- * Extractor for AIFF / AIFC audio (Media3 ships none). Parses the IFF
- * chunk structure - FORM header, COMM (channels, frame count, bit depth,
- * sample rate as an 80-bit IEEE-754 extended float), SSND (PCM payload) -
- * and outputs raw PCM. Big-endian data (plain AIFF / AIFC "NONE") is
- * declared with the corresponding big-endian PCM encoding so ExoPlayer's
- * audio processors convert it; AIFC "sowt" is little-endian and passes
- * straight through. Constant-rate PCM makes exact seeking trivial.
- */
 @UnstableApi
 class AiffExtractor : Extractor {
     private lateinit var output: ExtractorOutput
@@ -74,7 +65,6 @@ class AiffExtractor : Extractor {
             return Extractor.RESULT_END_OF_INPUT
         }
         pendingBytes += appended
-        // Emit in whole frames so timestamps stay exact.
         val emitBytes = (pendingBytes / bytesPerFrame) * bytesPerFrame
         if (emitBytes > 0) {
             val endPosition = input.position
@@ -97,7 +87,7 @@ class AiffExtractor : Extractor {
 
     private fun parseHeaders(input: ExtractorInput) {
         val scratch = ParsableByteArray(18)
-        input.readFully(scratch.data, 0, 12) // FORM + size + AIFF/AIFC
+        input.readFully(scratch.data, 0, 12)
         scratch.setPosition(8)
         val isAifc = scratch.readInt() == AIFC
         var commSeen = false
@@ -109,15 +99,6 @@ class AiffExtractor : Extractor {
             val size = scratch.readInt().toLong() and 0xFFFFFFFFL
             when (id) {
                 COMM -> {
-                    // size is an untrusted 32-bit field from the file. A real
-                    // COMM chunk is 18 bytes (AIFF) or a little more (AIFC's
-                    // compression fourcc + pascal string); a declared size
-                    // far past that is a corrupt or hostile file, not a
-                    // format this app has ever produced. Bounding it here
-                    // keeps `size.toInt()` from wrapping negative (top bit
-                    // set) into a NegativeArraySizeException, and keeps a
-                    // large-but-still-positive value from allocating up to
-                    // ~2 GB in one ByteArray.
                     if (size !in 18L..MAX_COMM_BYTES) {
                         throw ParserException.createForMalformedContainer(
                             "AIFF: implausible COMM chunk size ($size)",
@@ -148,16 +129,13 @@ class AiffExtractor : Extractor {
                     input.readFully(scratch.data, 0, 8)
                     scratch.setPosition(0)
                     val offset = scratch.readInt().toLong() and 0xFFFFFFFFL
-                    scratch.skipBytes(4) // blockSize, unused for PCM
+                    scratch.skipBytes(4)
                     dataStart = input.position + offset
                     dataEnd = input.position + (size - 8)
                     bytesPerFrame = channels * (bitsPerSample / 8)
                     return
                 }
                 else -> {
-                    // Chunks are word-aligned: odd sizes carry a pad byte.
-                    // Same untrusted-field guard as COMM above: an implied
-                    // skip beyond Int range must not be handed to skipFully.
                     val padded = size + (size and 1L)
                     if (padded > Int.MAX_VALUE) {
                         throw ParserException.createForMalformedContainer(
@@ -221,14 +199,6 @@ class AiffExtractor : Extractor {
         val bitsPerSample: Int,
         val pcmEncoding: @C.PcmEncoding Int,
     ) {
-        /**
-         * False for any field a real encoder would never produce (a zero or
-         * negative channel count, bit depth, or sample rate) - the shape a
-         * corrupt or hostile COMM chunk takes. `channels * (bitsPerSample /
-         * 8)` and every later `/ sampleRate` in [AiffExtractor] assume this
-         * holds; unchecked, a zero here is a divide-by-zero on the extractor
-         * thread the moment the track is opened.
-         */
         fun isPlausible(): Boolean = channels > 0 && bitsPerSample > 0 && sampleRate > 0
     }
 
@@ -242,26 +212,15 @@ class AiffExtractor : Extractor {
         private const val NONE = 0x4E4F4E45
         private const val MAX_SAMPLE_BYTES = 32 * 1024
 
-        /**
-         * A real COMM chunk is 18 bytes (AIFF) or a little more (AIFC's
-         * compression fourcc + a short pascal-string name); this bound is
-         * generous headroom above that, not a spec limit, so a
-         * declared size outside it is treated as a malformed file rather
-         * than allocated verbatim.
-         */
         internal const val MAX_COMM_BYTES = 256L
 
-        /**
-         * Parses a COMM chunk body. AIFC appends a compressionType fourcc;
-         * "NONE" is big-endian PCM like plain AIFF, "sowt" is little-endian.
-         */
         internal fun parseComm(
             body: ByteArray,
             isAifc: Boolean,
         ): CommInfo {
             val p = ParsableByteArray(body)
             val channels = p.readShort().toInt()
-            p.skipBytes(4) // numSampleFrames
+            p.skipBytes(4)
             val bits = p.readShort().toInt()
             val rate = parseExtendedFloat80(body, 8)
             val compression =
@@ -285,11 +244,6 @@ class AiffExtractor : Extractor {
             return CommInfo(channels, rate, bits, encoding)
         }
 
-        /**
-         * IEEE 754 80-bit extended float (the AIFF sample-rate field):
-         * 1 sign bit, 15 exponent bits (bias 16383), 64-bit mantissa with an
-         * explicit integer bit.
-         */
         internal fun parseExtendedFloat80(
             bytes: ByteArray,
             offset: Int,
@@ -300,10 +254,7 @@ class AiffExtractor : Extractor {
                 mantissa = (mantissa shl 8) or (bytes[offset + 2 + i].toLong() and 0xFF)
             }
             if (mantissa == 0L) return 0
-            // The mantissa's integer bit is set for normalized values, so the
-            // signed Long is negative; convert as unsigned before scaling.
             val m = mantissa.toULong().toDouble()
-            // value = mantissa * 2^(exponent - 63)
             val shift = exponent - 63
             val value =
                 if (shift >= 0) {

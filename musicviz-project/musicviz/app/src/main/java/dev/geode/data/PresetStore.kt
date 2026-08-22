@@ -7,20 +7,6 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 
-/**
- * A saved visual configuration: scene, reactivity, the whole [SceneParams]
- * bundle, and - for the styles whose look is not expressible as parameters at
- * all - the source they render.
- *
- * [milkPreset] is the .milk source itself, not a path, for the same reason
- * [customShader] is the GLSL source: a preset has to BE the look. A path is a
- * pointer into one installation's private storage, so a preset carrying one
- * survives neither sharing nor a reinstall, and on the MILKDROP style a preset
- * whose .milk cannot be found renders projectM's idle "M" logo instead of the
- * visual that was saved. Null on every other style (and on MilkDrop presets
- * saved before the source was carried - see `PlayerViewModel.milkPresetPathFor`
- * for how those still resolve).
- */
 data class Preset(
     val name: String,
     val sceneId: String,
@@ -31,28 +17,17 @@ data class Preset(
     val milkPreset: String? = null,
 )
 
-/** JSON file persistence for presets in app-private storage. */
 class PresetStore(
     context: Context,
 ) {
     private val dir = File(context.filesDir, "presets").apply { mkdirs() }
 
-    /** Where a MilkDrop preset's paired .milk lives (see [milkFileName]). */
     private val milkDir = File(context.filesDir, "milk")
 
     init {
         migrateLegacyFileNames()
     }
 
-    /**
-     * One-time rename of files saved under the pre-hash sanitizer, which
-     * collapsed every disallowed character to '_' ("夜曲" and "月光" both
-     * landed on "__.json"): [findFile] resolves names through [safeFileName]
-     * now, so a file left under its old stem would be unloadable and
-     * undeletable. Idempotent - a file already under its hashed stem is left
-     * alone - and never clobbering: a taken target keeps the old file in
-     * place, unrenamed rather than destroyed.
-     */
     private fun migrateLegacyFileNames() {
         dir
             .walkTopDown()
@@ -64,16 +39,12 @@ class PresetStore(
                 if (f.nameWithoutExtension == stem) return@forEach
                 val target = File(f.parentFile, "$stem.json")
                 if (target.exists() || !f.renameTo(target)) return@forEach
-                // The paired .milk moves too: a preset saved before sources
-                // were carried resolves its visual through the file that
-                // shares its .json's stem (see milkFileName).
                 val milk = File(milkDir, f.nameWithoutExtension + ".milk")
                 val milkTarget = File(milkDir, "$stem.milk")
                 if (milk.isFile && !milkTarget.exists()) milk.renameTo(milkTarget)
             }
     }
 
-    /** Relative folder ("" = root) for each preset name, for the tree UI. */
     fun folderOf(name: String): String {
         val f = findFile(name) ?: return ""
         return f.parentFile
@@ -103,20 +74,9 @@ class PresetStore(
         if (src.isDirectory) src.renameTo(File(dir, sanitize(to)))
     }
 
-    /**
-     * Deletes the folder [name], but ONLY when nothing is filed under it: a
-     * folder that still holds any file - a preset, or anything else - is
-     * refused rather than emptied, so this can never take saved work with it.
-     * Empty subfolders do go with it (they are structure, not content). The
-     * root is refused too: it is the store itself. Returns whether the folder
-     * was removed.
-     */
     fun removeFolder(name: String): Boolean {
         if (name.isBlank()) return false
         val f = File(dir, sanitize(name))
-        // sanitize() cannot produce a path that escapes or lands back on
-        // [dir], but a folder delete is the one operation worth a second
-        // lock on that door.
         val isRoot = runCatching { f.canonicalPath == dir.canonicalPath }.getOrDefault(true)
         if (isRoot || !f.isDirectory) return false
         if (f.walkTopDown().any { it.isFile }) return false
@@ -133,36 +93,10 @@ class PresetStore(
         f.renameTo(File(destDir, f.name))
     }
 
-    /** The on-disk JSON file for a saved preset, for mirroring/export. */
     fun fileOf(name: String): File? = findFile(name)
 
-    /**
-     * The .milk file a preset named [presetName] owns, whether or not it
-     * exists yet. Named through [milkFileName] so a preset's .milk and its
-     * .json always share one sanitized base name - the raw name was a
-     * different file for anything with a slash or a colon in it.
-     */
     fun milkFileOf(presetName: String): File = File(milkDir, milkFileName(presetName))
 
-    /**
-     * Materializes a MilkDrop preset's carried .milk [source] under the
-     * preset's own file (see [milkFileOf]) and returns the path the engine
-     * should render, or null when there is nothing on disk to render.
-     *
-     * Two eras resolve here, exactly as `PlayerViewModel.milkPresetPathFor`
-     * resolves them. Presets saved with their source write it out under the
-     * preset's own name, so they work after a share, an import or a
-     * reinstall; a matching file already on disk is left untouched. Presets
-     * saved before the source was carried pass null and only ever left the
-     * copied file behind, so an existing file under the same name is used
-     * as-is rather than declaring the preset broken.
-     *
-     * The write goes through [AtomicWrite], not `File.writeText`: the
-     * engine may be RENDERING this very file when the preset is re-applied,
-     * and a truncating write's kill window would leave it half a preset -
-     * which projectM answers with its idle "M" logo. An interrupted write
-     * leaves the previous .milk whole instead.
-     */
     @WorkerThread
     fun materializeMilk(
         presetName: String,
@@ -200,9 +134,6 @@ class PresetStore(
         val destDir = if (folder.isEmpty()) dir else File(dir, sanitize(folder)).apply { mkdirs() }
         val dest = File(destDir, safeFileName(preset.name) + ".json")
         val previous = findFile(preset.name)?.takeIf { it != dest }
-        // AtomicWrite, not writeText: a truncating write's kill window sits
-        // on the only copy of the preset. The old location (a folder move) is
-        // only removed once the new file is whole on disk.
         if (AtomicWrite.text(dest, toJson(preset))) previous?.delete()
     }
 
@@ -385,34 +316,14 @@ class PresetStore(
                 .apply { if (p.milkPreset != null) put("milkPreset", p.milkPreset) }
                 .toString(2)
 
-        /** Preset-envelope keys; everything else in the object is a parameter. */
         internal val ENVELOPE_KEYS = setOf("name", "sceneId", "attack", "decay", "customShader", "milkPreset")
 
-        /**
-         * The .milk file name a MilkDrop preset's source is materialized under,
-         * sanitized exactly like the preset's own .json so the two always sit
-         * side by side under the same base name. A preset called "Live / set 1"
-         * used to write its .json as "Live _ set 1.json" and its .milk as
-         * "Live / set 1.milk" - a path with a directory in it, which silently
-         * failed to copy and left the preset with no visual to restore.
-         */
         internal fun milkFileName(presetName: String): String = safeFileName(presetName.removeSuffix(".milk")) + ".milk"
 
         private val UNSAFE_CHARS = Regex("[^A-Za-z0-9-_ ]")
 
-        /** Folder paths only; item files resolve through [safeFileName]. */
         private fun sanitize(name: String): String = name.replace(UNSAFE_CHARS, "_")
 
-        /**
-         * Filesystem-safe, collision-free file stem for a user-chosen item
-         * name. A name made only of safe characters keeps its exact old stem,
-         * so nothing saved by earlier builds moves. Any other name also
-         * carries a short stable digest of the raw name: replacement alone
-         * collapsed distinct names onto one file ("夜曲" and "月光" both
-         * became "__"), so saving one silently destroyed the other. Shared by
-         * presets (and their paired .milk), music playlists and palettes so
-         * every store migrates the same way.
-         */
         internal fun safeFileName(name: String): String {
             val stem = name.replace(UNSAFE_CHARS, "_")
             if (stem == name) return name
@@ -425,22 +336,10 @@ class PresetStore(
             return "$stem-$hash"
         }
 
-        /**
-         * Scene parameters alone, without the preset envelope.
-         *
-         * Routed through [toJson] rather than written out a second time
-         * because that serializer is the ONE place every [SceneParams] field
-         * has to be listed - `PresetRoundtripTest` fails the build if a new
-         * field is missing from it. A parallel writer here would be a second
-         * list to remember, and the failure mode of forgetting is silent:
-         * performance takes and change counts would just quietly ignore the
-         * new parameter.
-         */
         internal fun paramsToJson(params: SceneParams): JSONObject =
             JSONObject(toJson(Preset("", "", 0f, 0f, null, params)))
                 .also { o -> ENVELOPE_KEYS.forEach(o::remove) }
 
-        /** Inverse of [paramsToJson]; unknown/missing keys fall back to the default. */
         internal fun paramsFromJson(o: JSONObject): SceneParams {
             val full = JSONObject(o.toString())
             full.put("name", "")
@@ -494,9 +393,6 @@ class PresetStore(
                         palette = o.optInt("palette", 0),
                         palette2 = o.optInt("palette2", 1),
                         paletteMix = o.optDouble("paletteMix", 0.0).toFloat(),
-                        // Presets saved before the palette maker carry no
-                        // override keys; the UNSET sentinel keeps them on the
-                        // built-in PALETTES entry they were tuned with.
                         paletteBaseOverride =
                             o.optDouble("paletteBaseOverride", SceneParams.UNSET_OVERRIDE.toDouble()).toFloat(),
                         paletteRangeOverride =
@@ -507,9 +403,6 @@ class PresetStore(
                             o.optDouble("palette2RangeOverride", SceneParams.UNSET_OVERRIDE.toDouble()).toFloat(),
                         customPaletteId = o.optString("customPaletteId", SceneParams.NO_CUSTOM_PALETTE),
                         customPalette2Id = o.optString("customPalette2Id", SceneParams.NO_CUSTOM_PALETTE),
-                        // Absent in every preset saved before the MilkDrop
-                        // palette tint existed; 0 keeps those looking exactly
-                        // as they were authored.
                         milkdropPaletteTint = o.optDouble("milkdropPaletteTint", 0.0).toFloat(),
                         milkdropBlendPresets = o.optBoolean("milkdropBlendPresets", false),
                         colorShift = o.optDouble("colorShift", 0.0).toFloat(),
@@ -572,12 +465,6 @@ class PresetStore(
                         fluidSpawnPath = o.optInt("fluidSpawnPath", 1),
                         fluidSpawnPoints = o.optInt("fluidSpawnPoints", 3),
                         fluidSpawnProgress = o.optDouble("fluidSpawnProgress", 1.0).toFloat(),
-                        // Legacy migration: presets saved before v0.13.0 have
-                        // no journey keys - default them to NO catch wells and
-                        // a slow lifecycle (close to the old ~12.5 s mean
-                        // rebirth) so a tuned pre-rebuild look doesn't gain
-                        // suction/churn it was never designed with. Presets
-                        // saved from v0.13.0 on always carry explicit values.
                         fluidCatchPoints = o.optInt("fluidCatchPoints", 0),
                         fluidCatchPull = o.optDouble("fluidCatchPull", 1.0).toFloat(),
                         fluidCatchRadius = o.optDouble("fluidCatchRadius", 0.12).toFloat(),

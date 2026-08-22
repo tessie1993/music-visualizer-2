@@ -1,32 +1,5 @@
 package dev.geode.analysis
 
-/**
- * Bounds the number of [TimelineFrame]s the offline analyzer holds, so a very
- * long file cannot run the process out of memory mid-analysis.
- *
- * A 60 Hz frame costs roughly a kilobyte (64 band floats + 128 waveform floats
- * plus object headers), so the analyzer's frame list grows about 3.5 MB per
- * track minute. A 90-minute album rip is ~300 MB and a 3-hour DJ set ~650 MB -
- * an OOM kill during "Analyzing...", not a slow analysis.
- *
- * The bound works by halving the time resolution instead of truncating the
- * track: when [maxFrames] is reached, the whole history is merged pairwise
- * (doubling the effective hop) and every subsequent [groupSize] incoming
- * frames merge into one stored frame, so spacing stays uniform - which is what
- * keeps [FeatureTimeline]'s nearest-index lookup valid - and the whole track
- * stays covered. Memory peaks at ~[maxFrames] frames and halves immediately.
- *
- * Merging follows the same rules as [FeatureTimeline.featuresAt] with a span:
- * the one-frame impulses (the beat flag, onset, flux, beatStrength, transient,
- * kick/snare/hat) are OR-ed / max-held across the group so no beat or hit
- * disappears, while continuous levels (bands, waveform, rms, bass/mid/treble,
- * centroid, bpm, phase, confidence, energy, chroma) keep the group's first
- * point sample - averaging those would low-pass the visuals, and averaging a
- * waveform cancels its phase.
- *
- * Pure JVM, single-threaded, deterministic: the same frames in produce the
- * same frames out, so cached analysis and export stay in step.
- */
 class FrameAccumulator(
     private val maxFrames: Int = MAX_OFFLINE_FRAMES,
 ) {
@@ -37,18 +10,11 @@ class FrameAccumulator(
     private val frames = ArrayList<TimelineFrame>()
     private val pending = ArrayList<TimelineFrame>(2)
 
-    /**
-     * How many incoming frames each stored frame now represents: 1 until
-     * [maxFrames] is first reached, doubling on each halving. The caller
-     * divides its hop rate by this when building the [FeatureTimeline].
-     */
     var groupSize: Int = 1
         private set
 
-    /** Stored frames so far (a partial in-progress group is not counted). */
     val size: Int get() = frames.size
 
-    /** Appends one analysis frame, merging and halving as the bound demands. */
     fun add(frame: TimelineFrame) {
         if (groupSize == 1) {
             frames.add(frame)
@@ -65,10 +31,6 @@ class FrameAccumulator(
         }
     }
 
-    /**
-     * Flushes any partial trailing group and returns the frames. The
-     * accumulator is spent afterwards; build the timeline and drop it.
-     */
     fun finish(): List<TimelineFrame> {
         if (pending.isNotEmpty()) {
             frames.add(mergeGroup(pending))
@@ -77,7 +39,6 @@ class FrameAccumulator(
         return frames
     }
 
-    /** Pairwise in-place merge; an odd trailing frame is kept as-is. */
     private fun halveInPlace() {
         var w = 0
         var r = 0
@@ -90,19 +51,8 @@ class FrameAccumulator(
     }
 
     companion object {
-        /**
-         * 30 minutes at the 60 Hz offline hop. Below this nothing changes at
-         * all; a longer track analyses at 30 Hz (60-minute reach), then 15 Hz,
-         * and so on - still finer than any scene needs for a track that long,
-         * and bounded however long the file is.
-         */
         const val MAX_OFFLINE_FRAMES = 108_000
 
-        /**
-         * Merges two consecutive frames into one covering both: impulses are
-         * OR-ed / max-held, continuous levels keep [a]'s point sample, and the
-         * merged frame keeps [a]'s timestamp.
-         */
         fun merge(
             a: TimelineFrame,
             b: TimelineFrame,
@@ -120,7 +70,6 @@ class FrameAccumulator(
                     snare = maxOf(fa.snare, fb.snare),
                     hat = maxOf(fa.hat, fb.hat),
                 )
-            // Identity-preserving when nothing differs, like featuresAt.
             return if (merged == fa) a else TimelineFrame(a.timeMs, merged)
         }
 

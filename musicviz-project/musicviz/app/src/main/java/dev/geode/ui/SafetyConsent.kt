@@ -25,29 +25,6 @@ import androidx.compose.ui.unit.dp
 import dev.geode.R
 import dev.geode.render.VisualSafetyChoice
 
-/**
- * The one screen that asks about flashing, before anything flashes.
- *
- * Geode draws full-screen brightness changes on purpose — that is what a music
- * visualizer is — and with limits off, the strobe runs at 9 Hz and the beat
- * flash at the track's rate. Both sit in the band that provokes photosensitive
- * seizures. The app already refuses to run those unasked: an unanswered choice
- * resolves to safe limits. What it did not do is *say so*, which left the
- * question half-answered in both directions — nobody was warned, and nobody
- * who wanted the full effects ever found out they were being held back.
- *
- * ## Why there is no live preview here
- *
- * The obvious design is a side-by-side "Safe vs Full effects" preview. It is
- * the wrong one: showing an unconsented user a 9 Hz sample to help them decide
- * whether to consent to 9 Hz samples is the exact harm the screen exists to
- * prevent. The comparison is therefore described in words, and the visuals
- * behind this screen stay limited until the moment the answer is given.
- *
- * Shown once, when the stored choice is [VisualSafetyChoice.UNKNOWN]. It also
- * reappears when the safety schema version changes — a choice made about an
- * older set of behaviours is not consent to a new one.
- */
 @Composable
 fun SafetyConsent(
     onChoose: (VisualSafetyChoice, Boolean) -> Unit,
@@ -120,9 +97,6 @@ private fun ConsentOption(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    // The detail is the substance of the choice, so a screen
-                    // reader has to hear it as part of the button rather than
-                    // as loose text that follows it.
                     .semantics { contentDescription = spoken },
         ) {
             Text(title)

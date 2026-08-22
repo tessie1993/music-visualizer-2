@@ -47,24 +47,6 @@ import dev.geode.export.ExportRatio
 import dev.geode.export.StudioClip
 import kotlin.math.roundToInt
 
-/**
- * The Export Studio: what happens to a render after it exists.
- *
- * The visualizer exporter makes a file and stops there, which leaves the two
- * jobs everyone actually has - cut the good bit out, and get it somewhere -
- * to a second app. This does both without leaving Geode.
- *
- * Built on Media3's Transformer rather than on the app's own exporter, because
- * the two answer different questions: one renders frames that do not exist
- * yet, this one re-encodes frames that do. Transformer also knows when NOT to
- * re-encode - a trim-only edit is a container rewrite, which is faster and
- * lossless.
- *
- * "Upload" is the system share sheet, deliberately. The app holds no network
- * permission and no API keys, and a share sheet reaches YouTube, Instagram,
- * TikTok, Drive and everything else the phone already knows how to post to,
- * with the account the user is already signed in to.
- */
 @Composable
 fun StudioScreen(viewModel: PlayerViewModel) {
     val context = LocalContext.current
@@ -109,7 +91,6 @@ fun StudioScreen(viewModel: PlayerViewModel) {
     }
 }
 
-/** The clip list: what the app has rendered, newest first. */
 @Composable
 private fun ClipLibrary(
     studio: StudioUiState,
@@ -119,13 +100,9 @@ private fun ClipLibrary(
     onRename: (StudioClip, String, (Boolean) -> Unit) -> Unit,
     onDelete: (StudioClip, (Boolean) -> Unit) -> Unit,
 ) {
-    // Null when no dialog is up. Held by clip rather than by index so a refresh
-    // that reorders the list cannot retarget a pending delete at another file.
     var renaming by remember { mutableStateOf<StudioClip?>(null) }
     var deleting by remember { mutableStateOf<StudioClip?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
-    // Read here rather than inside the result callbacks: those run off the
-    // composition, where stringResource does not exist.
     val renameFailed = stringResource(R.string.studio_rename_failed)
     val deleteFailed = stringResource(R.string.studio_delete_failed)
     LazyColumn(
@@ -195,8 +172,6 @@ private fun ClipLibrary(
         }
         if (studio.clips.isNotEmpty()) {
             item {
-                // Renders run to 300 MB a minute at 4K, so the total is the
-                // number that tells someone whether to start clearing up.
                 val bytes = studio.clips.sumOf { it.sizeBytes }
                 Text(
                     pluralStringResource(R.plurals.clip_count, studio.clips.size, studio.clips.size) +
@@ -242,8 +217,6 @@ private fun ClipLibrary(
         AlertDialog(
             onDismissRequest = { deleting = null },
             title = { Text(stringResource(R.string.studio_delete_title)) },
-            // Named, and stated as permanent: the file is gone from the device,
-            // not from this list.
             text = { Text(stringResource(R.string.studio_delete_body, clip.name)) },
             confirmButton = {
                 TextButton(onClick = {
@@ -267,13 +240,6 @@ private fun ClipLibrary(
     }
 }
 
-/**
- * The editor: trim, grade, reframe, caption, render.
- *
- * The edit is one immutable value the whole screen reads and writes, which is
- * what makes "Reset" a single assignment and makes the exported result exactly
- * the thing on screen rather than a re-derivation of it.
- */
 @Composable
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 private fun ClipEditor(
@@ -309,7 +275,6 @@ private fun ClipEditor(
             }
         }
 
-        // ---- Preview --------------------------------------------------
         item {
             ClipPreview(clip, edit)
             Text(
@@ -319,12 +284,8 @@ private fun ClipEditor(
             )
         }
 
-        // ---- Trim -----------------------------------------------------
         item {
             StudioSection(stringResource(R.string.studio_section_cut)) {
-                // A filmstrip rather than a scrub bar: six keyframes across
-                // the clip is enough to find the bit you meant, and it is what
-                // the range handles are being dragged over.
                 Row(Modifier.fillMaxWidth().height(56.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     repeat(FILMSTRIP_FRAMES) { i ->
                         VideoFrame(
@@ -341,9 +302,6 @@ private fun ClipEditor(
                         edit =
                             edit.copy(
                                 startMs = range.start.toLong().coerceIn(0L, duration),
-                                // Store the out-point as 0 when it is the end,
-                                // so a clip whose duration is re-read later
-                                // does not end up trimmed by a stale value.
                                 endMs = if (range.endInclusive >= duration - 1) 0L else range.endInclusive.toLong(),
                             )
                     },
@@ -367,7 +325,6 @@ private fun ClipEditor(
             }
         }
 
-        // ---- Look -----------------------------------------------------
         item {
             StudioSection(stringResource(R.string.studio_section_look)) {
                 Row(
@@ -402,7 +359,6 @@ private fun ClipEditor(
             }
         }
 
-        // ---- Motion and frame ------------------------------------------
         item {
             StudioSection(stringResource(R.string.studio_section_frame)) {
                 StudioSlider(stringResource(R.string.studio_speed), edit.speed, 0.25f..4f, unit = "×", decimals = 2) {
@@ -436,7 +392,6 @@ private fun ClipEditor(
             }
         }
 
-        // ---- Sound and caption -----------------------------------------
         item {
             StudioSection(stringResource(R.string.studio_section_sound)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -458,7 +413,6 @@ private fun ClipEditor(
             }
         }
 
-        // ---- Render ------------------------------------------------------
         item {
             StudioSection(stringResource(R.string.studio_section_render)) {
                 when {
@@ -523,7 +477,6 @@ private fun ClipEditor(
     }
 }
 
-/** Keyframes shown across a clip in the trim strip. */
 private const val FILMSTRIP_FRAMES = 6
 
 @Composable
@@ -594,15 +547,6 @@ private fun StudioChip(
 
 private fun clock(ms: Long): String = "%d:%02d".format(ms / 60_000, (ms / 1000) % 60)
 
-/**
- * "Upload", as the platform actually does it.
- *
- * A chooser rather than a hard-coded target: the apps that can receive a video
- * are whatever the phone has installed, already signed in, with their own
- * upload flows and their own rules. Reimplementing three of those against APIs
- * that need OAuth and a network permission the app does not have would be
- * worse in every way.
- */
 private fun android.content.Context.shareVideo(
     uri: Uri,
     chooserTitle: String,

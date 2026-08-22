@@ -34,25 +34,11 @@ import dev.geode.playback.MediaArtwork
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/**
- * Album art for the Home screen and the player, decoded small and remembered.
- *
- * A list of sleeves is the one place this app reads a lot of files purely to
- * look at them, so three things are non-negotiable: decode off the main
- * thread, decode DOWN (a 3000 px sleeve at 96 dp is 99% waste), and never
- * decode the same track twice while scrolling. A miss is cached as a miss for
- * the same reason - a track with no embedded picture must not re-open the
- * retriever every time it scrolls back into view.
- */
 object ArtworkCache {
-    /** A cached "this track has no artwork", so misses cost nothing twice. */
     private val NONE = Any()
 
-    // ~40 sleeves at ART_PX square; the LRU is sized in entries rather than
-    // bytes because every entry here is the same bounded size by construction.
     private val cache = LruCache<String, Any>(40)
 
-    /** Longest edge we decode to. Comfortably over the largest tile on Home. */
     private const val ART_PX = 384
 
     suspend fun load(
@@ -65,33 +51,17 @@ object ArtworkCache {
         return decoded
     }
 
-    /** Synchronous peek for callers that must not suspend (list pre-fill). */
     fun peek(uri: String): ImageBitmap? = cache.get(uri)?.takeIf { it !== NONE } as? ImageBitmap
 
-    /**
-     * Delegates to [MediaArtwork] so the sleeve in the app and the sleeve on
-     * the lock screen are the same bytes decoded the same way. This used to
-     * hold its own copy of the retriever-and-downsample logic, which meant a
-     * fix to one was a fix to one.
-     */
     private fun decode(
         context: Context,
         uri: String,
     ): ImageBitmap? = MediaArtwork.decodeEmbedded(context, uri, ART_PX)?.asImageBitmap()
 }
 
-/**
- * Frames pulled out of video files, for the Studio's clip list and its trim
- * filmstrip.
- *
- * Separate cache from [ArtworkCache] because the key is different: a sleeve is
- * identified by its track, a frame by a track AND a timestamp, and mixing the
- * two would make a filmstrip evict every album cover on the screen behind it.
- */
 object VideoFrameCache {
     private val NONE = Any()
 
-    // Enough for a clip list plus one open filmstrip.
     private val cache = LruCache<String, Any>(32)
 
     suspend fun frame(
@@ -117,14 +87,9 @@ object VideoFrameCache {
         atMs: Long,
     ): ImageBitmap? =
         runCatching {
-            // try/finally rather than use(): MediaMetadataRetriever only became
-            // AutoCloseable in API 29 and this app runs from 26.
             val retriever = android.media.MediaMetadataRetriever()
             try {
                 retriever.setDataSource(context, Uri.parse(uri))
-                // CLOSEST_SYNC rather than CLOSEST: a filmstrip wants six cheap
-                // keyframes, not six exact frames each decoded from the
-                // preceding GOP.
                 retriever
                     .getFrameAtTime(
                         atMs * 1000L,
@@ -136,7 +101,6 @@ object VideoFrameCache {
         }.getOrNull()
 }
 
-/** A frame from a video, with the same gradient stand-in when it has none. */
 @Composable
 fun VideoFrame(
     uri: String?,
@@ -165,15 +129,6 @@ fun VideoFrame(
     }
 }
 
-/**
- * A track's sleeve, or - when it has none - a deterministic gradient standing
- * in for it.
- *
- * The stand-in is derived from the uri, so a track without artwork still
- * looks like ITSELF everywhere it appears: the same tile colour on Home, in
- * the queue and in the player. That is what makes a wall of art scannable
- * even when half of it is missing.
- */
 @Composable
 fun TrackArtwork(
     uri: String?,
@@ -197,9 +152,6 @@ fun TrackArtwork(
             )
         } else {
             Box(Modifier.fillMaxSize().background(placeholderBrush(uri))) {
-                // The placeholder tile is dark by construction (see
-                // placeholderBrush), so the glyph stays light — but tinted
-                // toward the theme primary rather than theme-blind white.
                 Icon(
                     Icons.Filled.MusicNote,
                     null,
@@ -211,10 +163,6 @@ fun TrackArtwork(
     }
 }
 
-/**
- * The stand-in gradient for [uri]: two hues a sixth of the circle apart,
- * picked by hash so the same track always draws the same tile.
- */
 fun placeholderBrush(uri: String?): Brush {
     val hash = (uri ?: "").hashCode()
     val hue = ((hash ushr 8) % 360 + 360) % 360

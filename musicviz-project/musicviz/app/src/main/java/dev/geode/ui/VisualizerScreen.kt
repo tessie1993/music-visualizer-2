@@ -44,22 +44,10 @@ import dev.geode.render.scene.TouchTransform
 import dev.geode.ui.theme.StoneIcon
 import dev.geode.ui.theme.StoneIconArt
 
-/**
- * Now Playing: the fullscreen visualizer canvas with the app shell's design
- * language - one Material3 card of transport controls, a collapse chip, and
- * a shortcut into the Visuals hub. All visual configuration lives in the hub
- * (AppShell tab), so this screen is deliberately minimal. Tap the canvas to
- * hide or show the controls.
- */
 @Composable
 fun VisualizerScreen(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
-    /**
-     * Name of the display the canvas has been sent to, or null when it is
-     * here. Non-null means this screen must NOT host the view - it has one
-     * parent, and that parent is currently the presentation.
-     */
     externalDisplayName: String? = null,
     onCollapse: () -> Unit,
     onOpenVisuals: () -> Unit,
@@ -75,12 +63,7 @@ fun VisualizerScreen(
     val external by viewModel.externalAudio.collectAsState()
     val currentUri = remember(state.title, state.artist) { viewModel.currentTrackUri() }
     val isFavourite = currentUri != null && currentUri in favourites
-    // Which of the three faces of the player is showing. Deliberately not
-    // saved across a collapse: reopening Now Playing should show the
-    // transport, not whatever tab was left open an hour ago.
     var panel by remember { mutableStateOf(PlayerPanel.TRANSPORT) }
-    // Chrome over the live canvas follows the Settings bar-opacity slider,
-    // clamped to >= 0.25 so the transport stays readable over bright visuals.
     val chromeAlpha = maxOf(gui.barOpacity, 0.25f)
     var controlsVisible by remember { mutableStateOf(true) }
 
@@ -93,29 +76,14 @@ fun VisualizerScreen(
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { controlsVisible = !controlsVisible })
             }
-            // Canvas gestures. ONE detector for both, because two would fight
-            // over the same pointers: a drag detector and a transform detector
-            // stacked on one element each consume the changes the other is
-            // waiting for, and which one wins depends on modifier order rather
-            // than on what the fingers did. Taps still reach the detector above
-            // either way - a tap moves nothing, so nothing here consumes it.
-            //
-            // Only this screen gets them: the clear-overlay Visuals menu puts
-            // scrolling lists on the same canvas, and a drag there belongs to
-            // the list.
             .pointerInput(gui.touchSmear, gui.touchSmearStrength, gui.touchTransform) {
                 if (!gui.touchSmear && !gui.touchTransform) return@pointerInput
                 val w = size.width.toFloat().coerceAtLeast(1f)
                 val h = size.height.toFloat().coerceAtLeast(1f)
                 detectTransformGestures { centroid, pan, gestureZoom, gestureRotate ->
                     if (gui.touchTransform && TouchTransform.isTransform(gestureZoom, gestureRotate)) {
-                        // Two fingers: pinch is Zoom, twist is Rotation.
                         viewModel.nudgeTransform(gestureZoom, gestureRotate)
                     } else if (gui.touchSmear) {
-                        // One finger (or two moving together): push the
-                        // surface. Normalized to the view, y still DOWN as the
-                        // UI reports it; the renderer converts to sim space on
-                        // the GL thread.
                         visualizerView.visualizerRenderer.queueTouchStroke(
                             nx = centroid.x / w,
                             ny = centroid.y / h,
@@ -131,9 +99,6 @@ fun VisualizerScreen(
         if (externalDisplayName == null) {
             VisualizerCanvasHost(visualizerView, Modifier.fillMaxSize())
         } else {
-            // The canvas is on the other screen; this one is the control
-            // surface. Say where it went rather than showing a black rectangle
-            // that reads as a crash.
             CrystalBackground(Modifier.fillMaxSize(), reducedMotion = gui.reducedMotion)
             Column(
                 Modifier.align(Alignment.Center).padding(32.dp),
@@ -175,8 +140,6 @@ fun VisualizerScreen(
                     Icon(Icons.Filled.KeyboardArrowDown, stringResource(R.string.action_collapse))
                 }
                 Column(Modifier.weight(1f, fill = false)) {
-                    // Another app's audio outranks our own metadata: it is what
-                    // is making the sound on screen.
                     val foreign = external.active
                     val foreignTrack = external.nowPlaying?.takeIf { it.title.isNotBlank() }
                     val appName = stringResource(R.string.app_name)
@@ -232,9 +195,6 @@ fun VisualizerScreen(
                 }
             }
 
-            // Lyrics and the queue take over the space between the title chip
-            // and the transport, over the live canvas rather than instead of
-            // it - the visuals are the reason to be on this screen.
             if (panel != PlayerPanel.TRANSPORT) {
                 PlayerPanelSurface(
                     Modifier
@@ -265,8 +225,6 @@ fun VisualizerScreen(
                 }
             }
 
-            // Readability scrim under the transport: darkens the lowest part
-            // of bright visuals so a low-opacity glass card stays legible.
             Box(
                 Modifier
                     .align(Alignment.BottomCenter)
@@ -390,8 +348,6 @@ fun VisualizerScreen(
                             )
                         }
                         Box(Modifier.weight(1f))
-                        // A-B: one control, three states. The label says which
-                        // one you are in rather than leaving it to a colour.
                         TextButton(onClick = viewModel::cycleAbLoop, enabled = state.hasMedia) {
                             Text(
                                 when {
@@ -415,13 +371,6 @@ fun VisualizerScreen(
     }
 }
 
-/**
- * The three faces of Now Playing, chosen by the chips under the transport.
- *
- * The label is a resource id rather than the word itself: an enum constant is
- * built once, before any composition, so it cannot hold text that has to follow
- * the device language.
- */
 enum class PlayerPanel(
     @StringRes val label: Int,
 ) {
@@ -457,12 +406,6 @@ private fun PanelChip(
     }
 }
 
-/**
- * Timestep a drag frame is reported with. Compose delivers drag deltas per
- * pointer event rather than per unit of time, and the sim only needs a speed
- * scale, not a clock: a fixed nominal frame keeps a fast flick reading as fast
- * without threading a second time source through the gesture.
- */
 private const val FRAME_DT = 1f / 60f
 
 private fun formatTime(ms: Long): String {

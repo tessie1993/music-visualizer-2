@@ -4,27 +4,15 @@ import dev.geode.engine.audio.DrumChannels
 import dev.geode.engine.audio.PulseReplay
 import kotlin.math.sqrt
 
-/** One analysis frame at a fixed hop, produced by offline analysis. */
 data class TimelineFrame(
     val timeMs: Long,
     val features: AudioFeatures,
 )
 
-/**
- * Full-track analysis result: frames at a fixed hop plus track-level summary.
- * Used by the intelligence modes and by deterministic export.
- */
 class FeatureTimeline(
     val frames: List<TimelineFrame>,
     val hopMs: Long,
-    /** Estimated musical key, e.g. "A minor"; empty when unknown. */
     val key: String = "",
-    /**
-     * Rate the frames were produced at. Not derivable from [hopMs], which is
-     * an integer-truncated 16 for the offline analyzer's true 60 Hz hop - and
-     * [withBeatSensitivity] measures both the refractory window and the flux
-     * history in frames, so a 62.5 vs 60 mix-up would shift every beat.
-     */
     val hopRateHz: Float = 60f,
 ) {
     val durationMs: Long = frames.lastOrNull()?.timeMs ?: 0L
@@ -34,32 +22,9 @@ class FeatureTimeline(
     val beatDensity: Float =
         if (frames.isEmpty()) 0f else frames.count { it.features.beat } / (frames.size / 60f + 1e-6f)
 
-    /**
-     * The frames' ACTUAL spacing in ms (durationMs / (n-1)), not the nominal
-     * [hopMs]: the offline hop is sampleRate/60 samples (16.67 ms), so
-     * dividing by a truncated 16 ms would drift ~4% over a track.
-     */
     private val frameSpacingMs: Double =
         if (frames.size > 1) durationMs.toDouble() / (frames.size - 1) else hopMs.toDouble()
 
-    /**
-     * Re-decides every frame's beat fields ([AudioFeatures.beat] plus the
-     * graded [AudioFeatures.beatStrength] / [AudioFeatures.beatPhase] /
-     * [AudioFeatures.pulseConfidence] / [AudioFeatures.macroEnergy]) from the
-     * stored onset and rms curves at the given sensitivity, returning a new
-     * timeline.
-     *
-     * This is why the analysis cache stores the raw flux rather than the
-     * decided beats: changing "Beat sensitivity" or "Minimum gap between
-     * beats" then applies to already-analysed tracks immediately, and an
-     * exported video keeps matching what playback just showed - the live
-     * path and this one are the same [PulseReplay] code fed the same
-     * numbers in the same order.
-     *
-     * Timelines with no onset curve (analysed before it was stored, or
-     * synthesised) are returned untouched: re-deciding from all-zero flux
-     * would silently erase every beat.
-     */
     fun withBeatSensitivity(
         beatSensitivity: Float,
         beatMinIntervalMs: Float,
@@ -99,42 +64,10 @@ class FeatureTimeline(
                     )
                 }
         }
-        // Nothing moved - hand back the receiver rather than an equal copy.
-        // The beat-sensitivity slider re-runs this on every settle, and a drag
-        // that returns to the value already applied is the common case; the
-        // frames are shared either way, so this only saves the list, but it
-        // also lets callers use identity to skip their own downstream work.
         if (!anyChanged) return this
         return FeatureTimeline(out, hopMs, key, hopRateHz)
     }
 
-    /**
-     * Fills in [AudioFeatures.kick] / [snare] / [hat] for every frame by
-     * replaying band-limited onset detection over the stored band spectra.
-     *
-     * Needed because a cache entry reconstructs its frames from stored scalars
-     * and the three channels are not among them - but the BANDS they are
-     * derived from are, so no cache-format change is required and existing v2
-     * entries keep working. The live and offline paths get these from
-     * [dev.geode.engine.audio.ReactiveAnalyzer] directly and never need
-     * this.
-     *
-     * A reconstruction, not a reproduction: the live channels are derived from
-     * whitened band POWER, and what a cache entry stores is the normalized,
-     * smoothed band levels a scene sees. The events land in the same places
-     * because the same detector runs over the same bands, but the strengths
-     * are graded against a different curve. Re-analysing the track is what
-     * gets the exact values back.
-     *
-     * [sampleRateHz] defaults to 48 kHz because the cache header does not
-     * carry it. The band ranges are logarithmic, so 44.1 vs 48 kHz moves every
-     * boundary by well under one band; a hi-res 96 kHz source shifts them by a
-     * few bands, which stays inside the same channel and is a far cheaper
-     * error than invalidating every cached track to store one integer. A
-     * caller that knows the true rate should pass it.
-     *
-     * Timelines with no bands are returned untouched.
-     */
     fun withDrumChannels(sampleRateHz: Int = 48_000): FeatureTimeline {
         if (frames.isEmpty()) return this
         val bandCount = frames[0].features.bands.size
@@ -144,9 +77,6 @@ class FeatureTimeline(
         var anyChanged = false
         for (fr in frames) {
             val f = fr.features
-            // A frame whose band array is a different width cannot be stepped
-            // through the same instance; leaving it alone keeps the replay
-            // total rather than throwing on a damaged entry.
             if (f.bands.size != bandCount) {
                 out += fr
                 continue
@@ -166,7 +96,6 @@ class FeatureTimeline(
         return if (anyChanged) FeatureTimeline(out, hopMs, key, hopRateHz) else this
     }
 
-    /** Index of the frame nearest [timeMs], clamped to the timeline. */
     private fun indexAt(timeMs: Long): Int =
         if (frameSpacingMs > 0.0) {
             Math.round(timeMs / frameSpacingMs).toInt().coerceIn(0, frames.size - 1)
@@ -174,35 +103,6 @@ class FeatureTimeline(
             0
         }
 
-    /**
-     * Features for the half-open span `[timeMs, timeMs + spanMs)`.
-     *
-     * With [spanMs] <= 0 (the default, and what live playback uses) this is
-     * the plain nearest-frame lookup it always was.
-     *
-     * A consumer that samples this 60 Hz timeline at a LOWER rate - an export
-     * at 24 or 30 fps - only ever looks at every second or third frame, and
-     * `AudioFeatures.beat` is exactly ONE frame wide by construction
-     * ([FeatureExtractor.BeatGate] raises it for a single frame per onset). A
-     * 30 fps export therefore never observed about half the track's beats: no
-     * `uBeat`, no flash/shake, and no "Beat pulse" envelope on those. Passing
-     * the exported frame's own duration as [spanMs] fixes that - the flag is
-     * OR-ed across every timeline frame that exported frame is on screen for,
-     * along with a peak-hold of the onset curve it was decided from
-     * ([AudioFeatures.onset] / [AudioFeatures.flux]) and of the graded
-     * [AudioFeatures.beatStrength], so strength and flag stay consistent
-     * with each other.
-     *
-     * Everything CONTINUOUS - bands, waveform, rms/bass/mid/treble, centroid,
-     * bpm - stays point-sampled at the nearest frame, exactly as before.
-     * Averaging those over the span would low-pass every exported clip (and
-     * averaging a waveform cancels its phase outright): that is a change of
-     * character, not a bug fix. Impulses get a max, levels get a sample.
-     *
-     * Consecutive spans tile the timeline exactly - one span's last index is
-     * the next span's first minus one - so no frame is observed twice and none
-     * is skipped, and both ends clamp to the timeline.
-     */
     fun featuresAt(
         timeMs: Long,
         spanMs: Long = 0L,
@@ -230,16 +130,6 @@ class FeatureTimeline(
         return f.copy(beat = beat, onset = onset, flux = flux, beatStrength = strength, transient = transient)
     }
 
-    /**
-     * [featuresAt] plus track-position context (progress + section index)
-     * for progression-driven scenes. [sections] is a detectSections() result
-     * the caller computed once - recomputing per frame would be O(n) each.
-     * Deterministic, so live playback and export agree exactly.
-     *
-     * [spanMs] is forwarded to [featuresAt]: an export passes the exported
-     * frame's duration so a sub-60 fps render still observes every one-frame
-     * beat flag. The progress/section context is taken at [timeMs] itself.
-     */
     fun progressionAt(
         timeMs: Long,
         sections: List<Long>,
@@ -258,10 +148,6 @@ class FeatureTimeline(
         )
     }
 
-    /**
-     * Section boundaries (ms) from a novelty curve: distance between averaged
-     * band vectors before/after each frame, peak-picked.
-     */
     fun detectSections(
         windowFrames: Int = 90,
         minGapFrames: Int = 300,

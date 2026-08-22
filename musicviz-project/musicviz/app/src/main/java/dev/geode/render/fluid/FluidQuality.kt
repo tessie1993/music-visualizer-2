@@ -1,12 +1,5 @@
 package dev.geode.render.fluid
 
-/**
- * F6 quality tiers: one enum-like index sets all
- * quality axes at once (fluid grid, dye grid, particle count, solver
- * iterations) so the app reasons about a single value. The grid-scale-correct
- * Jacobi (alpha = -dx^2) is what makes tier changes alter fidelity, not the
- * character of the flow.
- */
 internal object FluidQuality {
     data class Tier(
         val label: String,
@@ -29,12 +22,6 @@ internal object FluidQuality {
 
     fun tier(index: Int): Tier = TIERS[index.coerceIn(0, TIERS.size - 1)]
 
-    /**
-     * The tier actually run: the user's chosen tier, further downgraded by
-     * the automatic monitor's latch (larger index = lower quality). Manual
-     * selection always wins in the upgrade direction is NOT allowed here -
-     * the auto latch only ever lowers.
-     */
     fun effectiveIndex(
         userIndex: Int,
         autoDowngradeSteps: Int,

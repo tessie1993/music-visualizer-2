@@ -9,28 +9,6 @@ import dev.geode.render.fluid.FluidHue
 import kotlin.math.max
 import kotlin.math.pow
 
-/**
- * The MYCELIUM family: a Physarum trail ecology on the GPU.
- *
- * Two textures carry the whole organism. The agent texture holds one agent
- * per texel - position, heading, species - advanced by `myco_agent_frag`
- * with the published sense/turn/move machine (reimplemented; probes ahead
- * and to both sides, turns toward the strongest smell, random turn when the
- * middle probe is weakest). The trail texture is the pheromone field: agents
- * deposit into it as one-texel points (`myco_deposit_*`, additive and
- * linear), a 3x3 box blur with folded decay diffuses it, and every style of
- * `myco_show_frag` renders the FIELD - veins, threads, nebula dust, circuit
- * traces - never the agents, which is why nothing here reads as sprites.
- *
- * Two species sense a combined field through a 2x2 matrix; rivalry,
- * symbiosis and predation are matrix rows ([VisualStyleCatalog.myco]).
- *
- * Audio: the sensor distance BREATHES on the beat (the network visibly
- * reorganizes in rhythm), bass lengthens the stride, treble adds heading
- * jitter, and a hard beat re-aims a hashed fraction of agents outward - a
- * spore burst. Raw amplitude never touches deposit or decay, so the
- * network's memory stays its own.
- */
 internal class MycoScene(
     private val context: Context,
     private val style: VisualStyleCatalog.MycoStyle,
@@ -39,7 +17,6 @@ internal class MycoScene(
     override val id: String = style.id
 
     private companion object {
-        /** Trail short side, texels. */
         const val TRAIL_RES = 384
 
         const val TIME_WRAP_SECONDS = 628.31853f
@@ -49,7 +26,6 @@ internal class MycoScene(
         const val ENV_RISE_PER_SEC = 9f
         const val ENV_FALL_PER_SEC = 2.4f
 
-        /** Deposit rescale when the trail had to fall back to RGBA8. */
         const val BYTE_FALLBACK_DEPOSIT = 0.125f
     }
 
@@ -151,8 +127,6 @@ internal class MycoScene(
         this.height = max(height, 1)
         trail?.release()
         trail = null
-        // Agents live in trail-normalized space, so they survive a resize;
-        // only the field they draw into is rebuilt.
     }
 
     override fun acceptPcm(
@@ -173,15 +147,6 @@ internal class MycoScene(
     private fun ensureBuffers(): Boolean {
         val fmt = formats ?: FluidBuffers.probeFormats().also { formats = it }
         if (agents == null) {
-            // Positions need real precision: half-float texels quantize a
-            // slow walk into visible stalls. Full float where the driver
-            // renders it, half otherwise - the walk jitter hides the rest.
-            // Where NO float format renders (fmt.ok false and no rgba32),
-            // positions ride RGBA8 at 1/255 steps: coarse, but §6.3's rule is
-            // a named fallback rather than a black frame, and without this
-            // every Myco style was permanently black on exactly those
-            // devices - fmt.rgba is the RGBA16F descriptor even when the
-            // probe just proved it unrenderable.
             val agentFmt =
                 fmt.rgba32
                     ?: if (fmt.ok) {
@@ -226,13 +191,8 @@ internal class MycoScene(
     override fun draw(timeSeconds: Float) {
         if (!programOk) return
         GlUtil.resetFrameState()
-        // Captured BEFORE ensureBuffers(): allocation and the format probe
-        // leave framebuffer 0 bound, so a later capture aims the present pass
-        // at the screen on the frame that allocates and the composite
-        // presents black (see FieldSimFboContractTest).
         GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
         GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
-        // ensureBuffers() == true guarantees both; checkNotNull documents it.
         if (!ensureBuffers()) return
         val colony = checkNotNull(agents)
         val field = checkNotNull(trail)
@@ -254,7 +214,6 @@ internal class MycoScene(
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
         GLES30.glBindVertexArray(vao)
 
-        // -- 1. agents sense, turn, walk ------------------------------------
         GLES30.glUseProgram(agentProgram)
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, colony.write.fbo)
         GLES30.glViewport(0, 0, colony.width, colony.height)
@@ -282,7 +241,6 @@ internal class MycoScene(
         colony.swap()
         agentsSeeded = true
 
-        // -- 2. deposit: one additive point per agent -----------------------
         GLES30.glUseProgram(depositProgram)
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, field.read.fbo)
         GLES30.glViewport(0, 0, field.width, field.height)
@@ -297,7 +255,6 @@ internal class MycoScene(
         GLES30.glDrawArrays(GLES30.GL_POINTS, 0, colony.width * colony.height)
         GLES30.glDisable(GLES30.GL_BLEND)
 
-        // -- 3. diffuse + decay ---------------------------------------------
         GLES30.glUseProgram(blurProgram)
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, field.write.fbo)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
@@ -308,7 +265,6 @@ internal class MycoScene(
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         field.swap()
 
-        // -- 4. present ------------------------------------------------------
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
         GLES30.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3])
         GLES30.glUseProgram(showProgram)

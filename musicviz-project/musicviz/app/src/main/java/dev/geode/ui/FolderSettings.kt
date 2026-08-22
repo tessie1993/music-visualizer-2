@@ -30,11 +30,6 @@ import dev.geode.ui.theme.StoneIconArt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/**
- * FOLDERS: every place the app reads from or writes to - the preset mirror
- * folder, the music library folders, the analysis cache, and a plain answer
- * to "where do exports go".
- */
 @Composable
 internal fun FolderSettingsTab(viewModel: PlayerViewModel) {
     val gui by viewModel.guiPrefs.collectAsState()
@@ -54,7 +49,6 @@ internal fun FolderSettingsTab(viewModel: PlayerViewModel) {
     }
 }
 
-/** SAF tree the user's saved presets are mirrored into, plus its clear. */
 @Composable
 private fun PresetFolderGroup(
     viewModel: PlayerViewModel,
@@ -64,14 +58,6 @@ private fun PresetFolderGroup(
     val folderPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) {
-                // Not every DocumentsProvider hands back a PERSISTABLE grant,
-                // and taking one that was not offered throws SecurityException
-                // - on the main thread, inside an ActivityResult callback,
-                // i.e. a crash. The mirror is a convenience; a folder whose
-                // permission cannot outlive this process is not one to record,
-                // so the preference is only written when the grant was taken.
-                // Same guard as the sibling call sites (importTracks,
-                // importFolder).
                 val persisted =
                     runCatching {
                         ctx.contentResolver.takePersistableUriPermission(
@@ -110,12 +96,6 @@ private fun PresetFolderGroup(
     }
 }
 
-/**
- * The music library's folder list - the same roots Library › Folders manages
- * ([PlayerViewModel.mediaRoots] is one state flow, so the two screens can
- * never disagree). Browsing the tracks inside each folder stays in Library;
- * this is the management half: the list, add, remove and rescan.
- */
 @Composable
 internal fun MusicFoldersEditor(viewModel: PlayerViewModel) {
     val roots by viewModel.mediaRoots.collectAsState()
@@ -174,7 +154,6 @@ internal fun MusicFoldersEditor(viewModel: PlayerViewModel) {
     }
 }
 
-/** Cached per-track analysis (beats, key, sections): size readout + clear. */
 @Composable
 private fun AnalysisCacheGroup() {
     val context = LocalContext.current

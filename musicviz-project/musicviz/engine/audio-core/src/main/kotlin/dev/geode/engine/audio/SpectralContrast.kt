@@ -4,22 +4,6 @@ import java.util.Arrays
 import kotlin.math.log10
 import kotlin.math.max
 
-/**
- * Octave-band spectral contrast — how far each band's peaks stand above its
- * own floor. A pure tone is all contrast; broadband noise is none; real
- * timbres sit between, differently per octave, which is what makes this a
- * texture descriptor where the mel bands are a level one.
- *
- * The published formulation (Jiang et al., ICME 2002), stated exactly as
- * the corpus oracle recomputes it: octave bands from [fminHz], and per band
- * the dB difference between the means of the top and bottom [alpha]
- * fraction of the band's POWER bins (at least one bin each), floored at
- * [Mfcc.LOG_POWER_FLOOR].
- *
- * A configuration that leaves any band empty refuses at construction — a
- * per-frame divide by zero is not an acceptable place to discover it.
- * Allocates nothing per frame.
- */
 class SpectralContrast(
     fftSize: Int,
     sampleRateHz: Int,
@@ -62,10 +46,6 @@ class SpectralContrast(
         scratch = DoubleArray(widest)
     }
 
-    /**
-     * Writes each band's contrast in dB into [out], which must hold
-     * [bands] values. [magnitudes] is [Spectrum]'s layout.
-     */
     fun compute(
         magnitudes: FloatArray,
         out: FloatArray,

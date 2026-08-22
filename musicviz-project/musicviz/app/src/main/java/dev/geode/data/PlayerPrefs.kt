@@ -2,48 +2,24 @@ package dev.geode.data
 
 import android.content.Context
 
-/** Core playback preferences applied to the ExoPlayer and persisted. */
 data class PlayerPrefs(
     val shuffle: Boolean = false,
-    /** One of Player.REPEAT_MODE_OFF / ONE / ALL (0 / 1 / 2). */
     val repeatMode: Int = 0,
-    /** Playback speed, 0.5..2 (1 = normal). */
     val speed: Float = 1f,
-    /** Pitch offset in semitones, -6..+6 (0 = normal). */
     val pitchSemitones: Float = 0f,
-    /** Skip silent passages during playback. */
     val skipSilence: Boolean = false,
-    /** Pause when headphones unplug (audio becoming noisy). */
     val pauseOnNoisy: Boolean = true,
-    /** Keep the screen awake while the visualizer is showing. */
     val keepScreenOn: Boolean = false,
-    /** Prepare (not play) the last-played track on startup. */
     val autoResume: Boolean = false,
-    /**
-     * Last-chosen sleep-timer duration in minutes; 0 = off. Only the chosen
-     * duration persists - a RUNNING timer is never restored across restarts.
-     */
     val sleepTimerMinutes: Int = 0,
-    /**
-     * Let the current track finish when the sleep timer runs out, instead of
-     * pausing mid-song.
-     */
     val sleepFinishTrack: Boolean = false,
-    /**
-     * Volume ramp on pause, resume and manual skip, in milliseconds; 0 = off.
-     *
-     * NOT a crossfade - one player decodes one track - but the half of it that
-     * removes the hard edges, which is the half people actually notice.
-     */
     val fadeMs: Int = 0,
 ) {
     companion object {
-        /** Longest fade offered. Past a few seconds it reads as a fault. */
         const val MAX_FADE_MS = 6_000
     }
 }
 
-/** Persists [PlayerPrefs] in shared preferences (same pattern as ThemeStore). */
 class PlayerPrefsStore(
     context: Context,
 ) {

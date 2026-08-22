@@ -9,37 +9,11 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-/**
- * The spawn/catch progression engine of the rebuilt fluid+particle stack:
- * every frame it places up to [MAX_SPAWN] spawn points (where dye splats fire
- * and particles are born) and up to [MAX_CATCH] catch points (attractors that
- * pull particles in, capture them and recycle them back to a spawn point),
- * and both sets PROGRESS through the track instead of sitting on a static
- * pattern.
- *
- * Three nested time scales drive the motion:
- *  1. Song progress (features.progress, 0..1) slides the layout through a
- *     journey: spawn points migrate bottom->spiral->top while catch points
- *     run the complementary path, so early, middle and late sections of a
- *     track read as different places on screen.
- *  2. Section changes (features.sectionIndex) re-seat the pattern phase by a
- *     golden-angle step, giving each verse/chorus its own anchor arrangement.
- *  3. Beats advance a phyllotaxis counter, so consecutive bursts land on
- *     successive golden-angle florets rather than on top of each other.
- *
- * Everything is rate-limited: anchors chase their targets with a critically
- * damped follow, so progression NEVER teleports - section jumps read as a purposeful glide.
- *
- * Pure Kotlin, deterministic per (inputs, dt) - the headless gate tests
- * continuity, progression and domain bounds directly
- * (FluidChoreographyTest).
- */
 internal class FluidChoreography {
     companion object {
         const val MAX_SPAWN = 8
         const val MAX_CATCH = 4
 
-        // Path families (SceneParams.fluidSpawnPath).
         const val PATH_ORBIT = 0
         const val PATH_LISSAJOUS = 1
         const val PATH_ROSE = 2
@@ -47,54 +21,25 @@ internal class FluidChoreography {
         const val PATH_DRIFT = 4
         val PATH_LABELS = listOf("Orbit", "Lissajous", "Rose", "Bloom", "Drift")
 
-        /** Golden angle (radians): successive florets never overlap. */
         const val GOLDEN_ANGLE = 2.399963f
 
-        /**
-         * Choreography clock wrap, matching VisualizerRenderer.TIME_WRAP_SEC.
-         * See the wrap site in [tick] for why ~2 h rather than an exact
-         * period: the composed sin rates share none, reset() runs per track,
-         * and the rare wrap jump is absorbed by the anchor easing.
-         */
         private const val TIME_WRAP_SECONDS = 7100f
 
-        /**
-         * The Motion tab's Speed slider, clamped to its OWN range.
-         *
-         * The fluid family (Fluid, Curl Flow, Water) used to clamp it to
-         * 0.1..2 while the slider ran 0.05..4, so the whole top half of the
-         * control was dead: dragging Speed from 2 to 4 changed nothing on any
-         * of the three. The clamp exists to keep a zero or a negative out of
-         * the rate expressions below, not to pick a taste ceiling, so it is
-         * the slider's bounds - the same shape `HyperspaceScene` and
-         * `CymaticsScene` already use (`coerceIn(0.05f, 4f)`). Every consumer
-         * multiplies by it, so widening it costs nothing but reach.
-         */
         fun sceneSpeed(speed: Float): Float = speed.coerceIn(0.05f, 4f)
 
-        /** Per-second anchor chase rate (exponential approach). */
         private const val FOLLOW_RATE = 2.2f
 
-        /**
-         * Hard ceiling on anchor travel, sim units per second: the
-         * no-teleport guarantee is structural, not statistical - even a
-         * corner-to-corner target swing (section jump on the Bloom path)
-         * moves the anchor at most MAX_SPEED*dt per frame.
-         */
         private const val MAX_SPEED = 4.5f
 
-        /** Keeps every anchor inside the visible domain with a margin. */
         private const val DOMAIN_MARGIN = 0.92f
     }
 
-    /** One choreographed point in sim space (y in [-1,1], x in [-a,a]). */
     class Anchor {
         var x = 0f
         var y = 0f
         var targetX = 0f
         var targetY = 0f
 
-        /** 0..1 emphasis (beat/band envelope), free for the consumer. */
         var energy = 0f
 
         fun follow(dt: Float) {
@@ -118,21 +63,17 @@ internal class FluidChoreography {
         }
     }
 
-    // ---- configuration (mapped from SceneParams by the scenes) ----
     var path = PATH_LISSAJOUS
     var spawnCount = 3
     var catchCount = 2
 
-    /** How strongly song progress reshapes the journey (0 = static pattern). */
     var progressionAmount = 1f
 
-    /** Extra orbital motion speed multiplier. */
     var speed = 1f
 
     val spawns: List<Anchor> = List(MAX_SPAWN) { Anchor() }
     val catches: List<Anchor> = List(MAX_CATCH) { Anchor() }
 
-    /** Count of beats seen; advances the phyllotaxis floret index. */
     var beatCount = 0
         private set
 
@@ -144,35 +85,18 @@ internal class FluidChoreography {
     private var bassEnv = 0f
     private var prevBeat = false
 
-    /**
-     * Advances the choreography one frame. [aspect] is sim-space half-width.
-     * Reads features.progress / sectionIndex / beat / bands; all optional
-     * (zero-defaults degrade to a slowly orbiting static-progress layout).
-     */
     fun tick(
         f: AudioFeatures,
         dt: Float,
         aspect: Float,
     ) {
-        // Wrapped (TIME_WRAP convention, VisualizerRenderer.TIME_WRAP_SEC
-        // horizon). The sin rates composed below (e.g. 0.31 * 0.83) have no
-        // common exact period, so the wrap is placed ~2 h out where reset()
-        // per track means it is only ever reached on an endless live input,
-        // and the one-frame target jump there is no bigger than a section
-        // change, which the emitter easing already absorbs.
         time = (time + dt * (0.4f + 0.6f * speed)) % TIME_WRAP_SECONDS
-        // Edge-detect: the analysis publishes at ~62.5 Hz while draw runs at
-        // the display rate, so one beat=true snapshot can be consumed by
-        // several frames - counting frames instead of edges advanced the
-        // bloom twice per beat on 120 Hz displays and diverged from export.
         if (f.beat && !prevBeat) beatCount++
         prevBeat = f.beat
         beatEnv = max(f.motionImpulse, beatEnv * kotlin.math.exp(-dt / 0.35f))
         val bassTarget = (f.bass * 1.2f).coerceIn(0f, 1f)
         bassEnv += (bassTarget - bassEnv) * (if (bassTarget > bassEnv) (dt / 0.03f) else (dt / 0.45f)).coerceAtMost(1f)
 
-        // Section re-seat: each detected section rotates the whole layout by
-        // one golden-angle step (drifted to, never snapped).
         if (f.sectionIndex != lastSection) {
             lastSection = f.sectionIndex
             sectionPhase = f.sectionIndex * GOLDEN_ANGLE
@@ -186,9 +110,6 @@ internal class FluidChoreography {
             val (tx, ty) = spawnTarget(i, nS, progress, ax)
             spawns[i].targetX = tx.coerceIn(-ax, ax)
             spawns[i].targetY = ty.coerceIn(-DOMAIN_MARGIN, DOMAIN_MARGIN)
-            // Per-slot energy = beat impulse + this slot's share of the
-            // spectrum, so the weighted respawn pick actually biases births
-            // toward the spawn points whose band is loud right now.
             val bandE =
                 if (f.bands.isEmpty()) {
                     0f
@@ -215,7 +136,6 @@ internal class FluidChoreography {
         }
     }
 
-    /** Resets motion state (scene re-init); keeps configuration. */
     fun reset() {
         initialized = false
         time = 0f
@@ -227,13 +147,6 @@ internal class FluidChoreography {
         prevBeat = false
     }
 
-    /**
-     * Spawn-point target for slot [i] of [n]: the path family shape, swept
-     * through the journey by song [progress]. The journey arc is shared by
-     * every family: radius breathes 0.35->0.75->0.5, the layout precesses a
-     * half-turn, and the vertical center rises from the lower third to the
-     * upper third across the track.
-     */
     private fun spawnTarget(
         i: Int,
         n: Int,
@@ -250,24 +163,18 @@ internal class FluidChoreography {
                 (cos(a) * journeyR * ax) to (cy + sin(a) * journeyR)
             }
             PATH_ROSE -> {
-                // r = cos(k*theta) rose; k morphs 2->5 petals over the track.
                 val k = 2f + 3f * progress
                 val theta = frac * 2f * PI.toFloat() + precession
                 val r = journeyR * (0.35f + 0.65f * abs(cos(k * theta)))
                 (cos(theta) * r * ax) to (cy + sin(theta) * r)
             }
             PATH_BLOOM -> {
-                // Phyllotaxis: florets step outward at the golden angle; the
-                // beat counter advances which florets are occupied, so bursts
-                // bloom outward as the song plays.
                 val idx = (beatCount + i).toFloat()
                 val a = idx * GOLDEN_ANGLE + sectionPhase
                 val r = journeyR * sqrt(((idx % 24f) + 1f) / 24f)
                 (cos(a) * r * ax) to (cy + sin(a) * r)
             }
             PATH_DRIFT -> {
-                // Slow deterministic wander, unique per slot: two
-                // incommensurate sines per axis (no hash - continuity).
                 val s = i * 3.7f + sectionPhase
                 val t = time * 0.31f + progress * 5f
                 val x = 0.7f * sin(t * 0.83f + s) * sin(t * 0.19f + s * 1.7f)
@@ -275,8 +182,6 @@ internal class FluidChoreography {
                 (x * ax) to (cy * 0.5f + y * 0.8f)
             }
             else -> {
-                // PATH_LISSAJOUS: 3:2 figure with per-slot phase offset; the
-                // ratio slides toward 5:4 with progress for a denser weave.
                 val a = 3f + 2f * progress
                 val b = 2f + 2f * progress
                 val ph = frac * 2f * PI.toFloat() + precession
@@ -286,12 +191,6 @@ internal class FluidChoreography {
         }
     }
 
-    /**
-     * Catch-point target: the complementary journey. Catches sit where
-     * spawns are NOT - phase-opposed on the same family radius early in the
-     * track, then spiral toward the center as the song closes so the finale
-     * visibly drains inward.
-     */
     private fun catchTarget(
         i: Int,
         n: Int,
@@ -300,17 +199,11 @@ internal class FluidChoreography {
     ): Pair<Float, Float> {
         val frac = i.toFloat() / n
         val a = frac * 2f * PI.toFloat() + sectionPhase + PI.toFloat() / n - time * 0.09f
-        // Radius shrinks with progress: endgame pulls everything to center.
         val r = (0.62f - 0.4f * progress).coerceAtLeast(0.12f)
         val cy = (0.5f - progress) * 0.5f
         return (cos(a) * r * ax) to (cy + sin(a) * r * 0.85f)
     }
 
-    /**
-     * Packs spawn points into a vec4 array for the particle shaders:
-     * (x, y, weight, jitterRadius). Weight biases WHICH spawn point a
-     * recycled particle respawns at - beat-hot spawns get more births.
-     */
     fun packSpawns(out: FloatArray) {
         val n = spawnCount.coerceIn(1, MAX_SPAWN)
         for (i in 0 until MAX_SPAWN) {
@@ -329,11 +222,6 @@ internal class FluidChoreography {
         }
     }
 
-    /**
-     * Packs catch points for the particle shaders:
-     * (x, y, pullStrength, captureRadius); pull scales with the bass
-     * envelope so drops physically drag the field in.
-     */
     fun packCatches(
         out: FloatArray,
         pull: Float,

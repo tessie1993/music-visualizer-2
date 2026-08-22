@@ -19,7 +19,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 
-/** Output quality tier - the short side (px) and target video bitrate. */
 enum class ExportQuality(
     val shortSide: Int,
     val bitRate: Int,
@@ -29,7 +28,6 @@ enum class ExportQuality(
     UHD4K(2160, 40_000_000),
 }
 
-/** Output aspect ratio as width:height. */
 enum class ExportRatio(
     val label: String,
     val wRatio: Int,
@@ -43,11 +41,6 @@ enum class ExportRatio(
     R21_9("21:9", 21, 9),
 }
 
-/**
- * A concrete export target: encoder pixel dimensions (always even) plus the
- * chosen bitrate, derived from a quality tier and a ratio. The short side of
- * the frame equals the quality's [ExportQuality.shortSide].
- */
 class ExportAspect(
     val width: Int,
     val height: Int,
@@ -62,10 +55,6 @@ class ExportAspect(
             val landscape = ratio.wRatio >= ratio.hRatio
             var longSide = (short.toLong() * maxOf(ratio.wRatio, ratio.hRatio) / minOf(ratio.wRatio, ratio.hRatio)).toInt()
             var shortSide = short
-            // Hardware AVC encoders top out at 4096 px per dimension on most
-            // devices (e.g. 4K x 21:9 would ask for 5040 wide and fail to
-            // configure). Clamp the long side and scale the short side to
-            // preserve the aspect ratio.
             if (longSide > MAX_AVC_DIM) {
                 shortSide = (short.toLong() * MAX_AVC_DIM / longSide).toInt()
                 longSide = MAX_AVC_DIM
@@ -81,11 +70,6 @@ class ExportAspect(
     }
 }
 
-/**
- * Offline renderer: draws [Scene] frame-by-frame at exact timestamps into an
- * H.264 encoder using the precomputed [FeatureTimeline] (deterministic - no
- * dropped frames), then muxes the original audio track alongside.
- */
 class VideoExporter(
     private val context: Context,
 ) {
@@ -93,48 +77,17 @@ class VideoExporter(
         private const val FPS: Int = 60
         private const val TIMEOUT_US: Long = 10_000
 
-        /**
-         * TRY_AGAIN rounds tolerated in the post-EOS drain before the encoder
-         * is declared stalled: x [TIMEOUT_US] = 10 s of no output at all, far
-         * past any healthy flush, but enough headroom that a slow 4K encoder
-         * is not mistaken for a wedged one.
-         */
         private const val FLUSH_ATTEMPT_LIMIT = 1_000
 
-        /** Ripple overlay grid short side - matches the live renderer's. */
         private const val RIPPLE_OVERLAY_RES = 256
 
-        /**
-         * Whether the export fades the canvas instead of hard-clearing it.
-         * Live twin: VisualizerRenderer's `persists` gate - Curl Flow and the
-         * beam persist regardless of the Trails toggle (their looks are
-         * DEFINED by canvas echo). The field-sim families are deliberately
-         * absent: each runs its own feedback loop internally, so a composite
-         * echo on top would double every trail.
-         */
         fun canvasPersists(
             isCurlFlow: Boolean,
             isBeam: Boolean,
         ): Boolean = isCurlFlow || isBeam
 
-        /**
-         * Live twin: VisualizerRenderer's `isBeam` retention. The beam is
-         * phosphor - the decay between frames IS the afterglow, and a trace
-         * with no persistence is a single-frame wire - so there is a floor
-         * under which the glow never drops, with the Trail length slider
-         * setting how long it lasts above it.
-         */
         fun beamRetention(trailLength: Float): Float = (0.55f + 0.44f * trailLength).coerceIn(0f, 0.99f)
 
-        /**
-         * Scans the WHOLE render for effect use. FlowField/RippleSim are
-         * allocated once, before the frame loop, but a replayed take can
-         * change the gating params mid-render: deciding from the take's end
-         * state alone dropped an effect the performance toggled on mid-song
-         * and off again before the end from the entire video. Sampling at
-         * the loop's own frame timestamps makes the answer exact - allocate
-         * iff some rendered frame will ask the service to run.
-         */
         fun scanEffectUse(
             paramsAt: ((Long) -> SceneParams)?,
             flat: SceneParams,
@@ -158,22 +111,11 @@ class VideoExporter(
         fun create(): Scene
     }
 
-    /** Effects at least one rendered frame will gate on. */
     data class EffectUse(
         val flowField: Boolean,
         val rippleOverlay: Boolean,
     )
 
-    /**
-     * How an export ended, mirroring [dev.geode.export.StudioExporter.Result].
-     *
-     * Three outcomes, not a nullable Uri. A null told the caller only that no
-     * file arrived, which conflated a user cancel with the three ways saving
-     * can be refused outright - MediaStore declining the insert, and either
-     * output refusing to open for writing (some cloud/SAF providers do). The
-     * dialog then showed a bar running to 100% and then the options form
-     * again: no file, no message, and nothing to tell the user.
-     */
     sealed interface Result {
         data class Saved(
             val uri: Uri,
@@ -195,48 +137,17 @@ class VideoExporter(
         sceneParams: SceneParams,
         lfoConfigs: List<dev.geode.render.LfoConfig> = emptyList(),
         adsrConfigs: List<dev.geode.render.AdsrConfig> = emptyList(),
-        /** Photosensitivity limits, mirroring the live renderer's clamp. */
         safety: dev.geode.render.VisualSafety.SafetyConfig =
             dev.geode.render.VisualSafety.SafetyConfig.OFF,
         requestedFps: Int = FPS,
-        /**
-         * The slice of the track to render, in milliseconds from its start.
-         *
-         * `null` renders the whole thing, which is what every export did before
-         * this existed — and why getting a fifteen-second clip cost a full-song
-         * render plus a second pass through the Studio to trim it.
-         *
-         * The output is rebased to zero: a clip taken from 1:30 begins at 0:00
-         * in the file. Visual features are still sampled at the SOURCE time, so
-         * the drop looks like the drop.
-         */
         range: ExportRange? = null,
-        /**
-         * Per-frame parameter override: a recorded performance take, sampled
-         * at the frame's own timestamp. Null renders [sceneParams] flat, which
-         * is what every export did before takes existed.
-         *
-         * Returns the parameters ONLY - the style a take switches to mid-set
-         * is not applied here, because this renderer builds one scene up front
-         * and drawing through several would mean creating, swapping and
-         * releasing them inside the frame loop. The export dialog says as much
-         * where the take is chosen.
-         */
         paramsAt: ((Long) -> SceneParams)? = null,
-        /**
-         * Trim the render to a whole number of bars so the clip loops without
-         * a stumble at the seam. Applies to the audio as well as the video -
-         * a loop-safe video over full-length audio is not loop-safe.
-         */
         loopSafe: Boolean = false,
         destination: Uri? = null,
         onProgress: (Float) -> Unit,
         isCancelled: () -> Boolean,
     ): Result =
         withContext(Dispatchers.Default) {
-            // If the user picked a destination via the system file picker, write
-            // straight into it; otherwise fall back to the app's gallery folder
-            // (Movies/Geode) via MediaStore.
             if (destination != null) {
                 return@withContext exportToDestination(
                     destination,
@@ -298,8 +209,6 @@ class VideoExporter(
                     )
                 }
                 if (isCancelled()) {
-                    // A cancelled export is a truncated file with no audio;
-                    // remove it instead of publishing it to the gallery.
                     runCatching { resolver.delete(outUri, null, null) }
                     Result.Cancelled
                 } else {
@@ -398,10 +307,6 @@ class VideoExporter(
                 setInteger(MediaFormat.KEY_FRAME_RATE, fps)
                 setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
             }
-        // Every resource below must be released even when SETUP throws - a
-        // cancelled audio transcode, a source with no audio track, or a failed
-        // shader/EGL init used to leak the started encoder, its input surface
-        // and the muxer (repeated attempts exhaust hardware codec instances).
         var encoderRef: MediaCodec? = null
         var inputSurfaceRef: android.view.Surface? = null
         var muxerRef: MediaMuxer? = null
@@ -420,8 +325,6 @@ class VideoExporter(
             try {
                 encoder.configure(makeFormat(fps, aspect.bitRate), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             } catch (e: Exception) {
-                // High resolutions/60 fps can exceed a device's encoder limits
-                // (notably 4K); retry once at 30 fps and 2/3 bitrate.
                 runCatching { encoder.release() }
                 encoderRef = null
                 encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).also { encoderRef = it }
@@ -432,7 +335,6 @@ class VideoExporter(
             encoder.start()
 
             val muxer = MediaMuxer(pfd.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4).also { muxerRef = it }
-            // MP4 cannot carry MP3/Vorbis/FLAC tracks; transcode audio to AAC first.
             val rangeStartMs = range?.startMs ?: 0L
             val aac =
                 AudioTranscoder(context)
@@ -451,34 +353,13 @@ class VideoExporter(
             scene.resize(aspect.width, aspect.height)
             GLES30.glViewport(0, 0, aspect.width, aspect.height)
             val isShaderScene = scene is dev.geode.render.scene.ShaderScene
-            // Milkdrop grades (and mirrors/inverts) in pm_post_frag, so the
-            // composite must send it the neutral identity like the live path.
             val isProjectM = scene is dev.geode.render.scene.MilkdropScene
-            // Curl Flow's look is DEFINED by canvas persistence (live renderer
-            // forces it regardless of the trails toggle); a hard-cleared export
-            // reads as strobing dots instead of streams.
             val isCurlFlow = scene is dev.geode.render.fluid.CurlFlowScene
-            // The beam's phosphor afterglow is canvas persistence too - hard-
-            // cleared it exports as a thin single-frame wire (live twin:
-            // VisualizerRenderer's isBeam gate).
             val isBeam = scene is dev.geode.render.scene.BeamScene
 
-            // Build an offscreen FBO + composite program so the export applies the
-            // SAME screen-space FX chain (geometry, chroma, vignette, scanlines,
-            // grain, glitch, fisheye, strobe, bloom, posterize) the live renderer
-            // does. Without this, exports - especially of particle scenes - would
-            // omit every FX/shape customization, which are composite-only.
             val fx = FxCompositor(context, aspect.width, aspect.height).also { fxRef = it }
 
-            // Video length is derived from the ACTUAL transcoded audio duration so
-            // the export always matches the music exactly. The analysis timeline is
-            // only used for per-frame features (featuresAt clamps at its end).
-            // Computed before the effect-allocation decisions below, which
-            // need to know every frame timestamp the loop will render.
             val sourceDurationUs = if (aac.durationUs > 0) aac.durationUs else timeline.durationMs * 1000
-            // Loop-safe: cut on a bar boundary so the last beat runs into the
-            // first. Down to the nearest bar, never up - rounding up would end
-            // the clip in silence, which is worse than the seam it fixes.
             val exportDurationUs =
                 if (loopSafe) {
                     dev.geode.analysis.BarTrim
@@ -489,15 +370,6 @@ class VideoExporter(
             val totalFrames = (exportDurationUs * fps / 1_000_000L).toInt().coerceAtLeast(1)
             val frameDurationNs = 1_000_000_000L / fps
 
-            // FlowField export parity (F7): run the shared field in the export GL
-            // context so fluidWarp bends exported frames exactly like the live
-            // view. The FLUID scene reuses its own velocity field instead.
-            // Both services are allocated ONCE, before the frame loop, from
-            // params that a replayed take can change mid-render - so the
-            // decision scans every frame the take will render. Allocating a
-            // field the render never uses costs a few small FBOs; NOT
-            // allocating one the take toggles on mid-song (and maybe off
-            // again before the end) silently drops the effect from the video.
             val effectUse = scanEffectUse(paramsAt, sceneParams, totalFrames, fps)
             val usesFlowField = effectUse.flowField
             val usesRippleOverlay = effectUse.rippleOverlay
@@ -512,11 +384,6 @@ class VideoExporter(
                 } else {
                     null
                 }
-            // Ripple overlay export parity (F2): run a fresh RippleSim in the
-            // export GL context so the refraction + glint land in exported
-            // frames exactly like the live view. When the export scene IS
-            // water, its own sim already refracts - the overlay stays off
-            // (matches the live renderer's exclusivity guard).
             val exportWaterScene = scene as? dev.geode.render.fluid.WaterScene
             val rippleOverlay =
                 if (usesRippleOverlay && exportWaterScene == null) {
@@ -532,8 +399,6 @@ class VideoExporter(
             val rippleDrops =
                 dev.geode.render.fluid
                     .RippleOverlayDrops()
-            // Reproduce the live path's per-frame LFO modulation so automations
-            // the user set up appear in the render, not just on screen.
             val lfoEngine = dev.geode.render.LfoEngine()
             if (lfoConfigs.isNotEmpty()) lfoEngine.configs = lfoConfigs
             val adsrEngine =
@@ -544,49 +409,21 @@ class VideoExporter(
             var videoTrack = -1
             var audioTrack = -1
             val info = MediaCodec.BufferInfo()
-            // Section boundaries once (O(n)); per-frame features then carry the
-            // progress/section context, so the fluid spawn/catch choreography
-            // journeys through the exported video exactly like live playback.
             val sections = timeline.detectSections()
 
             for (frame in 0 until totalFrames) {
                 if (isCancelled()) break
-                // Same first line as the live frame: projectM's native render
-                // leaves GL state dirty, and the live renderer has undone it at
-                // the top of every frame since that bug was found. The export
-                // path never did - it happened to survive because the scenes
-                // that dirty state also reset it themselves, which is a
-                // property of those scenes rather than a guarantee. This is the
-                // one path where a corrupt frame is written to a file instead
-                // of to a screen someone is looking at.
                 dev.geode.render.scene.GlUtil
                     .resetFrameState()
                 val timeMs = frame * 1000L / fps
-                // An exported frame is on screen until the next one, so it has
-                // to see the WHOLE span of 60 Hz timeline frames it covers, not
-                // just the nearest one: the beat flag is exactly one timeline
-                // frame wide, so a 30 fps render (every other frame) used to
-                // miss about half the track's beats - no uBeat, no flash/shake
-                // and no Beat pulse on those. Spans tile exactly, so at 60 fps
-                // this is still one timeline frame and nothing changes.
                 val nextTimeMs = (frame + 1) * 1000L / fps
-                // Video time is relative to the clip; the timeline is indexed by
-                // the SOURCE track. Sampling at the clip's own clock would make a
-                // ranged export render the intro's features over the drop's audio.
                 val sourceTimeMs = rangeStartMs + timeMs
                 val features = timeline.progressionAt(sourceTimeMs, sections, nextTimeMs - timeMs)
-                // Mirror the live modulation order exactly (envelopes first:
-                // their offsets can drive LFO rate/depth): the export was
-                // silently dropping ALL ADSR routing - including the new
-                // Catch pull/Catch radius targets - from rendered video.
                 val envValues = adsrEngine.tick(1f / fps, features)
                 val (envRate, envDepth) =
                     dev.geode.render.AdsrEngine
                         .lfoOffsets(adsrEngine.configs, envValues)
                 val lfoValues = lfoEngine.tick(1f / fps, features.bpm, envRate, envDepth, safety)
-                // A replayed take supplies the frame's own parameters; the
-                // modulators then run on top of them exactly as they do live,
-                // so an LFO the user set up still moves during a take render.
                 val frameParams = paramsAt?.invoke(timeMs) ?: sceneParams
                 var p =
                     dev.geode.render.LfoEngine
@@ -594,23 +431,9 @@ class VideoExporter(
                 p =
                     dev.geode.render.AdsrEngine
                         .apply(p, adsrEngine.configs, envValues)
-                // Mirrors VisualizerRenderer's third line: the photosensitivity
-                // clamp runs after every modulator, so a rendered clip is as
-                // safe as the screen the user approved it from. If these two
-                // ever diverge, an export becomes the one place the limits do
-                // not apply.
                 p =
                     dev.geode.render.VisualSafety
                         .apply(p, safety)
-                // Adaptive fluid quality is a frame-time sensor, and this loop
-                // has no frame times - it drives every scene with a constant
-                // dt = 1/fps off the export clock. Left on, a 30 fps render
-                // reads as a permanent deficit against PerformanceMonitor's
-                // 50 fps target and drops two tiers every 2.5 s until it
-                // bottoms out, so the file came out at minimum quality while
-                // the screen it was exported from looked fine. The tier the
-                // user chose is the tier that renders; see
-                // ExportDeterministicQualityTest for the arithmetic.
                 p = p.copy(fluidAutoQuality = false)
                 scene.setParams(p)
                 scene.update(
@@ -619,23 +442,16 @@ class VideoExporter(
                     1f / fps,
                 )
                 if (p.flowEnabled && flowField != null && flowField.available) {
-                    // Steps into the FlowField's own FBOs, before the scene
-                    // target is bound - mirroring the live renderer's order.
                     flowField.step(
                         dev.geode.render.scene
                             .applyBandGains(features, p),
                         1f / fps,
                         p,
                     )
-                    // FlowField consumer, mirroring the live renderer: the
-                    // uFlow sampler for shader scenes. Without this, exported
-                    // shader-scene flow distortion was 0.
                     if (scene is dev.geode.render.scene.ShaderScene) {
                         scene.setFlow(flowField.velocityTex, p.flowStrength)
                     }
                 }
-                // Ripple overlay: advance the heightfield before the scene
-                // target is bound (its own FBOs), mirroring the live order.
                 val rippleOn = p.rippleOverlayEnabled && rippleOverlay != null && rippleOverlay.available
                 if (rippleOn) {
                     rippleOverlay.waveSpeed = 1.2f * p.waterWaveSpeed.coerceIn(0.2f, 2f)
@@ -647,18 +463,8 @@ class VideoExporter(
                     ) { x, y, radius, amp -> rippleOverlay.queueDrop(x, y, radius, amp) }
                     rippleOverlay.step(1f / fps)
                 }
-                // Draw the scene into the FX FBO, then composite (with the full
-                // FX chain) onto the encoder surface, matching the live path.
                 fx.bindSceneTarget()
                 if (canvasPersists(isCurlFlow, isBeam) && frame > 0) {
-                    // Mirror the live trails gate (VisualizerRenderer): Curl
-                    // Flow ALWAYS persists - its bare GL_POINTS strobe on a
-                    // cleared canvas and `trails` defaults to false - but the
-                    // toggle still picks the band, a short OFF_RETENTION echo
-                    // versus the remapped Trail length slider. The beam
-                    // always persists too (phosphor: the decay IS the
-                    // afterglow), on its own floored remap. Same remap in
-                    // the plain-fade and the trail-warp branch.
                     val fadeParams =
                         when {
                             isCurlFlow -> p.copy(trailLength = CurlFlowMath.retention(p.trailLength, p.trails))
@@ -681,9 +487,6 @@ class VideoExporter(
                 val rippleTex = if (rippleOn) rippleOverlay.heightTex else 0
                 fx.composite(
                     timeSeconds = timeMs / 1000f,
-                    // The composite integrates rotation/colour cycle on the
-                    // export's own clock, so it must see the export's frame
-                    // delta - 1/60 would spin a 30 fps render at half speed.
                     dtSeconds = 1f / fps,
                     features = features,
                     isShaderScene = isShaderScene,
@@ -704,7 +507,6 @@ class VideoExporter(
                 egl.setPresentationTimeNs(frame * frameDurationNs)
                 egl.swapBuffers()
 
-                // Drain encoder without blocking the render loop for long.
                 while (true) {
                     val outIndex = encoder.dequeueOutputBuffer(info, 0)
                     if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
@@ -720,12 +522,6 @@ class VideoExporter(
                         break
                     }
                 }
-                // Feed the audio interleaved with the video it accompanies.
-                // Muxed as one block after the frame loop (the old shape),
-                // the MP4 was legal but fully non-interleaved - all video,
-                // then all audio - which streams badly everywhere the file is
-                // most likely to go (Drive preview, chat players, casting):
-                // the first second of sound lives at the far end of the file.
                 if (muxerStarted && audioTrack >= 0) {
                     val feed =
                         audioFeedRef ?: AudioFeed(muxer, audioTrack, aac, exportDurationUs).also { audioFeedRef = it }
@@ -734,8 +530,6 @@ class VideoExporter(
                 onProgress(0.1f + frame / totalFrames.toFloat() * 0.85f)
             }
             encoder.signalEndOfInputStream()
-            // Encoders return TRY_AGAIN repeatedly while flushing; keep draining
-            // until EOS (bounded so a stuck codec cannot hang the export).
             var flushAttempts = 0
             var sawEos = false
             drain@ while (flushAttempts < FLUSH_ATTEMPT_LIMIT) {
@@ -760,46 +554,24 @@ class VideoExporter(
                     else -> flushAttempts++
                 }
             }
-            // If the encoder never emitted its output format, nothing was
-            // muxed: without this check the export would "succeed" with an
-            // empty/broken file.
             check(muxerStarted || isCancelled()) { "Video encoder produced no output (encoder/format unsupported?)" }
-            // An encoder that stalled before EOS used to exit the bounded
-            // drain silently, publishing a file with its tail frames missing.
-            // An export that cannot finish is a failure, not a shorter video.
             check(sawEos || isCancelled()) { "Video encoder stalled while flushing - export incomplete" }
             if (muxerStarted && !isCancelled() && audioTrack >= 0) {
-                // Whatever the frame loop has not fed yet - normally just the
-                // last frame's span of samples, trimmed to the same instant as
-                // the video: a loop-safe picture over full-length sound still
-                // stumbles.
                 val feed =
                     audioFeedRef ?: AudioFeed(muxer, audioTrack, aac, exportDurationUs).also { audioFeedRef = it }
                 feed.writeUpTo(Long.MAX_VALUE)
                 onProgress(1f)
             }
             if (muxerStarted && !isCancelled()) {
-                // stop() is where the moov atom is written, so a failure here
-                // (a disk that filled at finalize, a track with no samples)
-                // means a file no player can open. Done on the success path,
-                // where it is allowed to throw: swallowed in the finally, the
-                // export returned normally and published that file to the
-                // gallery as "Saved".
                 muxer.stop()
                 muxerStopped = true
             }
         } finally {
-            // Cleanup failures (e.g. stopping a muxer after a mid-export error)
-            // must never mask the original exception. Refs are null for any
-            // resource whose creation was never reached.
             runCatching { sceneRef?.release() }
             runCatching { flowFieldRef?.release() }
             runCatching { rippleRef?.release() }
             runCatching { fxRef?.release() }
             runCatching { audioFeedRef?.close() }
-            // Only the abandoned runs - cancelled, or unwinding from an
-            // exception - stop the muxer here, where the failure must stay
-            // swallowed so it cannot mask the reason the export is unwinding.
             if (muxerStarted && !muxerStopped) runCatching { muxerRef?.stop() }
             runCatching { muxerRef?.release() }
             runCatching { encoderRef?.stop() }
@@ -824,17 +596,10 @@ class VideoExporter(
         muxer.writeSampleData(track, buffer, info)
     }
 
-    /**
-     * Streams the pre-transcoded AAC samples from the temp file into the
-     * muxer, in step with the video: [writeUpTo] is fed inside the frame loop
-     * with the frame's own timestamp, then once more with no bound after the
-     * final drain. The cursor makes each sample write exactly once.
-     */
     private class AudioFeed(
         private val muxer: MediaMuxer,
         private val track: Int,
         private val aac: AudioTranscoder.Result,
-        /** Samples at or after this timestamp are dropped (loop-safe trim). */
         private val limitUs: Long,
     ) : java.io.Closeable {
         private val raf = java.io.RandomAccessFile(aac.file, "r")
@@ -842,14 +607,12 @@ class VideoExporter(
         private var scratch = ByteBuffer.allocate(64 * 1024)
         private var next = 0
 
-        /** Writes every not-yet-written sample with a timestamp before [upToUs]. */
         fun writeUpTo(upToUs: Long) {
             val channel = raf.channel
             while (next < aac.sampleInfos.size) {
                 val sample = aac.sampleInfos[next]
                 if (sample.presentationTimeUs >= upToUs) return
                 if (sample.presentationTimeUs >= limitUs) {
-                    // Samples are in timestamp order; past the trim, done for good.
                     next = aac.sampleInfos.size
                     return
                 }
@@ -864,7 +627,6 @@ class VideoExporter(
                     read += n
                 }
                 scratch.flip()
-                // writeSampleData reads [info.offset, info.offset + info.size) of the buffer.
                 info.set(0, read, sample.presentationTimeUs, sample.flags)
                 muxer.writeSampleData(track, scratch, info)
             }

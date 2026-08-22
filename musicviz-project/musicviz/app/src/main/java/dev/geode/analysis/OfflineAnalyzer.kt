@@ -13,22 +13,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.ByteOrder
 
-/**
- * Decodes a whole audio file (no playback) via MediaExtractor/MediaCodec and
- * runs the same FFT/feature pipeline as live analysis at a fixed hop.
- *
- * Streaming: decoded PCM is analyzed chunk-by-chunk and discarded, so the
- * PCM side of memory stays constant regardless of track length; the frame
- * list itself is bounded by [FrameAccumulator], which trades time resolution
- * for coverage on multi-hour files instead of growing without limit.
- *
- * The beat gate is driven by the caller's sensitivity settings, exactly as
- * [AnalysisEngine] drives the live one - otherwise every export and every
- * section-driven decision would silently run at the shipped defaults. The
- * timeline also carries the raw onset curve, so [AnalysisCache] can re-decide
- * the beats later without a second decode (see
- * [FeatureTimeline.withBeatSensitivity]).
- */
 class OfflineAnalyzer(
     private val context: Context,
 ) {
@@ -48,8 +32,6 @@ class OfflineAnalyzer(
         beatMinIntervalMs: Float = BeatTuning.INTERVAL_MS_DEFAULT,
         onProgress: (Float) -> Unit = {},
     ): FeatureTimeline {
-        // AIFF first: the platform extractor/codec stack can't read it, but
-        // it's plain PCM - stream it straight into the pipeline.
         dev.geode.audio.AiffPcm.open(context, uri)?.let { aiff ->
             try {
                 val pipeline = StreamingPipeline(beatSensitivity, beatMinIntervalMs)
@@ -76,11 +58,6 @@ class OfflineAnalyzer(
         var inputDone = false
         var outputDone = false
         var lastProgress = 0f
-        // Setup runs inside the try as well: setDataSource on a truncated or
-        // DRM file, and createDecoderByType on a codec this device does not
-        // have, throw as readily as the decode loop does, and used to leave
-        // the extractor holding an open descriptor and the decoder a native
-        // instance - which a batch of files accumulates.
         try {
             extractor.setDataSource(context, uri, null)
             val trackIndex =
@@ -153,26 +130,15 @@ class OfflineAnalyzer(
         return pipeline.finish()
     }
 
-    /** Windows a mono stream at a fixed hop, running the shared FFT/feature pipeline. */
     internal class StreamingPipeline(
         sigma: Float,
         minIntervalMs: Float,
     ) {
         private val keyDetector = KeyDetector()
 
-        // The nodes the live Pass runs and this pipeline historically did
-        // not: every exported video lost the harmony and width reactivity
-        // playback showed. Same classes, same configuration - parity by
-        // construction, pinned by LiveOfflineParityTest.
         private val chroma = Chromagram(hopRateHz = HOP_RATE_HZ)
         private var stereo = StereoField.MONO
 
-        /**
-         * The same graph the live path runs, configured the same way. It is
-         * literally the same class, which is what makes an exported video match
-         * what playback showed — the two paths cannot drift apart because there
-         * is only one implementation of the analysis.
-         */
         private val analyzer =
             ReactiveAnalyzer(
                 bandCount = AnalysisEngine.DEFAULT_BAND_COUNT,
@@ -191,8 +157,6 @@ class OfflineAnalyzer(
         private val waveform = FloatArray(128)
         private val dtSeconds = 1f / HOP_RATE_HZ
 
-        /** Bounded frame store: halves its own time resolution rather than
-         *  letting a 3-hour file OOM the process; see [FrameAccumulator]. */
         private val frames = FrameAccumulator()
         private var buffer = FloatArray(AnalysisEngine.DEFAULT_FFT_SIZE * 4)
         private var sideBuffer = FloatArray(AnalysisEngine.DEFAULT_FFT_SIZE * 4)
@@ -200,8 +164,6 @@ class OfflineAnalyzer(
         private var sampleRate = 44100
         private var hopSamples = sampleRate / 60
 
-        /** Absolute mono-sample index of the current window start; timestamps
-         *  derive from this so they never drift (1000/60 truncates to 16 ms). */
         private var absSample = 0L
 
         fun feed(
@@ -209,9 +171,6 @@ class OfflineAnalyzer(
             channels: Int,
             sampleRateHz: Int,
         ) {
-            // A malformed header or a broken codec reporting zero channels or
-            // rate would otherwise divide by zero below; there is no audio to
-            // analyse in either case.
             if (channels <= 0 || sampleRateHz <= 0) return
             if (sampleRateHz != sampleRate) {
                 sampleRate = sampleRateHz
@@ -224,9 +183,6 @@ class OfflineAnalyzer(
             }
             var s = 0
             for (f in 0 until frameCount) {
-                // The front pair only, mirroring the capture ring's rule:
-                // channels beyond it are dropped, not folded in, so mid and
-                // side describe the same two speakers live analysis hears.
                 val left = pcm.get(s) / 32768f
                 val right = if (channels >= 2) pcm.get(s + 1) / 32768f else left
                 buffer[buffered + f] = (left + right) * 0.5f
@@ -237,7 +193,6 @@ class OfflineAnalyzer(
             drain()
         }
 
-        /** Same as [feed] for decoders that output float PCM. */
         fun feedFloat(
             pcm: java.nio.FloatBuffer,
             channels: Int,
@@ -290,7 +245,6 @@ class OfflineAnalyzer(
             }
         }
 
-        /** One frame of the analyzer's outputs, in the shape scenes consume. */
         private fun snapshot(): AudioFeatures =
             AudioFeatures(
                 bands = analyzer.bands.copyOf(),
@@ -320,11 +274,6 @@ class OfflineAnalyzer(
             )
 
         fun finish(): FeatureTimeline {
-            // groupSize is 1 for every track under FrameAccumulator's bound,
-            // making this exactly the historical 60 Hz timeline; past it the
-            // effective hop rate halves per doubling and the timeline carries
-            // the true rate, so withBeatSensitivity's frame-based windows stay
-            // measured in the right units.
             val out = frames.finish()
             val group = frames.groupSize
             return FeatureTimeline(
@@ -336,14 +285,11 @@ class OfflineAnalyzer(
         }
 
         private companion object {
-            /** Offline hop rate. Note hopMs above truncates it to 16 ms, which
-             *  is why the timeline carries the rate separately. */
             const val HOP_RATE_HZ = OFFLINE_HOP_RATE_HZ
         }
     }
 
     companion object {
-        /** The offline hop rate, part of [AnalysisIdentity]. */
         const val OFFLINE_HOP_RATE_HZ = 60f
     }
 }

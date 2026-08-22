@@ -12,30 +12,6 @@ import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.sin
 
-/**
- * The SILK family: strange-attractor velocity fields rendered as continuous
- * luminous dye.
- *
- * There are no particles anywhere in this family - not CPU, not GPU. The
- * state is one low-resolution dye texture whose three channels are band lanes
- * (r bass, g mid, b treble). Every frame `silk_step_frag` advects the dye
- * through a smooth 3D velocity field and injects field-aligned strokes whose
- * brightness IS the band envelope, then `silk_show_frag` palettes the lanes
- * and tone-maps. Filaments are the dye's own stretched history, which is why
- * the picture reads as flowing silk.
- *
- * Field identity is the style. Ten substyles select ten different fields
- * (a cyclic-sine family around the published Thomas attractor form, a curl
- * of noise, a pole field) plus their own stroke geometry, folds, palette
- * offsets and damping-breath parameters - see [VisualStyleCatalog.silk].
- *
- * Audio: slew-limited bass/mid/treble paint their own lanes; the graded beat
- * launches a radial ring and a brief outward push; the raw-PCM strike
- * ([PcmPulse]) lifts the treble lane the FFT window average would miss. The
- * damping parameter b breathes on the scene clock (the reference behaviour of
- * this field family), never on raw amplitude - §5.5's rule that raw loudness
- * must not advance simulation time.
- */
 internal class SilkScene(
     private val context: Context,
     private val style: VisualStyleCatalog.SilkStyle,
@@ -44,30 +20,19 @@ internal class SilkScene(
     override val id: String = style.id
 
     private companion object {
-        /** Sim short side, texels. The dye is soft by nature; 320 is plenty. */
         const val SIM_RES = 320
 
-        /**
-         * Dye range packed into RGBA8 on devices whose driver refuses
-         * half-float render targets (optional in core GLES 3.0, per §6.3).
-         * The step and show shaders divide on write and multiply on read by
-         * `uStateScale`, so the same HDR math runs on both paths.
-         */
         const val BYTE_STATE_SCALE = 8f
 
-        /** Scene clock wrap (`sin(TAU * time / period)` is what reads it). */
         const val TIME_WRAP_SECONDS = 628.31853f
 
         const val TWO_PI = (2.0 * PI).toFloat()
 
-        /** Seconds between stroke-lattice re-seats. */
         const val SEED_EPOCH_SECONDS = 9f
 
-        /** Band envelope slew, fractions per second. */
         const val ENV_RISE_PER_SEC = 8f
         const val ENV_FALL_PER_SEC = 2.2f
 
-        /** Beat ring expansion, field units per second. */
         const val RING_SPEED = 2.6f
         const val RING_MAX = 3.4f
 
@@ -167,9 +132,6 @@ internal class SilkScene(
     private fun ensureDye(): FluidBuffers.DoubleFbo? {
         dye?.let { return it }
         val fmt = formats ?: FluidBuffers.probeFormats().also { formats = it }
-        // Half-float render targets are OPTIONAL in core GLES 3.0; without
-        // the fallback this family rendered black on exactly the devices
-        // §6.3 warns about. RGBA8 carries the dye pre-scaled instead.
         byteDye = !fmt.ok
         val texFmt =
             if (byteDye) {
@@ -202,12 +164,6 @@ internal class SilkScene(
     override fun draw(timeSeconds: Float) {
         if (!programOk) return
         GlUtil.resetFrameState()
-        // The renderer's scene target, captured BEFORE ensureDye(): the format
-        // probe and FBO allocation both leave framebuffer 0 bound, so a
-        // capture taken after them aims the show pass at the screen on
-        // exactly the frames that allocate - a black frame per style entry
-        // and per resize, because the composite then presents an unwritten
-        // scene target.
         GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
         GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
         val field = ensureDye() ?: return
@@ -235,7 +191,6 @@ internal class SilkScene(
         val b = style.bBase + style.bAmp * sin(TWO_PI * time / style.bPeriod)
         val seedEpoch = (time / SEED_EPOCH_SECONDS).toInt().toFloat()
 
-        // Feedback survival, frame-rate compensated; Trails lengthens it.
         var decay = style.decay
         if (p.trails) decay += (1f - decay) * 0.6f * p.trailLength.coerceIn(0f, 1f)
         val frameDecay = decay.pow(dt * 60f)
@@ -244,7 +199,6 @@ internal class SilkScene(
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
         GLES30.glBindVertexArray(vao)
 
-        // -- step: advect + inject into the write side ----------------------
         GLES30.glUseProgram(stepProgram)
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, field.write.fbo)
         GLES30.glViewport(0, 0, field.width, field.height)
@@ -275,7 +229,6 @@ internal class SilkScene(
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         field.swap()
 
-        // -- show: palette + tone map into the renderer's target ------------
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
         GLES30.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3])
         GLES30.glUseProgram(showProgram)

@@ -57,20 +57,6 @@ import dev.geode.ui.theme.StoneIconArt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
-/**
- * The seek bar, drawn as the track's own loudness.
- *
- * The offline analyzer already produces a per-frame RMS curve for the visuals,
- * so this is a reduction of numbers the app computed anyway - the intro, the
- * drop and the outro are where you can see them, and dragging lands on a
- * section you can recognise rather than on a percentage. Tracks that have not
- * been analysed fall back to a plain bar, because a seek bar that appears only
- * sometimes would be worse than one that is occasionally flat.
- *
- * Dragging updates a local position and only commits on release: seeking on
- * every pointer event would re-prepare the decoder dozens of times across one
- * drag, and the beat tracker resets on every seek.
- */
 @Composable
 fun WaveformSeekBar(
     waveform: FloatArray?,
@@ -93,20 +79,12 @@ fun WaveformSeekBar(
     val primary = MaterialTheme.colorScheme.primary
     val idle = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
     val loopTint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.28f)
-    // onSurface rather than white: follows the theme (dark playhead on the
-    // light stones) and any font colour override.
     val playhead = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
     val positionLabel = formatClock(if (dragFraction >= 0f) (dragFraction * durationMs).toLong() else positionMs)
     val durationLabel = formatClock(durationMs)
     val seekDescription = stringResource(R.string.seek_description, positionLabel, durationLabel)
     Canvas(
         modifier
-            // Without this the primary seek control does not exist for TalkBack
-            // or switch access: a bare Canvas has no role, no value and no
-            // action, so the whole app was unseekable for anyone not using a
-            // pointer. progressBarRangeInfo gives it a value to announce and
-            // setProgress gives assistive tech something to call — the same
-            // fraction the drag commits, so both routes land in one place.
             .semantics {
                 contentDescription = seekDescription
                 progressBarRangeInfo = ProgressBarRangeInfo(played, 0f..1f)
@@ -135,8 +113,6 @@ fun WaveformSeekBar(
                 }
             },
     ) {
-        // The looped section, painted under everything so the bars stay
-        // readable through it.
         if (loopStartMs != null && durationMs > 0) {
             val from = (loopStartMs / durationMs.toFloat()).coerceIn(0f, 1f) * size.width
             val to = ((loopEndMs ?: durationMs) / durationMs.toFloat()).coerceIn(0f, 1f) * size.width
@@ -153,8 +129,6 @@ fun WaveformSeekBar(
             val barWidth = (slot * 0.62f).coerceAtLeast(1f)
             val playedX = size.width * played
             for (i in 0 until n) {
-                // Even a silent bucket gets a visible stub, so the bar reads as
-                // a control across its whole width.
                 val h = (size.height * (0.08f + 0.92f * waveform[i])).coerceAtLeast(2f)
                 val x = i * slot + (slot - barWidth) / 2f
                 drawRoundRect(
@@ -165,8 +139,6 @@ fun WaveformSeekBar(
                 )
             }
         }
-        // Playhead, so the exact position is readable during a drag over a
-        // stretch of similar-looking bars.
         val x = (size.width * played).coerceIn(1f, size.width - 1f)
         drawRoundRect(
             playhead,
@@ -177,13 +149,6 @@ fun WaveformSeekBar(
     }
 }
 
-/**
- * The words, following the music when they are timed.
- *
- * Auto-scroll keeps the current line a third of the way down rather than
- * centred: the eye reads ahead, and a line pinned to the middle means the next
- * one is always at the edge of the panel.
- */
 @Composable
 fun LyricsPanel(
     lyrics: Lyrics?,
@@ -228,8 +193,6 @@ fun LyricsPanel(
                     .then(
                         if (lyrics.synced) {
                             Modifier.clickable {
-                                // Jumping to a line is an explicit "take me
-                                // there": resume following immediately.
                                 follows.value = true
                                 onSeek(line.timeMs)
                             }
@@ -243,9 +206,6 @@ fun LyricsPanel(
                     } else {
                         MaterialTheme.typography.bodyMedium
                     },
-                // onSurface rather than white so the words follow the theme
-                // (dark text on the light stones) and any font colour
-                // override; only the alpha ranks the lines.
                 color =
                     when {
                         active -> accentTextColor()
@@ -269,26 +229,10 @@ fun LyricsPanel(
     }
 }
 
-/** How far above centre the active lyric line rides, in pixels. */
 private const val SCROLL_LEAD_PX = 160
 
-/** How long after the user lets go of a following list before it resumes chasing playback. */
 private const val FOLLOW_RESUME_DELAY_MS = 5_000L
 
-/**
- * Whether a list that follows playback should be following right now.
- *
- * A follow scroll that fires while the user is reading back through the lyrics
- * or browsing the queue yanks the list out from under them, so following is
- * suspended the moment the user grabs the list and resumes after
- * [FOLLOW_RESUME_DELAY_MS] of idle. Invariant: programmatic scrolls must not
- * count as user scrolls — the auto-scroller would suspend itself — which is
- * why user intent is read from the list's drag interactions: only pointer
- * gestures emit those, `animateScrollToItem` never does.
- *
- * The returned state is writable so a tap that expresses "take me to the
- * playing item" can resume following immediately.
- */
 @Composable
 private fun rememberFollowsPlayback(listState: LazyListState): MutableState<Boolean> {
     val follows = remember { mutableStateOf(true) }
@@ -297,9 +241,6 @@ private fun rememberFollowsPlayback(listState: LazyListState): MutableState<Bool
             if (interaction is DragInteraction.Start) {
                 follows.value = false
             } else {
-                // Drag ended or was cancelled: wait out the idle window before
-                // resuming. collectLatest restarts the wait if the user grabs
-                // the list again, and any fling decays well inside it.
                 delay(FOLLOW_RESUME_DELAY_MS)
                 follows.value = true
             }
@@ -308,22 +249,6 @@ private fun rememberFollowsPlayback(listState: LazyListState): MutableState<Bool
     return follows
 }
 
-/**
- * What is coming up, and the ability to change it.
- *
- * A queue you can only watch is a list; the point of showing it is being able
- * to pull a track forward or drop one you have gone off. Reordering is two
- * buttons rather than a drag: a drag inside a list that is itself inside a
- * full-screen gesture surface fights the canvas gestures for the same pointer,
- * and a button never picks the wrong one.
- *
- * A queue worth arranging is worth keeping: "Save as playlist" in the header
- * writes the current order through the same create/add calls the Playlists
- * tab uses. That action needs the view model, not one more callback - the
- * caller hands this panel playback state only - so the defaulted parameter
- * resolves the activity-scoped [PlayerViewModel], the same instance every
- * screen already shares.
- */
 @Composable
 fun QueuePanel(
     queue: QueueUiState,
@@ -378,8 +303,6 @@ fun QueuePanel(
                     Modifier
                         .fillMaxWidth()
                         .clickable {
-                            // Picking a track is an explicit "play from here":
-                            // resume following immediately.
                             follows.value = true
                             onPlayIndex(index)
                         }.padding(vertical = 6.dp, horizontal = 4.dp),
@@ -425,8 +348,6 @@ fun QueuePanel(
             taken = library.playlists.map { it.name }.toSet(),
             onName = { name ->
                 viewModel.createMusicPlaylist(name)
-                // In queue order; addTrackToPlaylist skips a uri the playlist
-                // already holds, so a track queued twice is saved once.
                 queue.tracks.forEach { viewModel.addTrackToPlaylist(name, it.uri) }
             },
             onDismiss = { saving = false },
@@ -434,16 +355,6 @@ fun QueuePanel(
     }
 }
 
-/**
- * Stable identity for the queue's rows. The queue models an entry as bare
- * uri+metadata with no id of its own, and the same track can be enqueued
- * twice, so a row's key is its uri plus which occurrence of that uri it is.
- * The key used to mix the INDEX in, which names the slot rather than the
- * entry: removing row 0 renamed every row after it, so remembered item state
- * and removal animations belonged to positions, not tracks. Occurrence
- * counting keeps a key through removals and reorders of OTHER entries; only
- * literal duplicates of one track trade keys, and they are interchangeable.
- */
 internal fun queueRowKeys(tracks: List<QueueTrack>): List<String> {
     val seen = HashMap<String, Int>()
     return tracks.map { t ->
@@ -453,25 +364,11 @@ internal fun queueRowKeys(tracks: List<QueueTrack>): List<String> {
     }
 }
 
-/**
- * Whether [name] may become a NEW playlist among [existing] names. Blank is
- * refused for the same reason [PlayerViewModel.createMusicPlaylist] refuses
- * it; a taken name has to be refused HERE because [MusicPlaylistStore.save]
- * is an overwrite - accepting it would silently replace that playlist's
- * tracks, where rename gets to refuse inside the store. Trimmed before
- * comparing, exactly as the create call trims before saving.
- */
 internal fun playlistNameAccepted(
     name: String,
     existing: Collection<String>,
 ): Boolean = name.isNotBlank() && name.trim() !in existing
 
-/**
- * The naming dialog behind every "make a playlist" affordance - the Playlists
- * tab, the queue panel's save, and the track menus' "New playlist…" - shaped
- * like the Playlists tab's rename dialog. Confirm stays disabled while the
- * name is unusable (see [playlistNameAccepted]) rather than failing after OK.
- */
 @Composable
 internal fun PlaylistNameDialog(
     title: String,
@@ -498,7 +395,6 @@ internal fun PlaylistNameDialog(
     )
 }
 
-/** Shared backdrop for the lyrics and queue panels over the live canvas. */
 @Composable
 fun PlayerPanelSurface(
     modifier: Modifier = Modifier,
