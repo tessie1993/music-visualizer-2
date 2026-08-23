@@ -223,7 +223,13 @@ class MilkdropScene(
                 pendingPresetPath = null
                 lastLoadMs = now
                 val dir = File(path).parent ?: "/"
-                val dirs = mutableListOf(dir, "$dir/textures")
+                // The per-preset link directory goes FIRST: it is where the app materializes
+                // this preset's texture resolution (renames undone, substitutions, manual
+                // choices - see MilkTextureLinks), and search order is the only precedence
+                // projectM has, so first is what lets a per-preset choice beat a same-named
+                // file in the shared folder.
+                val stem = File(path).nameWithoutExtension
+                val dirs = mutableListOf("$dir/textures/.links/$stem", dir, "$dir/textures")
                 sharedTextureDir?.let { dirs += it }
                 MilkdropEngine.nativeSetTexturePaths(handle, dirs.toTypedArray())
                 MilkdropEngine.nativeLoadPreset(handle, path, sceneParams.milkdropBlendPresets)

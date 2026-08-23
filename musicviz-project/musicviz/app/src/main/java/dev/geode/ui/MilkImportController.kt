@@ -7,6 +7,8 @@ import androidx.documentfile.provider.DocumentFile
 import dev.geode.RingLog
 import dev.geode.data.AtomicWrite
 import dev.geode.data.MilkPackImporter
+import dev.geode.data.MilkTextureLink
+import dev.geode.data.MilkTextureLinks
 import dev.geode.data.PresetStore
 import dev.geode.render.scene.MilkStarterPack
 import kotlinx.coroutines.CoroutineScope
@@ -19,6 +21,8 @@ internal class MilkImportController(
     private val application: Application,
     private val scope: CoroutineScope,
 ) {
+    private val textureLinks = MilkTextureLinks(application)
+
     private fun builtInDir(): File = File(application.filesDir, "milk-builtin")
 
     private fun importDir(): File = File(application.filesDir, "milk")
@@ -31,6 +35,9 @@ internal class MilkImportController(
                     builtInDir().deleteRecursively()
                     File(importDir(), "textures").mkdirs()
                     MilkStarterPack.install(application, importDir())
+                    // Idempotent refresh: catches textures imported before a preset existed,
+                    // presets from older installs that predate linking, and starter presets.
+                    textureLinks.relinkAll()
                     importDir()
                         .listFiles { f -> f.extension == "milk" }
                         .orEmpty()
@@ -64,6 +71,7 @@ internal class MilkImportController(
                 application.contentResolver.openInputStream(uri)?.use { input ->
                     AtomicWrite.stream(file) { out -> input.copyTo(out) }
                 } ?: false
+            if (written) textureLinks.relink(file)
             if (written) file.absolutePath else null
         } catch (t: Throwable) {
             RingLog.note("MilkImport", "milk import failed", t)
@@ -80,7 +88,10 @@ internal class MilkImportController(
                 val root = DocumentFile.fromTreeUri(application, treeUri)
                 if (root != null) collectMilkEntries(root, entries, depth = 0)
             }
-            val report = MilkPackImporter.import(entries, importDir())
+            val imported = MilkPackImporter.import(entries, importDir())
+            // The importer's missing count is measured BEFORE linking; what the person needs to
+            // hear is the state after it - how many presets still had to take a stand-in.
+            val report = imported.copy(presetsMissingTextures = textureLinks.relinkAll())
             withContext(Dispatchers.Main) { onDone(report) }
         }
     }
@@ -103,6 +114,21 @@ internal class MilkImportController(
                         }
                 }
             }
+        }
+    }
+
+    /** What [MilkTextureLinks.relink] decided for this preset, in reference order. */
+    fun textureLinksFor(path: String): List<MilkTextureLink> = textureLinks.resolutionFor(File(path))
+
+    fun assignTextureAsync(
+        path: String,
+        expected: String,
+        texture: String?,
+        onDone: (List<MilkTextureLink>) -> Unit,
+    ) {
+        scope.launch(Dispatchers.IO) {
+            val links = textureLinks.assign(File(path), expected, texture)
+            withContext(Dispatchers.Main) { onDone(links) }
         }
     }
 
