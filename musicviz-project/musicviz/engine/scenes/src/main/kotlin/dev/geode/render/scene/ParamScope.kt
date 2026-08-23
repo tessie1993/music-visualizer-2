@@ -35,6 +35,15 @@ enum class ParamScope {
     /** Lives in the shader-scene fragment programs (morph, dual palette, colour map, duotone). */
     SHADER_LOOK,
 
+    /**
+     * The raymarch step budget, live only on the five marched fragment styles.
+     *
+     * The only scope whose answer depends on the STYLE rather than the renderer behind it -
+     * see [appliesTo] - because Plasma and Vanishing are both [SceneKind.SHADER] and only one
+     * of them has a march to spend steps on.
+     */
+    MARCH_DETAIL,
+
     /** The endless-dive phase, integrated by the shader scenes and MilkDrop. */
     ENDLESS_ZOOM,
 
@@ -80,7 +89,14 @@ enum class ParamScope {
     RIPPLE_OVERLAY,
     ;
 
-    fun appliesTo(sceneId: String): Boolean = appliesTo(SceneCapabilities.kindOf(sceneId))
+    fun appliesTo(sceneId: String): Boolean =
+        // MARCH_DETAIL is the one scope a SceneKind cannot answer: the marched styles are a
+        // subset of one kind, so the id is the only thing that separates them.
+        if (this == MARCH_DETAIL) {
+            sceneId in SceneCapabilities.MARCHED_SCENES
+        } else {
+            appliesTo(SceneCapabilities.kindOf(sceneId))
+        }
 
     fun appliesTo(kind: SceneKind): Boolean =
         when (this) {
@@ -92,6 +108,9 @@ enum class ParamScope {
             TREBLE_BAND -> kind in TREBLE_READERS
             BAND_GAINS -> kind in BASS_READERS || kind in MID_READERS || kind in TREBLE_READERS
             SHADER_LOOK -> kind == SceneKind.SHADER
+            // The widest honest kind-level answer: a marched style is always a SHADER, but not
+            // every SHADER marches. Callers holding a style id get the exact answer above.
+            MARCH_DETAIL -> kind == SceneKind.SHADER
             ENDLESS_ZOOM -> kind == SceneKind.SHADER || kind == SceneKind.MILKDROP
             TURBULENCE -> kind in TURBULENCE_READERS
             DYE_DENSITY -> kind == SceneKind.FLUID
@@ -179,6 +198,7 @@ enum class ParamScope {
                 scoped(BASS_BAND, ParamKeys.BASS_GAIN)
                 scoped(MID_BAND, ParamKeys.MID_GAIN)
                 scoped(TREBLE_BAND, ParamKeys.TREBLE_GAIN)
+                scoped(MARCH_DETAIL, ParamKeys.MARCH_DETAIL)
                 scoped(SHADER_LOOK, ParamKeys.MORPH, ParamKeys.COLOUR_MAP, ParamKeys.PALETTE_2, ParamKeys.PALETTE_BLEND, ParamKeys.DUOTONE)
                 scoped(ENDLESS_ZOOM, ParamKeys.ENDLESS_ZOOM, ParamKeys.DIVE_SPEED)
                 scoped(TURBULENCE, ParamKeys.TURBULENCE)

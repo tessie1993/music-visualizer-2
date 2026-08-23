@@ -63,6 +63,22 @@ object SceneCapabilities {
         )
 
     /**
+     * The fragment styles that raymarch, and so spend the [MarchBudget] the Detail control sets.
+     *
+     * A per-STYLE set rather than a [SceneKind], because only five of the 27 shader styles march;
+     * scoping Detail to `SceneKind.SHADER` would put a dead slider in front of anyone looking at
+     * Plasma, which is exactly what [ParamScope]'s no-dead-controls rule exists to prevent.
+     */
+    val MARCHED_SCENES: Set<String> =
+        setOf(
+            SceneIds.VANISHING,
+            SceneIds.MORPHOGEN,
+            SceneIds.NEBULA,
+            SceneIds.NONEUCLID,
+            SceneIds.KIFS,
+        )
+
+    /**
      * The renderer [sceneId] builds.
      *
      * Unknown ids resolve to [SceneKind.SILK] because [SceneIds.DEFAULT] is a Silk style and
