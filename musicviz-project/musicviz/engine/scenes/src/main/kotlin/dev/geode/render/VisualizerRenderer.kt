@@ -137,6 +137,14 @@ class VisualizerRenderer(
         )
 
     /**
+     * Releases every scene's resources, native ones included.
+     *
+     * Must run on the GL thread with the context still current, and only when this renderer is
+     * being discarded - a host that is merely losing its surface gets [onSurfaceCreated] instead.
+     */
+    fun releaseScenes() = registry.releaseAll()
+
+    /**
      * Where the fingers are, for every scene family that wants to know.
      *
      * One instance, owned here and handed to the registry, because "where is the user

@@ -3,6 +3,9 @@ package dev.geode.render
 import android.content.Context
 import android.opengl.GLSurfaceView
 import android.view.SurfaceHolder
+import dev.geode.util.bestEffort
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class VisualizerView(
     context: Context,
@@ -61,7 +64,26 @@ class VisualizerView(
     override fun onDetachedFromWindow() {
         // Before super, which tears down the GL thread: no point asking it for one more frame.
         framePacer.stop()
+        releaseScenesOnGlThread()
         super.onDetachedFromWindow()
+    }
+
+    /**
+     * Hands the GL thread its last job while it is still taking them.
+     *
+     * GLSurfaceView's thread stops draining its event queue once it has been asked to exit, so
+     * anything queued after super is silently dropped - which is why this runs before it, and
+     * why it waits: the thread is gone by the time super returns. The wait is bounded because a
+     * wedged GL thread must not turn a teardown into an ANR; the leak it prevents is finite and
+     * an ANR is not.
+     */
+    private fun releaseScenesOnGlThread() {
+        val done = CountDownLatch(1)
+        queueEvent {
+            bestEffort(TAG, "visualizerRenderer.releaseScenes()") { visualizerRenderer.releaseScenes() }
+            done.countDown()
+        }
+        bestEffort(TAG, "await scene release") { done.await(RELEASE_WAIT_MS, TimeUnit.MILLISECONDS) }
     }
 
     /**
@@ -78,5 +100,12 @@ class VisualizerView(
     private fun syncPacer() {
         val watched = isAttachedToWindow && windowVisibility == VISIBLE
         if (watched) framePacer.start() else framePacer.stop()
+    }
+
+    private companion object {
+        const val TAG = "VisualizerView"
+
+        /** Long enough for one queued event, short enough that a wedged GL thread is not an ANR. */
+        const val RELEASE_WAIT_MS = 200L
     }
 }

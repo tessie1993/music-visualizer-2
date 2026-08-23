@@ -13,6 +13,7 @@ import dev.geode.render.FrameRatePolicy
 import dev.geode.render.TouchField
 import dev.geode.render.VisualizerRenderer
 import dev.geode.ui.ThemeStore
+import dev.geode.util.bestEffort
 
 class VisualizerWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = VisualizerEngine()
@@ -225,14 +226,42 @@ class VisualizerWallpaperService : WallpaperService() {
         override fun onDestroy() {
             pacer.stop()
             stopFeeding()
+            releaseScenesOnGlThread()
             glView?.destroy()
             glView = null
             renderer = null
             super.onDestroy()
         }
+
+        /**
+         * The engine is discarded here, and MilkdropScene's projectM instance lives in the native
+         * heap, where losing the GL context reclaims nothing. A wallpaper engine is created and
+         * destroyed every time the screen sleeps or the user switches launcher screens, so without
+         * this each of those leaks one engine into a process that keeps running.
+         *
+         * Queued before destroy() because GLSurfaceView's thread stops draining events once it is
+         * asked to exit, and waited on - briefly - because that thread is gone afterwards.
+         */
+        private fun releaseScenesOnGlThread() {
+            val view = glView ?: return
+            val active = renderer ?: return
+            val done = java.util.concurrent.CountDownLatch(1)
+            view.queueEvent {
+                bestEffort(TAG, "active.releaseScenes()") { active.releaseScenes() }
+                done.countDown()
+            }
+            bestEffort(TAG, "await scene release") {
+                done.await(GL_RELEASE_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+            }
+        }
     }
 
     private companion object {
+        const val TAG = "VisualizerWallpaper"
+
+        /** Bounded on purpose: a wedged GL thread must not turn teardown into an ANR. */
+        const val GL_RELEASE_WAIT_MS = 200L
+
         const val FEED_INTERVAL_MS = 16L
 
         const val FEEDER_JOIN_MS = 200L
