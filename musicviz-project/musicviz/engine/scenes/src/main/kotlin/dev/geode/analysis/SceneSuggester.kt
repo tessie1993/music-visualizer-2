@@ -43,7 +43,6 @@ object SceneSuggester {
                 widthBias = 0.4f,
             ),
             Affinity(SceneIds.TUNNEL, tempoBpm = 90f..160f, energy = 0.15f..0.4f, brightness = 0.45f..1f),
-            Affinity(SceneIds.HYPERSPACE, tempoBpm = 120f..200f, energy = 0.2f..0.5f, brightness = 0.4f..1f, percussiveBias = 0.2f),
             Affinity(
                 SCENE_MYCELIUM,
                 tempoBpm = 95f..200f,

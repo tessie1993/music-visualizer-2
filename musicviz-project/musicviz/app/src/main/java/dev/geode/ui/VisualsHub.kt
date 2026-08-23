@@ -172,7 +172,6 @@ internal fun presetReplaceTarget(
 
 internal fun builtInPresetSceneFamily(activeSceneId: String): String =
     when {
-        VisualStyleCatalog.isHyperspace(activeSceneId) -> SceneIds.HYPERSPACE
         VisualStyleCatalog.isCymatics(activeSceneId) -> SceneIds.CYMATICS
         else -> activeSceneId
     }
@@ -547,7 +546,7 @@ private fun StylesTab(
             }
         }
         CrystalTabs(
-            titles = listOf("Silk", "Life", "Mycelium", "Acid", "Shaders", "Fluid", "Cymatics", "Hyperspace", "Beam", "MilkDrop"),
+            titles = listOf("Silk", "Life", "Mycelium", "Acid", "Shaders", "Fluid", "Cymatics", "Beam", "MilkDrop"),
             selected = sub,
             onSelect = { sub = it },
         )
@@ -559,9 +558,8 @@ private fun StylesTab(
             4 -> SceneList(SceneCapabilities.SHADER_SCENES.keys.toList(), viz.sceneId, pickScene)
             5 -> SceneList(listOf(SceneIds.FLUID, SceneIds.CURLFLOW, SceneIds.WATER), viz.sceneId, pickScene)
             6 -> SceneList(VisualStyleCatalog.cymaticsIds, viz.sceneId, pickScene)
-            7 -> SceneList(VisualStyleCatalog.hyperspaceIds, viz.sceneId, pickScene)
-            8 -> SceneList(listOf(SceneIds.BEAM), viz.sceneId, pickScene)
-            9 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
+            7 -> SceneList(listOf(SceneIds.BEAM), viz.sceneId, pickScene)
+            8 -> MilkDropTab(viewModel, visualizerView, onOpenTextures)
         }
     }
 }
@@ -793,7 +791,6 @@ private fun tabAppliesTo(
         CustomizeTab.FLUID,
         -> true
         CustomizeTab.CYMATICS -> SceneCapabilities.isCymatics(sceneId)
-        CustomizeTab.HYPERSPACE -> SceneCapabilities.isHyperspace(sceneId)
     }
 
 @Composable
@@ -855,7 +852,6 @@ private fun CustomizeTabBody(
                 },
             )
         CustomizeTab.CYMATICS -> CymaticsTab(p, onChange)
-        CustomizeTab.HYPERSPACE -> HyperspaceTab(p, onChange)
         null -> GlslHubTab(viewModel, visualizerView)
     }
 }

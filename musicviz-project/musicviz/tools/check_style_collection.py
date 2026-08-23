@@ -28,9 +28,7 @@ def uploaded_uniforms(scene: str) -> set[str]:
 
 def main() -> None:
     catalog = read("app/src/main/java/dev/musicviz/render/scene/VisualStyleCatalog.kt")
-    hyper_shader = read("app/src/main/res/raw/hyperspace_frag.glsl")
     cym_shader = read("app/src/main/res/raw/cymatics_field_frag.glsl")
-    hyper_scene = read("app/src/main/java/dev/musicviz/render/scene/HyperspaceScene.kt")
     cym_scene = read("app/src/main/java/dev/musicviz/render/scene/CymaticsScene.kt")
     preview = read("tools/shaderpreview/lib/scenes.mjs")
     crystal = read("app/src/main/java/dev/musicviz/ui/Crystal.kt")
@@ -40,31 +38,24 @@ def main() -> None:
 
     # \s* after the paren: ktlint wraps long constructor calls onto their own
     # lines, so the id literal is not necessarily on the same line as the name.
-    hyper_ids = re.findall(r'HyperspaceStyle\(\s*"(hyper_[^"]+)"', catalog)
     cym_ids = re.findall(r'CymaticsStyle\(\s*"([^" ]+)"', catalog)
-    require(len(hyper_ids) == 10, f"expected 10 Hyperspace substyles, got {len(hyper_ids)}")
     require(len(cym_ids) == 10, f"expected 10 Cymatics substyles, got {len(cym_ids)}")
-    require(len(set(hyper_ids + cym_ids)) == 20, "style IDs collide")
+    require(len(set(cym_ids)) == 10, "style IDs collide")
 
-    for family, shader in (("Hyperspace", hyper_shader), ("Cymatics", cym_shader)):
+    for family, shader in (("Cymatics", cym_shader),):
         require("uniform int uStyle;" in shader, f"{family} shader lacks uStyle")
         for style in range(1, 11):
             require(f"uStyle == {style}" in shader, f"{family} shader lacks branch {style}")
 
-    require(declared_uniforms(hyper_shader) == uploaded_uniforms(hyper_scene), "Hyperspace uniform parity drift")
     require(declared_uniforms(cym_shader) == uploaded_uniforms(cym_scene), "Cymatics uniform parity drift")
     require("'uStyle'" in preview and "uStyle: { t: '1i'" in preview, "preview driver does not supply uStyle")
     require("addAll(VisualStyleCatalog.cymaticsIds)" in renderer, "renderer does not offer Cymatics variants")
-    require("addAll(VisualStyleCatalog.hyperspaceIds)" in renderer, "renderer does not offer Hyperspace variants")
     require("VisualStyleCatalog.cymatics(id)?.let" in renderer, "live factory does not resolve Cymatics variants")
-    require("VisualStyleCatalog.hyperspace(id)?.let" in renderer, "live factory does not resolve Hyperspace variants")
     # The export factory used to be a second hand-maintained switch (pinned
-    # here as `val cymaticsStyle = ...` / `val hyperspaceStyle = ...`); it now
     # builds through the same createScene the live registry uses, so the
     # variant resolution pinned above covers export too - pin the routing.
     require("createScene(sceneId" in renderer, "export factory no longer routes through createScene")
     require("SceneList(VisualStyleCatalog.cymaticsIds" in hub, "Cymatics variants are absent from the picker")
-    require("SceneList(VisualStyleCatalog.hyperspaceIds" in hub, "Hyperspace variants are absent from the picker")
 
     named_crystals = [
         "LAPIS",
@@ -82,7 +73,6 @@ def main() -> None:
     require("LocalCrystalTheme provides appTheme" in crystal, "crystal panels do not receive the active theme")
 
     print("style collection checks passed")
-    print(f"  Hyperspace substyles: {len(hyper_ids)}")
     print(f"  Cymatics substyles:   {len(cym_ids)}")
     print(f"  Crystal materials:    {len(named_crystals)}")
 

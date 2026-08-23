@@ -386,7 +386,7 @@ Matter, Living Field, Recursive Feedback, Phase & Scope, Spatial & Fluid.
    and `CustomizeSurfaceTest` break at once. **Plan the schema and the gate rewrite as one
    vertical slice.**
 2. **Deleted styles orphan live presets, not just code.** Presets on disk carry
-   `sceneId` values for the 9 particle scenes and hyperspace, plus ~30 `hyper*` keys.
+   `sceneId` values for the 9 particle scenes.
    **`SceneIds` constants for deleted styles must survive as deprecated aliases** or a
    remap table has nothing to key on. Needs a "this preset used a retired style" affordance.
 3. **`live_state` is a preset and the wallpaper reads it cross-process.** `PlayerViewModel`
@@ -473,7 +473,7 @@ module-scoped twin, author the twins, and state `SceneParams`' end-of-life inclu
 recipe params reach the Compose controls, the randomizer and the lock chips. Without that
 last part the flat param model and the typed schema ship side by side forever.
 
-**Slice 8 — delete the particle and hyperspace style classes.** Only now, with recipes in
+**Slice 8 — delete the particle style classes.** Only now, with recipes in
 place, twins authored and `sceneId` remapping tested. Update `ParamSurface.FAMILIES` in
 the same commit.
 

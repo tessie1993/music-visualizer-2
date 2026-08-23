@@ -52,7 +52,6 @@ import dev.geode.render.ModCurve
 import dev.geode.render.ModPolarity
 import dev.geode.render.ModSource
 import dev.geode.render.scene.CymaticsMath
-import dev.geode.render.scene.HyperspaceMath
 import dev.geode.render.scene.ParamKeys
 import dev.geode.render.scene.ParamRandomizer
 import dev.geode.render.scene.ParamScope
@@ -990,97 +989,6 @@ internal fun CymaticsTab(
 }
 
 @Composable
-internal fun HyperspaceTab(
-    p: SceneParams,
-    onChange: (SceneParams) -> Unit,
-) {
-    val activeSceneId = LocalSceneId.current
-    Column {
-        SectionHeader("Journey", ParamScope.HYPERSPACE)
-        ControlHint(
-            "Five acts: Threshold, Chrysanthemum, Magic eye, Waiting room, Breakthrough. On " +
-                "Music, loud passages take it deeper and quiet ones bring it back; Hold pins one " +
-                "act, Cycle walks them on a timer.",
-            ParamScope.HYPERSPACE,
-        )
-        ParamChips(JOURNEY_MODE, SceneParams.HYPERSPACE_JOURNEYS, p.hyperJourney, ParamScope.HYPERSPACE) {
-            onChange(p.copy(hyperJourney = it))
-        }
-        if (p.hyperJourney == HyperspaceMath.JOURNEY_HOLD) {
-            ParamChips(ParamKeys.ACT, HyperspaceMath.ACT_NAMES, p.hyperAct) { onChange(p.copy(hyperAct = it)) }
-        }
-        LabeledSlider(ParamKeys.ACT_LENGTH_S, p.hyperCycleSeconds, 5f..180f) {
-            onChange(p.copy(hyperCycleSeconds = it))
-        }
-
-        SectionHeader("Life", ParamScope.HYPERSPACE)
-        ControlHint(
-            "Every body is its own fractal on its own clock - it buds in on a hit, turns on its " +
-                "own axis, drifts on its own orbit, and dissolves. Mixed gives a room of all six " +
-                "at once.",
-            ParamScope.HYPERSPACE,
-        )
-        val forcedSpecies =
-            VisualStyleCatalog
-                .hyperspace(activeSceneId)
-                ?.forcedSpecies
-                ?.let { SceneParams.HYPERSPACE_SPECIES.getOrNull(it) }
-        if (forcedSpecies != null) {
-            ControlHint("Fractal set by this style: $forcedSpecies.", ParamScope.HYPERSPACE)
-        } else {
-            ParamChips(ParamKeys.FRACTAL, SceneParams.HYPERSPACE_SPECIES, p.hyperSpecies) {
-                onChange(p.copy(hyperSpecies = it))
-            }
-        }
-        LabeledSlider(ParamKeys.BODIES, p.hyperBodies, 0.2f..2f) { onChange(p.copy(hyperBodies = it)) }
-        LabeledSlider(ParamKeys.BODY_LIFE_S, p.hyperLifetime, 3f..45f) { onChange(p.copy(hyperLifetime = it)) }
-        LabeledSlider(ParamKeys.BODY_SPIN, p.hyperSpin, 0f..3f) { onChange(p.copy(hyperSpin = it)) }
-        LabeledSlider(ParamKeys.ORBIT_DRIFT, p.hyperOrbit, 0f..3f) { onChange(p.copy(hyperOrbit = it)) }
-        LabeledSlider(ParamKeys.CAMERA_DRIFT, p.hyperCamera, 0f..3f) { onChange(p.copy(hyperCamera = it)) }
-        LabeledSlider(ParamKeys.FOLD, p.hyperFold, 0f..1f) { onChange(p.copy(hyperFold = it)) }
-
-        SectionHeader("Look", ParamScope.HYPERSPACE)
-        ControlHint(
-            "Filigree is the fabric behind everything; Colour banding is the nested shells within a body.",
-            ParamScope.HYPERSPACE,
-        )
-        LabeledSlider(ParamKeys.BODY_GLOW, p.hyperGlow, 0f..2f) { onChange(p.copy(hyperGlow = it)) }
-        LabeledSlider(ParamKeys.NEON_RIM, p.hyperNeon, 0f..2f) { onChange(p.copy(hyperNeon = it)) }
-        LabeledSlider(ParamKeys.FILIGREE, p.hyperField, 0f..2f) { onChange(p.copy(hyperField = it)) }
-        LabeledSlider(ParamKeys.HAZE, p.hyperHaze, 0f..2f) { onChange(p.copy(hyperHaze = it)) }
-        LabeledSlider(ParamKeys.COLOUR_BANDING, p.hyperTrap, 0f..1.5f) { onChange(p.copy(hyperTrap = it)) }
-        LabeledIntSlider(ParamKeys.MIRROR_FOLDS, p.hyperMirrorFolds, 2..16) {
-            onChange(p.copy(hyperMirrorFolds = it))
-        }
-
-        SectionHeader(ParamKeys.MELT, ParamScope.HYPERSPACE)
-        ControlHint(
-            "A fluid simulation runs underneath the fractals. The bodies stir it as they drift, " +
-                "the music and your finger stir it, and it stirs them back - Melt is how far it " +
-                "can pull the geometry out of shape.",
-            ParamScope.HYPERSPACE,
-        )
-        LabeledSlider(ParamKeys.MELT, p.hyperMelt, 0f..2f) { onChange(p.copy(hyperMelt = it)) }
-        LabeledSlider(ParamKeys.INK_STAIN, p.hyperStain, 0f..1.5f) { onChange(p.copy(hyperStain = it)) }
-        LabeledSlider(ParamKeys.LIQUID_LIGHT, p.hyperLiquid, 0f..1.5f) { onChange(p.copy(hyperLiquid = it)) }
-        LabeledSlider(ParamKeys.RIDGES, p.hyperRidges, 0f..1f) { onChange(p.copy(hyperRidges = it)) }
-        LabeledSlider(ParamKeys.STIR, p.hyperStir, 0f..3f) { onChange(p.copy(hyperStir = it)) }
-        LabeledSlider(ParamKeys.VORTICITY, p.hyperSwirl, 0f..50f) { onChange(p.copy(hyperSwirl = it)) }
-        LabeledSlider(ParamKeys.FLOW_FADE, p.hyperFlowFade, 0f..4f) { onChange(p.copy(hyperFlowFade = it)) }
-
-        SectionHeader("Quality", ParamScope.HYPERSPACE)
-        ControlHint(
-            "How many march steps and fractal iterations each pixel gets. This is the frame-rate " +
-                "control: turn it down on a slower phone, up for finer detail.",
-            ParamScope.HYPERSPACE,
-        )
-        LabeledSlider(HYPER_DETAIL, p.hyperDetail, 0.25f..1.5f, scope = ParamScope.HYPERSPACE) {
-            onChange(p.copy(hyperDetail = it))
-        }
-    }
-}
-
-@Composable
 private fun LabeledIntSlider(
     label: String,
     value: Int,
@@ -1204,8 +1112,6 @@ private const val INK_LAYER = "Ink layer"
 private const val FLOWFIELD_ENABLED = "FlowField enabled"
 private const val RIPPLES_ENABLED = "Water ripples enabled"
 private const val LAYERS_ENABLED = "Layers enabled"
-private const val JOURNEY_MODE = "Journey"
-private const val HYPER_DETAIL = "Detail"
 
 /** Wraps a tab's content in the scene + search context every control reads. */
 @Composable

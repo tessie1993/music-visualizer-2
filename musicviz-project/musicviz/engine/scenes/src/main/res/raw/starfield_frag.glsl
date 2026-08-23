@@ -158,7 +158,7 @@ vec3 grade(vec3 col) {
     return mix(col, max(vec3(1.0) - col, 0.0), uInvert);
 }
 
-// Hyperspace starfield: band-lit streaks racing outward with the energy.
+// Starfield: band-lit streaks racing outward with the energy.
 void main() {
     vec2 uv = view();
     vec3 col = vec3(0.0);

@@ -6,23 +6,6 @@ The collection is implemented as **profiles over the existing authored engines**
 
 ## Implemented visual collection
 
-### Hyperspace
-
-The original `hyperspace` ID remains unchanged for saved presets. Ten additional profiles are registered:
-
-1. Polytope — mirrored hard cells and four-dimensional-looking turns.
-2. Liquid Warp — hyperspace bodies pulled through the existing fluid velocity and dye field.
-3. Caduceus — double-helical torsion and paired sky traces.
-4. Cortex — folded organic ridges with neural surface accents.
-5. Reliquary — cut mineral facets around a pale protected core.
-6. Moiré — close angular frames and interference contrast.
-7. Foam — pressure shells and pearlescent cellular atmosphere.
-8. Dustskin — granular surface displacement and treble-lit motes.
-9. Plume — long twisting forms carried strongly by the fluid field.
-10. Resonant Wormhole — cymatic nodal portals folded into the hyperspace flight axis.
-
-All ten still use the same body simulation, camera, fluid solver, audio features, raymarch safety bounds and post-processing path as the original.
-
 ### Cymatics
 
 The original `cymatics` ID also remains unchanged. Ten additional resonator profiles are registered:
@@ -73,8 +56,6 @@ The implementation is original except for code already credited by the project. 
 The profile system makes these additions possible without another renderer fork:
 
 - Resonant Wormhole v2: drive portal mode numbers directly from the Cymatics resonator bank.
-- Hyperspace × Water: refractive star tunnel with screen-space caustic normals.
-- Hyperspace × Curl Flow: body trails seeded into the shared velocity field.
 - Cymatics × Fluid: nodal lines inject dye while velocity transports the pattern.
 - Cymatics × Particles: grains physically migrate toward the zero-level set.
 - Crystal-aware visuals: optionally borrow the active UI mineral's banding or inclusions as a material modifier, without forcing the visual palette to match the UI.

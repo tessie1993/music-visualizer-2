@@ -171,7 +171,7 @@ vec3 grade(vec3 col) {
 //  - It sampled `uFlow` itself to smear every layer by the FlowField. The
 //    composite pass already warps EVERY style through that same field
 //    (`composite_frag`'s `uFlowStrength` block), so a second read here would
-//    apply one velocity field twice - the Hyperspace double-rotation bug in
+//    apply one velocity field twice - the double-rotation bug seen in
 //    another costume. The layered "blown around" motion is re-expressed with
 //    what the scene is actually given: per-layer wind from Sway/Turbulence
 //    and the mid band, which parallaxes exactly like the smear did and still

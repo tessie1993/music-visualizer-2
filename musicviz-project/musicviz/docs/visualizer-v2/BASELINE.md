@@ -79,7 +79,6 @@ wrong. Collapsing the 18 `repoFile` copies to one shared helper is prerequisite 
 | Water | `render/fluid/WaterScene.kt` |
 | Cymatics | `render/scene/CymaticsScene.kt` |
 | Beam | `render/scene/BeamScene.kt` |
-| Hyperspace | `render/scene/HyperspaceScene.kt` |
 | Composite | `render/VisualizerRenderer.kt`, `render/CompositeGrade.kt` |
 | Export | `export/FxCompositor.kt`, `export/VideoExporter.kt` |
 

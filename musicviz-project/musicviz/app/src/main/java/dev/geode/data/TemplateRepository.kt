@@ -451,7 +451,7 @@ object BundledTemplates {
             notes = "Archive render: 4K, sixty frames, no overlays. The one you keep.",
             look =
                 TemplateLook(
-                    sceneId = SceneIds.HYPERSPACE,
+                    sceneId = SceneIds.DEFAULT,
                     attack = 0.65f,
                     decay = 0.12f,
                     params =

@@ -10,7 +10,6 @@ import dev.geode.render.scene.AcidScene
 import dev.geode.render.scene.BeamScene
 import dev.geode.render.scene.CymaticsScene
 import dev.geode.render.scene.GlUtil
-import dev.geode.render.scene.HyperspaceScene
 import dev.geode.render.scene.LifeScene
 import dev.geode.render.scene.MilkdropEngine
 import dev.geode.render.scene.MilkdropScene
@@ -81,7 +80,6 @@ internal class SceneRegistry(
             add(SceneIds.WATER)
             addAll(VisualStyleCatalog.cymaticsIds)
             add(SceneIds.BEAM)
-            addAll(VisualStyleCatalog.hyperspaceIds)
         }
 
     fun submitShader(
@@ -233,11 +231,6 @@ internal class SceneRegistry(
             ?: VisualStyleCatalog.myco(id)?.let { style ->
                 MycoScene(context, style).also { scene ->
                     scene.onShaderError = { host.onShaderError(it) }
-                }
-            }
-            ?: VisualStyleCatalog.hyperspace(id)?.let { style ->
-                HyperspaceScene(context, style).also { hyper ->
-                    hyper.onShaderError = { host.onShaderError(it) }
                 }
             }
             ?: buildNamedScene(id)

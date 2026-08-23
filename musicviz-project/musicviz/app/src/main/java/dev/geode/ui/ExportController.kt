@@ -176,11 +176,14 @@ internal class ExportController(
                     _exportState.value =
                         ExportUiState(customDestination = destination != null, phase = result.toPhase())
                 } catch (t: Throwable) {
-                    if (exportCancelled) {
-                        _exportState.value = ExportUiState()
-                    } else if (t is kotlinx.coroutines.CancellationException) {
+                    // Cancellation is tested before the user's own cancel flag: when the two
+                    // coincide the flag branch used to win and swallow the CancellationException,
+                    // leaving a cancelled coroutine to finish as if it had succeeded.
+                    if (t is kotlinx.coroutines.CancellationException) {
                         _exportState.value = ExportUiState()
                         throw t
+                    } else if (exportCancelled) {
+                        _exportState.value = ExportUiState()
                     } else {
                         val detail = "${t.javaClass.simpleName}: ${t.message ?: "no message"}"
                         _exportState.value = ExportUiState(phase = ExportPhase.Failed(detail))

@@ -6,7 +6,7 @@
 // preview of a style: a uniform the harness forgets defaults to zero in GL,
 // and a zeroed uniform is indistinguishable from a feature that is switched
 // off. `uHasMelt = 0` is precisely that failure, and it is the difference
-// between HYPERSPACE's whole medium being there and not.
+// between a whole medium being there and not.
 //
 // So the tool does a three-way audit per scene:
 //
@@ -25,7 +25,7 @@ import fs from 'node:fs';
  * Uniform names uploaded by a Kotlin scene.
  *
  * Covers the three call shapes in this codebase:
- *   loc("uName")                              - HyperspaceScene, fluid scenes
+ *   loc("uName")                              - fluid scenes
  *   glGetUniformLocation(program, "uName")    - ShaderScene's samplers
  *   setUniform1f("uName", ...)                - ShaderScene's scalars
  */

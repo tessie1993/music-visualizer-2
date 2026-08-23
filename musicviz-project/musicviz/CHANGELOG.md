@@ -11,10 +11,15 @@ a partial reconstruction, rebuilt from the references in these entries, is at
 
 ## Composite visual families and mineral UI (working tree)
 
-- Hyperspace and Cymatics now keep their original saved-preset IDs while each
-  exposes ten authored substyles through one shared renderer per family.
-- `Liquid Warp` uses Hyperspace's existing velocity/dye solver; `Resonant
-  Wormhole` folds cymatic nodal portals into the raymarched room.
+- **Removed the Hyperspace style family.** All eleven looks (Original · Living
+  Fractals, Polytope, Liquid Warp, Caduceus, Cortex, Reliquary, Foam, Dustskin,
+  Plume, Resonant Wormhole and Moiré), the raymarched scene and its shader, the
+  body simulation, the world-anchored "melt" medium, the Customize tab and its
+  twenty-four `hyper*` parameters are gone. Saved presets and templates that
+  named a Hyperspace scene fall back to the default style; their unknown JSON
+  keys are ignored on read, so nothing else in a preset is lost.
+- Cymatics keeps its original saved-preset IDs while exposing ten authored
+  substyles through one shared renderer.
 - The eight named crystal themes now draw different deterministic mineral
   structures instead of recolouring one generic glass/nebula texture.
 - Design rationale, open-source references, the complete style catalogue and

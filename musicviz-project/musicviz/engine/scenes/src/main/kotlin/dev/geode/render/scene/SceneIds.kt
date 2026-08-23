@@ -29,6 +29,5 @@ object SceneIds {
     const val CURLFLOW: String = "curlflow"
     const val WATER: String = "water"
     const val CYMATICS: String = "cymatics"
-    const val HYPERSPACE: String = "hyperspace"
     const val BEAM: String = "beam"
 }

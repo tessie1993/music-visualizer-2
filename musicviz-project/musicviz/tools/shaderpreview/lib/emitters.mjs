@@ -11,7 +11,7 @@
 //
 // Ported from render/fluid/FluidEmitters.kt.
 
-import { FluidHue } from './hyperspace-math.mjs';
+import { FluidHue } from './palette.mjs';
 
 const BASE_SPEED = 6;
 const MAX_SPLATS_PER_FRAME = 16;

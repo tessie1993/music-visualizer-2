@@ -25,7 +25,7 @@ session (§12).
 | `ParticleSceneBase` + CPU subclasses | `render/scene/ParticleSceneBase.kt` (444) + 9 scenes | REPLACE then DELETE | GPU family parity/fallback, screenshots, device benchmarks | not started |
 | Existing GLSL scenes | `app/src/main/res/raw/*.glsl` (65) | RECIPE, ADAPT or LEGACY bridge, individually | a coverage ledger row and a golden image each | include manifest checked offline, V2-1-04b; `ShaderIncludeManifestTest` moves with the shaders |
 | `SceneParams` | `render/scene/SceneParams.kt` (521, 165 fields) | FREEZE then REPLACE | disposition for all 168 serialized keys; preset round trips | not started |
-| `VisualStyleCatalog` | `render/scene/VisualStyleCatalog.kt` | MIGRATE IDs and names | all 11 Hyperspace and 11 Cymatics looks resolve recognisably | not started |
+| `VisualStyleCatalog` | `render/scene/VisualStyleCatalog.kt` | MIGRATE IDs and names | all 11 Cymatics looks resolve recognisably | not started |
 | `CompositeGrade` / `FxCompositor` | `render/CompositeGrade.kt`, `export/FxCompositor.kt` (468) | CONSOLIDATE into the render graph | blend, colour and golden tests | not started |
 | `VideoExporter` visual loop | `export/VideoExporter.kt` (892) | REPLACE duplicate path | unified `FrameRunner` parity and A/V sync | not started |
 | Live wallpaper integration | `wallpaper/` | KEEP shell, REPLACE runner | lifecycle, visibility, battery, context-loss tests | not started |
