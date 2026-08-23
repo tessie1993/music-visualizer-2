@@ -29,15 +29,16 @@ internal fun AppSettingsTab(
     exportOpen: Boolean = false,
     onOpenExport: () -> Unit,
 ) {
+    val settingsViewModel: SettingsViewModel = geodeViewModel()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize()) {
         CrystalTabs(titles = SETTINGS_TAB_TITLES, selected = tab, onSelect = { tab = it })
         when (tab) {
-            0 -> LookSettingsTab(viewModel)
+            0 -> LookSettingsTab(settingsViewModel)
             1 -> AudioSettingsTab(viewModel)
             2 -> ExportSettingsTab(exportOpen, onOpenExport)
-            3 -> FolderSettingsTab(viewModel)
-            4 -> BehaviorSettingsTab(viewModel)
+            3 -> FolderSettingsTab()
+            4 -> BehaviorSettingsTab(settingsViewModel)
             else -> AboutSettingsTab()
         }
     }

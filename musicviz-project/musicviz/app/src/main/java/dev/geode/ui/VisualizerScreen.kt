@@ -52,9 +52,10 @@ fun VisualizerScreen(
     onCollapse: () -> Unit,
     onOpenVisuals: () -> Unit,
 ) {
+    val settingsViewModel: SettingsViewModel = geodeViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val autoMode by viewModel.autoMode.collectAsStateWithLifecycle()
-    val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
+    val gui by settingsViewModel.guiPrefs.collectAsStateWithLifecycle()
     val waveform by viewModel.waveform.collectAsStateWithLifecycle()
     val lyrics by viewModel.lyrics.collectAsStateWithLifecycle()
     val queue by viewModel.queue.collectAsStateWithLifecycle()

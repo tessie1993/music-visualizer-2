@@ -27,17 +27,19 @@ import kotlin.math.roundToInt
 
 @Composable
 internal fun AudioSettingsTab(viewModel: PlayerViewModel) {
+    val settingsViewModel: SettingsViewModel = geodeViewModel()
     SettingsTabColumn {
-        item { SettingsGroup(stringResource(R.string.audio_group_playback)) { PlaybackSettingsSection(viewModel) } }
-        item { EqualizerSettings(viewModel) }
-        item { SettingsGroup(stringResource(R.string.audio_group_analysis)) { AnalysisGroup(viewModel) } }
+        item { SettingsGroup(stringResource(R.string.audio_group_playback)) { PlaybackSettingsSection(settingsViewModel) } }
+        item { EqualizerSettings(settingsViewModel) }
+        item { SettingsGroup(stringResource(R.string.audio_group_analysis)) { AnalysisGroup(settingsViewModel) } }
         item { SettingsGroup(stringResource(R.string.source_live_input)) { LiveInputGroup(viewModel) } }
         item { SettingsGroup(stringResource(R.string.source_other_apps)) { ExternalAudioSettings(viewModel) } }
     }
 }
 
 @Composable
-private fun AnalysisGroup(viewModel: PlayerViewModel) {
+private fun AnalysisGroup(viewModel: SettingsViewModel) {
+    val playerViewModel: PlayerViewModel = geodeViewModel()
     val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
     Column {
         Text(
@@ -102,7 +104,7 @@ private fun AnalysisGroup(viewModel: PlayerViewModel) {
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Switch(checked = gui.keyColor, onCheckedChange = viewModel::setKeyColor)
+            Switch(checked = gui.keyColor, onCheckedChange = playerViewModel::setKeyColor)
         }
         Text(
             stringResource(R.string.audio_key_colour_explainer),

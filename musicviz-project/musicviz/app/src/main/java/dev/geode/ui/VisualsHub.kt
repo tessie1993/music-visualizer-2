@@ -67,10 +67,12 @@ fun VisualsHub(
     onOpenNowPlaying: () -> Unit,
     liveBackdrop: Boolean = false,
 ) {
+    val settingsViewModel: SettingsViewModel = geodeViewModel()
+    val studioViewModel: StudioViewModel = geodeViewModel()
     var tab by rememberSaveable { mutableStateOf(0) }
     val tabs = listOf("Presets", "Styles", "Customize", "Textures", "Takes")
-    val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
-    val takes by viewModel.takeState.collectAsStateWithLifecycle()
+    val gui by settingsViewModel.guiPrefs.collectAsStateWithLifecycle()
+    val takes by studioViewModel.takeState.collectAsStateWithLifecycle()
     Box(Modifier.fillMaxSize()) {
         if (liveBackdrop) {
             VisualizerCanvasHost(visualizerView, Modifier.fillMaxSize())
@@ -117,7 +119,7 @@ fun VisualsHub(
                         GlowTitle("Visuals")
                     }
                     IconButton(onClick = {
-                        if (takes.recording) viewModel.stopRecording() else viewModel.startRecording()
+                        if (takes.recording) studioViewModel.stopRecording() else studioViewModel.startRecording()
                     }) {
                         Icon(
                             if (takes.recording) Icons.Filled.StopCircle else Icons.Filled.FiberManualRecord,
@@ -131,7 +133,7 @@ fun VisualsHub(
                         )
                     }
                     IconButton(onClick = {
-                        viewModel.setGuiPrefs(gui.copy(clearVisualsMenu = !gui.clearVisualsMenu))
+                        settingsViewModel.setGuiPrefs(gui.copy(clearVisualsMenu = !gui.clearVisualsMenu))
                     }) {
                         Icon(
                             if (liveBackdrop) Icons.Filled.LayersClear else Icons.Filled.Layers,
@@ -147,7 +149,7 @@ fun VisualsHub(
                     1 -> StylesTab(viewModel, visualizerView, onOpenTextures = { tab = 3 })
                     2 -> CustomizePanel(viewModel, visualizerView)
                     3 -> TexturesHubTab(viewModel, visualizerView)
-                    4 -> TakesTab(viewModel)
+                    4 -> TakesTab(studioViewModel)
                 }
             }
         }
@@ -184,8 +186,9 @@ private fun PresetsTreeTab(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
 ) {
+    val visualsViewModel: VisualsViewModel = geodeViewModel()
     val viz by viewModel.vizState.collectAsStateWithLifecycle()
-    val presetFolders by viewModel.presetFolders.collectAsStateWithLifecycle()
+    val presetFolders by visualsViewModel.presetFolders.collectAsStateWithLifecycle()
     val folders = presetFolders.folders
     var newFolder by remember { mutableStateOf("") }
     var saveName by remember { mutableStateOf("") }
@@ -202,7 +205,7 @@ private fun PresetsTreeTab(
     val presetFilePicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
-                viewModel.importPresetFile(uri) { name ->
+                visualsViewModel.importPresetFile(uri) { name ->
                     importNote = name?.let { "Imported \"$it\"." } ?: "That file is not a Geode preset."
                 }
             }
@@ -217,7 +220,7 @@ private fun PresetsTreeTab(
                         when {
                             pasted.isNullOrBlank() -> "The clipboard is empty."
                             else ->
-                                viewModel.importPresetLink(pasted)?.let { "Imported \"$it\"." }
+                                visualsViewModel.importPresetLink(pasted)?.let { "Imported \"$it\"." }
                                     ?: "That clipboard text is not a Geode preset link."
                         }
                 }) { Text("Paste a shared preset") }
@@ -243,7 +246,7 @@ private fun PresetsTreeTab(
                 )
                 CrystalButton(onClick = {
                     if (newFolder.isNotBlank()) {
-                        viewModel.addPresetFolder(newFolder.trim())
+                        visualsViewModel.addPresetFolder(newFolder.trim())
                         newFolder = ""
                     }
                 }) { Text("Add") }
@@ -280,7 +283,7 @@ private fun PresetsTreeTab(
                     IconButton(onClick = { applyPresetLive(viewModel, visualizerView, p) }) {
                         StoneIconArt(StoneIcon.PLAY, "Apply", tint = MaterialTheme.colorScheme.primary)
                     }
-                    IconButton(onClick = { sharePreset(context, viewModel, p.name) }) {
+                    IconButton(onClick = { sharePreset(context, visualsViewModel, p.name) }) {
                         StoneIconArt(StoneIcon.SHARE, "Share this preset")
                     }
                     val playlistIndex = vizPlaylistIndexOf(viz.vizPlaylist, p.name)
@@ -349,7 +352,7 @@ private fun PresetsTreeTab(
                         if (existing != null) {
                             replacingPreset = existing
                         } else {
-                            viewModel.savePreset(
+                            visualsViewModel.savePreset(
                                 saveName.trim(),
                                 visualizerView.visualizerRenderer.customShaderFor(viewModel.vizState.value.sceneId),
                                 saveFolder,
@@ -394,7 +397,7 @@ private fun PresetsTreeTab(
             },
             confirmButton = {
                 CrystalButton(enabled = proposed.isNotBlank() && !collides, onClick = {
-                    viewModel.renamePresetFolder(old, proposed)
+                    visualsViewModel.renamePresetFolder(old, proposed)
                     if (saveFolder == old) saveFolder = proposed
                     renamingFolder = null
                 }) { Text("Rename") }
@@ -414,7 +417,7 @@ private fun PresetsTreeTab(
                 ) {
                     (listOf("") + folders).forEach { f ->
                         CrystalButton(compact = true, filled = f == current, onClick = {
-                            viewModel.movePresetToFolder(name, f)
+                            visualsViewModel.movePresetToFolder(name, f)
                             movingPreset = null
                         }) { Text(f.ifEmpty { "root" }, style = MaterialTheme.typography.bodySmall) }
                     }
@@ -435,7 +438,7 @@ private fun PresetsTreeTab(
             },
             confirmButton = {
                 CrystalButton(onClick = {
-                    viewModel.savePreset(
+                    visualsViewModel.savePreset(
                         saveName.trim(),
                         visualizerView.visualizerRenderer.customShaderFor(viewModel.vizState.value.sceneId),
                         saveFolder,
@@ -459,7 +462,7 @@ private fun PresetsTreeTab(
             },
             confirmButton = {
                 CrystalButton(onClick = {
-                    viewModel.deletePreset(name)
+                    visualsViewModel.deletePreset(name)
                     deletingPreset = null
                 }) { Text("Delete") }
             },
@@ -483,7 +486,7 @@ private fun clipboardText(context: android.content.Context): String? =
 
 private fun sharePreset(
     context: android.content.Context,
-    viewModel: PlayerViewModel,
+    viewModel: VisualsViewModel,
     name: String,
 ) {
     val link = viewModel.presetShareLink(name)
@@ -605,9 +608,10 @@ private fun MilkDropTab(
     visualizerView: VisualizerView,
     onOpenTextures: () -> Unit,
 ) {
+    val visualsViewModel: VisualsViewModel = geodeViewModel()
     var refresh by remember { mutableStateOf(0) }
     val viz by viewModel.vizState.collectAsStateWithLifecycle()
-    val milkFiles = remember(refresh) { viewModel.userMilkPresets() }
+    val milkFiles = remember(refresh) { visualsViewModel.userMilkPresets() }
     val loaded by viewModel.activeMilkPath.collectAsStateWithLifecycle()
     var packReport by remember { mutableStateOf<dev.geode.data.MilkPackImporter.Report?>(null) }
     var singleMissesTexture by remember { mutableStateOf(false) }
@@ -723,6 +727,7 @@ internal fun CustomizePanel(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
 ) {
+    val visualsViewModel: VisualsViewModel = geodeViewModel()
     val viz by viewModel.vizState.collectAsStateWithLifecycle()
     var sub by rememberSaveable { mutableStateOf(0) }
     val isShader = SceneCapabilities.hasShaderLook(viz.sceneId)
@@ -755,13 +760,13 @@ internal fun CustomizePanel(
         )
         CustomizeToolbar(viewModel, viz.params, tabs.getOrNull(sub))
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-            val locked by viewModel.lockedParams.collectAsStateWithLifecycle()
+            val locked by visualsViewModel.lockedParams.collectAsStateWithLifecycle()
             androidx.compose.runtime.CompositionLocalProvider(
-                LocalParamLocks provides (locked to viewModel::toggleParamLock),
+                LocalParamLocks provides (locked to visualsViewModel::toggleParamLock),
             ) {
                 val p = viz.params
                 val onChange: (dev.geode.render.scene.SceneParams) -> Unit = { viewModel.setSceneParams(it) }
-                val lfos by viewModel.lfos.collectAsStateWithLifecycle()
+                val lfos by visualsViewModel.lfos.collectAsStateWithLifecycle()
                 when (tabs.getOrNull(sub)) {
                     CustomizeTab.MOTION -> MotionTab(p, onChange)
                     CustomizeTab.SHAPE ->
@@ -798,14 +803,14 @@ internal fun CustomizePanel(
                         )
                     }
                     CustomizeTab.FX -> {
-                        val adsrs by viewModel.adsrs.collectAsStateWithLifecycle()
+                        val adsrs by visualsViewModel.adsrs.collectAsStateWithLifecycle()
                         FxTab(
                             p,
                             onChange,
                             lfos = lfos,
-                            onLfoChange = viewModel::setLfo,
+                            onLfoChange = visualsViewModel::setLfo,
                             adsr = adsrs,
-                            onAdsrChange = viewModel::setAdsr,
+                            onAdsrChange = visualsViewModel::setAdsr,
                         )
                     }
                     CustomizeTab.FLUID ->
@@ -837,6 +842,7 @@ private fun CustomizeToolbar(
     params: dev.geode.render.scene.SceneParams,
     tab: CustomizeTab?,
 ) {
+    val visualsViewModel: VisualsViewModel = geodeViewModel()
     var confirmReset by remember { mutableStateOf(false) }
     val changed = remember(params) { CustomizeSummary.changedCount(params) }
     Row(
@@ -847,7 +853,7 @@ private fun CustomizeToolbar(
         CrystalButton(
             compact = true,
             enabled = tab != null,
-            onClick = { tab?.let(viewModel::randomizeParams) },
+            onClick = { tab?.let(visualsViewModel::randomizeParams) },
         ) {
             Icon(Icons.Filled.Casino, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
@@ -904,8 +910,9 @@ private fun formatTakeTime(ms: Long): String {
 }
 
 @Composable
-private fun TakesTab(viewModel: PlayerViewModel) {
-    val takes by viewModel.takeState.collectAsStateWithLifecycle()
+private fun TakesTab(viewModel: StudioViewModel) {
+    val studioViewModel = viewModel
+    val takes by studioViewModel.takeState.collectAsStateWithLifecycle()
     var renaming by remember { mutableStateOf<String?>(null) }
     var renameText by remember { mutableStateOf("") }
     var deleting by remember { mutableStateOf<String?>(null) }
@@ -967,7 +974,7 @@ private fun TakesTab(viewModel: PlayerViewModel) {
                     )
                 }
                 IconButton(onClick = {
-                    if (playing) viewModel.stopReplay() else viewModel.playTake(take.name)
+                    if (playing) studioViewModel.stopReplay() else studioViewModel.playTake(take.name)
                 }) {
                     if (playing) {
                         Icon(Icons.Filled.Stop, "Stop replay", tint = MaterialTheme.colorScheme.primary)
@@ -976,7 +983,7 @@ private fun TakesTab(viewModel: PlayerViewModel) {
                     }
                 }
                 IconButton(onClick = {
-                    viewModel.setExportTake(if (takes.exportTake == take.name) null else take.name)
+                    studioViewModel.setExportTake(if (takes.exportTake == take.name) null else take.name)
                 }) {
                     StoneIconArt(
                         StoneIcon.FAVORITE,
@@ -1024,7 +1031,7 @@ private fun TakesTab(viewModel: PlayerViewModel) {
             },
             confirmButton = {
                 CrystalButton(enabled = renameError == null, onClick = {
-                    viewModel.renameTake(old, proposed)
+                    studioViewModel.renameTake(old, proposed)
                     renaming = null
                 }) { Text("Rename") }
             },
@@ -1040,7 +1047,7 @@ private fun TakesTab(viewModel: PlayerViewModel) {
             },
             confirmButton = {
                 CrystalButton(onClick = {
-                    viewModel.deleteTake(name)
+                    studioViewModel.deleteTake(name)
                     deleting = null
                 }) { Text("Delete") }
             },
@@ -1056,12 +1063,13 @@ private fun TexturesHubTab(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
 ) {
-    val textures by viewModel.textures.collectAsStateWithLifecycle()
+    val visualsViewModel: VisualsViewModel = geodeViewModel()
+    val textures by visualsViewModel.textures.collectAsStateWithLifecycle()
     var deletingTexture by remember { mutableStateOf<String?>(null) }
     val picker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
             if (uris.isNotEmpty()) {
-                viewModel.importTextures(uris) { visualizerView.visualizerRenderer.reloadCurrentMilkPreset() }
+                visualsViewModel.importTextures(uris) { visualizerView.visualizerRenderer.reloadCurrentMilkPreset() }
             }
         }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1070,7 +1078,7 @@ private fun TexturesHubTab(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(tex.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 CrystalButton(compact = true, filled = false, onClick = {
-                    viewModel.useTexture(tex.name) { path -> selectMilk(viewModel, visualizerView, path) }
+                    visualsViewModel.useTexture(tex.name) { path -> selectMilk(viewModel, visualizerView, path) }
                 }) { Text("Use") }
                 IconButton(onClick = { deletingTexture = tex.name }) {
                     StoneIconArt(StoneIcon.DELETE, "Delete this texture", tint = MaterialTheme.colorScheme.error)
@@ -1091,7 +1099,7 @@ private fun TexturesHubTab(
             },
             confirmButton = {
                 CrystalButton(onClick = {
-                    viewModel.removeTexture(name)
+                    visualsViewModel.removeTexture(name)
                     deletingTexture = null
                 }) { Text("Delete") }
             },

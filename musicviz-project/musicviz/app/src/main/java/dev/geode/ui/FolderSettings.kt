@@ -31,11 +31,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-internal fun FolderSettingsTab(viewModel: PlayerViewModel) {
-    val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
+internal fun FolderSettingsTab() {
+    val settingsViewModel: SettingsViewModel = geodeViewModel()
+    val libraryViewModel: LibraryViewModel = geodeViewModel()
+    val gui by settingsViewModel.guiPrefs.collectAsStateWithLifecycle()
     SettingsTabColumn {
-        item { SettingsGroup(stringResource(R.string.folders_group_preset)) { PresetFolderGroup(viewModel, gui) } }
-        item { SettingsGroup(stringResource(R.string.folders_group_music)) { MusicFoldersEditor(viewModel) } }
+        item { SettingsGroup(stringResource(R.string.folders_group_preset)) { PresetFolderGroup(settingsViewModel, gui) } }
+        item { SettingsGroup(stringResource(R.string.folders_group_music)) { MusicFoldersEditor(libraryViewModel) } }
         item { SettingsGroup(stringResource(R.string.folders_group_cache)) { AnalysisCacheGroup() } }
         item {
             SettingsGroup(stringResource(R.string.folders_group_export)) {
@@ -51,7 +53,7 @@ internal fun FolderSettingsTab(viewModel: PlayerViewModel) {
 
 @Composable
 private fun PresetFolderGroup(
-    viewModel: PlayerViewModel,
+    viewModel: SettingsViewModel,
     gui: GuiPrefs,
 ) {
     val ctx = LocalContext.current
@@ -97,7 +99,7 @@ private fun PresetFolderGroup(
 }
 
 @Composable
-internal fun MusicFoldersEditor(viewModel: PlayerViewModel) {
+internal fun MusicFoldersEditor(viewModel: LibraryViewModel) {
     val roots by viewModel.mediaRoots.collectAsStateWithLifecycle()
     val scanning by viewModel.libraryScanning.collectAsStateWithLifecycle()
     val folderPicker =

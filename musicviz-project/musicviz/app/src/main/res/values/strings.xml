@@ -504,4 +504,6 @@
     <string name="action_close">Close</string>
     <string name="action_copy">Copy</string>
     <string name="action_dismiss">Dismiss</string>
+    <string name="preset_link_imported">Preset \"%1$s\" imported — it is in Visuals › Presets.</string>
+    <string name="preset_link_unreadable">That preset link could not be read. It may have been cut short in transit.</string>
 </resources>

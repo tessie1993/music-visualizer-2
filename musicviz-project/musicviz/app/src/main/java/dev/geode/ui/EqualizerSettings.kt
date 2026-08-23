@@ -17,7 +17,7 @@ import dev.geode.audio.AudioFxFormat
 import dev.geode.audio.AudioFxState
 
 @Composable
-fun EqualizerSettings(viewModel: PlayerViewModel) {
+fun EqualizerSettings(viewModel: SettingsViewModel) {
     val fx by viewModel.audioFx.collectAsStateWithLifecycle()
     EqualizerCard(
         fx = fx,

@@ -257,7 +257,7 @@ fun QueuePanel(
     onMoveUp: (Int) -> Unit,
     onRemove: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: PlayerViewModel = viewModel(),
+    viewModel: LibraryViewModel = geodeViewModel(),
 ) {
     if (queue.tracks.isEmpty()) {
         Column(modifier.padding(24.dp)) {

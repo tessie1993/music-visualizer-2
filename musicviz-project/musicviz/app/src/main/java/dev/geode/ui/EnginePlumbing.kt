@@ -30,11 +30,13 @@ fun VisualizerEngineBindings(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
 ) {
+    val settingsViewModel: SettingsViewModel = geodeViewModel()
+    val visualsViewModel: VisualsViewModel = geodeViewModel()
     val viz by viewModel.vizState.collectAsStateWithLifecycle()
-    val lfos by viewModel.lfos.collectAsStateWithLifecycle()
-    val adsrs by viewModel.adsrs.collectAsStateWithLifecycle()
-    val playerPrefs by viewModel.playerPrefs.collectAsStateWithLifecycle()
-    val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
+    val lfos by visualsViewModel.lfos.collectAsStateWithLifecycle()
+    val adsrs by visualsViewModel.adsrs.collectAsStateWithLifecycle()
+    val playerPrefs by settingsViewModel.playerPrefs.collectAsStateWithLifecycle()
+    val gui by settingsViewModel.guiPrefs.collectAsStateWithLifecycle()
     val layers by LayersBus.state.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
@@ -81,7 +83,7 @@ fun VisualizerEngineBindings(
         viewModel.morphFade.collect { visualizerView.visualizerRenderer.beginParamMorph(it) }
     }
     LaunchedEffect(Unit) {
-        visualizerView.visualizerRenderer.onMilkPresetLoaded = { viewModel.noteMilkPreset(it) }
+        visualizerView.visualizerRenderer.onMilkPresetLoaded = { visualsViewModel.noteMilkPreset(it) }
         viewModel.activeMilkPath.value?.let { visualizerView.visualizerRenderer.loadMilkPreset(it) }
         viewModel.vizApply.collect { apply ->
             apply.milkPath?.let {

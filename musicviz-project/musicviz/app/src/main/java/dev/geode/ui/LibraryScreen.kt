@@ -71,10 +71,9 @@ import dev.geode.ui.theme.StoneIconArt
 import kotlin.math.roundToInt
 
 @Composable
-fun LibraryScreen(
-    viewModel: PlayerViewModel,
-    onOpenSearch: () -> Unit,
-) {
+fun LibraryScreen(onOpenSearch: () -> Unit) {
+    val libraryViewModel: LibraryViewModel = geodeViewModel()
+    val playerViewModel: PlayerViewModel = geodeViewModel()
     val context = LocalContext.current
     val permission =
         if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
@@ -86,8 +85,8 @@ fun LibraryScreen(
     val permLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     var reloadKey by remember { mutableStateOf(0) }
-    val tracks by viewModel.deviceTracks.collectAsStateWithLifecycle()
-    LaunchedEffect(granted, reloadKey) { if (granted) viewModel.refreshDeviceTracks() }
+    val tracks by libraryViewModel.deviceTracks.collectAsStateWithLifecycle()
+    LaunchedEffect(granted, reloadKey) { if (granted) libraryViewModel.refreshDeviceTracks() }
     var tab by rememberSaveable { mutableStateOf(0) }
     val tabs =
         listOf(
@@ -139,11 +138,11 @@ fun LibraryScreen(
         }
         CrystalTabs(titles = tabs, selected = tab, onSelect = { tab = it })
         when (tab) {
-            0 -> TrackList(tracks, viewModel)
-            1 -> GroupList(tracks.groupBy { it.album }, viewModel)
-            2 -> GroupList(tracks.groupBy { it.artist }, viewModel)
-            3 -> PlaylistsTab(viewModel)
-            4 -> FoldersTab(tracks.groupBy { it.folder }, viewModel)
+            0 -> TrackList(tracks, playerViewModel)
+            1 -> GroupList(tracks.groupBy { it.album }, playerViewModel)
+            2 -> GroupList(tracks.groupBy { it.artist }, playerViewModel)
+            3 -> PlaylistsTab(libraryViewModel)
+            4 -> FoldersTab(tracks.groupBy { it.folder }, playerViewModel)
         }
     }
 }
@@ -167,7 +166,8 @@ private fun TrackRow(
     subtitleOverride: String? = null,
     queue: List<QueueTrack> = emptyList(),
 ) {
-    val overrides by viewModel.trackOverrides.collectAsStateWithLifecycle()
+    val libraryViewModel: LibraryViewModel = geodeViewModel()
+    val overrides by libraryViewModel.trackOverrides.collectAsStateWithLifecycle()
     val stored = overrides[t.uri]
     val title = stored?.title?.ifBlank { null } ?: t.title
     val analyzed = stored?.takeIf { it.analyzed }
@@ -219,7 +219,7 @@ private fun TrackRow(
                 menu = false
             })
             DropdownMenuItem(text = { Text(stringResource(R.string.action_add_to_library_list)) }, onClick = {
-                viewModel.importTracks(listOf(Uri.parse(t.uri)))
+                libraryViewModel.importTracks(listOf(Uri.parse(t.uri)))
                 menu = false
             })
             DropdownMenuItem(text = { Text(stringResource(R.string.action_edit_track_info)) }, onClick = {
@@ -229,17 +229,17 @@ private fun TrackRow(
         }
     }
     if (editing) {
-        TrackInfoEditor(uri = t.uri, viewModel = viewModel, onDismiss = { editing = false })
+        TrackInfoEditor(uri = t.uri, viewModel = libraryViewModel, onDismiss = { editing = false })
     }
     if (addingToPlaylist) {
-        AddToPlaylistDialog(uri = t.uri, viewModel = viewModel, onDismiss = { addingToPlaylist = false })
+        AddToPlaylistDialog(uri = t.uri, viewModel = libraryViewModel, onDismiss = { addingToPlaylist = false })
     }
 }
 
 @Composable
 private fun AddToPlaylistDialog(
     uri: String,
-    viewModel: PlayerViewModel,
+    viewModel: LibraryViewModel,
     onDismiss: () -> Unit,
 ) {
     val library by viewModel.library.collectAsStateWithLifecycle()
@@ -378,7 +378,7 @@ private fun GroupList(
 }
 
 @Composable
-private fun PlaylistsTab(viewModel: PlayerViewModel) {
+private fun PlaylistsTab(viewModel: LibraryViewModel) {
     val library by viewModel.library.collectAsStateWithLifecycle()
     var expanded by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf<String?>(null) }
@@ -520,7 +520,7 @@ internal fun playlistRowShift(
 private fun PlaylistTracks(
     playlist: MusicPlaylist,
     tracks: List<LibraryTrack>,
-    viewModel: PlayerViewModel,
+    viewModel: LibraryViewModel,
 ) {
     val count = playlist.trackUris.size
     var dragFrom by remember(playlist.name) { mutableIntStateOf(-1) }
@@ -598,11 +598,12 @@ private fun FoldersTab(
     folders: Map<String, List<DeviceTrack>>,
     viewModel: PlayerViewModel,
 ) {
-    val roots by viewModel.mediaRoots.collectAsStateWithLifecycle()
-    val scanning by viewModel.libraryScanning.collectAsStateWithLifecycle()
+    val libraryViewModel: LibraryViewModel = geodeViewModel()
+    val roots by libraryViewModel.mediaRoots.collectAsStateWithLifecycle()
+    val scanning by libraryViewModel.libraryScanning.collectAsStateWithLifecycle()
     val folderPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-            if (uri != null) viewModel.importFolder(uri)
+            if (uri != null) libraryViewModel.importFolder(uri)
         }
     Column {
         Text(
@@ -624,7 +625,7 @@ private fun FoldersTab(
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
                 )
-                IconButton(onClick = { viewModel.removeMediaRoot(root) }) {
+                IconButton(onClick = { libraryViewModel.removeMediaRoot(root) }) {
                     StoneIconArt(StoneIcon.CLOSE, stringResource(R.string.folders_remove))
                 }
             }
@@ -641,7 +642,7 @@ private fun FoldersTab(
             CrystalButton(
                 compact = true,
                 filled = false,
-                onClick = viewModel::rescanMediaRoots,
+                onClick = libraryViewModel::rescanMediaRoots,
                 enabled = roots.isNotEmpty() && !scanning,
             ) {
                 Text(stringResource(if (scanning) R.string.folders_scanning else R.string.folders_rescan))

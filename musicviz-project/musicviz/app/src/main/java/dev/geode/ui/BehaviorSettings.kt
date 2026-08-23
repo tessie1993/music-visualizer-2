@@ -20,20 +20,21 @@ import dev.geode.render.VisualSafetyChoice
 import kotlin.math.roundToInt
 
 @Composable
-internal fun BehaviorSettingsTab(viewModel: PlayerViewModel) {
+internal fun BehaviorSettingsTab(viewModel: SettingsViewModel) {
+    val playerViewModel: PlayerViewModel = geodeViewModel()
     val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
     SettingsTabColumn {
         item { SettingsGroup(stringResource(R.string.behavior_group_touch)) { TouchGroup(viewModel, gui) } }
         item { SettingsGroup(stringResource(R.string.behavior_group_display)) { ConnectedDisplayGroup(viewModel, gui) } }
         item { SettingsGroup(stringResource(R.string.behavior_group_safety)) { VisualSafetyGroup(viewModel, gui) } }
-        item { SettingsGroup(stringResource(R.string.behavior_group_auto)) { AutoVisualsGroup(viewModel) } }
+        item { SettingsGroup(stringResource(R.string.behavior_group_auto)) { AutoVisualsGroup(playerViewModel) } }
         item { SettingsGroup(stringResource(R.string.behavior_group_wallpaper)) { LiveWallpaperGroup() } }
     }
 }
 
 @Composable
 private fun TouchGroup(
-    viewModel: PlayerViewModel,
+    viewModel: SettingsViewModel,
     gui: GuiPrefs,
 ) {
     Column {
@@ -79,7 +80,7 @@ private fun TouchGroup(
 
 @Composable
 private fun ConnectedDisplayGroup(
-    viewModel: PlayerViewModel,
+    viewModel: SettingsViewModel,
     gui: GuiPrefs,
 ) {
     val external = rememberExternalDisplay()
@@ -112,7 +113,7 @@ private val SAFETY_CHOICES =
 
 @Composable
 private fun VisualSafetyGroup(
-    viewModel: PlayerViewModel,
+    viewModel: SettingsViewModel,
     gui: GuiPrefs,
 ) {
     Column {

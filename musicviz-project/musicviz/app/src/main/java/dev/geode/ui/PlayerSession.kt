@@ -932,6 +932,12 @@ class PlayerSession private constructor(
 
     val studio: StateFlow<StudioUiState> get() = exportController.studio
 
+    val playbackRepository: PlaybackRepository = SessionPlaybackRepository(this)
+
+    val visualizerRepository: VisualizerRepository = SessionVisualizerRepository(this)
+
+    val userDataRepository: UserDataRepository get() = container.userData
+
     fun startExport(
         aspect: ExportAspect,
         fps: Int,

@@ -64,9 +64,10 @@ fun ExportHost(
     visualizerView: VisualizerView,
     onDismiss: () -> Unit,
 ) {
+    val studioViewModel: StudioViewModel = geodeViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val viz by viewModel.vizState.collectAsStateWithLifecycle()
-    val export by viewModel.exportState.collectAsStateWithLifecycle()
+    val export by studioViewModel.exportState.collectAsStateWithLifecycle()
 
     var pendingExport by rememberSaveable(stateSaver = PendingExportSaver) {
         mutableStateOf<PendingExport?>(null)
@@ -95,13 +96,13 @@ fun ExportHost(
                 )
             }
         }
-    val takes by viewModel.takeState.collectAsStateWithLifecycle()
+    val takes by studioViewModel.takeState.collectAsStateWithLifecycle()
     SettingsDialog(
         export = export,
         hasMedia = state.hasMedia,
         takes = takes.takes.map { it.name },
         selectedTake = takes.exportTake,
-        onSelectTake = viewModel::setExportTake,
+        onSelectTake = studioViewModel::setExportTake,
         bpm = viz.bpm,
         trackDurationMs = state.durationMs,
         onStart = { aspect, fps, loopSafe, range ->
@@ -126,9 +127,9 @@ fun ExportHost(
                 )
             destinationPicker.launch("geode_${System.currentTimeMillis()}.mp4")
         },
-        onCancel = viewModel::cancelExport,
+        onCancel = studioViewModel::cancelExport,
         onDismiss = {
-            viewModel.resetExportState()
+            studioViewModel.resetExportState()
             onDismiss()
         },
     )

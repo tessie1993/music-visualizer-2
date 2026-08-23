@@ -64,11 +64,13 @@ import kotlinx.coroutines.withContext
 private const val CRASH_REPORT_MAX_BYTES = 64 * 1024
 
 @Composable
-fun AppRoot(viewModel: PlayerViewModel) {
+fun AppRoot() {
+    val viewModel: PlayerViewModel = geodeViewModel()
+    val settingsViewModel: SettingsViewModel = geodeViewModel()
     val context = LocalContext.current
     val visualizerView = remember { VisualizerView(context) }
-    val themePack by viewModel.theme.collectAsStateWithLifecycle()
-    val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
+    val themePack by settingsViewModel.theme.collectAsStateWithLifecycle()
+    val gui by settingsViewModel.guiPrefs.collectAsStateWithLifecycle()
     val systemDark = isSystemInDarkTheme()
     val effectiveTheme =
         if (gui.followSystemDark && !systemDark) {
@@ -77,13 +79,10 @@ fun AppRoot(viewModel: PlayerViewModel) {
         } else {
             themePack
         }
-    var dest by rememberSaveable { mutableStateOf(0) }
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    var searching by rememberSaveable { mutableStateOf(false) }
-    var bootDone by rememberSaveable { mutableStateOf(false) }
+    val externalDisplay = rememberExternalDisplay()
+    val appState = rememberGeodeAppState(externalDisplay)
     val bootAnimEnabled = remember { BootAnimationStore(GeodePrefsFiles(context).general).load() }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val externalDisplay = rememberExternalDisplay()
     val onSecondScreen = gui.secondScreen && externalDisplay != null
     if (onSecondScreen) {
         SecondScreenCanvas(externalDisplay, visualizerView)
@@ -111,7 +110,7 @@ fun AppRoot(viewModel: PlayerViewModel) {
             }
     }
     VisualizerEngineBindings(viewModel, visualizerView)
-    androidx.activity.compose.BackHandler(enabled = dest != 0) { dest = 0 }
+    androidx.activity.compose.BackHandler(enabled = !appState.onPlayer) { appState.resetToPlayer() }
     CrystalMaterialTheme(
         pack = effectiveTheme,
         gui = gui,
@@ -133,7 +132,7 @@ fun AppRoot(viewModel: PlayerViewModel) {
                     },
                 compact = gui.compactPlayer,
                 barOpacity = gui.barOpacity,
-                onExpand = { expanded = true },
+                onExpand = appState::expand,
                 onPlayPause = viewModel::togglePlayPause,
                 onPrevious = viewModel::previous,
                 onNext = viewModel::next,
@@ -144,13 +143,13 @@ fun AppRoot(viewModel: PlayerViewModel) {
             Scaffold(
                 containerColor = Color.Transparent,
                 topBar = {
-                    if (gui.playerPosition == PlayerPosition.TOP && state.hasMedia && dest != 0) {
+                    if (gui.playerPosition == PlayerPosition.TOP && state.hasMedia && !appState.onPlayer) {
                         Box(Modifier.statusBarsPadding()) { miniPlayer() }
                     }
                 },
                 bottomBar = {
                     Column {
-                        if (gui.playerPosition == PlayerPosition.BOTTOM && dest != 0) miniPlayer()
+                        if (gui.playerPosition == PlayerPosition.BOTTOM && !appState.onPlayer) miniPlayer()
                         Box(
                             Modifier
                                 .fillMaxWidth()
@@ -166,8 +165,8 @@ fun AppRoot(viewModel: PlayerViewModel) {
                                     CrystalNavItem(stringResource(R.string.nav_studio), StoneIcon.STUDIO),
                                     CrystalNavItem(stringResource(R.string.nav_settings), StoneIcon.SETTINGS),
                                 ),
-                            selected = dest,
-                            onSelect = { dest = it },
+                            selected = appState.dest,
+                            onSelect = appState::navigateTo,
                             opacity = gui.barOpacity,
                         )
                     }
@@ -175,29 +174,29 @@ fun AppRoot(viewModel: PlayerViewModel) {
             ) { pad ->
                 Box(Modifier.padding(pad)) {
                     PlaybackNoticeBanner(viewModel)
-                    when (dest) {
-                        0 ->
+                    when (appState.dest) {
+                        GeodeDestinations.PLAYER ->
                             PlayerScreen(
                                 viewModel,
-                                onOpenSearch = { searching = true },
-                                onExpand = { expanded = true },
-                                onOpenLibrary = { dest = 1 },
+                                onOpenSearch = appState::openSearch,
+                                onExpand = appState::expand,
+                                onOpenLibrary = { appState.navigateTo(GeodeDestinations.LIBRARY) },
                             )
-                        1 -> LibraryScreen(viewModel, onOpenSearch = { searching = true })
-                        2 ->
+                        GeodeDestinations.LIBRARY -> LibraryScreen(onOpenSearch = appState::openSearch)
+                        GeodeDestinations.VISUALS ->
                             VisualsHub(
                                 viewModel,
                                 visualizerView,
-                                onOpenNowPlaying = { expanded = true },
-                                liveBackdrop = gui.clearVisualsMenu && !expanded && !onSecondScreen,
+                                onOpenNowPlaying = appState::expand,
+                                liveBackdrop = gui.clearVisualsMenu && !appState.expanded && !onSecondScreen,
                             )
-                        3 -> StudioRoute()
-                        4 -> SettingsScreen(viewModel, visualizerView)
+                        GeodeDestinations.STUDIO -> StudioRoute()
+                        GeodeDestinations.SETTINGS -> SettingsScreen(viewModel, visualizerView)
                     }
                 }
             }
-            if (searching) {
-                SearchScreen(viewModel, onClose = { searching = false })
+            if (appState.searching) {
+                SearchScreen(viewModel, onClose = appState::closeSearch)
             }
             val clipLabel = stringResource(R.string.crash_clip_label)
             crashText?.let { text ->
@@ -224,27 +223,27 @@ fun AppRoot(viewModel: PlayerViewModel) {
                     },
                 )
             }
-            if (expanded) {
+            if (appState.expanded) {
                 VisualizerScreen(
                     viewModel = viewModel,
                     visualizerView = visualizerView,
                     externalDisplayName = if (onSecondScreen) externalDisplay?.name else null,
-                    onCollapse = { expanded = false },
+                    onCollapse = appState::collapse,
                     onOpenVisuals = {
-                        expanded = false
-                        dest = 2
+                        appState.collapse()
+                        appState.navigateTo(GeodeDestinations.VISUALS)
                     },
                 )
             }
-            if ((!bootAnimEnabled || bootDone) && gui.safetyChoice == VisualSafetyChoice.UNKNOWN) {
+            if ((!bootAnimEnabled || appState.bootDone) && gui.safetyChoice == VisualSafetyChoice.UNKNOWN) {
                 SafetyConsent(
                     onChoose = { choice, limited ->
-                        viewModel.setGuiPrefs(gui.copy(safetyChoice = choice, safeVisuals = limited))
+                        settingsViewModel.setGuiPrefs(gui.copy(safetyChoice = choice, safeVisuals = limited))
                     },
                 )
             }
-            if (bootAnimEnabled && !bootDone) {
-                BootIntro(onDone = { bootDone = true })
+            if (bootAnimEnabled && !appState.bootDone) {
+                BootIntro(onDone = { appState.bootDone = true })
             }
         }
     }
@@ -345,13 +344,15 @@ fun SearchScreen(
     viewModel: PlayerViewModel,
     onClose: () -> Unit,
 ) {
+    val settingsViewModel: SettingsViewModel = geodeViewModel()
+    val libraryViewModel: LibraryViewModel = geodeViewModel()
     var query by rememberSaveable { mutableStateOf("") }
     var debounced by rememberSaveable { mutableStateOf("") }
-    val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
-    val library by viewModel.library.collectAsStateWithLifecycle()
+    val gui by settingsViewModel.guiPrefs.collectAsStateWithLifecycle()
+    val library by libraryViewModel.library.collectAsStateWithLifecycle()
     val viz by viewModel.vizState.collectAsStateWithLifecycle()
-    val deviceTracks by viewModel.deviceTracks.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { viewModel.refreshDeviceTracks() }
+    val deviceTracks by libraryViewModel.deviceTracks.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { libraryViewModel.refreshDeviceTracks() }
     LaunchedEffect(query) {
         if (query.isNotBlank()) delay(250)
         debounced = query
@@ -477,7 +478,7 @@ fun SearchScreen(
                                 Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        viewModel.playPlaylist(pl.name)
+                                        libraryViewModel.playPlaylist(pl.name)
                                         onClose()
                                     }.padding(vertical = 8.dp),
                             ) {

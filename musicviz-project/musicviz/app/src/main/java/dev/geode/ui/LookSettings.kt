@@ -39,7 +39,7 @@ import dev.geode.data.BootAnimationStore
 import dev.geode.data.GeodePrefsFiles
 
 @Composable
-internal fun LookSettingsTab(viewModel: PlayerViewModel) {
+internal fun LookSettingsTab(viewModel: SettingsViewModel) {
     val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
     val appTheme by viewModel.theme.collectAsStateWithLifecycle()
     SettingsTabColumn {
@@ -104,7 +104,7 @@ internal fun LookSettingsTab(viewModel: PlayerViewModel) {
 
 @Composable
 private fun ThemePickerRow(
-    viewModel: PlayerViewModel,
+    viewModel: SettingsViewModel,
     current: dev.geode.ui.theme.ThemePack,
 ) {
     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -143,7 +143,7 @@ private fun ThemePickerRow(
 
 @Composable
 private fun FontColorRow(
-    viewModel: PlayerViewModel,
+    viewModel: SettingsViewModel,
     gui: GuiPrefs,
     appTheme: dev.geode.ui.theme.ThemePack,
 ) {
@@ -210,7 +210,7 @@ private fun FontColorRow(
 
 @Composable
 private fun LayoutGroup(
-    viewModel: PlayerViewModel,
+    viewModel: SettingsViewModel,
     gui: GuiPrefs,
 ) {
     Column {

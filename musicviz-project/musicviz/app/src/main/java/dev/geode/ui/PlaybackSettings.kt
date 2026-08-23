@@ -24,9 +24,10 @@ import dev.geode.data.PlayerPrefs
 private val SLEEP_TIMER_CHOICES = listOf(0, 15, 30, 45, 60)
 
 @Composable
-fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
+fun PlaybackSettingsSection(viewModel: SettingsViewModel) {
+    val playerViewModel: PlayerViewModel = geodeViewModel()
     val prefs by viewModel.playerPrefs.collectAsStateWithLifecycle()
-    val sleepRemainingMs by viewModel.sleepTimerRemainingMs.collectAsStateWithLifecycle()
+    val sleepRemainingMs by playerViewModel.sleepTimerRemainingMs.collectAsStateWithLifecycle()
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Column {
             Text(
@@ -100,7 +101,7 @@ fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
                                 minutes == 0
                             },
                         onClick = {
-                            if (minutes == 0) viewModel.cancelSleepTimer() else viewModel.startSleepTimer(minutes)
+                            if (minutes == 0) playerViewModel.cancelSleepTimer() else playerViewModel.startSleepTimer(minutes)
                         },
                         label = {
                             Text(

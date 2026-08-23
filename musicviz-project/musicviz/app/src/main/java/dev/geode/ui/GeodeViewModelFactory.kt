@@ -14,6 +14,10 @@ class GeodeViewModelFactory(
         val session = PlayerSession.acquire(application)
         val created: ViewModel =
             when (modelClass) {
+                PlayerViewModel::class.java -> PlayerViewModel(session)
+                LibraryViewModel::class.java -> LibraryViewModel(session)
+                SettingsViewModel::class.java -> SettingsViewModel(session)
+                VisualsViewModel::class.java -> VisualsViewModel(session)
                 StudioViewModel::class.java -> StudioViewModel(session)
                 else -> {
                     PlayerSession.release()
