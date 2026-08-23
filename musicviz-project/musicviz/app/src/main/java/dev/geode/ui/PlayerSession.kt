@@ -999,6 +999,9 @@ class PlayerSession private constructor(
 
     init {
         AudioBus.addConsumer()
+        // Last init block in the class, so every field above is assigned by now — which is what
+        // the capture controller needs before it may call back into this session.
+        captureController.start()
         musicLibrary.refreshNumericTitles()
         takeController.refresh()
         presetLibrary.refreshInitial()

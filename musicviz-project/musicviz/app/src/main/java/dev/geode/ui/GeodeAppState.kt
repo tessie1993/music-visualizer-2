@@ -1,31 +1,43 @@
 package dev.geode.ui
 
 import android.view.Display
+import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import dev.geode.R
+import dev.geode.ui.theme.StoneIcon
 
-object GeodeDestinations {
-    const val PLAYER = 0
-    const val LIBRARY = 1
-    const val VISUALS = 2
-    const val STUDIO = 3
-    const val SETTINGS = 4
+/**
+ * The app's top-level screens, in the order the navigation bar shows them.
+ *
+ * Each destination carries its own label and icon so the bar is built from this list rather
+ * than from a parallel one — a destination cannot exist without a way to reach it, and a
+ * `when` over these has no `else`, so adding a screen is a compile error until it is handled.
+ */
+enum class GeodeDestination(
+    @param:StringRes val labelRes: Int,
+    val icon: StoneIcon,
+) {
+    PLAYER(R.string.nav_player, StoneIcon.PLAY),
+    LIBRARY(R.string.nav_library, StoneIcon.LIBRARY),
+    VISUALS(R.string.nav_visuals, StoneIcon.VISUALIZER),
+    STUDIO(R.string.nav_studio, StoneIcon.STUDIO),
+    SETTINGS(R.string.nav_settings, StoneIcon.SETTINGS),
 }
 
 @Stable
 class GeodeAppState(
-    dest: Int = GeodeDestinations.PLAYER,
+    dest: GeodeDestination = GeodeDestination.PLAYER,
     expanded: Boolean = false,
     searching: Boolean = false,
     bootDone: Boolean = false,
 ) {
-    var dest by mutableIntStateOf(dest)
+    var dest by mutableStateOf(dest)
 
     var expanded by mutableStateOf(expanded)
 
@@ -36,7 +48,7 @@ class GeodeAppState(
     var externalDisplay: Display? = null
         internal set
 
-    val onPlayer: Boolean get() = dest == GeodeDestinations.PLAYER
+    val onPlayer: Boolean get() = dest == GeodeDestination.PLAYER
 
     fun openSearch() {
         searching = true
@@ -54,21 +66,25 @@ class GeodeAppState(
         expanded = false
     }
 
-    fun navigateTo(destination: Int) {
+    fun navigateTo(destination: GeodeDestination) {
         dest = destination
     }
 
     fun resetToPlayer() {
-        dest = GeodeDestinations.PLAYER
+        dest = GeodeDestination.PLAYER
     }
 
     companion object {
         val Saver: Saver<GeodeAppState, List<Any>> =
             Saver(
-                save = { listOf(it.dest, it.expanded, it.searching, it.bootDone) },
+                // Saved as the enum name, not its ordinal: reordering the navigation bar then
+                // cannot silently restore a process-death survivor onto a different screen.
+                save = { listOf(it.dest.name, it.expanded, it.searching, it.bootDone) },
                 restore = {
                     GeodeAppState(
-                        dest = it[0] as Int,
+                        dest =
+                            GeodeDestination.entries.firstOrNull { d -> d.name == it[0] }
+                                ?: GeodeDestination.PLAYER,
                         expanded = it[1] as Boolean,
                         searching = it[2] as Boolean,
                         bootDone = it[3] as Boolean,

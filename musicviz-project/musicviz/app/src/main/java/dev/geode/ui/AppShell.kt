@@ -68,6 +68,17 @@ import kotlinx.coroutines.withContext
 
 private const val CRASH_REPORT_MAX_BYTES = 64 * 1024
 
+/**
+ * A destination paired with the resolved label and icon the navigation surfaces draw for it.
+ *
+ * Built from [GeodeDestination.entries], so the bar and the rail cannot drift out of step with
+ * the screens they switch between, and selection compares destinations rather than positions.
+ */
+private data class NavEntry(
+    val destination: GeodeDestination,
+    val item: CrystalNavItem,
+)
+
 @Composable
 fun AppRoot() {
     val viewModel: PlayerViewModel = geodeViewModel()
@@ -143,25 +154,21 @@ fun AppRoot() {
                 onNext = viewModel::next,
             )
         }
-        val navItems =
-            listOf(
-                CrystalNavItem(stringResource(R.string.nav_player), StoneIcon.PLAY),
-                CrystalNavItem(stringResource(R.string.nav_library), StoneIcon.LIBRARY),
-                CrystalNavItem(stringResource(R.string.nav_visuals), StoneIcon.VISUALIZER),
-                CrystalNavItem(stringResource(R.string.nav_studio), StoneIcon.STUDIO),
-                CrystalNavItem(stringResource(R.string.nav_settings), StoneIcon.SETTINGS),
-            )
+        val navEntries =
+            GeodeDestination.entries.map {
+                NavEntry(it, CrystalNavItem(stringResource(it.labelRes), it.icon))
+            }
         val destinationContent: @Composable (twoPane: Boolean) -> Unit = { twoPane ->
             PlaybackNoticeBanner(viewModel)
             when (appState.dest) {
-                GeodeDestinations.PLAYER ->
+                GeodeDestination.PLAYER ->
                     PlayerScreen(
                         viewModel,
                         onOpenSearch = appState::openSearch,
                         onExpand = appState::expand,
-                        onOpenLibrary = { appState.navigateTo(GeodeDestinations.LIBRARY) },
+                        onOpenLibrary = { appState.navigateTo(GeodeDestination.LIBRARY) },
                     )
-                GeodeDestinations.LIBRARY ->
+                GeodeDestination.LIBRARY ->
                     if (twoPane) {
                         Row(Modifier.fillMaxSize()) {
                             Box(Modifier.weight(1f)) {
@@ -185,15 +192,15 @@ fun AppRoot() {
                     } else {
                         LibraryScreen(onOpenSearch = appState::openSearch)
                     }
-                GeodeDestinations.VISUALS ->
+                GeodeDestination.VISUALS ->
                     VisualsHub(
                         viewModel,
                         visualizerView,
                         onOpenNowPlaying = appState::expand,
                         liveBackdrop = gui.clearVisualsMenu && !appState.expanded && !onSecondScreen,
                     )
-                GeodeDestinations.STUDIO -> StudioRoute()
-                GeodeDestinations.SETTINGS -> SettingsScreen(viewModel, visualizerView)
+                GeodeDestination.STUDIO -> StudioRoute()
+                GeodeDestination.SETTINGS -> SettingsScreen(viewModel, visualizerView)
             }
         }
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -201,7 +208,7 @@ fun AppRoot() {
             val widthClass = currentWindowAdaptiveInfo().windowSizeClass.windowWidthSizeClass
             if (widthClass == WindowWidthSizeClass.COMPACT) {
                 AppShellCompact(
-                    navItems = navItems,
+                    navEntries = navEntries,
                     appState = appState,
                     gui = gui,
                     hasMedia = state.hasMedia,
@@ -210,7 +217,7 @@ fun AppRoot() {
                 )
             } else {
                 AppShellExpanded(
-                    navItems = navItems,
+                    navEntries = navEntries,
                     appState = appState,
                     hasMedia = state.hasMedia,
                     miniPlayer = miniPlayer,
@@ -253,7 +260,7 @@ fun AppRoot() {
                     onCollapse = appState::collapse,
                     onOpenVisuals = {
                         appState.collapse()
-                        appState.navigateTo(GeodeDestinations.VISUALS)
+                        appState.navigateTo(GeodeDestination.VISUALS)
                     },
                 )
             }
@@ -273,7 +280,7 @@ fun AppRoot() {
 
 @Composable
 private fun AppShellCompact(
-    navItems: List<CrystalNavItem>,
+    navEntries: List<NavEntry>,
     appState: GeodeAppState,
     gui: GuiPrefs,
     hasMedia: Boolean,
@@ -297,9 +304,9 @@ private fun AppShellCompact(
                         .luminousHairline(MaterialTheme.colorScheme.primary),
                 )
                 CrystalNavBar(
-                    items = navItems,
-                    selected = appState.dest,
-                    onSelect = appState::navigateTo,
+                    items = navEntries.map { it.item },
+                    selected = navEntries.indexOfFirst { it.destination == appState.dest },
+                    onSelect = { appState.navigateTo(navEntries[it].destination) },
                     opacity = gui.barOpacity,
                 )
             }
@@ -311,7 +318,7 @@ private fun AppShellCompact(
 
 @Composable
 private fun AppShellExpanded(
-    navItems: List<CrystalNavItem>,
+    navEntries: List<NavEntry>,
     appState: GeodeAppState,
     hasMedia: Boolean,
     miniPlayer: @Composable () -> Unit,
@@ -319,10 +326,10 @@ private fun AppShellExpanded(
 ) {
     Row(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         NavigationRail(containerColor = Color.Transparent) {
-            navItems.forEachIndexed { index, item ->
+            navEntries.forEach { (destination, item) ->
                 NavigationRailItem(
-                    selected = appState.dest == index,
-                    onClick = { appState.navigateTo(index) },
+                    selected = appState.dest == destination,
+                    onClick = { appState.navigateTo(destination) },
                     icon = { StoneIconArt(item.icon, item.label) },
                     label = { Text(item.label, style = MaterialTheme.typography.labelSmall) },
                 )
