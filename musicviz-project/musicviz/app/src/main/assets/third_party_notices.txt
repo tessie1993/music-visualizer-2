@@ -3,8 +3,8 @@ THIRD-PARTY NOTICES
 
 WebGL-Fluid-Simulation
 ----------------------
-The fluid simulation shaders and pipeline in app/src/main/res/raw/fluid_*.glsl
-and app/src/main/java/dev/geode/render/fluid/ are ported in part from:
+The fluid simulation shaders and pipeline in engine/scenes/src/main/res/raw/fluid_*.glsl
+and engine/scenes/src/main/kotlin/dev/geode/render/fluid/ are ported in part from:
 
   https://github.com/PavelDoGreat/WebGL-Fluid-Simulation
 
@@ -38,7 +38,7 @@ GPL-licensed fluid projects is included.
 
 Naadara (technique reference)
 -----------------------------
-The CYMATICS style's nodal rendering in app/src/main/res/raw/cymatics_field_frag.glsl
+The CYMATICS style's nodal rendering in engine/scenes/src/main/res/raw/cymatics_field_frag.glsl
 - a narrow Gaussian on the absolute field value for the bright filigree plus a
 wide one for its halo, layered additively - follows the approach taken by:
 
@@ -85,6 +85,41 @@ available at the URL above; and the dynamic-linking arrangement preserves
 the user's ability to replace the library. LGPL-2.1 section 6 requires a
 copy of the licence itself to accompany the app, not merely a link, so the
 full text is reproduced verbatim at the end of this file.
+
+The shipped binary statically embeds projectM's vendored dependencies, so
+their notices belong here too. Confirmed present by the build paths left in
+app/src/main/jniLibs/*/libprojectM-4.so:
+
+  glm (https://github.com/g-truc/glm) - Copyright (c) 2005 - G-Truc
+  Creation. Dual licensed under The Happy Bunny License (Modified MIT
+  License) and the MIT License.
+
+  hlslparser (https://github.com/Unknownworlds/hlslparser) - Copyright (c)
+  2013-2014 Unknown Worlds Entertainment, Inc. Licensed under the MIT
+  License.
+
+  SOIL2 (https://github.com/SpartanJ/SOIL2) - Copyright 2020 Martin Lucas
+  Golini, itself derived from Jonathan Dummer's public-domain SOIL.
+  Licensed under MIT No Attribution.
+
+  projectm-eval - part of the projectM project itself and covered by the
+  LGPL-2.1 notice above.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of the MIT-licensed software above and associated documentation files
+(the "Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to permit
+persons to whom the Software is furnished to do so, subject to the
+following conditions: the above copyright notice and this permission
+notice shall be included in all copies or substantial portions of the
+Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 AndroidX / Jetpack (Compose, Media3, DocumentFile, Activity, Lifecycle)
 -----------------------------------------------------------------------
@@ -163,7 +198,7 @@ IS" AND ANY EXPRESS OR IMPLIED WARRANTIES ARE DISCLAIMED.
 
 Free blue noise textures
 ------------------------
-The dither mask in app/src/main/res/raw/blue_noise_64.bin is the red channel of
+The dither mask in engine/scenes/src/main/res/raw/blue_noise_64.bin is the red channel of
 `64_64/LDR_LLL1_0.png` from:
 
   https://github.com/Calinou/free-blue-noise-textures
@@ -179,7 +214,7 @@ of which destroys the spectral property the mask exists for.
 
 woscope
 -------
-The oscilloscope beam maths in app/src/main/res/raw/beam_vert.glsl and
+The oscilloscope beam maths in engine/scenes/src/main/res/raw/beam_vert.glsl and
 beam_frag.glsl - expanding each waveform segment into a quad and integrating a
 Gaussian beam along it analytically, divided by the distance travelled so the
 trace brightens where the beam dwells - is ported from:
@@ -215,7 +250,7 @@ VBO. The error-function approximation is Abramowitz & Stegun 7.1.26.
 
 psrdnoise
 ---------
-app/src/main/res/raw/lib_psrdnoise2.glsl is vendored verbatim, with its licence
+engine/scenes/src/main/res/raw/lib_psrdnoise2.glsl is vendored verbatim, with its licence
 header intact, from:
 
   https://github.com/stegu/psrdnoise
@@ -234,7 +269,7 @@ seamless loop would be built on.
 
 Scientific colour maps (cyclic)
 -------------------------------
-app/src/main/res/raw/cyclic_palettes.bin packs the five CYCLIC scientific
+engine/scenes/src/main/res/raw/cyclic_palettes.bin packs the five CYCLIC scientific
 colour maps - bamO, brocO, corkO, romaO, vikO - at 256 entries each, RGB8,
 3840 bytes for the set. Source distribution:
 
@@ -765,13 +800,14 @@ necessary.  Here is a sample; alter the names:
 
 That's all there is to it!
 
-Cinzel (font)
--------------
-app/src/main/res/font/cinzel.ttf is the Cinzel variable font, bundled
-unmodified from https://github.com/google/fonts/tree/main/ofl/cinzel
-and used for the app's display/headline typography.
+Mali (font)
+-----------
+app/src/main/res/font/mali_regular.ttf, mali_medium.ttf, mali_semibold.ttf
+and mali_bold.ttf are the Mali family, bundled unmodified from
+https://github.com/google/fonts/tree/main/ofl/mali and used for the app's
+body, label and title typography (StoneTheme.kt).
 
-Copyright 2020 The Cinzel Project Authors (https://github.com/NDISCOVER/Cinzel)
+Copyright 2018 The Mali Project Authors (https://github.com/cadsondemak/Mali)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:
@@ -865,13 +901,15 @@ DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 
-Manrope (font)
---------------
-app/src/main/res/font/manrope.ttf is the Manrope variable font, bundled
-unmodified from https://github.com/google/fonts/tree/main/ofl/manrope
-and used for the app's body/label typography.
+Mystery Quest (font)
+--------------------
+app/src/main/res/font/mystery_quest_regular.ttf is the Mystery Quest font,
+bundled unmodified from
+https://github.com/google/fonts/tree/main/ofl/mysteryquest and used for the
+app's display and headline typography (StoneTheme.kt).
 
-Copyright 2018 The Manrope Project Authors (https://github.com/sharanda/manrope)
+Copyright (c) 2012 by Font Diner, Inc DBA Sideshow (diner@fontdiner.com),
+with Reserved Font Name "Mystery Quest"
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

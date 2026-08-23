@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Imports a MusicViz crystal theme pack into the app's Android resources.
+# Imports a crystal theme pack into Geode's Android resources.
 #
 # Usage: tools/import-theme-pack.sh <extracted-pack-dir> [<pack-dir> ...]
 #
@@ -8,18 +8,19 @@
 # to list exactly that set. Adding a crystal is then a folder drop plus one
 # re-run - no hand-written Kotlin.
 #
-# A pack is the unpacked `MusicViz-<Stone>-Theme-Pack/` folder. Everything the
-# app needs at runtime is derived from it; `preview/` and
-# `materials/material-master.png` are documentation and deliberately not
-# shipped.
+# A pack is the unpacked `MusicViz-<Stone>-Theme-Pack/` folder (the packs keep
+# their original name on disk). Everything the app needs at runtime is derived
+# from it; `preview/` and `materials/material-master.png` are documentation and
+# are not shipped - the app read the master nowhere, and ten of them were 25 MB.
 #
-# Every raster asset is copied byte-for-byte as the pack ships it. The PNGs go
-# in as PNGs - untranscoded, unresampled, unrecoloured - and the four assets
-# the packs already ship as WebP are copied in that form. Nothing here
-# re-encodes or regenerates artwork.
+# The packs ship their component art as PNG, and PNG is what made this app
+# unpublishable: ten packs came to ~300 MB of resources that an AAB cannot
+# compress, against Google Play's 200 MB limit for the entire download. So the
+# rasters are re-encoded to WebP here, at a quality where these mineral
+# textures are indistinguishable and about an eighth of the size. The four
+# assets the packs already ship as WebP are copied verbatim.
 #
-# That fidelity costs about 33 MB of PNG per crystal, so a build offering many
-# packs at once is large; import only the packs that build should ship.
+# Budget roughly 4 MB per crystal after encoding.
 #
 # Fonts are byte-identical across every pack, so they are written once.
 # Icon path geometry is also pack-invariant and lives in Kotlin
@@ -45,8 +46,29 @@ FAMILIES="album-tile bottom-sheet card chip compact-button dialog icon-button \
 knob list-row mini-player navigation-bar primary-button progress-ring \
 secondary-button slider-thumb slider-track text-field toggle"
 
-put_png() { # <src> <dest-basename>
-    cp "$1" "$DRAWABLE/$2.png"
+# Quality 90 measured at 12.9% of PNG across all ten packs, with no visible
+# difference on crystal surfaces. Raise it before reaching for PNG again.
+WEBP_QUALITY=90
+
+put_raster() { # <src> <dest-basename>
+    # A leftover .png beside the new .webp is a duplicate-resource build error.
+    rm -f "$DRAWABLE/$2.png"
+    if command -v cwebp >/dev/null 2>&1; then
+        cwebp -quiet -q "$WEBP_QUALITY" -alpha_q 100 -m 6 "$1" -o "$DRAWABLE/$2.webp"
+    elif python3 -c 'import PIL' >/dev/null 2>&1; then
+        python3 - "$1" "$DRAWABLE/$2.webp" "$WEBP_QUALITY" <<'PY'
+import sys
+from PIL import Image
+src, dst, quality = sys.argv[1], sys.argv[2], int(sys.argv[3])
+image = Image.open(src)
+if image.mode not in ("RGBA", "RGB"):
+    image = image.convert("RGBA")
+image.save(dst, "WEBP", quality=quality, method=6)
+PY
+    else
+        echo "need cwebp (libwebp-tools) or python3 with Pillow to encode WebP" >&2
+        exit 1
+    fi
 }
 
 # CATALOG_ONLY=1 skips the asset encode and only regenerates the Kotlin
@@ -65,16 +87,12 @@ for PACK in "$@"; do
         for s in $STATES; do
             src="$PACK/components/individual/$f--$s.png"
             [ -f "$src" ] || { echo "missing $src" >&2; exit 1; }
-            put_png "$src" "tp_${RS}_${f//-/_}_${s}"
+            put_raster "$src" "tp_${RS}_${f//-/_}_${s}"
         done
     done
 
-    put_png "$PACK/materials/glow-overlay.png"       "tp_${RS}_glow_overlay"
-    put_png "$PACK/materials/refraction-overlay.png" "tp_${RS}_refraction_overlay"
-    # The tokens name this one `material.texture`: the uncropped mineral master
-    # the mirrored tile is cut from, for surfaces big enough to show the seam.
-    put_png "$PACK/materials/material-master.png"    "tp_${RS}_material_master"
-
+    put_raster "$PACK/materials/glow-overlay.png"       "tp_${RS}_glow_overlay"
+    put_raster "$PACK/materials/refraction-overlay.png" "tp_${RS}_refraction_overlay"
     # Already WebP in the pack - copied verbatim, no re-encode.
     cp "$PACK/materials/material-tile.webp"        "$DRAWABLE/tp_${RS}_material_tile.webp"
     cp "$PACK/backgrounds/ambient-portrait.webp"   "$DRAWABLE/tp_${RS}_ambient_portrait.webp"
@@ -96,7 +114,7 @@ done
 # Regenerate ThemePackCatalog.kt from the packs' own token files, so the
 # Kotlin catalog can never drift from what was actually imported.
 # ---------------------------------------------------------------------------
-CATALOG="$SCRIPT_DIR/../app/src/main/java/dev/musicviz/ui/theme/ThemePackCatalog.kt"
+CATALOG="$SCRIPT_DIR/../app/src/main/java/dev/geode/ui/theme/ThemePackCatalog.kt"
 
 # token <pack-dir> <json-key>  -> string value from tokens/theme.tokens.json
 # (space-preserving: the pack contract requires exact names like "Clear Quartz")
@@ -117,10 +135,10 @@ color() {
 // GENERATED by tools/import-theme-pack.sh - DO NOT EDIT BY HAND.
 // Values are transcribed from each pack's tokens/{colors,theme.tokens}.json;
 // re-run the importer with every shipped pack to regenerate.
-package dev.musicviz.ui.theme
+package dev.geode.ui.theme
 
 import androidx.compose.ui.graphics.Color
-import dev.musicviz.R
+import dev.geode.R
 
 /** Every crystal pack this build ships, in theme-picker order. */
 object ThemePackCatalog {
@@ -176,7 +194,6 @@ HEADER
             material =
                 StoneMaterial(
                     tile = R.drawable.tp_${RS}_material_tile,
-                    master = R.drawable.tp_${RS}_material_master,
                     glowOverlay = R.drawable.tp_${RS}_glow_overlay,
                     refractionOverlay = R.drawable.tp_${RS}_refraction_overlay,
                     ambientPortrait = R.drawable.tp_${RS}_ambient_portrait,

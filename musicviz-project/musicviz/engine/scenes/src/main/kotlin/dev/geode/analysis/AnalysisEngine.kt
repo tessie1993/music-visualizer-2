@@ -146,7 +146,10 @@ class AnalysisEngine(
                     deadlineNs += TICK_NS
                     val now = System.nanoTime()
                     if (deadlineNs < now) deadlineNs = now
-                    delay((deadlineNs - now) / 1_000_000)
+                    // Never delay(0): it returns without suspending, so a tick that
+                    // overruns the budget would leave this loop with no suspension
+                    // point at all - uncancellable, and spinning a core flat out.
+                    delay(maxOf(1L, (deadlineNs - now) / 1_000_000))
                 }
             }
     }

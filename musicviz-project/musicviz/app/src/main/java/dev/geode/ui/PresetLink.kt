@@ -32,6 +32,11 @@ object PresetLink {
     fun decode(text: String): String? {
         val trimmed = text.trim()
         if (!isPresetLink(trimmed)) return null
+        // The producer refuses to mint a link longer than this and shares a file
+        // instead, so anything longer arrived from somewhere else. Enforcing it on
+        // the way IN too keeps a hostile link from spending the inflate budget
+        // below on the main thread before the first frame is drawn.
+        if (trimmed.length > MAX_LINK_LENGTH) return null
         val payload = trimmed.substring(PREFIX.length).substringBefore('#').substringBefore('?')
         if (payload.length > MAX_PAYLOAD_LENGTH) return null
         return runCatching {

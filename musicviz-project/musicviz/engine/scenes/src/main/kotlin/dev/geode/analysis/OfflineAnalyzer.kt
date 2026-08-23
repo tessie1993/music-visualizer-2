@@ -10,7 +10,9 @@ import dev.geode.engine.audio.KeyDetector
 import dev.geode.engine.audio.ReactiveAnalyzer
 import dev.geode.engine.audio.StereoField
 import dev.geode.util.bestEffort
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.nio.ByteOrder
 
@@ -24,14 +26,23 @@ class OfflineAnalyzer(
         onProgress: (Float) -> Unit = {},
     ): FeatureTimeline =
         withContext(Dispatchers.Default) {
-            analyzeBlocking(uri, beatSensitivity, beatMinIntervalMs, onProgress)
+            // The blocking body has no suspension point of its own, so without this
+            // the decode runs to completion after the caller is cancelled - holding a
+            // hardware MediaCodec the whole time.
+            analyzeBlocking(uri, beatSensitivity, beatMinIntervalMs, onProgress) { isActive }
         }
 
+    /**
+     * [stillWanted] is polled once per decoded buffer; returning false aborts the run with a
+     * [CancellationException], so the finally blocks below still release the codec and the
+     * extractor. It defaults to "always", which is what a caller outside a coroutine wants.
+     */
     fun analyzeBlocking(
         uri: Uri,
         beatSensitivity: Float = BeatTuning.SENSITIVITY_DEFAULT,
         beatMinIntervalMs: Float = BeatTuning.INTERVAL_MS_DEFAULT,
         onProgress: (Float) -> Unit = {},
+        stillWanted: () -> Boolean = { true },
     ): FeatureTimeline {
         dev.geode.audio.AiffPcm.open(context, uri)?.let { aiff ->
             try {
@@ -39,6 +50,7 @@ class OfflineAnalyzer(
                 val buf = ShortArray(16384)
                 var last = 0f
                 while (true) {
+                    if (!stillWanted()) throw CancellationException("analysis cancelled")
                     val n = aiff.read(buf)
                     if (n <= 0) break
                     pipeline.feed(java.nio.ShortBuffer.wrap(buf, 0, n), aiff.channels, aiff.sampleRate)
@@ -74,6 +86,7 @@ class OfflineAnalyzer(
             codec.configure(format, null, null, 0)
             codec.start()
             while (!outputDone) {
+                if (!stillWanted()) throw CancellationException("analysis cancelled")
                 if (!inputDone) {
                     val inIndex = codec.dequeueInputBuffer(10_000)
                     if (inIndex >= 0) {

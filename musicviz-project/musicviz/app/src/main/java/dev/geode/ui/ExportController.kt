@@ -118,7 +118,10 @@ internal class ExportController(
         exportCancelled = false
         _exportState.value =
             ExportUiState(customDestination = destination != null, phase = ExportPhase.Running(0f))
-        ExportRun.begin(uri.lastPathSegment.orEmpty())
+        // Basename only: a SAF document id is "primary:Music/Artist/Song.mp3", and this
+        // label goes straight into the foreground-service notification, where the lock
+        // screen and every enabled notification listener can read it.
+        ExportRun.begin(uri.lastPathSegment.orEmpty().substringAfterLast('/'))
         ExportService.start(application)
         exportJob =
             ExportRun.scope.launch(Dispatchers.Default) {

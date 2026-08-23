@@ -140,7 +140,7 @@ fun WaveformSeekBar(
                 )
             }
         }
-        val x = (size.width * played).coerceIn(1f, size.width - 1f)
+        val x = (size.width * played).coerceIn(1f, maxOf(1f, size.width - 1f))
         drawRoundRect(
             playhead,
             topLeft = Offset(x - 1.dp.toPx(), 0f),

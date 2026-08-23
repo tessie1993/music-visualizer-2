@@ -158,6 +158,9 @@ class StudioExporter(
         displayName: String,
     ): Uri? =
         runCatching {
+            // Below Q this insert needs WRITE_EXTERNAL_STORAGE, which the app does not hold;
+            // failing here rather than mid-insert keeps a half-made row out of the library.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
             val resolver = context.contentResolver
             val values =
                 ContentValues().apply {

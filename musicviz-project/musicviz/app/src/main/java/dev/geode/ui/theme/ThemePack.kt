@@ -50,7 +50,6 @@ data class StoneMotion(
 
 data class StoneMaterial(
     @param:DrawableRes val tile: Int,
-    @param:DrawableRes val master: Int,
     @param:DrawableRes val glowOverlay: Int,
     @param:DrawableRes val refractionOverlay: Int,
     @param:DrawableRes val ambientPortrait: Int,

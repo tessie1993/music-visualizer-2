@@ -5,7 +5,15 @@
 #include <projectM-4/projectM.h>
 
 #define TAG "milkdrop-jni"
+/* LOGI names user-chosen preset and texture paths, and native code cannot see
+ * BuildConfig.DEBUG - so the gate that keeps RingLog's echo out of release
+ * builds does not reach here. native-libs.yml compiles this file with -DNDEBUG,
+ * so the shipped bridge carries none of these. Errors still log either way. */
+#ifdef NDEBUG
+#define LOGI(...) ((void) 0)
+#else
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
+#endif
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
 /*

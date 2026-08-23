@@ -131,13 +131,28 @@ internal class SceneRegistry(
         milkdropScene?.reloadCurrent()
     }
 
+    /**
+     * Drops every built scene while the GL context is still current.
+     *
+     * [onSurfaceCreated] does this because a NEW context has arrived and the old objects are
+     * stale. This is the other direction: a host that is going away for good. It matters because
+     * MilkdropScene owns a projectM instance in the NATIVE heap, and losing the GL context
+     * reclaims none of that - only MilkdropScene.release() calls nativeDestroy. Pure-GL scenes
+     * would be reclaimed either way.
+     *
+     * Must be called on the GL thread.
+     */
+    fun releaseAll() {
+        milkdropScene = null
+        scenes.values.forEach { it.release() }
+        scenes.clear()
+    }
+
     fun onSurfaceCreated(
         width: Int,
         height: Int,
     ) {
-        milkdropScene = null
-        scenes.values.forEach { it.release() }
-        scenes.clear()
+        releaseAll()
         if (paletteLutTex != 0) {
             GLES30.glDeleteTextures(1, intArrayOf(paletteLutTex), 0)
             paletteLutTex = 0

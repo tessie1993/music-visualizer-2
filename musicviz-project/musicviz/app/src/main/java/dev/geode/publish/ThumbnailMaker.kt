@@ -489,6 +489,9 @@ class ThumbnailMaker(
         displayName: String,
     ): Uri? =
         runCatching {
+            // Below Q this insert needs WRITE_EXTERNAL_STORAGE; returning early keeps the
+            // failed write from leaving an empty row in the user's Pictures library.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
             val resolver = context.contentResolver
             val values =
                 ContentValues().apply {

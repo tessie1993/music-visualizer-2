@@ -90,7 +90,7 @@ jobs:
             *) echo "::error::no toolchain triple mapped for ABI $ABI"; exit 1 ;;
           esac
           "$TOOLCHAIN/bin/$TRIPLE$API-clang" \
-            -shared -fPIC -O2 \
+            -shared -fPIC -O2 -DNDEBUG \
             -o out/libmilkdropjni.so \
             musicviz-project/musicviz/tools/milkdrop_jni.c \
             -I projectm/src/api/include \
@@ -110,6 +110,23 @@ jobs:
                    nativeGetLastError nativeSetBeatSensitivity nativeSetPresetLocked; do
             grep -qx "Java_dev_geode_render_scene_MilkdropEngine_$m" exported.txt || {
               echo "::error::missing JNI export: $m"; exit 1; }
+          done
+
+      # These .so are committed and shipped as-is, and unstripped they each carry
+      # about 11 MB of DWARF that no device reads. AGP's own strip step cannot
+      # help: the app build installs no NDK, so stripDebugSymbols is a no-op and
+      # whatever is committed is what users download. Strip here, after the
+      # export check and before the checksums, so the recorded hashes describe
+      # the bytes that actually ship. --strip-unneeded keeps .dynsym, so every
+      # Java_dev_geode_* export verified above survives.
+      - name: Strip debug symbols
+        run: |
+          set -euo pipefail
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          for so in out/*.so; do
+            before=$(stat -c%s "$so")
+            "$TOOLCHAIN/bin/llvm-strip" --strip-unneeded "$so"
+            echo "$(basename "$so"): $before -> $(stat -c%s "$so") bytes"
           done
 
       - name: Verify 16 KB alignment

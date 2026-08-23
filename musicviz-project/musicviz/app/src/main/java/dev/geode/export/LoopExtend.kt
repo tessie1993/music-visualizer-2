@@ -435,6 +435,14 @@ class LoopExtend(
                     )
             return Target.Opened(destination, descriptor, viaMediaStore = false)
         }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            // Pre-scoped-storage, writing into the Videos library needs
+            // WRITE_EXTERNAL_STORAGE. Saying so beats letting the insert throw.
+            return Target.Failed(
+                "On this version of Android, Geode cannot add to your Videos library directly. " +
+                    "Render to a folder you choose instead.",
+            )
+        }
         val values =
             ContentValues().apply {
                 put(MediaStore.Video.Media.DISPLAY_NAME, fileName)

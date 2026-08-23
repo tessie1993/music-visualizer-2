@@ -30,13 +30,18 @@
     <string name="first_run_access_skip">Not now</string>
     <string name="first_run_access_denied">Music access is off, and Android will not ask again from here. You can turn it on in app settings whenever you like.</string>
     <string name="first_run_access_granted">Music access granted</string>
-    <string name="first_run_scanning">%1$d tracks found</string>
+    <plurals name="first_run_scanning">
+        <item quantity="one">%1$d track found</item>
+        <item quantity="other">%1$d tracks found</item>
+    </plurals>
     <string name="first_run_scanning_working">Scanning your library…</string>
     <string name="first_run_folder_title">Add a folder?</string>
     <string name="first_run_folder_body">Optional. Your library is already loading. Add a folder only if you keep music somewhere Android does not index — an SD card, or Downloads.</string>
     <string name="first_run_folder_pick">Choose a folder</string>
-    <string name="first_run_folder_added">%1$d folder added</string>
-    <string name="first_run_folder_added_plural">%1$d folders added</string>
+    <plurals name="first_run_folder_added">
+        <item quantity="one">%1$d folder added</item>
+        <item quantity="other">%1$d folders added</item>
+    </plurals>
     <string name="first_run_optional">Optional</string>
     <string name="first_run_done">Start listening</string>
 
@@ -86,7 +91,7 @@
     <string name="help_topic_touch">Touch on the visualizer</string>
     <string name="help_topic_touch_body">Every style reads where your finger is and means something by it — a vanishing point, a spawn point, a place the geometry reaches toward. Pinch and twist map onto the real Zoom and Rotation controls, so a gesture you like is saved with the preset.</string>
     <string name="help_topic_safety">Flashing and motion</string>
-    <string name="help_topic_safety_body">Settings › Behaviour has a safe-visuals clamp that limits how fast and how much of the screen can flash, and a separate reduced-motion switch. Turn them on before exploring if flashing affects you.</string>
+    <string name="help_topic_safety_body">Nothing on screen can flash more than three times a second. That limit lives in the engine, covers exported video as well as the screen, and is always on — there is no switch for it and nothing to turn on. Settings › Behavior › Visual safety adds one choice on top: “Slow the motion down”, which eases movement, shake, drift and rotation if motion rather than flashing is what affects you.</string>
     <string name="help_topic_performance">If it runs hot or stutters</string>
     <string name="help_topic_performance_body">The engine already lowers its own quality when the device heats up. The Detail control on the marched styles is the biggest single lever you have, and lowering it costs less than you would expect.</string>
 

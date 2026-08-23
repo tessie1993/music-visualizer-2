@@ -1,7 +1,9 @@
-# Transient agent worktrees created by the Claude Code harness.
-# These are full checkouts of this repo plus live .git pointer files;
-# they are cleaned up automatically and must never be committed.
-.claude/worktrees/
+# Agent tooling is local-only and is not tracked in this repository.
+.claude/
+.agents/
+.codex/
+AGENTS.md
+CLAUDE.md
 __pycache__/
 
 # Service credentials, at the repo root too: an .env dropped beside the
