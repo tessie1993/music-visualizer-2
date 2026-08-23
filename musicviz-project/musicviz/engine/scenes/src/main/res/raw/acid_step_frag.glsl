@@ -47,6 +47,21 @@ uniform float uBaseHue;
 uniform float uHueSpan;
 uniform float uLiquid;    // sine-field liquid warp amount
 
+// ---- the finger as a source ------------------------------------------------
+//
+// A finger draws into the SOURCE layer, upstream of everything: the loop then
+// zooms it, folds it, rotates its hue and smears it exactly as it does the
+// audio-drawn figure, so a swipe becomes a trail that keeps travelling for as
+// long as the feedback holds it. It also lands before srcLuma is measured, so
+// the finger displaces where the echo re-samples too - the picture bends
+// toward it, not just brightens under it. See SceneTouch.kt for the packing
+// (xy is y-up NDC, aspect NOT applied).
+#define TOUCH_MAX_POINTS 5
+/** Per finger: xy = position, z = strength 0..1, w = age in seconds. */
+uniform vec4 uTouchPoints[TOUCH_MAX_POINTS];
+/** Occupied slots, including ones still fading after release. 0 = nothing touched. */
+uniform int uTouchCount;
+
 const float TAU = 6.2831853;
 
 vec3 hsv2rgb(vec3 c) {
@@ -114,6 +129,38 @@ vec3 sourceLayer(vec2 q, float r, float ang) {
     return hsv2rgb(vec3(fract(uBaseHue + uTreble * 0.3), 0.7, 1.0)) * dot1 * 1.6;
 }
 
+/** Radius of a finger's spark, in the same units as q (half-screen = 0.5). */
+#define TOUCH_SPARK_RADIUS 0.06
+/** Ceiling on the summed spark, per channel. */
+#define TOUCH_SPARK_CAP 0.9
+
+/**
+ * The fingers, drawn as palette sparks.
+ *
+ * Hue walks with the finger's AGE rather than with time, so a held finger
+ * paints a gradient along its own path while a tap stays one colour - the
+ * gesture writes its own duration into the picture. 0.12 turns a second: a
+ * long drag crosses a third of the wheel, which reads as one continuous
+ * ribbon shading rather than as a rainbow.
+ *
+ * Capped, not normalized, for the same reason the pedestal below exists: this
+ * is an 8-bit loop with a gain just under 1, so anything injected at full
+ * white sits in the feedback for seconds. 0.9 leaves the top of the range to
+ * the crossings and the overdrive.
+ */
+vec3 touchSpark(vec2 q, float aspect) {
+    vec3 acc = vec3(0.0);
+    for (int i = 0; i < TOUCH_MAX_POINTS; i++) {
+        if (i >= uTouchCount) break;
+        vec4 t = uTouchPoints[i];
+        if (t.z <= 0.0) continue;
+        vec2 d = q - vec2(t.x * 0.5 * aspect, t.y * 0.5);
+        float g = t.z * exp(-dot(d, d) / (TOUCH_SPARK_RADIUS * TOUCH_SPARK_RADIUS));
+        acc += hsv2rgb(vec3(fract(uBaseHue + uHueSpan * 0.12 * t.w), 0.7, 1.0)) * g;
+    }
+    return min(acc, vec3(TOUCH_SPARK_CAP));
+}
+
 // -- the style warps ---------------------------------------------------------
 
 vec2 warp(vec2 q) {
@@ -176,6 +223,9 @@ void main() {
     float ang = atan(q.y, q.x);
 
     vec3 src = sourceLayer(q, r, ang) * uDrive;
+    // Outside uDrive on purpose: a finger is not audio, and it has to answer
+    // even with Audio drive at zero.
+    if (uTouchCount > 0) src += touchSpark(q, aspect);
 
     // hydra-style modulation: source brightness displaces the resample point.
     float srcLuma = dot(src, vec3(0.3333));

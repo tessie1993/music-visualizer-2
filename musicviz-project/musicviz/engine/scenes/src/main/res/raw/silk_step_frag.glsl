@@ -45,6 +45,20 @@ uniform float uStrike;     // raw-PCM transient, 0..1.5
 uniform float uBeatRing;   // expanding ring radius since the last beat, <0 = none
 uniform float uStateScale; // 1 on float targets; the RGBA8 fallback's dye range
 
+// ---- the finger as a source ------------------------------------------------
+//
+// Everything above injects where the STROKE LATTICE says to. A finger is the
+// one seed the user places: dye is laid down under it in all three band lanes
+// and the flow then does what it does to any other dye - stretches it into
+// filaments and carries it away. Nothing else changes, which is the point;
+// touch is a source term, not a second engine. See SceneTouch.kt for the
+// packing (xy is y-up NDC, aspect NOT applied).
+#define TOUCH_MAX_POINTS 5
+/** Per finger: xy = position, z = strength 0..1, w = age in seconds. */
+uniform vec4 uTouchPoints[TOUCH_MAX_POINTS];
+/** Occupied slots, including ones still fading after release. 0 = nothing touched. */
+uniform int uTouchCount;
+
 const float TAU = 6.2831853;
 
 // -- field library -----------------------------------------------------------
@@ -135,6 +149,39 @@ vec3 strokes(vec2 q, vec2 dir, float aspect) {
     return acc;
 }
 
+/** Radius of a finger's deposit, as a fraction of the half-screen. */
+#define TOUCH_INK_RADIUS 0.09
+/** Ceiling on the summed deposit, per lane. */
+#define TOUCH_INK_CAP 1.5
+
+/**
+ * Dye laid down under the fingers, in field units.
+ *
+ * The lane weights are the live band envelopes over a floor: a finger paints
+ * in whatever the music is made of right now, and the floor is what makes it
+ * still paint in silence - a finger that left no mark on a quiet passage would
+ * read as the touch being broken rather than as the track being quiet.
+ *
+ * SUMMED over fingers, then capped. Summing is what lets two fingers crossing
+ * read brighter than one; the cap is what keeps five of them from writing a
+ * value the feedback would carry for the rest of the session. It is a hard
+ * ceiling rather than a normalization because the step's own `max(prev, add)`
+ * means whatever is injected here is the new floor of that texel's history.
+ */
+vec3 touchInk(vec2 q, float aspect, float span) {
+    vec3 acc = vec3(0.0);
+    float radius = TOUCH_INK_RADIUS * span;
+    vec3 lane = vec3(0.25) + 0.75 * vec3(uBass, uMid, uTreble);
+    for (int i = 0; i < TOUCH_MAX_POINTS; i++) {
+        if (i >= uTouchCount) break;
+        vec4 t = uTouchPoints[i];
+        if (t.z <= 0.0) continue;
+        vec2 d = q - vec2(t.x * 0.5 * aspect, t.y * 0.5) * span;
+        acc += lane * (t.z * exp(-dot(d, d) / (radius * radius)));
+    }
+    return min(acc, vec3(TOUCH_INK_CAP));
+}
+
 void main() {
     vec2 uv = vUv;
     float aspect = uRes.x / uRes.y;
@@ -175,6 +222,11 @@ void main() {
         float ring = exp(-pow((length(q) - uBeatRing) * 9.0, 2.0));
         add.r += ring * uBeat * 0.8;
     }
+
+    // Deliberately NOT scaled by uDrive: a finger is not audio, and a user who
+    // has turned Audio drive down to watch the flow on its own still expects
+    // the thing they are touching to answer.
+    if (uTouchCount > 0) add += touchInk(q, aspect, 3.2 * uFieldScale);
 
     vec3 color = max(prev, add) + add * 0.3;
     fragColor = vec4(min(color, vec3(8.0)) / uStateScale, 1.0);

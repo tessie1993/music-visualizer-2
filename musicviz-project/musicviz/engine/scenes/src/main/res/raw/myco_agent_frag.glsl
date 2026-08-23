@@ -41,6 +41,26 @@ uniform float uAniso;        // vertical sensing bias for frost-like growth
 uniform float uInit;         // 1 = write a fresh random population and stop
 uniform float uSpeciesMix;   // fraction of agents born as species B
 
+// ---- the finger as a spore fall --------------------------------------------
+//
+// The colony has no seeding pass after uInit - it is the same population from
+// the first frame to the last - so the only way a finger can mean anything
+// here is to be where some of those agents are BORN AGAIN. A hashed slice of
+// the population is relocated under the fingertip each frame with headings
+// pointing outward, and it then walks and deposits like every other agent, so
+// what appears is a real colony growing out of the touch rather than a mark
+// drawn on top of one. See SceneTouch.kt for the packing (xy is y-up NDC,
+// which is also agent/trail space once mapped through xy*0.5 + 0.5).
+#define TOUCH_MAX_POINTS 5
+/** Per finger: xy = position, z = strength 0..1, w = age in seconds. */
+uniform vec4 uTouchPoints[TOUCH_MAX_POINTS];
+/** Occupied slots, including ones still fading after release. 0 = nothing touched. */
+uniform int uTouchCount;
+/** Fraction of the population reborn at a finger THIS FRAME; MycoScene scales it by dt. */
+uniform float uTouchBirth;
+/** Radius of the spore cloud, in trail-space units. */
+#define TOUCH_SPAWN_SPREAD 0.05
+
 const float TAU = 6.2831853;
 
 float hash1(vec2 q) {
@@ -112,6 +132,31 @@ void main() {
     if (uReaim > 0.0 && hash1(vUv * 313.0 + 7.7) < uReaim) {
         vec2 fromCentre = pos - 0.5;
         heading = atan(fromCentre.y, fromCentre.x) + (rnd - 0.5) * 0.8;
+    }
+
+    // Spore fall: a slice of the colony is reborn under a finger, aimed out of
+    // the cloud it lands in, so the touch grows a network instead of stamping a
+    // blob. The slice is a per-frame FRACTION and the scene keeps it small
+    // (MycoScene.TOUCH_BIRTH_PER_SECOND) for a reason that is visible the
+    // moment it is not: every relocated agent stops maintaining the road it was
+    // on, and above roughly a third of the population per second the existing
+    // network dies faster than the new one grows and the screen goes empty.
+    if (uTouchCount > 0 && hash1(vUv * 613.0 + fract(uTime) * 53.3) < uTouchBirth) {
+        // Pick a finger by hash rather than always slot 0, so several fingers
+        // split one birth budget instead of each spending it.
+        float pick = hash1(vUv * 271.0 + 5.9) * float(uTouchCount);
+        vec4 tp = vec4(0.0);
+        for (int i = 0; i < TOUCH_MAX_POINTS; i++) {
+            if (i >= uTouchCount) break;
+            if (float(i) <= pick && pick < float(i) + 1.0) tp = uTouchPoints[i];
+        }
+        if (tp.z > 0.0) {
+            vec2 off = hash2(vUv * 811.0 + fract(uTime) * 29.3) - 0.5;
+            pos = fract(tp.xy * 0.5 + 0.5 + off * TOUCH_SPAWN_SPREAD);
+            // Outward from where it landed in the cloud: the burst disperses
+            // instead of every newborn setting off on the same bearing.
+            heading = atan(off.y, off.x + 1e-5);
+        }
     }
 
     if (uSnap > 0.0) heading = floor(heading / uSnap + 0.5) * uSnap;

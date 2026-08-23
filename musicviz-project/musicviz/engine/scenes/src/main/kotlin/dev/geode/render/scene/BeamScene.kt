@@ -5,6 +5,7 @@ import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
 import dev.geode.engine.scenes.R
 import dev.geode.render.LiveSignal
+import dev.geode.render.TouchField
 import dev.geode.render.fluid.FluidHue
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -14,7 +15,8 @@ import kotlin.math.max
 internal class BeamScene(
     private val context: Context,
 ) : Scene,
-    PcmSink {
+    PcmSink,
+    TouchReactive {
     override val id: String = SceneIds.BEAM
 
     private companion object {
@@ -61,6 +63,8 @@ internal class BeamScene(
 
     private var beatPulse = 0f
 
+    private var touch: TouchField? = null
+
     var onShaderError: (String?) -> Unit = {}
 
     override fun init() {
@@ -92,6 +96,10 @@ internal class BeamScene(
 
     override fun setParams(params: SceneParams) {
         this.params = params
+    }
+
+    override fun setTouchField(field: TouchField) {
+        touch = field
     }
 
     override fun resize(
@@ -149,6 +157,7 @@ internal class BeamScene(
         )
         FluidHue.rgb(FluidHue.base(p.paletteBase), 1f, beamRgb)
         GLES30.glUniform3f(loc("uColor"), beamRgb[0], beamRgb[1], beamRgb[2])
+        SceneTouch.upload(uniforms, touch)
 
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE)

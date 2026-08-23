@@ -5,6 +5,7 @@ import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
 import dev.geode.engine.scenes.R
 import dev.geode.render.LiveSignal
+import dev.geode.render.TouchField
 import dev.geode.render.fluid.FluidHue
 import kotlin.math.PI
 import kotlin.math.cos
@@ -17,7 +18,8 @@ internal class CymaticsScene(
     private val style: VisualStyleCatalog.CymaticsStyle =
         requireNotNull(VisualStyleCatalog.cymatics(SceneIds.CYMATICS)),
 ) : Scene,
-    PcmSink {
+    PcmSink,
+    TouchReactive {
     override val id: String = style.id
 
     private companion object {
@@ -52,6 +54,19 @@ internal class CymaticsScene(
         const val TONE_HUE_SPAN = 0.05f
 
         const val PCM_STRIKE_GAIN = 0.6f
+
+        /**
+         * Bounds on the finger's ripple wavenumber, radians per field unit.
+         *
+         * The driver radiates at the plate's own wavenumber, so the ripples land on the
+         * same scale as the figure they are disturbing. The floor matters more than the
+         * ceiling: with Audio drive at zero nothing rings, the dominant wavenumber is 0,
+         * and an unbounded k would put a single flat lobe under the finger instead of
+         * rings. The ceiling keeps the highest modes from driving ripples finer than the
+         * screen can resolve, which is aliasing, not detail.
+         */
+        const val MIN_TOUCH_K = 5f
+        const val MAX_TOUCH_K = 26f
     }
 
     private val plate = CymaticsPlate()
@@ -89,6 +104,17 @@ internal class CymaticsScene(
     private var idleBlend = 0f
     private var idlePhase = 0f
 
+    private var touch: TouchField? = null
+
+    /**
+     * The finger's ripple phase, integrated and wrapped like every other clock here.
+     *
+     * A raw rate x wall-clock product would teleport the rings whenever Speed changed or
+     * the dominant mode moved; integrating means a change bends the motion from here on,
+     * which is the discipline the rest of this scene's phases already follow.
+     */
+    private var touchPhase = 0f
+
     private var idleBands = FloatArray(0)
     private var driveBands = FloatArray(0)
 
@@ -103,6 +129,7 @@ internal class CymaticsScene(
         programOk = false
         plate.reset()
         drops.reset()
+        touchPhase = 0f
         program =
             GlUtil.buildProgramReporting(
                 GlUtil.loadShader(context, R.raw.quad_vert),
@@ -120,6 +147,10 @@ internal class CymaticsScene(
 
     override fun setParams(params: SceneParams) {
         this.params = params
+    }
+
+    override fun setTouchField(field: TouchField) {
+        touch = field
     }
 
     override fun resize(
@@ -176,6 +207,15 @@ internal class CymaticsScene(
         travelPhase = CymaticsMath.wrapPhase(travelPhase + flowRate * TRAVEL_OMEGA * dt, TWO_PI)
         driftShift = CymaticsMath.wrapPhase(driftShift + flowRate * DRIFT_RATE * dt, DRIFT_WRAP)
 
+        // The driver rings at the loudest mode's own frequency, so the finger's ripples
+        // keep time with the plate rather than beating against it.
+        val touchK = (PI.toFloat() * plate.dominantWavenumber).coerceIn(MIN_TOUCH_K, MAX_TOUCH_K)
+        touchPhase =
+            CymaticsMath.wrapPhase(
+                touchPhase + CymaticsMath.vibrationHz(plate.dominantWavenumber) * speed * TWO_PI * dt,
+                TWO_PI,
+            )
+
         if (style.shaderStyle == STYLE_FARADAY) drops.update(dt, LiveSignal.hit(f))
 
         // The hue nudge used to chase the chromagram's strongest pitch class: that needs a
@@ -214,6 +254,9 @@ internal class CymaticsScene(
         GLES30.glUniform1f(loc("uTreble"), f.treble.coerceIn(0f, 1.5f))
         GLES30.glUniform1f(loc("uBeat"), beatPulse)
         GLES30.glUniform1f(loc("uExposure"), EXPOSURE)
+        GLES30.glUniform1f(loc("uTouchK"), touchK)
+        GLES30.glUniform1f(loc("uTouchPhase"), touchPhase)
+        SceneTouch.upload(uniforms, touch)
         GLES30.glBindVertexArray(vao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)

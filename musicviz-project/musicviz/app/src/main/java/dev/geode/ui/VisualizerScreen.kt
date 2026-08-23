@@ -3,8 +3,14 @@ package dev.geode.ui
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateRotation
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,18 +36,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.fastAny
+import androidx.compose.ui.util.fastForEach
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import dev.geode.R
+import dev.geode.render.TouchField
+import dev.geode.render.VisualizerRenderer
 import dev.geode.render.VisualizerView
 import dev.geode.render.scene.TouchTransform
 import dev.geode.ui.theme.StoneIcon
 import dev.geode.ui.theme.StoneIconArt
+import kotlin.math.PI
+import kotlin.math.abs
 
 @Composable
 fun VisualizerScreen(
@@ -77,25 +93,13 @@ fun VisualizerScreen(
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { controlsVisible = !controlsVisible })
             }
-            .pointerInput(gui.touchSmear, gui.touchSmearStrength, gui.touchTransform) {
-                if (!gui.touchSmear && !gui.touchTransform) return@pointerInput
-                val w = size.width.toFloat().coerceAtLeast(1f)
-                val h = size.height.toFloat().coerceAtLeast(1f)
-                detectTransformGestures { centroid, pan, gestureZoom, gestureRotate ->
-                    if (gui.touchTransform && TouchTransform.isTransform(gestureZoom, gestureRotate)) {
-                        viewModel.nudgeTransform(gestureZoom, gestureRotate)
-                    } else if (gui.touchSmear) {
-                        visualizerView.visualizerRenderer.queueTouchStroke(
-                            nx = centroid.x / w,
-                            ny = centroid.y / h,
-                            ndx = pan.x / w,
-                            ndy = pan.y / h,
-                            dt = FRAME_DT,
-                            strength = gui.touchSmearStrength,
-                        )
-                    }
-                }
-            },
+            .visualizerTouch(
+                renderer = visualizerView.visualizerRenderer,
+                smear = gui.touchSmear,
+                smearStrength = gui.touchSmearStrength,
+                transform = gui.touchTransform,
+                onTransform = viewModel::nudgeTransform,
+            ),
     ) {
         if (externalDisplayName == null) {
             VisualizerCanvasHost(visualizerView, Modifier.fillMaxSize())
@@ -404,6 +408,219 @@ private fun PanelChip(
             style = MaterialTheme.typography.labelMedium,
             color = if (selected) accentTextColor() else MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * The visualizer surface's one pointer detector.
+ *
+ * Extracted from [VisualizerScreen] rather than inlined into its Modifier chain because the
+ * composable sits against detekt's LongMethod ceiling, and because a detector this long reads
+ * as its own concern: it is the only place in the app that turns raw pointers into both a
+ * transform gesture and the engine-wide touch field.
+ */
+private fun Modifier.visualizerTouch(
+    renderer: VisualizerRenderer,
+    smear: Boolean,
+    smearStrength: Float,
+    transform: Boolean,
+    onTransform: (Float, Float) -> Unit,
+): Modifier =
+    pointerInput(smear, smearStrength, transform) {
+        // Still exactly one detector on this surface, because pointers belong to
+        // whoever consumes them first and two detectors would each see half a
+        // gesture. The pointers are published whatever the settings say — every
+        // scene family is now expected to mean something by "where is the finger",
+        // and no preference turns that off — while zoom, twist and smear stay
+        // gated on the settings that have always gated them.
+        val touch =
+            VisualizerTouch(
+                renderer = renderer,
+                smear = smear,
+                smearStrength = smearStrength,
+                transform = transform,
+                onTransform = onTransform,
+            )
+        try {
+            awaitEachGesture {
+                touch.begin()
+                val slop = viewConfiguration.touchSlop
+                awaitFirstDown(requireUnconsumed = false)
+                // Published before the first move: a finger that lands and holds
+                // still is a one-finger anchor, and for that gesture this is the
+                // whole of it. Waiting for movement would make the commonest
+                // gesture the one that never arrives.
+                touch.publish(currentEvent, size)
+                do {
+                    val event = awaitPointerEvent()
+                    // Consumed means another detector already claimed these
+                    // pointers; deriving a transform from them as well would be a
+                    // second reading of one gesture.
+                    val canceled = event.changes.fastAny { it.isConsumed }
+                    if (!canceled) {
+                        touch.publish(event, size)
+                        touch.steer(event, slop, size)
+                    }
+                } while (!canceled && event.changes.fastAny { it.pressed })
+                touch.release()
+            }
+        } finally {
+            // The loop is cancelled outright when the screen leaves composition
+            // mid-gesture (a back swipe with a finger still down) or when a touch
+            // preference changes. Without this the last published pointers would
+            // read as still down forever, because nothing else retires them.
+            touch.release()
+        }
+    }
+
+/**
+ * Everything one finger on the visualizer can mean, in one place.
+ *
+ * WHY it is one place: `detectTransformGestures` hands its callback a centroid and
+ * nothing else, and the scene touch model reads the finger COUNT — one anchors, two
+ * define an axis, three or more open a vortex — so a centroid cannot serve it. Adding a
+ * second detector to read the pointers is worse than useless: pointers belong to whoever
+ * consumes them first, so the two would fight and each would see a truncated gesture.
+ * The pinch/twist quantities are therefore derived here, off the same event the
+ * per-pointer positions are read from.
+ *
+ * The slop accounting is deliberately Compose's own arithmetic, factor for factor. This
+ * surface also carries the tap that toggles the chrome, and "moved far enough to be a
+ * drag" has to mean exactly one thing on it, or a gesture that steers the visuals also
+ * flashes the transport bar on its way past.
+ */
+
+private class VisualizerTouch(
+    private val renderer: VisualizerRenderer,
+    private val smear: Boolean,
+    private val smearStrength: Float,
+    private val transform: Boolean,
+    private val onTransform: (zoomFactor: Float, rotationDegrees: Float) -> Unit,
+) {
+    /**
+     * Reused for the life of the gesture loop, never allocated per event: pointers arrive
+     * at 120-240 Hz on a modern panel, so a fresh array each time would be thousands of
+     * short-lived objects a minute underneath the one gesture that has to stay smooth.
+     */
+    private val pointers = FloatArray(TouchField.MAX_POINTS * 2)
+
+    /** With both settings off there is nothing to steer, and so nothing to consume. */
+    private val steers = smear || transform
+
+    private var zoom = 1f
+    private var rotation = 0f
+    private var pan = Offset.Zero
+    private var pastSlop = false
+
+    /** Start a gesture. The slop totals are per-gesture; the pointer buffer is not. */
+    fun begin() {
+        zoom = 1f
+        rotation = 0f
+        pan = Offset.Zero
+        pastSlop = false
+    }
+
+    /**
+     * Hand the scenes the pointers that are down in [event], in y-up NDC.
+     *
+     * Only pressed changes count. A change that reports its finger as lifted is that
+     * pointer's obituary rather than a position, and publishing it would leave an anchor
+     * sitting under a finger that is gone.
+     *
+     * [surface] is read per event rather than captured once because this modifier is not
+     * restarted by a rotation or a fold, and it can start before layout has given the node
+     * a size at all — a stale divisor here would put the anchor somewhere the user is not.
+     */
+    fun publish(
+        event: PointerEvent,
+        surface: IntSize,
+    ) {
+        val w = surface.width.toFloat().coerceAtLeast(1f)
+        val h = surface.height.toFloat().coerceAtLeast(1f)
+        val changes = event.changes
+        var live = 0
+        for (i in changes.indices) {
+            val change = changes[i]
+            if (change.pressed && live < TouchField.MAX_POINTS) {
+                // Compose measures y downward from the top-left corner; the scenes measure
+                // it upward from the centre, which is the frame their own geometry is in.
+                pointers[live * 2] = change.position.x / w * 2f - 1f
+                pointers[live * 2 + 1] = 1f - change.position.y / h * 2f
+                live++
+            }
+        }
+        renderer.submitTouchPoints(pointers, live)
+    }
+
+    /**
+     * Every finger is off, or something else claimed the gesture.
+     *
+     * Publishing zero points is a state and not a no-op: it is the only thing that retires
+     * a point and starts the release decay, so an abandoned or cancelled gesture has to
+     * say it too or the visuals keep being steered by a touch that ended.
+     */
+    fun release() = renderer.submitTouchPoints(pointers, 0)
+
+    /**
+     * Feed [event] to the pinch/twist and smear paths, once the gesture has earned them.
+     */
+    fun steer(
+        event: PointerEvent,
+        slop: Float,
+        surface: IntSize,
+    ) {
+        if (!steers) return
+        val zoomChange = event.calculateZoom()
+        val rotationChange = event.calculateRotation()
+        val panChange = event.calculatePan()
+        if (!pastSlop) {
+            zoom *= zoomChange
+            rotation += rotationChange
+            pan += panChange
+            // Slop is measured in the pixels the fingers actually travel: the same 2% pinch
+            // moves further under a wide grip than a narrow one, so the spread scales it.
+            // `useCurrent = false` takes that spread from BEFORE this event, so the sample
+            // being tested does not also move the threshold it is tested against.
+            val spread = event.calculateCentroidSize(useCurrent = false)
+            val zoomMotion = abs(1f - zoom) * spread
+            val twistMotion = abs(rotation * PI.toFloat() * spread / 180f)
+            pastSlop = zoomMotion > slop || twistMotion > slop || pan.getDistance() > slop
+        }
+        if (!pastSlop) return
+        if (rotationChange != 0f || zoomChange != 1f || panChange != Offset.Zero) {
+            dispatch(event, zoomChange, rotationChange, panChange, surface)
+        }
+        // Consuming is how the tap detector upstream learns this was a drag and not a tap
+        // on the chrome. Only past slop: a finger that lands and holds still must leave its
+        // changes untouched, or the chrome toggle dies with it.
+        event.changes.fastForEach { if (it.positionChanged()) it.consume() }
+    }
+
+    private fun dispatch(
+        event: PointerEvent,
+        zoomChange: Float,
+        rotationChange: Float,
+        panChange: Offset,
+        surface: IntSize,
+    ) {
+        if (transform && TouchTransform.isTransform(zoomChange, rotationChange)) {
+            // Pinch and twist drive the real Zoom and Rotation params rather than a
+            // view-only transform, which is why a gesture survives into presets, takes and
+            // exports instead of evaporating when the screen is left.
+            onTransform(zoomChange, rotationChange)
+        } else if (smear) {
+            val w = surface.width.toFloat().coerceAtLeast(1f)
+            val h = surface.height.toFloat().coerceAtLeast(1f)
+            val centroid = event.calculateCentroid(useCurrent = false)
+            renderer.queueTouchStroke(
+                nx = centroid.x / w,
+                ny = centroid.y / h,
+                ndx = panChange.x / w,
+                ndy = panChange.y / h,
+                dt = FRAME_DT,
+                strength = smearStrength,
+            )
+        }
     }
 }
 

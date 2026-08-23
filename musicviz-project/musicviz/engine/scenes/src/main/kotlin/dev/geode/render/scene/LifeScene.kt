@@ -5,6 +5,7 @@ import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
 import dev.geode.engine.scenes.R
 import dev.geode.render.LiveSignal
+import dev.geode.render.TouchField
 import dev.geode.render.fluid.FluidBuffers
 import dev.geode.render.fluid.FluidHue
 import kotlin.math.cos
@@ -16,7 +17,8 @@ internal class LifeScene(
     private val context: Context,
     private val style: VisualStyleCatalog.LifeStyle,
 ) : Scene,
-    PcmSink {
+    PcmSink,
+    TouchReactive {
     override val id: String = style.id
 
     private companion object {
@@ -68,6 +70,7 @@ internal class LifeScene(
     private var kickX = 0.5f
     private var kickY = 0.5f
     private var censusAge = 0f
+    private var touch: TouchField? = null
     private val censusBytes =
         java.nio.ByteBuffer
             .allocateDirect(16)
@@ -108,6 +111,10 @@ internal class LifeScene(
 
     override fun setParams(params: SceneParams) {
         this.params = params
+    }
+
+    override fun setTouchField(field: TouchField) {
+        touch = field
     }
 
     override fun resize(
@@ -270,6 +277,10 @@ internal class LifeScene(
             GLES30.glUniform1f(stepLocs.loc("uKick"), if (first) kick else 0f)
             GLES30.glUniform2f(stepLocs.loc("uKickPos"), kickX, kickY)
             GLES30.glUniform1f(stepLocs.loc("uSprinkle"), if (first) (envTreble + pcmStrike * 0.5f) * drive else 0f)
+            // Injections land once per frame, not once per substep: at Speed 4 this pass runs
+            // eight times, and a touch integrated eight times would seed eight times as hard
+            // for the same gesture.
+            SceneTouch.upload(stepLocs, touch, enabled = first)
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
             field.swap()
         }

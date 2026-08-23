@@ -5,6 +5,7 @@ import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
 import dev.geode.engine.scenes.R
 import dev.geode.render.LiveSignal
+import dev.geode.render.TouchField
 import dev.geode.render.fluid.FluidBuffers
 import dev.geode.render.fluid.FluidHue
 import kotlin.math.PI
@@ -17,7 +18,8 @@ internal class SilkScene(
     private val context: Context,
     private val style: VisualStyleCatalog.SilkStyle,
 ) : Scene,
-    PcmSink {
+    PcmSink,
+    TouchReactive {
     override val id: String = style.id
 
     private companion object {
@@ -70,6 +72,8 @@ internal class SilkScene(
     private var foldPhase = 0f
     private var drift = 0f
 
+    private var touch: TouchField? = null
+
     private val prevFbo = IntArray(1)
     private val prevViewport = IntArray(4)
 
@@ -103,6 +107,10 @@ internal class SilkScene(
 
     override fun setParams(params: SceneParams) {
         this.params = params
+    }
+
+    override fun setTouchField(field: TouchField) {
+        touch = field
     }
 
     override fun resize(
@@ -227,6 +235,7 @@ internal class SilkScene(
         GLES30.glUniform1f(stepLocs.loc("uStrike"), pcmStrike.coerceIn(0f, 1.5f))
         GLES30.glUniform1f(stepLocs.loc("uBeatRing"), ringRadius)
         GLES30.glUniform1f(stepLocs.loc("uStateScale"), if (byteDye) BYTE_STATE_SCALE else 1f)
+        SceneTouch.upload(stepLocs, touch)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         field.swap()
 
