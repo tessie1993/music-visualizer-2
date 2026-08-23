@@ -15,7 +15,7 @@ class SettingsViewModel
     constructor(
         private val sessions: PlayerSessionProvider,
     ) : ViewModel() {
-        private val session: PlayerSession = sessions.acquire()
+        private val session: PlayerSession = sessions.get()
         private val userData: UserDataRepository = session.userDataRepository
 
         val theme: StateFlow<ThemePack> get() = userData.theme
@@ -46,8 +46,4 @@ class SettingsViewModel
         fun setAudioFxBassBoost(strength: Int) = session.setAudioFxBassBoost(strength)
 
         fun setAudioFxLoudness(gainMb: Int) = session.setAudioFxLoudness(gainMb)
-
-        override fun onCleared() {
-            sessions.release()
-        }
     }

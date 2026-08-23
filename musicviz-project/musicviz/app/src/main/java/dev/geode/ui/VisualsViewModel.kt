@@ -29,7 +29,7 @@ class VisualsViewModel
     constructor(
         private val sessions: PlayerSessionProvider,
     ) : ViewModel() {
-        private val session: PlayerSession = sessions.acquire()
+        private val session: PlayerSession = sessions.get()
         private val visualizer: VisualizerRepository = session.visualizerRepository
 
         val vizState: StateFlow<VizUiState> get() = visualizer.viz
@@ -148,8 +148,4 @@ class VisualsViewModel
         fun noteMilkPreset(path: String) = session.noteMilkPreset(path)
 
         internal fun milkPresetPathFor(preset: Preset): String? = session.milkPresetPathFor(preset)
-
-        override fun onCleared() {
-            sessions.release()
-        }
     }
