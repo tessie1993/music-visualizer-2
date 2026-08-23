@@ -31,7 +31,7 @@ class PlayerViewModel
     constructor(
         private val sessions: PlayerSessionProvider,
     ) : ViewModel() {
-        private val session: PlayerSession = sessions.acquire()
+        private val session: PlayerSession = sessions.get()
         private val playback: PlaybackRepository = session.playbackRepository
         private val visualizer: VisualizerRepository = session.visualizerRepository
 
@@ -254,7 +254,12 @@ class PlayerViewModel
             sceneFactoryFor: ((String) -> SceneFactory)? = null,
         ) = session.startExport(aspect, fps, sceneFactory, destination, loopSafe, range, sceneFactoryFor)
 
+        /**
+         * This ViewModel owns the session's teardown. `AppRoot` creates it unconditionally and
+         * every Geode ViewModel shares the Activity's store, so this runs exactly once, when the
+         * whole UI is going away — see [dev.geode.di.PlayerSessionProvider].
+         */
         override fun onCleared() {
-            sessions.release()
+            sessions.shutdown()
         }
     }

@@ -15,7 +15,7 @@ class StudioViewModel
     constructor(
         private val sessions: PlayerSessionProvider,
     ) : ViewModel() {
-        private val session: PlayerSession = sessions.acquire()
+        private val session: PlayerSession = sessions.get()
         val studio: StateFlow<StudioUiState> get() = session.studio
 
         val exportState: StateFlow<ExportUiState> get() = session.exportState
@@ -69,8 +69,4 @@ class StudioViewModel
         fun cancelStudioExport() = session.cancelStudioExport()
 
         fun clearStudioResult() = session.clearStudioResult()
-
-        override fun onCleared() {
-            sessions.release()
-        }
     }

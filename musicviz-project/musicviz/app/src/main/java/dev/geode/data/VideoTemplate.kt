@@ -374,8 +374,7 @@ enum class TemplatePlaceholder(
     companion object {
         val PATTERN: Regex = Regex("\\{([A-Za-z0-9_]+)}")
 
-        fun forKey(key: String): TemplatePlaceholder? =
-            TemplatePlaceholder.entries.firstOrNull { it.key.equals(key, ignoreCase = true) }
+        fun forKey(key: String): TemplatePlaceholder? = TemplatePlaceholder.entries.firstOrNull { it.key.equals(key, ignoreCase = true) }
     }
 }
 

@@ -68,15 +68,14 @@ object LibraryBrowse {
         term: String,
         fields: List<String>,
     ): Boolean {
-        if (term.isBlank()) return true
-        if (fields.any { it.contains(term, ignoreCase = true) }) return true
+        if (term.isBlank() || fields.any { it.contains(term, ignoreCase = true) }) return true
         val budget = typoBudget(term)
-        if (budget == 0) return false
-        return fields.any { field ->
-            field.split(WORD_SPLIT).any { word ->
-                word.isNotBlank() && withinEditDistance(term, word, budget)
+        return budget > 0 &&
+            fields.any { field ->
+                field.split(WORD_SPLIT).any { word ->
+                    word.isNotBlank() && withinEditDistance(term, word, budget)
+                }
             }
-        }
     }
 
     private fun typoBudget(term: String): Int =
@@ -100,20 +99,23 @@ object LibraryBrowse {
         if (a.length - b.length > max || b.length - a.length > max) return false
         var prev = IntArray(b.length + 1) { it }
         var cur = IntArray(b.length + 1)
+        var rowMin = 0
         for (i in 1..a.length) {
             cur[0] = i
-            var rowMin = cur[0]
+            rowMin = cur[0]
             for (j in 1..b.length) {
                 val cost = if (a[i - 1].equals(b[j - 1], ignoreCase = true)) 0 else 1
                 cur[j] = minOf(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
                 if (cur[j] < rowMin) rowMin = cur[j]
             }
-            if (rowMin > max) return false
+            if (rowMin > max) break
             val swap = prev
             prev = cur
             cur = swap
         }
-        return prev[b.length] <= max
+        // A row whose cheapest path already exceeds the budget can only get dearer, so the break
+        // above leaves `prev` on the last row worth reading and `rowMin` saying it was abandoned.
+        return rowMin <= max && prev[b.length] <= max
     }
 
     /** `m:ss`, or blank when the duration is unknown — better nothing than a confident `0:00`. */

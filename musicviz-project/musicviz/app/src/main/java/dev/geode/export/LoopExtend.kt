@@ -564,7 +564,7 @@ class LoopExtend(
                         val track =
                             (0 until extractor.trackCount).firstOrNull {
                                 extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
-                            } ?: throw IllegalStateException("The rendered loop has no video track.")
+                            } ?: error("The rendered loop has no video track.")
                         extractor.selectTrack(track)
                         LoopReader(extractor, extractor.getTrackFormat(track))
                     }

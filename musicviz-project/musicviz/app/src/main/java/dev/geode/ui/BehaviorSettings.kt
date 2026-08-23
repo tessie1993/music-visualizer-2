@@ -15,8 +15,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.R
-import dev.geode.render.VisualSafety
-import kotlin.math.roundToInt
 
 @Composable
 internal fun BehaviorSettingsTab(viewModel: SettingsViewModel) {
