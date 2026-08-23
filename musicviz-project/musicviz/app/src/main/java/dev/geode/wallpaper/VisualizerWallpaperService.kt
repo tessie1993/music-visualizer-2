@@ -79,11 +79,12 @@ class VisualizerWallpaperService : WallpaperService() {
         private fun startFeeding(engine: VisualizerRenderer) {
             if (feeder != null) return
             AudioBus.addConsumer()
+            val generation = ++feedGeneration
             running = true
             lastFrameMs = android.os.SystemClock.elapsedRealtime()
             feeder =
                 Thread {
-                    while (running) {
+                    while (running && feedGeneration == generation) {
                         val now = android.os.SystemClock.elapsedRealtime()
                         val dt = ((now - lastFrameMs).coerceIn(1, 100)) / 1000f
                         lastFrameMs = now
@@ -98,10 +99,11 @@ class VisualizerWallpaperService : WallpaperService() {
         }
 
         private fun stopFeeding() {
-            if (feeder == null) return
-            AudioBus.removeConsumer()
+            val thread = feeder ?: return
             running = false
-            runCatching { feeder?.join(FEEDER_JOIN_MS) }
+            feedGeneration++
+            AudioBus.removeConsumer()
+            runCatching { thread.join(FEEDER_JOIN_MS) }
             feeder = null
         }
 

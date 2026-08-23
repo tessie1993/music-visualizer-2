@@ -25,14 +25,23 @@ object ParamRandomizer {
             "hyperJourney" to "how HYPERSPACE picks its act; a roll would unpin a held one",
         )
 
+    /**
+     * Rolls a new look.
+     *
+     * [sceneId] scopes the roll to what the style on screen can actually show: rolling
+     * `Morph` on a fluid style or `Fluid curl` on a shader burns the reroll on a parameter the
+     * user cannot see and cannot feel, which is how "randomize" ends up appearing to do nothing.
+     * Pass null to roll the whole surface (that is what builds [KEYS_BY_TAB]).
+     */
     fun randomize(
         current: SceneParams,
         locked: Set<String>,
         rng: Random = Random.Default,
         tab: CustomizeTab? = null,
+        sceneId: String? = null,
     ): SceneParams {
         repeat(REROLLS) {
-            val rolled = roll(current, locked, rng, tab, null)
+            val rolled = roll(current, locked, rng, tab, sceneId, null)
             if (rolled != current) return rolled
         }
         return current
@@ -40,7 +49,7 @@ object ParamRandomizer {
 
     val KEYS_BY_TAB: Map<CustomizeTab, List<String>> =
         mutableListOf<Pair<CustomizeTab, String>>()
-            .also { roll(SceneParams.DEFAULT, emptySet(), Random(0), null, it) }
+            .also { roll(SceneParams.DEFAULT, emptySet(), Random(0), null, null, it) }
             .groupBy({ it.first }, { it.second })
 
     val KEYS: List<String> = KEYS_BY_TAB.values.flatten()
@@ -54,6 +63,7 @@ object ParamRandomizer {
         locked: Set<String>,
         rng: Random,
         tab: CustomizeTab?,
+        sceneId: String?,
         keySink: MutableList<Pair<CustomizeTab, String>>?,
     ): SceneParams {
         fun f(
@@ -89,6 +99,7 @@ object ParamRandomizer {
         ) {
             keySink?.add(owner to key)
             if (tab != null && tab != owner) return
+            if (sceneId != null && !ParamScope.of(key).appliesTo(sceneId)) return
             if (key !in locked) s = block(s)
         }
 
@@ -103,6 +114,7 @@ object ParamRandomizer {
         r(ParamKeys.BEAT_SHAKE) { it.copy(shake = sometimes(0.3f, 0.1f, 0.6f)) }
         r(ParamKeys.ENDLESS_ZOOM) { it.copy(endlessZoom = chance(0.2f)) }
         r(ParamKeys.DIVE_SPEED) { it.copy(endlessZoomSpeed = f(0.1f, 0.8f)) }
+        r(ParamKeys.TURBULENCE) { it.copy(turbulence = sometimes(0.5f, 0.1f, 1f)) }
 
         section(CustomizeTab.SHAPE)
         r(ParamKeys.XY_PLOT) { it.copy(beamXy = chance(0.35f)) }
@@ -119,25 +131,21 @@ object ParamRandomizer {
         }
         r(ParamKeys.TILE) { it.copy(tile = if (chance(0.25f)) f(2f, 4f) else 1f) }
         r(ParamKeys.PIXELATE) { it.copy(pixelate = sometimes(0.15f, 0.2f, 0.6f)) }
-        r(ParamKeys.POSTERIZE) { it.copy(posterize = sometimes(0.15f, 0.2f, 0.6f)) }
+        r(ParamKeys.MIRROR) { it.copy(mirror = chance(0.15f)) }
         r(ParamKeys.PARTICLE_SHAPE) { it.copy(particleShape = rng.nextInt(SceneParams.PARTICLE_SHAPES.size)) }
         r(ParamKeys.PARTICLE_SIZE) { it.copy(particleSize = f(0.5f, 1.8f)) }
+        r(ParamKeys.DENSITY) { it.copy(density = f(0.4f, 1f)) }
 
-        section(CustomizeTab.BEHAVIOR)
+        section(CustomizeTab.REACTIVITY)
         r(ParamKeys.AUDIO_DRIVE) { it.copy(audioDrive = f(0.6f, 1.8f)) }
         r(ParamKeys.BEAT_RESPONSE) { it.copy(beatResponse = f(0.3f, 2f)) }
         r(ParamKeys.BEAT_FLASH) { it.copy(flash = sometimes(0.5f, 0.1f, 0.6f)) }
-        r(ParamKeys.BLEND_PRESET_CHANGES) { it.copy(milkdropBlendPresets = chance(0.35f)) }
         r(ParamKeys.BASS_GAIN) { it.copy(bassGain = f(0.8f, 1.4f)) }
         r(ParamKeys.MID_GAIN) { it.copy(midGain = f(0.8f, 1.4f)) }
         r(ParamKeys.TREBLE_GAIN) { it.copy(trebGain = f(0.8f, 1.4f)) }
-        r(ParamKeys.TURBULENCE) { it.copy(turbulence = sometimes(0.5f, 0.1f, 1f)) }
-        r(ParamKeys.DENSITY) { it.copy(density = f(0.4f, 1f)) }
-        r(ParamKeys.MIRROR) { it.copy(mirror = chance(0.15f)) }
-        r(ParamKeys.TRAILS) { it.copy(trails = chance(0.4f)) }
-        r(ParamKeys.TRAIL_LENGTH) { it.copy(trailLength = f(0.3f, 0.9f)) }
-        r(ParamKeys.TRAIL_ZOOM_ECHO_IN_OUT) { it.copy(trailZoom = sometimes(0.3f, -0.3f, 0.3f)) }
-        r(ParamKeys.TRAIL_WARP_LIQUID_ECHO) { it.copy(trailWarp = sometimes(0.3f, 0.1f, 0.6f)) }
+
+        section(CustomizeTab.SCENE)
+        r(ParamKeys.BLEND_PRESET_CHANGES) { it.copy(milkdropBlendPresets = chance(0.35f)) }
 
         section(CustomizeTab.COLOR)
         r(ParamKeys.PALETTE) {
@@ -165,11 +173,16 @@ object ParamRandomizer {
         r(ParamKeys.INTENSITY) { it.copy(intensity = f(0.7f, 1.4f)) }
         r(ParamKeys.TEMPERATURE) { it.copy(temperature = sometimes(0.4f, -0.6f, 0.6f)) }
         r(ParamKeys.BLOOM) { it.copy(bloom = sometimes(0.5f, 0.1f, 0.7f)) }
+        r(ParamKeys.POSTERIZE) { it.copy(posterize = sometimes(0.15f, 0.2f, 0.6f)) }
         r(ParamKeys.DUOTONE) { it.copy(duotone = chance(0.1f)) }
         r(ParamKeys.SOLARIZE) { it.copy(solarize = chance(0.05f)) }
         r(ParamKeys.INVERT) { it.copy(invert = chance(0.03f)) }
 
         section(CustomizeTab.FX)
+        r(ParamKeys.TRAILS) { it.copy(trails = chance(0.4f)) }
+        r(ParamKeys.TRAIL_LENGTH) { it.copy(trailLength = f(0.3f, 0.9f)) }
+        r(ParamKeys.TRAIL_ZOOM_ECHO_IN_OUT) { it.copy(trailZoom = sometimes(0.3f, -0.3f, 0.3f)) }
+        r(ParamKeys.TRAIL_WARP_LIQUID_ECHO) { it.copy(trailWarp = sometimes(0.3f, 0.1f, 0.6f)) }
         r(ParamKeys.CHROMATIC_ABERRATION) { it.copy(chromaAb = sometimes(0.4f, 0.1f, 0.5f)) }
         r(ParamKeys.VIGNETTE) { it.copy(vignette = sometimes(0.5f, 0.1f, 0.6f)) }
         r(ParamKeys.SCANLINES) { it.copy(scanlines = sometimes(0.25f, 0.15f, 0.5f)) }

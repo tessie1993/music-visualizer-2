@@ -12,8 +12,8 @@ private const val YOUTUBE_CEILING_DBTP = -1.0
 /**
  * The level a platform plays back at, and the headroom it wants left underneath.
  *
- * [lowLufs]..[highLufs] is the band that counts as "already right" — nobody should be nudged into
- * re-exporting over 0.3 LU. [aimLufs] is where a normalising gain lands the file inside that band.
+ * [lowLufs]..[highLufs] is the band that counts as "already right" — nobody should be told to
+ * re-export over a difference they cannot hear. [aimLufs] is where a normalising gain lands.
  */
 data class LoudnessWindow(
     val aimLufs: Double,

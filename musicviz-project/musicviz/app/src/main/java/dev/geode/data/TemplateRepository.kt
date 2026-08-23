@@ -151,7 +151,7 @@ class TemplateStore(
         const val MAX_ID_TAG_LENGTH = 40
         const val TAG = "TemplateStore"
 
-        val UNSAFE_ID_CHARS = Regex("[^A-Za-z0-9-_]")
+        val UNSAFE_ID_CHARS = Regex("[^A-Za-z0-9_-]")
     }
 }
 
@@ -526,6 +526,13 @@ interface TemplateRepository {
 
     suspend fun find(id: TemplateId): VideoTemplate?
 
+    /**
+     * Saves a template into the library.
+     *
+     * Saving one of the bundled starters saves a copy under a fresh id instead: the
+     * starter set is read-only, so editing "Reel Neon" can never change what that
+     * name means for the next person who reaches for it.
+     */
     suspend fun save(template: VideoTemplate): TemplateWrite
 
     suspend fun delete(id: TemplateId): Boolean
@@ -577,11 +584,12 @@ class FileTemplateRepository(
 
     override suspend fun find(id: TemplateId): VideoTemplate? = withContext(Dispatchers.IO) { store.find(id) }
 
-    override suspend fun save(template: VideoTemplate): TemplateWrite {
-        val result = withContext(Dispatchers.IO) { store.save(template) }
-        refresh()
-        return result
-    }
+    override suspend fun save(template: VideoTemplate): TemplateWrite =
+        if (BundledTemplates.isBundled(template.id)) {
+            writeResultOf(adopt(template))
+        } else {
+            storeThenRefresh(template.copy(origin = TemplateOrigin.SAVED))
+        }
 
     override suspend fun delete(id: TemplateId): Boolean {
         val deleted = withContext(Dispatchers.IO) { store.delete(id) }
@@ -592,12 +600,12 @@ class FileTemplateRepository(
     override suspend fun adopt(
         starter: VideoTemplate,
         atMs: Long,
-    ): TemplateImport = persist(starter.asNewCopy(starter.name, atMs), TemplateOrigin.SAVED)
+    ): TemplateImport = persist(starter.asNewCopy(starter.name, atMs))
 
     override suspend fun importText(text: String): TemplateImport {
         val parse = withContext(Dispatchers.Default) { TemplateFormat.decode(text) }
         return when (parse) {
-            is TemplateParse.Parsed -> persist(parse.template, TemplateOrigin.IMPORTED)
+            is TemplateParse.Parsed -> persist(parse.template)
             is TemplateParse.NotATemplate -> TemplateImport.Unreadable(parse.why)
             is TemplateParse.Malformed -> TemplateImport.Unreadable(parse.why)
         }
@@ -638,19 +646,13 @@ class FileTemplateRepository(
      * duplicates. Only a genuinely new template gets its name made unique; replacing
      * keeps whatever the author called it.
      */
-    private suspend fun persist(
-        incoming: VideoTemplate,
-        origin: TemplateOrigin,
-    ): TemplateImport {
+    private suspend fun persist(incoming: VideoTemplate): TemplateImport {
         val outcome =
             withContext(Dispatchers.IO) {
                 val existing = store.list()
                 val previous = existing.firstOrNull { it.id == incoming.id }
-                val stored =
-                    incoming.copy(
-                        name = if (previous == null) uniqueName(incoming.name, existing.map { it.name }) else incoming.name,
-                        origin = origin,
-                    )
+                val name = if (previous == null) uniqueName(incoming.name, existing.map { it.name }) else incoming.name
+                val stored = incoming.copy(name = name, origin = TemplateOrigin.SAVED)
                 when (val write = store.save(stored)) {
                     TemplateWrite.Written ->
                         if (previous == null) {
@@ -664,6 +666,20 @@ class FileTemplateRepository(
         refresh()
         return outcome
     }
+
+    private suspend fun storeThenRefresh(template: VideoTemplate): TemplateWrite {
+        val result = withContext(Dispatchers.IO) { store.save(template) }
+        refresh()
+        return result
+    }
+
+    private fun writeResultOf(outcome: TemplateImport): TemplateWrite =
+        when (outcome) {
+            is TemplateImport.Added -> TemplateWrite.Written
+            is TemplateImport.Replaced -> TemplateWrite.Written
+            is TemplateImport.Unreadable -> TemplateWrite.Failed(outcome.why)
+            is TemplateImport.WriteFailed -> TemplateWrite.Failed(outcome.why)
+        }
 
     companion object {
         /**

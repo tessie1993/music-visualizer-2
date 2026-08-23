@@ -66,6 +66,11 @@ data class LoopExtendPlan(
     val totalDurationUs: Long,
     val segments: List<LoopSegment>,
 ) {
+    init {
+        require(loopDurationUs > 0) { "loopDurationUs must be positive, was $loopDurationUs" }
+        require(totalDurationUs > 0) { "totalDurationUs must be positive, was $totalDurationUs" }
+    }
+
     val writes: List<LoopWrite> =
         segments.flatMap { segment ->
             List(segment.repeats) { repeat -> LoopWrite(segment.loopIndex, segment.startUs + repeat * loopDurationUs) }
@@ -119,12 +124,11 @@ data class LoopExtendPlan(
             totalDurationUs: Long,
             loops: Int,
         ): LoopExtendPlan {
-            require(loopDurationUs > 0) { "loopDurationUs must be positive, was $loopDurationUs" }
             require(loops >= 1) { "a plan needs at least one loop, was $loops" }
             val total = totalDurationUs.coerceAtLeast(1L)
             val repeats = ((total + loopDurationUs - 1) / loopDurationUs).toInt().coerceAtLeast(1)
-            // A drift stop that would get no repeats is dropped rather than left empty: better
-            // three visible palette steps than twenty-four that never come round.
+            // A drift stop that would get no repeats is dropped rather than left empty: better a
+            // few palette steps that actually come round than a schedule the video never reaches.
             val stops = minOf(loops, repeats)
             val each = repeats / stops
             val remainder = repeats % stops

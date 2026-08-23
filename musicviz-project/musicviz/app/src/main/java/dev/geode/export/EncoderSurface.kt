@@ -17,13 +17,14 @@ class EncoderSurface(
 
     init {
         // A half-built EGL context is never handed back to the caller, so nothing would ever call
-        // release() on it. Tear down what was created before rethrowing, or every failed export
-        // strands an EGLContext for the life of the process and the next one starts poorer.
+        // release() on it. Unwind whatever was created before the failure propagates, or every
+        // export that dies here strands an EGLContext for the life of the process.
+        var built = false
         try {
             setUp(surface)
-        } catch (t: Throwable) {
-            release()
-            throw t
+            built = true
+        } finally {
+            if (!built) release()
         }
     }
 

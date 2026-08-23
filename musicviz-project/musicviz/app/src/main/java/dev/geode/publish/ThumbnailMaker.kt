@@ -341,6 +341,9 @@ class ThumbnailMaker(
      * Lays [text] out at the largest size that fits [maxWidth] in at most [maxLines] lines,
      * shrinking the type before it will ellipsize — a thumbnail title that trails off in "…" has
      * already failed at the only job it has.
+     *
+     * [paint] is left at the size that was chosen, so measuring and drawing the returned lines with
+     * the same paint agrees with the layout.
      */
     @Suppress("ReturnCount")
     private fun fitLines(
@@ -351,8 +354,7 @@ class ThumbnailMaker(
     ): List<String> {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return emptyList()
-        val startSize = paint.textSize
-        var size = startSize
+        var size = paint.textSize
         while (size > MIN_TEXT_SIZE) {
             paint.textSize = size
             val lines = wrap(paint, trimmed, maxWidth)
@@ -377,17 +379,17 @@ class ThumbnailMaker(
         val words = text.split(WHITESPACE).filter { it.isNotEmpty() }
         if (words.isEmpty()) return emptyList()
         val lines = mutableListOf<String>()
-        var line = StringBuilder(words.first())
+        var line = words.first()
         for (word in words.drop(1)) {
             val candidate = "$line $word"
             if (paint.measureText(candidate) <= maxWidth) {
-                line = StringBuilder(candidate)
+                line = candidate
             } else {
-                lines += line.toString()
-                line = StringBuilder(word)
+                lines += line
+                line = word
             }
         }
-        lines += line.toString()
+        lines += line
         return lines
     }
 
@@ -454,13 +456,23 @@ class ThumbnailMaker(
             shader = LinearGradient(0f, top, 0f, bottom, Color.TRANSPARENT, SCRIM_SOLID, Shader.TileMode.CLAMP)
         }
 
+    /**
+     * Only a real-looking extension is stripped: a title like "Vol. 2 Mix" must not lose its tail
+     * to a naive `substringBeforeLast('.')`.
+     */
+    private fun stripExtension(name: String): String {
+        val dot = name.lastIndexOf('.')
+        if (dot <= 0) return name
+        val suffix = name.substring(dot + 1)
+        return if (suffix.length in 2..4 && suffix.all { it.isLetterOrDigit() }) name.substring(0, dot) else name
+    }
+
     private fun fileNameFor(
         displayName: String,
         format: ThumbnailFormat,
     ): String {
         val stem =
-            displayName
-                .substringBeforeLast('.')
+            stripExtension(displayName)
                 .replace(UNSAFE_FOR_FILENAME, " ")
                 .replace(WHITESPACE, " ")
                 .trim()

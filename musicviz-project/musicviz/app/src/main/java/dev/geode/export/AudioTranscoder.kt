@@ -468,8 +468,11 @@ class AudioTranscoder(
             bestEffort(TAG, "out.close()") { out.close() }
             bestEffort(TAG, "decoder.stop()") { decoder.stop() }
             bestEffort(TAG, "decoder.release()") { decoder.release() }
-            bestEffort(TAG, "encoder?.stop()") { encoder?.stop() }
-            bestEffort(TAG, "encoder?.release()") { encoder?.release() }
+            // encoderRef, not encoder: `encoder` is only assigned once configure() and start()
+            // have both returned, so a codec that fails to configure would otherwise never be
+            // released — and a leaked AAC encoder is a device-wide resource the next export needs.
+            bestEffort(TAG, "encoderRef?.stop()") { encoderRef?.stop() }
+            bestEffort(TAG, "encoderRef?.release()") { encoderRef?.release() }
             bestEffort(TAG, "extractor.release()") { extractor.release() }
         }
     }

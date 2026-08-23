@@ -109,10 +109,187 @@ enum class ParamScope {
             RIPPLE_OVERLAY -> kind != SceneKind.WATER
         }
 
-    private companion object {
+    companion object {
+        /**
+         * The scope of the control named [paramKey] — a [ParamKeys] constant.
+         *
+         * Everything that shows, searches, rolls or modulates a parameter goes through this, so
+         * "does this control do anything here?" has exactly one answer. A key that is not a scene
+         * parameter at all (a panel preference, an envelope field) is [UNIVERSAL]: it belongs to
+         * the panel rather than to a style, so it is always live.
+         */
+        fun of(paramKey: String): ParamScope = BY_KEY[paramKey] ?: UNIVERSAL
+
+        private val BY_KEY: Map<String, ParamScope> =
+            buildMap {
+                fun put(
+                    scope: ParamScope,
+                    vararg keys: String,
+                ) = keys.forEach { put(it, scope) }
+
+                put(
+                    UNIVERSAL,
+                    ParamKeys.ZOOM,
+                    ParamKeys.ROTATION,
+                    ParamKeys.SWAY,
+                    ParamKeys.DRIFT_X,
+                    ParamKeys.DRIFT_Y,
+                    ParamKeys.BEAT_PULSE,
+                    ParamKeys.BEAT_SHAKE,
+                    ParamKeys.DOMAIN_WARP,
+                    ParamKeys.RIPPLE,
+                    ParamKeys.TWIST,
+                    ParamKeys.KALEIDOSCOPE,
+                    ParamKeys.TILE,
+                    ParamKeys.PIXELATE,
+                    ParamKeys.POSTERIZE,
+                    ParamKeys.MIRROR,
+                    ParamKeys.BEAT_RESPONSE,
+                    ParamKeys.BEAT_FLASH,
+                    ParamKeys.PALETTE,
+                    ParamKeys.HUE_SHIFT,
+                    ParamKeys.HUE_RANGE,
+                    ParamKeys.COLOR_CYCLE,
+                    ParamKeys.CYCLE_SPEED,
+                    ParamKeys.SATURATION,
+                    ParamKeys.BRIGHTNESS,
+                    ParamKeys.CONTRAST,
+                    ParamKeys.GAMMA,
+                    ParamKeys.INTENSITY,
+                    ParamKeys.TEMPERATURE,
+                    ParamKeys.BLOOM,
+                    ParamKeys.SOLARIZE,
+                    ParamKeys.INVERT,
+                    ParamKeys.CHROMATIC_ABERRATION,
+                    ParamKeys.VIGNETTE,
+                    ParamKeys.SCANLINES,
+                    ParamKeys.FILM_GRAIN,
+                    ParamKeys.GLITCH,
+                    ParamKeys.FISHEYE,
+                    ParamKeys.STROBE,
+                    ParamKeys.FLOW_STRENGTH,
+                    ParamKeys.WAVE_SPEED,
+                    ParamKeys.DAMPING,
+                )
+                put(SCENE_CLOCK, ParamKeys.SPEED)
+                put(AUDIO_DRIVE, ParamKeys.AUDIO_DRIVE)
+                put(BASS_BAND, ParamKeys.BASS_GAIN)
+                put(MID_BAND, ParamKeys.MID_GAIN)
+                put(TREBLE_BAND, ParamKeys.TREBLE_GAIN)
+                put(SHADER_LOOK, ParamKeys.MORPH, ParamKeys.COLOUR_MAP, ParamKeys.PALETTE_2, ParamKeys.PALETTE_BLEND, ParamKeys.DUOTONE)
+                put(ENDLESS_ZOOM, ParamKeys.ENDLESS_ZOOM, ParamKeys.DIVE_SPEED)
+                put(TURBULENCE, ParamKeys.TURBULENCE)
+                put(DYE_DENSITY, ParamKeys.DENSITY)
+                put(TRAIL_TOGGLE, ParamKeys.TRAILS)
+                put(TRAIL_LENGTH, ParamKeys.TRAIL_LENGTH)
+                put(TRAIL_ECHO, ParamKeys.TRAIL_ZOOM_ECHO_IN_OUT, ParamKeys.TRAIL_WARP_LIQUID_ECHO)
+                put(
+                    PARTICLE_SPRITE,
+                    ParamKeys.PARTICLE_SHAPE,
+                    ParamKeys.PARTICLE_SIZE,
+                    ParamKeys.PARTICLE_LIFE_S,
+                    ParamKeys.PARTICLE_DRAG,
+                )
+                put(MILKDROP, ParamKeys.MILKDROP_PALETTE_TINT, ParamKeys.BLEND_PRESET_CHANGES)
+                put(
+                    FLUID_SIM,
+                    ParamKeys.SOLVER_ITERATIONS,
+                    ParamKeys.PRESSURE,
+                    ParamKeys.FLUID_CURL,
+                    ParamKeys.MOTION_FADE,
+                    ParamKeys.FLUID_FADE,
+                    ParamKeys.CHROMATIC_AGING,
+                    ParamKeys.PALETTE_CYCLE,
+                    ParamKeys.PARTICLE_BRIGHTNESS,
+                    ParamKeys.SHADING_EMBOSSED_INK,
+                    ParamKeys.GLOW_FLUID,
+                    ParamKeys.FLUID_GLOW,
+                    ParamKeys.GLOW_THRESHOLD,
+                    ParamKeys.SUNRAYS,
+                    ParamKeys.SUNRAYS_WEIGHT,
+                    ParamKeys.CURL_FROM_MIDS,
+                    ParamKeys.GLOW_FROM_LOUDNESS,
+                    ParamKeys.FADE_WHEN_QUIET,
+                )
+                put(
+                    EMITTERS,
+                    ParamKeys.BEAT_PATTERN,
+                    ParamKeys.BEAT_SPLATS,
+                    ParamKeys.STIRRERS,
+                    ParamKeys.STIRRER_SPEED,
+                    ParamKeys.FLUID_SPLAT_RADIUS,
+                    ParamKeys.FLUID_SPLAT_FORCE,
+                    ParamKeys.BASS_PUMP,
+                    ParamKeys.TREBLE_SPARKLE,
+                    ParamKeys.RADIUS_ON_BEAT,
+                )
+                put(
+                    JOURNEY,
+                    ParamKeys.PATH,
+                    ParamKeys.SPAWN_POINTS,
+                    ParamKeys.CATCH_POINTS,
+                    ParamKeys.CATCH_PULL,
+                    ParamKeys.CATCH_RADIUS,
+                )
+                put(FLOW_FIELD_SIM, ParamKeys.FLOW_FORCE, ParamKeys.FLOW_CURL)
+                put(
+                    WATER,
+                    ParamKeys.RIPPLE_STRENGTH,
+                    ParamKeys.DEPTH,
+                    ParamKeys.SPECULAR,
+                    ParamKeys.FLOW_DRIFT,
+                    ParamKeys.LIQUID,
+                    ParamKeys.LIQUID_FLOW,
+                    ParamKeys.LIQUID_FADE,
+                )
+                put(RIPPLE_OVERLAY, ParamKeys.RIPPLE_OVERLAY_STRENGTH, ParamKeys.RIPPLE_GLINT)
+                put(
+                    CYMATICS,
+                    ParamKeys.GEOMETRY,
+                    ParamKeys.FUNDAMENTAL_HZ,
+                    ParamKeys.STANDING_WAVES,
+                    ParamKeys.TONAL_FOCUS,
+                    ParamKeys.PLATE_RING,
+                    ParamKeys.FIELD_SCALE,
+                    ParamKeys.WAVE_FLOW,
+                    ParamKeys.FIELD_SWIRL,
+                    ParamKeys.FILL,
+                    ParamKeys.NODAL_LINES,
+                    ParamKeys.NODAL_GLOW,
+                    ParamKeys.IRIDESCENCE,
+                    ParamKeys.CAUSTIC_SHEEN,
+                )
+                put(
+                    HYPERSPACE,
+                    ParamKeys.ACT,
+                    ParamKeys.ACT_LENGTH_S,
+                    ParamKeys.FRACTAL,
+                    ParamKeys.BODIES,
+                    ParamKeys.BODY_LIFE_S,
+                    ParamKeys.BODY_SPIN,
+                    ParamKeys.ORBIT_DRIFT,
+                    ParamKeys.CAMERA_DRIFT,
+                    ParamKeys.FOLD,
+                    ParamKeys.BODY_GLOW,
+                    ParamKeys.NEON_RIM,
+                    ParamKeys.FILIGREE,
+                    ParamKeys.HAZE,
+                    ParamKeys.MIRROR_FOLDS,
+                    ParamKeys.COLOUR_BANDING,
+                    ParamKeys.MELT,
+                    ParamKeys.INK_STAIN,
+                    ParamKeys.LIQUID_LIGHT,
+                    ParamKeys.RIDGES,
+                    ParamKeys.STIR,
+                    ParamKeys.VORTICITY,
+                    ParamKeys.FLOW_FADE,
+                )
+                put(BEAM, ParamKeys.XY_PLOT, ParamKeys.BEAM_WIDTH, ParamKeys.BEAM_BRIGHTNESS, ParamKeys.BEAM_TAIL)
+            }
+
         // Per-band gain only reaches a style that reads that band's envelope. Beam and MilkDrop
         // consume raw PCM and never look at bass/mid/treble at all.
-        val BASS_READERS =
+        private val BASS_READERS =
             setOf(
                 SceneKind.SHADER,
                 SceneKind.SILK,
@@ -123,7 +300,7 @@ enum class ParamScope {
                 SceneKind.HYPERSPACE,
             )
 
-        val MID_READERS =
+        private val MID_READERS =
             setOf(
                 SceneKind.SHADER,
                 SceneKind.SILK,
@@ -134,7 +311,7 @@ enum class ParamScope {
                 SceneKind.HYPERSPACE,
             )
 
-        val TREBLE_READERS =
+        private val TREBLE_READERS =
             setOf(
                 SceneKind.SHADER,
                 SceneKind.SILK,
@@ -148,7 +325,7 @@ enum class ParamScope {
                 SceneKind.HYPERSPACE,
             )
 
-        val TURBULENCE_READERS =
+        private val TURBULENCE_READERS =
             setOf(
                 SceneKind.SHADER,
                 SceneKind.MYCELIUM,
