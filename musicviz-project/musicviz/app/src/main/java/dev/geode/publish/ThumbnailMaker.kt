@@ -342,6 +342,7 @@ class ThumbnailMaker(
      * shrinking the type before it will ellipsize — a thumbnail title that trails off in "…" has
      * already failed at the only job it has.
      */
+    @Suppress("ReturnCount")
     private fun fitLines(
         paint: TextPaint,
         text: String,

@@ -74,6 +74,11 @@ data class TransientEnvelope(
 }
 
 data class AutoCutSettings(
+    /**
+     * Which channel to build the envelope from — see [TransientEnvelope.from]. Detection itself
+     * reads the envelope it is handed; this is kept here so the choice round-trips with the rest
+     * of the settings and comes back attached to the suggestions it produced.
+     */
     val source: TransientSource = TransientSource.TRANSIENT,
     /** 0 keeps only the hits that tower over the mix, 1 takes almost every rise. */
     val sensitivity: Float = 0.5f,

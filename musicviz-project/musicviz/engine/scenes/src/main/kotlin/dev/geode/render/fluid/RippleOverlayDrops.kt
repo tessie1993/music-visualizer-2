@@ -1,6 +1,7 @@
 package dev.geode.render.fluid
 
 import dev.geode.analysis.AudioFeatures
+import dev.geode.render.LiveSignal
 
 internal class RippleOverlayDrops {
     companion object {
@@ -13,12 +14,12 @@ internal class RippleOverlayDrops {
 
     private var frame = 0
     private var dropIndex = 0
-    private var prevBeat = false
+    private val hitEdge = LiveSignal.Edge()
 
     fun reset() {
         frame = 0
         dropIndex = 0
-        prevBeat = false
+        hitEdge.reset()
     }
 
     fun tick(
@@ -27,10 +28,11 @@ internal class RippleOverlayDrops {
         queue: (Float, Float, Float, Float) -> Unit,
     ) {
         frame++
-        val beatEdge = features.beat && !prevBeat
-        prevBeat = features.beat
-        if (beatEdge) {
-            val amp = (0.22f + 0.4f * features.bass.coerceIn(0f, 1.5f)) * features.beatImpulse
+        // Rings drop on the heard transient rather than on a tracked beat, so the overlay
+        // works on live input and on material the tracker cannot lock to.
+        val hit = LiveSignal.hit(features)
+        if (hitEdge.step(features)) {
+            val amp = (0.22f + 0.4f * features.bass.coerceIn(0f, 1.5f)) * hit
             repeat(BEAT_DROPS) {
                 val (x, y) = RippleMath.overlayDropPosition(dropIndex++, aspect)
                 queue(x, y, 0.055f, amp)

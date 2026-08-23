@@ -227,18 +227,24 @@ sealed interface LoudnessAdvice {
                         append("only make that worse. Geode will take off ${LoudnessTargets.dbText(gainDb)} to get the ")
                         append("peak legal; getting louder as well needs a limiter on the mix.")
                     }
+                    // Genuinely louder than the platform plays at.
+                    gainForLevelDb < -LoudnessTargets.GAIN_TOLERANCE_DB -> {
+                        append("That is ${LoudnessTargets.luText(gainForLevelDb)} over the ${target.levelPhrase} ")
+                        append("${target.label} plays at — ${target.loudNote}. Geode will take off ")
+                        append("${LoudnessTargets.dbText(gainDb)}")
+                        if (ceilingLimited) {
+                            append(" — a shade more than the level alone needs, so the true peak clears the ")
+                            append("${LoudnessTargets.dbtpText(target.window.ceilingDbtp)} ceiling too")
+                        }
+                        append(", landing at ${LoudnessTargets.lufsText(resultingLufs)} with a true peak of ")
+                        append("${LoudnessTargets.dbtpText(resultingTruePeakDbtp)}.")
+                    }
                     // Level is fine; the ceiling is the only reason to touch it.
-                    ceilingLimited -> {
+                    else -> {
                         append("The level is where ${target.label} wants it, but the peak is over the ")
                         append("${LoudnessTargets.dbtpText(target.window.ceilingDbtp)} ceiling, where lossy encoders start ")
                         append("to distort. Geode will take off ${LoudnessTargets.dbText(gainDb)}, landing at ")
                         append("${LoudnessTargets.lufsText(resultingLufs)}.")
-                    }
-                    else -> {
-                        append("That is ${LoudnessTargets.luText(-gainForLevelDb)} over the ${target.levelPhrase} ")
-                        append("${target.label} plays at — ${target.loudNote}. Geode will take off ")
-                        append("${LoudnessTargets.dbText(gainDb)}, landing at ${LoudnessTargets.lufsText(resultingLufs)} ")
-                        append("with a true peak of ${LoudnessTargets.dbtpText(resultingTruePeakDbtp)}.")
                     }
                 }
             }

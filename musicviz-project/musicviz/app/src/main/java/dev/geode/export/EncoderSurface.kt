@@ -74,11 +74,12 @@ class EncoderSurface(
         check(EGL14.eglSwapBuffers(display, eglSurface)) { "eglSwapBuffers failed" }
     }
 
+    /** Idempotent, and safe on a partially built surface — see the constructor. */
     fun release() {
         if (display != EGL14.EGL_NO_DISPLAY) {
             EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
-            EGL14.eglDestroySurface(display, eglSurface)
-            EGL14.eglDestroyContext(display, context)
+            if (eglSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(display, eglSurface)
+            if (context != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(display, context)
             EGL14.eglReleaseThread()
         }
         display = EGL14.EGL_NO_DISPLAY

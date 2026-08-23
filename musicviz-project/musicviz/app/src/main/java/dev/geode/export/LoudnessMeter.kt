@@ -385,7 +385,7 @@ class LoudnessAnalyser(
     ) {
         val available = count / channelCount
         var offset = 0
-        for (frame in 0 until available) {
+        repeat(available) {
             for (channel in 0 until channelCount) {
                 val x = interleaved[offset + channel].toDouble()
                 val magnitude = abs(x)
@@ -451,6 +451,7 @@ class LoudnessAnalyser(
         blockPower = blockPower.copyOf(blockPower.size * 2)
     }
 
+    @Suppress("ReturnCount")
     private fun integrate(): Gated {
         var absoluteSum = 0.0
         var absoluteCount = 0

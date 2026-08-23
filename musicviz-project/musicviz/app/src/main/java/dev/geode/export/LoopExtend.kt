@@ -227,6 +227,7 @@ class LoopExtend(
         onProgress: (Float) -> Unit,
         isCancelled: () -> Boolean,
     ): Result {
+        if (soundtrack.totalUs <= 0L) return Result.Failed("That soundtrack decoded to nothing — the file may be empty or corrupt.")
         val plan = LoopExtendPlan.of(reel.loopDurationUs, soundtrack.totalUs, reel.loops.size)
         val estimate = plan.estimatedBytes(reel.bytes / reel.loops.size, soundtrack.bytes)
         if (estimate > sizeLimitBytes) return Result.Failed(oversizeMessage(plan, estimate, sizeLimitBytes, soundtrack.bytes))
@@ -282,12 +283,13 @@ class LoopExtend(
         onProgress: (Float) -> Unit,
         isCancelled: () -> Boolean,
     ): Boolean {
-        val readers = reel.loops.map { LoopReader.open(it.file) }
+        val readers = mutableListOf<LoopReader>()
         var muxer: MediaMuxer? = null
         var feed: AudioReel? = null
         var started = false
         var stopped = false
         try {
+            reel.loops.forEach { readers += LoopReader.open(it.file) }
             checkOneEncoding(readers)
             val writer = MediaMuxer(pfd.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4).also { muxer = it }
             val videoTrack = writer.addTrack(readers.first().format)

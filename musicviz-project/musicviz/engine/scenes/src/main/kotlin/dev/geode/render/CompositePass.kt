@@ -28,7 +28,7 @@ internal class CompositePass(
         var transitionId: String = TransitionStyle.FADE.name.lowercase()
         var ratio = 1f
         var timeSeconds = 0f
-        var beatImpulse = 0f
+        var hitImpulse = 0f
         var flash = 0f
         var strobeHz = 0f
         var postRotationAngle = 0f
@@ -147,7 +147,7 @@ internal class CompositePass(
         GLES30.glUniform1i(loc("uStyle"), styleValue)
         GLES30.glUniform1f(loc("uRatio"), inputs.ratio)
         GLES30.glUniform1f(loc("uTime"), inputs.timeSeconds)
-        GLES30.glUniform1f(loc("uBeat"), inputs.beatImpulse)
+        GLES30.glUniform1f(loc("uBeat"), inputs.hitImpulse)
     }
 
     private fun uploadGradeUniforms(

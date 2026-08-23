@@ -131,6 +131,9 @@ object PlaybackEngine {
     private fun rebindTo(context: Context): Context {
         val current = context.applicationContext
         if (app !== current) {
+            // Dropping the reference is not enough: the old session owns an ExoPlayer, the audio
+            // effect chain, the PCM tap and a coroutine scope, none of which the GC reclaims.
+            session?.release()
             session = null
             uiHolds = 0
             serviceHolds = 0

@@ -1,6 +1,7 @@
 package dev.geode.render.fluid
 
 import dev.geode.analysis.AudioFeatures
+import dev.geode.render.LiveSignal
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -74,7 +75,8 @@ internal class FluidChoreography {
     val spawns: List<Anchor> = List(MAX_SPAWN) { Anchor() }
     val catches: List<Anchor> = List(MAX_CATCH) { Anchor() }
 
-    var beatCount = 0
+    /** Hits heard so far. Drives the bloom path's phyllotaxis. */
+    var hitCount = 0
         private set
 
     private var time = 0f
@@ -83,7 +85,8 @@ internal class FluidChoreography {
     private var initialized = false
     private var beatEnv = 0f
     private var bassEnv = 0f
-    private var prevBeat = false
+    private val hitEdge = LiveSignal.Edge()
+    private val traverse = LiveSignal.Traverse()
 
     fun tick(
         f: AudioFeatures,
@@ -91,18 +94,23 @@ internal class FluidChoreography {
         aspect: Float,
     ) {
         time = (time + dt * (0.4f + 0.6f * speed)) % TIME_WRAP_SECONDS
-        if (f.beat && !prevBeat) beatCount++
-        prevBeat = f.beat
-        beatEnv = max(f.motionImpulse, beatEnv * kotlin.math.exp(-dt / 0.35f))
+        if (hitEdge.step(f)) hitCount++
+        beatEnv = max(LiveSignal.hit(f), beatEnv * kotlin.math.exp(-dt / 0.35f))
         val bassTarget = (f.bass * 1.2f).coerceIn(0f, 1f)
         bassEnv += (bassTarget - bassEnv) * (if (bassTarget > bassEnv) (dt / 0.03f) else (dt / 0.45f)).coerceAtMost(1f)
 
-        if (f.sectionIndex != lastSection) {
-            lastSection = f.sectionIndex
-            sectionPhase = f.sectionIndex * GOLDEN_ANGLE
+        // The journey used to be laid out along the track's play POSITION and re-seated from a
+        // pre-analysed section list. That meant nothing moved on live input, a seek teleported
+        // every spawn point, and a file the analyser had not reached had exactly one section.
+        // Traverse walks on heard energy and re-seats when the spectrum changes character, so
+        // the progression keeps its shape without the visuals ever consulting a timeline.
+        traverse.step(f, dt)
+        if (traverse.sectionCount != lastSection) {
+            lastSection = traverse.sectionCount
+            sectionPhase = traverse.sectionCount * GOLDEN_ANGLE
         }
 
-        val progress = f.progress.coerceIn(0f, 1f) * progressionAmount.coerceIn(0f, 1f)
+        val progress = traverse.position * progressionAmount.coerceIn(0f, 1f)
         val ax = min(aspect, 1.6f) * DOMAIN_MARGIN
 
         val nS = spawnCount.coerceIn(1, MAX_SPAWN)
@@ -139,12 +147,13 @@ internal class FluidChoreography {
     fun reset() {
         initialized = false
         time = 0f
-        beatCount = 0
+        hitCount = 0
         lastSection = -1
         sectionPhase = 0f
         beatEnv = 0f
         bassEnv = 0f
-        prevBeat = false
+        hitEdge.reset()
+        traverse.reset()
     }
 
     private fun spawnTarget(
@@ -169,7 +178,7 @@ internal class FluidChoreography {
                 (cos(theta) * r * ax) to (cy + sin(theta) * r)
             }
             PATH_BLOOM -> {
-                val idx = (beatCount + i).toFloat()
+                val idx = (hitCount + i).toFloat()
                 val a = idx * GOLDEN_ANGLE + sectionPhase
                 val r = journeyR * sqrt(((idx % 24f) + 1f) / 24f)
                 (cos(a) * r * ax) to (cy + sin(a) * r)
