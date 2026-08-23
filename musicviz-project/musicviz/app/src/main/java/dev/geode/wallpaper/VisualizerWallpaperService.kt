@@ -23,6 +23,17 @@ class VisualizerWallpaperService : WallpaperService() {
         @Volatile
         private var running = false
 
+        /**
+         * Distinguishes one feeder run from the next.
+         *
+         * A wallpaper toggles visibility every time the screen sleeps or the user switches app, so
+         * over a day this runs hundreds of times. If a join ever times out, the old thread must be
+         * able to tell that a newer run has taken over and exit — otherwise it keeps ticking, and
+         * keeps the renderer and the service context alive, for the rest of the process.
+         */
+        @Volatile
+        private var feedGeneration = 0
+
         private var surfaceAvailable = false
         private var visible = false
 

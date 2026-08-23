@@ -1,5 +1,12 @@
 package dev.geode.render.scene
 
+/**
+ * The user-facing name of every Customize parameter.
+ *
+ * These strings are the identity of a control everywhere: the label on screen, the key the
+ * randomizer rolls and locks by, the term the panel search matches, and the key
+ * [ParamScope.of] answers visibility for. Changing one renames the control.
+ */
 object ParamKeys {
     const val SPEED = "Speed"
     const val ZOOM = "Zoom"
@@ -7,8 +14,8 @@ object ParamKeys {
     const val SWAY = "Sway"
     const val DRIFT_X = "Drift X"
     const val DRIFT_Y = "Drift Y"
-    const val BEAT_PULSE = "Beat pulse"
-    const val BEAT_SHAKE = "Beat shake"
+    const val BEAT_PULSE = "Transient pulse"
+    const val BEAT_SHAKE = "Transient shake"
     const val ENDLESS_ZOOM = "Endless zoom"
     const val DIVE_SPEED = "Dive speed"
     const val XY_PLOT = "XY plot"
@@ -26,8 +33,8 @@ object ParamKeys {
     const val PARTICLE_SHAPE = "Particle shape"
     const val PARTICLE_SIZE = "Particle size"
     const val AUDIO_DRIVE = "Audio drive"
-    const val BEAT_RESPONSE = "Beat response"
-    const val BEAT_FLASH = "Beat flash"
+    const val BEAT_RESPONSE = "Transient response"
+    const val BEAT_FLASH = "Transient flash"
     const val BLEND_PRESET_CHANGES = "Blend preset changes"
     const val BASS_GAIN = "Bass gain"
     const val MID_GAIN = "Mid gain"
@@ -35,7 +42,7 @@ object ParamKeys {
     const val TURBULENCE = "Turbulence"
     const val DENSITY = "Density"
     const val MIRROR = "Mirror"
-    const val TRAILS_PARTICLE_SCENES = "Trails (particle scenes)"
+    const val TRAILS = "Trails"
     const val TRAIL_LENGTH = "Trail length"
     const val TRAIL_ZOOM_ECHO_IN_OUT = "Trail zoom (echo in/out)"
     const val TRAIL_WARP_LIQUID_ECHO = "Trail warp (liquid echo)"
@@ -71,8 +78,8 @@ object ParamKeys {
     const val MOTION_FADE = "Motion fade"
     const val FLUID_FADE = "Fluid fade"
     const val CHROMATIC_AGING = "Chromatic aging"
-    const val BEAT_PATTERN = "Beat pattern"
-    const val BEAT_SPLATS = "Beat splats"
+    const val BEAT_PATTERN = "Hit pattern"
+    const val BEAT_SPLATS = "Hit splats"
     const val STIRRERS = "Stirrers"
     const val STIRRER_SPEED = "Stirrer speed"
     const val FLUID_SPLAT_RADIUS = "Fluid splat radius"
@@ -97,7 +104,7 @@ object ParamKeys {
     const val CURL_FROM_MIDS = "Curl from mids"
     const val GLOW_FROM_LOUDNESS = "Glow from loudness"
     const val FADE_WHEN_QUIET = "Fade when quiet"
-    const val RADIUS_ON_BEAT = "Radius on beat"
+    const val RADIUS_ON_BEAT = "Radius on hit"
     const val FLOW_STRENGTH = "Flow strength"
     const val FLOW_FORCE = "Flow force"
     const val FLOW_CURL = "Flow curl"

@@ -309,7 +309,7 @@ internal fun BehaviorTab(
         LabeledSlider(ParamKeys.DENSITY, p.density, 0.1f..1f) { onChange(p.copy(density = it)) }
         ControlHint("Thins the population: the particle styles and Fluid's dye. Nothing else reads it.")
         CheckRow(ParamKeys.MIRROR, p.mirror) { onChange(p.copy(mirror = it)) }
-        CheckRow(ParamKeys.TRAILS_PARTICLE_SCENES, p.trails) { onChange(p.copy(trails = it)) }
+        CheckRow(ParamKeys.TRAILS, p.trails) { onChange(p.copy(trails = it)) }
         if (p.trails) {
             LabeledSlider(ParamKeys.TRAIL_LENGTH, p.trailLength, 0.05f..0.98f) { onChange(p.copy(trailLength = it)) }
             LabeledSlider(ParamKeys.TRAIL_ZOOM_ECHO_IN_OUT, p.trailZoom, -0.5f..0.5f) { onChange(p.copy(trailZoom = it)) }

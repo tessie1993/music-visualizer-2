@@ -221,14 +221,14 @@ sealed interface LoudnessAdvice {
                 append("Measured ${LoudnessTargets.lufsText(lufs)}, true peak ${LoudnessTargets.dbtpText(truePeakDbtp)}. ")
                 when {
                     // Quiet, but already clipping: gain cannot help, only a limiter can.
-                    gainForLevelDb > LoudnessTargets.GAIN_TOLERANCE_DB -> {
+                    lufs < target.window.lowLufs -> {
                         append("That is under the ${target.levelPhrase} ${target.label} plays at, but the peak is already ")
                         append("over the ${LoudnessTargets.dbtpText(target.window.ceilingDbtp)} ceiling, and gain alone can ")
                         append("only make that worse. Geode will take off ${LoudnessTargets.dbText(gainDb)} to get the ")
                         append("peak legal; getting louder as well needs a limiter on the mix.")
                     }
                     // Genuinely louder than the platform plays at.
-                    gainForLevelDb < -LoudnessTargets.GAIN_TOLERANCE_DB -> {
+                    lufs > target.window.highLufs -> {
                         append("That is ${LoudnessTargets.luText(gainForLevelDb)} over the ${target.levelPhrase} ")
                         append("${target.label} plays at — ${target.loudNote}. Geode will take off ")
                         append("${LoudnessTargets.dbText(gainDb)}")

@@ -134,7 +134,7 @@ object ParamRandomizer {
         r(ParamKeys.TURBULENCE) { it.copy(turbulence = sometimes(0.5f, 0.1f, 1f)) }
         r(ParamKeys.DENSITY) { it.copy(density = f(0.4f, 1f)) }
         r(ParamKeys.MIRROR) { it.copy(mirror = chance(0.15f)) }
-        r(ParamKeys.TRAILS_PARTICLE_SCENES) { it.copy(trails = chance(0.4f)) }
+        r(ParamKeys.TRAILS) { it.copy(trails = chance(0.4f)) }
         r(ParamKeys.TRAIL_LENGTH) { it.copy(trailLength = f(0.3f, 0.9f)) }
         r(ParamKeys.TRAIL_ZOOM_ECHO_IN_OUT) { it.copy(trailZoom = sometimes(0.3f, -0.3f, 0.3f)) }
         r(ParamKeys.TRAIL_WARP_LIQUID_ECHO) { it.copy(trailWarp = sometimes(0.3f, 0.1f, 0.6f)) }
