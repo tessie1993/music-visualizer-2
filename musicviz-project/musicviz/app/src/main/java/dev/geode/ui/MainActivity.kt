@@ -8,14 +8,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import dagger.hilt.android.AndroidEntryPoint
 import dev.geode.R
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    private val factory by lazy { GeodeViewModelFactory(application) }
+    private val settingsViewModel: SettingsViewModel by viewModels()
 
-    private val settingsViewModel: SettingsViewModel by viewModels { factory }
-
-    private val visualsViewModel: VisualsViewModel by viewModels { factory }
+    private val visualsViewModel: VisualsViewModel by viewModels()
 
     private fun importSharedPreset(intent: Intent?) {
         val data = intent?.data?.toString() ?: return

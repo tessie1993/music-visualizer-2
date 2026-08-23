@@ -1,6 +1,5 @@
 package dev.geode.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -68,11 +67,12 @@ fun VisualizerScreen(
     val chromeAlpha = maxOf(gui.barOpacity, 0.25f)
     var controlsVisible by remember { mutableStateOf(true) }
 
-    BackHandler { onCollapse() }
+    val dismiss = rememberPredictiveDismiss(onDismiss = onCollapse)
 
     Box(
         Modifier
             .fillMaxSize()
+            .dismissTransform(dismiss)
             .background(Color.Black)
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { controlsVisible = !controlsVisible })

@@ -1,5 +1,6 @@
 package dev.geode.analysis
 
+import dev.geode.util.bestEffort
 import android.content.Context
 import android.media.MediaCodec
 import android.media.MediaExtractor
@@ -121,7 +122,7 @@ class OfflineAnalyzer(
             }
         } finally {
             codecRef?.let {
-                runCatching { it.stop() }
+                bestEffort(TAG, "it.stop()") { it.stop() }
                 it.release()
             }
             extractor.release()
@@ -293,3 +294,5 @@ class OfflineAnalyzer(
         const val OFFLINE_HOP_RATE_HZ = 60f
     }
 }
+
+private const val TAG = "OfflineAnalyzer"

@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -271,7 +272,7 @@ fun QueuePanel(
         return
     }
     val library by viewModel.library.collectAsStateWithLifecycle()
-    var saving by remember { mutableStateOf(false) }
+    var saving by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val follows = rememberFollowsPlayback(listState)
     LaunchedEffect(queue.index, follows.value) {
@@ -377,7 +378,7 @@ internal fun PlaylistNameDialog(
     onName: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var name by remember { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },

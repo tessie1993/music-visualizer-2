@@ -325,9 +325,9 @@ private fun GroupList(
 ) {
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     val sel = open
-    androidx.activity.compose.BackHandler(enabled = sel != null) { open = null }
+    val dismiss = rememberPredictiveDismiss(enabled = sel != null) { open = null }
     if (sel != null && groups.containsKey(sel)) {
-        Column {
+        Column(Modifier.dismissTransform(dismiss)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     stringResource(R.string.library_back),

@@ -1,5 +1,6 @@
 package dev.geode.export
 
+import dev.geode.util.bestEffort
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -26,7 +27,7 @@ class ExportService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        runCatching { startForegroundNotification(ExportRun.state.value) }
+        bestEffort(TAG, "startForegroundNotification(ExportRun.state.v...") { startForegroundNotification(ExportRun.state.value) }
         watcher =
             scope.launch {
                 ExportRun.state.collectLatest { state ->
@@ -34,7 +35,7 @@ class ExportService : Service() {
                         stopSelf()
                         return@collectLatest
                     }
-                    runCatching { startForegroundNotification(state) }
+                    bestEffort(TAG, "startForegroundNotification(state)") { startForegroundNotification(state) }
                 }
             }
     }
@@ -133,3 +134,5 @@ class ExportService : Service() {
         }
     }
 }
+
+private const val TAG = "ExportService"

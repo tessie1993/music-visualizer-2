@@ -1,5 +1,6 @@
 package dev.geode.audio
 
+import dev.geode.util.bestEffort
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
@@ -106,7 +107,7 @@ class PlaybackCapture(
                         channelCount = channels
                         return rec
                     }
-                    runCatching { rec?.release() }
+                    bestEffort(TAG, "rec?.release()") { rec?.release() }
                 }
             }
         }
@@ -117,3 +118,5 @@ class PlaybackCapture(
         const val DEFAULT_RATE = 48_000
     }
 }
+
+private const val TAG = "PlaybackCapture"

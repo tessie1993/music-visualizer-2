@@ -2,6 +2,9 @@ package dev.geode.ui
 
 import android.net.Uri
 import androidx.lifecycle.ViewModel
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.geode.di.PlayerSessionProvider
+import javax.inject.Inject
 import dev.geode.data.MilkTexture
 import dev.geode.data.Preset
 import dev.geode.data.PresetFolders
@@ -19,104 +22,108 @@ sealed interface PresetLinkImport {
     data object Unreadable : PresetLinkImport
 }
 
-class VisualsViewModel internal constructor(
-    private val session: PlayerSession,
-) : ViewModel() {
-    private val visualizer: VisualizerRepository = session.visualizerRepository
+@HiltViewModel
+class VisualsViewModel
+    @Inject
+    constructor(
+        private val sessions: PlayerSessionProvider,
+    ) : ViewModel() {
+        private val session: PlayerSession = sessions.acquire()
+        private val visualizer: VisualizerRepository = session.visualizerRepository
 
-    val vizState: StateFlow<VizUiState> get() = visualizer.viz
+        val vizState: StateFlow<VizUiState> get() = visualizer.viz
 
-    val activeMilkPath: StateFlow<String?> get() = visualizer.activeMilkPath
+        val activeMilkPath: StateFlow<String?> get() = visualizer.activeMilkPath
 
-    val textures: StateFlow<List<MilkTexture>> get() = session.textures
+        val textures: StateFlow<List<MilkTexture>> get() = session.textures
 
-    val lfos: StateFlow<List<LfoConfig>> get() = session.lfos
+        val lfos: StateFlow<List<LfoConfig>> get() = session.lfos
 
-    val adsrs: StateFlow<List<AdsrConfig>> get() = session.adsrs
+        val adsrs: StateFlow<List<AdsrConfig>> get() = session.adsrs
 
-    val lockedParams: StateFlow<Set<String>> get() = session.lockedParams
+        val lockedParams: StateFlow<Set<String>> get() = session.lockedParams
 
-    val presetLocked: StateFlow<Boolean> get() = session.presetLocked
+        val presetLocked: StateFlow<Boolean> get() = session.presetLocked
 
-    val presetFolders: StateFlow<PresetFolders> get() = session.presetFolders
+        val presetFolders: StateFlow<PresetFolders> get() = session.presetFolders
 
-    fun toggleParamLock(label: String) = session.toggleParamLock(label)
+        fun toggleParamLock(label: String) = session.toggleParamLock(label)
 
-    fun randomizeParams(tab: CustomizeTab? = null) = session.randomizeParams(tab)
+        fun randomizeParams(tab: CustomizeTab? = null) = session.randomizeParams(tab)
 
-    fun setAdsr(
-        index: Int,
-        config: AdsrConfig,
-    ) = session.setAdsr(index, config)
+        fun setAdsr(
+            index: Int,
+            config: AdsrConfig,
+        ) = session.setAdsr(index, config)
 
-    fun setLfo(
-        index: Int,
-        config: LfoConfig,
-    ) = session.setLfo(index, config)
+        fun setLfo(
+            index: Int,
+            config: LfoConfig,
+        ) = session.setLfo(index, config)
 
-    fun importTextures(
-        uris: List<Uri>,
-        onImported: () -> Unit,
-    ) = session.importTextures(uris, onImported)
+        fun importTextures(
+            uris: List<Uri>,
+            onImported: () -> Unit,
+        ) = session.importTextures(uris, onImported)
 
-    fun removeTexture(name: String) = session.removeTexture(name)
+        fun removeTexture(name: String) = session.removeTexture(name)
 
-    fun useTexture(
-        name: String,
-        onReady: (String) -> Unit,
-    ) = session.useTexture(name, onReady)
+        fun useTexture(
+            name: String,
+            onReady: (String) -> Unit,
+        ) = session.useTexture(name, onReady)
 
-    fun togglePresetLock() = session.togglePresetLock()
+        fun togglePresetLock() = session.togglePresetLock()
 
-    fun applyPreset(preset: Preset) = session.applyPreset(preset)
+        fun applyPreset(preset: Preset) = session.applyPreset(preset)
 
-    fun savePreset(
-        name: String,
-        customShader: String?,
-        folder: String = "",
-    ) = session.savePreset(name, customShader, folder)
+        fun savePreset(
+            name: String,
+            customShader: String?,
+            folder: String = "",
+        ) = session.savePreset(name, customShader, folder)
 
-    fun deletePreset(name: String) = session.deletePreset(name)
+        fun deletePreset(name: String) = session.deletePreset(name)
 
-    fun presetFile(name: String): File? = session.presetFile(name)
+        fun presetFile(name: String): File? = session.presetFile(name)
 
-    fun presetShareLink(name: String): String? = session.presetShareLink(name)
+        fun presetShareLink(name: String): String? = session.presetShareLink(name)
 
-    fun importPresetLink(text: String): String? = session.importPresetLink(text)
+        fun importPresetLink(text: String): String? = session.importPresetLink(text)
 
-    fun importSharedPreset(data: String): PresetLinkImport =
-        if (!PresetLink.isPresetLink(data)) {
-            PresetLinkImport.NotALink
-        } else {
-            session.importPresetLink(data)
-                ?.let(PresetLinkImport::Imported)
-                ?: PresetLinkImport.Unreadable
+        fun importSharedPreset(data: String): PresetLinkImport =
+            if (!PresetLink.isPresetLink(data)) {
+                PresetLinkImport.NotALink
+            } else {
+                session.importPresetLink(data)
+                    ?.let(PresetLinkImport::Imported)
+                    ?: PresetLinkImport.Unreadable
+            }
+
+        fun importPresetFile(
+            uri: Uri,
+            onResult: (String?) -> Unit,
+        ) = session.importPresetFile(uri, onResult)
+
+        fun addPresetFolder(path: String) = session.addPresetFolder(path)
+
+        fun renamePresetFolder(
+            from: String,
+            to: String,
+        ) = session.renamePresetFolder(from, to)
+
+        fun movePresetToFolder(
+            name: String,
+            folder: String,
+        ) = session.movePresetToFolder(name, folder)
+
+        fun userMilkPresets(): List<File> = session.userMilkPresets()
+
+        fun noteMilkPreset(path: String) = session.noteMilkPreset(path)
+
+        internal fun milkPresetPathFor(preset: Preset): String? = session.milkPresetPathFor(preset)
+
+        override fun onCleared() {
+            sessions.release()
         }
-
-    fun importPresetFile(
-        uri: Uri,
-        onResult: (String?) -> Unit,
-    ) = session.importPresetFile(uri, onResult)
-
-    fun addPresetFolder(path: String) = session.addPresetFolder(path)
-
-    fun renamePresetFolder(
-        from: String,
-        to: String,
-    ) = session.renamePresetFolder(from, to)
-
-    fun movePresetToFolder(
-        name: String,
-        folder: String,
-    ) = session.movePresetToFolder(name, folder)
-
-    fun userMilkPresets(): List<File> = session.userMilkPresets()
-
-    fun noteMilkPreset(path: String) = session.noteMilkPreset(path)
-
-    internal fun milkPresetPathFor(preset: Preset): String? = session.milkPresetPathFor(preset)
-
-    override fun onCleared() {
-        PlayerSession.release()
     }
-}

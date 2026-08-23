@@ -1,5 +1,6 @@
 package dev.geode.audio
 
+import dev.geode.util.bestEffort
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -34,7 +35,7 @@ class PlaybackCaptureService : Service() {
         flags: Int,
         startId: Int,
     ): Int {
-        runCatching { startForegroundNotification() }
+        bestEffort(TAG, "startForegroundNotification()") { startForegroundNotification() }
         if (intent?.action == ACTION_STOP) {
             stopSelf()
             return START_NOT_STICKY
@@ -55,8 +56,8 @@ class PlaybackCaptureService : Service() {
             return START_NOT_STICKY
         }
         projection?.let {
-            runCatching { it.unregisterCallback(projectionCallback) }
-            runCatching { it.stop() }
+            bestEffort(TAG, "it.unregisterCallback(projectionCallback)") { it.unregisterCallback(projectionCallback) }
+            bestEffort(TAG, "it.stop()") { it.stop() }
         }
         mp.registerCallback(projectionCallback, Handler(Looper.getMainLooper()))
         projection = mp
@@ -67,8 +68,8 @@ class PlaybackCaptureService : Service() {
     override fun onDestroy() {
         MediaProjectionHolder.publish(null)
         projection?.let {
-            runCatching { it.unregisterCallback(projectionCallback) }
-            runCatching { it.stop() }
+            bestEffort(TAG, "it.unregisterCallback(projectionCallback)") { it.unregisterCallback(projectionCallback) }
+            bestEffort(TAG, "it.stop()") { it.stop() }
         }
         projection = null
         super.onDestroy()
@@ -175,3 +176,5 @@ object MediaProjectionHolder {
         _startFailures.value += 1
     }
 }
+
+private const val TAG = "PlaybackCaptureService"

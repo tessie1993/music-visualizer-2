@@ -1,5 +1,6 @@
 package dev.geode.export
 
+import dev.geode.util.bestEffort
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
@@ -125,7 +126,7 @@ class StudioExporter(
             transformer = built
             continuation.invokeOnCancellation {
                 cancelled = true
-                runCatching { built.cancel() }
+                bestEffort(TAG, "built.cancel()") { built.cancel() }
             }
             runCatching { built.start(edited, output.absolutePath) }
                 .onFailure {
@@ -149,7 +150,7 @@ class StudioExporter(
 
     fun cancel() {
         cancelled = true
-        runCatching { transformer?.cancel() }
+        bestEffort(TAG, "transformer?.cancel()") { transformer?.cancel() }
     }
 
     private fun publish(
@@ -209,3 +210,5 @@ class StudioExporter(
         }
     }
 }
+
+private const val TAG = "StudioExporter"

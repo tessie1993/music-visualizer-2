@@ -1,5 +1,6 @@
 package dev.geode.audio
 
+import dev.geode.util.bestEffort
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -90,7 +91,7 @@ class MicCapture(
                     sampleRateHz = rate
                     return rec
                 }
-                runCatching { rec?.release() }
+                bestEffort(TAG, "rec?.release()") { rec?.release() }
             }
         }
         return null
@@ -113,3 +114,5 @@ class MicCapture(
         const val DEFAULT_RATE = 44_100
     }
 }
+
+private const val TAG = "MicCapture"

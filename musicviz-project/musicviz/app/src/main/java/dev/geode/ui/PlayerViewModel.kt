@@ -4,6 +4,9 @@ import android.content.Intent
 import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.lifecycle.ViewModel
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.geode.di.PlayerSessionProvider
+import javax.inject.Inject
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import dev.geode.analysis.AudioFeatures
@@ -22,232 +25,236 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
 @OptIn(UnstableApi::class)
-class PlayerViewModel internal constructor(
-    private val session: PlayerSession,
-) : ViewModel() {
-    private val playback: PlaybackRepository = session.playbackRepository
-    private val visualizer: VisualizerRepository = session.visualizerRepository
+@HiltViewModel
+class PlayerViewModel
+    @Inject
+    constructor(
+        private val sessions: PlayerSessionProvider,
+    ) : ViewModel() {
+        private val session: PlayerSession = sessions.acquire()
+        private val playback: PlaybackRepository = session.playbackRepository
+        private val visualizer: VisualizerRepository = session.visualizerRepository
 
-    val player: ExoPlayer get() = session.player
+        val player: ExoPlayer get() = session.player
 
-    val uiState: StateFlow<PlayerUiState> get() = playback.state
+        val uiState: StateFlow<PlayerUiState> get() = playback.state
 
-    val queue: StateFlow<QueueUiState> get() = playback.queue
+        val queue: StateFlow<QueueUiState> get() = playback.queue
 
-    val abLoop: StateFlow<AbLoop?> get() = playback.abLoop
+        val abLoop: StateFlow<AbLoop?> get() = playback.abLoop
 
-    val playbackNotice: StateFlow<String?> get() = playback.notice
+        val playbackNotice: StateFlow<String?> get() = playback.notice
 
-    val vizState: StateFlow<VizUiState> get() = visualizer.viz
+        val vizState: StateFlow<VizUiState> get() = visualizer.viz
 
-    val features: StateFlow<AudioFeatures> get() = visualizer.features
+        val features: StateFlow<AudioFeatures> get() = visualizer.features
 
-    val waveform: StateFlow<FloatArray?> get() = visualizer.waveform
+        val waveform: StateFlow<FloatArray?> get() = visualizer.waveform
 
-    val activeMilkPath: StateFlow<String?> get() = visualizer.activeMilkPath
+        val activeMilkPath: StateFlow<String?> get() = visualizer.activeMilkPath
 
-    val micState: StateFlow<MicState> get() = session.micState
+        val micState: StateFlow<MicState> get() = session.micState
 
-    val externalAudio: StateFlow<ExternalAudioState> get() = session.externalAudio
+        val externalAudio: StateFlow<ExternalAudioState> get() = session.externalAudio
 
-    val historyTick: StateFlow<Int> get() = session.historyTick
+        val historyTick: StateFlow<Int> get() = session.historyTick
 
-    val favourites: StateFlow<Set<String>> get() = session.favourites
+        val favourites: StateFlow<Set<String>> get() = session.favourites
 
-    val artPaletteNote: StateFlow<String?> get() = session.artPaletteNote
+        val artPaletteNote: StateFlow<String?> get() = session.artPaletteNote
 
-    val lyrics: StateFlow<Lyrics?> get() = session.lyrics
+        val lyrics: StateFlow<Lyrics?> get() = session.lyrics
 
-    val autoMode: StateFlow<Int> get() = session.autoMode
+        val autoMode: StateFlow<Int> get() = session.autoMode
 
-    val sleepTimerRemainingMs: StateFlow<Long?> get() = session.sleepTimerRemainingMs
+        val sleepTimerRemainingMs: StateFlow<Long?> get() = session.sleepTimerRemainingMs
 
-    val vizApply: SharedFlow<VizApply> get() = session.vizApply
+        val vizApply: SharedFlow<VizApply> get() = session.vizApply
 
-    val morphFade: SharedFlow<Float> get() = session.morphFade
+        val morphFade: SharedFlow<Float> get() = session.morphFade
 
-    fun setMicEnabled(enabled: Boolean): MicCapture.Failure? = session.setMicEnabled(enabled)
+        fun setMicEnabled(enabled: Boolean): MicCapture.Failure? = session.setMicEnabled(enabled)
 
-    fun hasMicPermission(): Boolean = session.hasMicPermission()
+        fun hasMicPermission(): Boolean = session.hasMicPermission()
 
-    fun noteExternalAudioConsentPending() = session.noteExternalAudioConsentPending()
+        fun noteExternalAudioConsentPending() = session.noteExternalAudioConsentPending()
 
-    fun noteExternalAudioConsentDenied() = session.noteExternalAudioConsentDenied()
+        fun noteExternalAudioConsentDenied() = session.noteExternalAudioConsentDenied()
 
-    fun stopExternalAudio() = session.stopExternalAudio()
+        fun stopExternalAudio() = session.stopExternalAudio()
 
-    fun notificationAccessIntent(): Intent = session.notificationAccessIntent()
+        fun notificationAccessIntent(): Intent = session.notificationAccessIntent()
 
-    fun toggleShuffle() = session.toggleShuffle()
+        fun toggleShuffle() = session.toggleShuffle()
 
-    fun cycleRepeatMode() = session.cycleRepeatMode()
+        fun cycleRepeatMode() = session.cycleRepeatMode()
 
-    fun applyLiveInputProfile(profile: LiveInputProfile) = session.applyLiveInputProfile(profile)
+        fun applyLiveInputProfile(profile: LiveInputProfile) = session.applyLiveInputProfile(profile)
 
-    fun enrichFeatures(f: AudioFeatures): AudioFeatures = session.enrichFeatures(f)
+        fun enrichFeatures(f: AudioFeatures): AudioFeatures = session.enrichFeatures(f)
 
-    fun latestPcm(): PcmChunk? = session.latestPcm()
+        fun latestPcm(): PcmChunk? = session.latestPcm()
 
-    fun milkPresetFilesAsync(onDone: (List<MilkFile>) -> Unit) = session.milkPresetFilesAsync(onDone)
+        fun milkPresetFilesAsync(onDone: (List<MilkFile>) -> Unit) = session.milkPresetFilesAsync(onDone)
 
-    fun importMilkPresetAsync(
-        uri: Uri,
-        onDone: (String?) -> Unit,
-    ) = session.importMilkPresetAsync(uri, onDone)
+        fun importMilkPresetAsync(
+            uri: Uri,
+            onDone: (String?) -> Unit,
+        ) = session.importMilkPresetAsync(uri, onDone)
 
-    internal fun importMilkPresetBlocking(uri: Uri): String? = session.importMilkPresetBlocking(uri)
+        internal fun importMilkPresetBlocking(uri: Uri): String? = session.importMilkPresetBlocking(uri)
 
-    fun importMilkFolderAsync(
-        treeUri: Uri,
-        onDone: (MilkPackImporter.Report) -> Unit,
-    ) = session.importMilkFolderAsync(treeUri, onDone)
+        fun importMilkFolderAsync(
+            treeUri: Uri,
+            onDone: (MilkPackImporter.Report) -> Unit,
+        ) = session.importMilkFolderAsync(treeUri, onDone)
 
-    fun applyKeyColor(key: String) = session.applyKeyColor(key)
+        fun applyKeyColor(key: String) = session.applyKeyColor(key)
 
-    fun setKeyColor(enabled: Boolean) = session.setKeyColor(enabled)
+        fun setKeyColor(enabled: Boolean) = session.setKeyColor(enabled)
 
-    fun applyArtworkPalette() = session.applyArtworkPalette()
+        fun applyArtworkPalette() = session.applyArtworkPalette()
 
-    fun currentTrackKey(): String? = session.currentTrackKey()
+        fun currentTrackKey(): String? = session.currentTrackKey()
 
-    fun setIntelligenceMode(mode: IntelligenceMode) = session.setIntelligenceMode(mode)
+        fun setIntelligenceMode(mode: IntelligenceMode) = session.setIntelligenceMode(mode)
 
-    fun analyzeCurrentTrack() = session.analyzeCurrentTrack()
+        fun analyzeCurrentTrack() = session.analyzeCurrentTrack()
 
-    fun startSleepTimer(minutes: Int) = session.startSleepTimer(minutes)
+        fun startSleepTimer(minutes: Int) = session.startSleepTimer(minutes)
 
-    fun cancelSleepTimer() = session.cancelSleepTimer()
+        fun cancelSleepTimer() = session.cancelSleepTimer()
 
-    fun addToVizPlaylist(entry: VizPlaylistEntry) = session.addToVizPlaylist(entry)
+        fun addToVizPlaylist(entry: VizPlaylistEntry) = session.addToVizPlaylist(entry)
 
-    fun removeVizPlaylistAt(index: Int) = session.removeVizPlaylistAt(index)
+        fun removeVizPlaylistAt(index: Int) = session.removeVizPlaylistAt(index)
 
-    fun setVizPlaylistEnabled(enabled: Boolean) = session.setVizPlaylistEnabled(enabled)
+        fun setVizPlaylistEnabled(enabled: Boolean) = session.setVizPlaylistEnabled(enabled)
 
-    fun setVizPlaylistIntelligent(enabled: Boolean) = session.setVizPlaylistIntelligent(enabled)
+        fun setVizPlaylistIntelligent(enabled: Boolean) = session.setVizPlaylistIntelligent(enabled)
 
-    fun setVizPlaylistInterval(seconds: Int) = session.setVizPlaylistInterval(seconds)
+        fun setVizPlaylistInterval(seconds: Int) = session.setVizPlaylistInterval(seconds)
 
-    fun setRandomEnabled(enabled: Boolean) = session.setRandomEnabled(enabled)
+        fun setRandomEnabled(enabled: Boolean) = session.setRandomEnabled(enabled)
 
-    fun setRandomInterval(seconds: Int) = session.setRandomInterval(seconds)
+        fun setRandomInterval(seconds: Int) = session.setRandomInterval(seconds)
 
-    fun setRandomOnBeat(enabled: Boolean) = session.setRandomOnBeat(enabled)
+        fun setRandomOnBeat(enabled: Boolean) = session.setRandomOnBeat(enabled)
 
-    fun setRandomIncludeStyles(enabled: Boolean) = session.setRandomIncludeStyles(enabled)
+        fun setRandomIncludeStyles(enabled: Boolean) = session.setRandomIncludeStyles(enabled)
 
-    fun setRandomIncludePresets(enabled: Boolean) = session.setRandomIncludePresets(enabled)
+        fun setRandomIncludePresets(enabled: Boolean) = session.setRandomIncludePresets(enabled)
 
-    fun setRandomIncludeMilk(enabled: Boolean) = session.setRandomIncludeMilk(enabled)
+        fun setRandomIncludeMilk(enabled: Boolean) = session.setRandomIncludeMilk(enabled)
 
-    fun setRandomizeColors(enabled: Boolean) = session.setRandomizeColors(enabled)
+        fun setRandomizeColors(enabled: Boolean) = session.setRandomizeColors(enabled)
 
-    fun setSectionStaging(enabled: Boolean) = session.setSectionStaging(enabled)
+        fun setSectionStaging(enabled: Boolean) = session.setSectionStaging(enabled)
 
-    fun randomStepNow() = session.randomStepNow()
+        fun randomStepNow() = session.randomStepNow()
 
-    fun applyVizEntry(entry: VizPlaylistEntry) = session.applyVizEntry(entry)
+        fun applyVizEntry(entry: VizPlaylistEntry) = session.applyVizEntry(entry)
 
-    fun recentlyPlayed() = session.recentlyPlayed()
+        fun recentlyPlayed() = session.recentlyPlayed()
 
-    fun currentTrackUri(): String? = session.currentTrackUri()
+        fun currentTrackUri(): String? = session.currentTrackUri()
 
-    fun toggleFavourite(uri: String? = null) = session.toggleFavourite(uri)
+        fun toggleFavourite(uri: String? = null) = session.toggleFavourite(uri)
 
-    fun cycleAbLoop() = session.cycleAbLoop()
+        fun cycleAbLoop() = session.cycleAbLoop()
 
-    fun clearAbLoop() = session.clearAbLoop()
+        fun clearAbLoop() = session.clearAbLoop()
 
-    fun removeQueueItem(index: Int) = session.removeQueueItem(index)
+        fun removeQueueItem(index: Int) = session.removeQueueItem(index)
 
-    fun moveQueueItem(
-        from: Int,
-        to: Int,
-    ) = session.moveQueueItem(from, to)
+        fun moveQueueItem(
+            from: Int,
+            to: Int,
+        ) = session.moveQueueItem(from, to)
 
-    fun togglePlayPauseFaded() = session.togglePlayPauseFaded()
+        fun togglePlayPauseFaded() = session.togglePlayPauseFaded()
 
-    fun resumeLastPlayed() = session.resumeLastPlayed()
+        fun resumeLastPlayed() = session.resumeLastPlayed()
 
-    fun cycleAutoMode() = session.cycleAutoMode()
+        fun cycleAutoMode() = session.cycleAutoMode()
 
-    fun playNext(uri: String) = session.playNext(uri)
+        fun playNext(uri: String) = session.playNext(uri)
 
-    fun enqueue(uri: String) = session.enqueue(uri)
+        fun enqueue(uri: String) = session.enqueue(uri)
 
-    fun shuffleAllHistory() = session.shuffleAllHistory()
+        fun shuffleAllHistory() = session.shuffleAllHistory()
 
-    fun playTrack(uri: String) = session.playTrack(uri)
+        fun playTrack(uri: String) = session.playTrack(uri)
 
-    fun playFrom(
-        tracks: List<QueueTrack>,
-        startUri: String,
-    ) = session.playFrom(tracks, startUri)
+        fun playFrom(
+            tracks: List<QueueTrack>,
+            startUri: String,
+        ) = session.playFrom(tracks, startUri)
 
-    fun playAll(
-        tracks: List<QueueTrack>,
-        shuffled: Boolean = false,
-    ) = session.playAll(tracks, shuffled)
+        fun playAll(
+            tracks: List<QueueTrack>,
+            shuffled: Boolean = false,
+        ) = session.playAll(tracks, shuffled)
 
-    fun open(uris: List<Uri>) = session.open(uris)
+        fun open(uris: List<Uri>) = session.open(uris)
 
-    fun queueTitles(): List<String> = session.queueTitles()
+        fun queueTitles(): List<String> = session.queueTitles()
 
-    fun playQueueIndex(index: Int) = session.playQueueIndex(index)
+        fun playQueueIndex(index: Int) = session.playQueueIndex(index)
 
-    fun next() = session.next()
+        fun next() = session.next()
 
-    fun previous() = session.previous()
+        fun previous() = session.previous()
 
-    fun togglePlayPause() = session.togglePlayPause()
+        fun togglePlayPause() = session.togglePlayPause()
 
-    fun seekToMs(positionMs: Long) = session.seekToMs(positionMs)
+        fun seekToMs(positionMs: Long) = session.seekToMs(positionMs)
 
-    fun seekTo(fraction: Float) = session.seekTo(fraction)
+        fun seekTo(fraction: Float) = session.seekTo(fraction)
 
-    fun clearPlaybackNotice() = session.clearPlaybackNotice()
+        fun clearPlaybackNotice() = session.clearPlaybackNotice()
 
-    fun selectScene(sceneId: String) = session.selectScene(sceneId)
+        fun selectScene(sceneId: String) = session.selectScene(sceneId)
 
-    fun setReactivity(
-        attack: Float,
-        decay: Float,
-    ) = session.setReactivity(attack, decay)
+        fun setReactivity(
+            attack: Float,
+            decay: Float,
+        ) = session.setReactivity(attack, decay)
 
-    fun setSceneParams(params: SceneParams) = session.setSceneParams(params)
+        fun setSceneParams(params: SceneParams) = session.setSceneParams(params)
 
-    fun resetSceneParams() = session.resetSceneParams()
+        fun resetSceneParams() = session.resetSceneParams()
 
-    fun nudgeTransform(
-        zoomFactor: Float,
-        rotationDegrees: Float,
-    ) = session.nudgeTransform(zoomFactor, rotationDegrees)
+        fun nudgeTransform(
+            zoomFactor: Float,
+            rotationDegrees: Float,
+        ) = session.nudgeTransform(zoomFactor, rotationDegrees)
 
-    fun reportShaderError(error: String?) = session.reportShaderError(error)
+        fun reportShaderError(error: String?) = session.reportShaderError(error)
 
-    fun applyCustomShader(source: String) = session.applyCustomShader(source)
+        fun applyCustomShader(source: String) = session.applyCustomShader(source)
 
-    fun setTransitionStyle(style: TransitionStyle) = session.setTransitionStyle(style)
+        fun setTransitionStyle(style: TransitionStyle) = session.setTransitionStyle(style)
 
-    fun setTransitionId(id: String) = session.setTransitionId(id)
+        fun setTransitionId(id: String) = session.setTransitionId(id)
 
-    fun setTransitionDuration(seconds: Float) = session.setTransitionDuration(seconds)
+        fun setTransitionDuration(seconds: Float) = session.setTransitionDuration(seconds)
 
-    fun applyPreset(preset: Preset) = session.applyPreset(preset)
+        fun applyPreset(preset: Preset) = session.applyPreset(preset)
 
-    internal fun awaitStoreWrites(timeoutMs: Long) = session.awaitStoreWrites(timeoutMs)
+        internal fun awaitStoreWrites(timeoutMs: Long) = session.awaitStoreWrites(timeoutMs)
 
-    fun startExport(
-        aspect: ExportAspect,
-        fps: Int,
-        sceneFactory: VideoExporter.SceneFactory,
-        destination: Uri? = null,
-        loopSafe: Boolean = false,
-        range: ExportRange? = null,
-        sceneFactoryFor: ((String) -> VideoExporter.SceneFactory)? = null,
-    ) = session.startExport(aspect, fps, sceneFactory, destination, loopSafe, range, sceneFactoryFor)
+        fun startExport(
+            aspect: ExportAspect,
+            fps: Int,
+            sceneFactory: VideoExporter.SceneFactory,
+            destination: Uri? = null,
+            loopSafe: Boolean = false,
+            range: ExportRange? = null,
+            sceneFactoryFor: ((String) -> VideoExporter.SceneFactory)? = null,
+        ) = session.startExport(aspect, fps, sceneFactory, destination, loopSafe, range, sceneFactoryFor)
 
-    override fun onCleared() {
-        PlayerSession.release()
+        override fun onCleared() {
+            sessions.release()
+        }
     }
-}

@@ -1,5 +1,6 @@
 package dev.geode.ui
 
+import dev.geode.util.bestEffort
 import android.app.Application
 import android.content.ContentUris
 import android.content.SharedPreferences
@@ -176,7 +177,7 @@ internal class MusicLibraryController(
                         ?.trim()
                         ?.toIntOrNull() ?: 0
             } finally {
-                runCatching { r.release() }
+                bestEffort(TAG, "r.release()") { r.release() }
             }
         }
         val openable = openableInfoFor(uri)
@@ -421,3 +422,5 @@ internal class MusicLibraryController(
         _library.update { it.copy(playlists = musicPlaylists.list()) }
     }
 }
+
+private const val TAG = "MusicLibraryController"

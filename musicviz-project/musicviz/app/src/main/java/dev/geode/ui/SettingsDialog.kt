@@ -22,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -55,13 +56,13 @@ fun SettingsDialog(
     val context = LocalContext.current
     val exportPrefs = remember { ExportPrefsStore(GeodePrefsFiles(context).general) }
     val defaults = remember { exportPrefs.load() }
-    var quality by remember { mutableStateOf(defaults.quality) }
-    var ratio by remember { mutableStateOf(defaults.ratio) }
-    var fps by remember { mutableStateOf(defaults.fps) }
+    var quality by rememberSaveable { mutableStateOf(defaults.quality) }
+    var ratio by rememberSaveable { mutableStateOf(defaults.ratio) }
+    var fps by rememberSaveable { mutableStateOf(defaults.fps) }
     var loopSafe by remember {
         mutableStateOf(defaults.loopSafe && dev.geode.analysis.BarTrim.barDurationUs(bpm) != null)
     }
-    var segment by remember { mutableStateOf(false) }
+    var segment by rememberSaveable { mutableStateOf(false) }
     var rangeStart by remember { mutableFloatStateOf(0f) }
     var rangeEnd by remember { mutableFloatStateOf(1f) }
     val range =
@@ -82,8 +83,8 @@ fun SettingsDialog(
         title = { Text(stringResource(R.string.export_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                when {
-                    export.running -> {
+                when (val phase = export.phase) {
+                    is ExportPhase.Running -> {
                         val run by dev.geode.export.ExportRun.state.collectAsStateWithLifecycle()
                         Text(
                             listOfNotNull(
@@ -92,7 +93,7 @@ fun SettingsDialog(
                             ).joinToString(" · "),
                         )
                         LinearProgressIndicator(
-                            progress = { export.progress },
+                            progress = { phase.progress },
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Text(
@@ -101,7 +102,7 @@ fun SettingsDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    export.resultUri != null -> {
+                    is ExportPhase.Done -> {
                         Text(
                             stringResource(
                                 if (export.customDestination) {
@@ -116,7 +117,7 @@ fun SettingsDialog(
                                 val share =
                                     Intent(Intent.ACTION_SEND).apply {
                                         type = "video/mp4"
-                                        putExtra(Intent.EXTRA_STREAM, export.resultUri)
+                                        putExtra(Intent.EXTRA_STREAM, phase.resultUri)
                                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                     }
                                 context.startActivity(Intent.createChooser(share, chooserTitle))
@@ -125,10 +126,10 @@ fun SettingsDialog(
                             }
                         }
                     }
-                    export.error != null -> {
-                        Text(stringResource(R.string.export_failed, export.error.orEmpty()), color = MaterialTheme.colorScheme.error)
+                    is ExportPhase.Failed -> {
+                        Text(stringResource(R.string.export_failed, phase.message), color = MaterialTheme.colorScheme.error)
                     }
-                    else -> {
+                    ExportPhase.Idle, ExportPhase.Loading -> {
                         Text(stringResource(R.string.export_quality), style = MaterialTheme.typography.labelMedium)
                         Row(
                             modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -265,7 +266,7 @@ fun SettingsDialog(
             }
         },
         confirmButton = {
-            if (export.running) {
+            if (export.phase.isRunning) {
                 TextButton(onClick = onCancel) { Text(stringResource(R.string.export_cancel)) }
             } else {
                 TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }

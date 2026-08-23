@@ -1,36 +1,14 @@
 package dev.geode.ui
 
-import android.app.Application
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewmodel.compose.viewModel
 
-class GeodeViewModelFactory(
-    private val application: Application,
-) : ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        val session = PlayerSession.acquire(application)
-        val created: ViewModel =
-            when (modelClass) {
-                PlayerViewModel::class.java -> PlayerViewModel(session)
-                LibraryViewModel::class.java -> LibraryViewModel(session)
-                SettingsViewModel::class.java -> SettingsViewModel(session)
-                VisualsViewModel::class.java -> VisualsViewModel(session)
-                StudioViewModel::class.java -> StudioViewModel(session)
-                else -> {
-                    PlayerSession.release()
-                    error("Unknown ViewModel ${modelClass.name}")
-                }
-            }
-        @Suppress("UNCHECKED_CAST")
-        return created as T
-    }
-}
-
+/**
+ * Resolves one of Geode's five ViewModels from the Hilt graph.
+ *
+ * Kept as a named helper rather than calling `hiltViewModel()` at every site so the screens have a
+ * single seam to change if the resolution strategy moves again.
+ */
 @Composable
-internal inline fun <reified T : ViewModel> geodeViewModel(): T {
-    val application = LocalContext.current.applicationContext as Application
-    return viewModel(factory = GeodeViewModelFactory(application))
-}
+internal inline fun <reified T : ViewModel> geodeViewModel(): T = hiltViewModel()

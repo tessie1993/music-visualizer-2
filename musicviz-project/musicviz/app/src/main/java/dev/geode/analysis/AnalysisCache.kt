@@ -1,5 +1,6 @@
 package dev.geode.analysis
 
+import dev.geode.util.bestEffort
 import android.content.Context
 import android.net.Uri
 import java.io.DataInputStream
@@ -123,7 +124,7 @@ object AnalysisCache {
                 }
             }.getOrNull()
         if (loaded == null) {
-            runCatching { f.delete() }
+            bestEffort(TAG, "f.delete()") { f.delete() }
             return null
         }
         return loaded
@@ -195,3 +196,5 @@ object AnalysisCache {
         dir(context).listFiles()?.forEach { it.delete() }
     }
 }
+
+private const val TAG = "AnalysisCache"

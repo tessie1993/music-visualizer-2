@@ -111,8 +111,10 @@ fun ExternalAudioSettings(viewModel: PlayerViewModel) {
                     style = MaterialTheme.typography.bodySmall,
                     color = accentTextColor(),
                 )
-            external.failure != null ->
-                Text(stringResource(failureText(external.failure!!)), style = MaterialTheme.typography.bodySmall)
+            else ->
+                external.failure?.let { failure ->
+                    Text(stringResource(failureText(failure)), style = MaterialTheme.typography.bodySmall)
+                }
         }
 
         external.nowPlaying?.takeIf { it.title.isNotBlank() }?.let { np ->

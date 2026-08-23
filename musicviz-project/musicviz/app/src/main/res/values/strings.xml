@@ -506,4 +506,14 @@
     <string name="action_dismiss">Dismiss</string>
     <string name="preset_link_imported">Preset \"%1$s\" imported — it is in Visuals › Presets.</string>
     <string name="preset_link_unreadable">That preset link could not be read. It may have been cut short in transit.</string>
+    <string name="palette_base_hue">Base hue %1$s</string>
+    <string name="palette_hue_span">Hue span %1$s</string>
+    <string name="palette_apply_gradient">Apply gradient</string>
+    <string name="palette_from_current">From current</string>
+    <string name="palette_name_label">Palette name</string>
+    <string name="palette_save">Save palette</string>
+    <string name="palette_saved_heading">Saved palettes</string>
+    <string name="palette_none_yet">None yet — build a gradient above and save it.</string>
+    <string name="palette_edit">Edit</string>
+    <string name="palette_delete">Delete</string>
 </resources>

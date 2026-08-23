@@ -1,8 +1,10 @@
 package dev.geode
 
 import android.app.Application
+import dagger.hilt.android.HiltAndroidApp
 import java.io.File
 
+@HiltAndroidApp
 class GeodeApp : Application() {
     val container: GeodeContainer by lazy { GeodeContainer(this) }
 

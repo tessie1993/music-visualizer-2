@@ -1,5 +1,6 @@
 package dev.geode.audio
 
+import dev.geode.util.bestEffort
 import android.media.AudioFormat
 import android.media.AudioRecord
 import androidx.annotation.AnyThread
@@ -50,8 +51,8 @@ abstract class AudioCapturePump(
                 rec.recordingState == AudioRecord.RECORDSTATE_RECORDING
         if (!recording) {
             android.util.Log.w(javaClass.simpleName, "startRecording refused")
-            runCatching { rec.stop() }
-            runCatching { rec.release() }
+            bestEffort(TAG, "rec.stop()") { rec.stop() }
+            bestEffort(TAG, "rec.release()") { rec.release() }
             return false
         }
         record = rec
@@ -89,8 +90,8 @@ abstract class AudioCapturePump(
                         break
                     }
                 }
-                runCatching { rec.stop() }
-                runCatching { rec.release() }
+                bestEffort(TAG, "rec.stop()") { rec.stop() }
+                bestEffort(TAG, "rec.release()") { rec.release() }
                 if (runGeneration == generation) running = false
             }
         return true
@@ -117,3 +118,5 @@ abstract class AudioCapturePump(
         const val SILENCE_GRACE_MS = 4_000L
     }
 }
+
+private const val TAG = "AudioCapturePump"

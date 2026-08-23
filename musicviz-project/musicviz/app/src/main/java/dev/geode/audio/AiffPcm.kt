@@ -1,5 +1,6 @@
 package dev.geode.audio
 
+import dev.geode.util.bestEffort
 import android.content.Context
 import android.net.Uri
 import java.io.DataInputStream
@@ -56,7 +57,7 @@ class AiffPcm private constructor(
     }
 
     fun close() {
-        runCatching { input.close() }
+        bestEffort(TAG, "input.close()") { input.close() }
     }
 
     companion object {
@@ -133,3 +134,5 @@ class AiffPcm private constructor(
         }
     }
 }
+
+private const val TAG = "AiffPcm"

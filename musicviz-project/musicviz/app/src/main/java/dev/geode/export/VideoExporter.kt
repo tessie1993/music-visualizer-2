@@ -1,5 +1,6 @@
 package dev.geode.export
 
+import dev.geode.util.bestEffort
 import android.content.ContentValues
 import android.content.Context
 import android.media.MediaCodec
@@ -185,7 +186,7 @@ class VideoExporter(
                     )
             val pfd = resolver.openFileDescriptor(outUri, "w")
             if (pfd == null) {
-                runCatching { resolver.delete(outUri, null, null) }
+                bestEffort(TAG, "resolver.delete(outUri, null, null)") { resolver.delete(outUri, null, null) }
                 return@withContext Result.Failed("The new file in your Videos library could not be opened for writing.")
             }
             try {
@@ -209,7 +210,7 @@ class VideoExporter(
                     )
                 }
                 if (isCancelled()) {
-                    runCatching { resolver.delete(outUri, null, null) }
+                    bestEffort(TAG, "resolver.delete(outUri, null, null)") { resolver.delete(outUri, null, null) }
                     Result.Cancelled
                 } else {
                     if (android.os.Build.VERSION.SDK_INT >= 29) {
@@ -219,7 +220,7 @@ class VideoExporter(
                     Result.Saved(outUri)
                 }
             } catch (e: Exception) {
-                runCatching { resolver.delete(outUri, null, null) }
+                bestEffort(TAG, "resolver.delete(outUri, null, null)") { resolver.delete(outUri, null, null) }
                 throw e
             }
         }
@@ -269,13 +270,13 @@ class VideoExporter(
                 )
             }
             if (isCancelled()) {
-                runCatching { DocumentsContract.deleteDocument(resolver, destination) }
+                bestEffort(TAG, "DocumentsContract.deleteDocument(resolver, de...") { DocumentsContract.deleteDocument(resolver, destination) }
                 Result.Cancelled
             } else {
                 Result.Saved(destination)
             }
         } catch (e: Exception) {
-            runCatching { DocumentsContract.deleteDocument(resolver, destination) }
+            bestEffort(TAG, "DocumentsContract.deleteDocument(resolver, de...") { DocumentsContract.deleteDocument(resolver, destination) }
             throw e
         }
     }
@@ -325,7 +326,7 @@ class VideoExporter(
             try {
                 encoder.configure(makeFormat(fps, aspect.bitRate), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             } catch (e: Exception) {
-                runCatching { encoder.release() }
+                bestEffort(TAG, "encoder.release()") { encoder.release() }
                 encoderRef = null
                 encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).also { encoderRef = it }
                 fps = 30
@@ -567,17 +568,17 @@ class VideoExporter(
                 muxerStopped = true
             }
         } finally {
-            runCatching { sceneRef?.release() }
-            runCatching { flowFieldRef?.release() }
-            runCatching { rippleRef?.release() }
-            runCatching { fxRef?.release() }
-            runCatching { audioFeedRef?.close() }
+            bestEffort(TAG, "sceneRef?.release()") { sceneRef?.release() }
+            bestEffort(TAG, "flowFieldRef?.release()") { flowFieldRef?.release() }
+            bestEffort(TAG, "rippleRef?.release()") { rippleRef?.release() }
+            bestEffort(TAG, "fxRef?.release()") { fxRef?.release() }
+            bestEffort(TAG, "audioFeedRef?.close()") { audioFeedRef?.close() }
             if (muxerStarted && !muxerStopped) runCatching { muxerRef?.stop() }
-            runCatching { muxerRef?.release() }
-            runCatching { encoderRef?.stop() }
-            runCatching { encoderRef?.release() }
-            runCatching { inputSurfaceRef?.release() }
-            runCatching { eglRef?.release() }
+            bestEffort(TAG, "muxerRef?.release()") { muxerRef?.release() }
+            bestEffort(TAG, "encoderRef?.stop()") { encoderRef?.stop() }
+            bestEffort(TAG, "encoderRef?.release()") { encoderRef?.release() }
+            bestEffort(TAG, "inputSurfaceRef?.release()") { inputSurfaceRef?.release() }
+            bestEffort(TAG, "eglRef?.release()") { eglRef?.release() }
             aacRef?.release()
         }
     }
@@ -633,7 +634,9 @@ class VideoExporter(
         }
 
         override fun close() {
-            runCatching { raf.close() }
+            bestEffort(TAG, "raf.close()") { raf.close() }
         }
     }
 }
+
+private const val TAG = "VideoExporter"
