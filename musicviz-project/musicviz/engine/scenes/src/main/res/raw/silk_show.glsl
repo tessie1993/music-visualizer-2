@@ -1,7 +1,14 @@
-#version 300 es
-precision highp float;
-
 // SILK - the present pass.
+//
+// A SimPass DISPLAY BODY. Unlike the step body next door this one does bring
+// its own `in`, `out` and `main()` - it is an ordinary fragment shader over the
+// state, run with quad_vert - but it does NOT bring a #version or a precision
+// line, and it does not declare the state sampler. SimPass.displayShader()
+// prepends all of that, so the present pass reads the dye through the same
+// simSample() the step writes it with and is equally blind to the encoding: a
+// filterable half-float field and the pre-scaled RGBA8 fallback look identical
+// from in here, and the scale that separates them is a compile-time constant
+// folded into the fetch rather than a uniform this file could forget.
 //
 // The sim texture holds three band lanes of dye (r bass, g mid, b treble).
 // Each lane gets its own point on the user's palette - base hue for the bass
@@ -13,15 +20,13 @@ precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
 
-uniform sampler2D uField;
-uniform vec2 uRes;        // output size, for aspect
+uniform vec2 uRes;        // OUTPUT size, for aspect - not the sim grid, which is uSimSize
 uniform float uBaseHue;   // palette identity, turns
 uniform float uHueSpan;   // palette span, turns
 uniform float uExposure;
 uniform int uFold;        // mirror folds; 0 = none
 uniform float uFoldPhase; // slow fold rotation, radians
 uniform float uEnergy;    // overall level, lifts the floor glow
-uniform float uStateScale; // 1 on float targets; the RGBA8 fallback's dye range
 
 const float TAU = 6.2831853;
 
@@ -43,7 +48,7 @@ vec2 foldUv(vec2 uv) {
 }
 
 void main() {
-    vec3 lanes = texture(uField, foldUv(vUv)).rgb * uStateScale;
+    vec3 lanes = simSample(foldUv(vUv)).rgb;
 
     float span = uHueSpan * 0.18;
     vec3 cBass = hsv2rgb(vec3(fract(uBaseHue), 0.85, 1.0));

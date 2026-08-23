@@ -27,7 +27,22 @@ const UPLOAD_PATTERNS = [
   /glGetUniformLocation\(\s*\w+\s*,\s*"(u\w+)"\s*\)/g,
   /\bsetUniform1f\(\s*"(u\w+)"/g,
   /\bcLoc\(\s*"(u\w+)"\s*\)/g,
+  // SimUniforms: a step routed through SimPass never sees its own program, so
+  // it names uniforms to a setter instead of resolving a location itself.
+  // Anchored on the dot so `print(` and friends cannot match.
+  /\.(?:float|int|bool|vec2|vec3|vec4|ivec2|sampler|vec4Array)\(\s*"(u\w+)"/g,
 ];
+
+/**
+ * The two uniforms SimPass sets on the scene's behalf, named as constants
+ * rather than written at a call site.
+ *
+ * `uSimState` and `uSimSize` are the layer's contract with every generated
+ * shader: the state binding and the grid size, set inside step() and inside
+ * bindStateFor(), never by the scene. Scraped from the constants so there is
+ * still exactly one place in the repo that spells them.
+ */
+const CONSTANT_PATTERNS = [/\bconst val UNIFORM_\w+\s*=\s*"(u\w+)"/g];
 
 /**
  * Uploads a scene hands to a shared uploader rather than writing out itself.
@@ -46,10 +61,14 @@ const UPLOAD_PATTERNS = [
  */
 const DELEGATES = [
   { call: /\bSceneTouch\.upload\s*\(/, file: 'SceneTouch.kt' },
+  // A scene that builds a SimPass gets uSimState and uSimSize uploaded for it,
+  // on both the compute and the fragment path. Without this the audit would
+  // report the app as silently zeroing the state binding it in fact sets.
+  { call: /\bSimPass\.build\s*\(/, file: '../compute/SimGlsl.kt', patterns: CONSTANT_PATTERNS },
 ];
 
-function scanInto(names, src) {
-  for (const re of UPLOAD_PATTERNS) {
+function scanInto(names, src, patterns = UPLOAD_PATTERNS) {
+  for (const re of patterns) {
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(src)) !== null) names.add(m[1]);
@@ -76,7 +95,7 @@ export function extractUploadedUniforms(kotlinPath) {
     if (!d.call.test(src)) continue;
     const sibling = path.join(path.dirname(kotlinPath), d.file);
     if (!fs.existsSync(sibling)) continue;
-    scanInto(names, fs.readFileSync(sibling, 'utf8'));
+    scanInto(names, fs.readFileSync(sibling, 'utf8'), d.patterns);
   }
   return names;
 }

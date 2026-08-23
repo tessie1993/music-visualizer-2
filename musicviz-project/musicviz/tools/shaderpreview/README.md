@@ -13,6 +13,15 @@ and `app/src/main/res/raw`, with their `//#include` directives resolved exactly
 the way `GlUtil.kt` resolves them — driven by uniform values computed by a JS
 mirror of the Kotlin scene that would upload them.
 
+One family is a partial exception, named here rather than buried: SILK's two
+`.glsl` files are **`SimPass` bodies**, not whole shaders. The app wraps each in
+a generated header (`SimGlsl.kt`) and compiles the step twice over — as an ES
+3.1 compute kernel where the device proved it has one, as an ES 3.0 fragment
+step everywhere else. This harness is WebGL2, so it assembles the fragment half
+through `lib/simglsl.mjs`, a mirror of that generator, and **cannot see the
+compute path at all**. The body it renders is the app's; the wrapper around it
+is a mirror that can drift.
+
 **Read [What it cannot tell you](#what-it-cannot-tell-you) before you trust
 anything it prints.** An over-trusted harness is worse than no harness.
 
@@ -190,7 +199,16 @@ Take these seriously. Every one of them is a way to be confidently wrong.
    the app takes the `uHasMelt = 0` path. Use `--no-melt` deliberately; do not
    assume the default run is what a given phone shows.
 
-4. **Driver-specific compile and link failures do not happen here.** A shader
+4. **The ES 3.1 compute tier is invisible here.** WebGL2 is ES 3.0: no
+   compute shaders, no image load/store, nothing to fake either with. So for
+   SILK - the one family routed through `SimPass` today - this tool measures
+   the fragment ping-pong and says nothing whatever about the dispatch: not
+   that it compiles, not that it matches, not that it is faster. `SimGlsl`
+   generating both paths from one body and one encoding is what makes them the
+   same simulation; that is an argument from construction, and this harness is
+   not evidence for it.
+
+5. **Driver-specific compile and link failures do not happen here.** A shader
    compiling in this harness says nothing about whether a device driver will
    accept it: uniform-array sizes, loop bounds, `MAX_FRAGMENT_UNIFORM_VECTORS`
    (4096 here, as low as 224 on real ES 3.0 hardware), and vendor-specific
@@ -199,20 +217,20 @@ Take these seriously. Every one of them is a way to be confidently wrong.
 
 Also, more mundanely but just as capable of misleading you:
 
-5. **The bodies are not the device's bodies.** `HyperspaceScene` seeds its
+6. **The bodies are not the device's bodies.** `HyperspaceScene` seeds its
    bank from `Random.Default`; this uses a seeded xorshift. Species, axes,
    hues, sizes and lifetimes are drawn from the same distributions but are not
    the same draws. Any claim that depends on a *specific* body is not a valid
    finding from this tool. `--seed` makes a run reproducible, not faithful.
 
-6. **`--clock-jump` moves the clocks and nothing else.** It advances `uTime`
+7. **`--clock-jump` moves the clocks and nothing else.** It advances `uTime`
    (and the camera drift phase, and `uRotation`) without ageing the body bank
    or the fluid, because the app clamps its own `dt` to 1/15 s and a scene
    stepped at a 60-second `dt` is a state the app can never be in. Read a
    jumped run for precision behaviour only; the geometry in it is whatever
    the warm-up left there.
 
-7. **The composite pass is off unless you ask for it.** Without
+8. **The composite pass is off unless you ask for it.** Without
    `--composite` what you see is the scene's own output before the app grades
    it - which is what you want for debugging a scene, and is *not* what the
    user sees. On a fluid-family style that difference is not cosmetic:
@@ -222,11 +240,11 @@ Also, more mundanely but just as capable of misleading you:
    working control is dead. Even with `--composite`, transitions and the
    spliced gl-transition variants are not modelled.
 
-8. **Luminance is measured on the stored 8-bit values**, not on display-linear
+9. **Luminance is measured on the stored 8-bit values**, not on display-linear
    light. It is a good relative measure and a poor absolute one; use it to
    compare runs, not to make a claim about perceived brightness.
 
-9. **Nothing is ever touching the screen here.** The `uTouch*` uniforms are
+10. **Nothing is ever touching the screen here.** The `uTouch*` uniforms are
    supplied at TouchField's untouched values (all zero, `uTouchGesture = 0`,
    `uTouchCount = 0`), because this harness has no pointer to model. That is a
    real state the app spends most of its life in, so the frames are honest -
@@ -240,13 +258,20 @@ Also, more mundanely but just as capable of misleading you:
    behind `uTouchCount == 0` (render/scene/SceneTouch.kt), and none of it runs
    here.
 
-10. **Seven scene families are wired up**: `HyperspaceScene`, the 27
+11. **Seven scene families are wired up**: `HyperspaceScene`, the 27
     `ShaderScene` styles and the four field-sim families
     `SilkScene`, `LifeScene`, `AcidScene` and `MycoScene` (10 styles each,
     `--style`). The fluid family's own display passes, WATER, CYMATICS, BEAM
     and MILKDROP have their own uniform contracts and are not covered. Adding
     one means adding a driver to `lib/scenes.mjs` — and the audit will tell
     you when you have not finished.
+
+    SILK's two programs are ASSEMBLED rather than loaded, per the note at
+    the top of this file: `silk_step.glsl` and `silk_show.glsl` are SimPass
+    bodies and `lib/simglsl.mjs` supplies the wrapper. Its state target is
+    `FormatPolicy.advectedField` - RGBA16F filterable where the probe proves
+    it, pre-scaled RGBA8 (scale 8) otherwise, which is the world
+    `--no-float-sim` shows.
 
     The field-sim scenes run as a PASS LIST the driver emits per frame -
     named programs, named ping-pong targets (formats chosen by the same
@@ -263,7 +288,7 @@ Also, more mundanely but just as capable of misleading you:
     `LifeScene`'s 4-second liveness census is mirrored through a per-frame
     readback of the state's centre texel (float, quantized to the app's
     8-bit steps driver-side).
-11. **The sprite pass clears the target only when the echo is off.** With
+12. **The sprite pass clears the target only when the echo is off.** With
     Trails on, the echo blit is the background exactly as `drawWithEcho()`
     sequences it — previous frame warped, decayed and redrawn under the new
     sprites, ping-ponged between two RGBA8 targets. `--param trails=false`
@@ -282,6 +307,9 @@ lib/emitters.mjs        JS port of the FluidEmitters paths MeltField enables
 lib/scenes.mjs          per-frame uniform plans, mirroring the Kotlin draw()s,
                         plus the silk/life/acid/myco style tables (verbatim
                         VisualStyleCatalog.kt mirrors) and pass-list drivers
+lib/simglsl.mjs         SimGlsl.kt's FRAGMENT path, mirrored: the header, state
+                        sampler, decode helpers and main() the app generates
+                        around a SimPass step or display BODY
 lib/composite.mjs       the same, for VisualizerRenderer's composite_frag pass
 page/harness.html       WebGL2: compile, upload, run the fluid passes and the
                         field-sim pass lists, measure

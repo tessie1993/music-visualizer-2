@@ -2,6 +2,7 @@ package dev.geode.render.scene
 
 import android.opengl.GLES30
 import dev.geode.render.TouchField
+import dev.geode.render.compute.SimUniforms
 
 /**
  * How the fingers reach a scene that owns its own shader programs.
@@ -78,6 +79,27 @@ internal object SceneTouch {
             field.points,
             0,
         )
+    }
+
+    /**
+     * The same upload, for a step running through `SimPass`.
+     *
+     * An overload rather than a second implementation: [SimUniforms] exists so that a step body
+     * cannot pick its own texture unit and cannot see the encoding, so it does not hand out the
+     * program name and there is no `UniformCache` here to pass to the call above. What it does
+     * expose is the same two setters this needs, and routing through them keeps the packing —
+     * y-up NDC, `z` the strength, `w` the age, slot 0 the primary finger — described in exactly
+     * one place for the compute path and the fragment path alike.
+     */
+    fun upload(
+        uniforms: SimUniforms,
+        field: TouchField?,
+        enabled: Boolean = true,
+    ) {
+        val count = if (enabled && field != null) field.count else 0
+        uniforms.int("uTouchCount", count)
+        if (count <= 0 || field == null) return
+        uniforms.vec4Array("uTouchPoints", field.points, count, MAX_POINTS)
     }
 }
 

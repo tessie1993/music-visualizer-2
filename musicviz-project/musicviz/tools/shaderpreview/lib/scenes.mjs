@@ -11,6 +11,7 @@
 import * as H from './hyperspace-math.mjs';
 import { MeltEmitters } from './emitters.mjs';
 import { audioTexRows, motionImpulse, beatImpulseOf } from './audio.mjs';
+import { simEncoding, simFragmentStep, simDisplayShader, SIM_FULLSCREEN_VERTEX } from './simglsl.mjs';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -856,12 +857,20 @@ export const MYCO_STYLES = [
 // SILK - render/scene/SilkScene.kt
 // ---------------------------------------------------------------------------
 //
-// One ping-pong dye texture (three band lanes), stepped by silk_step_frag and
-// presented by silk_show_frag. Pass structure per frame, as draw() sequences
+// One ping-pong dye texture (three band lanes), stepped by silk_step and
+// presented by silk_show. Pass structure per frame, as draw() sequences
 // it: step (advect + inject, blend off) into the write side, swap, then show
 // to the renderer's target.
+//
+// THE TWO SHADERS ARE BODIES, NOT WHOLE SHADERS. SilkScene routes its step
+// through SimPass, so the app compiles silk_step.glsl wrapped by SimGlsl -
+// as a `310 es` compute kernel where the device proved it has one and as a
+// `300 es` fragment step everywhere else - and silk_show.glsl wrapped by
+// SimPass.displayShader. This harness is WebGL2 and therefore has only the
+// fragment half; it assembles it through lib/simglsl.mjs. See that file for
+// what this consequently CANNOT tell you about the compute path (everything).
 
-export function createSilkDriver({ style, params, width, height }) {
+export function createSilkDriver({ style, params, width, height, floatSim = true }) {
   const p = { ...FIELD_PARAM_DEFAULTS, ...params };
   /** SilkScene.SIM_RES = 320: "the dye is soft by nature; 320 is plenty". */
   const [simW, simH] = fluidResolution(320, width, height);
@@ -878,14 +887,23 @@ export function createSilkDriver({ style, params, width, height }) {
   let foldPhase = 0;
   let drift = 0;
 
+  // FormatPolicy.advectedField, decided here the way DeviceGl decides it on a
+  // phone: RGBA16F where the probe proves it renderable, and the pre-scaled
+  // RGBA8 fallback otherwise. --no-float-sim is that second world, and it is
+  // the only way to see it here - SwiftShader always has
+  // EXT_color_buffer_float. SilkScene.BYTE_STATE_SCALE = 8.
+  const enc = simEncoding(floatSim ? {} : { stateScale: 8 });
+
   const supplies = new Set([
-    // step
-    'uPrev', 'uRes', 'uField', 'uB', 'uAdvect', 'uDecay', 'uFieldScale', 'uSwirl',
+    // step. uSimState and uSimSize are the layer's, not the scene's: SimPass
+    // binds the state and sets both before handing the binder the program.
+    'uSimState', 'uSimSize',
+    'uField', 'uB', 'uAdvect', 'uDecay', 'uFieldScale', 'uSwirl',
     'uSlabX', 'uSlabY', 'uSeedEpoch', 'uDrift', 'uStrokes', 'uElong', 'uDrive',
-    'uBass', 'uMid', 'uTreble', 'uBeat', 'uStrike', 'uBeatRing', 'uStateScale',
+    'uBass', 'uMid', 'uTreble', 'uBeat', 'uStrike', 'uBeatRing',
     ...TOUCH_SUPPLIES,
-    // show (uField/uRes recur with different meanings; the audit is by name)
-    'uBaseHue', 'uHueSpan', 'uExposure', 'uFold', 'uFoldPhase', 'uEnergy',
+    // show (uSimState/uSimSize recur, bound by SimPass.bindStateFor)
+    'uRes', 'uBaseHue', 'uHueSpan', 'uExposure', 'uFold', 'uFoldPhase', 'uEnergy',
   ]);
 
   function step(f, dt) {
@@ -926,8 +944,11 @@ export function createSilkDriver({ style, params, width, height }) {
     const frameDecay = Math.pow(decay, d * 60);
 
     const stepU = {
-      uPrev: { t: 'tex', v: 0 },
-      uRes: { t: '2f', v: [simW, simH] },
+      // SimGlsl.STATE_TEXTURE_UNIT = 0; the grid arrives as ivec2, not the
+      // vec2 uRes the hand-written step used to take, and simStep() derives
+      // its aspect from it.
+      uSimState: { t: 'tex', v: 0 },
+      uSimSize: { t: '2i', v: [simW, simH] },
       uField: { t: '1i', v: style.field },
       uB: { t: '1f', v: b },
       uAdvect: { t: '1f', v: d * 0.18 * style.flow * speed },
@@ -947,13 +968,14 @@ export function createSilkDriver({ style, params, width, height }) {
       uBeat: { t: '1f', v: beatPulse },
       uStrike: { t: '1f', v: clamp(pcmStrike, 0, 1.5) },
       uBeatRing: { t: '1f', v: ringRadius },
-      // The app sends BYTE_STATE_SCALE = 8 only on its RGBA8 fallback path;
-      // the harness always renders the float target, so the scale is 1.
-      uStateScale: { t: '1f', v: 1 },
+      // No uStateScale any more: the dye's range is a compile-time constant
+      // SimGlsl folds into simLoad/simSample, so there is nothing per-frame to
+      // send and nothing for a caller to forget.
       ...untouched(),
     };
     const showU = {
-      uField: { t: 'tex', v: 0 },
+      uSimState: { t: 'tex', v: 0 },
+      uSimSize: { t: '2i', v: [simW, simH] },
       uRes: { t: '2f', v: [width, height] },
       uBaseHue: { t: '1f', v: H.FluidHue.base(p.paletteBase) + style.hueOffset },
       uHueSpan: { t: '1f', v: H.FluidHue.span(p.hueRange, p.paletteRange) * style.hueSpan },
@@ -961,7 +983,6 @@ export function createSilkDriver({ style, params, width, height }) {
       uFold: { t: '1i', v: style.fold },
       uFoldPhase: { t: '1f', v: foldPhase },
       uEnergy: { t: '1f', v: clamp(f.rms, 0, 1.5) },
-      uStateScale: { t: '1f', v: 1 },
     };
 
     return {
@@ -992,14 +1013,23 @@ export function createSilkDriver({ style, params, width, height }) {
     id: 'silk', supplies, step, jumpClock,
     meltConfig: { enabled: false },
     fieldPrograms: {
-      step: ['quad_vert', 'silk_step_frag'],
-      show: ['quad_vert', 'silk_show_frag'],
+      step: ['quad_vert', 'silk_step'],
+      show: ['quad_vert', 'silk_show'],
     },
-    // FluidBuffers.DoubleFbo(w, h, fmt.rgba, linear = true): RGBA16F where
-    // renderable (probed page-side), linear filtering.
+    // Both files are SimPass bodies; the wrapper around each is generated, not
+    // loaded. The step's vertex stage is generated too - SimGlsl's own
+    // attribute-less triangle, which carries no varying at all, where
+    // quad_vert carries vUv the generated fragment stage does not read.
+    fieldAssemble: (name, { vertSrc, fragSrc }) => (name === 'step'
+      ? { vertSrc: SIM_FULLSCREEN_VERTEX, fragSrc: simFragmentStep(enc, fragSrc) }
+      : { vertSrc, fragSrc: simDisplayShader(enc, fragSrc) }),
+    // SimField allocates the state pair at FormatPolicy.advectedField, which
+    // is RGBA16F with linear filtering wherever the probe proves it.
     fieldTargets: { dye: { width: simW, height: simH, format: 'rgba16f', filter: 'linear' } },
     standIns: [
       'uStrike is a stand-in: PcmPulse fed the audio model\'s waveform, not the app\'s raw PCM tap',
+      'step + show are assembled by lib/simglsl.mjs, a mirror of SimGlsl.kt\'s FRAGMENT path; '
+        + 'the ES 3.1 compute path this scene also builds is not representable in WebGL2 and is not measured here',
     ],
   };
 }

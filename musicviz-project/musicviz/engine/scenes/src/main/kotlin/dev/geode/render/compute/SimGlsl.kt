@@ -57,6 +57,27 @@ internal data class SimStateEncoding(
  * The same argument covers `#version`: the fragment path is `300 es` and the compute path is
  * `310 es`, so a body that carried its own version directive could only ever be right for one
  * of them.
+ *
+ * ### Why nothing here rounds the result to match the other path
+ *
+ * Because there is nothing to match it to. Both paths write the **same texture in the same
+ * format** — a colour attachment on one, an `imageStore` on the other — so the hardware applies
+ * the format's own rounding to both, and a half-float state quantises to halves whichever path
+ * produced it. A generated step therefore cannot drift from its twin by storage precision at
+ * all, which matters more for these families than anywhere else in the engine: state is a
+ * feedback loop, so a last-bit difference is not a last-bit difference for long, it is the seed
+ * of a different picture a few hundred frames later.
+ *
+ * A hand-written compute kernel that picks its own format does not get this for free, and the
+ * usual repair — round the fp32 result through `packHalf2x16`/`unpackHalf2x16` before storing —
+ * is a patch over a mismatch rather than the absence of one. One generator emitting both paths
+ * from one encoding is what makes the patch unnecessary.
+ *
+ * What can still differ is arithmetic: `sin`, `exp`, `pow`, `normalize` and friends are
+ * specified only to a few ulp in ESSL, and no driver promises its fragment and compute stages
+ * share an implementation of them. A step dense in transcendentals will part ways with itself
+ * over a few seconds of feedback even with identical inputs and identical rounding. The
+ * fragment path is the reference, because it is the one that ships everywhere.
  */
 internal object SimGlsl {
     /** Texture unit the state is sampled from. Scene textures start at [FIRST_SCENE_TEXTURE_UNIT]. */

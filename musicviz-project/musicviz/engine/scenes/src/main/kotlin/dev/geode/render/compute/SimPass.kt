@@ -82,6 +82,57 @@ class SimUniforms internal constructor(
         bindTexture(unit, texture)
         GLES30.glUniform1i(cache.loc(name), unit)
     }
+
+    /**
+     * Sets the first [count] elements of a `vec4[]` from [values], four floats per element.
+     *
+     * [declared] is the array length the shader source writes, and it is a fallback, not the
+     * count: a linker is free to shrink an array whose tail is never read, and uploading more
+     * elements than the linked program has is `GL_INVALID_OPERATION` — which silently drops the
+     * whole upload, not just the tail. So the true length is asked of the program once and
+     * cached, exactly as the hand-written passes do it.
+     */
+    fun vec4Array(
+        name: String,
+        values: FloatArray,
+        count: Int,
+        declared: Int,
+    ) = GLES30.glUniform4fv(cache.loc(name), minOf(count, cache.arrayCount(name, declared)), values, 0)
+}
+
+/**
+ * How a step reads the state it is stepping — the one thing about the encoding a simulation
+ * cannot be blind to, and therefore the only thing it declares about it.
+ *
+ * Everything else the layer hides: whether the four floats spend the frame as packed uints, as
+ * halves or as pre-scaled bytes, and whether the step runs as a dispatch or as a fragment. This
+ * cannot be hidden because it decides which *format* the state can live in at all, and the two
+ * answers are not a preference between equals — each is wrong for the other's simulation.
+ */
+enum class SimSampling {
+    /**
+     * The step reads whole texels only: `simLoad` at integer coordinates, its own and its
+     * neighbours'. A lattice — a cellular automaton, a reaction-diffusion grid, anything whose
+     * stencil is a fixed set of offsets.
+     *
+     * Takes `FormatPlan.simulationState`, which prefers packed `RGBA32UI`: the one four-channel
+     * state format that is core-renderable in ES 3.0 with no float extension at all. It cannot
+     * be filtered, and a step that never resamples never notices.
+     */
+    WHOLE_TEXELS,
+
+    /**
+     * The step reads **between** texels: `simSample` at a continuous coordinate, on essentially
+     * every texel of every frame. Advection — the back-traced fetch of a dye field.
+     *
+     * Takes `FormatPlan.advectedField`, which prefers filterable `RGBA16F`, because on this
+     * access pattern the packed encoding's price comes due every texel: no hardware filtering,
+     * so four loads and two mixes per fetch, out of twice the state bytes. Where the probe
+     * proves the format filterable both paths get the texture unit's own bilinear — including
+     * the compute path, which samples the read state through a sampler rather than an image
+     * for exactly this reason.
+     */
+    BETWEEN_TEXELS,
 }
 
 /**
@@ -124,8 +175,26 @@ fun interface SimUniformBinder {
  * The body never learns whether its four floats spent the frame as packed uints, as halves or
  * as pre-scaled bytes, and it never learns whether it ran as a dispatch or as a fragment.
  *
+ * ### What a body may not contain: `barrier()`, and therefore `shared`
+ *
+ * The generated compute `main()` returns early on an invocation outside the grid, and the
+ * dispatch always carries some — the group count is rounded up, so unless the grid is an exact
+ * multiple of the local size in both axes the last group in each row and column over-runs it.
+ * `barrier()` is defined only when **every** invocation in the work group reaches it, so a
+ * `barrier()` inside a body that some invocations return before is undefined behaviour: not a
+ * hang, but a group reading half-written `shared` storage, on some drivers, sometimes.
+ *
+ * That is a real constraint and not a small one. A tiled Jacobi solve — stage a halo in
+ * `shared`, iterate several times in registers, store once — is the kernel shape with the most
+ * to gain from compute, and it cannot be expressed here. It needs a guarded store rather than
+ * an early return, which is a different `main()`, which is a different layer. A step that wants
+ * one is telling you it is not a `SimSpec`.
+ *
  * @param label short name for logs and shader error messages.
  * @param stepBody the authored GLSL, per the contract above.
+ * @param sampling how the body reads the state, which decides the format it can live in. Get
+ *   this wrong toward [SimSampling.BETWEEN_TEXELS] and the state costs twice the bytes it
+ *   needed; wrong toward [SimSampling.WHOLE_TEXELS] and every advection fetch is done by hand.
  * @param stateScale the range an `RGBA8` fallback packs into [0, 1]. Ignored on the packed and
  *   half-float encodings, which carry their own range. Same meaning as the `uStateScale`
  *   uniform in the hand-written field shaders.
@@ -139,6 +208,7 @@ fun interface SimUniformBinder {
 class SimSpec(
     val label: String,
     val stepBody: String,
+    val sampling: SimSampling = SimSampling.WHOLE_TEXELS,
     val stateScale: Float = 1f,
     val preferredInvocations: Int = WorkGroupSize.TARGET_INVOCATIONS,
     val resultReadBy: Set<ComputeReader> = setOf(ComputeReader.TEXTURE_SAMPLE),
@@ -283,10 +353,18 @@ interface SimPass {
             gl: GlProfile,
             onDiagnostic: (String) -> Unit,
         ): SimBuild {
-            val resolved = gl.formats.simulationState
+            // The one decision the spec makes about storage, and it is made here rather than in
+            // the scene so that the scene still never names a format. Both roles come out of
+            // the same probe pass, so a device that fails RGBA16F and a device that fails
+            // RGBA32UI each get an answer measured on it rather than assumed for it.
+            val resolved =
+                when (spec.sampling) {
+                    SimSampling.WHOLE_TEXELS -> gl.formats.simulationState
+                    SimSampling.BETWEEN_TEXELS -> gl.formats.advectedField
+                }
             val format =
                 GlImageFormat.of(resolved.format) ?: return SimBuild.Failed(
-                    "${spec.label}: the format policy resolved simulation state to ${resolved.format}, " +
+                    "${spec.label}: the format policy resolved state for ${spec.sampling} sampling to ${resolved.format}, " +
                         "which has no GLSL descriptor here (${resolved.because})",
                 )
             val encoding =
