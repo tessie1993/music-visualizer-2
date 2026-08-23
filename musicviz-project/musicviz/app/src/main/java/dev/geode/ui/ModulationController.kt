@@ -141,9 +141,13 @@ internal class ModulationController(
 
     fun captureB() = _ab.update { it.copy(b = host.params) }
 
-    fun recallA() = _ab.value.a?.let(::commitSceneParams)
+    fun recallA() {
+        _ab.value.a?.let(::commitSceneParams)
+    }
 
-    fun recallB() = _ab.value.b?.let(::commitSceneParams)
+    fun recallB() {
+        _ab.value.b?.let(::commitSceneParams)
+    }
 
     /** Slides the live look between the two snapshots. One gesture, so one undo entry. */
     fun blendAb(t: Float) {
