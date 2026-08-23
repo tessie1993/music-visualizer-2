@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -730,17 +731,10 @@ internal fun CustomizePanel(
     val visualsViewModel: VisualsViewModel = geodeViewModel()
     val viz by viewModel.vizState.collectAsStateWithLifecycle()
     var sub by rememberSaveable { mutableStateOf(0) }
+    var query by rememberSaveable { mutableStateOf("") }
     val isShader = SceneCapabilities.hasShaderLook(viz.sceneId)
-    val isCymatics = SceneCapabilities.isCymatics(viz.sceneId)
-    val isHyperspace = SceneCapabilities.isHyperspace(viz.sceneId)
     val tabs: List<CustomizeTab?> =
-        CustomizeTab.entries.filter {
-            when (it) {
-                CustomizeTab.CYMATICS -> isCymatics
-                CustomizeTab.HYPERSPACE -> isHyperspace
-                else -> true
-            }
-        } + if (isShader) listOf(null) else emptyList()
+        CustomizeTab.entries.filter { tabAppliesTo(it, viz.sceneId) } + if (isShader) listOf(null) else emptyList()
     val titles = tabs.map { it?.title ?: "GLSL" }
     var shownTitle by rememberSaveable { mutableStateOf(titles.getOrNull(sub)) }
     LaunchedEffect(titles) {
@@ -758,114 +752,230 @@ internal fun CustomizePanel(
                 shownTitle = titles[it]
             },
         )
-        CustomizeToolbar(viewModel, viz.params, tabs.getOrNull(sub))
+        CustomizeToolbar(viewModel, visualizerView, viz.params, tabs.getOrNull(sub), query) { query = it }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             val locked by visualsViewModel.lockedParams.collectAsStateWithLifecycle()
             androidx.compose.runtime.CompositionLocalProvider(
                 LocalParamLocks provides (locked to visualsViewModel::toggleParamLock),
             ) {
-                val p = viz.params
-                val onChange: (dev.geode.render.scene.SceneParams) -> Unit = { viewModel.setSceneParams(it) }
-                val lfos by visualsViewModel.lfos.collectAsStateWithLifecycle()
-                when (tabs.getOrNull(sub)) {
-                    CustomizeTab.MOTION -> MotionTab(p, onChange)
-                    CustomizeTab.SHAPE ->
-                        ShapeTab(
-                            p,
-                            onChange,
-                            isShaderLookScene = isShader,
-                            isPointSpriteScene = SceneCapabilities.usesPointSprites(viz.sceneId),
-                            particleLayerOff = SceneCapabilities.isFluid(viz.sceneId) && !p.fluidParticlesEnabled,
-                            isBeamScene = SceneCapabilities.isBeam(viz.sceneId),
-                        )
-                    CustomizeTab.BEHAVIOR ->
-                        BehaviorTab(
-                            p,
-                            onChange,
-                            transitionId = viz.transitionId,
-                            transitionDurationSec = viz.transitionDurationSec,
-                            onTransitionId = viewModel::setTransitionId,
-                            onTransitionDuration = viewModel::setTransitionDuration,
-                            attack = viz.attack,
-                            decay = viz.decay,
-                            onReactivityChange = viewModel::setReactivity,
-                            intelligenceMode = viz.intelligenceMode,
-                            onIntelligenceModeChange = viewModel::setIntelligenceMode,
-                        )
-                    CustomizeTab.COLOR -> {
-                        val artNote by viewModel.artPaletteNote.collectAsStateWithLifecycle()
-                        ColorTab(
-                            p,
-                            onChange,
-                            isShaderLookScene = isShader,
-                            onTakeArtworkPalette = viewModel::applyArtworkPalette,
-                            artworkNote = artNote,
-                        )
+                ParamSurface(sceneId = viz.sceneId, query = query) {
+                    if (query.isBlank()) {
+                        CustomizeTabBody(viewModel, visualizerView, tabs.getOrNull(sub))
+                    } else {
+                        // Search reaches EVERY tab, not just the one on screen: "where did the
+                        // vignette slider go" is exactly the question search exists to answer.
+                        tabs.filterNotNull().forEach { tab -> CustomizeTabBody(viewModel, visualizerView, tab) }
                     }
-                    CustomizeTab.FX -> {
-                        val adsrs by visualsViewModel.adsrs.collectAsStateWithLifecycle()
-                        FxTab(
-                            p,
-                            onChange,
-                            lfos = lfos,
-                            onLfoChange = visualsViewModel::setLfo,
-                            adsr = adsrs,
-                            onAdsrChange = visualsViewModel::setAdsr,
-                        )
-                    }
-                    CustomizeTab.FLUID ->
-                        FluidTab(
-                            p,
-                            onChange,
-                            isFluidScene = SceneCapabilities.isFluid(viz.sceneId),
-                            isJourneyScene = SceneCapabilities.hasJourney(viz.sceneId),
-                            isWaterScene = SceneCapabilities.isWater(viz.sceneId),
-                            isEmitterScene = SceneCapabilities.hasEmitters(viz.sceneId),
-                            isParticleLayerScene = SceneCapabilities.hasParticleLayer(viz.sceneId),
-                            injectionError = if (SceneCapabilities.isFluid(viz.sceneId)) viz.shaderError else null,
-                            onApplyInjectionShaders = { force, dye ->
-                                visualizerView.visualizerRenderer.submitFluidInjectionShaders(force, dye)
-                            },
-                        )
-                    CustomizeTab.CYMATICS -> CymaticsTab(p, activeSceneId = viz.sceneId, onChange = onChange)
-                    CustomizeTab.HYPERSPACE -> HyperspaceTab(p, activeSceneId = viz.sceneId, onChange = onChange)
-                    null -> GlslHubTab(viewModel, visualizerView)
                 }
             }
         }
     }
 }
 
+/**
+ * Whether a tab has anything to show for the style on screen.
+ *
+ * The five spec tabs plus Scene are always there; the per-family ones appear only with their
+ * family. Fluid stays because it also holds the two "all styles" sections (FlowField and the
+ * shared water-ripple overlay), which every style can use.
+ */
+private fun tabAppliesTo(
+    tab: CustomizeTab,
+    sceneId: String,
+): Boolean =
+    when (tab) {
+        CustomizeTab.SHAPE,
+        CustomizeTab.COLOR,
+        CustomizeTab.MOTION,
+        CustomizeTab.FX,
+        CustomizeTab.REACTIVITY,
+        CustomizeTab.SCENE,
+        CustomizeTab.FLUID,
+        -> true
+        CustomizeTab.CYMATICS -> SceneCapabilities.isCymatics(sceneId)
+        CustomizeTab.HYPERSPACE -> SceneCapabilities.isHyperspace(sceneId)
+    }
+
 @Composable
-private fun CustomizeToolbar(
+private fun CustomizeTabBody(
     viewModel: PlayerViewModel,
-    params: dev.geode.render.scene.SceneParams,
+    visualizerView: VisualizerView,
     tab: CustomizeTab?,
 ) {
     val visualsViewModel: VisualsViewModel = geodeViewModel()
+    val viz by viewModel.vizState.collectAsStateWithLifecycle()
+    val p = viz.params
+    val onChange: (dev.geode.render.scene.SceneParams) -> Unit = visualsViewModel::editSceneParams
+    when (tab) {
+        CustomizeTab.MOTION -> MotionTab(p, onChange)
+        CustomizeTab.SHAPE -> ShapeTab(p, onChange)
+        CustomizeTab.SCENE ->
+            SceneTab(
+                p,
+                onChange,
+                intelligenceMode = viz.intelligenceMode,
+                onIntelligenceModeChange = viewModel::setIntelligenceMode,
+                transitionId = viz.transitionId,
+                transitionDurationSec = viz.transitionDurationSec,
+                onTransitionId = viewModel::setTransitionId,
+                onTransitionDuration = viewModel::setTransitionDuration,
+            )
+        CustomizeTab.REACTIVITY -> {
+            val lfos by visualsViewModel.lfos.collectAsStateWithLifecycle()
+            val adsrs by visualsViewModel.adsrs.collectAsStateWithLifecycle()
+            ReactivityTab(
+                p,
+                onChange,
+                attack = viz.attack,
+                decay = viz.decay,
+                onReactivityChange = viewModel::setReactivity,
+                lfos = lfos,
+                onLfoChange = visualsViewModel::setLfo,
+                adsr = adsrs,
+                onAdsrChange = visualsViewModel::setAdsr,
+            )
+        }
+        CustomizeTab.COLOR -> {
+            val artNote by viewModel.artPaletteNote.collectAsStateWithLifecycle()
+            ColorTab(
+                p,
+                onChange,
+                onTakeArtworkPalette = viewModel::applyArtworkPalette,
+                artworkNote = artNote,
+            )
+        }
+        CustomizeTab.FX -> FxTab(p, onChange)
+        CustomizeTab.FLUID ->
+            FluidTab(
+                p,
+                onChange,
+                injectionError = if (SceneCapabilities.isFluid(viz.sceneId)) viz.shaderError else null,
+                onApplyInjectionShaders = { force, dye ->
+                    visualizerView.visualizerRenderer.submitFluidInjectionShaders(force, dye)
+                },
+            )
+        CustomizeTab.CYMATICS -> CymaticsTab(p, onChange)
+        CustomizeTab.HYPERSPACE -> HyperspaceTab(p, onChange)
+        null -> GlslHubTab(viewModel, visualizerView)
+    }
+}
+
+@Composable
+private fun CustomizeToolbar(
+    viewModel: PlayerViewModel,
+    visualizerView: VisualizerView,
+    params: dev.geode.render.scene.SceneParams,
+    tab: CustomizeTab?,
+    query: String,
+    onQuery: (String) -> Unit,
+) {
+    val visualsViewModel: VisualsViewModel = geodeViewModel()
+    val history by visualsViewModel.paramHistory.collectAsStateWithLifecycle()
+    val ab by visualsViewModel.abSnapshots.collectAsStateWithLifecycle()
     var confirmReset by remember { mutableStateOf(false) }
+    var savingPreset by remember { mutableStateOf(false) }
+    var presetName by remember { mutableStateOf("") }
     val changed = remember(params) { CustomizeSummary.changedCount(params) }
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        CrystalButton(
-            compact = true,
-            enabled = tab != null,
-            onClick = { tab?.let(visualsViewModel::randomizeParams) },
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQuery,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("Search every parameter", style = MaterialTheme.typography.labelSmall) },
+        )
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(Icons.Filled.Casino, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(if (tab == null) "Randomize" else "Randomize ${tab.title}")
+            CrystalButton(
+                compact = true,
+                enabled = tab != null,
+                onClick = { tab?.let(visualsViewModel::randomizeParams) },
+            ) {
+                Icon(Icons.Filled.Casino, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(if (tab == null) "Randomize" else "Randomize ${tab.title}")
+            }
+            CrystalButton(compact = true, filled = false, enabled = history.canUndo, onClick = visualsViewModel::undoParams) {
+                Text("Undo")
+            }
+            CrystalButton(compact = true, filled = false, enabled = history.canRedo, onClick = visualsViewModel::redoParams) {
+                Text("Redo")
+            }
+            CrystalButton(
+                compact = true,
+                filled = false,
+                enabled = tab != null,
+                onClick = { tab?.let(visualsViewModel::resetCustomizeTab) },
+            ) {
+                Text(if (tab == null) "Reset tab" else "Reset ${tab.title}")
+            }
+            CrystalButton(compact = true, filled = false, enabled = changed > 0, onClick = { confirmReset = true }) {
+                Text("Reset all")
+            }
+            CrystalButton(compact = true, filled = false, onClick = { savingPreset = true }) { Text("Save as preset") }
+            Text(
+                if (changed == 0) "defaults" else "$changed changed",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-        CrystalButton(compact = true, filled = false, enabled = changed > 0, onClick = { confirmReset = true }) {
-            Text("Reset")
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("A/B", style = MaterialTheme.typography.labelSmall, color = accentTextColor())
+            CrystalButton(compact = true, filled = false, onClick = visualsViewModel::captureSnapshotA) { Text("Set A") }
+            CrystalButton(
+                compact = true,
+                filled = false,
+                enabled = ab.a != null,
+                onClick = visualsViewModel::recallSnapshotA,
+            ) { Text("Recall A") }
+            CrystalButton(compact = true, filled = false, onClick = visualsViewModel::captureSnapshotB) { Text("Set B") }
+            CrystalButton(
+                compact = true,
+                filled = false,
+                enabled = ab.b != null,
+                onClick = visualsViewModel::recallSnapshotB,
+            ) { Text("Recall B") }
         }
-        Text(
-            if (changed == 0) "defaults" else "$changed changed",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        if (ab.canBlend) {
+            Text("Blend A → B ${"%.2f".format(ab.blend)}", style = MaterialTheme.typography.labelSmall)
+            CrystalSlider(
+                value = ab.blend,
+                onValueChange = visualsViewModel::blendSnapshots,
+                valueRange = 0f..1f,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+    if (savingPreset) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { savingPreset = false },
+            title = { Text("Save as preset") },
+            text = {
+                OutlinedTextField(
+                    value = presetName,
+                    onValueChange = { presetName = it },
+                    singleLine = true,
+                    placeholder = { Text("Preset name") },
+                )
+            },
+            confirmButton = {
+                CrystalButton(enabled = presetName.isNotBlank(), onClick = {
+                    visualsViewModel.savePreset(
+                        presetName.trim(),
+                        visualizerView.visualizerRenderer.customShaderFor(viewModel.vizState.value.sceneId),
+                    )
+                    presetName = ""
+                    savingPreset = false
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { savingPreset = false }) { Text("Cancel") } },
         )
     }
     if (confirmReset) {
@@ -875,12 +985,12 @@ private fun CustomizeToolbar(
             text = {
                 Text(
                     "Puts all $changed changed controls back to their defaults, across every tab. " +
-                        "Saved presets are not touched — reapply one to get its look back.",
+                        "Undo brings them back, and saved presets are not touched.",
                 )
             },
             confirmButton = {
                 CrystalButton(onClick = {
-                    viewModel.resetSceneParams()
+                    visualsViewModel.resetAllCustomize()
                     confirmReset = false
                 }) { Text("Reset") }
             },

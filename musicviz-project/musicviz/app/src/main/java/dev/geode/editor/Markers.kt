@@ -173,7 +173,9 @@ data class TapInSession(
         id: MarkerId,
         playheadMs: Long,
     ): TapResult {
-        val sinceLast = taps.lastOrNull()?.let { last -> playheadMs - rawOf(last) } ?: Long.MAX_VALUE
+        // Measured on the raw taps and unsigned, so seeking backwards mid-pass and tapping again is
+        // judged by how close in the music the two hits are, not by which way the transport moved.
+        val sinceLast = taps.lastOrNull()?.let { last -> abs(playheadMs - rawOf(last)) } ?: Long.MAX_VALUE
         return if (sinceLast < settings.debounceMs) {
             TapResult.Debounced(this, sinceLast)
         } else {

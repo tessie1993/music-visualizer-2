@@ -82,7 +82,7 @@ internal class FluidEmitters(
     private var palettePhase = 0f
     private var suctionPhase = 0f
     private var suctionIndex = 0
-    private var prevBeat = false
+    private val hitEdge = LiveSignal.Edge()
 
     private val bands = FloatArray(4)
     private var anchorX = 0f
@@ -123,8 +123,10 @@ internal class FluidEmitters(
         val radius = splatRadius * (1f + radiusPulse * beatEnv).coerceAtMost(MAX_RADIUS_SWELL)
         val speed = BASE_SPEED * forceScale * (0.4f + 1.6f * f.bass) * (0.3f + 0.7f * beatEnv)
 
-        val beatEdge = f.beat && !prevBeat
-        prevBeat = f.beat
+        // Fires on the transient that was heard, not on the tempo grid's next slot: the
+        // splat lands with the hit instead of a fraction of a bar later, and material with no
+        // steady pulse still throws splats.
+        val beatEdge = hitEdge.step(f)
 
         if (beatEdge && beatSplats > 0 && beatResponse > BEAT_RESPONSE_GATE) {
             beatSplats(out, f, aspect, baseHue, hueSpan, radius, speed)

@@ -29,6 +29,9 @@ enum class ParamScope {
 
     TREBLE_BAND,
 
+    /** Reads at least one band envelope. Beam and MilkDrop take raw PCM and read none. */
+    BAND_GAINS,
+
     /** Lives in the shader-scene fragment programs (morph, dual palette, colour map, duotone). */
     SHADER_LOOK,
 
@@ -89,6 +92,7 @@ enum class ParamScope {
             BASS_BAND -> kind in BASS_READERS
             MID_BAND -> kind in MID_READERS
             TREBLE_BAND -> kind in TREBLE_READERS
+            BAND_GAINS -> kind in BASS_READERS || kind in MID_READERS || kind in TREBLE_READERS
             SHADER_LOOK -> kind == SceneKind.SHADER
             ENDLESS_ZOOM -> kind == SceneKind.SHADER || kind == SceneKind.MILKDROP
             TURBULENCE -> kind in TURBULENCE_READERS
@@ -109,10 +113,189 @@ enum class ParamScope {
             RIPPLE_OVERLAY -> kind != SceneKind.WATER
         }
 
-    private companion object {
+    companion object {
+        /**
+         * The scope of the control named [paramKey] — a [ParamKeys] constant.
+         *
+         * Everything that shows, searches, rolls or modulates a parameter goes through this, so
+         * "does this control do anything here?" has exactly one answer. A key that is not a scene
+         * parameter at all (a panel preference, an envelope field) is [UNIVERSAL]: it belongs to
+         * the panel rather than to a style, so it is always live.
+         */
+        fun of(paramKey: String): ParamScope = BY_KEY[paramKey] ?: UNIVERSAL
+
+        private val BY_KEY: Map<String, ParamScope> =
+            buildMap {
+                // Named `scoped` rather than `put` so nothing has to reason about whether an
+                // overload resolves to the local helper or to MutableMap.put.
+                fun scoped(
+                    scope: ParamScope,
+                    vararg keys: String,
+                ) = keys.forEach { key -> put(key, scope) }
+
+                scoped(
+                    UNIVERSAL,
+                    ParamKeys.ZOOM,
+                    ParamKeys.ROTATION,
+                    ParamKeys.SWAY,
+                    ParamKeys.DRIFT_X,
+                    ParamKeys.DRIFT_Y,
+                    ParamKeys.BEAT_PULSE,
+                    ParamKeys.BEAT_SHAKE,
+                    ParamKeys.DOMAIN_WARP,
+                    ParamKeys.RIPPLE,
+                    ParamKeys.TWIST,
+                    ParamKeys.KALEIDOSCOPE,
+                    ParamKeys.TILE,
+                    ParamKeys.PIXELATE,
+                    ParamKeys.POSTERIZE,
+                    ParamKeys.MIRROR,
+                    ParamKeys.BEAT_RESPONSE,
+                    ParamKeys.BEAT_FLASH,
+                    ParamKeys.PALETTE,
+                    ParamKeys.HUE_SHIFT,
+                    ParamKeys.HUE_RANGE,
+                    ParamKeys.COLOR_CYCLE,
+                    ParamKeys.CYCLE_SPEED,
+                    ParamKeys.SATURATION,
+                    ParamKeys.BRIGHTNESS,
+                    ParamKeys.CONTRAST,
+                    ParamKeys.GAMMA,
+                    ParamKeys.INTENSITY,
+                    ParamKeys.TEMPERATURE,
+                    ParamKeys.BLOOM,
+                    ParamKeys.SOLARIZE,
+                    ParamKeys.INVERT,
+                    ParamKeys.CHROMATIC_ABERRATION,
+                    ParamKeys.VIGNETTE,
+                    ParamKeys.SCANLINES,
+                    ParamKeys.FILM_GRAIN,
+                    ParamKeys.GLITCH,
+                    ParamKeys.FISHEYE,
+                    ParamKeys.STROBE,
+                    ParamKeys.FLOW_STRENGTH,
+                    ParamKeys.WAVE_SPEED,
+                    ParamKeys.DAMPING,
+                )
+                scoped(SCENE_CLOCK, ParamKeys.SPEED)
+                scoped(AUDIO_DRIVE, ParamKeys.AUDIO_DRIVE)
+                scoped(BASS_BAND, ParamKeys.BASS_GAIN)
+                scoped(MID_BAND, ParamKeys.MID_GAIN)
+                scoped(TREBLE_BAND, ParamKeys.TREBLE_GAIN)
+                scoped(SHADER_LOOK, ParamKeys.MORPH, ParamKeys.COLOUR_MAP, ParamKeys.PALETTE_2, ParamKeys.PALETTE_BLEND, ParamKeys.DUOTONE)
+                scoped(ENDLESS_ZOOM, ParamKeys.ENDLESS_ZOOM, ParamKeys.DIVE_SPEED)
+                scoped(TURBULENCE, ParamKeys.TURBULENCE)
+                scoped(DYE_DENSITY, ParamKeys.DENSITY)
+                scoped(TRAIL_TOGGLE, ParamKeys.TRAILS)
+                scoped(TRAIL_LENGTH, ParamKeys.TRAIL_LENGTH)
+                scoped(TRAIL_ECHO, ParamKeys.TRAIL_ZOOM_ECHO_IN_OUT, ParamKeys.TRAIL_WARP_LIQUID_ECHO)
+                scoped(
+                    PARTICLE_SPRITE,
+                    ParamKeys.PARTICLE_SHAPE,
+                    ParamKeys.PARTICLE_SIZE,
+                    ParamKeys.PARTICLE_LIFE_S,
+                    ParamKeys.PARTICLE_DRAG,
+                )
+                scoped(MILKDROP, ParamKeys.MILKDROP_PALETTE_TINT, ParamKeys.BLEND_PRESET_CHANGES)
+                scoped(
+                    FLUID_SIM,
+                    ParamKeys.SOLVER_ITERATIONS,
+                    ParamKeys.PRESSURE,
+                    ParamKeys.FLUID_CURL,
+                    ParamKeys.MOTION_FADE,
+                    ParamKeys.FLUID_FADE,
+                    ParamKeys.CHROMATIC_AGING,
+                    ParamKeys.PALETTE_CYCLE,
+                    ParamKeys.PARTICLE_BRIGHTNESS,
+                    ParamKeys.SHADING_EMBOSSED_INK,
+                    ParamKeys.GLOW_FLUID,
+                    ParamKeys.FLUID_GLOW,
+                    ParamKeys.GLOW_THRESHOLD,
+                    ParamKeys.SUNRAYS,
+                    ParamKeys.SUNRAYS_WEIGHT,
+                    ParamKeys.CURL_FROM_MIDS,
+                    ParamKeys.GLOW_FROM_LOUDNESS,
+                    ParamKeys.FADE_WHEN_QUIET,
+                )
+                scoped(
+                    EMITTERS,
+                    ParamKeys.BEAT_PATTERN,
+                    ParamKeys.BEAT_SPLATS,
+                    ParamKeys.STIRRERS,
+                    ParamKeys.STIRRER_SPEED,
+                    ParamKeys.FLUID_SPLAT_RADIUS,
+                    ParamKeys.FLUID_SPLAT_FORCE,
+                    ParamKeys.BASS_PUMP,
+                    ParamKeys.TREBLE_SPARKLE,
+                    ParamKeys.RADIUS_ON_BEAT,
+                )
+                scoped(
+                    JOURNEY,
+                    ParamKeys.PATH,
+                    ParamKeys.SPAWN_POINTS,
+                    ParamKeys.CATCH_POINTS,
+                    ParamKeys.CATCH_PULL,
+                    ParamKeys.CATCH_RADIUS,
+                )
+                scoped(FLOW_FIELD_SIM, ParamKeys.FLOW_FORCE, ParamKeys.FLOW_CURL)
+                scoped(
+                    WATER,
+                    ParamKeys.RIPPLE_STRENGTH,
+                    ParamKeys.DEPTH,
+                    ParamKeys.SPECULAR,
+                    ParamKeys.FLOW_DRIFT,
+                    ParamKeys.LIQUID,
+                    ParamKeys.LIQUID_FLOW,
+                    ParamKeys.LIQUID_FADE,
+                )
+                scoped(RIPPLE_OVERLAY, ParamKeys.RIPPLE_OVERLAY_STRENGTH, ParamKeys.RIPPLE_GLINT)
+                scoped(
+                    CYMATICS,
+                    ParamKeys.GEOMETRY,
+                    ParamKeys.FUNDAMENTAL_HZ,
+                    ParamKeys.STANDING_WAVES,
+                    ParamKeys.TONAL_FOCUS,
+                    ParamKeys.PLATE_RING,
+                    ParamKeys.FIELD_SCALE,
+                    ParamKeys.WAVE_FLOW,
+                    ParamKeys.FIELD_SWIRL,
+                    ParamKeys.FILL,
+                    ParamKeys.NODAL_LINES,
+                    ParamKeys.NODAL_GLOW,
+                    ParamKeys.IRIDESCENCE,
+                    ParamKeys.CAUSTIC_SHEEN,
+                )
+                scoped(
+                    HYPERSPACE,
+                    ParamKeys.ACT,
+                    ParamKeys.ACT_LENGTH_S,
+                    ParamKeys.FRACTAL,
+                    ParamKeys.BODIES,
+                    ParamKeys.BODY_LIFE_S,
+                    ParamKeys.BODY_SPIN,
+                    ParamKeys.ORBIT_DRIFT,
+                    ParamKeys.CAMERA_DRIFT,
+                    ParamKeys.FOLD,
+                    ParamKeys.BODY_GLOW,
+                    ParamKeys.NEON_RIM,
+                    ParamKeys.FILIGREE,
+                    ParamKeys.HAZE,
+                    ParamKeys.MIRROR_FOLDS,
+                    ParamKeys.COLOUR_BANDING,
+                    ParamKeys.MELT,
+                    ParamKeys.INK_STAIN,
+                    ParamKeys.LIQUID_LIGHT,
+                    ParamKeys.RIDGES,
+                    ParamKeys.STIR,
+                    ParamKeys.VORTICITY,
+                    ParamKeys.FLOW_FADE,
+                )
+                scoped(BEAM, ParamKeys.XY_PLOT, ParamKeys.BEAM_WIDTH, ParamKeys.BEAM_BRIGHTNESS, ParamKeys.BEAM_TAIL)
+            }
+
         // Per-band gain only reaches a style that reads that band's envelope. Beam and MilkDrop
         // consume raw PCM and never look at bass/mid/treble at all.
-        val BASS_READERS =
+        private val BASS_READERS =
             setOf(
                 SceneKind.SHADER,
                 SceneKind.SILK,
@@ -123,7 +306,7 @@ enum class ParamScope {
                 SceneKind.HYPERSPACE,
             )
 
-        val MID_READERS =
+        private val MID_READERS =
             setOf(
                 SceneKind.SHADER,
                 SceneKind.SILK,
@@ -134,7 +317,7 @@ enum class ParamScope {
                 SceneKind.HYPERSPACE,
             )
 
-        val TREBLE_READERS =
+        private val TREBLE_READERS =
             setOf(
                 SceneKind.SHADER,
                 SceneKind.SILK,
@@ -148,7 +331,7 @@ enum class ParamScope {
                 SceneKind.HYPERSPACE,
             )
 
-        val TURBULENCE_READERS =
+        private val TURBULENCE_READERS =
             setOf(
                 SceneKind.SHADER,
                 SceneKind.MYCELIUM,

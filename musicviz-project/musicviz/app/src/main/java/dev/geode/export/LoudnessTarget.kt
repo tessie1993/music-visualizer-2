@@ -12,8 +12,8 @@ private const val YOUTUBE_CEILING_DBTP = -1.0
 /**
  * The level a platform plays back at, and the headroom it wants left underneath.
  *
- * [lowLufs]..[highLufs] is the band that counts as "already right" — nobody should be nudged into
- * re-exporting over 0.3 LU. [aimLufs] is where a normalising gain lands the file inside that band.
+ * [lowLufs]..[highLufs] is the band that counts as "already right" — nobody should be told to
+ * re-export over a difference they cannot hear. [aimLufs] is where a normalising gain lands.
  */
 data class LoudnessWindow(
     val aimLufs: Double,
@@ -221,24 +221,30 @@ sealed interface LoudnessAdvice {
                 append("Measured ${LoudnessTargets.lufsText(lufs)}, true peak ${LoudnessTargets.dbtpText(truePeakDbtp)}. ")
                 when {
                     // Quiet, but already clipping: gain cannot help, only a limiter can.
-                    gainForLevelDb > LoudnessTargets.GAIN_TOLERANCE_DB -> {
+                    lufs < target.window.lowLufs -> {
                         append("That is under the ${target.levelPhrase} ${target.label} plays at, but the peak is already ")
                         append("over the ${LoudnessTargets.dbtpText(target.window.ceilingDbtp)} ceiling, and gain alone can ")
                         append("only make that worse. Geode will take off ${LoudnessTargets.dbText(gainDb)} to get the ")
                         append("peak legal; getting louder as well needs a limiter on the mix.")
                     }
+                    // Genuinely louder than the platform plays at.
+                    lufs > target.window.highLufs -> {
+                        append("That is ${LoudnessTargets.luText(gainForLevelDb)} over the ${target.levelPhrase} ")
+                        append("${target.label} plays at — ${target.loudNote}. Geode will take off ")
+                        append("${LoudnessTargets.dbText(gainDb)}")
+                        if (ceilingLimited) {
+                            append(" — a shade more than the level alone needs, so the true peak clears the ")
+                            append("${LoudnessTargets.dbtpText(target.window.ceilingDbtp)} ceiling too")
+                        }
+                        append(", landing at ${LoudnessTargets.lufsText(resultingLufs)} with a true peak of ")
+                        append("${LoudnessTargets.dbtpText(resultingTruePeakDbtp)}.")
+                    }
                     // Level is fine; the ceiling is the only reason to touch it.
-                    ceilingLimited -> {
+                    else -> {
                         append("The level is where ${target.label} wants it, but the peak is over the ")
                         append("${LoudnessTargets.dbtpText(target.window.ceilingDbtp)} ceiling, where lossy encoders start ")
                         append("to distort. Geode will take off ${LoudnessTargets.dbText(gainDb)}, landing at ")
                         append("${LoudnessTargets.lufsText(resultingLufs)}.")
-                    }
-                    else -> {
-                        append("That is ${LoudnessTargets.luText(-gainForLevelDb)} over the ${target.levelPhrase} ")
-                        append("${target.label} plays at — ${target.loudNote}. Geode will take off ")
-                        append("${LoudnessTargets.dbText(gainDb)}, landing at ${LoudnessTargets.lufsText(resultingLufs)} ")
-                        append("with a true peak of ${LoudnessTargets.dbtpText(resultingTruePeakDbtp)}.")
                     }
                 }
             }

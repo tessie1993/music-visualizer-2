@@ -16,6 +16,19 @@ class EncoderSurface(
     private var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
 
     init {
+        // A half-built EGL context is never handed back to the caller, so nothing would ever call
+        // release() on it. Unwind whatever was created before the failure propagates, or every
+        // export that dies here strands an EGLContext for the life of the process.
+        var built = false
+        try {
+            setUp(surface)
+            built = true
+        } finally {
+            if (!built) release()
+        }
+    }
+
+    private fun setUp(surface: Surface) {
         display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
         check(display != EGL14.EGL_NO_DISPLAY) { "No EGL display" }
         val version = IntArray(2)
@@ -62,11 +75,12 @@ class EncoderSurface(
         check(EGL14.eglSwapBuffers(display, eglSurface)) { "eglSwapBuffers failed" }
     }
 
+    /** Idempotent, and safe on a partially built surface — see the constructor. */
     fun release() {
         if (display != EGL14.EGL_NO_DISPLAY) {
             EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
-            EGL14.eglDestroySurface(display, eglSurface)
-            EGL14.eglDestroyContext(display, context)
+            if (eglSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(display, eglSurface)
+            if (context != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(display, context)
             EGL14.eglReleaseThread()
         }
         display = EGL14.EGL_NO_DISPLAY

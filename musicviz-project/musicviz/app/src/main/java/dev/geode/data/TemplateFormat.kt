@@ -258,10 +258,10 @@ object TemplateFormat {
         return if (match == null) Tolerant.Foreign(raw) else Tolerant.Known(match)
     }
 
-    private fun tokenOf(value: Tolerant<Enum<*>>): String =
-        when (value) {
-            is Tolerant.Known -> value.value.name
-            is Tolerant.Foreign -> value.token
+    private fun tokenOf(tolerant: Tolerant<Enum<*>>): String =
+        when (tolerant) {
+            is Tolerant.Known -> tolerant.value.name
+            is Tolerant.Foreign -> tolerant.token
         }
 
     // -----------------------------------------------------------------------
@@ -374,17 +374,15 @@ object TemplateFormat {
 
     private fun readText(source: JSONObject?): TemplateText {
         val array = source?.optJSONArray(KEY_SLOTS)
-        val bare =
-            TemplateText(
-                // An absent array means "never configured" and takes the default; a
-                // present but empty one is a real choice to show no text at all.
-                slots =
-                    if (array == null) {
-                        TemplateText.DEFAULT_SLOTS
-                    } else {
-                        (0 until array.length()).mapNotNull { index -> array.optJSONObject(index)?.let(::readSlot) }
-                    },
-            )
+        // An absent array means "never configured" and takes the documented default; a
+        // present but empty one is a real choice to put no text on the frame at all.
+        val slots =
+            if (array == null) {
+                TemplateText.DEFAULT_SLOTS
+            } else {
+                (0 until array.length()).mapNotNull { index -> array.optJSONObject(index)?.let(::readSlot) }
+            }
+        val bare = TemplateText(slots = slots)
         return bare.copy(foreign = foreignOf(source, textOf(bare)))
     }
 

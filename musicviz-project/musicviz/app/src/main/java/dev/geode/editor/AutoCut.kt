@@ -74,6 +74,11 @@ data class TransientEnvelope(
 }
 
 data class AutoCutSettings(
+    /**
+     * Which channel to build the envelope from — see [TransientEnvelope.from]. Detection itself
+     * reads the envelope it is handed; this is kept here so the choice round-trips with the rest
+     * of the settings and comes back attached to the suggestions it produced.
+     */
     val source: TransientSource = TransientSource.TRANSIENT,
     /** 0 keeps only the hits that tower over the mix, 1 takes almost every rise. */
     val sensitivity: Float = 0.5f,
@@ -154,9 +159,12 @@ object AutoCut {
         }
 
     /**
-     * Turn accepted suggestions into clips that butt up against each other, the last one running
-     * to [untilMs]. Auto-cut decides *when* the cuts fall; [content] decides what plays in each
-     * one, because that is a taste decision and this is not the place for it.
+     * Turn accepted suggestions into clips that butt up against each other, the first starting on
+     * the first hit and the last running to [untilMs]. The stretch before the first hit is left
+     * empty: nothing was detected there, so there is no cut to justify.
+     *
+     * Auto-cut decides *when* the cuts fall; [content] decides what plays in each one, because
+     * that is a taste decision and this is not the place for it.
      */
     fun clipsFrom(
         hits: List<TransientHit>,

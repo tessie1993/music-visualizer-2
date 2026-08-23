@@ -54,7 +54,6 @@ class OffscreenSceneRenderer(
     private val lfoEngine = LfoEngine()
     private val adsrEngine = AdsrEngine()
     private val rippleDrops = dev.geode.render.fluid.RippleOverlayDrops()
-    private val sections = timeline.detectSections()
 
     private var scene: Scene? = null
     private var compositor: OffscreenCompositor? = null
@@ -127,7 +126,10 @@ class OffscreenSceneRenderer(
         val dt = 1f / fps
         val timeMs = frame * 1000L / fps
         val nextTimeMs = (frame + 1) * 1000L / fps
-        val features = timeline.progressionAt(spec.rangeStartMs + timeMs, sections, nextTimeMs - timeMs)
+        // featuresAt, not progressionAt: nothing in the render path reads `progress` or
+        // `sectionIndex` any more, so the export replays only the per-frame signal — the same
+        // transients, level, brightness and bands the live path reacts to.
+        val features = timeline.featuresAt(spec.rangeStartMs + timeMs, nextTimeMs - timeMs)
 
         val envValues = adsrEngine.tick(dt, features)
         val (envRate, envDepth) = AdsrEngine.lfoOffsets(adsrEngine.configs, envValues)

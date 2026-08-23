@@ -339,7 +339,7 @@
     <string name="audio_beat_min_gap">"Minimum gap between beats  %1$d ms — never flash faster than %2$d BPM"</string>
     <string name="audio_slow_track">Slow track</string>
     <string name="audio_default">Default</string>
-    <string name="audio_preset_morph">Preset morph: %1$d beats (0 = snap)</string>
+    <string name="audio_preset_morph">Preset morph: %1$.1f s (0 = snap)</string>
     <string name="audio_key_colour">Colour from the musical key</string>
     <string name="audio_key_colour_explainer">Sets Hue shift from the key the analyser found, around the circle of fifths — so a track keeps the same colour every time you play it, and two songs that sound related look related. It moves the ordinary Hue shift slider, so you can always disagree with it; switching this off gives your own value back.</string>
     <string name="audio_react_mic">React to the microphone</string>

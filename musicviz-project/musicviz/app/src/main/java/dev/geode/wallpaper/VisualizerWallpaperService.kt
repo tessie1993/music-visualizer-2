@@ -23,6 +23,17 @@ class VisualizerWallpaperService : WallpaperService() {
         @Volatile
         private var running = false
 
+        /**
+         * Distinguishes one feeder run from the next.
+         *
+         * A wallpaper toggles visibility every time the screen sleeps or the user switches app, so
+         * over a day this runs hundreds of times. If a join ever times out, the old thread must be
+         * able to tell that a newer run has taken over and exit — otherwise it keeps ticking, and
+         * keeps the renderer and the service context alive, for the rest of the process.
+         */
+        @Volatile
+        private var feedGeneration = 0
+
         private var surfaceAvailable = false
         private var visible = false
 
@@ -68,11 +79,12 @@ class VisualizerWallpaperService : WallpaperService() {
         private fun startFeeding(engine: VisualizerRenderer) {
             if (feeder != null) return
             AudioBus.addConsumer()
+            val generation = ++feedGeneration
             running = true
             lastFrameMs = android.os.SystemClock.elapsedRealtime()
             feeder =
                 Thread {
-                    while (running) {
+                    while (running && feedGeneration == generation) {
                         val now = android.os.SystemClock.elapsedRealtime()
                         val dt = ((now - lastFrameMs).coerceIn(1, 100)) / 1000f
                         lastFrameMs = now
@@ -87,10 +99,11 @@ class VisualizerWallpaperService : WallpaperService() {
         }
 
         private fun stopFeeding() {
-            if (feeder == null) return
-            AudioBus.removeConsumer()
+            val thread = feeder ?: return
             running = false
-            runCatching { feeder?.join(FEEDER_JOIN_MS) }
+            feedGeneration++
+            AudioBus.removeConsumer()
+            runCatching { thread.join(FEEDER_JOIN_MS) }
             feeder = null
         }
 

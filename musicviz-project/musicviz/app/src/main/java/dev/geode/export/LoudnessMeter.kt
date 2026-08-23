@@ -123,11 +123,16 @@ class LoudnessMeter(
             val started =
                 runCatching {
                     MediaCodec.createDecoderByType(mime).also {
+                        // Published before configure/start, not after: a codec that fails to
+                        // configure still exists, and if `decoder` is only assigned once this
+                        // block returns, the finally below has nothing to release. MediaCodec
+                        // instances come from a device-global pool, so one leaked here fails the
+                        // next unrelated export rather than this one.
+                        decoder = it
                         it.configure(sourceFormat, null, null, 0)
                         it.start()
                     }
                 }.getOrElse { return LoudnessResult.Unreadable("This device has no decoder for $mime.") }
-            decoder = started
             return drain(started, extractor, sourceFormat, isCancelled, onProgress)
         } finally {
             bestEffort(TAG, "decoder?.stop()") { decoder?.stop() }
@@ -177,22 +182,24 @@ class LoudnessMeter(
                     val format = decoder.outputFormat
                     val rate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
                     val channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-                    val current = analyser
-                    val target =
-                        when {
-                            current == null && !LoudnessAnalyser.supports(channels) -> {
-                                decoder.releaseOutputBuffer(outIndex, false)
-                                return LoudnessResult.Unreadable(unsupportedLayout(channels))
-                            }
-                            current == null -> LoudnessAnalyser(rate, channels).also { analyser = it }
-                            current.sampleRate != rate || current.channelCount != channels -> {
-                                // Splicing blocks measured at two different rates would quietly bias the
-                                // gated average, and a wrong loudness number is worse than none.
-                                decoder.releaseOutputBuffer(outIndex, false)
-                                return LoudnessResult.Unreadable(FORMAT_CHANGED)
-                            }
-                            else -> current
+                    val existing = analyser
+                    val target: LoudnessAnalyser
+                    if (existing == null) {
+                        if (!LoudnessAnalyser.supports(channels)) {
+                            decoder.releaseOutputBuffer(outIndex, false)
+                            return LoudnessResult.Unreadable(unsupportedLayout(channels))
                         }
+                        target = LoudnessAnalyser(rate, channels)
+                        analyser = target
+                    } else {
+                        // Splicing blocks measured at two different rates would quietly bias the gated
+                        // average, and a wrong loudness number is worse than no number at all.
+                        if (existing.sampleRate != rate || existing.channelCount != channels) {
+                            decoder.releaseOutputBuffer(outIndex, false)
+                            return LoudnessResult.Unreadable(FORMAT_CHANGED)
+                        }
+                        target = existing
+                    }
                     val output = decoder.getOutputBuffer(outIndex) ?: return LoudnessResult.Unreadable(CODEC_STATE)
                     output.position(info.offset)
                     output.limit(info.offset + info.size)
@@ -234,11 +241,15 @@ class LoudnessMeter(
      * deliberately exempts.
      */
     private class Scratch {
-        private var buffer = FloatArray(INITIAL_SCRATCH_FLOATS)
+        private var buffer = FloatArray(INITIAL_FLOATS)
 
         fun ensure(floats: Int): FloatArray {
             if (buffer.size < floats) buffer = FloatArray(floats)
             return buffer
+        }
+
+        private companion object {
+            const val INITIAL_FLOATS = 16_384
         }
     }
 
@@ -255,7 +266,6 @@ class LoudnessMeter(
     private companion object {
         const val DEQUEUE_TIMEOUT_US = 10_000L
         const val STALL_LIMIT = 1_000
-        const val INITIAL_SCRATCH_FLOATS = 16_384
         const val SHORT_SCALE = 32_768f
         const val CODEC_STATE = "The audio decoder returned no buffer, which means it has failed."
         const val FORMAT_CHANGED =
@@ -380,7 +390,7 @@ class LoudnessAnalyser(
     ) {
         val available = count / channelCount
         var offset = 0
-        for (frame in 0 until available) {
+        repeat(available) {
             for (channel in 0 until channelCount) {
                 val x = interleaved[offset + channel].toDouble()
                 val magnitude = abs(x)
@@ -446,6 +456,7 @@ class LoudnessAnalyser(
         blockPower = blockPower.copyOf(blockPower.size * 2)
     }
 
+    @Suppress("ReturnCount")
     private fun integrate(): Gated {
         var absoluteSum = 0.0
         var absoluteCount = 0

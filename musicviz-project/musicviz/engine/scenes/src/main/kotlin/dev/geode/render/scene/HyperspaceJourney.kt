@@ -62,7 +62,6 @@ class HyperspaceJourney {
                             drive / HyperspaceMath.IMMERSION_PIVOT / HyperspaceMath.FALL_SECONDS
                         }
                     immersion = (immersion + rate * step).coerceIn(0f, 1f)
-                    immersion = max(immersion, HyperspaceMath.progressImmersionFloor(progress))
                     immersion * last
                 }
             }

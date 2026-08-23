@@ -3,11 +3,13 @@ package dev.geode.ui
 import dev.geode.analysis.AudioFeatures
 import dev.geode.data.PaletteStore
 import dev.geode.data.Preset
+import dev.geode.render.LiveSignal
 import dev.geode.render.scene.MilkdropEngine
 import dev.geode.render.scene.SceneIds
 import dev.geode.render.scene.SceneParams
 import kotlinx.coroutines.flow.StateFlow
 
+/** A switch waits for a hit this strong — the live transient, not a tracked beat. */
 private const val STRONG_MOMENT_IMPULSE = 0.6f
 
 internal class AutoVisualsController(
@@ -97,7 +99,7 @@ internal class AutoVisualsController(
             if (s.vizPlaylistIntelligent) {
                 val f = host.features()
                 val minDwell = maxOf(8_000L, intervalMs / 2)
-                (elapsed >= minDwell && f.beatImpulse >= STRONG_MOMENT_IMPULSE) || elapsed >= intervalMs * 2
+                (elapsed >= minDwell && LiveSignal.hit(f) >= STRONG_MOMENT_IMPULSE) || elapsed >= intervalMs * 2
             } else {
                 elapsed >= intervalMs
             }
@@ -206,7 +208,7 @@ internal class AutoVisualsController(
             if (s.randomOnBeat) {
                 val f = host.features()
                 val minDwell = maxOf(6_000L, intervalMs / 2)
-                (elapsed >= minDwell && f.beatImpulse >= STRONG_MOMENT_IMPULSE) || elapsed >= intervalMs * 2
+                (elapsed >= minDwell && LiveSignal.hit(f) >= STRONG_MOMENT_IMPULSE) || elapsed >= intervalMs * 2
             } else {
                 elapsed >= intervalMs
             }

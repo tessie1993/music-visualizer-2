@@ -5,8 +5,12 @@ import dev.geode.render.AdsrConfig
 import dev.geode.render.AdsrEngine
 import dev.geode.render.EnvBand
 import dev.geode.render.LfoConfig
+import dev.geode.render.LfoEngine
 import dev.geode.render.LfoTarget
 import dev.geode.render.LfoWave
+import dev.geode.render.ModCurve
+import dev.geode.render.ModPolarity
+import dev.geode.render.ModSource
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -17,18 +21,18 @@ class LfoStore(
         runCatching {
             val raw = prefs.getString(KEY, null) ?: return defaultList()
             val arr = JSONArray(raw)
-            (0 until 3).map { i ->
+            (0 until LfoEngine.SLOTS).map { i ->
                 if (i < arr.length()) fromJson(arr.getJSONObject(i)) else LfoConfig()
             }
         }.getOrDefault(defaultList())
 
     fun save(lfos: List<LfoConfig>) {
         val arr = JSONArray()
-        lfos.take(3).forEach { arr.put(toJson(it)) }
+        lfos.take(LfoEngine.SLOTS).forEach { arr.put(toJson(it)) }
         prefs.edit().putString(KEY, arr.toString()).apply()
     }
 
-    private fun defaultList() = List(3) { LfoConfig() }
+    private fun defaultList() = List(LfoEngine.SLOTS) { LfoConfig() }
 
     fun loadAdsrs(): List<AdsrConfig> =
         runCatching {
@@ -83,23 +87,44 @@ class LfoStore(
     private fun toJson(c: LfoConfig): JSONObject =
         JSONObject()
             .put("enabled", c.enabled)
+            .put("source", c.source.name)
             .put("target", c.target.name)
             .put("wave", c.wave.name)
-            .put("rateHz", c.rateHz.toDouble())
-            .put("beatSync", c.beatSync)
-            .put("beatDiv", c.beatDiv.toDouble())
+            .put("rateSeconds", c.rateSeconds.toDouble())
             .put("depth", c.depth.toDouble())
+            .put("polarity", c.polarity.name)
+            .put("curve", c.curve.name)
 
     private fun fromJson(o: JSONObject): LfoConfig =
         LfoConfig(
             enabled = o.optBoolean("enabled", false),
+            source = runCatching { ModSource.valueOf(o.getString("source")) }.getOrDefault(ModSource.LFO),
             target = runCatching { LfoTarget.valueOf(o.getString("target")) }.getOrDefault(LfoTarget.NONE),
             wave = runCatching { LfoWave.valueOf(o.getString("wave")) }.getOrDefault(LfoWave.SINE),
-            rateHz = o.optDouble("rateHz", 0.5).toFloat(),
-            beatSync = o.optBoolean("beatSync", false),
-            beatDiv = o.optDouble("beatDiv", 1.0).toFloat(),
+            rateSeconds = readRateSeconds(o),
             depth = o.optDouble("depth", 0.3).toFloat(),
+            polarity = runCatching { ModPolarity.valueOf(o.getString("polarity")) }.getOrDefault(ModPolarity.BIPOLAR),
+            curve = runCatching { ModCurve.valueOf(o.getString("curve")) }.getOrDefault(ModCurve.LINEAR),
         )
+
+    /**
+     * Reads the rate as a period in seconds, converting a slot saved by an older build.
+     *
+     * Rates used to be stored in Hz (and could be locked to a detected tempo). A saved
+     * `rateHz` is turned into the period it described so an existing setup keeps its speed;
+     * the tempo lock is simply dropped, because the slots are free-running now.
+     */
+    private fun readRateSeconds(o: JSONObject): Float {
+        if (o.has("rateSeconds")) {
+            return o
+                .optDouble("rateSeconds", LfoConfig.DEFAULT_RATE_SECONDS.toDouble())
+                .toFloat()
+                .coerceIn(LfoConfig.MIN_RATE_SECONDS, LfoConfig.MAX_RATE_SECONDS)
+        }
+        val hz = o.optDouble("rateHz", 0.0).toFloat()
+        if (hz <= 0f) return LfoConfig.DEFAULT_RATE_SECONDS
+        return (1f / hz).coerceIn(LfoConfig.MIN_RATE_SECONDS, LfoConfig.MAX_RATE_SECONDS)
+    }
 
     private companion object {
         const val KEY = "lfos"

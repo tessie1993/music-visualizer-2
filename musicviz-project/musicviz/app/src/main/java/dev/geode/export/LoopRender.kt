@@ -138,14 +138,15 @@ data class TimeOfDayDrift(
     companion object {
         val None: TimeOfDayDrift = TimeOfDayDrift(0f, 0f, 1)
 
-        const val MAX_STOPS: Int = 24
-        const val MIN_STOP_MS: Long = 10 * 60_000
+        const val MAX_STOPS: Int = 8
+        const val MIN_STOP_MS: Long = 20 * 60_000
 
         /**
          * Spreads a drift over [totalMs] at no more than one step every [MIN_STOP_MS].
          *
-         * Each stop costs a full loop render, so the step count is bounded by the running time
-         * rather than by how smooth we would like the drift to be.
+         * Each stop is a whole extra loop render, so the count stays small: eight stops across a
+         * three-hour video cost eight minutes of rendering rather than three hours of it, and a
+         * palette step every twenty minutes is already slower than anyone watches for.
          */
         fun over(
             totalMs: Long,
@@ -504,7 +505,7 @@ class LoopRender(
                     lfoConfigs = job.lfoConfigs,
                     adsrConfigs = job.adsrConfigs,
                     reducedMotion = job.reducedMotion,
-                    paramsAt = if (at == null) null else { timeMs -> stop.applyTo(at(timeMs)) },
+                    paramsAt = driftedParamsAt,
                 ),
         )
     }

@@ -66,6 +66,11 @@ data class LoopExtendPlan(
     val totalDurationUs: Long,
     val segments: List<LoopSegment>,
 ) {
+    init {
+        require(loopDurationUs > 0) { "loopDurationUs must be positive, was $loopDurationUs" }
+        require(totalDurationUs > 0) { "totalDurationUs must be positive, was $totalDurationUs" }
+    }
+
     val writes: List<LoopWrite> =
         segments.flatMap { segment ->
             List(segment.repeats) { repeat -> LoopWrite(segment.loopIndex, segment.startUs + repeat * loopDurationUs) }
@@ -119,12 +124,11 @@ data class LoopExtendPlan(
             totalDurationUs: Long,
             loops: Int,
         ): LoopExtendPlan {
-            require(loopDurationUs > 0) { "loopDurationUs must be positive, was $loopDurationUs" }
             require(loops >= 1) { "a plan needs at least one loop, was $loops" }
             val total = totalDurationUs.coerceAtLeast(1L)
             val repeats = ((total + loopDurationUs - 1) / loopDurationUs).toInt().coerceAtLeast(1)
-            // A drift stop that would get no repeats is dropped rather than left empty: better
-            // three visible palette steps than twenty-four that never come round.
+            // A drift stop that would get no repeats is dropped rather than left empty: better a
+            // few palette steps that actually come round than a schedule the video never reaches.
             val stops = minOf(loops, repeats)
             val each = repeats / stops
             val remainder = repeats % stops
@@ -227,6 +231,7 @@ class LoopExtend(
         onProgress: (Float) -> Unit,
         isCancelled: () -> Boolean,
     ): Result {
+        if (soundtrack.totalUs <= 0L) return Result.Failed("That soundtrack decoded to nothing — the file may be empty or corrupt.")
         val plan = LoopExtendPlan.of(reel.loopDurationUs, soundtrack.totalUs, reel.loops.size)
         val estimate = plan.estimatedBytes(reel.bytes / reel.loops.size, soundtrack.bytes)
         if (estimate > sizeLimitBytes) return Result.Failed(oversizeMessage(plan, estimate, sizeLimitBytes, soundtrack.bytes))
@@ -282,12 +287,13 @@ class LoopExtend(
         onProgress: (Float) -> Unit,
         isCancelled: () -> Boolean,
     ): Boolean {
-        val readers = reel.loops.map { LoopReader.open(it.file) }
+        val readers = mutableListOf<LoopReader>()
         var muxer: MediaMuxer? = null
         var feed: AudioReel? = null
         var started = false
         var stopped = false
         try {
+            reel.loops.forEach { readers += LoopReader.open(it.file) }
             checkOneEncoding(readers)
             val writer = MediaMuxer(pfd.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4).also { muxer = it }
             val videoTrack = writer.addTrack(readers.first().format)

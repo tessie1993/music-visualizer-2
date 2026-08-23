@@ -186,7 +186,6 @@ internal class HyperspaceScene(
             holdAct = p.hyperAct,
             cycleSeconds = p.hyperCycleSeconds,
             pace = pace,
-            progress = f.progress,
         )
         val profile = journey.profile()
 
@@ -195,12 +194,12 @@ internal class HyperspaceScene(
         spectral.advance(f.bands, dt)
         val pcmKick = pcmPulse.tick(dt).coerceIn(0f, 1f)
         stylePhase = (stylePhase + dt * pace * (style.phaseRate + style.phaseBassRate * slewBass) * (1f + pcmKick * 0.35f)) % 1f
-        val beatWeight = HyperspaceMath.beatGate(f.pulseConfidence)
+        val hitWeight = HyperspaceMath.hitGate(LiveSignal.level(f))
 
         val target = HyperspaceLook.bodyTarget(profile.bodies, p.hyperBodies * style.bodyScale)
         val spread = HyperspaceLook.spread(target)
         idleImpulseAge += dt
-        var impulse = ((LiveSignal.hit(f) * beatWeight + pcmKick * 0.5f) * p.beatResponse.coerceIn(0f, 2f)).coerceIn(0f, 1.5f)
+        var impulse = ((LiveSignal.hit(f) * hitWeight + pcmKick * 0.5f) * p.beatResponse.coerceIn(0f, 2f)).coerceIn(0f, 1.5f)
         if (idleBlend > 0.5f && idleImpulseAge >= IDLE_IMPULSE_SECONDS) {
             impulse = max(impulse, IDLE_IMPULSE)
             idleImpulseAge = 0f
@@ -256,7 +255,7 @@ internal class HyperspaceScene(
         farPlane = HyperspaceLook.farPlane(camDistance, spread)
 
         beatPulse =
-            maxOf((LiveSignal.hit(f) * beatWeight + pcmKick * 0.6f) * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f)
+            maxOf((LiveSignal.hit(f) * hitWeight + pcmKick * 0.6f) * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f)
                 .coerceIn(0f, 1.5f)
         val budget = MarchBudget.forDetail(p.hyperDetail)
 

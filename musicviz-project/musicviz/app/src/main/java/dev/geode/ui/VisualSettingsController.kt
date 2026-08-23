@@ -130,10 +130,16 @@ internal class VisualSettingsController(
         setSceneParams(profile.apply(state.value.params))
     }
 
+    /**
+     * How long a preset load glides in for.
+     *
+     * The length used to be a count of beats divided by the tracked tempo, which made the glide
+     * as wrong as the estimate and silently used 120 BPM on live input, where there is no
+     * estimate. It is a duration the user set, in seconds, and nothing consults the analyser.
+     */
     private fun emitPresetMorph() {
-        val beats = host.guiPrefs.morphBeats
-        if (beats <= 0) return
-        val bpm = engine.features.value.bpm.takeIf { it > 40f } ?: 120f
-        _morphFade.tryEmit(beats * 60f / bpm)
+        val seconds = host.guiPrefs.presetMorphSeconds
+        if (seconds <= 0f) return
+        _morphFade.tryEmit(seconds)
     }
 }

@@ -44,7 +44,7 @@ class ShaderScene(
     private var treble = 0f
     private var energy = 0f
     private var beatPulse = 0f
-    private var beatPhase = 0f
+    private var pulsePhase = 0f
     private var sceneParams: SceneParams = SceneParams.DEFAULT
     private var rotationAngle = 0f
     private var zoomPhase = 0f
@@ -153,7 +153,7 @@ class ShaderScene(
         // dragged every shader scene off the music and live input (no tempo yet) got a flat
         // 1 Hz throb. Now the transient that was actually heard resets the ramp, and it
         // free-runs in between so the bump still breathes when nothing is hitting.
-        beatPhase = if (hit > 0f) 0f else (beatPhase + dt * PULSE_PHASE_HZ) % 1f
+        pulsePhase = if (hit > 0f) 0f else (pulsePhase + dt * PULSE_PHASE_HZ) % 1f
         val drive = p.audioDrive
         texFloats.clear()
         for (i in 0 until AUDIO_TEX_WIDTH) {
@@ -225,7 +225,7 @@ class ShaderScene(
         setUniform1f("uPosterize", p.posterize)
         setUniform1f("uSway", p.sway)
         setUniform1f("uPulse", p.pulse)
-        setUniform1f("uBeatPhase", beatPhase)
+        setUniform1f("uBeatPhase", pulsePhase)
         setUniform1f("uDriftX", p.driftX)
         setUniform1f("uDriftY", p.driftY)
         setUniform1f("uShake", p.shake)

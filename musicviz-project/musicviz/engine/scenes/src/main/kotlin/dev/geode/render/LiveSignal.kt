@@ -2,7 +2,6 @@ package dev.geode.render
 
 import dev.geode.analysis.AudioFeatures
 import kotlin.math.abs
-import kotlin.math.exp
 
 /**
  * The live drive the visuals run on.
@@ -37,18 +36,6 @@ object LiveSignal {
 
     /** Left/right movement, -1 (hard left) .. 1 (hard right). */
     fun pan(f: AudioFeatures): Float = f.stereoPan.coerceIn(-1f, 1f)
-
-    /**
-     * A hit envelope: jumps to the new hit and falls back over [seconds].
-     *
-     * Frame-rate independent so an export at 60 fps decays like a preview at 30.
-     */
-    fun decay(
-        envelope: Float,
-        hit: Float,
-        dt: Float,
-        seconds: Float,
-    ): Float = maxOf(hit, envelope * exp(-dt / seconds.coerceAtLeast(1e-3f))).coerceIn(0f, 1.5f)
 
     /**
      * Rising-edge detector for hits.

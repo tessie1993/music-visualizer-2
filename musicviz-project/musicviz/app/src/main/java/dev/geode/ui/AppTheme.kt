@@ -99,7 +99,14 @@ data class GuiPrefs(
     val beatSensitivity: Float = BeatTuning.SENSITIVITY_DEFAULT,
     val beatMinIntervalMs: Float = BeatTuning.INTERVAL_MS_DEFAULT,
     val presetMirrorUri: String? = null,
-    val morphBeats: Int = 4,
+    /**
+     * How long a preset load takes to glide in, in SECONDS.
+     *
+     * Was a count of beats, converted with the tracked tempo — so the glide was the wrong
+     * length whenever the estimate was, and fell back to a flat 120 BPM on live input where
+     * there is no estimate at all. Seconds are the thing the user is actually choosing.
+     */
+    val presetMorphSeconds: Float = 2f,
     val accentIntensity: Float = 1f,
     val backgroundDim: Float = 0f,
     val compactPlayer: Boolean = false,
@@ -149,6 +156,15 @@ class ThemeStore(
         prefs.edit().putString(KEY, pack.slug).apply()
     }
 
+    /** Reads the morph length, converting a beat count saved by an older build. */
+    private fun readPresetMorphSeconds(prefs: SharedPreferences): Float {
+        if (prefs.contains(KEY_PRESET_MORPH_SEC)) {
+            return prefs.getFloat(KEY_PRESET_MORPH_SEC, 2f).coerceIn(0f, PRESET_MORPH_SECONDS_MAX)
+        }
+        val beats = prefs.getInt(LEGACY_KEY_MORPH_BEATS, 4)
+        return (beats * 60f / LEGACY_MORPH_BPM).coerceIn(0f, PRESET_MORPH_SECONDS_MAX)
+    }
+
     private fun migrateLegacyName(raw: String?): String? =
         when (raw) {
             "CLEAR_QUARTZ" -> "clear-quartz"
@@ -180,7 +196,7 @@ class ThemeStore(
                     .getFloat(KEY_BEAT_INTERVAL, BeatTuning.INTERVAL_MS_DEFAULT)
                     .coerceIn(BeatTuning.INTERVAL_MS_MIN, BeatTuning.INTERVAL_MS_MAX),
             presetMirrorUri = prefs.getString("preset_mirror_uri", null),
-            morphBeats = prefs.getInt("morph_beats", 4),
+            presetMorphSeconds = readPresetMorphSeconds(prefs),
             accentIntensity = prefs.getFloat(KEY_ACCENT, 1f),
             backgroundDim = prefs.getFloat(KEY_DIM, 0f),
             compactPlayer = prefs.getBoolean(KEY_COMPACT, false),
@@ -231,7 +247,7 @@ class ThemeStore(
             .putFloat("beat_sigma", gui.beatSensitivity)
             .putFloat(KEY_BEAT_INTERVAL, gui.beatMinIntervalMs)
             .putString("preset_mirror_uri", gui.presetMirrorUri)
-            .putInt("morph_beats", gui.morphBeats)
+            .putFloat(KEY_PRESET_MORPH_SEC, gui.presetMorphSeconds)
             .putFloat(KEY_ACCENT, gui.accentIntensity)
             .putFloat(KEY_DIM, gui.backgroundDim)
             .putBoolean(KEY_COMPACT, gui.compactPlayer)
@@ -275,6 +291,13 @@ class ThemeStore(
         const val KEY_FONT_COLOR = "gui_font_color"
         const val KEY_TEXT_SCALE = "gui_text_scale"
         const val KEY_BEAT_INTERVAL = "beat_min_interval_ms"
+        const val KEY_PRESET_MORPH_SEC = "gui_preset_morph_seconds"
+        const val LEGACY_KEY_MORPH_BEATS = "morph_beats"
+
+        /** The tempo the old beat-count morph fell back to; used only to migrate a saved value. */
+        const val LEGACY_MORPH_BPM = 120f
+
+        const val PRESET_MORPH_SECONDS_MAX = 8f
         const val KEY_REDUCED_MOTION = "gui_reduced_motion"
         const val KEY_TOUCH_SMEAR = "gui_touch_smear"
         const val KEY_TOUCH_SMEAR_STRENGTH = "gui_touch_smear_strength"

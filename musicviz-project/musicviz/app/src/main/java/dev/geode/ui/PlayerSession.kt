@@ -266,6 +266,8 @@ class PlayerSession private constructor(
             object : ModulationController.Host {
                 override val params: SceneParams get() = _vizState.value.params
 
+                override val sceneId: String get() = _vizState.value.sceneId
+
                 override fun setSceneParams(params: SceneParams) = visual.setSceneParams(params)
             },
         )
@@ -273,10 +275,32 @@ class PlayerSession private constructor(
     val lfos: StateFlow<List<LfoConfig>> get() = modulation.lfos
     val adsrs: StateFlow<List<AdsrConfig>> get() = modulation.adsrs
     val lockedParams: StateFlow<Set<String>> get() = modulation.lockedParams
+    val paramHistory: StateFlow<ParamHistoryState> get() = modulation.history
+    val abSnapshots: StateFlow<AbSnapshotState> get() = modulation.ab
 
     fun toggleParamLock(label: String) = modulation.toggleParamLock(label)
 
     fun randomizeParams(tab: CustomizeTab? = null) = modulation.randomizeParams(tab)
+
+    fun editSceneParams(params: SceneParams) = modulation.editSceneParams(params)
+
+    fun undoParams() = modulation.undo()
+
+    fun redoParams() = modulation.redo()
+
+    fun resetCustomizeTab(tab: CustomizeTab) = modulation.resetTab(tab)
+
+    fun resetAllCustomize() = modulation.resetAll()
+
+    fun captureSnapshotA() = modulation.captureA()
+
+    fun captureSnapshotB() = modulation.captureB()
+
+    fun recallSnapshotA() = modulation.recallA()
+
+    fun recallSnapshotB() = modulation.recallB()
+
+    fun blendSnapshots(t: Float) = modulation.blendAb(t)
 
     fun setAdsr(
         index: Int,

@@ -204,8 +204,8 @@ class VisualizerRenderer(
     /** Always budgeted — the same call the offscreen path makes, so preview and export agree. */
     private fun flashGain(
         fx: SceneParams,
-        beatImpulse: Float,
-    ): Float = flashBudget.gainFor(timeSeconds, VisualSafety.flashImpulse(fx.flash, beatImpulse))
+        hit: Float,
+    ): Float = flashBudget.gainFor(timeSeconds, VisualSafety.flashImpulse(fx.flash, hit))
 
     private fun gainAdjusted(
         f: AudioFeatures,
@@ -488,7 +488,7 @@ class VisualizerRenderer(
         // uBeat is the live transient, not a tracked beat: the FX that ride it (flash, shake,
         // glitch, strobe duty) then land on what was actually played this frame.
         val hit = LiveSignal.hit(features)
-        inputs.beatImpulse = hit
+        inputs.hitImpulse = hit
         inputs.flash = fx.flash * flashGain(fx, hit)
         inputs.strobeHz = VisualSafety.strobeHz()
         inputs.postRotationAngle = postRotationAngle

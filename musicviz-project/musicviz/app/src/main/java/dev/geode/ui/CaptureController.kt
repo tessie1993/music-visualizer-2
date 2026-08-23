@@ -214,6 +214,10 @@ internal class CaptureController(
 
     fun shutdown() {
         micCapture.stop()
-        if (_externalAudio.value.active) stopExternalAudio()
+        // Stop the pump on the pump's own state, not the UI mirror of it. After this the owning
+        // scope is cancelled, so the projection collector that would otherwise notice is gone —
+        // a pump left running here keeps an AudioRecord and its reader thread alive, writing into
+        // a released playback session, for the rest of the process.
+        if (playbackCapture.active || _externalAudio.value.active) stopExternalAudio()
     }
 }

@@ -45,20 +45,23 @@ import java.util.UUID
  * [orElse] supplies the documented fallback wherever the value is actually used.
  */
 sealed interface Tolerant<out T : Any> {
+    /** The value when this build understands it, null when it is a foreign token. */
+    val valueOrNull: T?
+
     data class Known<T : Any>(
         val value: T,
-    ) : Tolerant<T>
+    ) : Tolerant<T> {
+        override val valueOrNull: T get() = value
+    }
 
     data class Foreign(
         val token: String,
-    ) : Tolerant<Nothing>
+    ) : Tolerant<Nothing> {
+        override val valueOrNull: Nothing? get() = null
+    }
 }
 
-fun <T : Any> Tolerant<T>.orElse(fallback: T): T =
-    when (this) {
-        is Tolerant.Known -> value
-        is Tolerant.Foreign -> fallback
-    }
+fun <T : Any> Tolerant<T>.orElse(fallback: T): T = valueOrNull ?: fallback
 
 /**
  * Stable identity of a template, carried inside the shared file.
@@ -87,16 +90,20 @@ value class TemplateId private constructor(
     }
 }
 
-/** Where a template in the library came from. Deliberately *not* written to the file. */
+/**
+ * Where a template in the library came from.
+ *
+ * Deliberately *not* written to the file, and deliberately only two states: a
+ * template shared over WhatsApp must not claim to be bundled on the receiver's
+ * device, and once a file is in the library there is nothing on disk that could
+ * honestly distinguish "I made this" from "someone sent me this".
+ */
 enum class TemplateOrigin {
     /** Shipped with the app; browsable, adopted by copying. */
     BUNDLED,
 
-    /** Created or adopted on this device. */
+    /** In this device's library, however it got there. */
     SAVED,
-
-    /** Arrived as a file or link from someone else. */
-    IMPORTED,
 }
 
 /**
@@ -367,7 +374,8 @@ enum class TemplatePlaceholder(
     companion object {
         val PATTERN: Regex = Regex("\\{([A-Za-z0-9_]+)}")
 
-        fun forKey(key: String): TemplatePlaceholder? = entries.firstOrNull { it.key.equals(key, ignoreCase = true) }
+        fun forKey(key: String): TemplatePlaceholder? =
+            TemplatePlaceholder.entries.firstOrNull { it.key.equals(key, ignoreCase = true) }
     }
 }
 
@@ -417,7 +425,11 @@ fun TemplateText.resolve(facts: TrackFacts): List<ResolvedText> =
     slots.mapNotNull { slot ->
         when (slot.role) {
             is Tolerant.Foreign -> null
-            is Tolerant.Known -> facts.fill(slot.effectivePattern()).takeIf { it.isNotEmpty() }?.let { ResolvedText(slot, it) }
+            is Tolerant.Known ->
+                facts
+                    .fill(slot.effectivePattern())
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { filled -> ResolvedText(slot, filled) }
         }
     }
 

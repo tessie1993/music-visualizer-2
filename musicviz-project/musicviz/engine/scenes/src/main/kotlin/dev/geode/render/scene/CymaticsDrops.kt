@@ -31,7 +31,7 @@ class CymaticsDrops {
 
     fun update(
         dt: Float,
-        beatImpulse: Float,
+        hit: Float,
     ) {
         if (dt <= 0f) return
         cooldown = (cooldown - dt).coerceAtLeast(0f)
@@ -43,8 +43,8 @@ class CymaticsDrops {
             packed[base + 3] *= fade
             if (packed[base + 3] < SILENCE) packed[base + 3] = 0f
         }
-        if (beatImpulse > SPAWN_THRESHOLD && cooldown <= 0f) {
-            spawn(beatImpulse)
+        if (hit > SPAWN_THRESHOLD && cooldown <= 0f) {
+            spawn(hit)
             cooldown = COOLDOWN_SECONDS
         }
     }
