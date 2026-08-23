@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -204,10 +205,9 @@ private fun ScanStatus(
     val line =
         when {
             !granted -> stringResource(R.string.first_run_access_denied)
-            trackCount > 0 -> stringResource(R.string.first_run_scanning, trackCount)
+            trackCount > 0 -> pluralStringResource(R.plurals.first_run_scanning, trackCount, trackCount)
             scanning -> stringResource(R.string.first_run_scanning_working)
-            folderCount == 1 -> stringResource(R.string.first_run_folder_added, folderCount)
-            folderCount > 1 -> stringResource(R.string.first_run_folder_added_plural, folderCount)
+            folderCount > 0 -> pluralStringResource(R.plurals.first_run_folder_added, folderCount, folderCount)
             else -> stringResource(R.string.first_run_access_granted)
         }
     Text(

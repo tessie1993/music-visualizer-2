@@ -56,9 +56,9 @@ class TextureStore(
         if (ext !in IMAGE_EXTS) {
             return skipped("not a supported image type (" + IMAGE_EXTS.sorted().joinToString(", ") + ")")
         }
-        val bytes =
-            runCatching { appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
-                ?: return skipped("could not be read")
+        val tooLarge = "larger than ${MAX_TEXTURE_BYTES / (1024 * 1024)} MB"
+        if ((declaredSize(uri) ?: 0L) > MAX_TEXTURE_BYTES) return skipped(tooLarge)
+        val bytes = readBounded(uri) ?: return skipped("could not be read, or is $tooLarge")
         if (bytes.isEmpty()) return skipped("file is empty")
         validateImage(bytes, ext)?.let { return skipped(it) }
         val storedName = safeTextureFileName(name)
@@ -116,6 +116,37 @@ class TextureStore(
         )
     }
 
+    /**
+     * The picked file, or null if it cannot be read or runs past [MAX_TEXTURE_BYTES].
+     *
+     * A texture arrives from the system picker, so its size is whatever the user chose -
+     * and DDS masters in MilkDrop packs run to tens of megabytes. Reading one straight
+     * into a ByteArray put that number in the app's heap unbounded; this stops at the cap
+     * instead, which is why it does not use readBytes().
+     */
+    private fun readBounded(uri: Uri): ByteArray? =
+        runCatching {
+            appContext.contentResolver.openInputStream(uri)?.use { input ->
+                val out = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(READ_BUFFER_BYTES)
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    out.write(buffer, 0, n)
+                    if (out.size() > MAX_TEXTURE_BYTES) return@use null
+                }
+                out.toByteArray()
+            }
+        }.getOrNull()
+
+    /** What the provider claims the file weighs, so an oversized pick is refused before it is read. */
+    private fun declaredSize(uri: Uri): Long? =
+        runCatching {
+            appContext.contentResolver
+                .query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)
+                ?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null }
+        }.getOrNull()
+
     private fun displayName(uri: Uri): String? =
         runCatching {
             appContext.contentResolver
@@ -172,6 +203,11 @@ class TextureStore(
 
     internal companion object {
         val IMAGE_EXTS = setOf("png", "jpg", "jpeg", "bmp", "tga", "dds", "dib")
+
+        /** Comfortably above any real MilkDrop texture, far below what exhausts the heap. */
+        private const val MAX_TEXTURE_BYTES = 16 * 1024 * 1024
+
+        private const val READ_BUFFER_BYTES = 64 * 1024
 
         private val TGA_IMAGE_TYPES = setOf(1, 2, 3, 9, 10, 11)
 
