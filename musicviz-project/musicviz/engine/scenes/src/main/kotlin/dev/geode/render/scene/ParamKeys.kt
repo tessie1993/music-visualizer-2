@@ -9,6 +9,7 @@ package dev.geode.render.scene
  */
 object ParamKeys {
     const val SPEED = "Speed"
+    const val MARCH_DETAIL = "Detail"
     const val ZOOM = "Zoom"
     const val ROTATION = "Rotation"
     const val SWAY = "Sway"

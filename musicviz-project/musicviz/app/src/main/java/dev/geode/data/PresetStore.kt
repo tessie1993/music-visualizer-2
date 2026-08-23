@@ -158,6 +158,7 @@ class PresetStore(
                 .put("beatResponse", p.params.beatResponse.toDouble())
                 .put("turbulence", p.params.turbulence.toDouble())
                 .put("density", p.params.density.toDouble())
+                .put("marchDetail", p.params.marchDetail.toDouble())
                 .put("trails", p.params.trails)
                 .put("trailLength", p.params.trailLength.toDouble())
                 .put("trailZoom", p.params.trailZoom.toDouble())
@@ -350,6 +351,7 @@ class PresetStore(
                         beatResponse = o.optDouble("beatResponse", 1.0).toFloat(),
                         turbulence = o.optDouble("turbulence", 0.0).toFloat(),
                         density = o.optDouble("density", 1.0).toFloat(),
+                        marchDetail = o.optDouble("marchDetail", 1.0).toFloat(),
                         trails = o.optBoolean("trails", false),
                         trailLength = o.optDouble("trailLength", 0.5).toFloat(),
                         trailZoom = o.optDouble("trailZoom", 0.0).toFloat(),

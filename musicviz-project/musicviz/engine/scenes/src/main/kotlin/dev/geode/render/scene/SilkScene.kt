@@ -2,9 +2,18 @@ package dev.geode.render.scene
 
 import android.content.Context
 import android.opengl.GLES30
+import android.util.Log
 import dev.geode.analysis.AudioFeatures
+import dev.geode.engine.gl.DeviceGl
 import dev.geode.engine.scenes.R
 import dev.geode.render.LiveSignal
+import dev.geode.render.TouchField
+import dev.geode.render.compute.SimBuild
+import dev.geode.render.compute.SimPass
+import dev.geode.render.compute.SimSampling
+import dev.geode.render.compute.SimSpec
+import dev.geode.render.compute.SimUniformBinder
+import dev.geode.render.compute.SimUniforms
 import dev.geode.render.fluid.FluidBuffers
 import dev.geode.render.fluid.FluidHue
 import kotlin.math.PI
@@ -13,16 +22,37 @@ import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.sin
 
+/**
+ * SILK — three band lanes of dye advected through a smooth velocity field.
+ *
+ * The step goes through [SimPass], which means it runs as an ES 3.1 compute dispatch on a
+ * device that proved it has one and as the ES 3.0 fragment ping-pong everywhere else. This
+ * scene cannot tell which it got and deliberately has no way to ask: the choice is made once,
+ * inside [SimPass.build] during [init], and there is no `if (hasCompute)` anywhere below.
+ *
+ * Both paths run `silk_step.glsl` — one file, one simulation. They store into the same texture
+ * in the same format, so they round identically; what is left to differ between them is the
+ * last few ulp of `sin`, `exp` and `normalize`, which no driver promises to implement the same
+ * way in its fragment and compute stages.
+ */
 internal class SilkScene(
     private val context: Context,
     private val style: VisualStyleCatalog.SilkStyle,
 ) : Scene,
-    PcmSink {
+    PcmSink,
+    TouchReactive {
     override val id: String = style.id
 
     private companion object {
+        const val TAG = "SilkScene"
+
         const val SIM_RES = 320
 
+        /**
+         * The range the pre-scaled `RGBA8` fallback packs into [0, 1], matching the ceiling the
+         * step clamps its dye to. Only reaches the shader when the probe found no renderable
+         * half-float format; on every other device the layer folds a scale of 1.
+         */
         const val BYTE_STATE_SCALE = 8f
 
         const val TIME_WRAP_SECONDS = 628.31853f
@@ -48,16 +78,11 @@ internal class SilkScene(
     private var time = 0f
     private var lastDt = 1f / 60f
 
-    private var stepProgram = 0
+    private var sim: SimPass? = null
     private var showProgram = 0
-    private var stepLocs = GlUtil.UniformCache(0)
     private var showLocs = GlUtil.UniformCache(0)
     private var programOk = false
     private var vao = 0
-
-    private var formats: FluidBuffers.Formats? = null
-    private var dye: FluidBuffers.DoubleFbo? = null
-    private var byteDye = false
 
     private val pcmPulse = PcmPulse()
     private var pcmStrike = 0f
@@ -70,30 +95,73 @@ internal class SilkScene(
     private var foldPhase = 0f
     private var drift = 0f
 
-    private val prevFbo = IntArray(1)
-    private val prevViewport = IntArray(4)
+    // The frame's derived step inputs. Fields rather than locals because they are computed in
+    // draw() and read from the binder below, which the layer calls back into from inside
+    // step() — after it has bound its own state and before the dispatch or the draw.
+    private var stepB = 0f
+    private var stepAdvect = 0f
+    private var stepDecay = 0f
+    private var stepDrive = 0f
+    private var stepSeedEpoch = 0f
+
+    private var touch: TouchField? = null
+
+    /**
+     * Held in a property, not written at the `step(...)` call site.
+     *
+     * A lambda literal there captures this scene and allocates one object per frame, which is
+     * exactly the per-frame garbage the render loop is written to avoid. Allocated once, at
+     * construction, it costs nothing thereafter.
+     */
+    private val stepBinder = SimUniformBinder { uniforms -> bindStep(uniforms) }
 
     var onShaderError: (String?) -> Unit = {}
 
     override fun init() {
-        stepProgram = 0
+        sim = null
         showProgram = 0
         vao = 0
         programOk = false
-        formats = null
-        dye = null
-        val quad = GlUtil.loadShader(context, R.raw.quad_vert)
-        stepProgram =
-            GlUtil.buildProgramReporting(quad, GlUtil.loadShader(context, R.raw.silk_step_frag)) {
-                onShaderError("Silk unavailable on this GPU: $it")
+        val spec =
+            SimSpec(
+                label = id,
+                stepBody = GlUtil.loadShader(context, R.raw.silk_step),
+                // Every texel back-traces along the flow and samples between texels, every
+                // frame. That is the access pattern the packed integer state is worst at and
+                // the one a filterable half-float field is for.
+                sampling = SimSampling.BETWEEN_TEXELS,
+                stateScale = BYTE_STATE_SCALE,
+            )
+        // The profile is memoised on driver identity and was already resolved by
+        // VisualizerRenderer.onSurfaceCreated before any scene existed, so this costs three
+        // glGetString calls. The diagnostic below is the ONE line that says which path this
+        // family took and why — build() runs once per surface, so it is logged once per
+        // surface, not re-decided or re-logged per frame. It goes to logcat rather than to
+        // onShaderError because taking the fragment path is not an error and a compute step
+        // that failed to compile is not one either; both leave a correct picture on screen.
+        val built =
+            SimPass.build(spec, DeviceGl.profileWithCurrentContext(context)) { line ->
+                Log.i(TAG, line)
             }
-        if (stepProgram == 0) return
+        val pass =
+            when (built) {
+                is SimBuild.Failed -> {
+                    onShaderError("Silk unavailable on this GPU: ${built.message}")
+                    return
+                }
+
+                is SimBuild.Ready -> built.pass
+            }
+        sim = pass
+        applySimSize(pass)
         showProgram =
-            GlUtil.buildProgramReporting(quad, GlUtil.loadShader(context, R.raw.silk_show_frag)) {
+            GlUtil.buildProgramReporting(
+                GlUtil.loadShader(context, R.raw.quad_vert),
+                pass.displayShader(GlUtil.loadShader(context, R.raw.silk_show)),
+            ) {
                 onShaderError("Silk unavailable on this GPU: $it")
             }
         if (showProgram == 0) return
-        stepLocs = GlUtil.UniformCache(stepProgram)
         showLocs = GlUtil.UniformCache(showProgram)
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
@@ -105,14 +173,19 @@ internal class SilkScene(
         this.params = params
     }
 
+    override fun setTouchField(field: TouchField) {
+        touch = field
+    }
+
     override fun resize(
         width: Int,
         height: Int,
     ) {
         this.width = max(width, 1)
         this.height = max(height, 1)
-        dye?.release()
-        dye = null
+        // The layer reallocates lazily on the next step, so this is safe before there is
+        // anything to allocate into — including on a resize that arrives before init().
+        sim?.let { applySimSize(it) }
     }
 
     override fun acceptPcm(
@@ -130,26 +203,16 @@ internal class SilkScene(
         pendingFeatures = features
     }
 
-    private fun ensureDye(): FluidBuffers.DoubleFbo? {
-        dye?.let { return it }
-        val fmt = formats ?: FluidBuffers.probeFormats().also { formats = it }
-        byteDye = !fmt.ok
-        val texFmt =
-            if (byteDye) {
-                FluidBuffers.TexFormat(GLES30.GL_RGBA8, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE)
-            } else {
-                fmt.rgba
-            }
+    /**
+     * The simulation grid, which is not the display grid.
+     *
+     * A field sim at native resolution is texture-fetch bound on a mid-tier GPU long before it
+     * is ALU bound, and the dye is soft by nature — 320 on the long axis is plenty, and the
+     * short axis follows the surface so the flow is not stretched.
+     */
+    private fun applySimSize(pass: SimPass) {
         val (w, h) = FluidBuffers.resolution(SIM_RES, width, height)
-        val next = FluidBuffers.DoubleFbo(w, h, texFmt, linear = true)
-        next.create()
-        return if (next.ok) {
-            dye = next
-            next
-        } else {
-            next.release()
-            null
-        }
+        pass.resize(w, h)
     }
 
     private fun slew(
@@ -164,10 +227,8 @@ internal class SilkScene(
 
     override fun draw(timeSeconds: Float) {
         if (!programOk) return
+        val pass = sim ?: return
         GlUtil.resetFrameState()
-        GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
-        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
-        val field = ensureDye() ?: return
         val p = params
         val dt = lastDt.coerceIn(0f, 1f / 15f)
         val f = pendingFeatures ?: silence
@@ -189,53 +250,25 @@ internal class SilkScene(
         slabTurn = (slabTurn + dt * style.slabRate * speed) % 1f
         foldPhase = (foldPhase + dt * 0.03f * speed * TWO_PI) % TWO_PI
         drift = (drift + dt * 0.05f * speed) % 1024f
-        val b = style.bBase + style.bAmp * sin(TWO_PI * time / style.bPeriod)
-        val seedEpoch = (time / SEED_EPOCH_SECONDS).toInt().toFloat()
+        stepB = style.bBase + style.bAmp * sin(TWO_PI * time / style.bPeriod)
+        stepSeedEpoch = (time / SEED_EPOCH_SECONDS).toInt().toFloat()
+        stepAdvect = dt * 0.18f * style.flow * speed
+        stepDrive = CymaticsMath.safeDrive(p.audioDrive)
 
         var decay = style.decay
         if (p.trails) decay += (1f - decay) * 0.6f * p.trailLength.coerceIn(0f, 1f)
-        val frameDecay = decay.pow(dt * 60f)
+        stepDecay = decay.pow(dt * 60f)
+
+        // The step restores whatever draw target and viewport it found on the fragment path,
+        // and touches neither on the compute path, so the present pass below lands on the
+        // renderer's target without this scene saving or rebinding anything.
+        if (!pass.step(stepBinder)) return
 
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
         GLES30.glBindVertexArray(vao)
-
-        GLES30.glUseProgram(stepProgram)
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, field.write.fbo)
-        GLES30.glViewport(0, 0, field.width, field.height)
-        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, field.read.tex)
-        GLES30.glUniform1i(stepLocs.loc("uPrev"), 0)
-        GLES30.glUniform2f(stepLocs.loc("uRes"), field.width.toFloat(), field.height.toFloat())
-        GLES30.glUniform1i(stepLocs.loc("uField"), style.field)
-        GLES30.glUniform1f(stepLocs.loc("uB"), b)
-        GLES30.glUniform1f(stepLocs.loc("uAdvect"), dt * 0.18f * style.flow * speed)
-        GLES30.glUniform1f(stepLocs.loc("uDecay"), frameDecay)
-        GLES30.glUniform1f(stepLocs.loc("uFieldScale"), style.fieldScale)
-        GLES30.glUniform1f(stepLocs.loc("uSwirl"), style.swirl)
-        GLES30.glUniform1f(stepLocs.loc("uSlabX"), cos(slabTurn * TWO_PI))
-        GLES30.glUniform1f(stepLocs.loc("uSlabY"), sin(slabTurn * TWO_PI))
-        GLES30.glUniform1f(stepLocs.loc("uSeedEpoch"), seedEpoch)
-        GLES30.glUniform1f(stepLocs.loc("uDrift"), drift)
-        GLES30.glUniform1f(stepLocs.loc("uStrokes"), style.strokes)
-        GLES30.glUniform1f(stepLocs.loc("uElong"), style.elong)
-        GLES30.glUniform1f(stepLocs.loc("uDrive"), CymaticsMath.safeDrive(p.audioDrive))
-        GLES30.glUniform1f(stepLocs.loc("uBass"), envBass)
-        GLES30.glUniform1f(stepLocs.loc("uMid"), envMid)
-        GLES30.glUniform1f(stepLocs.loc("uTreble"), envTreble)
-        GLES30.glUniform1f(stepLocs.loc("uBeat"), beatPulse)
-        GLES30.glUniform1f(stepLocs.loc("uStrike"), pcmStrike.coerceIn(0f, 1.5f))
-        GLES30.glUniform1f(stepLocs.loc("uBeatRing"), ringRadius)
-        GLES30.glUniform1f(stepLocs.loc("uStateScale"), if (byteDye) BYTE_STATE_SCALE else 1f)
-        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
-        field.swap()
-
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, prevFbo[0])
-        GLES30.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3])
         GLES30.glUseProgram(showProgram)
-        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, field.read.tex)
-        GLES30.glUniform1i(showLocs.loc("uField"), 0)
+        pass.bindStateFor(showLocs, 0)
         GLES30.glUniform2f(showLocs.loc("uRes"), width.toFloat(), height.toFloat())
         GLES30.glUniform1f(showLocs.loc("uBaseHue"), FluidHue.base(p.paletteBase) + style.hueOffset)
         GLES30.glUniform1f(showLocs.loc("uHueSpan"), FluidHue.span(p.hueRange, p.paletteRange) * style.hueSpan)
@@ -243,24 +276,49 @@ internal class SilkScene(
         GLES30.glUniform1i(showLocs.loc("uFold"), style.fold)
         GLES30.glUniform1f(showLocs.loc("uFoldPhase"), foldPhase)
         GLES30.glUniform1f(showLocs.loc("uEnergy"), f.rms.coerceIn(0f, 1.5f))
-        GLES30.glUniform1f(showLocs.loc("uStateScale"), if (byteDye) BYTE_STATE_SCALE else 1f)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)
         GLES30.glUseProgram(0)
     }
 
+    /**
+     * The step's own uniforms, set through the layer rather than by hand.
+     *
+     * Nothing here names a texture unit or a state sampler: unit 0 belongs to the state and
+     * [SimUniforms] hands out the rest by name, which is what makes a body that grows a second
+     * input unable to collide with the layer's own binding.
+     */
+    private fun bindStep(uniforms: SimUniforms) {
+        uniforms.int("uField", style.field)
+        uniforms.float("uB", stepB)
+        uniforms.float("uAdvect", stepAdvect)
+        uniforms.float("uDecay", stepDecay)
+        uniforms.float("uFieldScale", style.fieldScale)
+        uniforms.float("uSwirl", style.swirl)
+        uniforms.float("uSlabX", cos(slabTurn * TWO_PI))
+        uniforms.float("uSlabY", sin(slabTurn * TWO_PI))
+        uniforms.float("uSeedEpoch", stepSeedEpoch)
+        uniforms.float("uDrift", drift)
+        uniforms.float("uStrokes", style.strokes)
+        uniforms.float("uElong", style.elong)
+        uniforms.float("uDrive", stepDrive)
+        uniforms.float("uBass", envBass)
+        uniforms.float("uMid", envMid)
+        uniforms.float("uTreble", envTreble)
+        uniforms.float("uBeat", beatPulse)
+        uniforms.float("uStrike", pcmStrike.coerceIn(0f, 1.5f))
+        uniforms.float("uBeatRing", ringRadius)
+        SceneTouch.upload(uniforms, touch)
+    }
+
     override fun release() {
-        if (stepProgram != 0) GLES30.glDeleteProgram(stepProgram)
+        sim?.release()
+        sim = null
         if (showProgram != 0) GLES30.glDeleteProgram(showProgram)
         if (vao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(vao), 0)
-        dye?.release()
-        dye = null
-        formats = null
-        stepProgram = 0
         showProgram = 0
         vao = 0
         programOk = false
-        stepLocs = GlUtil.UniformCache(0)
         showLocs = GlUtil.UniformCache(0)
     }
 }

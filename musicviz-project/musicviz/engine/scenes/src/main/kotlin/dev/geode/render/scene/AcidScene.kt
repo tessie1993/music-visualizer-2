@@ -5,6 +5,7 @@ import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
 import dev.geode.engine.scenes.R
 import dev.geode.render.LiveSignal
+import dev.geode.render.TouchField
 import dev.geode.render.fluid.FluidBuffers
 import dev.geode.render.fluid.FluidHue
 import kotlin.math.max
@@ -14,7 +15,8 @@ internal class AcidScene(
     private val context: Context,
     private val style: VisualStyleCatalog.AcidStyle,
 ) : Scene,
-    PcmSink {
+    PcmSink,
+    TouchReactive {
     override val id: String = style.id
 
     private companion object {
@@ -59,6 +61,7 @@ internal class AcidScene(
     private var beatPulse = 0f
     private var glitch = 0f
     private var glitchEpoch = 0f
+    private var touch: TouchField? = null
 
     /** Twelve live spectral spokes. Reused every frame — render hot path. */
     private val spokes = FloatArray(SPOKES)
@@ -95,6 +98,10 @@ internal class AcidScene(
 
     override fun setParams(params: SceneParams) {
         this.params = params
+    }
+
+    override fun setTouchField(field: TouchField) {
+        touch = field
     }
 
     override fun resize(
@@ -212,6 +219,7 @@ internal class AcidScene(
         GLES30.glUniform1f(stepLocs.loc("uBaseHue"), FluidHue.base(p.paletteBase) + style.hueOffset)
         GLES30.glUniform1f(stepLocs.loc("uHueSpan"), FluidHue.span(p.hueRange, p.paletteRange) * style.hueSpan)
         GLES30.glUniform1f(stepLocs.loc("uLiquid"), style.liquid + p.turbulence.coerceIn(0f, 1f) * 0.6f)
+        SceneTouch.upload(stepLocs, touch)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         loop.swap()
 

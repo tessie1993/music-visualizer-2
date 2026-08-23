@@ -9,10 +9,28 @@ import dev.geode.render.fluid.RippleSim
 import dev.geode.render.fluid.WaterScene
 import dev.geode.render.scene.Scene
 import dev.geode.render.scene.SceneParams
+import dev.geode.render.scene.TouchReactive
 import java.util.concurrent.ConcurrentLinkedQueue
 
 internal class OverlayEffects(
     private val context: Context,
+    /**
+     * Where the fingers are, for the scene families that read them rather than being
+     * painted over.
+     *
+     * The renderer owns this and steps it once a frame, ahead of every draw; the same
+     * object reaches the 27 fragment styles through `SceneRegistry.setTouchField`. It
+     * arrives HERE because [drainTouchStrokes] is the one place in the loop that already
+     * knows which scene is on screen, which is what a family that is not a fragment style
+     * needs before it can be handed anything.
+     *
+     * The default exists so this class can be constructed without one and behave exactly
+     * as it did before touch reached these families: a field that is never submitted to
+     * and never stepped publishes `count == 0` forever, which is the untouched state every
+     * shader early-outs on. It is not a second source of truth — nothing here ever writes
+     * to a field, whichever one it is holding.
+     */
+    private val touchField: TouchField = TouchField(),
 ) {
     private companion object {
         const val TOUCH_RADIUS = 0.11f
@@ -121,7 +139,20 @@ internal class OverlayEffects(
         r.step(dt)
     }
 
+    /**
+     * Hand the fingers to the scene, then hand it the strokes.
+     *
+     * The handover is reach ADDED, not routing changed: the branches below are untouched,
+     * so the melt, the water surface and the generic ripple all still get exactly what
+     * they got before. What is new is the line above them — the style now learns where the
+     * finger is instead of only being painted over. Idempotent and one reference write, so
+     * doing it per frame costs nothing and survives a scene switch without a callback.
+     *
+     * The renderer has already stepped the field for this frame, ahead of every draw, so
+     * every family reads the same anchor for the same frame.
+     */
     fun drainTouchStrokes(scene: Scene) {
+        (scene as? TouchReactive)?.setTouchField(touchField)
         val water = scene as? WaterScene
         val r = rippleOverlay
         val aspect = r?.aspect ?: 1f

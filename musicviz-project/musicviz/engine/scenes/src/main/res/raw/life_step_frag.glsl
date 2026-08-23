@@ -54,6 +54,21 @@ uniform vec2 uKickPos;     // beat blob position, uv
 uniform float uSprinkle;   // treble speckle strength
 uniform float uTime;
 
+// ---- the finger as a seed --------------------------------------------------
+//
+// Audio enters this world as matter; so does a finger. It seeds the SAME
+// channel the beat kick seeds - A for Lenia, v for Gray-Scott - so what grows
+// out from under a fingertip is the organism this species actually makes, not
+// a decoration painted over one. See SceneTouch.kt for the packing (xy is
+// y-up NDC, aspect NOT applied). LifeScene zeroes uTouchCount on every substep
+// but the first, so a touch is integrated once per frame however many times
+// the solver steps.
+#define TOUCH_MAX_POINTS 5
+/** Per finger: xy = position, z = strength 0..1, w = age in seconds. */
+uniform vec4 uTouchPoints[TOUCH_MAX_POINTS];
+/** Occupied slots, including ones still fading after release. 0 = nothing touched. */
+uniform int uTouchCount;
+
 const float TAU = 6.2831853;
 
 vec2 hash2(vec2 q) {
@@ -157,6 +172,30 @@ void main() {
             newA = clamp(newA + blob * 0.5, 0.0, 1.0);
         } else {
             newV = clamp(newV + blob, 0.0, 1.0);
+        }
+    }
+    if (uTouchCount > 0) {
+        // MAX over the fingers, not a sum: the injected amount per texel is then
+        // bounded by one finger's worth however many are down, so five fingers on
+        // one spot cannot hand the solver a value it has to be clamped out of.
+        // Both rules are conditionally stable only for bounded state - Lenia's A
+        // and Gray-Scott's v both live in [0,1] - and an out-of-range seed does
+        // not make a bigger organism, it makes a dead saturated disc.
+        float aspect = uRes.x / uRes.y;
+        float seedTouch = 0.0;
+        for (int i = 0; i < TOUCH_MAX_POINTS; i++) {
+            if (i >= uTouchCount) break;
+            vec4 t = uTouchPoints[i];
+            if (t.z <= 0.0) continue;
+            vec2 dpos = (uv - (t.xy * 0.5 + 0.5)) * vec2(aspect, 1.0);
+            seedTouch = max(seedTouch, t.z * exp(-dot(dpos, dpos) * 280.0));
+        }
+        if (uRule == 0) {
+            // Same reasoning as the beat kick's half strength: a saturated disc
+            // floods a Lenia world into one mass, a soft lump buds an organism.
+            newA = clamp(newA + seedTouch * 0.45, 0.0, 1.0);
+        } else {
+            newV = clamp(newV + seedTouch * 0.85, 0.0, 1.0);
         }
     }
     if (uSprinkle > 0.0) {

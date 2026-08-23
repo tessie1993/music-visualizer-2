@@ -234,7 +234,7 @@ internal class RippleSim(
             bindTex("uTarget", g.read.tex, 0, R.raw.ripple_splat_frag)
             GLES30.glUniform4fv(loc(R.raw.ripple_splat_frag, "uDrops"), DROPS_PER_PASS, dropVec, 0)
             GLES30.glUniform1i(loc(R.raw.ripple_splat_frag, "uDropCount"), n)
-            blit(g.write)
+            blitDiscarding(g.write)
             g.swap()
             if (inkFbo != null) {
                 useProgram(R.raw.water_ink_splat_frag, inkFbo.width, inkFbo.height)
@@ -243,7 +243,7 @@ internal class RippleSim(
                 GLES30.glUniform4fv(loc(R.raw.water_ink_splat_frag, "uDropColor"), DROPS_PER_PASS, dropColorVec, 0)
                 GLES30.glUniform1i(loc(R.raw.water_ink_splat_frag, "uDropCount"), n)
                 set1f(R.raw.water_ink_splat_frag, "uCeiling", INK_CEILING)
-                blit(inkFbo.write)
+                blitDiscarding(inkFbo.write)
                 inkFbo.swap()
             }
             i += n
@@ -273,7 +273,7 @@ internal class RippleSim(
             set1f(R.raw.ripple_update_frag, "uHeightDecay", subHeightDecay)
             repeat(substeps) {
                 bindTex("uHeight", g.read.tex, 0, R.raw.ripple_update_frag)
-                blit(g.write)
+                blitDiscarding(g.write)
                 g.swap()
             }
         }
@@ -285,7 +285,7 @@ internal class RippleSim(
             set1f(R.raw.water_ink_advect_frag, "uDt", dt)
             set1f(R.raw.water_ink_advect_frag, "uFlow", inkFlow.coerceIn(0f, 8f))
             set1f(R.raw.water_ink_advect_frag, "uKeep", RippleMath.inkDissipation(inkDissipation, dt))
-            blit(inkFbo.write)
+            blitDiscarding(inkFbo.write)
             inkFbo.swap()
             GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         }
@@ -315,8 +315,19 @@ internal class RippleSim(
         GLES30.glUniform1f(p.loc("uAspect"), aspect)
     }
 
-    private fun blit(target: FluidBuffers.Fbo) {
+    /**
+     * Every pass in this solver - drop splat, wave substep, ink splat, ink advect - is a
+     * fullscreen triangle over the whole grid with blending off and no discard, and each writes
+     * the ping-pong write side while sampling the read side. The destination's previous contents
+     * are therefore dead before the draw starts, and saying so keeps the driver from paging a
+     * full grid into tile memory per pass; the substep loop alone runs it up to MAX_SUBSTEPS times.
+     *
+     * The name carries the hazard: a pass that blends onto, or re-reads, its own destination must
+     * not go through here.
+     */
+    private fun blitDiscarding(target: FluidBuffers.Fbo) {
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, target.fbo)
+        target.discardContents()
         GLES30.glViewport(0, 0, target.width, target.height)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
     }

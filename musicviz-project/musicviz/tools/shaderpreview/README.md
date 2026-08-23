@@ -8,10 +8,19 @@ shaders get changed blind, and "it looks wrong" comes back as a sentence
 instead of a number. This turns a style into PNGs plus a table of luminance
 statistics you can assert on.
 
-It renders the app's **real** GLSL — the files in `app/src/main/res/raw`, with
-their `//#include` directives resolved exactly the way `GlUtil.kt` resolves
-them — driven by uniform values computed by a JS mirror of the Kotlin scene
-that would upload them.
+It renders the app's **real** GLSL — the files in `engine/scenes/src/main/res/raw`
+and `app/src/main/res/raw`, with their `//#include` directives resolved exactly
+the way `GlUtil.kt` resolves them — driven by uniform values computed by a JS
+mirror of the Kotlin scene that would upload them.
+
+One family is a partial exception, named here rather than buried: SILK's two
+`.glsl` files are **`SimPass` bodies**, not whole shaders. The app wraps each in
+a generated header (`SimGlsl.kt`) and compiles the step twice over — as an ES
+3.1 compute kernel where the device proved it has one, as an ES 3.0 fragment
+step everywhere else. This harness is WebGL2, so it assembles the fragment half
+through `lib/simglsl.mjs`, a mirror of that generator, and **cannot see the
+compute path at all**. The body it renders is the app's; the wrapper around it
+is a mirror that can drift.
 
 **Read [What it cannot tell you](#what-it-cannot-tell-you) before you trust
 anything it prints.** An over-trusted harness is worse than no harness.
@@ -28,7 +37,7 @@ node preview.mjs --list
 # Silk, eight frames of a beat track, PNGs + report.json into out/silk
 node preview.mjs --scene silk --frames 8 --audio beat --out out/silk
 
-# one of the 22 fragment styles
+# one of the fragment styles
 node preview.mjs --scene shader --shader julia --frames 4 --audio tone
 
 # the four field-sim families (SILK / LIFE / ACID / MYCO): the app's own
@@ -132,9 +141,10 @@ FBOs at the app's grid sizes. There is no re-implementation of the fluid to be
 wrong about.
 
 **Stand-ins are named.** Where the app binds something conditionally (the
-FlowField texture, the cyclic-palette atlas), the harness supplies the neutral
-value the app itself sends when it is absent, and prints it as a stand-in
-rather than pretending it is the real thing.
+FlowField texture, the cyclic-palette atlas), or where there is nothing here to
+model at all (the `uTouch*` block - this harness has no pointer), the harness
+supplies the neutral value the app itself sends in that state, and prints it as
+a stand-in rather than pretending it is the real thing.
 
 **The composite pass is the app's, and audited the same way.** With
 `--composite` the scene draws into an RGBA8 target (`VisualizerRenderer`'s
@@ -189,7 +199,16 @@ Take these seriously. Every one of them is a way to be confidently wrong.
    the app takes the `uHasMelt = 0` path. Use `--no-melt` deliberately; do not
    assume the default run is what a given phone shows.
 
-4. **Driver-specific compile and link failures do not happen here.** A shader
+4. **The ES 3.1 compute tier is invisible here.** WebGL2 is ES 3.0: no
+   compute shaders, no image load/store, nothing to fake either with. So for
+   SILK - the one family routed through `SimPass` today - this tool measures
+   the fragment ping-pong and says nothing whatever about the dispatch: not
+   that it compiles, not that it matches, not that it is faster. `SimGlsl`
+   generating both paths from one body and one encoding is what makes them the
+   same simulation; that is an argument from construction, and this harness is
+   not evidence for it.
+
+5. **Driver-specific compile and link failures do not happen here.** A shader
    compiling in this harness says nothing about whether a device driver will
    accept it: uniform-array sizes, loop bounds, `MAX_FRAGMENT_UNIFORM_VECTORS`
    (4096 here, as low as 224 on real ES 3.0 hardware), and vendor-specific
@@ -220,27 +239,50 @@ Also, more mundanely but just as capable of misleading you:
    light. It is a good relative measure and a poor absolute one; use it to
    compare runs, not to make a claim about perceived brightness.
 
-9. **Six scene families are wired up**: the 22
-   `ShaderScene` styles and the four field-sim families
-   `SilkScene`, `LifeScene`, `AcidScene` and `MycoScene` (10 styles each,
-   `--style`). The fluid family's own display passes, WATER, CYMATICS, BEAM
-   and MILKDROP have their own uniform contracts and are not covered. Adding
-   one means adding a driver to `lib/scenes.mjs` — and the audit will tell
-   you when you have not finished.
+9. **Nothing is ever touching the screen here.** The `uTouch*` uniforms are
+   supplied at TouchField's untouched values (all zero, `uTouchGesture = 0`,
+   `uTouchCount = 0`), because this harness has no pointer to model. That is a
+   real state the app spends most of its life in, so the frames are honest -
+   but anything a style draws only under a finger, and the 0.55 s release wake
+   behind a lifted one, are invisible to this tool. Reading a black frame here
+   as "the touch response is dead" is a way to be confidently wrong.
 
-   The field-sim scenes run as a PASS LIST the driver emits per frame -
-   named programs, named ping-pong targets (formats chosen by the same
-   renderability probe as `FluidBuffers`, falling RGBA16F→RGBA8, RG16F→
-   RGBA16F→RGBA8, RGBA32F→RGBA16F→RGBA8), the myco deposit as additive
-   GL_POINTS into the trail's READ side, exactly as the Kotlin sequences
-   its passes. Their sim passes step on every frame; only the present obeys
-   `--every`/`--warmup`. Named stand-ins: the PCM strike envelope runs on
-   the audio MODEL's waveform rather than the app's raw PCM tap, and the
-   acid family's `uChroma` comes from the model's synthetic triad
-   chromagram (the app sends zeros only when no chromagram ran).
-   `LifeScene`'s 4-second liveness census is mirrored through a per-frame
-   readback of the state's centre texel (float, quantized to the app's
-   8-bit steps driver-side).
+   This covers the field sims as well as the fragment styles now: silk deposits
+   dye under a finger, life seeds its state there, acid draws into the feedback
+   source, and myco reburies a slice of its colony at the fingertip. Each is
+   behind `uTouchCount == 0` (render/scene/SceneTouch.kt), and none of it runs
+   here.
+
+10. **Five scene families are wired up**: the 27
+    `ShaderScene` styles and the four field-sim families
+    `SilkScene`, `LifeScene`, `AcidScene` and `MycoScene` (10 styles each,
+    `--style`). The fluid family's own display passes, WATER, CYMATICS, BEAM
+    and MILKDROP have their own uniform contracts and are not covered. Adding
+    one means adding a driver to `lib/scenes.mjs` — and the audit will tell
+    you when you have not finished.
+
+    SILK's two programs are ASSEMBLED rather than loaded, per the note at
+    the top of this file: `silk_step.glsl` and `silk_show.glsl` are SimPass
+    bodies and `lib/simglsl.mjs` supplies the wrapper. Its state target is
+    `FormatPolicy.advectedField` - RGBA16F filterable where the probe proves
+    it, pre-scaled RGBA8 (scale 8) otherwise, which is the world
+    `--no-float-sim` shows.
+
+    The field-sim scenes run as a PASS LIST the driver emits per frame -
+    named programs, named ping-pong targets (formats chosen by the same
+    renderability probe as `FluidBuffers`, falling RGBA16F→RGBA8, RG16F→
+    RGBA16F→RGBA8, RGBA32F→RGBA16F→RGBA8), the myco deposit as additive
+    GL_POINTS into the trail's READ side, exactly as the Kotlin sequences
+    its passes. Their sim passes step on every frame; only the present obeys
+    `--every`/`--warmup`. Named stand-in: the PCM strike envelope runs on
+    the audio MODEL's waveform rather than the app's raw PCM tap. (The acid
+    family's wheel was a `uChroma` mirror on both sides until the app
+    replaced it with `uSpokes`, the live band envelopes folded onto twelve
+    spokes; the harness had not followed, so its audit was refusing every
+    acid style. It follows now.)
+    `LifeScene`'s 4-second liveness census is mirrored through a per-frame
+    readback of the state's centre texel (float, quantized to the app's
+    8-bit steps driver-side).
 11. **The sprite pass clears the target only when the echo is off.** With
     Trails on, the echo blit is the background exactly as `drawWithEcho()`
     sequences it — previous frame warped, decayed and redrawn under the new
@@ -260,6 +302,9 @@ lib/emitters.mjs        JS port of the FluidEmitters paths MeltField enables
 lib/scenes.mjs          per-frame uniform plans, mirroring the Kotlin draw()s,
                         plus the silk/life/acid/myco style tables (verbatim
                         VisualStyleCatalog.kt mirrors) and pass-list drivers
+lib/simglsl.mjs         SimGlsl.kt's FRAGMENT path, mirrored: the header, state
+                        sampler, decode helpers and main() the app generates
+                        around a SimPass step or display BODY
 lib/composite.mjs       the same, for VisualizerRenderer's composite_frag pass
 page/harness.html       WebGL2: compile, upload, run the fluid passes and the
                         field-sim pass lists, measure

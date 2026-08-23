@@ -37,6 +37,12 @@ precision highp float;
 // wrap; swirl, travel and the plate scroll arrive as integrated, wrapped
 // phases so a Speed or Swirl change bends the motion instead of teleporting
 // the field. CymaticsClockSafetyTest pins all of it.
+//
+// TOUCH: a finger is a second DRIVER on the plate, radiating at the plate's
+// own dominant wavenumber from wherever it is held, so the nodal lines
+// reorganize around it the way a real Chladni plate answers its exciter. It is
+// the only input here that is not the music. With nothing touched
+// (uTouchCount == 0) not one instruction of it runs.
 
 in vec2 vUv;
 out vec4 fragColor;
@@ -79,6 +85,23 @@ uniform float uEnergy;
 uniform float uTreble;
 uniform float uBeat;
 uniform float uExposure;
+
+// ---- the finger as a driver ------------------------------------------------
+//
+// A Chladni plate has a driver bolted to it, and where you put the driver is
+// what decides the figure. Everything above is the resonator's own answer to
+// the music; these four uniforms are the second driver, the one the user's
+// finger holds. See SceneTouch.kt for the packing; xy is y-up NDC with aspect
+// NOT applied, the same convention the fragment styles read.
+#define TOUCH_MAX_POINTS 5
+/** Per finger: xy = position, z = strength 0..1, w = age in seconds. */
+uniform vec4 uTouchPoints[TOUCH_MAX_POINTS];
+/** Occupied slots, including ones still fading after release. 0 = nothing touched. */
+uniform int uTouchCount;
+/** Ripple wavenumber, radians per field unit: the plate's own dominant mode. */
+uniform float uTouchK;
+/** Integrated ripple phase, radians, wrapped at 2*pi - same clock discipline as uTravelPhase. */
+uniform float uTouchPhase;
 
 const float PI = 3.14159265359;
 
@@ -169,6 +192,54 @@ float besselApprox(float m, float x, float phase) {
     return (c0 * cos(w) - c1 * sin(w)) * inversesqrt(1.0 + 2.0 * ax) * core * 1.7;
 }
 
+/** Reach of one finger's excitation, as a fraction of the half-screen. */
+#define TOUCH_REACH 0.45
+/** Peak displacement a finger adds, against a modal field normalized to +-1. */
+#define TOUCH_DRIVE 0.6
+
+/**
+ * The displacement a finger drives into the plate, and how live it makes it.
+ *
+ * A point driver on a plate radiates at the plate's OWN wavenumber - that is
+ * why a Chladni figure reorganizes around the driver instead of acquiring an
+ * unrelated pattern next to it - so the ripple frequency is uTouchK, which the
+ * scene sends as pi times the loudest ringing mode's wavenumber. The phase
+ * runs outward (cos(k*d - phase) with phase increasing), which is what a
+ * driven plate does: it sheds rings.
+ *
+ * The finger is mapped through the SAME transform the pixel took, style warp
+ * included, so it lands under the fingertip on all eleven substyles rather
+ * than under where the fingertip would be on the unwarped plate.
+ *
+ * .x is the displacement, clamped to +-1 BEFORE the gain: five fingers in one
+ * spot would otherwise sum to five, swamp the modal field, and turn the whole
+ * screen into one saturated ridge after the tone map. Clamping the sum rather
+ * than each term keeps one finger at full strength and makes five read as one
+ * hard push, which is what a hand pressed on a plate actually does.
+ *
+ * .y is the strongest finger's strength, which becomes a floor under the
+ * flat-field gate: touching a silent plate has to draw something, and a driven
+ * ripple is a genuinely non-constant field, so the gate's reason to be closed
+ * (a constant h, where the nodal Gaussians divide by ~0 and wash the screen)
+ * does not apply under a finger.
+ */
+vec2 touchDrive(vec2 p, float aspect, mat2 spin) {
+    float h = 0.0;
+    float live = 0.0;
+    float reach = TOUCH_REACH * uScale;
+    for (int i = 0; i < TOUCH_MAX_POINTS; i++) {
+        if (i >= uTouchCount) break;
+        vec4 t = uTouchPoints[i];
+        if (t.z <= 0.0) continue;
+        vec2 ndc = vec2(t.x * aspect, t.y);
+        vec2 c = styleCoordinates(spin * ndc * uScale, ndc);
+        float d = length(p - c);
+        h += t.z * cos(uTouchK * d - uTouchPhase) * exp(-(d * d) / (reach * reach));
+        live = max(live, t.z);
+    }
+    return vec2(clamp(h, -1.0, 1.0), live);
+}
+
 /** The dish/plate displacement at [p], as the sum of every ringing mode. */
 float field(vec2 p) {
     float h = 0.0;
@@ -217,13 +288,15 @@ void main() {
     // Screen -> field coordinates. The field CONTINUES past the edges of the
     // screen: there is no rim to frame, so nothing is ever letterboxed.
     vec2 uv = vUv * 2.0 - 1.0;
-    uv.x *= uResolution.x / max(uResolution.y, 1.0);
+    float aspect = uResolution.x / max(uResolution.y, 1.0);
+    uv.x *= aspect;
     // Whole-field rotation from an INTEGRATED phase: scrubbing Swirl or Speed
     // (a preset fade, an LFO) changes how fast the field turns from here on,
     // never where it currently points.
     float sw = sin(uSwirlPhase);
     float cw = cos(uSwirlPhase);
-    vec2 p = mat2(cw, -sw, sw, cw) * uv * uScale;
+    mat2 spin = mat2(cw, -sw, sw, cw);
+    vec2 p = spin * uv * uScale;
     p = styleCoordinates(p, uv);
 
     // Normalized displacement: -1..1 whatever is playing, so every threshold
@@ -296,6 +369,19 @@ void main() {
         // so striations stand at half-wavelength spacing along the axis.
         h = h * 0.3 + field(vec2(p.x * 2.1, p.y * 0.22)) * uHeightNorm * 0.7;
     }
+
+    // The finger's driver rides ON TOP of the substyle recomposition, not
+    // under it: styles 8 and 9 ASSIGN h rather than adding to it (the room
+    // modes and the Rosensweig pool are their own fields), so a driver added
+    // before this chain would be silently deleted on two of the eleven. Added
+    // here it means the same thing everywhere, which is what lets one gesture
+    // be described to a user once.
+    float live = uFieldLive;
+    if (uTouchCount > 0) {
+        vec2 driven = touchDrive(p, aspect, spin);
+        h += driven.x * TOUCH_DRIVE;
+        live = max(live, driven.y);
+    }
     float az = abs(h);
 
     vec2 g = vec2(dFdx(h), dFdy(h));
@@ -308,11 +394,13 @@ void main() {
     // 1e-5 floor made nodal = halo = 1 across the WHOLE screen - a ~74%
     // bright wash after tone mapping, exactly the photosensitivity failure
     // VisualSafety exists to prevent, arriving from below it. The gate
-    // demands a real gradient under the pixel (wRaw) AND a ringing resonator
-    // (uFieldLive, from the scene) before any line light is emitted; the
-    // fill/spec/material layers are gated by uFieldLive alone, so a flat
-    // field renders near black rather than washing out.
-    float lineLive = uFieldLive * smoothstep(2.0e-5, 1.2e-4, wRaw);
+    // demands a real gradient under the pixel (wRaw) AND a live plate before
+    // any line light is emitted; the fill/spec/material layers are gated by
+    // liveness alone, so a flat field renders near black rather than washing
+    // out. `live` is uFieldLive raised by the finger, because a driven ripple
+    // is the one thing that makes the field non-constant without the music:
+    // the gate is closed on a CONSTANT h, and a touched plate never has one.
+    float lineLive = live * smoothstep(2.0e-5, 1.2e-4, wRaw);
 
     // Nodal filigree and its halo: the sand of a plate, the standing ridges
     // of a dish. Both widths are measured in local slope, so a line keeps the
@@ -356,20 +444,20 @@ void main() {
     // The surface itself. "Fill" runs from bare filigree over dark cells (the
     // sand-on-a-plate reading) to a fully filled iridescent surface (the
     // liquid reading); level keeps both honest to how loud the track is, and
-    // uFieldLive keeps a silent field from wearing the filled surface at all.
+    // `live` keeps a silent, untouched field from wearing the filled surface.
     float level = 0.35 + 0.75 * clamp(uEnergy, 0.0, 1.5);
-    vec3 color = body * (0.04 + 0.20 * az * az + uFill * (0.10 + 0.80 * diffuse) * uFieldLive) * level;
+    vec3 color = body * (0.04 + 0.20 * az * az + uFill * (0.10 + 0.80 * diffuse) * live) * level;
 
     // Halo (broad, palette-coloured), then the filigree on top (near white,
     // treble glinting on it and beats flaring it), then the caustic sheen.
     color += body * halo * uGlow * 0.45 * level;
     vec3 ridge = mix(vec3(1.0), body, 0.4);
     color += ridge * nodal * (0.7 + 0.45 * clamp(uTreble, 0.0, 1.5) + 0.35 * clamp(uBeat, 0.0, 1.0));
-    color += ridge * (caustic + spec * uCaustic * 0.8) * (0.2 + 0.3 * clamp(uEnergy, 0.0, 1.5)) * uFieldLive;
+    color += ridge * (caustic + spec * uCaustic * 0.8) * (0.2 + 0.3 * clamp(uEnergy, 0.0, 1.5)) * live;
 
     // Material signatures: each substyle's own apparatus, painted out of the
     // same h, derivatives and palette so the family controls keep one meaning
-    // everywhere. Every additive layer here is gated by lineLive/uFieldLive
+    // everywhere. Every additive layer here is gated by lineLive/live
     // (or an az-window that is closed on a flat field), so no substyle can
     // reopen the flat-field wash.
     if (uStyle == 1) { // Chladni Sand: grains GATHER on the nodal lines.
@@ -390,22 +478,22 @@ void main() {
         float lum = dot(color, vec3(0.299, 0.587, 0.114));
         color = mix(color, lum * vec3(1.05, 0.97, 0.85), 0.4); // vellum, not lacquer
         color *= 1.0 - smoothstep(0.86, 1.0, rr); // nothing past the shell
-        color += ridge * rim * (0.4 + 0.7 * clamp(uBeat, 0.0, 1.0)) * uFieldLive;
+        color += ridge * rim * (0.4 + 0.7 * clamp(uBeat, 0.0, 1.0)) * live;
     } else if (uStyle == 3) { // Harmonograph: pendulum ink etched on dim paper.
         float etched = exp(-abs(sin(h * 15.0 + p.x * 1.2 - p.y * 0.7)) * 8.0);
         color *= 0.6;
-        color += body * etched * uFieldLive * (0.28 + 0.5 * uGlow);
+        color += body * etched * live * (0.28 + 0.5 * uGlow);
     } else if (uStyle == 4) { // Faraday: subharmonic cells + capillary glint.
         float cells = pow(clamp(1.0 - az, 0.0, 1.0), 5.0);
-        color += body * cells * uFieldLive * (0.18 + 0.45 * uCaustic) * (0.5 + 0.5 * sin(uTime * 0.5 + h * 8.0));
+        color += body * cells * live * (0.18 + 0.45 * uCaustic) * (0.5 + 0.5 * sin(uTime * 0.5 + h * 8.0));
         color += ridge * nodal * clamp(uTreble, 0.0, 1.5) * 0.35;
     } else if (uStyle == 5) { // Harmonic Shell: nacre fan with growth bands.
         float shellRim = pow(clamp(1.0 - dot(uv * 0.72, uv * 0.72), 0.0, 1.0), 0.36);
         float pearl = pow(clamp(dot(nrm, normalize(vec3(-0.25, 0.45, 0.86))), 0.0, 1.0), 9.0);
         float growth = exp(-abs(sin(p.y * 6.0 + h * 2.0)) * 5.0);
         color = color * (0.45 + 0.75 * shellRim)
-            + ridge * pearl * 0.55 * uFieldLive
-            + body * growth * 0.16 * uFieldLive;
+            + ridge * pearl * 0.55 * live
+            + body * growth * 0.16 * live;
     } else if (uStyle == 6) { // Caustic Sheet: sunlight folded through ripples.
         // Convergence: rays pile up where 1 + k * curvature collapses toward
         // zero - the fold lines of the refracted light, i.e. real caustics.
@@ -413,7 +501,7 @@ void main() {
         float web = clamp(1.0 / max(abs(1.0 + 2.6 * bend), 0.28) - 0.85, 0.0, 2.4);
         vec3 sunlit = mix(mix(body, vec3(0.6, 0.92, 1.0), 0.7), vec3(1.0), 0.45); // cyan-white
         color *= 0.5; // deep water
-        color += sunlit * web * uFieldLive * (0.4 + 0.9 * uCaustic);
+        color += sunlit * web * live * (0.4 + 0.9 * uCaustic);
     } else if (uStyle == 7) { // Levitator: droplets pinned at the antinode shelves.
         // A jittered lattice of beads, each held inside its own cell (jitter
         // + wobble + radius < half a cell, so nothing pops at cell borders),
@@ -428,7 +516,7 @@ void main() {
         float bead = smoothstep(0.30, 0.14, length(fract(bp) - centre));
         float antinode = smoothstep(0.3, 0.75, az);
         color *= 0.4; // dark chamber
-        color += ridge * bead * antinode * uFieldLive * (0.8 + 0.5 * clamp(uTreble, 0.0, 1.5));
+        color += ridge * bead * antinode * live * (0.8 + 0.5 * clamp(uTreble, 0.0, 1.5));
         color += body * halo * 0.3;
     } else if (uStyle == 8) { // Standing Chamber: pressure cells in a wire room.
         // The room itself is FIXED architecture (a static grid); the music
@@ -438,13 +526,13 @@ void main() {
         float frame = exp(-min(gx, gy) * 26.0);
         float depthFade = 1.0 - smoothstep(-0.85, 1.35, uv.y);
         color *= 0.42 + 0.58 * depthFade;
-        color += body * frame * uFieldLive * (0.3 + 0.6 * clamp(uEnergy, 0.0, 1.5));
+        color += body * frame * live * (0.3 + 0.6 * clamp(uEnergy, 0.0, 1.5));
         color += ridge * nodal * 0.3;
     } else if (uStyle == 9) { // Rosensweig: black gloss, spike tips catching light.
         float tips = pow(max(hexCell, 0.0), 6.0) * smoothstep(0.1, 0.55, az);
         vec3 steel = mix(body, vec3(0.85, 0.9, 1.0), 0.6);
         color *= 0.3; // the fluid body is near-black
-        color += steel * (spec * spec * 2.2 + tips * (0.9 + 0.8 * clamp(uBeat, 0.0, 1.0))) * uFieldLive;
+        color += steel * (spec * spec * 2.2 + tips * (0.9 + 0.8 * clamp(uBeat, 0.0, 1.0))) * live;
         color += body * halo * 0.18;
     } else if (uStyle == 10) { // Kundt Tube: dust bands inside a glass bore.
         // Dust piles where the air is still (|h| small) - half-wavelength
@@ -455,8 +543,8 @@ void main() {
         float wallGlint = 1.0 - smoothstep(0.0, 0.07, abs(abs(uv.y) - 0.62));
         vec3 dust = mix(body, vec3(1.0, 0.94, 0.8), 0.55); // cork dust
         color *= bore; // dark outside the tube
-        color += dust * piles * (0.35 + 0.65 * striae) * uFieldLive * bore * (0.6 + 0.5 * clamp(uEnergy, 0.0, 1.5));
-        color += ridge * wallGlint * 0.35 * uFieldLive;
+        color += dust * piles * (0.35 + 0.65 * striae) * live * bore * (0.6 + 0.5 * clamp(uEnergy, 0.0, 1.5));
+        color += ridge * wallGlint * 0.35 * live;
     }
 
     // Filmic-ish roll-off: the sum above is HDR by construction (three

@@ -1,7 +1,16 @@
-# Tuned detekt config (see app/build.gradle.kts for the reasoning).
+# Tuned detekt config (applied to every module by build-logic geode.kotlin-common).
 style:
   MagicNumber:
     active: false
+  ReturnCount:
+    active: true
+    # Detekt's default is 2, which forbids the guard-clause style this codebase is written
+    # in - probe, cache and capability code is a sequence of "try this, bail if it fails",
+    # and rewriting those into a single exit produces deeper nesting, not clearer code.
+    # 8 is just above the worst measured value among functions written against the current
+    # style; the handful of pre-existing functions above it sit in each module's baseline.
+    max: 8
+    excludeGuardClauses: true
   MaxLineLength:
     active: false # ktlint owns line length
 

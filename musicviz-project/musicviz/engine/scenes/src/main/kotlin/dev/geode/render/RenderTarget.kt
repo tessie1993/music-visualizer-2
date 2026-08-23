@@ -87,5 +87,46 @@ class RenderTarget(
         height = 0
     }
 
+    /**
+     * Tells the driver this target's current colour is dead, so the next pass may start with an
+     * undefined tile instead of a loaded one.
+     *
+     * Mobile GPUs render in tiles: binding a target whose contents the driver believes are still
+     * live costs a full-resolution DRAM read to seed tile memory before the first fragment lands,
+     * and a store on the way out. A pass that overwrites every pixel never needed that read.
+     *
+     * Contract: bind [fbo] to [bindTarget] first, then call this, then issue the overwriting draw
+     * or blit. Never call it ahead of a pass that blends onto, samples, or otherwise reads back
+     * what is already in the target - the contents after an invalidate are undefined, and on a
+     * tiler that shows up as garbage rather than as black.
+     */
+    fun discardContents(bindTarget: Int = GLES30.GL_FRAMEBUFFER) {
+        // GL_COLOR_ATTACHMENT0 is only a legal attachment name for a real FBO; on the default
+        // framebuffer it is GL_COLOR, and passing the wrong one raises GL_INVALID_ENUM that the
+        // fluid scenes' first-frames glGetError diagnostic would then report as a driver problem.
+        if (fbo == 0) return
+        discardColorAttachments(bindTarget, 1)
+    }
+
     override fun toString(): String = "RenderTarget($label ${width}x$height fbo=$fbo tex=$tex)"
+
+    companion object {
+        // Reused rather than built per call: discards run several times per frame on the GL
+        // thread, and this is one of the hot paths CLAUDE.md exempts from immutable style.
+        private val COLOR_ATTACHMENTS =
+            intArrayOf(GLES30.GL_COLOR_ATTACHMENT0, GLES30.GL_COLOR_ATTACHMENT1)
+
+        /**
+         * [discardContents] for colour FBOs that are not [RenderTarget]s - the fluid solver keeps
+         * its own float/MRT targets. [count] is how many colour attachments the FBO bound to
+         * [bindTarget] actually has; naming an attachment the FBO does not own is a no-op per
+         * spec, but keeping the count honest keeps the call site's coverage argument readable.
+         */
+        fun discardColorAttachments(
+            bindTarget: Int,
+            count: Int,
+        ) {
+            GLES30.glInvalidateFramebuffer(bindTarget, count, COLOR_ATTACHMENTS, 0)
+        }
+    }
 }

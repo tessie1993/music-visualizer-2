@@ -203,7 +203,7 @@ internal class FluidSim(
         quad.bind()
         useProgram(R.raw.fluid_copy_frag, dst.width, dst.height)
         bindTex("uTexture", src.tex, 0, R.raw.fluid_copy_frag)
-        blit(dst)
+        blitDiscarding(dst)
         quad.unbind()
     }
 
@@ -294,7 +294,7 @@ internal class FluidSim(
         set1f(R.raw.fluid_advect_frag, "uRdx", rdx)
         val vd = 1f + velocityDissipation * dt
         set3f(R.raw.fluid_advect_frag, "uDecay", vd, vd, vd)
-        blit(vel.write)
+        blitDiscarding(vel.write)
         vel.swap()
 
         runInjection(vel, mode = 0, custom = customForce, dt = dt)
@@ -302,25 +302,25 @@ internal class FluidSim(
         useProgram(R.raw.fluid_curl_frag, crl.width, crl.height)
         bindTex("uVelocity", vel.read.tex, 0, R.raw.fluid_curl_frag)
         set1f(R.raw.fluid_curl_frag, "uHalfRdx", halfRdx)
-        blit(crl)
+        blitDiscarding(crl)
         useProgram(R.raw.fluid_vorticity_frag, vel.width, vel.height)
         bindTex("uVelocity", vel.read.tex, 0, R.raw.fluid_vorticity_frag)
         bindTex("uCurl", crl.tex, 1, R.raw.fluid_vorticity_frag)
         set1f(R.raw.fluid_vorticity_frag, "uCurlStrength", curlStrength)
         set1f(R.raw.fluid_vorticity_frag, "uDx", cellSize)
         set1f(R.raw.fluid_vorticity_frag, "uDt", dt)
-        blit(vel.write)
+        blitDiscarding(vel.write)
         vel.swap()
 
         useProgram(R.raw.fluid_divergence_frag, div.width, div.height)
         bindTex("uVelocity", vel.read.tex, 0, R.raw.fluid_divergence_frag)
         set1f(R.raw.fluid_divergence_frag, "uHalfRdx", halfRdx)
         set2f(R.raw.fluid_divergence_frag, "uInvRes", 1f / div.width, 1f / div.height)
-        blit(div)
+        blitDiscarding(div)
         useProgram(R.raw.fluid_clear_frag, press.width, press.height)
         bindTex("uTexture", press.read.tex, 0, R.raw.fluid_clear_frag)
         set1f(R.raw.fluid_clear_frag, "uValue", pressureDamp)
-        blit(press.write)
+        blitDiscarding(press.write)
         press.swap()
         useProgram(R.raw.fluid_pressure_frag, press.width, press.height)
         bindTex("uDivergence", div.tex, 1, R.raw.fluid_pressure_frag)
@@ -328,7 +328,7 @@ internal class FluidSim(
         set2f(R.raw.fluid_pressure_frag, "uInvRes", 1f / press.width, 1f / press.height)
         repeat(pressureIterations) {
             bindTex("uPressure", press.read.tex, 0, R.raw.fluid_pressure_frag)
-            blit(press.write)
+            blitDiscarding(press.write)
             press.swap()
         }
         useProgram(R.raw.fluid_gradient_frag, vel.width, vel.height)
@@ -336,7 +336,7 @@ internal class FluidSim(
         bindTex("uVelocity", vel.read.tex, 1, R.raw.fluid_gradient_frag)
         set1f(R.raw.fluid_gradient_frag, "uHalfRdx", halfRdx)
         set2f(R.raw.fluid_gradient_frag, "uInvRes", 1f / vel.width, 1f / vel.height)
-        blit(vel.write)
+        blitDiscarding(vel.write)
         vel.swap()
 
         val dyeB = dye
@@ -355,7 +355,7 @@ internal class FluidSim(
             val ddG = 1f + densityDissipation * (1f + 0.35f * a) * dt
             val ddB = 1f + densityDissipation * (1f - 0.05f * a) * dt
             set3f(R.raw.fluid_advect_frag, "uDecay", ddR, ddG, ddB)
-            blit(dyeB.write)
+            blitDiscarding(dyeB.write)
             dyeB.swap()
             GLES30.glBindSampler(0, 0)
         }
@@ -489,6 +489,30 @@ internal class FluidSim(
         GLES30.glUniform1f(p.loc("uAspect"), aspect)
     }
 
+    /**
+     * The solver's default draw. Every engine pass here is a fullscreen triangle over the whole
+     * grid with blending off and no discard in the shader, so the destination is rewritten texel
+     * for texel and last frame's copy of it is dead on arrival - telling the driver that up front
+     * saves it loading a full grid into tile memory per pass, and this solver runs nine of them
+     * (plus the Jacobi iterations) every frame.
+     *
+     * Aliasing safety: [target] is either a single-use scratch grid (curl, divergence) or the
+     * ping-pong write side - never the read side the pass samples - so a discard here can never
+     * eat simulation state that is still needed.
+     */
+    private fun blitDiscarding(target: FluidBuffers.Fbo) {
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, target.fbo)
+        target.discardContents()
+        GLES30.glViewport(0, 0, target.width, target.height)
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
+    }
+
+    /**
+     * The same draw without the tile hint, for passes whose fragment shader is not ours: the
+     * injection programs come from [setInjectionShaders] and may discard or write partial
+     * coverage, and an undefined texel fed back into a ping-pong grid does not wash out - it
+     * advects.
+     */
     private fun blit(target: FluidBuffers.Fbo) {
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, target.fbo)
         GLES30.glViewport(0, 0, target.width, target.height)

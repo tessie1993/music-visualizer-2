@@ -4,7 +4,10 @@ import android.content.Context
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.os.SystemClock
+import android.util.Log
 import dev.geode.analysis.AudioFeatures
+import dev.geode.engine.gl.DeviceGl
+import dev.geode.engine.gl.GlProfile
 import dev.geode.engine.scenes.R
 import dev.geode.render.fluid.CurlFlowMath
 import dev.geode.render.fluid.CurlFlowScene
@@ -27,6 +30,8 @@ class VisualizerRenderer(
     private val context: Context,
 ) : GLSurfaceView.Renderer {
     companion object {
+        private const val TAG = "VisualizerRenderer"
+
         private const val TIME_WRAP_SEC = 7100f
 
         const val STYLE_LAYER = 6
@@ -108,6 +113,19 @@ class VisualizerRenderer(
 
     val adsrEngine = AdsrEngine()
 
+    /**
+     * What this device's GL was actually measured to do, resolved against the live context in
+     * [onSurfaceCreated] and constant for the life of that surface.
+     *
+     * [DeviceGl.unprobed] rather than `null` or `lateinit`: a renderer whose surface has not
+     * been created yet has no measurement, and the unprobed profile is the honest spelling of
+     * that — the ES 3.0 baseline, the RGBA8 floor for every role, and a tier whose stated reason
+     * is that nothing could be probed. Readers get a complete plan and no nullable to reason
+     * about, and one that claims nothing it has not proven.
+     */
+    var glProfile: GlProfile = DeviceGl.unprobed()
+        private set
+
     private val registry =
         SceneRegistry(
             context,
@@ -117,6 +135,15 @@ class VisualizerRenderer(
                 override fun onMilkPresetLoaded(path: String) = this@VisualizerRenderer.onMilkPresetLoaded(path)
             },
         )
+
+    /**
+     * Where the fingers are, for every scene family that wants to know.
+     *
+     * One instance, owned here and handed to the registry, because "where is the user
+     * pointing" is a property of the SURFACE and not of whichever style happens to be on it —
+     * a style switch mid-drag must not restart the gesture.
+     */
+    private val touchField = TouchField()
 
     private val overlays = OverlayEffects(context)
     private val trailPass = TrailPass()
@@ -157,6 +184,7 @@ class VisualizerRenderer(
     private var height = 1
     private var renderWidth = 1
     private var renderHeight = 1
+    private var appliedThermalTier = ThermalTier.FULL
     private var lastFrameMs = 0L
     private var frameNowMs = 0L
     private var timeSeconds = 0f
@@ -195,6 +223,21 @@ class VisualizerRenderer(
         strength: Float,
     ) = overlays.queueTouchStroke(nx, ny, ndx, ndy, dt, strength)
 
+    /**
+     * Publish the pointers that are down right now, from the UI thread.
+     *
+     * [xy] is `x0, y0, x1, y1, ...` in y-up NDC (-1..1, origin at the centre of the surface);
+     * `n = 0` says every finger has lifted, which starts the release decay rather than being a
+     * no-op. Latest-wins, not a queue — a visual anchor wants the CURRENT position.
+     *
+     * This is a companion to [queueTouchStroke], not a replacement for it: the fluid smear
+     * still needs the whole path, because a smear IS the path and a dropped sample loses ink.
+     */
+    fun submitTouchPoints(
+        xy: FloatArray,
+        n: Int,
+    ) = touchField.submit(xy, n)
+
     fun beginParamMorph(seconds: Float) {
         if (seconds <= 0f) return
         morphFadeSec = seconds
@@ -225,7 +268,32 @@ class VisualizerRenderer(
         gl: GL10?,
         config: EGLConfig?,
     ) {
+        // FIRST, before anything here allocates a GL object. Every target created below wants
+        // its format from the resolved plan, and a probe that ran after them would be describing
+        // a context whose resources had already been chosen without it. DeviceGl memoises on
+        // driver identity, so the recreate cases that dominate — rotation, return from
+        // background, the wallpaper engine restarting — pay three glGetString calls; only a
+        // driver this app has never run on pays the probe pass, once, before its first frame.
+        glProfile = DeviceGl.profileWithCurrentContext(context)
+        // Logged here rather than left to DeviceGl, which only speaks when it computes a profile
+        // — and the common case is the memo hit, which is silent. A bug report has to be able to
+        // say which path a device took AND why, because the label alone cannot separate an
+        // honest ES 3.0 phone from a 3.1 one whose limits undershoot its own spec floor.
+        // GlProfile.summary carries both; there is no debug HUD in this app to also put it on.
+        Log.i(TAG, "surface created: ${glProfile.summary}")
+        // Both idempotent. The registration is process-wide and no-ops after the first surface;
+        // the reset is here because a lost EGL context is also the moment the measured frame-time
+        // window stops describing anything that still exists. What it deliberately does NOT reset
+        // is the tier — the phone is exactly as hot as it was before the context went away.
+        ThermalGovernor.attach(context)
+        ThermalGovernor.onSurfaceRecreated()
         registry.onSurfaceCreated(renderWidth, renderHeight)
+        // Before the first sceneFor(): a surface loss drops every scene, and the ones rebuilt
+        // here must be handed the field on the way up rather than on the next handover. The
+        // reset goes with it because a lost surface loses the fingers too — resuming a drag
+        // the user is no longer making would strand an anchor in the middle of the frame.
+        touchField.reset()
+        registry.setTouchField(touchField)
         fboA.release()
         fboB.release()
         compositePass.releaseStaleTextures()
@@ -255,9 +323,27 @@ class VisualizerRenderer(
         this.width = width
         this.height = height
         GLES30.glViewport(0, 0, width, height)
-        val ss = supersampleFactor(width, height)
-        renderWidth = (width * ss).toInt()
-        renderHeight = (height * ss).toInt()
+        applyRenderScale()
+    }
+
+    /**
+     * Sizes the internal render targets, and re-sizes them whenever the thermal tier moves.
+     *
+     * Two independent factors multiply here. The supersample factor is about the panel — how much
+     * detail is worth resolving on this density. The tier's scale is §4.4's first and cheapest
+     * lever against heat, applied on top rather than instead, so a dense screen still supersamples
+     * (less) while a hot one still sheds pixels (from wherever it started).
+     *
+     * Every scene, overlay and FBO reallocates its textures here, which is why this is driven off
+     * a tier CHANGE and not read per frame: the governor's hysteresis is what keeps that from
+     * happening more than once every few seconds, and reallocating the world on a bounce would
+     * cost more than the tier saves.
+     */
+    private fun applyRenderScale() {
+        appliedThermalTier = ThermalGovernor.tier
+        val scale = supersampleFactor(width, height) * appliedThermalTier.renderScale
+        renderWidth = (width * scale).toInt().coerceAtLeast(1)
+        renderHeight = (height * scale).toInt().coerceAtLeast(1)
         registry.resize(renderWidth, renderHeight, width, height)
         overlays.resize(renderWidth, renderHeight)
         fboA.ensure(renderWidth, renderHeight)
@@ -278,6 +364,7 @@ class VisualizerRenderer(
 
     override fun onDrawFrame(gl: GL10?) {
         val dt = beginFrame()
+        if (ThermalGovernor.tier != appliedThermalTier) applyRenderScale()
         val scene = resolveActiveScene() ?: return
         val p = resolveParams(dt)
         registry.applyPendingFluidInjection()
@@ -297,6 +384,10 @@ class VisualizerRenderer(
         frameNowMs = now
         val dt = ((now - lastFrameMs).coerceIn(1, 100)) / 1000f
         lastFrameMs = now
+        // The clamped dt, deliberately: the governor's API 26-28 fallback should judge the engine
+        // by the same interval the simulations are stepping on, not by a 4-second stall that the
+        // rest of the frame is about to pretend never happened.
+        ThermalGovernor.onFrame(dt)
         timeSeconds = (timeSeconds + dt) % TIME_WRAP_SEC
         registry.drainPendingShaders()
         return dt
@@ -343,6 +434,15 @@ class VisualizerRenderer(
         var p = LfoEngine.apply(displayedParams, lfoEngine.configs, lfoValues)
         p = AdsrEngine.apply(p, adsrEngine.configs, envValues)
         p = VisualSafety.apply(p, reducedMotion)
+        // §4.4's second lever, expressed as params rather than as a branch: every consumer of the
+        // flow field and the ripple overlay — the sims, the scene uniforms, the composite — is
+        // already gated on these two flags, so switching them off here sheds two whole
+        // simulations per frame without a single extra `if` downstream. Touch-driven ripples are
+        // deliberately NOT shed with them: `rippleOverlayActive` still honours a live smear, and
+        // nobody keeps a finger down for the twenty minutes this tier is about.
+        if (!ThermalGovernor.tier.optionalPasses) {
+            p = p.copy(flowEnabled = false, rippleOverlayEnabled = false)
+        }
         lastFinalParams = p
         postRotationAngle = CompositeGrade.integrateRotation(postRotationAngle, p.rotation, dt)
         postCyclePhase = CompositeGrade.integrateCyclePhase(postCyclePhase, p.cycleSpeed, dt, p.colorCycle)
@@ -374,6 +474,10 @@ class VisualizerRenderer(
             overlays.stepFlow(gainAdjusted(features, p), dt, p)
         }
         smearing = overlays.smearing(frameNowMs)
+        // Stepped once per frame on the GL thread, ahead of every draw, so each scene reads the
+        // same anchor for the same frame — a second step would age the field twice and make the
+        // release wake decay at the number of scenes drawn rather than at wall-clock time.
+        touchField.step(dt)
         overlays.drainTouchStrokes(scene)
         rippleOverlayOn = overlays.rippleOverlayActive(p, smearing, waterActive = scene is WaterScene)
         if (rippleOverlayOn) overlays.stepRippleOverlay(gainAdjusted(features, p), p, dt)

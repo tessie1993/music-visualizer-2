@@ -3,10 +3,14 @@ package dev.geode.wallpaper
 import android.content.Context
 import android.opengl.GLSurfaceView
 import android.service.wallpaper.WallpaperService
+import android.view.MotionEvent
 import android.view.SurfaceHolder
 import dev.geode.audio.AudioBus
 import dev.geode.data.GeodePrefsFiles
 import dev.geode.data.PresetStore
+import dev.geode.render.FramePacer
+import dev.geode.render.FrameRatePolicy
+import dev.geode.render.TouchField
 import dev.geode.render.VisualizerRenderer
 import dev.geode.ui.ThemeStore
 
@@ -19,6 +23,13 @@ class VisualizerWallpaperService : WallpaperService() {
         private val idle = IdleFeatures()
         private var lastFrameMs = 0L
         private var feeder: Thread? = null
+
+        /**
+         * Each engine instance — preview and home screen can both be live at once — owns its
+         * own pacer, so the two never share a cadence or a frame-time window.
+         */
+        private val pacer =
+            FramePacer(FrameRatePolicy.Capped(WALLPAPER_FPS)) { glView?.requestRender() }
 
         @Volatile
         private var running = false
@@ -37,6 +48,21 @@ class VisualizerWallpaperService : WallpaperService() {
         private var surfaceAvailable = false
         private var visible = false
 
+        /**
+         * Reused across touch events: a wallpaper is touched at the panel's rate, and this
+         * runs on the main thread the launcher is also drawing on.
+         */
+        private val touchPoints = FloatArray(TouchField.MAX_POINTS * 2)
+
+        /**
+         * The surface, not the display: a wallpaper surface is often wider than the screen
+         * so the launcher can pan it, and [MotionEvent] coordinates are in that same
+         * surface space. Dividing by the display width would put every finger in the wrong
+         * place on exactly the devices that scroll their home screens.
+         */
+        private var surfaceWidth = 1f
+        private var surfaceHeight = 1f
+
         private inner class WallpaperGlSurfaceView(
             context: Context,
         ) : GLSurfaceView(context) {
@@ -49,6 +75,9 @@ class VisualizerWallpaperService : WallpaperService() {
 
         override fun onCreate(holder: SurfaceHolder) {
             super.onCreate(holder)
+            // Off by default on a wallpaper engine, so onTouchEvent is never called without
+            // this line — which is why the wallpaper had no touch at all.
+            setTouchEventsEnabled(true)
             val engine = VisualizerRenderer(this@VisualizerWallpaperService)
             renderer = engine
             restoreLiveState(engine)
@@ -57,7 +86,9 @@ class VisualizerWallpaperService : WallpaperService() {
                 WallpaperGlSurfaceView(this@VisualizerWallpaperService).apply {
                     setEGLContextClientVersion(3)
                     setRenderer(engine)
-                    renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+                    // The pacer asks for each frame; without a request the GL thread parks, which
+                    // is how "invisible costs nothing" is enforced rather than merely intended.
+                    renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
                 }
         }
 
@@ -111,8 +142,13 @@ class VisualizerWallpaperService : WallpaperService() {
             val engine = renderer ?: return
             if (surfaceAvailable && visible) {
                 glView?.onResume()
+                pacer.start()
                 startFeeding(engine)
             } else {
+                // Stopped first, and on this same main-thread callback: the vsync callback is gone
+                // before onPause is even asked for, so no frame can be requested after the
+                // wallpaper stops being visible.
+                pacer.stop()
                 glView?.onPause()
                 stopFeeding()
             }
@@ -121,13 +157,63 @@ class VisualizerWallpaperService : WallpaperService() {
         override fun onVisibilityChanged(visible: Boolean) {
             super.onVisibilityChanged(visible)
             this.visible = visible
+            // Going away with a finger still down is not guaranteed to come with a cancel,
+            // and a pointer that is never retired stays pinned across the whole sleep.
+            if (!visible) renderer?.submitTouchPoints(touchPoints, 0)
             syncRunState()
         }
 
         override fun onSurfaceCreated(holder: SurfaceHolder) {
             super.onSurfaceCreated(holder)
             surfaceAvailable = true
+            pacer.applyTo(holder.surface)
             syncRunState()
+        }
+
+        override fun onSurfaceChanged(
+            holder: SurfaceHolder,
+            format: Int,
+            width: Int,
+            height: Int,
+        ) {
+            super.onSurfaceChanged(holder, format, width, height)
+            surfaceWidth = width.toFloat().coerceAtLeast(1f)
+            surfaceHeight = height.toFloat().coerceAtLeast(1f)
+            // A rotation or a fold replaces the surface, and the rate preference lives on the
+            // surface, so it has to be restated rather than assumed to have survived.
+            pacer.applyTo(holder.surface)
+        }
+
+        /**
+         * The wallpaper's whole input: publish the live pointers, in the same y-up NDC the
+         * app publishes, so a scene behaves identically in both hosts.
+         *
+         * There is no smear or pinch here on purpose. Those write to the visual params, and
+         * a wallpaper has no controls to undo them with — a stray pinch on the home screen
+         * would leave the wallpaper zoomed with no way back. Publishing pointers is
+         * transient by construction: it decays to nothing the moment the finger leaves.
+         */
+        override fun onTouchEvent(event: MotionEvent) {
+            super.onTouchEvent(event)
+            val engine = renderer ?: return
+            val action = event.actionMasked
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                engine.submitTouchPoints(touchPoints, 0)
+                return
+            }
+            // ACTION_POINTER_UP names a finger that is leaving, and that finger is still in
+            // the event's pointer list. Publishing it would keep steering the visuals with a
+            // finger the user has already lifted.
+            val leaving = if (action == MotionEvent.ACTION_POINTER_UP) event.actionIndex else -1
+            var live = 0
+            for (i in 0 until event.pointerCount) {
+                if (i != leaving && live < TouchField.MAX_POINTS) {
+                    touchPoints[live * 2] = event.getX(i) / surfaceWidth * 2f - 1f
+                    touchPoints[live * 2 + 1] = 1f - event.getY(i) / surfaceHeight * 2f
+                    live++
+                }
+            }
+            engine.submitTouchPoints(touchPoints, live)
         }
 
         override fun onSurfaceDestroyed(holder: SurfaceHolder) {
@@ -137,6 +223,7 @@ class VisualizerWallpaperService : WallpaperService() {
         }
 
         override fun onDestroy() {
+            pacer.stop()
             stopFeeding()
             glView?.destroy()
             glView = null
@@ -149,5 +236,19 @@ class VisualizerWallpaperService : WallpaperService() {
         const val FEED_INTERVAL_MS = 16L
 
         const val FEEDER_JOIN_MS = 200L
+
+        /**
+         * The same target the app renders at, deliberately — not the 24–30 fps §4.4 of the
+         * quality bar wants from a wallpaper.
+         *
+         * The reduced rate is the right end state, but it cannot be switched on from here alone:
+         * `FluidSceneBase.autoQualityTick` reads GPU pressure off the achieved frame rate through
+         * `PerformanceMonitor(targetFps = 50f)`, an inference that only holds while the renderer
+         * free-runs. Ask for 30 and every fluid scene on the wallpaper reads its own cap as a
+         * device that cannot keep up and downgrades itself two quality tiers within three
+         * seconds. Teaching that monitor the difference between "capped" and "struggling" comes
+         * first; then this becomes a one-line change.
+         */
+        const val WALLPAPER_FPS = FramePacer.DEFAULT_TARGET_FPS
     }
 }

@@ -1,44 +1,36 @@
 package dev.geode.render.scene
 
-data class MarchBudget(
+/**
+ * The user's Detail control as a raymarch step budget.
+ *
+ * The marched fragment styles (VANISHING, MORPHOGEN, NEBULA, NONEUCLID, KIFS) all bound
+ * their loop with a compile-time constant and BREAK on [steps], so Detail moves without
+ * recompiling anything and no shader can ever iterate past its own ceiling.
+ *
+ * It used to carry three more counts - `iterations`, `bulbIterations`, `seedIterations` -
+ * for the six distance-estimator species in the Hyperspace family. That family is gone and
+ * nothing read them afterwards, so they went with it rather than sitting here looking live.
+ */
+@JvmInline
+value class MarchBudget(
     val steps: Int,
-    val iterations: Int,
-    val bulbIterations: Int,
-    val seedIterations: Int,
 ) {
     companion object {
+        /** The loop ceiling every marched shader declares. A budget can never exceed it. */
         const val MAX_STEPS: Int = 128
-        const val MAX_ITERS: Int = 14
-        const val MAX_BULB_ITERS: Int = 10
-        const val MAX_SEED_ITERS: Int = 12
 
         const val MIN_DETAIL: Float = 0.25f
         const val MAX_DETAIL: Float = 1.5f
 
+        /**
+         * Floor rather than 1: below this the surface breaks up into visible banding on the
+         * deeper styles, which reads as a bug rather than as a quality setting.
+         */
         private const val FLOOR_STEPS: Int = 64
-        private const val FLOOR_ITERS: Int = 5
-        private const val FLOOR_BULB_ITERS: Int = 3
-        private const val FLOOR_SEED_ITERS: Int = 5
-
-        private const val TOP_STEPS: Int = MAX_STEPS
-        private const val TOP_ITERS: Int = MAX_ITERS
-        private const val TOP_BULB_ITERS: Int = 8
-        private const val TOP_SEED_ITERS: Int = MAX_SEED_ITERS
 
         fun forDetail(detail: Float): MarchBudget {
             val t = ((detail - MIN_DETAIL) / (MAX_DETAIL - MIN_DETAIL)).coerceIn(0f, 1f)
-            return MarchBudget(
-                steps = lerpBudget(FLOOR_STEPS, TOP_STEPS, t),
-                iterations = lerpBudget(FLOOR_ITERS, TOP_ITERS, t),
-                bulbIterations = lerpBudget(FLOOR_BULB_ITERS, TOP_BULB_ITERS, t),
-                seedIterations = lerpBudget(FLOOR_SEED_ITERS, TOP_SEED_ITERS, t),
-            )
+            return MarchBudget(Math.round(FLOOR_STEPS + (MAX_STEPS - FLOOR_STEPS) * t))
         }
-
-        private fun lerpBudget(
-            floor: Int,
-            top: Int,
-            t: Float,
-        ): Int = Math.round(floor + (top - floor) * t)
     }
 }

@@ -20,27 +20,83 @@
 // A \ B is reported as a shader-side finding (the app never sets it either).
 
 import fs from 'node:fs';
+import path from 'node:path';
+
+const UPLOAD_PATTERNS = [
+  /\bloc\(\s*"(u\w+)"\s*\)/g,
+  /glGetUniformLocation\(\s*\w+\s*,\s*"(u\w+)"\s*\)/g,
+  /\bsetUniform1f\(\s*"(u\w+)"/g,
+  /\bcLoc\(\s*"(u\w+)"\s*\)/g,
+  // SimUniforms: a step routed through SimPass never sees its own program, so
+  // it names uniforms to a setter instead of resolving a location itself.
+  // Anchored on the dot so `print(` and friends cannot match.
+  /\.(?:float|int|bool|vec2|vec3|vec4|ivec2|sampler|vec4Array)\(\s*"(u\w+)"/g,
+];
+
+/**
+ * The two uniforms SimPass sets on the scene's behalf, named as constants
+ * rather than written at a call site.
+ *
+ * `uSimState` and `uSimSize` are the layer's contract with every generated
+ * shader: the state binding and the grid size, set inside step() and inside
+ * bindStateFor(), never by the scene. Scraped from the constants so there is
+ * still exactly one place in the repo that spells them.
+ */
+const CONSTANT_PATTERNS = [/\bconst val UNIFORM_\w+\s*=\s*"(u\w+)"/g];
+
+/**
+ * Uploads a scene hands to a shared uploader rather than writing out itself.
+ *
+ * `render/scene/SceneTouch.kt` owns the touch block for every family that is
+ * NOT a fragment style - cymatics, the four field sims, the beam - because six
+ * hand-rolled copies of one packing is six chances for it to drift. A scene
+ * that calls it uploads those uniforms as surely as if the glUniform calls sat
+ * in its own draw(), and an audit that could not see them would report the app
+ * as silently zeroing what it does in fact send - the exact failure this file
+ * exists to prevent, inverted.
+ *
+ * The names are deliberately NOT listed here: the delegate is scanned with the
+ * same patterns as the scene, so there is still exactly one place in the repo
+ * that says which uniforms it writes.
+ */
+const DELEGATES = [
+  { call: /\bSceneTouch\.upload\s*\(/, file: 'SceneTouch.kt' },
+  // A scene that builds a SimPass gets uSimState and uSimSize uploaded for it,
+  // on both the compute and the fragment path. Without this the audit would
+  // report the app as silently zeroing the state binding it in fact sets.
+  { call: /\bSimPass\.build\s*\(/, file: '../compute/SimGlsl.kt', patterns: CONSTANT_PATTERNS },
+];
+
+function scanInto(names, src, patterns = UPLOAD_PATTERNS) {
+  for (const re of patterns) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(src)) !== null) names.add(m[1]);
+  }
+}
 
 /**
  * Uniform names uploaded by a Kotlin scene.
  *
- * Covers the three call shapes in this codebase:
+ * Covers the five call shapes in this codebase:
  *   loc("uName")                              - fluid scenes
  *   glGetUniformLocation(program, "uName")    - ShaderScene's samplers
  *   setUniform1f("uName", ...)                - ShaderScene's scalars
+ *   cLoc("uName")                             - the composite pass
+ *   .float("uName") / .vec4Array("uName")     - a step routed through SimPass
+ * plus whatever the scene delegates (see [DELEGATES]). One level only, and the
+ * delegate is resolved as a sibling of the scene, which is where every scene in
+ * this codebase lives relative to its helpers.
  */
 export function extractUploadedUniforms(kotlinPath) {
   const src = fs.readFileSync(kotlinPath, 'utf8');
   const names = new Set();
-  const patterns = [
-    /\bloc\(\s*"(u\w+)"\s*\)/g,
-    /glGetUniformLocation\(\s*\w+\s*,\s*"(u\w+)"\s*\)/g,
-    /\bsetUniform1f\(\s*"(u\w+)"/g,
-    /\bcLoc\(\s*"(u\w+)"\s*\)/g,
-  ];
-  for (const re of patterns) {
-    let m;
-    while ((m = re.exec(src)) !== null) names.add(m[1]);
+  scanInto(names, src);
+  for (const d of DELEGATES) {
+    if (!d.call.test(src)) continue;
+    const sibling = path.join(path.dirname(kotlinPath), d.file);
+    if (!fs.existsSync(sibling)) continue;
+    scanInto(names, fs.readFileSync(sibling, 'utf8'), d.patterns);
   }
   return names;
 }

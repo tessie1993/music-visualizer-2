@@ -90,6 +90,13 @@ internal class CompositePass(
     fun warmTransition(id: String) = transitions.warm(id)
 
     fun draw(inputs: Inputs) {
+        // The composite is the frame's one opaque fullscreen pass: it samples texA/texB itself and
+        // owes nothing to what is already in the target. Blending on would cost the whole screen in
+        // read-modify-write bandwidth for a result identical to a straight write, and it would also
+        // mean the target's previous contents are live - which is what stops this pass from being a
+        // discard-then-overwrite the way the offscreen passes are. Owned here rather than left to
+        // the caller so the pass's own contract is provable from this file.
+        GLES30.glDisable(GLES30.GL_BLEND)
         program = transitions.programFor(inputs.transitionId)
         val definition = transitions.definition(inputs.transitionId)
         GLES30.glUseProgram(program.program)

@@ -791,6 +791,7 @@ function uploadUniforms(gl, plan, locOf) {
     switch (u.t) {
       case '1f': gl.uniform1f(loc, u.v); break;
       case '1i': case 'tex': gl.uniform1i(loc, u.v); break;
+      case '2i': gl.uniform2i(loc, u.v[0], u.v[1]); break;
       case '2f': gl.uniform2f(loc, u.v[0], u.v[1]); break;
       case '3f': gl.uniform3f(loc, u.v[0], u.v[1], u.v[2]); break;
       case '4f': gl.uniform4f(loc, u.v[0], u.v[1], u.v[2], u.v[3]); break;

@@ -30,4 +30,9 @@ object SceneIds {
     const val WATER: String = "water"
     const val CYMATICS: String = "cymatics"
     const val BEAM: String = "beam"
+    const val VANISHING: String = "vanishing"
+    const val MORPHOGEN: String = "morphogen"
+    const val NEBULA: String = "nebula"
+    const val NONEUCLID: String = "noneuclid"
+    const val KIFS: String = "kifs"
 }

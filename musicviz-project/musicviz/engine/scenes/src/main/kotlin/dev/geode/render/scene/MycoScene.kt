@@ -5,6 +5,7 @@ import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
 import dev.geode.engine.scenes.R
 import dev.geode.render.LiveSignal
+import dev.geode.render.TouchField
 import dev.geode.render.fluid.FluidBuffers
 import dev.geode.render.fluid.FluidHue
 import kotlin.math.max
@@ -14,7 +15,8 @@ internal class MycoScene(
     private val context: Context,
     private val style: VisualStyleCatalog.MycoStyle,
 ) : Scene,
-    PcmSink {
+    PcmSink,
+    TouchReactive {
     override val id: String = style.id
 
     private companion object {
@@ -28,6 +30,28 @@ internal class MycoScene(
         const val ENV_FALL_PER_SEC = 2.4f
 
         const val BYTE_FALLBACK_DEPOSIT = 0.125f
+
+        /**
+         * Fraction of the colony reborn under a finger per second of contact.
+         *
+         * Every agent relocated to the fingertip is an agent that stopped reinforcing
+         * the road it was on, and the trail behind it decays in well under a second on
+         * most styles. So this is a budget balanced against the decay, not against how
+         * visible the burst is: at 0.35/s a second of contact moves about 29% of the
+         * population, which is enough to see a colony grow out of the touch and few
+         * enough that the network it grew out of is still there when it does. At 1.0/s
+         * the picture visibly resets, which reads as a bug rather than as a gesture.
+         */
+        const val TOUCH_BIRTH_PER_SECOND = 0.35f
+
+        /**
+         * Ceiling on one frame's share of that budget.
+         *
+         * dt is already clamped to 1/15 s upstream, so this only binds on a stalled
+         * frame — where a single un-capped frame would relocate a visible slab of the
+         * colony at once and the burst would look like a stutter instead of a spray.
+         */
+        const val TOUCH_BIRTH_PER_FRAME_CAP = 0.02f
     }
 
     private var params = SceneParams.DEFAULT
@@ -61,6 +85,7 @@ internal class MycoScene(
     private var envTreble = 0f
     private var beatPulse = 0f
     private var reaim = 0f
+    private var touch: TouchField? = null
 
     private val prevFbo = IntArray(1)
     private val prevViewport = IntArray(4)
@@ -118,6 +143,10 @@ internal class MycoScene(
 
     override fun setParams(params: SceneParams) {
         this.params = params
+    }
+
+    override fun setTouchField(field: TouchField) {
+        touch = field
     }
 
     override fun resize(
@@ -238,6 +267,11 @@ internal class MycoScene(
         GLES30.glUniform1f(agentLocs.loc("uReaim"), reaim)
         GLES30.glUniform1f(agentLocs.loc("uTime"), time)
         GLES30.glUniform1f(agentLocs.loc("uAniso"), style.aniso)
+        // A rate integrated over dt, never a per-frame constant: otherwise one gesture buds
+        // twice as many agents at 120 Hz as it does at 60.
+        val birthRate = (TOUCH_BIRTH_PER_SECOND * dt).coerceAtMost(TOUCH_BIRTH_PER_FRAME_CAP)
+        GLES30.glUniform1f(agentLocs.loc("uTouchBirth"), birthRate * (touch?.anchorStrength ?: 0f))
+        SceneTouch.upload(agentLocs, touch)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         colony.swap()
         agentsSeeded = true
