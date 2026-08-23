@@ -227,12 +227,18 @@ Also, more mundanely but just as capable of misleading you:
    compare runs, not to make a claim about perceived brightness.
 
 9. **Nothing is ever touching the screen here.** The `uTouch*` uniforms are
-   supplied at TouchField's untouched values (all zero, `uTouchGesture = 0`),
-   because this harness has no pointer to model. That is a real state the app
-   spends most of its life in, so the frames are honest - but anything a style
-   draws only under a finger, and the 0.55 s release wake behind a lifted one,
-   are invisible to this tool. Reading a black frame here as "the touch
-   response is dead" is a way to be confidently wrong.
+   supplied at TouchField's untouched values (all zero, `uTouchGesture = 0`,
+   `uTouchCount = 0`), because this harness has no pointer to model. That is a
+   real state the app spends most of its life in, so the frames are honest -
+   but anything a style draws only under a finger, and the 0.55 s release wake
+   behind a lifted one, are invisible to this tool. Reading a black frame here
+   as "the touch response is dead" is a way to be confidently wrong.
+
+   This covers the field sims as well as the fragment styles now: silk deposits
+   dye under a finger, life seeds its state there, acid draws into the feedback
+   source, and myco reburies a slice of its colony at the fingertip. Each is
+   behind `uTouchCount == 0` (render/scene/SceneTouch.kt), and none of it runs
+   here.
 
 10. **Seven scene families are wired up**: `HyperspaceScene`, the 27
     `ShaderScene` styles and the four field-sim families
@@ -248,10 +254,12 @@ Also, more mundanely but just as capable of misleading you:
     RGBA16F→RGBA8, RGBA32F→RGBA16F→RGBA8), the myco deposit as additive
     GL_POINTS into the trail's READ side, exactly as the Kotlin sequences
     its passes. Their sim passes step on every frame; only the present obeys
-    `--every`/`--warmup`. Named stand-ins: the PCM strike envelope runs on
-    the audio MODEL's waveform rather than the app's raw PCM tap, and the
-    acid family's `uChroma` comes from the model's synthetic triad
-    chromagram (the app sends zeros only when no chromagram ran).
+    `--every`/`--warmup`. Named stand-in: the PCM strike envelope runs on
+    the audio MODEL's waveform rather than the app's raw PCM tap. (The acid
+    family's wheel was a `uChroma` mirror on both sides until the app
+    replaced it with `uSpokes`, the live band envelopes folded onto twelve
+    spokes; the harness had not followed, so its audit was refusing every
+    acid style. It follows now.)
     `LifeScene`'s 4-second liveness census is mirrored through a per-frame
     readback of the state's centre texel (float, quantized to the app's
     8-bit steps driver-side).

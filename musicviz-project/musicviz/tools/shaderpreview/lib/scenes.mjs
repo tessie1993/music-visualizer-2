@@ -589,6 +589,27 @@ function slewEnv(current, target, dt, risePerSec, fallPerSec) {
 }
 
 /**
+ * The touch block (render/scene/SceneTouch.kt), at TouchField's untouched values.
+ *
+ * Every one of these four families now reads the fingers in its step pass -
+ * silk deposits dye, life seeds the state, acid draws into the feedback source,
+ * myco is reborn under the fingertip. This harness has no pointer to model, so
+ * it supplies the app's own zero: `uTouchCount = 0` is the exact idle test each
+ * shader breaks on, which is a real state the app spends most of its life in
+ * and not an invented one. Anything a finger does is therefore invisible here -
+ * see README, "Nothing is ever touching the screen here".
+ */
+function untouched() {
+  return {
+    uTouchPoints: { t: '4fv', v: new Array(TOUCH_MAX_POINTS * 4).fill(0) },
+    uTouchCount: { t: '1i', v: 0 },
+  };
+}
+
+/** The names [untouched] covers, for the drivers' `supplies` sets. */
+const TOUCH_SUPPLIES = ['uTouchPoints', 'uTouchCount'];
+
+/**
  * SceneParams.DEFAULT, the subset these four scenes read. palette 0 is
  * "Spectrum" (base 0.0, range 1.0) - see SceneParams.PALETTES.
  */
@@ -862,6 +883,7 @@ export function createSilkDriver({ style, params, width, height }) {
     'uPrev', 'uRes', 'uField', 'uB', 'uAdvect', 'uDecay', 'uFieldScale', 'uSwirl',
     'uSlabX', 'uSlabY', 'uSeedEpoch', 'uDrift', 'uStrokes', 'uElong', 'uDrive',
     'uBass', 'uMid', 'uTreble', 'uBeat', 'uStrike', 'uBeatRing', 'uStateScale',
+    ...TOUCH_SUPPLIES,
     // show (uField/uRes recur with different meanings; the audit is by name)
     'uBaseHue', 'uHueSpan', 'uExposure', 'uFold', 'uFoldPhase', 'uEnergy',
   ]);
@@ -928,6 +950,7 @@ export function createSilkDriver({ style, params, width, height }) {
       // The app sends BYTE_STATE_SCALE = 8 only on its RGBA8 fallback path;
       // the harness always renders the float target, so the scale is 1.
       uStateScale: { t: '1f', v: 1 },
+      ...untouched(),
     };
     const showU = {
       uField: { t: 'tex', v: 0 },
@@ -1019,7 +1042,7 @@ export function createLifeDriver({ style, params, width, height }) {
     // step
     'uRes', 'uRule', 'uDt', 'uCore', 'uGrowth', 'uMu', 'uSigma', 'uRadius', 'uRings',
     'uB', 'uF', 'uK', 'uDiff', 'uAniso', 'uSeedJitter', 'uTime',
-    'uPrev', 'uSeed', 'uKick', 'uKickPos', 'uSprinkle',
+    'uPrev', 'uSeed', 'uKick', 'uKickPos', 'uSprinkle', ...TOUCH_SUPPLIES,
     // show
     'uState', 'uSimRes', 'uLook', 'uShowV', 'uBaseHue', 'uHueSpan', 'uEnergy', 'uBeat',
   ]);
@@ -1092,6 +1115,9 @@ export function createLifeDriver({ style, params, width, height }) {
       uTime: { t: '1f', v: time },
       uPrev: { t: 'tex', v: 0 },
       uKickPos: { t: '2f', v: [kickX, kickY] },
+      // LifeScene gates the touch to the first substep exactly as it gates
+      // uSeed/uKick/uSprinkle; untouched, every substep sees the same zero.
+      ...untouched(),
     };
 
     const passes = [];
@@ -1190,13 +1216,15 @@ export function createAcidDriver({ style, params, width, height }) {
   let beatPulse = 0;
   let glitch = 0;
   let glitchEpoch = 0;
-  const chroma = new Array(12).fill(0);
+  /** AcidScene.SPOKES = 12, matching `uSpokes[12]` in acid_step_frag. */
+  const spokes = new Array(12).fill(0);
 
   const supplies = new Set([
     // step
     'uPrev', 'uRes', 'uStyle', 'uSource', 'uZoom', 'uRotate', 'uHueShift', 'uFeedback',
     'uModulate', 'uGlitch', 'uEpoch', 'uTime', 'uBass', 'uMid', 'uTreble', 'uBeat',
-    'uStrike', 'uDrive', 'uChroma', 'uBaseHue', 'uHueSpan', 'uOverdrive', 'uLiquid',
+    'uStrike', 'uDrive', 'uSpokes', 'uBaseHue', 'uHueSpan', 'uOverdrive', 'uLiquid',
+    ...TOUCH_SUPPLIES,
     // show
     'uState', 'uScanline', 'uCurve', 'uSat', 'uFloorHue', 'uHit',
   ]);
@@ -1222,19 +1250,12 @@ export function createAcidDriver({ style, params, width, height }) {
       glitchEpoch = (glitchEpoch + 1) % 1024;
     }
     glitch = Math.max(glitch - d * 2.4, 0);
-    const hasChroma = f.chroma && f.chroma.length === 12 && (f.chromaConfidence ?? 1) > 0.1;
-    if (hasChroma) {
-      for (let i = 0; i < 12; i++) chroma[i] = clamp(f.chroma[i], 0, 1);
-    } else {
-      // AcidScene.draw's synthetic three-spoke mandala for unpitched material.
-      const spin = (time * 0.05) % 1;
-      for (let i = 0; i < 12; i++) {
-        const angle = (i / 12 - spin + 2) % 1;
-        const spoke = 1 - Math.abs(angle - 0.5) * 2;
-        const band = i % 3 === 0 ? envBass : (i % 3 === 1 ? envMid : envTreble);
-        chroma[i] = clamp(spoke * spoke * band, 0, 1);
-      }
-    }
+    // AcidScene.fillSpokes: the live band envelopes folded onto the wheel. This
+    // WAS a chromagram mirror on both sides; the app replaced it with one live
+    // reading ("identical on file and on mic") and the harness had not followed,
+    // so its uniform audit refused every acid style. Integer division truncates,
+    // as it does in the Kotlin.
+    fillSpokes(f.bands);
 
     // Frame-rate-compensated loop constants: survival, zoom and rotation are
     // per-frame quantities at the authored 60 Hz.
@@ -1263,10 +1284,11 @@ export function createAcidDriver({ style, params, width, height }) {
       uBeat: { t: '1f', v: beatPulse },
       uStrike: { t: '1f', v: clamp(pcmStrike, 0, 1.5) },
       uDrive: { t: '1f', v: safeDrive(p.audioDrive) },
-      uChroma: { t: '1fv', v: chroma.slice() },
+      uSpokes: { t: '1fv', v: spokes.slice() },
       uBaseHue: { t: '1f', v: H.FluidHue.base(p.paletteBase) + style.hueOffset },
       uHueSpan: { t: '1f', v: H.FluidHue.span(p.hueRange, p.paletteRange) * style.hueSpan },
       uLiquid: { t: '1f', v: style.liquid + clamp(p.turbulence, 0, 1) * 0.6 },
+      ...untouched(),
     };
     const showU = {
       uState: { t: 'tex', v: 0 },
@@ -1298,6 +1320,21 @@ export function createAcidDriver({ style, params, width, height }) {
     };
   }
 
+  /** AcidScene.fillSpokes, verbatim: the band envelopes folded onto the wheel. */
+  function fillSpokes(bands) {
+    if (!bands || bands.length === 0) {
+      spokes.fill(0);
+      return;
+    }
+    for (let i = 0; i < 12; i++) {
+      const from = Math.trunc((i * bands.length) / 12);
+      const to = Math.max(Math.min(Math.trunc(((i + 1) * bands.length) / 12), bands.length), from + 1);
+      let acc = 0;
+      for (let b = from; b < to; b++) acc += bands[b];
+      spokes[i] = clamp(acc / (to - from), 0, 1);
+    }
+  }
+
   function jumpClock(seconds) {
     time = (time + seconds) % FIELD_TIME_WRAP;
   }
@@ -1314,8 +1351,6 @@ export function createAcidDriver({ style, params, width, height }) {
     fieldTargets: { loop: { width: simW, height: simH, format: 'rgba8', filter: 'linear' } },
     standIns: [
       'uStrike is a stand-in: PcmPulse fed the audio model\'s waveform',
-      'uChroma comes from the audio model\'s synthetic triad chromagram; the app sends '
-      + 'zeros only when no chromagram ran (which would leave source-0 styles unfed)',
     ],
   };
 }
@@ -1355,7 +1390,7 @@ export function createMycoDriver({ style, params, width, height }) {
     // agent
     'uAgents', 'uTrail', 'uAgentRes', 'uTrailRes', 'uInit', 'uSpeciesMix',
     'uSensorDist', 'uSensorAngle', 'uTurnAngle', 'uMoveStep', 'uMatrix', 'uBreath',
-    'uJitter', 'uSnap', 'uReaim', 'uTime', 'uAniso',
+    'uJitter', 'uSnap', 'uReaim', 'uTime', 'uAniso', 'uTouchBirth', ...TOUCH_SUPPLIES,
     // deposit
     'uDeposit',
     // blur
@@ -1400,6 +1435,10 @@ export function createMycoDriver({ style, params, width, height }) {
       uReaim: { t: '1f', v: reaim },
       uTime: { t: '1f', v: time },
       uAniso: { t: '1f', v: style.aniso },
+      // TOUCH_BIRTH_PER_SECOND * dt, capped, times the anchor strength - all of
+      // which is 0 with nothing touched, so no agent is ever reborn here.
+      uTouchBirth: { t: '1f', v: 0 },
+      ...untouched(),
     };
     const depositU = {
       uAgents: { t: 'tex', v: 0 },
