@@ -242,8 +242,6 @@ class PlayerViewModel
 
         fun applyPreset(preset: Preset) = session.applyPreset(preset)
 
-        internal fun awaitStoreWrites(timeoutMs: Long) = session.awaitStoreWrites(timeoutMs)
-
         fun startExport(
             aspect: ExportAspect,
             fps: Int,
