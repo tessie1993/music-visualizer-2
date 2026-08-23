@@ -51,7 +51,7 @@ class LibraryViewModel
         private val sessions: PlayerSessionProvider,
         private val savedStateHandle: SavedStateHandle,
     ) : ViewModel() {
-        private val session: PlayerSession = sessions.acquire()
+        private val session: PlayerSession = sessions.get()
 
         // Search and sort survive process death with the rest of the screen's saved state, so
         // coming back to a filtered library does not silently reset it.
@@ -161,8 +161,4 @@ class LibraryViewModel
             playlist: String,
             startIndex: Int = 0,
         ) = session.playPlaylist(playlist, startIndex)
-
-        override fun onCleared() {
-            sessions.release()
-        }
     }

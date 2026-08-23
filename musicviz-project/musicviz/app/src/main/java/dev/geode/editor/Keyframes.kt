@@ -256,8 +256,7 @@ data class KeyframeTrack(
     /** Removing a key that is not there is a no-op, not a failure — the user got what they asked for. */
     fun removeKey(id: KeyframeId): KeyframeTrack = withKeys(keys.filterNot { it.id == id })
 
-    fun shiftedBy(deltaMs: Long): KeyframeTrack =
-        withKeys(keys.map { it.copy(atMs = (it.atMs + deltaMs).coerceAtLeast(0L)) })
+    fun shiftedBy(deltaMs: Long): KeyframeTrack = withKeys(keys.map { it.copy(atMs = (it.atMs + deltaMs).coerceAtLeast(0L)) })
 
     /** Follow a ripple edit: keys after the cut move with the picture they were written against. */
     fun rippled(shift: RippleShift): KeyframeTrack =
@@ -285,8 +284,7 @@ data class KeyframeSheet(
     fun withTrack(track: KeyframeTrack): KeyframeSheet =
         copy(tracks = tracks.filterNot { it.paramId == track.paramId && it.clipId == track.clipId } + track)
 
-    fun withTracks(incoming: List<KeyframeTrack>): KeyframeSheet =
-        incoming.fold(this) { sheet, track -> sheet.withTrack(track) }
+    fun withTracks(incoming: List<KeyframeTrack>): KeyframeSheet = incoming.fold(this) { sheet, track -> sheet.withTrack(track) }
 
     fun removeTrack(
         paramId: ParamId,

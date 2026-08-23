@@ -68,7 +68,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 @OptIn(UnstableApi::class)
-class PlayerSession private constructor(
+class PlayerSession internal constructor(
     private val application: Application,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -1003,7 +1003,11 @@ class PlayerSession private constructor(
 
     fun clearStudioResult() = exportController.clearStudioResult()
 
-    private fun shutdown() {
+    /**
+     * Tears the session down. Called only by [dev.geode.di.PlayerSessionProvider], on behalf of the
+     * one ViewModel that owns the session — never from a screen.
+     */
+    internal fun shutdown() {
         listening.flushListenTime()
         val flushDeadline = SystemClock.elapsedRealtime() + STORE_FLUSH_BUDGET_MS
         listening.awaitHistoryWrites(STORE_FLUSH_BUDGET_MS)
@@ -1153,26 +1157,8 @@ class PlayerSession private constructor(
         }
     }
 
-    companion object {
-        private const val STORE_FLUSH_BUDGET_MS = 2_000L
-        private const val POLL_INTERVAL_MS = 500L
-
-        private var instance: PlayerSession? = null
-        private var holds = 0
-
-        @Synchronized
-        fun acquire(application: Application): PlayerSession {
-            val existing = instance ?: PlayerSession(application).also { instance = it }
-            holds++
-            return existing
-        }
-
-        @Synchronized
-        fun release() {
-            if (holds > 0) holds--
-            if (holds > 0) return
-            instance?.shutdown()
-            instance = null
-        }
+    private companion object {
+        const val STORE_FLUSH_BUDGET_MS = 2_000L
+        const val POLL_INTERVAL_MS = 500L
     }
 }

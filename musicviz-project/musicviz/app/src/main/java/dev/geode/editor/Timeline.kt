@@ -228,8 +228,7 @@ data class Lane(
     fun edgesMs(): List<Long> = clips.flatMap { listOf(it.startMs, it.endMs) }
 
     /** Shift everything that starts at or after the cut. Straddling clips are left alone — see [Timeline.ripple]. */
-    fun rippled(shift: RippleShift): Lane =
-        withClips(clips.map { if (it.startMs >= shift.fromMs) it.shiftedBy(shift.deltaMs) else it })
+    fun rippled(shift: RippleShift): Lane = withClips(clips.map { if (it.startMs >= shift.fromMs) it.shiftedBy(shift.deltaMs) else it })
 }
 
 /**
