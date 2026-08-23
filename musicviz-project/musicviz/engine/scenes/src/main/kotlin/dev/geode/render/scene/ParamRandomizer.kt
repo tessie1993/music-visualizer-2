@@ -58,6 +58,65 @@ object ParamRandomizer {
 
     fun keysFor(tab: CustomizeTab): List<String> = KEYS_BY_TAB[tab].orEmpty()
 
+    /**
+     * Puts one tab's parameters back to their defaults and leaves every other tab alone.
+     *
+     * Which fields a tab owns is worked out from the rolls themselves rather than from a second
+     * hand-written table, because a second table drifts: somebody adds a control, wires its roll,
+     * and "Reset this tab" quietly stops covering it. A roll is run twice over two parameter sets
+     * that differ in EVERY field, with the same seed both times. A field the roll writes comes out
+     * identical in both runs (the roll decided it); a field it leaves alone still differs (it came
+     * from the input). That is an exact answer, not a sampled one.
+     */
+    fun resetTab(
+        current: SceneParams,
+        tab: CustomizeTab,
+    ): SceneParams {
+        val owned = FIELDS_BY_TAB[tab].orEmpty()
+        if (owned.isEmpty()) return current
+        val out = current.copy()
+        for (field in PARAM_FIELDS) {
+            if (field.name in owned) field.set(out, field.get(SceneParams.DEFAULT))
+        }
+        return out
+    }
+
+    private val PARAM_FIELDS: List<java.lang.reflect.Field> =
+        SceneParams::class.java.declaredFields
+            .filterNot { java.lang.reflect.Modifier.isStatic(it.modifiers) }
+            .onEach { it.isAccessible = true }
+
+    /** Seeds unioned so a roll gated behind a `chance()` still reveals what it writes. */
+    private val PROBE_SEEDS = listOf(1, 7, 13, 29, 61, 127, 257, 521)
+
+    private val FIELDS_BY_TAB: Map<CustomizeTab, Set<String>> by lazy {
+        CustomizeTab.entries.associateWith { tab ->
+            buildSet {
+                for (seed in PROBE_SEEDS) {
+                    val one = roll(probe(1), emptySet(), Random(seed), tab, null, null)
+                    val two = roll(probe(2), emptySet(), Random(seed), tab, null, null)
+                    for (field in PARAM_FIELDS) {
+                        if (field.get(one) == field.get(two)) add(field.name)
+                    }
+                }
+            }
+        }
+    }
+
+    /** A parameter set whose every field differs from the other probe's. */
+    private fun probe(variant: Int): SceneParams {
+        val out = SceneParams.DEFAULT.copy()
+        PARAM_FIELDS.forEachIndexed { index, field ->
+            when (field.type) {
+                Float::class.javaPrimitiveType -> field.setFloat(out, 0.017f * index + 0.31f * variant)
+                Int::class.javaPrimitiveType -> field.setInt(out, index + 3 * variant)
+                Boolean::class.javaPrimitiveType -> field.setBoolean(out, variant == 1)
+                else -> field.set(out, "probe$variant-$index")
+            }
+        }
+        return out
+    }
+
     private fun roll(
         current: SceneParams,
         locked: Set<String>,

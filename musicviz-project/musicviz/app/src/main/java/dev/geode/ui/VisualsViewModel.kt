@@ -10,6 +10,7 @@ import dev.geode.di.PlayerSessionProvider
 import dev.geode.render.AdsrConfig
 import dev.geode.render.LfoConfig
 import dev.geode.render.scene.CustomizeTab
+import dev.geode.render.scene.SceneParams
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 import javax.inject.Inject
@@ -50,6 +51,31 @@ class VisualsViewModel
         fun toggleParamLock(label: String) = session.toggleParamLock(label)
 
         fun randomizeParams(tab: CustomizeTab? = null) = session.randomizeParams(tab)
+
+        val paramHistory: StateFlow<ParamHistoryState> get() = session.paramHistory
+
+        val abSnapshots: StateFlow<AbSnapshotState> get() = session.abSnapshots
+
+        /** The one write path for a Customize edit, so the panel's undo covers every control. */
+        fun editSceneParams(params: SceneParams) = session.editSceneParams(params)
+
+        fun undoParams() = session.undoParams()
+
+        fun redoParams() = session.redoParams()
+
+        fun resetCustomizeTab(tab: CustomizeTab) = session.resetCustomizeTab(tab)
+
+        fun resetAllCustomize() = session.resetAllCustomize()
+
+        fun captureSnapshotA() = session.captureSnapshotA()
+
+        fun captureSnapshotB() = session.captureSnapshotB()
+
+        fun recallSnapshotA() = session.recallSnapshotA()
+
+        fun recallSnapshotB() = session.recallSnapshotB()
+
+        fun blendSnapshots(t: Float) = session.blendSnapshots(t)
 
         fun setAdsr(
             index: Int,
