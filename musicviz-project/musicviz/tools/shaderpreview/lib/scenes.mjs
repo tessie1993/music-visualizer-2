@@ -8,7 +8,8 @@
 // Uniform values are tagged with their setter so the page can upload them
 // without guessing: '1f' '1i' '2f' '3f' '1fv' '4fv' 'm3fv' 'tex'.
 
-import * as H from './hyperspace-math.mjs';
+import * as H from './palette.mjs';
+import { marchSteps } from './march.mjs';
 import { MeltEmitters } from './emitters.mjs';
 import { audioTexRows, motionImpulse, beatImpulseOf } from './audio.mjs';
 import { simEncoding, simFragmentStep, simDisplayShader, SIM_FULLSCREEN_VERTEX } from './simglsl.mjs';
@@ -16,7 +17,6 @@ import { simEncoding, simFragmentStep, simDisplayShader, SIM_FULLSCREEN_VERTEX }
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 // ---------------------------------------------------------------------------
-// HYPERSPACE - render/scene/HyperspaceScene.kt
 // ---------------------------------------------------------------------------
 
 const IDLE_RMS = 0.015;
@@ -32,321 +32,6 @@ const BODY_INK = 0.22;
 const MELT_SIM_RES = 96;
 const MELT_DYE_RES = 256;
 const MELT_PRESSURE_ITERATIONS = 14;
-
-export function createHyperspaceDriver({ params, width, height, seed = 12345, hasMelt = true }) {
-  const p = { ...H.DEFAULT_PARAMS, ...params };
-  const rng = H.makeRng(seed);
-  const rnd = () => rng.nextFloat();
-  const journey = new H.HyperspaceJourney();
-  const camera = new H.HyperspaceCamera();
-  const bank = new H.BloomBank(rng);
-  const emitters = new MeltEmitters();
-
-  const bloomPos = new Float32Array(H.MAX_BLOOMS * 4);
-  const bloomShape = new Float32Array(H.MAX_BLOOMS * 4);
-  const bloomLook = new Float32Array(H.MAX_BLOOMS * 4);
-  const bloomRot = new Float32Array(H.MAX_BLOOMS * 9);
-  const prevBodyXy = new Float32Array(H.MAX_BLOOMS * 2);
-  const hasPrevBody = new Array(H.MAX_BLOOMS).fill(false);
-
-  let time = 0;
-  let beatPulse = 0;
-  let idleBlend = 0;
-  let idlePhase = 0;
-  let idleImpulseAge = 0;
-
-  const meltAspect = width / Math.max(height, 1);
-  // FluidSim.flowScale = 2 * rdx / velocityHeight, rdx = 1/cellSize,
-  // cellSize = 2/velocityHeight  =>  flowScale = velocityHeight^2 / 2... no:
-  // rdx = velocityHeight/2, so flowScale = 2*(vh/2)/vh = 1. Kept explicit so
-  // a change to FluidSim's grid maths shows up here as a mismatch.
-  const velGrid = fluidResolution(MELT_SIM_RES, width, height);
-  const dyeGrid = fluidResolution(MELT_DYE_RES, width, height);
-  const cellSize = 2 / velGrid[1];
-  const flowScale = (2 * (1 / cellSize)) / velGrid[1];
-
-  const supplies = new Set([
-    'uResolution', 'uTime', 'uStyle', 'uBloomCount', 'uBloomPos', 'uBloomShape', 'uBloomLook', 'uBloomRot',
-    'uCamPos', 'uCamBasis', 'uFov', 'uSteps', 'uIters', 'uBulbIters', 'uSeedIters',
-    'uFar', 'uMaxStep', 'uHitEps',
-    'uBoundMargin', 'uField', 'uMirror', 'uMirrorFolds', 'uGlow', 'uNeon', 'uHaze',
-    'uTrapColor', 'uHueSpread', 'uBaseHue', 'uHueSpan', 'uHasMelt', 'uMelt', 'uFlowGain',
-    'uMeltReach', 'uMeltScale', 'uMeltAspect', 'uMeltRelax', 'uStain', 'uLiquid', 'uRidges',
-    'uFlowTex', 'uDyeTex', 'uEnergy', 'uBass', 'uTreble', 'uBeat', 'uExposure',
-    // The substyle identity block (catalog-driven in the app; the harness
-    // previews shader style 0, so these carry the Original's neutral values
-    // except the live envelopes, which are mirrored from HyperspaceScene).
-    'uLipschitz', 'uStyleFloor', 'uStyleKaleido', 'uStyleTint',
-    'uSlewBass', 'uSlewMid', 'uStylePhase', 'uBands',
-  ]);
-
-  // HyperspaceScene's slew-limited envelopes, phase and spectrum summary.
-  const TIME_WRAP_SECONDS = 6283.1853;
-  const SLEW_RISE_PER_SEC = 2.2;
-  const SLEW_FALL_PER_SEC = 1.1;
-  let slewBass = 0;
-  let slewMid = 0;
-  let stylePhase = 0;
-  const bands16 = new Float32Array(16);
-
-  function slewLimit(current, target, dt, rise, fall) {
-    const t = clamp(target, 0, 1);
-    return clamp(current + clamp(t - current, -fall * dt, rise * dt), 0, 1);
-  }
-
-  function advanceBands(bands, dt) {
-    const src = bands && bands.length ? bands : null;
-    for (let i = 0; i < 16; i++) {
-      let goal = 0;
-      if (src) {
-        const lo = Math.floor((i * src.length) / 16);
-        const hi = Math.min(Math.max(Math.floor(((i + 1) * src.length) / 16), lo + 1), src.length);
-        let sum = 0;
-        for (let j = lo; j < hi; j++) sum += clamp(src[j], 0, 1.5);
-        goal = sum / (hi - lo);
-      }
-      const seconds = goal > bands16[i] ? 0.06 : 0.32;
-      const k = 1 - Math.exp(-dt / Math.max(seconds, 1e-6));
-      const next = bands16[i] + (goal - bands16[i]) * k;
-      bands16[i] = Number.isFinite(next) ? clamp(next, 0, 1.5) : 0;
-    }
-  }
-
-  function step(features, dt) {
-    time = (time + dt) % TIME_WRAP_SECONDS;
-    const f = features;
-    const impulseRaw = motionImpulse(f);
-    const pace = clamp(p.speed, 0.05, 4);
-    slewBass = slewLimit(slewBass, f.bass, dt, SLEW_RISE_PER_SEC, SLEW_FALL_PER_SEC);
-    slewMid = slewLimit(slewMid, f.mid, dt, SLEW_RISE_PER_SEC, SLEW_FALL_PER_SEC);
-    advanceBands(f.bands, dt);
-    stylePhase = (stylePhase + dt * pace * 0.05) % 1;
-
-    const silent = f.rms < IDLE_RMS;
-    const fadeStep = IDLE_FADE_SECONDS > 0 ? dt / IDLE_FADE_SECONDS : 1;
-    idleBlend = clamp(idleBlend + (silent ? fadeStep : -fadeStep * 3), 0, 1);
-    idlePhase += dt / IDLE_CYCLE_SECONDS;
-    const live = (f.macroEnergy > 0 ? f.macroEnergy : f.rms) * clamp(p.audioDrive, 0, 4);
-    const idle = 0.5 - 0.5 * Math.cos(idlePhase * 2 * Math.PI);
-    const energy = clamp(live * (1 - idleBlend) + idle * idleBlend, 0, 1);
-
-    journey.advance({
-      dt, energy, mode: p.hyperJourney, holdAct: p.hyperAct,
-      cycleSeconds: p.hyperCycleSeconds, pace,
-    });
-    const profile = journey.profile();
-
-    const target = H.Look.bodyTarget(profile.bodies, p.hyperBodies);
-    const spread = H.Look.spread(target);
-    idleImpulseAge += dt;
-    let impulse = clamp(impulseRaw * clamp(p.beatResponse, 0, 2), 0, 1.5);
-    if (idleBlend > 0.5 && idleImpulseAge >= IDLE_IMPULSE_SECONDS) {
-      impulse = Math.max(impulse, IDLE_IMPULSE);
-      idleImpulseAge = 0;
-    } else if (impulse > 0.2) {
-      idleImpulseAge = 0;
-    }
-    bank.advance({
-      dt, target, impulse,
-      species: p.hyperSpecies <= 0 ? null : H.SPECIES[p.hyperSpecies - 1],
-      lifetime: clamp(p.hyperLifetime, 2, 60),
-      spread,
-      sizeScale: H.Look.bodySize(target),
-      // Decoupled like the app: spin no longer freezes orbits and breath.
-      motion: profile.motion * pace,
-      orbitScale: clamp(p.hyperOrbit, 0, 3),
-      spinScale: clamp(p.hyperSpin, 0, 3),
-    });
-
-    const meltAmount = hasMelt ? clamp(p.hyperMelt, 0, 2) : 0;
-    const hueBase = H.FluidHue.base(p.paletteBase);
-    const hueSpan = H.FluidHue.span(p.hueRange, p.paletteRange);
-
-    let splats = [];
-    if (hasMelt) {
-      splats = splats.concat(stirWithBodies(hueBase, hueSpan));
-      // MeltField.step: emitters then the sim, at the sim's own clamped dt.
-      const simDt = clamp(dt, 0, 1 / 30);
-      emitters.forceScale = clamp(p.hyperStir, 0, 3);
-      emitters.stirrerSpeed = clamp(p.speed, 0.1, 2);
-      emitters.beatResponse = p.beatResponse;
-      splats = splats.concat(emitters.tick(f, simDt, meltAspect, hueBase, hueSpan, impulseRaw));
-    }
-
-    const bloomCount = bank.snapshot(
-      p.hyperFold, bloomPos, bloomShape, bloomLook, bloomRot,
-      H.MeltMath.reach(meltAmount, H.MeltMath.DEFAULT_SCALE),
-    );
-
-    // Zoom and Rotation are the composite pass' for this family, so the scene
-    // reads neither - see HyperspaceScene's camera block.
-    const camDistance = H.Look.cameraDistance(
-      profile.camera, spread, H.Look.maxBodyRadius(target),
-    );
-    camera.advance({ dt, distance: camDistance, drift: clamp(p.hyperCamera, 0, 3) * pace });
-    const farPlane = H.Look.farPlane(camDistance, spread);
-    beatPulse = clamp(Math.max(impulseRaw * clamp(p.beatResponse, 0, 2), beatPulse - dt * 3), 0, 1.5);
-    const budget = H.marchBudget(p.hyperDetail);
-
-    const uniforms = {
-      uResolution: { t: '2f', v: [width, height] },
-      uTime: { t: '1f', v: time },
-      uStyle: { t: '1i', v: 0 },
-      uBloomCount: { t: '1i', v: bloomCount },
-      uBloomPos: { t: '4fv', v: Array.from(bloomPos) },
-      uBloomShape: { t: '4fv', v: Array.from(bloomShape) },
-      uBloomLook: { t: '4fv', v: Array.from(bloomLook) },
-      uBloomRot: { t: 'm3fv', v: Array.from(bloomRot) },
-      uCamPos: { t: '3f', v: Array.from(camera.position) },
-      uCamBasis: { t: 'm3fv', v: Array.from(camera.basis) },
-      uFov: { t: '1f', v: FOV },
-      uSteps: { t: '1i', v: budget.steps },
-      uIters: { t: '1i', v: budget.iterations },
-      uBulbIters: { t: '1i', v: budget.bulbIterations },
-      uSeedIters: { t: '1i', v: budget.seedIterations },
-      uFar: { t: '1f', v: farPlane },
-      uMaxStep: { t: '1f', v: H.Look.maxMarchStep(H.MeltMath.DEFAULT_SCALE) },
-      uHitEps: { t: '1f', v: H.Look.HIT_EPSILON },
-      uBoundMargin: { t: '1f', v: H.Look.BOUND_MARGIN },
-      uField: { t: '1f', v: profile.field * clamp(p.hyperField, 0, 2) },
-      uMirror: { t: '1f', v: profile.mirror },
-      uMirrorFolds: { t: '1f', v: clamp(Math.round(p.hyperMirrorFolds), 2, 16) },
-      uGlow: { t: '1f', v: profile.glow * clamp(p.hyperGlow, 0, 2) },
-      uNeon: { t: '1f', v: clamp(p.hyperNeon, 0, 2) },
-      uHaze: { t: '1f', v: clamp(p.hyperHaze, 0, 2) },
-      uTrapColor: { t: '1f', v: clamp(p.hyperTrap, 0, 1.5) },
-      uHueSpread: { t: '1f', v: profile.hueSpread },
-      uBaseHue: { t: '1f', v: hueBase },
-      uHueSpan: { t: '1f', v: hueSpan },
-      uHasMelt: { t: '1f', v: hasMelt ? 1 : 0 },
-      uMelt: { t: '1f', v: meltAmount },
-      uFlowGain: { t: '1f', v: flowScale * H.MeltMath.DEFAULT_SCALE * H.MeltMath.MELT_SECONDS },
-      uMeltReach: { t: '1f', v: H.MeltMath.reach(meltAmount, H.MeltMath.DEFAULT_SCALE) },
-      uMeltScale: { t: '1f', v: H.MeltMath.DEFAULT_SCALE },
-      uMeltAspect: { t: '1f', v: meltAspect },
-      uMeltRelax: { t: '1f', v: H.MeltMath.stepRelaxation(meltAmount) },
-      uStain: { t: '1f', v: hasMelt ? clamp(p.hyperStain, 0, 1.5) : 0 },
-      uLiquid: { t: '1f', v: hasMelt ? clamp(p.hyperLiquid, 0, 1.5) : 0 },
-      uRidges: { t: '1f', v: hasMelt ? clamp(p.hyperRidges, 0, 1) : 0 },
-      uFlowTex: { t: 'tex', v: 0 },
-      uDyeTex: { t: 'tex', v: 1 },
-      uEnergy: { t: '1f', v: clamp(f.rms, 0, 1.5) },
-      uBass: { t: '1f', v: clamp(f.bass, 0, 1.5) },
-      uTreble: { t: '1f', v: clamp(f.treble, 0, 1.5) },
-      uBeat: { t: '1f', v: beatPulse },
-      uExposure: { t: '1f', v: EXPOSURE },
-      // Substyle identity block: neutral (Original) constants, live envelopes.
-      uLipschitz: { t: '1f', v: 1 },
-      uStyleFloor: { t: '1f', v: 0 },
-      uStyleKaleido: { t: '1f', v: 0 },
-      uStyleTint: { t: '3f', v: [0, 0.7, 0] },
-      uSlewBass: { t: '1f', v: slewBass },
-      uSlewMid: { t: '1f', v: slewMid },
-      uStylePhase: { t: '1f', v: stylePhase },
-      uBands: { t: '1fv', v: Array.from(bands16) },
-    };
-
-    return {
-      uniforms,
-      melt: hasMelt ? {
-        splats,
-        dt: clamp(dt, 0, 1 / 30),
-        curlStrength: clamp(p.hyperSwirl, 0, 50) * (1 + 0.5 * f.mid),
-        velocityDissipation: clamp(p.hyperFlowFade, 0, 4),
-        densityDissipation: H.MeltMath.dyeDissipation(p.hyperFlowFade),
-        dyeCeiling: H.MeltMath.DYE_CEILING,
-      } : null,
-      debug: {
-        time,
-        act: journey.act,
-        actName: H.ACT_NAMES[journey.act],
-        actPosition: journey.actPosition,
-        bloomCount,
-        species: bank.blooms.filter((b) => b.alive).map((b) => b.species),
-        camDistance,
-      },
-    };
-  }
-
-  function stirWithBodies(hueBase, hueSpan) {
-    const out = [];
-    const strength = clamp(p.hyperStain, 0, 1.5) + clamp(p.hyperLiquid, 0, 1.5);
-    const blooms = bank.blooms;
-    if (strength <= 0.01) {
-      for (let i = 0; i < blooms.length; i++) {
-        const b = blooms[i];
-        if (!b.alive) { hasPrevBody[i] = false; continue; }
-        prevBodyXy[i * 2] = b.centre[0];
-        prevBodyXy[i * 2 + 1] = b.centre[1];
-        hasPrevBody[i] = true;
-      }
-      return out;
-    }
-    for (let i = 0; i < blooms.length; i++) {
-      const b = blooms[i];
-      if (!b.alive || b.fade <= 0.01) { hasPrevBody[i] = false; continue; }
-      const x = b.centre[0];
-      const y = b.centre[1];
-      if (hasPrevBody[i]) {
-        const [r, g, bl] = H.FluidHue.rgb(hueBase + b.hue * hueSpan, 0.95);
-        const scale = H.MeltMath.DEFAULT_SCALE;
-        const st = BODY_INK * strength * b.fade;
-        const px = H.MeltMath.simFromWorld(prevBodyXy[i * 2], scale);
-        const py = H.MeltMath.simFromWorld(prevBodyXy[i * 2 + 1], scale);
-        const cx = H.MeltMath.simFromWorld(x, scale);
-        const cy = H.MeltMath.simFromWorld(y, scale);
-        if (st > 0 && H.MeltMath.insideSim(cx, cy, meltAspect)) {
-          const edge = H.MeltMath.birthBoost(b.fade);
-          const push = H.MeltMath.BODY_FORCE * st * edge;
-          out.push({
-            prevX: px, prevY: py, curX: cx, curY: cy,
-            radius: H.MeltMath.splatRadius(H.localRadius(b.species) * b.scale * b.fade, scale),
-            velX: (cx - px) * push, velY: (cy - py) * push,
-            r: r * st * edge, g: g * st * edge, b: bl * st * edge,
-          });
-        }
-      }
-      prevBodyXy[i * 2] = x;
-      prevBodyXy[i * 2 + 1] = y;
-      hasPrevBody[i] = true;
-    }
-    return out;
-  }
-
-  /**
-   * Advances only the FREE-RUNNING CLOCKS by [seconds], without stepping any
-   * per-frame simulation.
-   *
-   * A live wallpaper's `time` reaches hours, and everything downstream of it
-   * is a float: `sin(uTime * 0.043)` at t = 3600 has lost most of its
-   * fractional precision in a mediump-capable driver, and `p.rotation * time`
-   * grows without bound. That is what this mode is for. It deliberately does
-   * NOT age the body bank or the fluid - those integrate at a bounded dt in
-   * the app too, and pretending to run them at a 60-second step would produce
-   * a picture the app can never show. Anything about the bodies read from a
-   * jumped run is meaningless.
-   */
-  function jumpClock(seconds) {
-    time += seconds;
-    camera.t += seconds * clamp(p.hyperCamera, 0, 3) * clamp(p.speed, 0.05, 4);
-  }
-
-  return {
-    id: 'hyperspace',
-    supplies,
-    step,
-    jumpClock,
-    meltConfig: {
-      enabled: hasMelt,
-      velWidth: velGrid[0], velHeight: velGrid[1],
-      dyeWidth: dyeGrid[0], dyeHeight: dyeGrid[1],
-      aspect: meltAspect,
-      cellSize,
-      pressureIterations: MELT_PRESSURE_ITERATIONS,
-      pressureDamp: 0.8,
-    },
-  };
-}
 
 /** FluidBuffers.resolution. */
 function fluidResolution(res, width, height) {
@@ -374,10 +59,11 @@ const SHADER_SCENE_DEFAULTS = {
   pixelate: 0, posterize: 0, sway: 0, pulse: 0, driftX: 0, driftY: 0, shake: 0,
   tile: 0, twist: 0, temperature: 0, solarize: false, flash: 0, contrast: 1,
   gamma: 1, paletteLut: -1,
-  // The Detail control. It is `hyperDetail` because it is the SAME slider
-  // HYPERSPACE scales itself with - ShaderScene sends MarchBudget.forDetail of
+  // The Detail control. `marchDetail` is what it is called now: it used to be
+  // `hyperDetail` and belonged to the Hyperspace family, which has been removed.
+  // ShaderScene sends MarchBudget.forDetail of
   // it as uSteps, so one control drives every marched style.
-  hyperDetail: 1,
+  marchDetail: 1,
 };
 
 export function createShaderSceneDriver({ params, width, height }) {
@@ -487,9 +173,8 @@ export function createShaderSceneDriver({ params, width, height }) {
       u('uPalLutRow', 0),
       u('uFlowStrength', 0),
       // A float, not an int: it is a budget the loop BREAKS on, while the loop
-      // bound stays a compile-time constant. HyperspaceScene sends its own
-      // uSteps as an int to a different program; same name, different contract.
-      u('uSteps', H.marchBudget(p.hyperDetail).steps),
+      // bound stays a compile-time constant.
+      u('uSteps', marchSteps(p.marchDetail)),
       u('uTouchSpin', 0),
       {
         uResolution: { t: '2f', v: [width, height] },
@@ -514,7 +199,7 @@ export function createShaderSceneDriver({ params, width, height }) {
     };
   }
 
-  /** See the hyperspace driver's jumpClock: free-running clocks only. */
+  /** Free-running clocks only. */
   function jumpClock(seconds) {
     shaderTime += p.speed * seconds;
     rotationAngle += p.rotation * seconds;

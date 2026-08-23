@@ -91,7 +91,7 @@ class FramePacer(
      * Seconds between the last two drawn frames, clamped to [MIN_DT_SECONDS]..[MAX_DT_SECONDS].
      *
      * The upper bound matches the clamp the field-simulation scenes already apply to their own
-     * step (`AcidScene`, `CymaticsScene`, `LifeScene`, `MycoScene`, `SilkScene`, `HyperspaceScene`
+     * step (`AcidScene`, `CymaticsScene`, `LifeScene`, `MycoScene`, `SilkScene`
      * all use 1/15 s): past that, an integrator that was tuned at 60 Hz stops being merely slow
      * and starts diverging. A single stalled frame must not be allowed to blow up a simulation
      * that has been running all evening.

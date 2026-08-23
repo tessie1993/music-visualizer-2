@@ -33,6 +33,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +53,9 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.window.core.layout.WindowWidthSizeClass
 import dev.geode.R
@@ -84,6 +88,26 @@ fun AppRoot() {
     val settingsViewModel: SettingsViewModel = geodeViewModel()
     val context = LocalContext.current
     val visualizerView = remember { VisualizerView(context) }
+    // GLSurfaceView renders continuously and only ever stops when its host says so. Without this
+    // the render thread keeps drawing whenever the app is visible but not resumed — behind a
+    // permission dialog, in split-screen, partially obscured — burning battery on frames nobody
+    // sees. GLSurfaceView's contract is that the owner forwards these two.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, visualizerView) {
+        val observer =
+            LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_RESUME -> visualizerView.onResume()
+                    Lifecycle.Event.ON_PAUSE -> visualizerView.onPause()
+                    else -> Unit
+                }
+            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            visualizerView.onPause()
+        }
+    }
     val themePack by settingsViewModel.theme.collectAsStateWithLifecycle()
     val gui by settingsViewModel.guiPrefs.collectAsStateWithLifecycle()
     val systemDark = isSystemInDarkTheme()

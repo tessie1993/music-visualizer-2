@@ -108,7 +108,7 @@ export function beatImpulse({ bpm = 120, level = 0.5, peak = 1 } = {}) {
   };
 }
 
-/** A long-form arc: quiet verse, loud chorus. Drives HYPERSPACE's journey. */
+/** A long-form arc: quiet verse, loud chorus. */
 export function musicArc({ bpm = 120, periodSeconds = 60 } = {}) {
   const beats = beatImpulse({ bpm });
   return (t) => {

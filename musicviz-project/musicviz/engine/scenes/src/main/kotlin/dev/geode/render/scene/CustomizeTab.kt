@@ -21,6 +21,4 @@ enum class CustomizeTab(
     FLUID("Fluid"),
 
     CYMATICS("Cymatics"),
-
-    HYPERSPACE("Hyperspace"),
 }

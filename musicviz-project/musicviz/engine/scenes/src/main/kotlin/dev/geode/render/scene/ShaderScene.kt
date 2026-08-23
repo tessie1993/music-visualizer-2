@@ -272,7 +272,7 @@ class ShaderScene(
         }
         setUniform1f("uPalLutMix", if (lutSelected) 1f else 0f)
         setUniform1f("uPalLutRow", dev.geode.render.CyclicPalettes.rowCoordinate(p.paletteLut.coerceAtLeast(0)))
-        setUniform1f("uSteps", marchSteps(p.hyperDetail))
+        setUniform1f("uSteps", marchSteps(p.marchDetail))
         uploadTouch()
         GLES30.glBindVertexArray(vao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
@@ -333,7 +333,7 @@ class ShaderScene(
      * [MarchBudget.forDetail] allocates, and this runs once per scene per frame; the control
      * only moves when a finger is on it, so the cache misses a handful of times a session and
      * the render path allocates nothing. Detail is the SAME control Hyperspace scales itself
-     * with (`SceneParams.hyperDetail`), so one slider drives every marched style.
+     * with (`SceneParams.marchDetail`), so one slider drives every marched style.
      */
     private fun marchSteps(detail: Float): Float {
         if (detail != stepsDetail) {

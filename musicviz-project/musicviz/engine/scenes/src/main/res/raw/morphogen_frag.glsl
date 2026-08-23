@@ -797,7 +797,7 @@ void main() {
     // ---- audio, clamped before anything structural reads it ---------------
     //
     // These bands are auto-gained and per-frame. Nothing here is slew-limited
-    // the way HyperspaceMath's uSlewBass is, so they are allowed to move the
+    // slew-limited on the Kotlin side, so they are allowed to move the
     // body by a few per cent and no more: what VisualSafety cannot clamp is
     // AREA, and a band value driving a size directly is how a quiet passage
     // and a loud one end up covering different fractions of the screen from

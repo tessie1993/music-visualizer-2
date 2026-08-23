@@ -7,7 +7,6 @@ import dev.geode.render.fluid.FlowField
 import dev.geode.render.fluid.RippleOverlayDrops
 import dev.geode.render.fluid.RippleSim
 import dev.geode.render.fluid.WaterScene
-import dev.geode.render.scene.HyperspaceScene
 import dev.geode.render.scene.Scene
 import dev.geode.render.scene.SceneParams
 import dev.geode.render.scene.TouchReactive
@@ -155,20 +154,11 @@ internal class OverlayEffects(
     fun drainTouchStrokes(scene: Scene) {
         (scene as? TouchReactive)?.setTouchField(touchField)
         val water = scene as? WaterScene
-        val hyper = scene as? HyperspaceScene
         val r = rippleOverlay
         val aspect = r?.aspect ?: 1f
         while (true) {
             val st = touchStrokes.poll() ?: return
-            if (hyper != null) {
-                hyper.queueTouchStroke(
-                    st.nx * 2f - 1f,
-                    1f - st.ny * 2f,
-                    st.ndx * 2f,
-                    -st.ndy * 2f,
-                    st.strength,
-                )
-            } else if (water != null) {
+            if (water != null) {
                 water.queueTouchStroke(
                     st.nx * 2f - 1f,
                     1f - st.ny * 2f,

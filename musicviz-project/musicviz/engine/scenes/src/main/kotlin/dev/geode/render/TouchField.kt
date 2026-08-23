@@ -7,8 +7,7 @@ import kotlin.math.sqrt
 /**
  * Where the fingers are, in one place every scene family can read.
  *
- * WHY: touch used to reach exactly three destinations — the melt in
- * [dev.geode.render.scene.HyperspaceScene], the surface in
+ * WHY: touch used to reach exactly two destinations — the surface in
  * [dev.geode.render.fluid.WaterScene], and otherwise a generic 2D ripple
  * overlay laid over whatever was underneath. Every other family — the fragment
  * styles, cymatics, the four field sims, the beam — was untouchable, so on 50

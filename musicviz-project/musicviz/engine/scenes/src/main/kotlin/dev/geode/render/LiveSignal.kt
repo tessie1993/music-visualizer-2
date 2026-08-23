@@ -61,7 +61,7 @@ object LiveSignal {
     /**
      * A live stand-in for "how far through the piece are we".
      *
-     * The fluid and hyperspace journeys used to walk the track's own play position and
+     * The fluid journeys used to walk the track's own play position and
      * its pre-analysed section list, which meant nothing moved on live input and a
      * seek teleported the layout. This walks on heard energy instead: loud passages
      * advance it, quiet ones let it drift back, and a sustained change of spectral

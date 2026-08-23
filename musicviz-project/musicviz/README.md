@@ -17,8 +17,7 @@ history is in [CHANGELOG.md](CHANGELOG.md).
   and Home's shelves are built from that real history.
 - **Visual scenes** — particle scenes; fragment-shader scenes with an in-app
   GLSL editor; the GPU fluid family (Fluid / Curl Flow / Water); Cymatics
-  (the standing-wave field of what is playing); Hyperspace (raymarched 3D
-  fractals, coupled to the fluid engine); MilkDrop via libprojectM 4
+  (the standing-wave field of what is playing); MilkDrop via libprojectM 4
   (arm64-v8a — rebuild notes in `tools/build-projectm.md`). The Customize
   panel exposes every parameter with per-param locks, one randomizer, LFO and
   ADSR modulation, a palette maker, presets (JSON + `.milk`), and

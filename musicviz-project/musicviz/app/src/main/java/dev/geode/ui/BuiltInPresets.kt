@@ -566,138 +566,6 @@ object BuiltInPresets {
             ),
         )
 
-    private val HYPERSPACE_VARIANTS: List<Preset> =
-        listOf(
-            Preset(
-                name = "hyperspace · Breakthrough",
-                sceneId = dev.geode.render.scene.SceneIds.HYPERSPACE,
-                attack = 0.5f,
-                decay = 0.35f,
-                customShader = null,
-                params =
-                    SceneParams(
-                        hyperJourney = dev.geode.render.scene.HyperspaceMath.JOURNEY_MUSIC,
-                        hyperSpecies = 0,
-                        hyperBodies = 1.2f,
-                        hyperLifetime = 12f,
-                        hyperSpin = 1.1f,
-                        hyperOrbit = 1.1f,
-                        hyperCamera = 1f,
-                        hyperFold = 0.5f,
-                        hyperGlow = 1.1f,
-                        hyperNeon = 1.2f,
-                        hyperField = 1f,
-                        hyperHaze = 0.7f,
-                        hyperTrap = 0.9f,
-                        hyperMelt = 0.6f,
-                        hyperStain = 0.55f,
-                        hyperLiquid = 0.4f,
-                        hyperRidges = 0.5f,
-                        hyperStir = 1.1f,
-                        palette = 0,
-                        hueRange = 1f,
-                    ),
-            ),
-            Preset(
-                name = "hyperspace · Chrysanthemum",
-                sceneId = dev.geode.render.scene.SceneIds.HYPERSPACE,
-                attack = 0.4f,
-                decay = 0.45f,
-                customShader = null,
-                params =
-                    SceneParams(
-                        hyperJourney = dev.geode.render.scene.HyperspaceMath.JOURNEY_HOLD,
-                        hyperAct = dev.geode.render.scene.HyperspaceMath.Act.CHRYSANTHEMUM.ordinal,
-                        hyperSpecies = 0,
-                        hyperBodies = 1f,
-                        hyperLifetime = 18f,
-                        hyperSpin = 0.8f,
-                        hyperOrbit = 0.7f,
-                        hyperCamera = 0.7f,
-                        hyperFold = 0.35f,
-                        hyperGlow = 1f,
-                        hyperNeon = 1.4f,
-                        hyperField = 1.5f,
-                        hyperHaze = 0.5f,
-                        hyperMirrorFolds = 6,
-                        hyperTrap = 1f,
-                        hyperMelt = 0.3f,
-                        hyperStain = 0.45f,
-                        hyperLiquid = 0.3f,
-                        hyperRidges = 0.7f,
-                        hyperStir = 0.7f,
-                        palette = 16,
-                        hueRange = 0.9f,
-                    ),
-            ),
-            Preset(
-                name = "hyperspace · Coral garden",
-                sceneId = dev.geode.render.scene.SceneIds.HYPERSPACE,
-                attack = 0.3f,
-                decay = 0.1f,
-                customShader = null,
-                params =
-                    SceneParams(
-                        speed = 0.6f,
-                        hyperJourney = dev.geode.render.scene.HyperspaceMath.JOURNEY_CYCLE,
-                        hyperCycleSeconds = 55f,
-                        hyperSpecies = dev.geode.render.scene.HyperspaceMath.Species.CORAL.ordinal + 1,
-                        hyperBodies = 0.8f,
-                        hyperLifetime = 30f,
-                        hyperSpin = 0.5f,
-                        hyperOrbit = 0.45f,
-                        hyperCamera = 0.5f,
-                        hyperFold = 0.7f,
-                        hyperGlow = 0.9f,
-                        hyperNeon = 1.6f,
-                        hyperField = 0.25f,
-                        hyperHaze = 0.9f,
-                        hyperTrap = 1.2f,
-                        hyperMelt = 0.45f,
-                        hyperStain = 0.7f,
-                        hyperLiquid = 0.5f,
-                        hyperRidges = 0.85f,
-                        hyperStir = 0.6f,
-                        hyperSwirl = 14f,
-                        hyperFlowFade = 0.15f,
-                        palette = 7,
-                        hueRange = 0.8f,
-                    ),
-            ),
-            Preset(
-                name = "hyperspace · Molten",
-                sceneId = dev.geode.render.scene.SceneIds.HYPERSPACE,
-                attack = 0.55f,
-                decay = 0.3f,
-                customShader = null,
-                params =
-                    SceneParams(
-                        hyperJourney = dev.geode.render.scene.HyperspaceMath.JOURNEY_MUSIC,
-                        hyperSpecies = 0,
-                        hyperBodies = 0.9f,
-                        hyperLifetime = 10f,
-                        hyperSpin = 0.8f,
-                        hyperOrbit = 1.3f,
-                        hyperFold = 0.55f,
-                        hyperGlow = 1f,
-                        hyperNeon = 1.5f,
-                        hyperField = 0.5f,
-                        hyperHaze = 0.6f,
-                        hyperTrap = 0.7f,
-                        hyperMelt = 1.35f,
-                        hyperStain = 1f,
-                        hyperLiquid = 0.75f,
-                        hyperRidges = 1f,
-                        hyperStir = 2f,
-                        hyperSwirl = 40f,
-                        hyperFlowFade = 0.12f,
-                        hyperDetail = 0.8f,
-                        palette = 10,
-                        hueRange = 1.1f,
-                    ),
-            ),
-        )
-
     val ALL: List<Preset> =
         SceneCapabilities.SHADER_SCENES.keys.flatMap { id ->
             LOOKS.map { look ->
@@ -710,7 +578,7 @@ object BuiltInPresets {
                     params = look.params,
                 )
             }
-        } + SHADER_VARIANTS + FLUID_VARIANTS + CYMATICS_VARIANTS + HYPERSPACE_VARIANTS
+        } + SHADER_VARIANTS + FLUID_VARIANTS + CYMATICS_VARIANTS
 
     fun isBuiltIn(name: String): Boolean = name.contains(" · ")
 }

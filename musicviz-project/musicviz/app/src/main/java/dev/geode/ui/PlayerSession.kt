@@ -3,7 +3,6 @@ package dev.geode.ui
 import android.app.Application
 import android.content.Intent
 import android.net.Uri
-import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -52,6 +51,7 @@ import dev.geode.render.scene.SceneParams
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -62,7 +62,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.job
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
@@ -883,14 +882,6 @@ class PlayerSession internal constructor(
 
     fun applyPreset(preset: Preset) = visual.applyPreset(preset)
 
-    internal fun awaitStoreWrites(timeoutMs: Long) {
-        runBlocking {
-            withTimeoutOrNull(timeoutMs.coerceAtLeast(0L)) {
-                storeScope.coroutineContext.job.children.toList().joinAll()
-            }
-        }
-    }
-
     fun savePreset(
         name: String,
         customShader: String?,
@@ -1008,11 +999,12 @@ class PlayerSession internal constructor(
      * one ViewModel that owns the session — never from a screen.
      */
     internal fun shutdown() {
+        // Queue every outstanding write BEFORE the pending set is snapshotted below, or the store
+        // scope's cancellation races the very writes this teardown exists to preserve.
         listening.flushListenTime()
-        val flushDeadline = SystemClock.elapsedRealtime() + STORE_FLUSH_BUDGET_MS
-        listening.awaitHistoryWrites(STORE_FLUSH_BUDGET_MS)
-        awaitStoreWrites(flushDeadline - SystemClock.elapsedRealtime())
         vizStateStore.flushIfDirty()
+        val pendingStoreWrites = storeScope.coroutineContext.job.children.toList()
+
         captureController.shutdown()
         AudioBus.removeConsumer()
         playerListener?.let { player.removeListener(it) }
@@ -1021,8 +1013,32 @@ class PlayerSession internal constructor(
         if (sleepTimer.onFadeVolume === fades.sleepFadeHook) sleepTimer.onFadeVolume = null
         if (!playback.playbackWanted) PlaybackService.stop(application)
         PlaybackEngine.releaseUi()
-        storeScope.cancel()
         scope.cancel()
+
+        drainStoreWrites(pendingStoreWrites)
+    }
+
+    /**
+     * Lets the queued store writes finish, then retires the scope that owns them.
+     *
+     * This runs on the app scope's IO dispatcher rather than the caller's thread. `shutdown()` is
+     * reached from `PlayerViewModel.onCleared()`, which is the main thread: the previous version
+     * spent its whole [STORE_FLUSH_BUDGET_MS] budget there, between a blocking `Future.get` and a
+     * `runBlocking`, so a slow disk stalled Activity teardown for up to two seconds.
+     *
+     * The budget and the ordering are unchanged; only the thread that waits them out is different.
+     * The trade is that durability past this point is best-effort — the process could in principle
+     * be killed mid-drain — but the writes are already queued on a serialised IO dispatcher, and
+     * blocking the main thread bought only the window between destroy and death.
+     */
+    private fun drainStoreWrites(pending: List<Job>) {
+        container.appScope.launch(Dispatchers.IO) {
+            withTimeoutOrNull(STORE_FLUSH_BUDGET_MS) {
+                listening.awaitHistoryWrites(STORE_FLUSH_BUDGET_MS)
+                pending.joinAll()
+            }
+            storeScope.cancel()
+        }
     }
 
     init {
