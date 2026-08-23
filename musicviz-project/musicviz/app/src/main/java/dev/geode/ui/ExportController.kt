@@ -153,7 +153,7 @@ internal class ExportController(
                             sceneParams = host.sceneParams,
                             lfoConfigs = host.lfoConfigs(),
                             adsrConfigs = host.adsrConfigs(),
-                            safety = gui.safety,
+                            reducedMotion = gui.reducedMotion,
                             requestedFps = fps,
                             paramsAt =
                                 exportTake?.let { take ->

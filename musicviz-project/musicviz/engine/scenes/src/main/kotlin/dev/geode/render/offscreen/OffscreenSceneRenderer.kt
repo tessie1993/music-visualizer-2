@@ -31,7 +31,7 @@ data class OffscreenRenderSpec(
     val baseParams: SceneParams,
     val lfoConfigs: List<LfoConfig> = emptyList(),
     val adsrConfigs: List<AdsrConfig> = emptyList(),
-    val safety: VisualSafety.SafetyConfig = VisualSafety.SafetyConfig.OFF,
+    val reducedMotion: Boolean = false,
     val paramsAt: ((Long) -> SceneParams)? = null,
 )
 
@@ -131,12 +131,12 @@ class OffscreenSceneRenderer(
 
         val envValues = adsrEngine.tick(dt, features)
         val (envRate, envDepth) = AdsrEngine.lfoOffsets(adsrEngine.configs, envValues)
-        val lfoValues = lfoEngine.tick(dt, features.bpm, envRate, envDepth, spec.safety)
+        val lfoValues = lfoEngine.tick(dt, features.bpm, envRate, envDepth)
 
         var p = spec.paramsAt?.invoke(timeMs) ?: spec.baseParams
         p = LfoEngine.apply(p, lfoEngine.configs, lfoValues)
         p = AdsrEngine.apply(p, adsrEngine.configs, envValues)
-        p = VisualSafety.apply(p, spec.safety)
+        p = VisualSafety.apply(p, spec.reducedMotion)
         // An offscreen render has no frame budget to protect, so quality never adapts downward.
         p = p.copy(fluidAutoQuality = false)
 
@@ -199,8 +199,7 @@ class OffscreenSceneRenderer(
             rippleTexelH = if (rippleTex != 0 && ripple != null) ripple.texelH else 0f,
             rippleStrength = if (rippleTex != 0) p.rippleOverlayStrength.coerceIn(0f, 1f) else 0f,
             rippleSpecular = if (rippleTex != 0) p.rippleOverlaySpecular.coerceIn(0f, 1f) else 0f,
-            strobeHz = VisualSafety.strobeHz(spec.safety),
-            limitFlashRate = spec.safety.enabled,
+            strobeHz = VisualSafety.strobeHz(),
         )
     }
 

@@ -17,17 +17,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.geode.R
-import dev.geode.render.VisualSafetyChoice
 
+/**
+ * The first-run photosensitivity notice.
+ *
+ * It takes an acknowledgement and nothing else. The flash clamp is unconditional, so there is no
+ * safety level to pick here — telling someone the visuals are intense and that the rate is capped
+ * in the engine is information they are owed, not a decision they are being asked to make.
+ */
 @Composable
 fun SafetyConsent(
-    onChoose: (VisualSafetyChoice, Boolean) -> Unit,
+    onAcknowledge: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -63,49 +68,11 @@ fun SafetyConsent(
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(28.dp))
-
-        ConsentOption(
-            title = stringResource(R.string.safety_option_safe),
-            detail = stringResource(R.string.safety_option_safe_detail),
-            onClick = { onChoose(VisualSafetyChoice.SAFE, true) },
-        )
-        Spacer(Modifier.height(12.dp))
-        ConsentOption(
-            title = stringResource(R.string.safety_option_reduced_motion),
-            detail = stringResource(R.string.safety_option_reduced_motion_detail),
-            onClick = { onChoose(VisualSafetyChoice.REDUCED_MOTION, true) },
-        )
-        Spacer(Modifier.height(12.dp))
-        ConsentOption(
-            title = stringResource(R.string.safety_option_full),
-            detail = stringResource(R.string.safety_option_full_detail),
-            onClick = { onChoose(VisualSafetyChoice.CUSTOM, false) },
-        )
-    }
-}
-
-@Composable
-private fun ConsentOption(
-    title: String,
-    detail: String,
-    onClick: () -> Unit,
-) {
-    val spoken = stringResource(R.string.safety_option_description, title, detail)
-    Column(Modifier.fillMaxWidth()) {
         CrystalButton(
-            onClick = onClick,
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .semantics { contentDescription = spoken },
+            onClick = onAcknowledge,
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(title)
+            Text(stringResource(R.string.safety_acknowledge))
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            detail,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }

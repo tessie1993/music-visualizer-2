@@ -14,19 +14,13 @@
     <string name="export_notification_title">Rendering video</string>
     <string name="export_notification_text">Geode is rendering your visuals.</string>
 
-    <!-- First-run photosensitivity choice. Safety copy: translate carefully,
-         the flash rates are factual and must survive translation. -->
+    <!-- First-run photosensitivity notice. Safety copy: translate carefully,
+         the flash rate is factual and must survive translation. This is an
+         acknowledgement, not a choice — there is no setting behind it. -->
     <string name="safety_title">Before the visuals start</string>
-    <string name="safety_warning">Geode reacts to music with light. With its limits switched off it can flash the whole screen up to nine times a second — enough to trigger a seizure in people with photosensitive epilepsy, whether or not they know they have it.</string>
-    <string name="safety_prompt">Until you answer, the visuals run limited. Pick what suits you — you can change it any time in Settings › Behavior.</string>
-    <string name="safety_option_safe">Keep it safe</string>
-    <string name="safety_option_safe_detail">Caps how fast and how strongly the screen can flash, holds brightness near neutral, and crossfades scene changes instead of cutting. Recommended if you or anyone watching is sensitive to flashing light.</string>
-    <string name="safety_option_reduced_motion">Safe, and easier on motion</string>
-    <string name="safety_option_reduced_motion_detail">Everything above, plus speed, drift, shake and endless zoom scaled down for motion comfort. Colour and texture keep reacting to the music.</string>
-    <string name="safety_option_full">Full effects</string>
-    <string name="safety_option_full_detail">No limits: the strobe runs at 9 Hz and the beat flash at the track\'s rate. Choose this only if flashing light does not affect you or anyone who can see your screen.</string>
-    <!-- Read out as one button: the detail is the substance of the choice. -->
-    <string name="safety_option_description">%1$s. %2$s</string>
+    <string name="safety_warning">Geode reacts to music with light, and the visuals are intense — bright, fast and full-screen.</string>
+    <string name="safety_prompt">The flash rate is limited in the engine, by design. Nothing on screen can flash more than three times a second, no preset or imported file can raise that, and the video you export is held to the same limit as the screen you saw. There is no setting for this and nothing to switch off.</string>
+    <string name="safety_acknowledge">I understand</string>
 
     <!-- Per-track metadata editor. -->
     <string name="track_info_title">Track info</string>
@@ -443,25 +437,9 @@
     <string name="behavior_display_connected">Connected: %1$s. The visuals play there and the phone becomes the control surface — the canvas moves rather than being mirrored, so the big screen shows exactly what the app renders.</string>
     <string name="behavior_display_none">Nothing connected. Plug in HDMI or start casting, and the visuals move to that screen while the phone keeps the controls.</string>
     <string name="behavior_safety_title">Flashing and motion</string>
-    <string name="behavior_safety_hint">Limits how fast and how strongly the whole screen can flash: caps the strobe and beat flash, holds brightness and contrast near neutral, turns hard scene cuts into crossfades, and slows any modulation aimed at brightness.</string>
-    <string name="behavior_safety_unanswered">You have not chosen yet, so the visuals are running limited. Pick one — you can change it whenever you like.</string>
-    <string name="behavior_safety_safe">Safe</string>
-    <string name="behavior_safety_reduced">Reduced motion</string>
-    <string name="behavior_safety_custom">Custom</string>
-    <string name="behavior_safety_safe_hint">Recommended if you or anyone watching is sensitive to flashing light.</string>
-    <string name="behavior_safety_reduced_hint">Everything Safe does, plus speed, drift, shake and endless zoom scaled down for motion comfort. Colour and texture keep reacting to the music.</string>
-    <string name="behavior_safety_custom_hint">Your own limits, including switching them off entirely. The strobe then runs at 9 Hz and the beat flash at the track\'s rate.</string>
-    <string name="behavior_limit_flashing">Limit flashing</string>
-    <string name="behavior_max_flash_hz">"Maximum flashes per second  %1$s Hz"</string>
-    <string name="behavior_within_guidance">"  (within guidance)"</string>
-    <string name="behavior_flash_guidance">Published guidance (WCAG 2.3.1) puts the general limit at three per second; the risk is highest between about 15 and 20. Without this the strobe runs at 9.</string>
-    <string name="behavior_max_flash_depth">"Maximum flash strength  %1$d%%"</string>
-    <string name="behavior_no_flashing">"  (no flashing at all)"</string>
-    <string name="behavior_allow_inversion">Allow invert and solarize</string>
-    <string name="behavior_inversion_hint">These reverse the whole frame at once. Off is safer; on keeps them available if you are limiting the flash rate alone.</string>
+    <string name="behavior_flash_guidance">Nothing in Geode can flash more than three times a second. Published guidance (WCAG 2.3.1) puts the general limit there, and the clamp sits in the render path itself — it applies to every scene, every preset and every imported file, on screen and in exported video alike. It is not a setting, so there is nothing here to adjust.</string>
     <string name="behavior_slow_motion">Slow the motion down</string>
-    <string name="behavior_slow_motion_hint">Slows movement, shake, drift and rotation. Independent of the flash limits above: this one is about motion comfort rather than seizures, and either can be used on its own.</string>
-    <string name="behavior_safety_export_note">Both settings apply to exported video as well as the screen.</string>
+    <string name="behavior_slow_motion_hint">Slows movement, shake, drift and rotation. This one is about motion comfort rather than seizures, which is why it is a choice: the flash limit above is not. Applies to exported video as well as the screen.</string>
     <string name="behavior_wallpaper_hint">Set the visualizer as your wallpaper. It uses the style and settings the app was last showing, reacts to whatever Geode is playing, and drifts gently on its own the rest of the time. It draws nothing while another app is in front, so it is not a background battery drain.</string>
     <string name="behavior_wallpaper_button">Set as live wallpaper</string>
 

@@ -94,7 +94,6 @@ class LfoEngine {
         bpm: Float,
         extRateAdd: FloatArray? = null,
         extDepthAdd: FloatArray? = null,
-        safety: VisualSafety.SafetyConfig = VisualSafety.SafetyConfig.OFF,
     ): FloatArray {
         val cfgs = configs
         for (i in 0 until 3) {
@@ -115,7 +114,6 @@ class LfoEngine {
                 VisualSafety.limitLfoRate(
                     (baseRate + rateAdd[i]).coerceIn(0.01f, 30f),
                     c.target,
-                    safety,
                 )
             val depth = (c.depth + depthAdd[i]).coerceIn(0f, 2f)
             phases[i] = (phases[i] + rate * dt) % 1f

@@ -68,16 +68,16 @@ fun VisualizerEngineBindings(
         visualizerView.visualizerRenderer.lfoEngine.configs = lfos
         visualizerView.visualizerRenderer.adsrEngine.configs = adsrs
     }
-    LaunchedEffect(viz.transitionId, viz.transitionDurationSec, gui.safety) {
-        val id = VisualSafety.transitionId(viz.transitionId, gui.safety)
+    LaunchedEffect(viz.transitionId, viz.transitionDurationSec) {
+        val id = VisualSafety.transitionId(viz.transitionId)
         val renderer = visualizerView.visualizerRenderer
         renderer.transitionId = id
         TransitionCatalog.builtIn(id)?.let { renderer.transitionStyle = it }
         renderer.transitionDurationMs = (viz.transitionDurationSec * 1000).toLong()
         visualizerView.queueEvent { renderer.warmTransition(id) }
     }
-    LaunchedEffect(gui.safety) {
-        visualizerView.visualizerRenderer.safety = gui.safety
+    LaunchedEffect(gui.reducedMotion) {
+        visualizerView.visualizerRenderer.reducedMotion = gui.reducedMotion
     }
     LaunchedEffect(Unit) {
         viewModel.morphFade.collect { visualizerView.visualizerRenderer.beginParamMorph(it) }

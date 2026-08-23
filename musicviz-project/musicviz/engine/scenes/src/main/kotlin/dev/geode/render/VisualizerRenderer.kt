@@ -71,8 +71,12 @@ class VisualizerRenderer(
     @Volatile
     var sceneParams: SceneParams = SceneParams.DEFAULT
 
+    /**
+     * Vestibular accessibility only. The flash clamp is not routed through here — it is
+     * unconditional inside [VisualSafety] and cannot be switched off from anywhere.
+     */
     @Volatile
-    var safety: VisualSafety.SafetyConfig = VisualSafety.SafetyConfig.OFF
+    var reducedMotion: Boolean = false
 
     @Volatile
     var layerSceneId: String? = null
@@ -197,13 +201,11 @@ class VisualizerRenderer(
         morphRemainSec = seconds * 3f
     }
 
+    /** Always budgeted — the same call the offscreen path makes, so preview and export agree. */
     private fun flashGain(
         fx: SceneParams,
         beatImpulse: Float,
-    ): Float {
-        val gain = flashBudget.gainFor(timeSeconds, VisualSafety.flashImpulse(fx.flash, beatImpulse))
-        return if (safety.enabled) gain else 1f
-    }
+    ): Float = flashBudget.gainFor(timeSeconds, VisualSafety.flashImpulse(fx.flash, beatImpulse))
 
     private fun gainAdjusted(
         f: AudioFeatures,
@@ -337,10 +339,10 @@ class VisualizerRenderer(
             }
         val envValues = adsrEngine.tick(dt, features)
         AdsrEngine.lfoOffsets(adsrEngine.configs, envValues, envRateOffsets, envDepthOffsets)
-        val lfoValues = lfoEngine.tick(dt, features.bpm, envRateOffsets, envDepthOffsets, safety)
+        val lfoValues = lfoEngine.tick(dt, features.bpm, envRateOffsets, envDepthOffsets)
         var p = LfoEngine.apply(displayedParams, lfoEngine.configs, lfoValues)
         p = AdsrEngine.apply(p, adsrEngine.configs, envValues)
-        p = VisualSafety.apply(p, safety)
+        p = VisualSafety.apply(p, reducedMotion)
         lastFinalParams = p
         postRotationAngle = CompositeGrade.integrateRotation(postRotationAngle, p.rotation, dt)
         postCyclePhase = CompositeGrade.integrateCyclePhase(postCyclePhase, p.cycleSpeed, dt, p.colorCycle)
@@ -475,7 +477,7 @@ class VisualizerRenderer(
         resolveFlowUniforms(scene, p, inputs)
         resolveRippleUniforms(p, inputs)
         inputs.progress = progress
-        inputs.layerMix = VisualSafety.layerMix(layerMix, layerBlend, safety)
+        inputs.layerMix = VisualSafety.layerMix(layerMix, layerBlend)
         inputs.blendOrdinal = layerBlend.ordinal
         inputs.hasLayer = layerScene != null
         inputs.hasOutgoing = outgoingScene != null
@@ -485,7 +487,7 @@ class VisualizerRenderer(
         inputs.timeSeconds = timeSeconds
         inputs.beatImpulse = features.beatImpulse
         inputs.flash = fx.flash * flashGain(fx, features.beatImpulse)
-        inputs.strobeHz = VisualSafety.strobeHz(safety)
+        inputs.strobeHz = VisualSafety.strobeHz()
         inputs.postRotationAngle = postRotationAngle
         inputs.postCyclePhase = postCyclePhase
         inputs.postBeatPulse = postBeatPulse

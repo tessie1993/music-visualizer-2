@@ -12,7 +12,6 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import dev.geode.R
 import dev.geode.analysis.BeatTuning
-import dev.geode.render.VisualSafetyChoice
 import dev.geode.ui.theme.ThemePack
 import dev.geode.ui.theme.ThemePackCatalog
 
@@ -109,11 +108,11 @@ data class GuiPrefs(
     val whiteFont: Boolean = false,
     val fontColorArgb: Int? = null,
     val textScale: Float = 1f,
-    val safetyChoice: VisualSafetyChoice = VisualSafetyChoice.UNKNOWN,
-    val safeVisuals: Boolean = false,
-    val maxFlashHz: Float = dev.geode.render.VisualSafety.WCAG_FLASHES_PER_SECOND,
-    val maxFlashDepth: Float = 0.25f,
-    val allowInversion: Boolean = false,
+    /**
+     * Whether the photosensitivity notice has been seen. It is an acknowledgement, not a choice:
+     * the flash clamp is unconditional either way, so this only decides whether the notice shows.
+     */
+    val safetyAcknowledged: Boolean = false,
     val reducedMotion: Boolean = false,
     val micReactive: Boolean = false,
     val touchSmear: Boolean = false,
@@ -128,20 +127,7 @@ data class GuiPrefs(
     val effectiveBeatMinIntervalMs: Float
         get() =
             dev.geode.render.VisualSafety
-                .beatMinIntervalMs(beatMinIntervalMs, safety)
-
-    val safety: dev.geode.render.VisualSafety.SafetyConfig
-        get() =
-            dev.geode.render.VisualSafety.resolve(
-                safetyChoice,
-                dev.geode.render.VisualSafety.SafetyConfig(
-                    enabled = safeVisuals,
-                    maxFlashHz = maxFlashHz,
-                    maxFlashDepth = maxFlashDepth,
-                    allowInversion = allowInversion,
-                    reducedMotion = reducedMotion,
-                ),
-            )
+                .beatMinIntervalMs(beatMinIntervalMs)
 
     companion object {
         const val TEXT_SCALE_MIN = 0.85f
@@ -200,15 +186,8 @@ class ThemeStore(
                 prefs
                     .getFloat(KEY_TEXT_SCALE, 1f)
                     .coerceIn(GuiPrefs.TEXT_SCALE_MIN, GuiPrefs.TEXT_SCALE_MAX),
-            safetyChoice = loadSafetyChoice(),
-            safeVisuals = prefs.getBoolean(KEY_SAFE_VISUALS, false),
-            maxFlashHz =
-                prefs
-                    .getFloat(KEY_MAX_FLASH_HZ, dev.geode.render.VisualSafety.WCAG_FLASHES_PER_SECOND)
-                    .coerceIn(1f, dev.geode.render.VisualSafety.DEFAULT_STROBE_HZ),
-            maxFlashDepth = prefs.getFloat(KEY_MAX_FLASH_DEPTH, 0.25f).coerceIn(0f, 1f),
-            allowInversion = prefs.getBoolean(KEY_ALLOW_INVERSION, false),
-            reducedMotion = prefs.getBoolean(KEY_REDUCED_MOTION, false),
+            safetyAcknowledged = loadSafetyAcknowledged(),
+            reducedMotion = loadReducedMotion(),
             touchSmear = prefs.getBoolean(KEY_TOUCH_SMEAR, false),
             touchSmearStrength = prefs.getFloat(KEY_TOUCH_SMEAR_STRENGTH, 1f).coerceIn(0.2f, 2f),
             touchTransform = prefs.getBoolean(KEY_TOUCH_TRANSFORM, true),
@@ -217,15 +196,21 @@ class ThemeStore(
         )
     }
 
-    private fun loadSafetyChoice(): VisualSafetyChoice {
-        val stored =
-            prefs
-                .getString(KEY_SAFETY_CHOICE, null)
-                ?.takeIf { prefs.getInt(KEY_SAFETY_CHOICE_VERSION, 0) == SAFETY_CHOICE_VERSION }
-                ?.let { name -> runCatching { VisualSafetyChoice.valueOf(name) }.getOrNull() }
-        return stored
-            ?: if (prefs.getBoolean(KEY_SAFE_VISUALS, false)) VisualSafetyChoice.SAFE else VisualSafetyChoice.UNKNOWN
-    }
+    /**
+     * Anyone who answered the old three-way safety question has already been shown the notice, so
+     * they are not asked again — the question itself is gone, but the acknowledgement carries over.
+     */
+    private fun loadSafetyAcknowledged(): Boolean =
+        prefs.getBoolean(KEY_SAFETY_ACKNOWLEDGED, false) ||
+            prefs.getString(KEY_SAFETY_CHOICE, null) != null
+
+    /**
+     * Reduced motion survives the same migration: it used to be one of the three answers, and it is
+     * the only one of them that described something other than the flash clamp.
+     */
+    private fun loadReducedMotion(): Boolean =
+        prefs.getBoolean(KEY_REDUCED_MOTION, false) ||
+            prefs.getString(KEY_SAFETY_CHOICE, null) == LEGACY_CHOICE_REDUCED_MOTION
 
     fun saveGui(gui: GuiPrefs) {
         val fontColor = gui.fontColorOverride
@@ -246,12 +231,7 @@ class ThemeStore(
             .apply { if (fontColor != null) putInt(KEY_FONT_COLOR, fontColor) else remove(KEY_FONT_COLOR) }
             .remove(KEY_WHITE_FONT)
             .putFloat(KEY_TEXT_SCALE, gui.textScale)
-            .putString(KEY_SAFETY_CHOICE, gui.safetyChoice.name)
-            .putInt(KEY_SAFETY_CHOICE_VERSION, SAFETY_CHOICE_VERSION)
-            .putBoolean(KEY_SAFE_VISUALS, gui.safeVisuals)
-            .putFloat(KEY_MAX_FLASH_HZ, gui.maxFlashHz)
-            .putFloat(KEY_MAX_FLASH_DEPTH, gui.maxFlashDepth)
-            .putBoolean(KEY_ALLOW_INVERSION, gui.allowInversion)
+            .putBoolean(KEY_SAFETY_ACKNOWLEDGED, gui.safetyAcknowledged)
             .putBoolean(KEY_REDUCED_MOTION, gui.reducedMotion)
             .putBoolean(KEY_TOUCH_SMEAR, gui.touchSmear)
             .putFloat(KEY_TOUCH_SMEAR_STRENGTH, gui.touchSmearStrength)
@@ -262,9 +242,11 @@ class ThemeStore(
     }
 
     internal companion object {
-        const val SAFETY_CHOICE_VERSION = 1
+        const val KEY_SAFETY_ACKNOWLEDGED = "gui_safety_acknowledged"
+
+        /** Read-only now: the old three-way answer, kept solely to migrate existing installs. */
         const val KEY_SAFETY_CHOICE = "gui_safety_choice"
-        const val KEY_SAFETY_CHOICE_VERSION = "gui_safety_choice_version"
+        const val LEGACY_CHOICE_REDUCED_MOTION = "REDUCED_MOTION"
 
         const val KEY = "app_theme"
         const val KEY_POS = "gui_player_pos"
@@ -280,10 +262,6 @@ class ThemeStore(
         const val KEY_FONT_COLOR = "gui_font_color"
         const val KEY_TEXT_SCALE = "gui_text_scale"
         const val KEY_BEAT_INTERVAL = "beat_min_interval_ms"
-        const val KEY_SAFE_VISUALS = "gui_safe_visuals"
-        const val KEY_MAX_FLASH_HZ = "gui_max_flash_hz"
-        const val KEY_MAX_FLASH_DEPTH = "gui_max_flash_depth"
-        const val KEY_ALLOW_INVERSION = "gui_allow_inversion"
         const val KEY_REDUCED_MOTION = "gui_reduced_motion"
         const val KEY_TOUCH_SMEAR = "gui_touch_smear"
         const val KEY_TOUCH_SMEAR_STRENGTH = "gui_touch_smear_strength"

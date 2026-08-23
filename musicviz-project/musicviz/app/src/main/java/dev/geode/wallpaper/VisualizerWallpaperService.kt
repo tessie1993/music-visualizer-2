@@ -62,7 +62,7 @@ class VisualizerWallpaperService : WallpaperService() {
             prefs.getString("milk_path", null)?.let { path ->
                 if (java.io.File(path).isFile) engine.loadMilkPreset(path)
             }
-            engine.safety = ThemeStore(prefsFiles.general).loadGui().safety
+            engine.reducedMotion = ThemeStore(prefsFiles.general).loadGui().reducedMotion
         }
 
         private fun startFeeding(engine: VisualizerRenderer) {

@@ -2,20 +2,28 @@ package dev.geode.render
 
 import dev.geode.render.scene.SceneParams
 
-enum class VisualSafetyChoice {
-    UNKNOWN,
-
-    SAFE,
-
-    REDUCED_MOTION,
-
-    CUSTOM,
-}
-
+/**
+ * The flash and luminance clamp.
+ *
+ * This is not a setting. There is no mode, no off switch and no strict tier: every scene, every
+ * preset, every imported `.milk` file and every parameter combination passes through the same
+ * numbers, on preview and on export alike, because the clamp is applied after all of them. A
+ * preview that is safe therefore cannot produce an unsafe file — same clamp, same code, same
+ * numbers.
+ *
+ * The threshold is the accepted one: no more than three flashes in any one second, with the
+ * luminance change of anything faster held under [MAX_FLASH_DEPTH].
+ *
+ * Reduced motion is deliberately *not* part of this. It is a vestibular accessibility preference
+ * about how much the picture moves, not a photosensitivity guard, so it stays a choice the user
+ * makes while the flash clamp stays one they cannot.
+ */
 object VisualSafety {
+    /** No more than three flashes in any one second. The rule, not a default. */
     const val WCAG_FLASHES_PER_SECOND = 3f
 
-    const val DEFAULT_STROBE_HZ = 9f
+    /** Ceiling on how far luminance may swing within one flash. */
+    const val MAX_FLASH_DEPTH = 0.25f
 
     const val STROBE_SHADER_DEPTH = 0.85f
 
@@ -23,61 +31,28 @@ object VisualSafety {
 
     const val REDUCED_MOTION_SCALE = 0.4f
 
-    data class SafetyConfig(
-        val enabled: Boolean = false,
-        val maxFlashHz: Float = WCAG_FLASHES_PER_SECOND,
-        val maxFlashDepth: Float = 0.25f,
-        val allowInversion: Boolean = false,
-        val reducedMotion: Boolean = false,
-    ) {
-        val isNeutral: Boolean get() = !enabled && !reducedMotion
-
-        companion object {
-            val OFF = SafetyConfig()
-
-            val SAFE_DEFAULTS =
-                SafetyConfig(
-                    enabled = true,
-                    maxFlashHz = WCAG_FLASHES_PER_SECOND,
-                    maxFlashDepth = 0.25f,
-                    allowInversion = false,
-                    reducedMotion = false,
-                )
-        }
-    }
-
-    fun resolve(
-        choice: VisualSafetyChoice,
-        custom: SafetyConfig,
-    ): SafetyConfig =
-        when (choice) {
-            VisualSafetyChoice.UNKNOWN, VisualSafetyChoice.SAFE -> SafetyConfig.SAFE_DEFAULTS
-            VisualSafetyChoice.REDUCED_MOTION -> SafetyConfig.SAFE_DEFAULTS.copy(reducedMotion = true)
-            VisualSafetyChoice.CUSTOM -> custom
-        }
-
+    /**
+     * Clamps [p] to the flash limit, then optionally slows it for reduced motion.
+     *
+     * Inversion and solarize are left alone on purpose. A statically inverted picture is not a
+     * flash — the hazard is toggling it quickly, and the rate limits below already bound how fast
+     * luminance is allowed to move. Forcing them off would only produce a dead control.
+     */
     fun apply(
         p: SceneParams,
-        config: SafetyConfig,
+        reducedMotion: Boolean = false,
     ): SceneParams {
-        if (config.isNeutral) return p
-        var out = p
-        if (config.enabled) {
-            val depth = config.maxFlashDepth.coerceIn(0f, 1f)
-            out =
-                out.copy(
-                    strobe = out.strobe.coerceIn(0f, depth / STROBE_SHADER_DEPTH),
-                    flash = out.flash.coerceIn(0f, depth / FLASH_SHADER_DEPTH),
-                    glitch = out.glitch.coerceAtMost(depth),
-                    bloom = out.bloom.coerceAtMost(depth),
-                    invert = out.invert && config.allowInversion,
-                    solarize = out.solarize && config.allowInversion,
-                    brightness = out.brightness.coerceIn(0f, 1f + depth),
-                    intensity = out.intensity.coerceIn(0f, 1f + depth),
-                    contrast = out.contrast.coerceIn(0f, 1f + depth),
-                )
-        }
-        if (config.reducedMotion) {
+        var out =
+            p.copy(
+                strobe = p.strobe.coerceIn(0f, MAX_FLASH_DEPTH / STROBE_SHADER_DEPTH),
+                flash = p.flash.coerceIn(0f, MAX_FLASH_DEPTH / FLASH_SHADER_DEPTH),
+                glitch = p.glitch.coerceAtMost(MAX_FLASH_DEPTH),
+                bloom = p.bloom.coerceAtMost(MAX_FLASH_DEPTH),
+                brightness = p.brightness.coerceIn(0f, 1f + MAX_FLASH_DEPTH),
+                intensity = p.intensity.coerceIn(0f, 1f + MAX_FLASH_DEPTH),
+                contrast = p.contrast.coerceIn(0f, 1f + MAX_FLASH_DEPTH),
+            )
+        if (reducedMotion) {
             out =
                 out.copy(
                     speed = out.speed * REDUCED_MOTION_SCALE,
@@ -100,63 +75,46 @@ object VisualSafety {
         beatImpulse: Float,
     ): Float = flash * beatImpulse * FLASH_SHADER_DEPTH
 
-    fun strobeHz(config: SafetyConfig): Float =
-        if (config.enabled) {
-            config.maxFlashHz.coerceIn(0.1f, DEFAULT_STROBE_HZ)
-        } else {
-            DEFAULT_STROBE_HZ
-        }
+    /** The strobe rate any scene may run at. Fixed at the limit. */
+    fun strobeHz(): Float = WCAG_FLASHES_PER_SECOND
 
+    /** Holds an LFO driving a luminance target down to the flash limit. */
     fun limitLfoRate(
         rateHz: Float,
         target: LfoTarget,
-        config: SafetyConfig,
-    ): Float =
-        if (config.enabled && target.isLuminance) {
-            rateHz.coerceAtMost(config.maxFlashHz.coerceAtLeast(0.1f))
-        } else {
-            rateHz
-        }
+    ): Float = if (target.isLuminance) rateHz.coerceAtMost(WCAG_FLASHES_PER_SECOND) else rateHz
 
-    fun beatMinIntervalMs(
-        requestedMs: Float,
-        config: SafetyConfig,
-    ): Float =
-        if (config.enabled) {
-            maxOf(requestedMs, 1000f / config.maxFlashHz.coerceAtLeast(0.1f))
-        } else {
-            requestedMs
-        }
+    /** Floors the gap between beat-driven hits so they cannot outrun the flash limit. */
+    fun beatMinIntervalMs(requestedMs: Float): Float = maxOf(requestedMs, 1000f / WCAG_FLASHES_PER_SECOND)
 
-    fun transitionStyle(
-        requested: TransitionStyle,
-        config: SafetyConfig,
-    ): TransitionStyle = if (config.enabled && requested == TransitionStyle.CUT) TransitionStyle.FADE else requested
+    /** A hard cut between scenes is a full-frame luminance step, so it always becomes a fade. */
+    fun transitionStyle(requested: TransitionStyle): TransitionStyle =
+        if (requested == TransitionStyle.CUT) TransitionStyle.FADE else requested
 
-    fun layerMix(
-        requested: Float,
-        mode: BlendMode,
-        config: SafetyConfig,
-    ): Float {
-        val mix = requested.coerceIn(0f, 1f)
-        if (!config.enabled) return mix
-        return when (mode) {
-            BlendMode.DIFFERENCE ->
-                if (config.allowInversion) minOf(mix, config.maxFlashDepth) else 0f
-            BlendMode.ADD -> minOf(mix, config.maxFlashDepth)
-            else -> mix
-        }
-    }
-
-    fun transitionId(
-        requested: String,
-        config: SafetyConfig,
-    ): String =
-        if (config.enabled && requested == TransitionStyle.CUT.name.lowercase()) {
+    fun transitionId(requested: String): String =
+        if (requested == TransitionStyle.CUT.name.lowercase()) {
             TransitionStyle.FADE.name.lowercase()
         } else {
             requested
         }
+
+    /**
+     * Caps how hard a second layer may be blended in.
+     *
+     * Additive and difference blending both drive large luminance swings at full mix, so both are
+     * held to [MAX_FLASH_DEPTH] rather than switched off — the mode stays usable, it just cannot
+     * reach flash territory.
+     */
+    fun layerMix(
+        requested: Float,
+        mode: BlendMode,
+    ): Float {
+        val mix = requested.coerceIn(0f, 1f)
+        return when (mode) {
+            BlendMode.DIFFERENCE, BlendMode.ADD -> minOf(mix, MAX_FLASH_DEPTH)
+            else -> mix
+        }
+    }
 
     private val LfoTarget.isLuminance: Boolean
         get() =

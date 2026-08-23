@@ -58,7 +58,6 @@ import dev.geode.R
 import dev.geode.analysis.SearchMatcher
 import dev.geode.data.BootAnimationStore
 import dev.geode.data.GeodePrefsFiles
-import dev.geode.render.VisualSafetyChoice
 import dev.geode.render.VisualizerView
 import dev.geode.ui.theme.StoneIcon
 import dev.geode.ui.theme.StoneIconArt
@@ -264,11 +263,9 @@ fun AppRoot() {
                     },
                 )
             }
-            if ((!bootAnimEnabled || appState.bootDone) && gui.safetyChoice == VisualSafetyChoice.UNKNOWN) {
+            if ((!bootAnimEnabled || appState.bootDone) && !gui.safetyAcknowledged) {
                 SafetyConsent(
-                    onChoose = { choice, limited ->
-                        settingsViewModel.setGuiPrefs(gui.copy(safetyChoice = choice, safeVisuals = limited))
-                    },
+                    onAcknowledge = { settingsViewModel.setGuiPrefs(gui.copy(safetyAcknowledged = true)) },
                 )
             }
             if (bootAnimEnabled && !appState.bootDone) {

@@ -96,17 +96,19 @@ internal class OffscreenCompositor(
 
     private val flashBudget = dev.geode.render.FlashBudget()
 
+    /**
+     * The flash-rate budget. There is no unlimited path: an export is held to the same budget as
+     * the screen, which is what makes a safe preview a guarantee about the file rather than a hint.
+     */
     private fun flashGain(
         timeSeconds: Float,
         params: SceneParams,
         features: AudioFeatures,
-        limitFlashRate: Boolean,
     ): Float {
         val impulse =
             dev.geode.render.VisualSafety
                 .flashImpulse(params.flash, features.beatImpulse)
-        val gain = flashBudget.gainFor(timeSeconds, impulse)
-        return if (limitFlashRate) gain else 1f
+        return flashBudget.gainFor(timeSeconds, impulse)
     }
 
     private val noiseTex: Int = dev.geode.render.BlueNoise.createTexture(context)
@@ -221,8 +223,7 @@ internal class OffscreenCompositor(
         rippleTexelH: Float = 0f,
         rippleStrength: Float = 0f,
         rippleSpecular: Float = 0f,
-        strobeHz: Float = dev.geode.render.VisualSafety.DEFAULT_STROBE_HZ,
-        limitFlashRate: Boolean = false,
+        strobeHz: Float = dev.geode.render.VisualSafety.strobeHz(),
     ) {
         grade.advance(params, dtSeconds, features.motionImpulse)
         val family =
@@ -284,7 +285,7 @@ internal class OffscreenCompositor(
         GLES30.glUniform1f(loc("uPostDriftY"), params.driftY)
         GLES30.glUniform1f(loc("uPostSway"), params.sway)
         GLES30.glUniform1f(loc("uPostShake"), params.shake)
-        GLES30.glUniform1f(loc("uPostFlash"), params.flash * flashGain(timeSeconds, params, features, limitFlashRate))
+        GLES30.glUniform1f(loc("uPostFlash"), params.flash * flashGain(timeSeconds, params, features))
         GLES30.glUniform1f(loc("uPostTemp"), params.temperature)
         GLES30.glUniform1f(loc("uPostSolarize"), if (params.solarize) 1f else 0f)
         GLES30.glUniform1f(loc("uPostMirror"), if (params.mirror) 1f else 0f)
