@@ -123,11 +123,16 @@ class LoudnessMeter(
             val started =
                 runCatching {
                     MediaCodec.createDecoderByType(mime).also {
+                        // Published before configure/start, not after: a codec that fails to
+                        // configure still exists, and if `decoder` is only assigned once this
+                        // block returns, the finally below has nothing to release. MediaCodec
+                        // instances come from a device-global pool, so one leaked here fails the
+                        // next unrelated export rather than this one.
+                        decoder = it
                         it.configure(sourceFormat, null, null, 0)
                         it.start()
                     }
                 }.getOrElse { return LoudnessResult.Unreadable("This device has no decoder for $mime.") }
-            decoder = started
             return drain(started, extractor, sourceFormat, isCancelled, onProgress)
         } finally {
             bestEffort(TAG, "decoder?.stop()") { decoder?.stop() }
