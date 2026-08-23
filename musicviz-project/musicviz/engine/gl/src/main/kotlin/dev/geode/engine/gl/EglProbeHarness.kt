@@ -73,7 +73,12 @@ object EglProbeHarness {
      *   FBO, so the pbuffer's own colour depth is never used for anything; constraining it
      *   would only shrink the set of configs a device can satisfy. All that is required is that
      *   the config is ES3-renderable and can back a pbuffer.
+     *
+     * `Throwable` and not `Exception`: a missing EGL entry point surfaces as an `Error`, and a
+     * startup probe is the last place that should be fatal. Cancellation is rethrown, which is
+     * what the instance check is for.
      */
+    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException")
     fun <T> withProbeContext(block: () -> T): EglProbeOutcome<T> {
         if (EGL14.eglGetCurrentContext() != EGL14.EGL_NO_CONTEXT) {
             return EglProbeOutcome.Unavailable(

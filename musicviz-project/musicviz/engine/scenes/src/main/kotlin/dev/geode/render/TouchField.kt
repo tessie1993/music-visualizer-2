@@ -256,8 +256,8 @@ class TouchField {
 
     private fun decay(dt: Float) {
         val k = exp(-dt / RELEASE_TAU_SECONDS)
-        for (i in 0 until MAX_POINTS) {
-            if (i < liveCount) continue
+        // Exactly the released slots: 0 until liveCount are still held and do not decay.
+        for (i in liveCount until MAX_POINTS) {
             if (strength[i] <= 0f) continue
             strength[i] *= k
             age[i] += dt

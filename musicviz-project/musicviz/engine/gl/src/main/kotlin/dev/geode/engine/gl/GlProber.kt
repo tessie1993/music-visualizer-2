@@ -105,7 +105,10 @@ object GlProber {
      * absent from the map counts as failed, so an empty report claims nothing and
      * [FormatPolicy] hands every role the core-mandated RGBA8 floor. A device therefore gets a
      * named plan rather than a black frame even if this function accomplishes nothing.
+     *
+     * Suppressed rather than rewritten: the instance check IS the cancellation rethrow.
      */
+    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException")
     fun probe(): GlProbeReport {
         val identity = identity()
         val guard = probeCatching("capture GL state") { GlStateGuard.captureAndNeutralise() }
@@ -656,6 +659,7 @@ object GlProber {
      * startup probe is the last place that should be fatal. Cancellation is rethrown because it
      * is control flow, not a failed measurement.
      */
+    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException")
     private inline fun <T> probeCatching(
         what: String,
         block: () -> T,

@@ -403,7 +403,7 @@ object ProgramBinaryCache {
     }
 
     private fun drainErrors() {
-        for (attempt in 0 until ERROR_DRAIN_LIMIT) {
+        repeat(ERROR_DRAIN_LIMIT) {
             if (GLES30.glGetError() == GLES30.GL_NO_ERROR) return
         }
     }

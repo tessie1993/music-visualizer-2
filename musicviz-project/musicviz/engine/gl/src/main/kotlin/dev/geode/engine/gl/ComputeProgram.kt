@@ -80,7 +80,13 @@ class ComputeProgram private constructor(
          *
          * Requires a current ES 3.1 context. Throws [ComputeCompileException] on any failure;
          * callers that want a value rather than an exception use [buildReporting].
+         *
+         * Three throws, one type, three distinct GL failures: the program object was never
+         * created, the link failed, or the driver reported a work-group size other than the
+         * one the source declared. Collapsing them would cost the caller the only
+         * information that says which of the three happened.
          */
+        @Suppress("ThrowsCount")
         fun build(
             label: String,
             source: String,

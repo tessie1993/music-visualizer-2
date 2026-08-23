@@ -8,15 +8,8 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     id("geode.kotlin-common")
-    alias(libs.plugins.detekt)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
-}
-
-detekt {
-    config.setFrom(rootProject.file("config/detekt/detekt.yml"))
-    baseline = file("detekt-baseline.xml")
-    buildUponDefaultConfig = true
 }
 
 val keystoreProps =
