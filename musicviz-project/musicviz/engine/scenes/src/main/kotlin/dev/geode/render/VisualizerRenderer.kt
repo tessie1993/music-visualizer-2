@@ -4,7 +4,10 @@ import android.content.Context
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.os.SystemClock
+import android.util.Log
 import dev.geode.analysis.AudioFeatures
+import dev.geode.engine.gl.DeviceGl
+import dev.geode.engine.gl.GlProfile
 import dev.geode.engine.scenes.R
 import dev.geode.render.fluid.CurlFlowMath
 import dev.geode.render.fluid.CurlFlowScene
@@ -27,6 +30,8 @@ class VisualizerRenderer(
     private val context: Context,
 ) : GLSurfaceView.Renderer {
     companion object {
+        private const val TAG = "VisualizerRenderer"
+
         private const val TIME_WRAP_SEC = 7100f
 
         const val STYLE_LAYER = 6
@@ -107,6 +112,19 @@ class VisualizerRenderer(
     val lfoEngine = LfoEngine()
 
     val adsrEngine = AdsrEngine()
+
+    /**
+     * What this device's GL was actually measured to do, resolved against the live context in
+     * [onSurfaceCreated] and constant for the life of that surface.
+     *
+     * [DeviceGl.unprobed] rather than `null` or `lateinit`: a renderer whose surface has not
+     * been created yet has no measurement, and the unprobed profile is the honest spelling of
+     * that — the ES 3.0 baseline, the RGBA8 floor for every role, and a tier whose stated reason
+     * is that nothing could be probed. Readers get a complete plan and no nullable to reason
+     * about, and one that claims nothing it has not proven.
+     */
+    var glProfile: GlProfile = DeviceGl.unprobed()
+        private set
 
     private val registry =
         SceneRegistry(
@@ -250,6 +268,19 @@ class VisualizerRenderer(
         gl: GL10?,
         config: EGLConfig?,
     ) {
+        // FIRST, before anything here allocates a GL object. Every target created below wants
+        // its format from the resolved plan, and a probe that ran after them would be describing
+        // a context whose resources had already been chosen without it. DeviceGl memoises on
+        // driver identity, so the recreate cases that dominate — rotation, return from
+        // background, the wallpaper engine restarting — pay three glGetString calls; only a
+        // driver this app has never run on pays the probe pass, once, before its first frame.
+        glProfile = DeviceGl.profileWithCurrentContext(context)
+        // Logged here rather than left to DeviceGl, which only speaks when it computes a profile
+        // — and the common case is the memo hit, which is silent. A bug report has to be able to
+        // say which path a device took AND why, because the label alone cannot separate an
+        // honest ES 3.0 phone from a 3.1 one whose limits undershoot its own spec floor.
+        // GlProfile.summary carries both; there is no debug HUD in this app to also put it on.
+        Log.i(TAG, "surface created: ${glProfile.summary}")
         // Both idempotent. The registration is process-wide and no-ops after the first surface;
         // the reset is here because a lost EGL context is also the moment the measured frame-time
         // window stops describing anything that still exists. What it deliberately does NOT reset
