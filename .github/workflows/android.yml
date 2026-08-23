@@ -87,6 +87,30 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: ./gradlew :app:detekt --stacktrace --no-daemon
 
+      # detekt prints only "Analysis failed with N weighted issues" and a stack
+      # trace; the findings themselves go to a report file. Without this, reading
+      # a failure means downloading the reports artifact, so the log says a gate
+      # failed but never which rule or which line. Print them instead.
+      - name: Show detekt findings
+        if: failure()
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          dir=app/build/reports/detekt
+          if [ -f "$dir/detekt.txt" ]; then
+            echo "::group::detekt findings"
+            cat "$dir/detekt.txt"
+            echo "::endgroup::"
+          elif [ -f "$dir/detekt.xml" ]; then
+            # The XML carries the same findings one <error> element per issue;
+            # enough to name the rule, file and line without the artifact.
+            echo "::group::detekt findings (xml)"
+            grep -oE '<file name="[^"]*"|<error line="[0-9]+" column="[0-9]+" severity="[^"]*" message="[^"]*" source="[^"]*"' "$dir/detekt.xml" || cat "$dir/detekt.xml"
+            echo "::endgroup::"
+          else
+            echo "No detekt report found under $dir. Present:"
+            ls -la "$dir" 2>/dev/null || echo "  (directory absent)"
+          fi
+
       - name: Assemble debug APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: ./gradlew :app:assembleDebug --stacktrace --no-daemon

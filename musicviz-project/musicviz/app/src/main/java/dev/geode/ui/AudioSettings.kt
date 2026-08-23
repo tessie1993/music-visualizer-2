@@ -89,12 +89,11 @@ private fun AnalysisGroup(viewModel: SettingsViewModel) {
         }
     }
     Column {
-        Text(stringResource(R.string.audio_preset_morph, gui.morphBeats))
+        Text(stringResource(R.string.audio_preset_morph, gui.presetMorphSeconds))
         CrystalSlider(
-            value = gui.morphBeats.toFloat(),
-            onValueChange = { viewModel.setGuiPrefs(gui.copy(morphBeats = it.toInt())) },
-            valueRange = 0f..16f,
-            steps = 15,
+            value = gui.presetMorphSeconds,
+            onValueChange = { viewModel.setGuiPrefs(gui.copy(presetMorphSeconds = it)) },
+            valueRange = 0f..ThemeStore.PRESET_MORPH_SECONDS_MAX,
         )
     }
     Column {

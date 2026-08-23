@@ -29,6 +29,9 @@ enum class ParamScope {
 
     TREBLE_BAND,
 
+    /** Reads at least one band envelope. Beam and MilkDrop take raw PCM and read none. */
+    BAND_GAINS,
+
     /** Lives in the shader-scene fragment programs (morph, dual palette, colour map, duotone). */
     SHADER_LOOK,
 
@@ -89,6 +92,7 @@ enum class ParamScope {
             BASS_BAND -> kind in BASS_READERS
             MID_BAND -> kind in MID_READERS
             TREBLE_BAND -> kind in TREBLE_READERS
+            BAND_GAINS -> kind in BASS_READERS || kind in MID_READERS || kind in TREBLE_READERS
             SHADER_LOOK -> kind == SceneKind.SHADER
             ENDLESS_ZOOM -> kind == SceneKind.SHADER || kind == SceneKind.MILKDROP
             TURBULENCE -> kind in TURBULENCE_READERS

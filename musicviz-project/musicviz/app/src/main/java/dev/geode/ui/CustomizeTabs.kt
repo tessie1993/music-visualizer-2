@@ -352,14 +352,21 @@ internal fun ReactivityTab(
         LabeledSlider(ParamKeys.AUDIO_DRIVE, p.audioDrive, 0.2f..2.5f) { onChange(p.copy(audioDrive = it)) }
         LabeledSlider(ParamKeys.BEAT_RESPONSE, p.beatResponse, 0f..2f) { onChange(p.copy(beatResponse = it)) }
         LabeledSlider(ParamKeys.BEAT_FLASH, p.flash, 0f..1f) { onChange(p.copy(flash = it)) }
-        SectionHeader("Band balance")
+        SectionHeader("Band balance", ParamScope.BAND_GAINS)
         LabeledSlider(ParamKeys.BASS_GAIN, p.bassGain, 0f..2f) { onChange(p.copy(bassGain = it)) }
         LabeledSlider(ParamKeys.MID_GAIN, p.midGain, 0f..2f) { onChange(p.copy(midGain = it)) }
         LabeledSlider(ParamKeys.TREBLE_GAIN, p.trebGain, 0f..2f) { onChange(p.copy(trebGain = it)) }
-        SectionHeader("Envelope shape")
-        ControlHint("How fast every band envelope rises and falls. Short attack snaps, long decay smears.")
-        LabeledSlider(REACTIVITY_ATTACK, attack, 0.05f..1f) { onReactivityChange(it, decay) }
-        LabeledSlider(REACTIVITY_DECAY, decay, 0.02f..0.6f) { onReactivityChange(attack, it) }
+        SectionHeader("Envelope shape", ParamScope.BAND_GAINS)
+        ControlHint(
+            "How fast every band envelope rises and falls. Short attack snaps, long decay smears.",
+            ParamScope.BAND_GAINS,
+        )
+        LabeledSlider(REACTIVITY_ATTACK, attack, 0.05f..1f, scope = ParamScope.BAND_GAINS) {
+            onReactivityChange(it, decay)
+        }
+        LabeledSlider(REACTIVITY_DECAY, decay, 0.02f..0.6f, scope = ParamScope.BAND_GAINS) {
+            onReactivityChange(attack, it)
+        }
         SectionHeader("Triggered envelopes")
         ControlHint(
             "Two envelopes fired by the transients that are heard. Each can drive SEVERAL " +
@@ -485,7 +492,7 @@ internal fun FxTab(
         SectionHeader("Settings fade (automation)")
         ControlHint("Changes to sliders and preset loads glide to their new values over this time.")
         LabeledSlider(PARAM_FADE, p.paramFadeSec, 0f..5f) { onChange(p.copy(paramFadeSec = it)) }
-        SectionHeader("Feedback & trails", ParamScope.TRAIL_TOGGLE)
+        SectionHeader("Feedback & trails", ParamScope.TRAIL_LENGTH)
         CheckRow(ParamKeys.TRAILS, p.trails) { onChange(p.copy(trails = it)) }
         LabeledSlider(ParamKeys.TRAIL_LENGTH, p.trailLength, 0.05f..0.98f) { onChange(p.copy(trailLength = it)) }
         LabeledSlider(ParamKeys.TRAIL_ZOOM_ECHO_IN_OUT, p.trailZoom, -0.5f..0.5f) { onChange(p.copy(trailZoom = it)) }
