@@ -45,10 +45,12 @@ import dev.geode.playback.PlaybackErrors
 import dev.geode.playback.PlaybackService
 import dev.geode.render.AdsrConfig
 import dev.geode.render.LfoConfig
+import dev.geode.render.SceneFactory
 import dev.geode.render.TransitionStyle
 import dev.geode.render.scene.CustomizeTab
 import dev.geode.render.scene.PcmChunk
 import dev.geode.render.scene.SceneParams
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -65,7 +67,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.io.File
 
 @OptIn(UnstableApi::class)
 class PlayerSession private constructor(
@@ -941,11 +942,11 @@ class PlayerSession private constructor(
     fun startExport(
         aspect: ExportAspect,
         fps: Int,
-        sceneFactory: VideoExporter.SceneFactory,
+        sceneFactory: SceneFactory,
         destination: Uri? = null,
         loopSafe: Boolean = false,
         range: ExportRange? = null,
-        sceneFactoryFor: ((String) -> VideoExporter.SceneFactory)? = null,
+        sceneFactoryFor: ((String) -> SceneFactory)? = null,
     ) = exportController.startExport(aspect, fps, sceneFactory, destination, loopSafe, range, sceneFactoryFor)
 
     fun cancelExport() = exportController.cancelExport()

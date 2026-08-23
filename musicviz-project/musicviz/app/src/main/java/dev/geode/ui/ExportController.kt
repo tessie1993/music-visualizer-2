@@ -9,6 +9,7 @@ import dev.geode.export.ExportRange
 import dev.geode.export.ExportRun
 import dev.geode.export.ExportService
 import dev.geode.export.VideoExporter
+import dev.geode.render.SceneFactory
 import dev.geode.render.scene.SceneParams
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -106,11 +107,11 @@ internal class ExportController(
     fun startExport(
         aspect: ExportAspect,
         fps: Int,
-        sceneFactory: VideoExporter.SceneFactory,
+        sceneFactory: SceneFactory,
         destination: Uri? = null,
         loopSafe: Boolean = false,
         range: ExportRange? = null,
-        sceneFactoryFor: ((String) -> VideoExporter.SceneFactory)? = null,
+        sceneFactoryFor: ((String) -> SceneFactory)? = null,
     ) {
         val uri = host.exportUri ?: return
         if (_exportState.value.phase.isBusy || ExportRun.running) return

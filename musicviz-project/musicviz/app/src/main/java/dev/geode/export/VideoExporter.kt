@@ -1,6 +1,5 @@
 package dev.geode.export
 
-import dev.geode.util.bestEffort
 import android.content.ContentValues
 import android.content.Context
 import android.media.MediaCodec
@@ -13,12 +12,14 @@ import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import dev.geode.analysis.FeatureTimeline
+import dev.geode.render.SceneFactory
 import dev.geode.render.fluid.CurlFlowMath
 import dev.geode.render.scene.Scene
 import dev.geode.render.scene.SceneParams
+import dev.geode.util.bestEffort
+import java.nio.ByteBuffer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.nio.ByteBuffer
 
 enum class ExportQuality(
     val shortSide: Int,
@@ -106,10 +107,6 @@ class VideoExporter(
             }
             return EffectUse(flow, ripple)
         }
-    }
-
-    interface SceneFactory {
-        fun create(): Scene
     }
 
     data class EffectUse(

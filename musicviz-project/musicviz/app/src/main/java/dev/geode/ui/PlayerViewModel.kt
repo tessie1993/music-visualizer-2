@@ -4,23 +4,24 @@ import android.content.Intent
 import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.lifecycle.ViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
-import dev.geode.di.PlayerSessionProvider
-import javax.inject.Inject
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.geode.analysis.AudioFeatures
 import dev.geode.analysis.IntelligenceMode
 import dev.geode.analysis.LiveInputProfile
 import dev.geode.audio.MicCapture
 import dev.geode.data.MilkPackImporter
 import dev.geode.data.Preset
+import dev.geode.di.PlayerSessionProvider
 import dev.geode.export.ExportAspect
 import dev.geode.export.ExportRange
 import dev.geode.export.VideoExporter
+import dev.geode.render.SceneFactory
 import dev.geode.render.TransitionStyle
 import dev.geode.render.scene.PcmChunk
 import dev.geode.render.scene.SceneParams
+import javax.inject.Inject
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -247,11 +248,11 @@ class PlayerViewModel
         fun startExport(
             aspect: ExportAspect,
             fps: Int,
-            sceneFactory: VideoExporter.SceneFactory,
+            sceneFactory: SceneFactory,
             destination: Uri? = null,
             loopSafe: Boolean = false,
             range: ExportRange? = null,
-            sceneFactoryFor: ((String) -> VideoExporter.SceneFactory)? = null,
+            sceneFactoryFor: ((String) -> SceneFactory)? = null,
         ) = session.startExport(aspect, fps, sceneFactory, destination, loopSafe, range, sceneFactoryFor)
 
         override fun onCleared() {

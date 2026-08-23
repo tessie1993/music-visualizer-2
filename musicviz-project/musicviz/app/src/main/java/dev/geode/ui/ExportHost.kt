@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.export.ExportAspect
 import dev.geode.export.ExportRange
+import dev.geode.render.SceneFactory
 import dev.geode.render.VisualizerView
 
 private data class PendingExport(
@@ -73,7 +74,7 @@ fun ExportHost(
         mutableStateOf<PendingExport?>(null)
     }
 
-    val sceneFactoryFor: (String, String) -> dev.geode.export.VideoExporter.SceneFactory =
+    val sceneFactoryFor: (String, String) -> SceneFactory =
         { requested, fallback ->
             val renderer = visualizerView.visualizerRenderer
             renderer.exportSceneFactory(

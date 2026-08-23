@@ -6,7 +6,6 @@ import android.opengl.GLSurfaceView
 import android.os.SystemClock
 import dev.geode.R
 import dev.geode.analysis.AudioFeatures
-import dev.geode.export.VideoExporter
 import dev.geode.render.fluid.CurlFlowMath
 import dev.geode.render.fluid.CurlFlowScene
 import dev.geode.render.fluid.FluidScene
@@ -569,8 +568,8 @@ class VisualizerRenderer(
             else -> CompositeGrade.SceneFamily.FLUID
         }
 
-    fun exportSceneFactory(sceneId: String): VideoExporter.SceneFactory =
-        object : VideoExporter.SceneFactory {
+    fun exportSceneFactory(sceneId: String): SceneFactory =
+        object : SceneFactory {
             override fun create(): Scene = registry.exportScene(sceneId, sceneParams)
         }
 }
