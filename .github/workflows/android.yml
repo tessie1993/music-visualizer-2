@@ -1,4 +1,4 @@
-name: Build MusicViz Debug APK
+name: Build Geode Debug APK
 
 # Pull-request CI, plus a manual build when an APK is wanted from a branch.
 # Pushes to main are handled by ship-apk.yml, which runs the same build and
@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: musicviz-debug-${{ github.workflow }}-${{ github.ref }}
+  group: geode-debug-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -123,7 +123,7 @@ jobs:
           VERSION_NAME=$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' \
             "$PROJECT_DIR/app/build.gradle.kts" | head -n 1)
           SHORT_SHA="${GITHUB_SHA::7}"
-          FILE_NAME="MusicViz-${VERSION_NAME:-debug}-${SHORT_SHA}-debug.apk"
+          FILE_NAME="Geode-${VERSION_NAME:-debug}-${SHORT_SHA}-debug.apk"
 
           mkdir -p dist
           cp "$APK_SOURCE" "dist/$FILE_NAME"
@@ -144,15 +144,16 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: musicviz-debug-${{ github.run_number }}-${{ github.sha }}
+          name: geode-debug-${{ github.run_number }}-${{ github.sha }}
           path: |
             dist/${{ steps.package.outputs.file_name }}
             dist/${{ steps.package.outputs.file_name }}.sha256
           if-no-files-found: error
-          # 7 days, not 30: every PR run stores an uncompressed ~35 MB APK, and
-          # the quota that broke run 185 is the sum of them.
+          # 7 days, not 30: the quota that broke run 185 is the sum of these.
+          # The APK is mostly WebP and native libs, which do not compress
+          # further, but the dex and resources.arsc do - so this no longer
+          # forces compression off.
           retention-days: 7
-          compression-level: 0
 
       # Verification runs after the APK upload. If a check fails, the APK is
       # still available from the workflow run for device testing.
@@ -181,7 +182,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: musicviz-build-reports-${{ github.run_number }}
+          name: geode-build-reports-${{ github.run_number }}
           path: |
             musicviz-project/musicviz/app/build/reports/
             musicviz-project/musicviz/app/build/test-results/

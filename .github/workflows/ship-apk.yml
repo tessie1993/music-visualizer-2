@@ -1,4 +1,4 @@
-name: Ship MusicViz APK
+name: Ship Geode APK
 
 # Builds the debug-signed APK from main and publishes it as a GitHub Release,
 # so it can be downloaded and sideloaded without a GitHub login and without the
@@ -37,7 +37,7 @@ permissions:
 # and it stayed undetected until the NEXT push failed for the same reason.
 # One group per commit means every commit on main is verified on its own.
 concurrency:
-  group: musicviz-ship-${{ github.sha }}
+  group: geode-ship-${{ github.sha }}
   cancel-in-progress: false
 
 env:
@@ -107,7 +107,7 @@ jobs:
           # run, so tag the commit actually built.
           BUILT_SHA=$(git rev-parse HEAD)
           SHORT_SHA=${BUILT_SHA::7}
-          FILE_NAME="MusicViz-${VERSION_NAME:-debug}-${SHORT_SHA}-debug.apk"
+          FILE_NAME="Geode-${VERSION_NAME:-debug}-${SHORT_SHA}-debug.apk"
 
           mkdir -p dist
           cp "$APK_SOURCE" "dist/$FILE_NAME"
@@ -138,21 +138,23 @@ jobs:
         run: |
           set -euo pipefail
           NOTES=$(cat <<EOF
-          Debug-signed MusicViz APK built by GitHub Actions.
+          Debug-signed Geode APK built by GitHub Actions.
 
           | | |
           | --- | --- |
           | Version | \`$VERSION_NAME\` (versionCode $VERSION_CODE) |
           | Commit | \`$BUILT_SHA\` |
-          | ABI | arm64-v8a, minSdk 26 |
+          | ABI | arm64-v8a and x86_64, minSdk 26 |
           | Workflow run | [#$GITHUB_RUN_NUMBER]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) |
 
           Download \`$FILE_NAME\` and open it on the device to install; Android
           asks for permission to install from the browser or file manager used.
           Verify the download with \`sha256sum -c $FILE_NAME.sha256\`.
 
-          This build is signed with Android's debug key, so it installs
-          alongside — and never updates — a Play Store install of MusicViz.
+          This build is signed with Android's debug key while sharing the
+          Play build's application id, so the two cannot be installed at the
+          same time: Android refuses the install over a Play copy, and you have
+          to uninstall one to try the other.
           EOF
           )
 
@@ -170,7 +172,7 @@ jobs:
             gh release create "$TAG" \
               "dist/$FILE_NAME" "dist/$FILE_NAME.sha256" \
               --target "$BUILT_SHA" \
-              --title "MusicViz $VERSION_NAME ($SHORT_SHA)" \
+              --title "Geode $VERSION_NAME ($SHORT_SHA)" \
               --notes "$NOTES" \
               "${PRERELEASE_FLAG[@]}"
           fi
@@ -192,7 +194,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: musicviz-ship-reports-${{ github.run_number }}
+          name: geode-ship-reports-${{ github.run_number }}
           path: |
             musicviz-project/musicviz/app/build/reports/
             musicviz-project/musicviz/app/build/test-results/
