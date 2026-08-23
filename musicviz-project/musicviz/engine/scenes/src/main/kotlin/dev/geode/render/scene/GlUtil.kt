@@ -115,6 +115,10 @@ object GlUtil {
     private val INCLUDES: Map<String, Int> =
         mapOf(
             "lib_palette" to R.raw.lib_palette,
+            "lib_scene_uniforms" to R.raw.lib_scene_uniforms,
+            "lib_scene_grade" to R.raw.lib_scene_grade,
+            "lib_sdf3" to R.raw.lib_sdf3,
+            "lib_touch" to R.raw.lib_touch,
             "lib_psrdnoise2" to R.raw.lib_psrdnoise2,
             "lib_particle_common" to R.raw.lib_particle_common,
             "lib_particle_shade" to R.raw.lib_particle_shade,

@@ -54,6 +54,14 @@ object SceneCapabilities {
             SceneIds.SOLAR to R.raw.solar_frag,
             SceneIds.WINTER to R.raw.winter_frag,
             SceneIds.LAVA to R.raw.lava_frag,
+            // The five styles built on the shared GLSL libraries (lib_scene_uniforms,
+            // lib_scene_grade, lib_sdf3, lib_touch) rather than on their own copy of
+            // the boilerplate. Same ShaderScene, same uniform contract.
+            SceneIds.VANISHING to R.raw.vanishing_frag,
+            SceneIds.MORPHOGEN to R.raw.morphogen_frag,
+            SceneIds.NEBULA to R.raw.nebula_frag,
+            SceneIds.NONEUCLID to R.raw.noneuclid_frag,
+            SceneIds.KIFS to R.raw.kifs_frag,
         )
 
     /**

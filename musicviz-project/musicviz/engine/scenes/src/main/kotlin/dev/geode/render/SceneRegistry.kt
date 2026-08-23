@@ -44,6 +44,13 @@ internal class SceneRegistry(
 
     private var paletteLutTex = 0
 
+    /**
+     * The renderer's one [TouchField], held here for the same reason [paletteLutTex] is: scenes
+     * are built lazily on first use, so whatever a scene needs handed to it has to survive
+     * between the handover and the build.
+     */
+    private var touchField: TouchField? = null
+
     @Volatile
     private var milkdropScene: MilkdropScene? = null
 
@@ -148,6 +155,12 @@ internal class SceneRegistry(
         scenes.values.filterIsInstance<ShaderScene>().forEach { it.setPaletteLut(paletteLutTex) }
     }
 
+    /** Hand the renderer's touch field to every shader scene, now and on every later build. */
+    fun setTouchField(field: TouchField) {
+        touchField = field
+        scenes.values.filterIsInstance<ShaderScene>().forEach { it.setTouchField(field) }
+    }
+
     fun resize(
         width: Int,
         height: Int,
@@ -171,7 +184,10 @@ internal class SceneRegistry(
 
     private fun buildScene(id: String): Scene {
         val scene = createScene(id, GlUtil.loadShader(context, R.raw.quad_vert))
-        if (scene is ShaderScene && paletteLutTex != 0) scene.setPaletteLut(paletteLutTex)
+        if (scene is ShaderScene) {
+            if (paletteLutTex != 0) scene.setPaletteLut(paletteLutTex)
+            touchField?.let { scene.setTouchField(it) }
+        }
         scene.init()
         scene.setParams(sceneParams)
         scene.resize(renderWidth, renderHeight)

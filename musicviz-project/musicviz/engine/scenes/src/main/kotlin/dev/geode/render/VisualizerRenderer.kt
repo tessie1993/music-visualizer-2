@@ -118,6 +118,15 @@ class VisualizerRenderer(
             },
         )
 
+    /**
+     * Where the fingers are, for every scene family that wants to know.
+     *
+     * One instance, owned here and handed to the registry, because "where is the user
+     * pointing" is a property of the SURFACE and not of whichever style happens to be on it —
+     * a style switch mid-drag must not restart the gesture.
+     */
+    private val touchField = TouchField()
+
     private val overlays = OverlayEffects(context)
     private val trailPass = TrailPass()
     private val compositePass = CompositePass(context)
@@ -195,6 +204,21 @@ class VisualizerRenderer(
         strength: Float,
     ) = overlays.queueTouchStroke(nx, ny, ndx, ndy, dt, strength)
 
+    /**
+     * Publish the pointers that are down right now, from the UI thread.
+     *
+     * [xy] is `x0, y0, x1, y1, ...` in y-up NDC (-1..1, origin at the centre of the surface);
+     * `n = 0` says every finger has lifted, which starts the release decay rather than being a
+     * no-op. Latest-wins, not a queue — a visual anchor wants the CURRENT position.
+     *
+     * This is a companion to [queueTouchStroke], not a replacement for it: the fluid smear
+     * still needs the whole path, because a smear IS the path and a dropped sample loses ink.
+     */
+    fun submitTouchPoints(
+        xy: FloatArray,
+        n: Int,
+    ) = touchField.submit(xy, n)
+
     fun beginParamMorph(seconds: Float) {
         if (seconds <= 0f) return
         morphFadeSec = seconds
@@ -226,6 +250,12 @@ class VisualizerRenderer(
         config: EGLConfig?,
     ) {
         registry.onSurfaceCreated(renderWidth, renderHeight)
+        // Before the first sceneFor(): a surface loss drops every scene, and the ones rebuilt
+        // here must be handed the field on the way up rather than on the next handover. The
+        // reset goes with it because a lost surface loses the fingers too — resuming a drag
+        // the user is no longer making would strand an anchor in the middle of the frame.
+        touchField.reset()
+        registry.setTouchField(touchField)
         fboA.release()
         fboB.release()
         compositePass.releaseStaleTextures()
@@ -374,6 +404,10 @@ class VisualizerRenderer(
             overlays.stepFlow(gainAdjusted(features, p), dt, p)
         }
         smearing = overlays.smearing(frameNowMs)
+        // Stepped once per frame on the GL thread, ahead of every draw, so each scene reads the
+        // same anchor for the same frame — a second step would age the field twice and make the
+        // release wake decay at the number of scenes drawn rather than at wall-clock time.
+        touchField.step(dt)
         overlays.drainTouchStrokes(scene)
         rippleOverlayOn = overlays.rippleOverlayActive(p, smearing, waterActive = scene is WaterScene)
         if (rippleOverlayOn) overlays.stepRippleOverlay(gainAdjusted(features, p), p, dt)

@@ -8,10 +8,10 @@ shaders get changed blind, and "it looks wrong" comes back as a sentence
 instead of a number. This turns a style into PNGs plus a table of luminance
 statistics you can assert on.
 
-It renders the app's **real** GLSL — the files in `app/src/main/res/raw`, with
-their `//#include` directives resolved exactly the way `GlUtil.kt` resolves
-them — driven by uniform values computed by a JS mirror of the Kotlin scene
-that would upload them.
+It renders the app's **real** GLSL — the files in `engine/scenes/src/main/res/raw`
+and `app/src/main/res/raw`, with their `//#include` directives resolved exactly
+the way `GlUtil.kt` resolves them — driven by uniform values computed by a JS
+mirror of the Kotlin scene that would upload them.
 
 **Read [What it cannot tell you](#what-it-cannot-tell-you) before you trust
 anything it prints.** An over-trusted harness is worse than no harness.
@@ -28,7 +28,7 @@ node preview.mjs --list
 # HYPERSPACE, eight frames of a beat track, PNGs + report.json into out/hs
 node preview.mjs --scene hyperspace --frames 8 --audio beat --out out/hs
 
-# one of the 22 fragment styles
+# one of the fragment styles
 node preview.mjs --scene shader --shader julia --frames 4 --audio tone
 
 # the four field-sim families (SILK / LIFE / ACID / MYCO): the app's own
@@ -132,9 +132,10 @@ FBOs at the app's grid sizes. There is no re-implementation of the fluid to be
 wrong about.
 
 **Stand-ins are named.** Where the app binds something conditionally (the
-FlowField texture, the cyclic-palette atlas), the harness supplies the neutral
-value the app itself sends when it is absent, and prints it as a stand-in
-rather than pretending it is the real thing.
+FlowField texture, the cyclic-palette atlas), or where there is nothing here to
+model at all (the `uTouch*` block - this harness has no pointer), the harness
+supplies the neutral value the app itself sends in that state, and prints it as
+a stand-in rather than pretending it is the real thing.
 
 **The composite pass is the app's, and audited the same way.** With
 `--composite` the scene draws into an RGBA8 target (`VisualizerRenderer`'s
@@ -225,27 +226,35 @@ Also, more mundanely but just as capable of misleading you:
    light. It is a good relative measure and a poor absolute one; use it to
    compare runs, not to make a claim about perceived brightness.
 
-9. **Seven scene families are wired up**: `HyperspaceScene`, the 22
-   `ShaderScene` styles and the four field-sim families
-   `SilkScene`, `LifeScene`, `AcidScene` and `MycoScene` (10 styles each,
-   `--style`). The fluid family's own display passes, WATER, CYMATICS, BEAM
-   and MILKDROP have their own uniform contracts and are not covered. Adding
-   one means adding a driver to `lib/scenes.mjs` — and the audit will tell
-   you when you have not finished.
+9. **Nothing is ever touching the screen here.** The `uTouch*` uniforms are
+   supplied at TouchField's untouched values (all zero, `uTouchGesture = 0`),
+   because this harness has no pointer to model. That is a real state the app
+   spends most of its life in, so the frames are honest - but anything a style
+   draws only under a finger, and the 0.55 s release wake behind a lifted one,
+   are invisible to this tool. Reading a black frame here as "the touch
+   response is dead" is a way to be confidently wrong.
 
-   The field-sim scenes run as a PASS LIST the driver emits per frame -
-   named programs, named ping-pong targets (formats chosen by the same
-   renderability probe as `FluidBuffers`, falling RGBA16F→RGBA8, RG16F→
-   RGBA16F→RGBA8, RGBA32F→RGBA16F→RGBA8), the myco deposit as additive
-   GL_POINTS into the trail's READ side, exactly as the Kotlin sequences
-   its passes. Their sim passes step on every frame; only the present obeys
-   `--every`/`--warmup`. Named stand-ins: the PCM strike envelope runs on
-   the audio MODEL's waveform rather than the app's raw PCM tap, and the
-   acid family's `uChroma` comes from the model's synthetic triad
-   chromagram (the app sends zeros only when no chromagram ran).
-   `LifeScene`'s 4-second liveness census is mirrored through a per-frame
-   readback of the state's centre texel (float, quantized to the app's
-   8-bit steps driver-side).
+10. **Seven scene families are wired up**: `HyperspaceScene`, the 27
+    `ShaderScene` styles and the four field-sim families
+    `SilkScene`, `LifeScene`, `AcidScene` and `MycoScene` (10 styles each,
+    `--style`). The fluid family's own display passes, WATER, CYMATICS, BEAM
+    and MILKDROP have their own uniform contracts and are not covered. Adding
+    one means adding a driver to `lib/scenes.mjs` — and the audit will tell
+    you when you have not finished.
+
+    The field-sim scenes run as a PASS LIST the driver emits per frame -
+    named programs, named ping-pong targets (formats chosen by the same
+    renderability probe as `FluidBuffers`, falling RGBA16F→RGBA8, RG16F→
+    RGBA16F→RGBA8, RGBA32F→RGBA16F→RGBA8), the myco deposit as additive
+    GL_POINTS into the trail's READ side, exactly as the Kotlin sequences
+    its passes. Their sim passes step on every frame; only the present obeys
+    `--every`/`--warmup`. Named stand-ins: the PCM strike envelope runs on
+    the audio MODEL's waveform rather than the app's raw PCM tap, and the
+    acid family's `uChroma` comes from the model's synthetic triad
+    chromagram (the app sends zeros only when no chromagram ran).
+    `LifeScene`'s 4-second liveness census is mirrored through a per-frame
+    readback of the state's centre texel (float, quantized to the app's
+    8-bit steps driver-side).
 11. **The sprite pass clears the target only when the echo is off.** With
     Trails on, the echo blit is the background exactly as `drawWithEcho()`
     sequences it — previous frame warped, decayed and redrawn under the new

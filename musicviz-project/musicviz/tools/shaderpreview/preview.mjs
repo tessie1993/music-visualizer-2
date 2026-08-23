@@ -25,17 +25,21 @@ const APP = path.resolve(HERE, '../../app/src/main');
 const RAW = path.join(APP, 'res/raw');
 const ENGINE_RAW = path.resolve(HERE, '../../engine/scenes/src/main/res/raw');
 const RAWS = [RAW, ENGINE_RAW];
-const JAVA = path.join(APP, 'java/dev/geode');
+// The renderer and the scenes live in :engine:scenes, not in :app. They used to
+// be under app/src/main/java/dev/geode and every path here pointed there; when
+// they moved, this tool stopped starting at all rather than drifting quietly,
+// which is the failure mode it was built to have.
+const JAVA = path.resolve(HERE, '../../engine/scenes/src/main/kotlin/dev/geode');
 const GLUTIL = path.join(JAVA, 'render/scene/GlUtil.kt');
 
 /**
- * The 22 GLSL styles, keyed as `SHADER_SCENES` in VisualizerRenderer.kt.
+ * The GLSL styles, keyed as `SHADER_SCENES` in SceneCapabilities.kt.
  * Read out of the Kotlin so a style added there shows up here.
  */
 function shaderSceneMap() {
-  const src = fs.readFileSync(path.join(JAVA, 'render/VisualizerRenderer.kt'), 'utf8');
+  const src = fs.readFileSync(path.join(JAVA, 'render/scene/SceneCapabilities.kt'), 'utf8');
   const block = src.match(/SHADER_SCENES[^=]*=\s*(?:linkedMapOf|mapOf|hashMapOf)\(([\s\S]*?)\n\s*\)/);
-  if (!block) throw new Error('could not find SHADER_SCENES in VisualizerRenderer.kt');
+  if (!block) throw new Error('could not find SHADER_SCENES in SceneCapabilities.kt');
   const out = new Map();
   const re = /SceneIds\.(\w+)\s+to\s+R\.raw\.(\w+)/g;
   let m;
@@ -149,6 +153,7 @@ function makeDriver(args) {
       standIns: [
         'uFlow = 1x1 black, uFlowStrength = 0 (the app\'s state for a scene not wired to the FlowField)',
         'uPalLut = 1x1 black, uPalLutMix = 0 (the app\'s state when the cyclic-palette atlas is absent)',
+        'uTouch* = untouched, gesture 0 (there is no pointer here; anything a style draws only under a finger is invisible)',
       ],
       family: 'SHADER',
     };
@@ -260,7 +265,8 @@ async function main() {
   });
 
   // The composite pass gets the SAME three-way audit as a scene: its shader is
-  // composite_frag, its Kotlin is VisualizerRenderer's cLoc() block, and a
+  // composite_frag, its Kotlin is CompositePass's loc() block (it was
+  // VisualizerRenderer's cLoc() block until the pass was extracted), and a
   // uniform any of the three is missing would be a silent zero in the pass the
   // user actually looks at.
   let compositeDriver = null;
@@ -276,7 +282,7 @@ async function main() {
       frag: loadShader(RAWS, 'composite_frag', registry),
     };
     const compositeDeclared = parseUniforms(compositeShaders.frag);
-    const compositeUploaded = extractUploadedUniforms(path.join(JAVA, 'render/VisualizerRenderer.kt'));
+    const compositeUploaded = extractUploadedUniforms(path.join(JAVA, 'render/CompositePass.kt'));
     const compositeAudit = auditUniforms({
       sceneId: 'composite',
       declared: compositeDeclared,

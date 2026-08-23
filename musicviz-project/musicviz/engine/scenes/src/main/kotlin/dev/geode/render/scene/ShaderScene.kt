@@ -3,6 +3,7 @@ package dev.geode.render.scene
 import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
 import dev.geode.render.LiveSignal
+import dev.geode.render.TouchField
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -78,6 +79,23 @@ class ShaderScene(
     fun setPaletteLut(tex: Int) {
         paletteLutTex = tex
     }
+
+    private var touchField: TouchField? = null
+
+    /**
+     * Where the fingers are. One shared [TouchField] is owned by the renderer and handed to
+     * every shader scene, exactly as [setPaletteLut] hands over the palette atlas — a scene
+     * built before the handover uploads the untouched state, which is what the styles that
+     * never read the touch uniforms see anyway.
+     */
+    fun setTouchField(field: TouchField) {
+        touchField = field
+    }
+
+    // Preallocated because uploadTouch() runs once per scene per frame; the render hot-path
+    // exemption in CLAUDE.md is exactly this case.
+    private val touchAnchor = FloatArray(TouchField.POINT_STRIDE)
+    private val touchPoints = FloatArray(TouchField.MAX_POINTS * TouchField.POINT_STRIDE)
 
     fun setFlow(
         tex: Int,
@@ -254,6 +272,8 @@ class ShaderScene(
         }
         setUniform1f("uPalLutMix", if (lutSelected) 1f else 0f)
         setUniform1f("uPalLutRow", dev.geode.render.CyclicPalettes.rowCoordinate(p.paletteLut.coerceAtLeast(0)))
+        setUniform1f("uSteps", marchSteps(p.hyperDetail))
+        uploadTouch()
         GLES30.glBindVertexArray(vao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)
@@ -266,6 +286,61 @@ class ShaderScene(
         value: Float,
     ) {
         GLES30.glUniform1f(uniformLocs.loc(name), value)
+    }
+
+    /**
+     * Kept out of [draw] deliberately: `draw()` is one long uniform block already, and detekt's
+     * LongMethod ceiling is the reason a sixth section of it lives here rather than inline.
+     *
+     * Every location is looked up through [uniformLocs], so a style that declares none of these
+     * gets -1 six times — a legal, silent no-op, which is what leaves the 22 existing styles
+     * bit-identical.
+     */
+    private fun uploadTouch() {
+        val field = touchField
+        if (field != null) {
+            touchAnchor[0] = field.anchorX
+            touchAnchor[1] = field.anchorY
+            touchAnchor[2] = field.anchorStrength
+            touchAnchor[3] = field.anchorAge
+            System.arraycopy(field.points, 0, touchPoints, 0, touchPoints.size)
+        } else {
+            touchAnchor.fill(0f)
+            touchPoints.fill(0f)
+        }
+        GLES30.glUniform4fv(uniformLocs.loc("uTouchAnchor"), 1, touchAnchor, 0)
+        // arrayCount asks the linker how many elements SURVIVED: a style that only reads
+        // uTouchPoints[0] may see the tail optimized away, and uploading past the live length
+        // is an INVALID_OPERATION rather than a harmless extra write.
+        GLES30.glUniform4fv(
+            uniformLocs.loc("uTouchPoints"),
+            uniformLocs.arrayCount("uTouchPoints", TouchField.MAX_POINTS),
+            touchPoints,
+            0,
+        )
+        GLES30.glUniform1i(uniformLocs.loc("uTouchCount"), field?.count ?: 0)
+        GLES30.glUniform1i(uniformLocs.loc("uTouchGesture"), field?.gesture ?: TouchField.GESTURE_NONE)
+        GLES30.glUniform2f(uniformLocs.loc("uTouchAxis"), field?.axisX ?: 0f, field?.axisY ?: 0f)
+        setUniform1f("uTouchSpin", field?.spin ?: 0f)
+    }
+
+    private var stepsDetail = Float.NaN
+    private var stepsBudget = 0f
+
+    /**
+     * The user's Detail control as a march-step count, memoized on the detail value.
+     *
+     * [MarchBudget.forDetail] allocates, and this runs once per scene per frame; the control
+     * only moves when a finger is on it, so the cache misses a handful of times a session and
+     * the render path allocates nothing. Detail is the SAME control Hyperspace scales itself
+     * with (`SceneParams.hyperDetail`), so one slider drives every marched style.
+     */
+    private fun marchSteps(detail: Float): Float {
+        if (detail != stepsDetail) {
+            stepsDetail = detail
+            stepsBudget = MarchBudget.forDetail(detail).steps.toFloat()
+        }
+        return stepsBudget
     }
 
     private fun compilePendingIfAny() {

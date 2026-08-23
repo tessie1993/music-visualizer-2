@@ -357,8 +357,11 @@ function fluidResolution(res, width, height) {
 }
 
 // ---------------------------------------------------------------------------
-// The 22 GLSL styles - render/scene/ShaderScene.kt
+// The GLSL styles - render/scene/ShaderScene.kt
 // ---------------------------------------------------------------------------
+
+/** TouchField.MAX_POINTS - the slot count uTouchPoints is declared with. */
+const TOUCH_MAX_POINTS = 5;
 
 const SHADER_SCENE_DEFAULTS = {
   speed: 1, zoom: 1, rotation: 0, endlessZoom: false, endlessZoomSpeed: 0.2,
@@ -370,6 +373,10 @@ const SHADER_SCENE_DEFAULTS = {
   pixelate: 0, posterize: 0, sway: 0, pulse: 0, driftX: 0, driftY: 0, shake: 0,
   tile: 0, twist: 0, temperature: 0, solarize: false, flash: 0, contrast: 1,
   gamma: 1, paletteLut: -1,
+  // The Detail control. It is `hyperDetail` because it is the SAME slider
+  // HYPERSPACE scales itself with - ShaderScene sends MarchBudget.forDetail of
+  // it as uSteps, so one control drives every marched style.
+  hyperDetail: 1,
 };
 
 export function createShaderSceneDriver({ params, width, height }) {
@@ -389,6 +396,13 @@ export function createShaderSceneDriver({ params, width, height }) {
     'uKaleido', 'uMorph', 'uPixelate', 'uPosterize', 'uSway', 'uPulse', 'uBeatPhase',
     'uDriftX', 'uDriftY', 'uShake', 'uTile', 'uTwist', 'uTemperature', 'uSolarize', 'uFlash',
     'uContrast', 'uGamma', 'uResolution', 'uAudioTex', 'uPalLutMix', 'uPalLutRow',
+    // The Detail budget, and where the fingers are (TouchField -> uploadTouch).
+    // Supplied UNTOUCHED here: this harness has no pointer, and the untouched
+    // state is a real state the app is in for most of its life, not a
+    // stand-in. Anything a style draws only under a finger is therefore
+    // invisible to this tool - see README, "What it cannot tell you".
+    'uSteps', 'uTouchAnchor', 'uTouchPoints', 'uTouchCount', 'uTouchGesture',
+    'uTouchAxis', 'uTouchSpin',
     // Conditional in the app: the renderer only binds the FlowField for the
     // scenes wired to it, and the cyclic-palette atlas only when it loaded.
     // Both are supplied here as the NEUTRAL state the app itself sends when
@@ -471,11 +485,24 @@ export function createShaderSceneDriver({ params, width, height }) {
       u('uPalLutMix', 0),
       u('uPalLutRow', 0),
       u('uFlowStrength', 0),
+      // A float, not an int: it is a budget the loop BREAKS on, while the loop
+      // bound stays a compile-time constant. HyperspaceScene sends its own
+      // uSteps as an int to a different program; same name, different contract.
+      u('uSteps', H.marchBudget(p.hyperDetail).steps),
+      u('uTouchSpin', 0),
       {
         uResolution: { t: '2f', v: [width, height] },
         uAudioTex: { t: 'tex', v: 0 },
         uFlow: { t: 'tex', v: 1 },
         uPalLut: { t: 'tex', v: 2 },
+        // Untouched: TouchField publishes exactly these values when no finger
+        // has ever been down, so this is the app's own zero and not an
+        // invented one. Gesture 0 is TouchField.GESTURE_NONE.
+        uTouchAnchor: { t: '4f', v: [0, 0, 0, 0] },
+        uTouchPoints: { t: '4fv', v: new Array(TOUCH_MAX_POINTS * 4).fill(0) },
+        uTouchCount: { t: '1i', v: 0 },
+        uTouchGesture: { t: '1i', v: 0 },
+        uTouchAxis: { t: '2f', v: [0, 0] },
       },
     );
     return {
