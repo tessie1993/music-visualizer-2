@@ -19,7 +19,6 @@ include(":app")
 
 include(
     ":engine:audio-core",
-    ":engine:visual-core",
     ":engine:gl",
     ":engine:scenes",
     ":engine:audio-android",

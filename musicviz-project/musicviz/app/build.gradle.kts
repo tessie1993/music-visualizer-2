@@ -102,6 +102,7 @@ android {
     lint {
         checkReleaseBuilds = true
         abortOnError = true
+        fatal += "HardcodedText"
     }
 
     buildFeatures {
