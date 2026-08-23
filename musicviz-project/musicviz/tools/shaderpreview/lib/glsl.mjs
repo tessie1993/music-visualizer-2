@@ -84,7 +84,7 @@ function parseDefines(src) {
  * Every `uniform` a shader declares, with its type and (resolved) array size.
  *
  * The array length may be a `#define`, which is exactly the case for
- * hyperspace's `uBloomPos[MAX_BLOOMS]`, so the defines are resolved first.
+ * array uniforms sized by a #define, so the defines are resolved first.
  */
 export function parseUniforms(source) {
   const src = stripComments(source);

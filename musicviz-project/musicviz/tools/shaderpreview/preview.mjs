@@ -2,7 +2,6 @@
 // Headless preview for the app's GPU styles. See README.md - in particular
 // the section on what this tool CANNOT tell you.
 //
-//   node preview.mjs --scene hyperspace --frames 8 --audio beat --out out/hs
 //   node preview.mjs --scene shader --shader julia_frag --audio tone
 //   node preview.mjs --list
 
@@ -15,7 +14,7 @@ import { parseIncludeRegistry, loadShader, parseUniforms, shaderFile } from './l
 import { extractUploadedUniforms, auditUniforms } from './lib/kotlin.mjs';
 import { MODELS } from './lib/audio.mjs';
 import {
-  createHyperspaceDriver, createShaderSceneDriver, FIELD_FAMILIES,
+  createShaderSceneDriver, FIELD_FAMILIES,
 } from './lib/scenes.mjs';
 import { createCompositeDriver } from './lib/composite.mjs';
 
@@ -45,7 +44,7 @@ function shaderSceneMap() {
 
 function parseArgs(argv) {
   const a = {
-    scene: 'hyperspace',
+    scene: 'shader',
     shader: null,
     style: null,
     frames: 6,
@@ -117,23 +116,6 @@ function parseArgs(argv) {
 }
 
 function makeDriver(args) {
-  if (args.scene === 'hyperspace') {
-    return {
-      driver: createHyperspaceDriver({
-        params: args.params, width: args.width, height: args.height,
-        seed: args.seed, hasMelt: args.hasMelt,
-      }),
-      fragResource: 'hyperspace_frag',
-      kotlinPath: path.join(JAVA, 'render/scene/HyperspaceScene.kt'),
-      // The app binds both samplers unconditionally but only ever names them
-      // via loc(); they ARE in the Kotlin, so nothing is ignored here.
-      ignoreUploaded: [],
-      standIns: [],
-      // CompositeGrade.SceneFamily: HyperspaceScene is none of ShaderScene,
-      // EmergenceScene or MilkdropScene, so it lands in the else branch.
-      family: 'FLUID',
-    };
-  }
   if (args.scene === 'shader') {
     const map = shaderSceneMap();
     if (!args.shader) throw new Error(`--scene shader needs --shader; try --list`);
@@ -180,7 +162,7 @@ function makeDriver(args) {
     };
   }
   throw new Error(
-    `unknown scene '${args.scene}' (hyperspace, shader, ${Object.keys(FIELD_FAMILIES).join(', ')})`,
+    `unknown scene '${args.scene}' (shader, ${Object.keys(FIELD_FAMILIES).join(', ')})`,
   );
 }
 
@@ -192,7 +174,6 @@ async function main() {
     const map = shaderSceneMap();
     console.log(`includes registered in GlUtil: ${[...registry].join(', ')}`);
     console.log('\nscenes:');
-    console.log('  hyperspace                 (HyperspaceScene.kt + hyperspace_frag.glsl)');
     console.log('  shader --shader <id>       (ShaderScene.kt), one of:');
     for (const [id, res] of map) console.log(`    ${id.padEnd(12)} -> ${res}.glsl`);
     for (const [scene, fam] of Object.entries(FIELD_FAMILIES)) {
@@ -329,7 +310,7 @@ async function main() {
     return;
   }
 
-  const meltShaders = args.scene === 'hyperspace' && args.hasMelt
+  const meltShaders = false
     ? {
       vert: loadShader(RAWS, 'fluid_base_vert', registry),
       frags: {

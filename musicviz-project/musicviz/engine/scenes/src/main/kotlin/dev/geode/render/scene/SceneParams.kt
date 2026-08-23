@@ -133,30 +133,6 @@ data class SceneParams(
     val cymaticsCaustic: Float = 0.8f,
     val cymaticsFlow: Float = 0.35f,
     val cymaticsSwirl: Float = 0.05f,
-    val hyperJourney: Int = 0,
-    val hyperAct: Int = 2,
-    val hyperCycleSeconds: Float = 30f,
-    val hyperBodies: Float = 1f,
-    val hyperLifetime: Float = 14f,
-    val hyperSpin: Float = 1f,
-    val hyperOrbit: Float = 1f,
-    val hyperSpecies: Int = 0,
-    val hyperFold: Float = 0.5f,
-    val hyperDetail: Float = 1f,
-    val hyperGlow: Float = 1f,
-    val hyperNeon: Float = 1f,
-    val hyperField: Float = 1f,
-    val hyperHaze: Float = 0.7f,
-    val hyperCamera: Float = 1f,
-    val hyperMirrorFolds: Int = 6,
-    val hyperTrap: Float = 0.8f,
-    val hyperMelt: Float = 0.55f,
-    val hyperStain: Float = 0.5f,
-    val hyperLiquid: Float = 0.35f,
-    val hyperRidges: Float = 0.5f,
-    val hyperStir: Float = 1f,
-    val hyperSwirl: Float = 26f,
-    val hyperFlowFade: Float = 0.35f,
     val beamXy: Boolean = false,
     val beamWidth: Float = 1f,
     val beamIntensity: Float = 1f,
@@ -218,11 +194,6 @@ data class SceneParams(
         val FLUID_PATHS: List<String> = listOf("Orbit", "Lissajous", "Rose", "Bloom", "Drift")
 
         val CYMATICS_GEOMETRIES: List<String> = listOf("Water dish", "Chladni plate")
-
-        val HYPERSPACE_JOURNEYS: List<String> = HyperspaceMath.JOURNEY_MODES
-
-        val HYPERSPACE_SPECIES: List<String> =
-            listOf("Mixed") + HyperspaceMath.SPECIES.map { it.name.lowercase().replaceFirstChar(Char::uppercase) }
     }
 
     val usesCustomPalette: Boolean

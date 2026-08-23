@@ -25,8 +25,8 @@ cd musicviz-project/musicviz/tools/shaderpreview
 
 node preview.mjs --list
 
-# HYPERSPACE, eight frames of a beat track, PNGs + report.json into out/hs
-node preview.mjs --scene hyperspace --frames 8 --audio beat --out out/hs
+# Silk, eight frames of a beat track, PNGs + report.json into out/silk
+node preview.mjs --scene silk --frames 8 --audio beat --out out/silk
 
 # one of the 22 fragment styles
 node preview.mjs --scene shader --shader julia --frames 4 --audio tone
@@ -39,10 +39,10 @@ node preview.mjs --scene silk --style silk_web --warmup 88 --frames 2 --audio be
 node preview.mjs --scene myco --style myco_rivals --warmup 118 --frames 2 --field-stats
 
 # a minute of steady music, sampled every 5 s, with fluid-field statistics
-node preview.mjs --scene hyperspace --frames 13 --every 300 --audio tone --field-stats
+node preview.mjs --scene silk --frames 13 --every 300 --audio tone --field-stats
 
 # what the style looks like on a GPU with no float render targets
-node preview.mjs --scene hyperspace --no-melt --out out/no-melt
+node preview.mjs --scene silk --out out/silk
 
 # five hours of wallpaper uptime, after a 10 s warm-up
 node preview.mjs --scene shader --shader plasma --warmup 600 --frames 6 --clock-jump 3600
@@ -54,14 +54,14 @@ node preview.mjs --scene shader --shader plasma --composite --layer 1,4 --frames
 # through the composite pass, which is where Zoom and Rotation live on a
 # fluid-family style - without this you are looking at a frame the user never
 # sees, and half its controls are applied nowhere in it
-node preview.mjs --scene hyperspace --composite --param zoom=3 --frames 1
+node preview.mjs --scene silk --composite --param zoom=3 --frames 1
 ```
 
 ### Flags
 
 | flag | meaning |
 | --- | --- |
-| `--scene hyperspace \| shader \| silk \| life \| acid \| myco` | which driver to use |
+| `--scene shader \| silk \| life \| acid \| myco` | which driver to use |
 | `--shader <id>` | style id for `--scene shader` (see `--list`) |
 | `--style <id>` | style id for the four field-sim families (default = the family's first style; see `--list`) |
 | `--frames N` | frames to **capture** |
@@ -119,7 +119,7 @@ When the audit fails, the tool prints the mismatch and **refuses to render**.
 That is the point: a picture from a drifted harness is worse than no picture.
 
 **Uniform values** are computed by JS ports of the Kotlin that owns them:
-`lib/hyperspace-math.mjs` (`HyperspaceMath.kt`, `MeltMath`, `FluidHue`),
+`lib/palette.mjs` (`FluidHue`),
 `lib/emitters.mjs` (the `FluidEmitters` paths `MeltField` actually enables),
 and `lib/scenes.mjs` (the two `draw()` methods). Every constant is
 copied with the comment that justifies it, so a drift is visible in a diff.
@@ -198,11 +198,6 @@ Take these seriously. Every one of them is a way to be confidently wrong.
 
 Also, more mundanely but just as capable of misleading you:
 
-5. **The bodies are not the device's bodies.** `HyperspaceScene` seeds its
-   bank from `Random.Default`; this uses a seeded xorshift. Species, axes,
-   hues, sizes and lifetimes are drawn from the same distributions but are not
-   the same draws. Any claim that depends on a *specific* body is not a valid
-   finding from this tool. `--seed` makes a run reproducible, not faithful.
 
 6. **`--clock-jump` moves the clocks and nothing else.** It advances `uTime`
    (and the camera drift phase, and `uRotation`) without ageing the body bank
@@ -225,7 +220,7 @@ Also, more mundanely but just as capable of misleading you:
    light. It is a good relative measure and a poor absolute one; use it to
    compare runs, not to make a claim about perceived brightness.
 
-9. **Seven scene families are wired up**: `HyperspaceScene`, the 22
+9. **Six scene families are wired up**: the 22
    `ShaderScene` styles and the four field-sim families
    `SilkScene`, `LifeScene`, `AcidScene` and `MycoScene` (10 styles each,
    `--style`). The fluid family's own display passes, WATER, CYMATICS, BEAM
@@ -260,7 +255,7 @@ lib/cdp.mjs             Chromium launch + CDP over Node 22's built-in WebSocket
 lib/glsl.mjs            GlUtil-equivalent include resolution; uniform declaration scan
 lib/kotlin.mjs          uniform names scraped from Kotlin; the three-way audit
 lib/audio.mjs           AudioFeatures models + the 64x2 uAudioTex rows
-lib/hyperspace-math.mjs JS port of HyperspaceMath.kt / MeltMath / FluidHue
+lib/palette.mjs        JS port of FluidHue
 lib/emitters.mjs        JS port of the FluidEmitters paths MeltField enables
 lib/scenes.mjs          per-frame uniform plans, mirroring the Kotlin draw()s,
                         plus the silk/life/acid/myco style tables (verbatim

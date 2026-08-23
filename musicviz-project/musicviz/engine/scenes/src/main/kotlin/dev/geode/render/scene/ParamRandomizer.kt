@@ -21,8 +21,6 @@ object ParamRandomizer {
             "fluidDyeEnabled" to "the fluid ink layer's master switch",
             "flowEnabled" to "the FlowField's master switch",
             "rippleOverlayEnabled" to "the water-ripple overlay's master switch",
-            "hyperDetail" to "a performance setting, not a look",
-            "hyperJourney" to "how HYPERSPACE picks its act; a roll would unpin a held one",
         )
 
     /**
@@ -320,30 +318,6 @@ object ParamRandomizer {
         r(ParamKeys.NODAL_GLOW) { it.copy(cymaticsGlow = f(0.3f, 1.7f)) }
         r(ParamKeys.IRIDESCENCE) { it.copy(cymaticsIridescence = f(0f, 1f)) }
         r(ParamKeys.CAUSTIC_SHEEN) { it.copy(cymaticsCaustic = f(0.2f, 1.3f)) }
-
-        section(CustomizeTab.HYPERSPACE)
-        r(ParamKeys.ACT) { it.copy(hyperAct = rng.nextInt(HyperspaceMath.ACTS.size)) }
-        r(ParamKeys.ACT_LENGTH_S) { it.copy(hyperCycleSeconds = f(12f, 90f)) }
-        r(ParamKeys.FRACTAL) { it.copy(hyperSpecies = rng.nextInt(SceneParams.HYPERSPACE_SPECIES.size)) }
-        r(ParamKeys.BODIES) { it.copy(hyperBodies = f(0.5f, 1.6f)) }
-        r(ParamKeys.BODY_LIFE_S) { it.copy(hyperLifetime = f(6f, 30f)) }
-        r(ParamKeys.BODY_SPIN) { it.copy(hyperSpin = f(0.3f, 2f)) }
-        r(ParamKeys.ORBIT_DRIFT) { it.copy(hyperOrbit = f(0.3f, 2f)) }
-        r(ParamKeys.CAMERA_DRIFT) { it.copy(hyperCamera = f(0.3f, 2f)) }
-        r(ParamKeys.FOLD) { it.copy(hyperFold = f(0.15f, 0.9f)) }
-        r(ParamKeys.BODY_GLOW) { it.copy(hyperGlow = f(0.4f, 1.6f)) }
-        r(ParamKeys.NEON_RIM) { it.copy(hyperNeon = f(0.3f, 1.8f)) }
-        r(ParamKeys.FILIGREE) { it.copy(hyperField = f(0.2f, 1.6f)) }
-        r(ParamKeys.HAZE) { it.copy(hyperHaze = f(0.2f, 1.4f)) }
-        r(ParamKeys.MIRROR_FOLDS) { it.copy(hyperMirrorFolds = n(3, 12)) }
-        r(ParamKeys.COLOUR_BANDING) { it.copy(hyperTrap = f(0.2f, 1.3f)) }
-        r(ParamKeys.MELT) { it.copy(hyperMelt = f(0.15f, 1.1f)) }
-        r(ParamKeys.INK_STAIN) { it.copy(hyperStain = f(0.15f, 1.1f)) }
-        r(ParamKeys.LIQUID_LIGHT) { it.copy(hyperLiquid = f(0.1f, 1.1f)) }
-        r(ParamKeys.RIDGES) { it.copy(hyperRidges = f(0f, 0.9f)) }
-        r(ParamKeys.STIR) { it.copy(hyperStir = f(0.4f, 2f)) }
-        r(ParamKeys.VORTICITY) { it.copy(hyperSwirl = f(8f, 42f)) }
-        r(ParamKeys.FLOW_FADE) { it.copy(hyperFlowFade = f(0.1f, 1.2f)) }
 
         return s
     }

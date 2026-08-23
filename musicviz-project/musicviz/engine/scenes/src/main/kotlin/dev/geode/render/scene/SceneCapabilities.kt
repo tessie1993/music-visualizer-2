@@ -25,8 +25,6 @@ enum class SceneKind {
     CYMATICS,
 
     BEAM,
-
-    HYPERSPACE,
 }
 
 object SceneCapabilities {
@@ -72,7 +70,6 @@ object SceneCapabilities {
             sceneId == SceneIds.WATER -> SceneKind.WATER
             sceneId == SceneIds.BEAM -> SceneKind.BEAM
             VisualStyleCatalog.isCymatics(sceneId) -> SceneKind.CYMATICS
-            VisualStyleCatalog.isHyperspace(sceneId) -> SceneKind.HYPERSPACE
             VisualStyleCatalog.life(sceneId) != null -> SceneKind.LIFE
             VisualStyleCatalog.myco(sceneId) != null -> SceneKind.MYCELIUM
             VisualStyleCatalog.acid(sceneId) != null -> SceneKind.ACID
@@ -86,8 +83,6 @@ object SceneCapabilities {
     fun isBeam(sceneId: String): Boolean = sceneId == SceneIds.BEAM
 
     fun isCymatics(sceneId: String): Boolean = VisualStyleCatalog.isCymatics(sceneId)
-
-    fun isHyperspace(sceneId: String): Boolean = VisualStyleCatalog.isHyperspace(sceneId)
 
     fun hasJourney(sceneId: String): Boolean = sceneId == SceneIds.FLUID || sceneId == SceneIds.CURLFLOW || sceneId == SceneIds.WATER
 

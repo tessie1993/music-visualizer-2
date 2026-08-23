@@ -7,32 +7,6 @@ package dev.geode.render.scene
  * scene implementations they describe stay internal to this module.
  */
 object VisualStyleCatalog {
-    data class HyperspaceStyle(
-        val id: String,
-        val label: String,
-        val shaderStyle: Int,
-        val bodyScale: Float = 1f,
-        val cameraScale: Float = 1f,
-        val driftScale: Float = 1f,
-        val fieldScale: Float = 1f,
-        val glowScale: Float = 1f,
-        val neonScale: Float = 1f,
-        val hazeScale: Float = 1f,
-        val meltScale: Float = 1f,
-        val stainScale: Float = 1f,
-        val liquidScale: Float = 1f,
-        val ridgeScale: Float = 1f,
-        val forcedSpecies: Int? = null,
-        val lipschitz: Float = 1f,
-        val kaleidoFolds: Int = 0,
-        val signatureFloor: Float = 0.25f,
-        val tintHue: Float = 0f,
-        val tintSat: Float = 0.7f,
-        val tintAmount: Float = 0f,
-        val phaseRate: Float = 0.05f,
-        val phaseBassRate: Float = 0f,
-    )
-
     data class CymaticsStyle(
         val id: String,
         val label: String,
@@ -50,187 +24,6 @@ object VisualStyleCatalog {
         val hueSpan: Float = 1f,
         val modeCap: Int = CymaticsMath.MAX_RENDERED_MODES,
     )
-
-    val hyperspace: List<HyperspaceStyle> =
-        listOf(
-            HyperspaceStyle(SceneIds.HYPERSPACE, "Original · Living Fractals", 0, signatureFloor = 0f),
-            HyperspaceStyle(
-                "hyper_polytope",
-                "Polytope",
-                1,
-                bodyScale = 1.05f,
-                cameraScale = 1.08f,
-                driftScale = 0.9f,
-                fieldScale = 0.72f,
-                neonScale = 1.28f,
-                forcedSpecies = 3,
-                lipschitz = 1.95f,
-                kaleidoFolds = 4,
-                tintHue = 0.62f,
-                tintSat = 0.55f,
-                tintAmount = 0.3f,
-                phaseRate = 0.04f,
-            ),
-            HyperspaceStyle(
-                "hyper_liquid_warp",
-                "Liquid Warp",
-                2,
-                bodyScale = 0.78f,
-                fieldScale = 0.82f,
-                glowScale = 1.18f,
-                meltScale = 1.35f,
-                liquidScale = 1.35f,
-                ridgeScale = 0.55f,
-                lipschitz = 1.45f,
-                tintHue = 0.45f,
-                tintSat = 0.6f,
-                tintAmount = 0.25f,
-                phaseRate = 0.06f,
-            ),
-            HyperspaceStyle(
-                "hyper_caduceus",
-                "Caduceus",
-                3,
-                bodyScale = 0.72f,
-                cameraScale = 1.12f,
-                driftScale = 0.85f,
-                fieldScale = 0.58f,
-                neonScale = 1.38f,
-                meltScale = 0.85f,
-                forcedSpecies = 5,
-                lipschitz = 2.3f,
-                tintHue = 0.1f,
-                tintSat = 0.75f,
-                tintAmount = 0.3f,
-            ),
-            HyperspaceStyle(
-                "hyper_cortex",
-                "Cortex",
-                4,
-                bodyScale = 1.14f,
-                cameraScale = 0.94f,
-                fieldScale = 1.15f,
-                hazeScale = 0.82f,
-                ridgeScale = 1.45f,
-                stainScale = 1.2f,
-                forcedSpecies = 4,
-                lipschitz = 1.35f,
-                tintHue = 0.88f,
-                tintAmount = 0.25f,
-            ),
-            HyperspaceStyle(
-                "hyper_reliquary",
-                "Reliquary",
-                5,
-                bodyScale = 0.68f,
-                cameraScale = 1.18f,
-                driftScale = 0.8f,
-                fieldScale = 0.45f,
-                glowScale = 0.82f,
-                neonScale = 1.5f,
-                hazeScale = 0.72f,
-                forcedSpecies = 2,
-                kaleidoFolds = 4,
-                tintHue = 0.08f,
-                tintSat = 0.5f,
-                tintAmount = 0.4f,
-            ),
-            HyperspaceStyle(
-                "hyper_moire",
-                "Moiré",
-                6,
-                bodyScale = 0.92f,
-                fieldScale = 1.5f,
-                glowScale = 0.92f,
-                neonScale = 0.72f,
-                meltScale = 0.45f,
-                liquidScale = 0.42f,
-                kaleidoFolds = 12,
-                signatureFloor = 0.35f,
-                tintHue = 0.5f,
-                tintSat = 0.8f,
-                tintAmount = 0.3f,
-                phaseRate = 0.25f,
-                phaseBassRate = 0.45f,
-            ),
-            HyperspaceStyle(
-                "hyper_foam",
-                "Foam",
-                7,
-                bodyScale = 1.32f,
-                cameraScale = 0.9f,
-                fieldScale = 0.38f,
-                glowScale = 1.22f,
-                neonScale = 0.72f,
-                hazeScale = 1.15f,
-                stainScale = 1.3f,
-                forcedSpecies = 1,
-                lipschitz = 1.4f,
-                tintHue = 0.55f,
-                tintSat = 0.25f,
-                tintAmount = 0.35f,
-            ),
-            HyperspaceStyle(
-                "hyper_dustskin",
-                "Dustskin",
-                8,
-                bodyScale = 0.9f,
-                fieldScale = 0.82f,
-                glowScale = 1.3f,
-                neonScale = 0.55f,
-                hazeScale = 1.3f,
-                liquidScale = 0.75f,
-                ridgeScale = 0.65f,
-                signatureFloor = 0.4f,
-                tintHue = 0.04f,
-                tintSat = 0.8f,
-                tintAmount = 0.25f,
-                phaseRate = 0.02f,
-            ),
-            HyperspaceStyle(
-                "hyper_plume",
-                "Plume",
-                9,
-                bodyScale = 0.62f,
-                cameraScale = 1.2f,
-                driftScale = 0.9f,
-                fieldScale = 0.5f,
-                glowScale = 1.35f,
-                neonScale = 0.48f,
-                hazeScale = 1.42f,
-                meltScale = 1.7f,
-                stainScale = 1.2f,
-                liquidScale = 1.75f,
-                ridgeScale = 0.3f,
-                forcedSpecies = 4,
-                lipschitz = 1.9f,
-                signatureFloor = 0.35f,
-                tintHue = 0.93f,
-                tintSat = 0.55f,
-                tintAmount = 0.3f,
-                phaseRate = 0.03f,
-                phaseBassRate = 0.05f,
-            ),
-            HyperspaceStyle(
-                "hyper_resonant_wormhole",
-                "Resonant Wormhole",
-                10,
-                bodyScale = 1.18f,
-                cameraScale = 0.92f,
-                fieldScale = 0.92f,
-                glowScale = 1.12f,
-                neonScale = 0.9f,
-                hazeScale = 0.84f,
-                meltScale = 1.15f,
-                stainScale = 1.25f,
-                liquidScale = 1.15f,
-                signatureFloor = 0.35f,
-                tintHue = 0.68f,
-                tintAmount = 0.3f,
-                phaseRate = 0.2f,
-                phaseBassRate = 0.35f,
-            ),
-        )
 
     val cymatics: List<CymaticsStyle> =
         listOf(
@@ -690,21 +483,17 @@ object VisualStyleCatalog {
             ),
         )
 
-    val hyperspaceIds: List<String> = hyperspace.map { it.id }
     val cymaticsIds: List<String> = cymatics.map { it.id }
     val silkIds: List<String> = silk.map { it.id }
     val lifeIds: List<String> = life.map { it.id }
     val acidIds: List<String> = acid.map { it.id }
     val mycoIds: List<String> = myco.map { it.id }
 
-    private val hyperspaceById = hyperspace.associateBy { it.id }
     private val cymaticsById = cymatics.associateBy { it.id }
     private val silkById = silk.associateBy { it.id }
     private val lifeById = life.associateBy { it.id }
     private val acidById = acid.associateBy { it.id }
     private val mycoById = myco.associateBy { it.id }
-
-    fun hyperspace(id: String): HyperspaceStyle? = hyperspaceById[id]
 
     fun cymatics(id: String): CymaticsStyle? = cymaticsById[id]
 
@@ -716,13 +505,10 @@ object VisualStyleCatalog {
 
     fun myco(id: String): MycoStyle? = mycoById[id]
 
-    fun isHyperspace(id: String): Boolean = id in hyperspaceById
-
     fun isCymatics(id: String): Boolean = id in cymaticsById
 
     fun label(id: String): String =
-        hyperspaceById[id]?.label
-            ?: cymaticsById[id]?.label
+        cymaticsById[id]?.label
             ?: silkById[id]?.label
             ?: lifeById[id]?.label
             ?: acidById[id]?.label

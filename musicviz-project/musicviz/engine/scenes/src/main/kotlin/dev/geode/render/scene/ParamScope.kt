@@ -71,8 +71,6 @@ enum class ParamScope {
 
     CYMATICS,
 
-    HYPERSPACE,
-
     BEAM,
 
     /** The standalone FlowField sim. Fluid drives the field from its own solver instead. */
@@ -107,7 +105,6 @@ enum class ParamScope {
             JOURNEY -> kind == SceneKind.FLUID || kind == SceneKind.CURL_FLOW || kind == SceneKind.WATER
             WATER -> kind == SceneKind.WATER
             CYMATICS -> kind == SceneKind.CYMATICS
-            HYPERSPACE -> kind == SceneKind.HYPERSPACE
             BEAM -> kind == SceneKind.BEAM
             FLOW_FIELD_SIM -> kind != SceneKind.FLUID
             RIPPLE_OVERLAY -> kind != SceneKind.WATER
@@ -265,31 +262,6 @@ enum class ParamScope {
                     ParamKeys.IRIDESCENCE,
                     ParamKeys.CAUSTIC_SHEEN,
                 )
-                scoped(
-                    HYPERSPACE,
-                    ParamKeys.ACT,
-                    ParamKeys.ACT_LENGTH_S,
-                    ParamKeys.FRACTAL,
-                    ParamKeys.BODIES,
-                    ParamKeys.BODY_LIFE_S,
-                    ParamKeys.BODY_SPIN,
-                    ParamKeys.ORBIT_DRIFT,
-                    ParamKeys.CAMERA_DRIFT,
-                    ParamKeys.FOLD,
-                    ParamKeys.BODY_GLOW,
-                    ParamKeys.NEON_RIM,
-                    ParamKeys.FILIGREE,
-                    ParamKeys.HAZE,
-                    ParamKeys.MIRROR_FOLDS,
-                    ParamKeys.COLOUR_BANDING,
-                    ParamKeys.MELT,
-                    ParamKeys.INK_STAIN,
-                    ParamKeys.LIQUID_LIGHT,
-                    ParamKeys.RIDGES,
-                    ParamKeys.STIR,
-                    ParamKeys.VORTICITY,
-                    ParamKeys.FLOW_FADE,
-                )
                 scoped(BEAM, ParamKeys.XY_PLOT, ParamKeys.BEAM_WIDTH, ParamKeys.BEAM_BRIGHTNESS, ParamKeys.BEAM_TAIL)
             }
 
@@ -303,7 +275,6 @@ enum class ParamScope {
                 SceneKind.ACID,
                 SceneKind.FLUID,
                 SceneKind.WATER,
-                SceneKind.HYPERSPACE,
             )
 
         private val MID_READERS =
@@ -314,7 +285,6 @@ enum class ParamScope {
                 SceneKind.FLUID,
                 SceneKind.CURL_FLOW,
                 SceneKind.WATER,
-                SceneKind.HYPERSPACE,
             )
 
         private val TREBLE_READERS =
@@ -328,7 +298,6 @@ enum class ParamScope {
                 SceneKind.CURL_FLOW,
                 SceneKind.WATER,
                 SceneKind.CYMATICS,
-                SceneKind.HYPERSPACE,
             )
 
         private val TURBULENCE_READERS =

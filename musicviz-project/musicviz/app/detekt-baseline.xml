@@ -20,7 +20,6 @@
     <ID>LoopWithTooManyJumpStatements:AutoVisualsPrefsStore.kt$AutoVisualsPrefsStore.Companion$for</ID>
     <ID>LoopWithTooManyJumpStatements:CompositeGradeTest.kt$CompositeGradeTest$for</ID>
     <ID>LoopWithTooManyJumpStatements:FeatureTimeline.kt$FeatureTimeline$for</ID>
-    <ID>LoopWithTooManyJumpStatements:HyperspaceMath.kt$BloomBank$for</ID>
     <ID>LoopWithTooManyJumpStatements:Lfo.kt$LfoEngine.Companion$for</ID>
     <ID>LoopWithTooManyJumpStatements:Lyrics.kt$LyricsLoader$for</ID>
     <ID>LoopWithTooManyJumpStatements:PerformanceTake.kt$PerformanceTake.Timeline$while</ID>
@@ -35,7 +34,6 @@
     <ID>NestedBlockDepth:CymaticsClockSafetyTest.kt$CymaticsClockSafetyTest$private fun enclosingCall( src: String, pos: Int, ): String?</ID>
     <ID>NestedBlockDepth:ExportDefaultsPersistenceTest.kt$ExportDefaultsPersistenceTest$@Test fun everyChoiceCombinationRoundTrips()</ID>
     <ID>NestedBlockDepth:FluidSim.kt$FluidSim$private fun allocGrids(preserve: Boolean)</ID>
-    <ID>NestedBlockDepth:HyperspaceMath.kt$BloomBank$fun advance( dt: Float, target: Int, impulse: Float, species: HyperspaceMath.Species?, lifetime: Float, spread: Float, sizeScale: Float, motion: Float, orbitScale: Float, spinScale: Float = 1f, )</ID>
     <ID>NestedBlockDepth:OfflineAnalyzer.kt$OfflineAnalyzer$fun analyzeBlocking( uri: Uri, beatSensitivity: Float = BeatTuning.SENSITIVITY_DEFAULT, beatMinIntervalMs: Float = BeatTuning.INTERVAL_MS_DEFAULT, onProgress: (Float) -&gt; Unit = {}, ): FeatureTimeline</ID>
     <ID>NestedBlockDepth:PlaybackCapture.kt$PlaybackCapture$@RequiresApi(Build.VERSION_CODES.Q) private fun openRecord(projection: MediaProjection): AudioRecord?</ID>
     <ID>NestedBlockDepth:PlayerScreen.kt$internal suspend fun driveSpectrum( live: Boolean, bands: () -&gt; FloatArray, emit: (FloatArray) -&gt; Unit, )</ID>
@@ -66,7 +64,6 @@
     <ID>ReturnCount:FluidSim.kt$FluidSim$fun step(dtRaw: Float)</ID>
     <ID>ReturnCount:FluidSim.kt$FluidSim$private fun compileCustom( src: String?, current: GlUtil.UniformCache?, reportError: (String?) -&gt; Unit, ): GlUtil.UniformCache?</ID>
     <ID>ReturnCount:HistoryStore.kt$HistoryStore$private fun readLocked()</ID>
-    <ID>ReturnCount:HyperspaceMath.kt$HyperspaceMath$fun lifeEnvelope( age: Float, lifetime: Float, grow: Float, wither: Float, ): Float</ID>
     <ID>ReturnCount:KeyPalette.kt$KeyPalette$fun hueFor(key: String): Float?</ID>
     <ID>ReturnCount:LibraryScreen.kt$internal fun playlistDropIndex( from: Int, offsetPx: Float, rowHeightPx: Int, count: Int, ): Int</ID>
     <ID>ReturnCount:MicCapture.kt$MicCapture$@Synchronized fun start(onSampleRate: (Int) -&gt; Unit = {}): Failure?</ID>

@@ -23,7 +23,7 @@ inputs, not collateral.
 | 7 | `audio/MicCapture.kt` / `PlaybackCapture.kt` | Same class twice; non-volatile stop flags | Low-med |
 | 8 | `ui/Crystal.kt` (1,854 lines) | Six responsibilities in one file, zero tests | Medium |
 | 9 | `ui/CustomizeTabs.kt` + `ParamRandomizer.kt` | Stringly-typed 4-way parameter wiring | High |
-| 10 | `render/scene/HyperspaceMath.kt` / `CymaticsMath.kt` | Multi-class monolith files | Medium |
+| 10 | `render/scene/CymaticsMath.kt` | Multi-class monolith files | Medium |
 | 11 | GL bootstrap duplication across `render/*` | Quad VBO ×7, loadRaw ×8, compile-catch ×12 | Low |
 | 12 | `data/` stores | migrateLegacyFileNames ×4; no store base; serializer drift | Medium |
 | 13 | Global mutable singletons (`AudioBus`, `LayersBus`, …) | Unowned process-wide state | High/diffuse |
