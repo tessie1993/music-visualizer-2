@@ -21,13 +21,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-internal val SETTINGS_TAB_TITLES = listOf("Look", "Audio", "Export", "Folders", "Behavior", "About")
+internal val SETTINGS_TAB_TITLES = listOf("Look", "Audio", "Export", "Folders", "Behavior", "Help", "About")
 
 @Composable
 internal fun AppSettingsTab(
     viewModel: PlayerViewModel,
     exportOpen: Boolean = false,
     onOpenExport: () -> Unit,
+    onStartTutorial: () -> Unit,
 ) {
     val settingsViewModel: SettingsViewModel = geodeViewModel()
     var tab by rememberSaveable { mutableIntStateOf(0) }
@@ -39,6 +40,7 @@ internal fun AppSettingsTab(
             2 -> ExportSettingsTab(exportOpen, onOpenExport)
             3 -> FolderSettingsTab()
             4 -> BehaviorSettingsTab(settingsViewModel)
+            5 -> HelpSettingsTab(settingsViewModel, onStartTutorial)
             else -> AboutSettingsTab()
         }
     }

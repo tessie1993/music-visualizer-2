@@ -4,21 +4,24 @@ import androidx.annotation.StringRes
 import dev.geode.R
 
 /**
- * What the person opening the app came here to do.
+ * What the person opening the app uses it for.
  *
- * This is the only question first run asks, and it earns its place by deciding two things at
- * once: which tab the app lands on, and whether Studio appears in the navigation at all. Someone
- * who only wants to listen should not have to walk past a render queue to reach their music.
+ * Decides two things: which tab the app lands on, and whether Studio appears in the navigation
+ * at all. Someone who only wants to listen should not have to walk past a render queue to reach
+ * their music.
  *
- * Changeable later in Settings — it is a starting point, not a commitment.
+ * First run used to ASK this, as its final step. It no longer does — the question made someone
+ * categorise themselves before they had seen a single thing to categorise, and the honest answer
+ * on a fresh install is almost always "I don't know yet". Everyone starts on [BOTH], which hides
+ * nothing, and Settings > Behaviour narrows it once there is something to narrow.
  */
 enum class UserIntent(
     @param:StringRes val labelRes: Int,
     @param:StringRes val detailRes: Int,
 ) {
-    LISTENING(R.string.first_run_intent_listening, R.string.first_run_intent_listening_detail),
-    MAKING_VIDEOS(R.string.first_run_intent_videos, R.string.first_run_intent_videos_detail),
-    BOTH(R.string.first_run_intent_both, R.string.first_run_intent_both_detail),
+    LISTENING(R.string.settings_intent_listening, R.string.settings_intent_listening_detail),
+    MAKING_VIDEOS(R.string.settings_intent_videos, R.string.settings_intent_videos_detail),
+    BOTH(R.string.settings_intent_both, R.string.settings_intent_both_detail),
     ;
 
     /** Studio is hidden for pure listeners; everyone else gets it. */
