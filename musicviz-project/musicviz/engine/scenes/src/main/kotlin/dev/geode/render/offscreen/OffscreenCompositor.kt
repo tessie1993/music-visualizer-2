@@ -225,7 +225,7 @@ internal class OffscreenCompositor(
         rippleSpecular: Float = 0f,
         strobeHz: Float = dev.geode.render.VisualSafety.strobeHz(),
     ) {
-        grade.advance(params, dtSeconds, features.motionImpulse)
+        grade.advance(params, dtSeconds, dev.geode.render.LiveSignal.hit(features))
         val family =
             when {
                 isShaderScene -> CompositeGrade.SceneFamily.SHADER

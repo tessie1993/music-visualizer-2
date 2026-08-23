@@ -4,6 +4,7 @@ import android.content.Context
 import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
 import dev.geode.engine.scenes.R
+import dev.geode.render.LiveSignal
 import dev.geode.render.fluid.FluidBuffers
 import dev.geode.render.fluid.FluidHue
 import kotlin.math.PI
@@ -177,9 +178,9 @@ internal class SilkScene(
         envMid = slew(envMid, f.mid.coerceIn(0f, 1.5f), dt)
         envTreble = slew(envTreble, f.treble.coerceIn(0f, 1.5f), dt)
         beatPulse =
-            maxOf(f.motionImpulse * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f)
+            maxOf(LiveSignal.hit(f) * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f)
                 .coerceIn(0f, 1.5f)
-        if (f.beatImpulse * p.beatResponse > BEAT_THRESHOLD) ringRadius = 0f
+        if (LiveSignal.hit(f) * p.beatResponse > BEAT_THRESHOLD) ringRadius = 0f
         if (ringRadius >= 0f) {
             ringRadius += dt * RING_SPEED * speed
             if (ringRadius > RING_MAX) ringRadius = -1f

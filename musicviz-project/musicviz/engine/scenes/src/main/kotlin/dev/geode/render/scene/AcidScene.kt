@@ -4,6 +4,7 @@ import android.content.Context
 import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
 import dev.geode.engine.scenes.R
+import dev.geode.render.LiveSignal
 import dev.geode.render.fluid.FluidBuffers
 import dev.geode.render.fluid.FluidHue
 import kotlin.math.max
@@ -29,6 +30,9 @@ internal class AcidScene(
 
         const val ENV_RISE_PER_SEC = 9f
         const val ENV_FALL_PER_SEC = 2.4f
+
+        /** Spokes on the wheel. Matches `uSpokes[12]` in acid_step_frag. */
+        const val SPOKES = 12
     }
 
     private var params = SceneParams.DEFAULT
@@ -55,7 +59,8 @@ internal class AcidScene(
     private var beatPulse = 0f
     private var glitch = 0f
     private var glitchEpoch = 0f
-    private val chroma = FloatArray(12)
+    /** Twelve live spectral spokes. Reused every frame — render hot path. */
+    private val spokes = FloatArray(SPOKES)
 
     private val prevFbo = IntArray(1)
     private val prevViewport = IntArray(4)
@@ -156,29 +161,18 @@ internal class AcidScene(
         envMid = slew(envMid, f.mid.coerceIn(0f, 1.5f), dt)
         envTreble = slew(envTreble, f.treble.coerceIn(0f, 1.5f), dt)
         beatPulse =
-            maxOf(f.motionImpulse * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f)
+            maxOf(LiveSignal.hit(f) * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f)
                 .coerceIn(0f, 1.5f)
-        if (f.beatImpulse * p.beatResponse > GLITCH_THRESHOLD) {
+        if (LiveSignal.hit(f) * p.beatResponse > GLITCH_THRESHOLD) {
             glitch = 1f
             glitchEpoch = (glitchEpoch + 1f) % 1024f
         }
         glitch = (glitch - dt * GLITCH_DECAY).coerceAtLeast(0f)
-        if (f.hasChroma && f.chromaConfidence > 0.1f) {
-            for (i in 0 until 12) chroma[i] = f.chroma[i].coerceIn(0f, 1f)
-        } else {
-            val spin = (time * 0.05f) % 1f
-            for (i in 0 until 12) {
-                val angle = (i / 12f - spin + 2f) % 1f
-                val spoke = (1f - kotlin.math.abs(angle - 0.5f) * 2f)
-                val band =
-                    when (i % 3) {
-                        0 -> envBass
-                        1 -> envMid
-                        else -> envTreble
-                    }
-                chroma[i] = (spoke * spoke * band).coerceIn(0f, 1f)
-            }
-        }
+        // The wheel used to prefer the chromagram's pitch classes and only fall back to the
+        // band envelopes when a track had not been analysed — so the figure changed shape
+        // depending on whether analysis had caught up. It is one live reading now: the
+        // current band envelopes folded into twelve spokes, identical on file and on mic.
+        fillSpokes(f.bands)
 
         val frames = dt * 60f
         val feedback = (style.feedback.coerceAtMost(FEEDBACK_CAP)).pow(frames)
@@ -213,7 +207,7 @@ internal class AcidScene(
         GLES30.glUniform1f(stepLocs.loc("uBeat"), beatPulse)
         GLES30.glUniform1f(stepLocs.loc("uStrike"), pcmStrike.coerceIn(0f, 1.5f))
         GLES30.glUniform1f(stepLocs.loc("uDrive"), CymaticsMath.safeDrive(p.audioDrive))
-        GLES30.glUniform1fv(stepLocs.loc("uChroma"), 12, chroma, 0)
+        GLES30.glUniform1fv(stepLocs.loc("uSpokes"), SPOKES, spokes, 0)
         GLES30.glUniform1f(stepLocs.loc("uBaseHue"), FluidHue.base(p.paletteBase) + style.hueOffset)
         GLES30.glUniform1f(stepLocs.loc("uHueSpan"), FluidHue.span(p.hueRange, p.paletteRange) * style.hueSpan)
         GLES30.glUniform1f(stepLocs.loc("uLiquid"), style.liquid + p.turbulence.coerceIn(0f, 1f) * 0.6f)
@@ -236,6 +230,21 @@ internal class AcidScene(
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindVertexArray(0)
         GLES30.glUseProgram(0)
+    }
+
+    /** Folds the live band envelopes down onto the wheel, in place. */
+    private fun fillSpokes(bands: FloatArray) {
+        if (bands.isEmpty()) {
+            spokes.fill(0f)
+            return
+        }
+        for (i in 0 until SPOKES) {
+            val from = i * bands.size / SPOKES
+            val to = (((i + 1) * bands.size / SPOKES).coerceAtMost(bands.size)).coerceAtLeast(from + 1)
+            var acc = 0f
+            for (b in from until to) acc += bands[b]
+            spokes[i] = (acc / (to - from)).coerceIn(0f, 1f)
+        }
     }
 
     override fun release() {

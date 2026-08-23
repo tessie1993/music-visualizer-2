@@ -4,6 +4,7 @@ import android.content.Context
 import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
 import dev.geode.engine.scenes.R
+import dev.geode.render.LiveSignal
 import dev.geode.render.fluid.FluidBuffers
 import dev.geode.render.fluid.FluidHue
 import kotlin.math.max
@@ -206,9 +207,9 @@ internal class MycoScene(
         envBass = slew(envBass, f.bass.coerceIn(0f, 1.5f), dt)
         envTreble = slew(envTreble, f.treble.coerceIn(0f, 1.5f), dt)
         beatPulse =
-            maxOf(f.motionImpulse * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f)
+            maxOf(LiveSignal.hit(f) * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f)
                 .coerceIn(0f, 1.5f)
-        reaim = if (f.beatImpulse * p.beatResponse > BEAT_THRESHOLD) style.reaim else 0f
+        reaim = if (LiveSignal.hit(f) * p.beatResponse > BEAT_THRESHOLD) style.reaim else 0f
 
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)

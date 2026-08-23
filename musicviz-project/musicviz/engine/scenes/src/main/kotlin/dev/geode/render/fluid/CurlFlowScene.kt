@@ -4,6 +4,7 @@ import android.content.Context
 import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
 import dev.geode.engine.scenes.R
+import dev.geode.render.LiveSignal
 import dev.geode.render.scene.GlUtil
 import dev.geode.render.scene.ParticleLook
 import dev.geode.render.scene.SceneIds
@@ -105,7 +106,7 @@ internal class CurlFlowScene(
 
         if (f != null) {
             wallTime = (wallTime + lastDt) % WALL_WRAP_SECONDS
-            beatEnv = kotlin.math.max(f.motionImpulse, beatEnv * kotlin.math.exp(-lastDt / 0.35f))
+            beatEnv = kotlin.math.max(LiveSignal.hit(f), beatEnv * kotlin.math.exp(-lastDt / 0.35f))
             beatDrive = CurlFlowMath.beatDrive(beatEnv, params.beatResponse)
             noiseTime = (noiseTime + lastDt * (0.15f + f.mid * 1.4f) * FluidChoreography.sceneSpeed(params.speed)) %
                 NOISE_WRAP_SECONDS

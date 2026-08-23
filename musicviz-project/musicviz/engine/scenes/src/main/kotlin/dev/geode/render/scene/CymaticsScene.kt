@@ -4,6 +4,7 @@ import android.content.Context
 import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
 import dev.geode.engine.scenes.R
+import dev.geode.render.LiveSignal
 import dev.geode.render.fluid.FluidHue
 import kotlin.math.PI
 import kotlin.math.cos
@@ -46,11 +47,10 @@ internal class CymaticsScene(
 
         const val STYLE_FARADAY = 4
 
-        const val CHROMA_CONFIDENCE = 0.35f
 
-        const val CHROMA_TAU_SECONDS = 2.5f
+        const val TONE_TAU_SECONDS = 2.5f
 
-        const val CHROMA_HUE_SPAN = 0.05f
+        const val TONE_HUE_SPAN = 0.05f
 
         const val PCM_STRIKE_GAIN = 0.6f
     }
@@ -85,7 +85,7 @@ internal class CymaticsScene(
 
     private var driftShift = 0f
 
-    private var chromaHue = 0f
+    private var toneHue = 0f
 
     private var idleBlend = 0f
     private var idlePhase = 0f
@@ -168,7 +168,7 @@ internal class CymaticsScene(
         var totalAmplitude = 0f
         for (i in 0 until modeCount) totalAmplitude += modes[i * 4 + 2]
 
-        beatPulse = maxOf(f.motionImpulse * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f).coerceIn(0f, 1.5f)
+        beatPulse = maxOf(LiveSignal.hit(f) * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f).coerceIn(0f, 1.5f)
 
         val speed = p.speed.coerceIn(0.05f, 4f)
         val swirlRate = (p.cymaticsSwirl * style.swirl).coerceIn(-1f, 1f) * speed
@@ -177,14 +177,15 @@ internal class CymaticsScene(
         travelPhase = CymaticsMath.wrapPhase(travelPhase + flowRate * TRAVEL_OMEGA * dt, TWO_PI)
         driftShift = CymaticsMath.wrapPhase(driftShift + flowRate * DRIFT_RATE * dt, DRIFT_WRAP)
 
-        if (style.shaderStyle == STYLE_FARADAY) drops.update(dt, f.beatImpulse)
+        if (style.shaderStyle == STYLE_FARADAY) drops.update(dt, LiveSignal.hit(f))
 
-        if (f.hasChroma && f.chromaConfidence >= CHROMA_CONFIDENCE) {
-            var best = 0
-            for (i in 1 until 12) if (f.chroma[i] > f.chroma[best]) best = i
-            chromaHue = CymaticsMath.approachHue(chromaHue, best / 12f, CymaticsMath.smoothing(dt, CHROMA_TAU_SECONDS))
-        }
-        val chromaNudge = sin(chromaHue * TWO_PI) * CHROMA_HUE_SPAN
+        // The hue nudge used to chase the chromagram's strongest pitch class: that needs a
+        // track the analyser has already been through, it says nothing on live input, and it
+        // steps a twelfth of the wheel between neighbouring notes. Spectral brightness is the
+        // live reading of the same thing and moves continuously — a dark passage sits at one
+        // end of the nudge, a bright one at the other.
+        toneHue = CymaticsMath.approachHue(toneHue, LiveSignal.brightness(f), CymaticsMath.smoothing(dt, TONE_TAU_SECONDS))
+        val toneNudge = sin(toneHue * TWO_PI) * TONE_HUE_SPAN
 
         GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
@@ -208,7 +209,7 @@ internal class CymaticsScene(
         GLES30.glUniform1f(loc("uTravelPhase"), travelPhase)
         GLES30.glUniform1f(loc("uDriftShift"), driftShift)
         GLES30.glUniform4fv(loc("uDrops"), uniforms.arrayCount("uDrops", CymaticsDrops.SLOTS), drops.packed, 0)
-        GLES30.glUniform1f(loc("uBaseHue"), FluidHue.base(p.paletteBase) + style.hueOffset + chromaNudge)
+        GLES30.glUniform1f(loc("uBaseHue"), FluidHue.base(p.paletteBase) + style.hueOffset + toneNudge)
         GLES30.glUniform1f(loc("uHueSpan"), FluidHue.span(p.hueRange, p.paletteRange) * style.hueSpan)
         GLES30.glUniform1f(loc("uEnergy"), f.rms.coerceIn(0f, 1.5f))
         GLES30.glUniform1f(loc("uTreble"), f.treble.coerceIn(0f, 1.5f))

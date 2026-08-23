@@ -4,6 +4,7 @@ import android.content.Context
 import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
 import dev.geode.engine.scenes.R
+import dev.geode.render.LiveSignal
 import dev.geode.render.fluid.FluidHue
 import dev.geode.render.fluid.MeltField
 import dev.geode.render.fluid.MeltMath
@@ -199,7 +200,7 @@ internal class HyperspaceScene(
         val target = HyperspaceLook.bodyTarget(profile.bodies, p.hyperBodies * style.bodyScale)
         val spread = HyperspaceLook.spread(target)
         idleImpulseAge += dt
-        var impulse = ((f.motionImpulse * beatWeight + pcmKick * 0.5f) * p.beatResponse.coerceIn(0f, 2f)).coerceIn(0f, 1.5f)
+        var impulse = ((LiveSignal.hit(f) * beatWeight + pcmKick * 0.5f) * p.beatResponse.coerceIn(0f, 2f)).coerceIn(0f, 1.5f)
         if (idleBlend > 0.5f && idleImpulseAge >= IDLE_IMPULSE_SECONDS) {
             impulse = max(impulse, IDLE_IMPULSE)
             idleImpulseAge = 0f
@@ -255,7 +256,7 @@ internal class HyperspaceScene(
         farPlane = HyperspaceLook.farPlane(camDistance, spread)
 
         beatPulse =
-            maxOf((f.motionImpulse * beatWeight + pcmKick * 0.6f) * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f)
+            maxOf((LiveSignal.hit(f) * beatWeight + pcmKick * 0.6f) * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f)
                 .coerceIn(0f, 1.5f)
         val budget = MarchBudget.forDetail(p.hyperDetail)
 

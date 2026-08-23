@@ -3,15 +3,15 @@ package dev.geode.editor
 import dev.geode.data.PerformanceTake
 import kotlin.math.abs
 
-/**
+/*
  * Keyframes and the curve editor — Product Spec §9.
  *
  * Any parameter can be animated: transform, opacity, colour, scene settings, FX amounts. A track
  * is a list of keys in time order plus the curve leaving each key, and evaluation is a pure
  * function of (track, time) so the same code drives the timeline preview and the export.
  *
- * Keyframes snap to markers or clip edges through the editor's one snapping engine (see
- * [SnapMode]); there is no beat grid to snap to on purpose.
+ * Keyframes snap to markers or clip edges through the editor's one snapping engine (SnapMode);
+ * there is no beat grid to snap to on purpose.
  */
 
 @JvmInline
@@ -85,20 +85,20 @@ data class BezierCurve(
     // Polynomial form of the bezier, computed once: B(s) = ((a*s + b)*s + c)*s.
     // The x handles are clamped to [0,1] because a handle outside that range makes the curve
     // non-monotonic in time, which is not a thing a time warp can be.
-    private val cx: Float = 3f * c1x.coerceIn(0f, 1f)
-    private val bx: Float = 3f * (c2x.coerceIn(0f, 1f) - c1x.coerceIn(0f, 1f)) - cx
-    private val ax: Float = 1f - cx - bx
-    private val cy: Float = 3f * c1y
-    private val by: Float = 3f * (c2y - c1y) - cy
-    private val ay: Float = 1f - cy - by
+    private val xC: Float = 3f * c1x.coerceIn(0f, 1f)
+    private val xB: Float = 3f * (c2x.coerceIn(0f, 1f) - c1x.coerceIn(0f, 1f)) - xC
+    private val xA: Float = 1f - xC - xB
+    private val yC: Float = 3f * c1y
+    private val yB: Float = 3f * (c2y - c1y) - yC
+    private val yA: Float = 1f - yC - yB
 
     fun eval(x: Float): Float = axisY(solveForX(x.coerceIn(0f, 1f)))
 
-    private fun axisX(s: Float): Float = ((ax * s + bx) * s + cx) * s
+    private fun axisX(s: Float): Float = ((xA * s + xB) * s + xC) * s
 
-    private fun axisY(s: Float): Float = ((ay * s + by) * s + cy) * s
+    private fun axisY(s: Float): Float = ((yA * s + yB) * s + yC) * s
 
-    private fun slopeX(s: Float): Float = (3f * ax * s + 2f * bx) * s + cx
+    private fun slopeX(s: Float): Float = (3f * xA * s + 2f * xB) * s + xC
 
     private fun solveForX(x: Float): Float {
         var s = x
@@ -249,7 +249,8 @@ data class KeyframeTrack(
         if (key(id) == null) {
             KeyframeResult.Rejected(KeyframeError.KeyNotFound(id))
         } else {
-            KeyframeResult.Applied(withKeys(keys.map { if (it.id == id) it.copy(interpolation = interpolation) else it }))
+            val recurved = keys.map { if (it.id == id) it.copy(interpolation = interpolation) else it }
+            KeyframeResult.Applied(withKeys(recurved))
         }
 
     /** Removing a key that is not there is a no-op, not a failure — the user got what they asked for. */
@@ -386,11 +387,12 @@ object PerformanceKeyframes {
     ): List<KeyframeTrack> {
         val paramIds = samples.flatMapTo(LinkedHashSet()) { it.values.keys }
         return paramIds
-            .map { paramId -> KeyframeTrack(paramId = paramId, keys = reduce(paramId, samples, idFor, interpolation)) }
-            .filterNot { it.isEmpty }
+            .map { paramId ->
+                KeyframeTrack(paramId = paramId, keys = reduceToKeys(paramId, samples, idFor, interpolation))
+            }.filterNot { it.isEmpty }
     }
 
-    private fun reduce(
+    private fun reduceToKeys(
         paramId: ParamId,
         samples: List<PerformanceSample>,
         idFor: (ParamId, Long) -> KeyframeId,

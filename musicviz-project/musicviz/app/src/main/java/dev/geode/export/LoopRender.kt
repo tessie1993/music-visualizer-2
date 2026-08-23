@@ -317,9 +317,10 @@ class LoopRender(
         val phases = job.drift.stopPhases()
         val rendered = mutableListOf<RenderedLoop>()
         var seamFrames = job.spec.crossfadeFrames
+        var pending: File? = null
         try {
             for ((index, stop) in phases.withIndex()) {
-                val file = File.createTempFile("geode_loop_${stop.index}_", ".mp4", context.cacheDir)
+                val file = File.createTempFile("geode_loop_${stop.index}_", ".mp4", context.cacheDir).also { pending = it }
                 val outcome =
                     renderStop(
                         job = job,
@@ -338,23 +339,21 @@ class LoopRender(
                             // so the reel reports the shortest seam any of its loops used.
                             seamFrames = minOf(seamFrames, outcome.crossfadeFrames)
                             rendered += RenderedLoop(file, stop)
+                            pending = null
                             false
                         }
                         StopOutcome.Cancelled -> true
                     }
-                if (cancelled) {
-                    bestEffort(TAG, "file.delete()") { file.delete() }
-                    return discard(rendered, Result.Cancelled)
-                }
+                if (cancelled) return discard(rendered, pending, Result.Cancelled)
             }
         } catch (e: MediaCodec.CodecException) {
-            return discard(rendered, Result.Failed(codecMessage(e)))
+            return discard(rendered, pending, Result.Failed(codecMessage(e)))
         } catch (e: IllegalStateException) {
-            return discard(rendered, Result.Failed(e.message ?: "The loop render stopped unexpectedly."))
+            return discard(rendered, pending, Result.Failed(e.message ?: "The loop render stopped unexpectedly."))
         } catch (e: IOException) {
-            return discard(rendered, Result.Failed("The loop could not be written to this device's cache: ${e.message}"))
+            return discard(rendered, pending, Result.Failed("The loop could not be written to this device's cache: ${e.message}"))
         } catch (e: GlUtil.ShaderCompileException) {
-            return discard(rendered, Result.Failed("The seam blend could not be compiled on this GPU: ${e.message}"))
+            return discard(rendered, pending, Result.Failed("The seam blend could not be compiled on this GPU: ${e.message}"))
         }
         onProgress(1f)
         val effective = job.spec.copy(crossfadeMs = seamFrames * 1000L / job.spec.fps)
@@ -457,7 +456,7 @@ class LoopRender(
                     seam.capture(frame)
                 } else {
                     val tail = frame - loopFrames
-                    if (tail >= 0) seam.blendOver(tail, (tail + 1).toFloat() / seamFrames)
+                    if (tail >= 0) seam.blendOver(tail, seamWeight(tail, seamFrames))
                     egl.setPresentationTimeNs((frame - seamFrames) * frameDurationNs)
                     egl.swapBuffers()
                     writer.drain(untilEndOfStream = false)
@@ -469,12 +468,27 @@ class LoopRender(
         return if (cancelled) StopOutcome.Cancelled else StopOutcome.Done(seamFrames)
     }
 
+    /**
+     * The dissolve's weight on the stashed opening frame.
+     *
+     * It reaches the ends exactly — no weight on the first closing frame, all of it on the last —
+     * so the frames either side of the wrap are untouched renders rather than mixtures, and the
+     * seam has nothing left to give itself away with.
+     */
+    private fun seamWeight(
+        tail: Int,
+        seamFrames: Int,
+    ): Float = if (seamFrames > 1) tail / (seamFrames - 1f) else 1f
+
     private fun prepareRenderer(
         job: RenderJob,
         stop: DriftStop,
         sourceFrames: Int,
     ): OffscreenSceneRenderer {
-        val at = job.paramsAt
+        // Keyframed parameters drift with the stop they are rendered for, so an automated hue
+        // still lands on top of this stop's palette rather than resetting it every repeat.
+        val driftedParamsAt: ((Long) -> SceneParams)? =
+            job.paramsAt?.let { source -> { timeMs: Long -> stop.applyTo(source(timeMs)) } }
         return OffscreenSceneRenderer(
             context = context,
             sceneFactory = job.sceneFactory,
@@ -497,9 +511,11 @@ class LoopRender(
 
     private fun discard(
         rendered: List<RenderedLoop>,
+        pending: File?,
         result: Result,
     ): Result {
         rendered.forEach { it.delete() }
+        pending?.let { file -> bestEffort(TAG, "file.delete()") { file.delete() } }
         return result
     }
 

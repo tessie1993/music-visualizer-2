@@ -2,7 +2,7 @@ package dev.geode.editor
 
 import kotlin.math.abs
 
-/**
+/*
  * Markers — Product Spec §9.
  *
  * A marker is the user's own mark on the track: the drop, the bar they want the text to hit, the

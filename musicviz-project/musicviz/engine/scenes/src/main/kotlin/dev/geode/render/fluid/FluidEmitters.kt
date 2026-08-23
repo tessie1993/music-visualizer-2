@@ -1,6 +1,7 @@
 package dev.geode.render.fluid
 
 import dev.geode.analysis.AudioFeatures
+import dev.geode.render.LiveSignal
 import dev.geode.render.scene.SceneParams
 import kotlin.math.PI
 import kotlin.math.cos
@@ -109,7 +110,7 @@ internal class FluidEmitters(
         out: MutableList<FluidSim.Splat>,
     ) {
         out.clear()
-        beatEnvRaw = max(f.motionImpulse, beatEnvRaw * exp(-dt / 0.3f))
+        beatEnvRaw = max(LiveSignal.hit(f), beatEnvRaw * exp(-dt / 0.3f))
         beatEnv = beatEnvRaw * beatResponse.coerceIn(MIN_BEAT_RESPONSE, MAX_BEAT_RESPONSE)
         val bassTarget = (f.bass * 1.2f).coerceIn(0f, 1f)
         bassEnv +=

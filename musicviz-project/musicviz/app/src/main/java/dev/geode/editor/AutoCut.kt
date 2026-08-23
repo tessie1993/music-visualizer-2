@@ -3,7 +3,7 @@ package dev.geode.editor
 import dev.geode.analysis.AudioFeatures
 import dev.geode.analysis.FeatureTimeline
 
-/**
+/*
  * Auto-cut — Product Spec §9.
  *
  * Cuts and markers are proposed from the transients in the track: the hits the player actually

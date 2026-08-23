@@ -2,6 +2,7 @@ package dev.geode.render.fluid
 
 import android.content.Context
 import dev.geode.analysis.AudioFeatures
+import dev.geode.render.LiveSignal
 import dev.geode.render.scene.SceneParams
 import kotlin.math.abs
 import kotlin.math.max
@@ -121,7 +122,7 @@ internal class MeltField(
         sim.audioMid = features.mid
         sim.audioTreble = features.treble
         sim.audioEnergy = features.rms.coerceIn(0f, 1f)
-        sim.audioBeat = features.motionImpulse
+        sim.audioBeat = LiveSignal.hit(features)
         emitters.forceScale = p.hyperStir.coerceIn(0f, 3f)
         emitters.stirrerSpeed = p.speed.coerceIn(0.1f, 2f)
         emitters.beatResponse = p.beatResponse

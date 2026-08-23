@@ -39,7 +39,10 @@ uniform float uTreble;
 uniform float uBeat;
 uniform float uStrike;
 uniform float uDrive;
-uniform float uChroma[12]; // pitch-class energies, 0..1
+// Twelve live spectral spokes, 0..1: the current band envelopes folded into a
+// wheel. Was a chromagram (pitch classes), which needs an analysed track and
+// describes notes rather than what the spectrum is doing this frame.
+uniform float uSpokes[12];
 uniform float uBaseHue;
 uniform float uHueSpan;
 uniform float uLiquid;    // sine-field liquid warp amount
@@ -82,8 +85,8 @@ vec3 sourceLayer(vec2 q, float r, float ang) {
         for (int i = 0; i < 12; i++) {
             float a = TAU * (float(i) / 12.0);
             float d = abs(mod(ang - a + TAU * 1.5, TAU) - TAU * 0.5);
-            float spoke = exp(-d * d * 90.0) * uChroma[i];
-            float radial = exp(-pow((r - 0.32 - 0.25 * uChroma[i]) * 6.0, 2.0));
+            float spoke = exp(-d * d * 90.0) * uSpokes[i];
+            float radial = exp(-pow((r - 0.32 - 0.25 * uSpokes[i]) * 6.0, 2.0));
             acc += hsv2rgb(vec3(fract(uBaseHue + uHueSpan * float(i) / 12.0), 0.8, 1.0)) * spoke * radial;
             best = max(best, spoke);
         }

@@ -3,10 +3,10 @@ package dev.geode.editor
 import dev.geode.export.ClipEdit
 import kotlin.math.abs
 
-/**
+/*
  * Editor timeline — Product Spec §9.
  *
- * Every type here is immutable and every operation is a pure function returning a new [Timeline],
+ * Every type here is immutable and every operation is a pure function returning a new Timeline,
  * because undo in this editor is "keep the previous value", not "replay an inverse operation".
  * Unchanged lanes and clips are reused by reference, so a copy costs a handful of list nodes.
  *
@@ -174,17 +174,17 @@ data class Clip(
         atMs: Long,
         tailId: ClipId,
     ): ClipSplit? {
-        val head = atMs - startMs
-        val tail = endMs - atMs
-        if (head < MIN_CLIP_DURATION_MS || tail < MIN_CLIP_DURATION_MS) return null
+        val headMs = atMs - startMs
+        val tailMs = endMs - atMs
+        if (headMs < MIN_CLIP_DURATION_MS || tailMs < MIN_CLIP_DURATION_MS) return null
         return ClipSplit(
-            head = copy(durationMs = head),
+            head = copy(durationMs = headMs),
             tail =
                 copy(
                     id = tailId,
                     startMs = atMs,
-                    durationMs = tail,
-                    sourceInMs = sourceInMs + head,
+                    durationMs = tailMs,
+                    sourceInMs = sourceInMs + headMs,
                 ),
         )
     }
@@ -406,11 +406,11 @@ data class Timeline(
     ): EditResult {
         val lane = laneOf(clipId)
         val clip = lane?.clip(clipId)
-        val copy = clip?.copy(id = newId, startMs = (atMs ?: clip.endMs).coerceAtLeast(0L))
+        val duplicate = clip?.copy(id = newId, startMs = (atMs ?: clip.endMs).coerceAtLeast(0L))
         return when {
-            lane == null || copy == null -> EditResult.Rejected(EditError.ClipNotFound(clipId))
+            lane == null || duplicate == null -> EditResult.Rejected(EditError.ClipNotFound(clipId))
             lane.locked -> EditResult.Rejected(EditError.LaneLocked(lane.id))
-            else -> lane.place(copy, policy).asEditResult(listOf(newId))
+            else -> lane.place(duplicate, policy).asEditResult(listOf(newId))
         }
     }
 

@@ -4,6 +4,7 @@ import android.opengl.GLES30
 import android.os.SystemClock
 import dev.geode.analysis.AudioFeatures
 import dev.geode.render.CompositeGrade
+import dev.geode.render.LiveSignal
 import java.io.File
 
 class MilkdropScene(
@@ -200,7 +201,7 @@ class MilkdropScene(
         rotationAngle = (rotationAngle + p.rotation * dt) % TWO_PI
         zoomPhase = if (p.endlessZoom) (zoomPhase + p.endlessZoomSpeed * dt) % 1f else 0f
         if (p.colorCycle) cyclePhase = (cyclePhase + p.cycleSpeed * dt) % 1f
-        beatPulse = maxOf(features.motionImpulse, beatPulse - dt * 3f).coerceAtLeast(0f)
+        beatPulse = maxOf(LiveSignal.hit(features), beatPulse - dt * 3f).coerceAtLeast(0f)
         if (handle == 0L) return
         if (pcmCount > 0) {
             MilkdropEngine.nativeAddPcmMono(handle, pcmBuffer, pcmCount)

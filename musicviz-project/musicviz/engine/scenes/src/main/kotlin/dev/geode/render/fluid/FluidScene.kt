@@ -3,6 +3,7 @@ package dev.geode.render.fluid
 import android.content.Context
 import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
+import dev.geode.render.LiveSignal
 import dev.geode.render.scene.GlUtil
 import dev.geode.render.scene.ParticleLook
 import dev.geode.render.scene.SceneIds
@@ -111,7 +112,7 @@ internal class FluidScene(
         sim.audioMid = f.mid
         sim.audioTreble = f.treble
         sim.audioEnergy = energy
-        sim.audioBeat = f.motionImpulse
+        sim.audioBeat = LiveSignal.hit(f)
         sim.timeSeconds = time
 
         configureChoreography()

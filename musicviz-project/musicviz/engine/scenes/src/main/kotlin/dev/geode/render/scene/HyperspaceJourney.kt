@@ -25,6 +25,14 @@ class HyperspaceJourney {
         cyclePhase = 0f
     }
 
+    /**
+     * Walks the journey one frame.
+     *
+     * [energy] is the only thing that moves it on Music: the track's play position used to
+     * force a floor under the immersion so a long track drifted deeper whatever it sounded
+     * like, which made the journey a function of the clock rather than of the music, and did
+     * nothing at all on live input. Loud passages take it deeper now, quiet ones bring it back.
+     */
     fun advance(
         dt: Float,
         energy: Float,
@@ -32,7 +40,6 @@ class HyperspaceJourney {
         holdAct: Int,
         cycleSeconds: Float,
         pace: Float,
-        progress: Float = 0f,
     ) {
         val last = HyperspaceMath.ACTS.size - 1
         val step = dt * max(pace, 0f)

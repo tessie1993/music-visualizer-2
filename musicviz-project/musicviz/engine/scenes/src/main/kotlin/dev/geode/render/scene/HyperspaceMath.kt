@@ -174,13 +174,17 @@ object HyperspaceMath {
         return (current + step).coerceIn(0f, 1f)
     }
 
-    fun beatGate(pulseConfidence: Float): Float = BEAT_GATE_FLOOR + (1f - BEAT_GATE_FLOOR) * smoothstep(0.2f, 0.65f, pulseConfidence)
+    /**
+     * How much of a hit's strength is allowed to bud a new body.
+     *
+     * Was gated on the beat tracker's CONFIDENCE, which meant the room stayed half-dead for
+     * the several seconds the tracker needed to lock, and never woke up at all on material
+     * with no steady pulse. Gated on the live level instead: a loud passage buds hard, a
+     * near-silent one barely at all, decided from the frame in hand.
+     */
+    fun hitGate(level: Float): Float = HIT_GATE_FLOOR + (1f - HIT_GATE_FLOOR) * smoothstep(0.05f, 0.35f, level.coerceIn(0f, 1f))
 
-    const val BEAT_GATE_FLOOR: Float = 0.35f
-
-    fun progressImmersionFloor(progress: Float): Float = PROGRESS_FLOOR_MAX * smoothstep(0.2f, 0.75f, progress.coerceIn(0f, 1f))
-
-    const val PROGRESS_FLOOR_MAX: Float = 0.30f
+    const val HIT_GATE_FLOOR: Float = 0.35f
 
     fun worldToLocalRotation(
         axisA: FloatArray,

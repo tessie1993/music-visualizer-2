@@ -4,6 +4,7 @@ import android.content.Context
 import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
 import dev.geode.engine.scenes.R
+import dev.geode.render.LiveSignal
 import dev.geode.render.fluid.FluidHue
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -118,7 +119,7 @@ internal class BeamScene(
         for (i in samples.indices) peak = max(peak, abs(samples[i]))
         val target = if (peak > 0.02f) (0.85f / peak).coerceIn(0.5f, 6f) else autoGain
         autoGain += (target - autoGain) * (if (target < autoGain) 0.06f else 0.02f)
-        beatPulse = max(features.motionImpulse, beatPulse - dt * 3f).coerceIn(0f, 1.5f)
+        beatPulse = max(LiveSignal.hit(features), beatPulse - dt * 3f).coerceIn(0f, 1.5f)
     }
 
     override fun draw(timeSeconds: Float) {

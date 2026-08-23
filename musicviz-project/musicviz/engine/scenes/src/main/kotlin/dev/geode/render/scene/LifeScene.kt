@@ -4,6 +4,7 @@ import android.content.Context
 import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
 import dev.geode.engine.scenes.R
+import dev.geode.render.LiveSignal
 import dev.geode.render.fluid.FluidBuffers
 import dev.geode.render.fluid.FluidHue
 import kotlin.math.cos
@@ -217,12 +218,13 @@ internal class LifeScene(
         val speed = p.speed.coerceIn(0.05f, 4f)
         val drive = CymaticsMath.safeDrive(p.audioDrive)
         envTreble = slew(envTreble, f.treble.coerceIn(0f, 1.5f), dt)
+        val hit = LiveSignal.hit(f)
         beatPulse =
-            maxOf(f.motionImpulse * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f)
+            maxOf(hit * p.beatResponse.coerceIn(0f, 2f), beatPulse - dt * 3f)
                 .coerceIn(0f, 1.5f)
         kick = (kick - dt * 5f).coerceAtLeast(0f)
-        if (f.beatImpulse * p.beatResponse > BEAT_THRESHOLD) {
-            kick = (0.4f + 0.6f * f.beatImpulse.coerceIn(0f, 1.5f)) * drive
+        if (hit * p.beatResponse > BEAT_THRESHOLD) {
+            kick = (0.4f + 0.6f * hit.coerceIn(0f, 1.5f)) * drive
             kickAngle += GOLDEN_ANGLE
             kickX = 0.5f + 0.32f * cos(kickAngle)
             kickY = 0.5f + 0.32f * sin(kickAngle)

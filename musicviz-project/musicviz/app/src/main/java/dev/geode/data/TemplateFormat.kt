@@ -74,7 +74,6 @@
 
 package dev.geode.data
 
-import dev.geode.export.ExportQuality
 import dev.geode.render.scene.SceneIds
 import dev.geode.render.scene.SceneParams
 import dev.geode.ui.PresetLink
@@ -193,7 +192,6 @@ object TemplateFormat {
             .takeIf { it.length <= PresetLink.MAX_LINK_LENGTH }
 
     /** Finds a template link inside a longer pasted message. */
-    @Suppress("ReturnCount")
     fun linkIn(text: String): String? {
         val start = text.indexOf(LINK_PREFIX, ignoreCase = true)
         if (start < 0) return null
@@ -249,7 +247,6 @@ object TemplateFormat {
         return this
     }
 
-    @Suppress("ReturnCount")
     private inline fun <reified E : Enum<E>> readEnum(
         source: JSONObject?,
         key: String,
@@ -468,7 +465,6 @@ object TemplateFormat {
             is TemplateSegment.Unknown -> JSONObject().put(KEY_KIND, segment.kind).mergeForeign(segment.fields)
         }
 
-    @Suppress("ReturnCount")
     private fun readSegment(source: JSONObject?): TemplateSegment {
         if (source == null) return TemplateSegment.WholeTrack
         val kind = source.optString(KEY_KIND).trim().ifBlank { SEGMENT_WHOLE }
@@ -490,11 +486,21 @@ object TemplateFormat {
     // Small readers
     // -----------------------------------------------------------------------
 
+    /**
+     * The JSON body of whatever was handed over: a pasted link, or a file that may
+     * carry a byte order mark or stray leading whitespace from an editor or a cloud
+     * drive. Starting at the opening brace deals with all of those at once.
+     */
+    @Suppress("ReturnCount")
     private fun bodyOf(raw: String): String? {
-        val trimmed = raw.trimStart { it == BOM || it.isWhitespace() }.trimEnd()
-        val link = linkIn(trimmed)
-        return if (link == null) trimmed.takeIf { it.isNotEmpty() } else PresetLink.decode(link.replaceFirst(LINK_PREFIX, PRESET_PREFIX, ignoreCase = true))
+        val link = linkIn(raw)
+        if (link != null) return decodeLink(link)
+        val start = raw.indexOf('{')
+        if (start < 0) return null
+        return raw.substring(start).trimEnd().takeIf { it.isNotEmpty() }
     }
+
+    private fun decodeLink(link: String): String? = PresetLink.decode(link.replaceFirst(LINK_PREFIX, PRESET_PREFIX, ignoreCase = true))
 
     private fun optFloat(
         source: JSONObject?,
@@ -590,9 +596,6 @@ object TemplateFormat {
     private const val HEX_RADIX = 16
     private const val JSON_INDENT = 2
     private const val MAX_NAME_LENGTH = 60
-
-    /** U+FEFF: some editors and cloud drives prepend one when they touch a JSON file. */
-    private val BOM: Char = Char(65_279)
 
     private val UNSAFE_NAME_CHARS = Regex("""[\\/:*?"<>|]""")
 

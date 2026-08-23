@@ -2,6 +2,7 @@ package dev.geode.render.scene
 
 import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
+import dev.geode.render.LiveSignal
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -19,6 +20,11 @@ class ShaderScene(
         private const val TIME_WRAP_SECONDS = 7100f
 
         private const val TWO_PI = (2.0 * Math.PI).toFloat()
+
+        /** How fast uBeatPhase free-runs between hits, in cycles/second. */
+        private const val PULSE_PHASE_HZ = 0.6f
+
+        private const val PULSE_DECAY_PER_SECOND = 3f
     }
 
     private var program = 0
@@ -138,17 +144,16 @@ class ShaderScene(
         mid = (features.mid * p.audioDrive).coerceIn(0f, 1.5f)
         treble = (features.treble * p.audioDrive).coerceIn(0f, 1.5f)
         energy = (features.rms * p.audioDrive).coerceIn(0f, 1.5f)
-        beatPulse = maxOf(features.motionImpulse, beatPulse - dt * 3f).coerceAtLeast(0f)
-        val bpm = features.bpm
-        if (bpm > 40f) {
-            beatPhase = (beatPhase + dt * bpm / 60f) % 1f
-            if (features.beat) {
-                beatPhase = if (beatPhase > 0.5f) beatPhase * 0.5f + 0.5f else beatPhase * 0.5f
-                if (beatPhase >= 0.999f) beatPhase = 0f
-            }
-        } else {
-            beatPhase = (beatPhase + dt) % 1f
-        }
+        val hit = LiveSignal.hit(features)
+        beatPulse = maxOf(hit, beatPulse - dt * PULSE_DECAY_PER_SECOND).coerceAtLeast(0f)
+        // uBeatPhase is the shared pulse ramp every fragment reads as
+        // `pow(0.5 + 0.5 * cos(TAU * uBeatPhase), 2)`, so it peaks at 0 and falls away.
+        // It used to be a tempo grid stepped by `bpm` and nudged by the tracked beat, which
+        // meant the bump landed where the tracker THOUGHT the next beat was; a wrong estimate
+        // dragged every shader scene off the music and live input (no tempo yet) got a flat
+        // 1 Hz throb. Now the transient that was actually heard resets the ramp, and it
+        // free-runs in between so the bump still breathes when nothing is hitting.
+        beatPhase = if (hit > 0f) 0f else (beatPhase + dt * PULSE_PHASE_HZ) % 1f
         val drive = p.audioDrive
         texFloats.clear()
         for (i in 0 until AUDIO_TEX_WIDTH) {
