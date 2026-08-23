@@ -23,11 +23,34 @@ internal fun BehaviorSettingsTab(viewModel: SettingsViewModel) {
     val playerViewModel: PlayerViewModel = geodeViewModel()
     val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
     SettingsTabColumn {
+        item { SettingsGroup(stringResource(R.string.behavior_group_intent)) { IntentGroup(viewModel, gui) } }
         item { SettingsGroup(stringResource(R.string.behavior_group_touch)) { TouchGroup(viewModel, gui) } }
         item { SettingsGroup(stringResource(R.string.behavior_group_display)) { ConnectedDisplayGroup(viewModel, gui) } }
         item { SettingsGroup(stringResource(R.string.behavior_group_safety)) { VisualSafetyGroup(viewModel, gui) } }
         item { SettingsGroup(stringResource(R.string.behavior_group_auto)) { AutoVisualsGroup(playerViewModel) } }
         item { SettingsGroup(stringResource(R.string.behavior_group_wallpaper)) { LiveWallpaperGroup() } }
+    }
+}
+
+/** The first-run question, asked again. Changing it moves Studio in or out of the navigation. */
+@Composable
+private fun IntentGroup(
+    viewModel: SettingsViewModel,
+    gui: GuiPrefs,
+) {
+    Column {
+        Text(stringResource(R.string.first_run_intent_title), style = MaterialTheme.typography.bodyMedium)
+        CrystalSegmented(
+            options = UserIntent.entries.map { stringResource(it.labelRes) },
+            selected = UserIntent.entries.indexOf(gui.intent ?: UserIntent.BOTH),
+            onSelect = { viewModel.setGuiPrefs(gui.copy(intent = UserIntent.entries[it])) },
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        Text(
+            stringResource((gui.intent ?: UserIntent.BOTH).detailRes),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

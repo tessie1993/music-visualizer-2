@@ -22,6 +22,22 @@
     <string name="safety_prompt">The flash rate is limited in the engine, by design. Nothing on screen can flash more than three times a second, no preset or imported file can raise that, and the video you export is held to the same limit as the screen you saw. There is no setting for this and nothing to switch off.</string>
     <string name="safety_acknowledge">I understand</string>
 
+    <!-- First run, after the notice: where the music is, and what you came here to do. -->
+    <string name="first_run_source_title">Where\'s your music?</string>
+    <string name="first_run_source_body">Pick your media library, a folder, or both. Scanning starts straight away and everything stays usable while it runs.</string>
+    <string name="first_run_source_media_library">Use my media library</string>
+    <string name="first_run_source_folder">Pick a folder</string>
+    <string name="first_run_continue">Continue</string>
+    <string name="first_run_scanning">%1$d tracks found</string>
+    <string name="first_run_intent_title">What brings you here?</string>
+    <string name="first_run_intent_body">This sets where the app opens. You can change it later in Settings.</string>
+    <string name="first_run_intent_listening">Listening</string>
+    <string name="first_run_intent_listening_detail">Opens on the player. Studio stays out of the way.</string>
+    <string name="first_run_intent_videos">Making videos</string>
+    <string name="first_run_intent_videos_detail">Opens in Studio, with your projects and render queue to hand.</string>
+    <string name="first_run_intent_both">Both</string>
+    <string name="first_run_intent_both_detail">Opens on the player, with Studio one tap away.</string>
+
     <!-- Per-track metadata editor. -->
     <string name="track_info_title">Track info</string>
     <string name="track_info_field_title">Title</string>
@@ -171,6 +187,16 @@
     <string name="library_group_unnamed">(no name)</string>
     <string name="library_back">‹ Back</string>
     <string name="library_play_all">Play all</string>
+    <string name="library_search_hint">Search titles, artists, albums</string>
+    <string name="library_no_results">Nothing matches that.</string>
+    <string name="library_sort_title">Title</string>
+    <string name="library_sort_artist">Artist</string>
+    <string name="library_sort_album">Album</string>
+    <string name="library_sort_duration">Length</string>
+    <string name="library_sort_added">Added</string>
+    <string name="action_visualise">Visualise</string>
+    <string name="action_export_now">Export now</string>
+    <string name="action_add_to_studio">Add to Studio</string>
 
     <string name="action_more">More</string>
     <string name="action_play_next">Play next</string>
@@ -185,8 +211,6 @@
     <string name="action_ok">OK</string>
 
     <!-- The analysed badge announces itself as one phrase; the gem is decoration. -->
-    <string name="analysed_badge">Analysed</string>
-    <string name="analysed_badge_with_tempo">Analysed, %1$s</string>
 
     <string name="playlist_new">New playlist</string>
     <string name="playlist_new_branch">New playlist…</string>
@@ -436,6 +460,7 @@
     <string name="behavior_display_use">Use a connected display</string>
     <string name="behavior_display_connected">Connected: %1$s. The visuals play there and the phone becomes the control surface — the canvas moves rather than being mirrored, so the big screen shows exactly what the app renders.</string>
     <string name="behavior_display_none">Nothing connected. Plug in HDMI or start casting, and the visuals move to that screen while the phone keeps the controls.</string>
+    <string name="behavior_group_intent">What you\'re here for</string>
     <string name="behavior_safety_title">Flashing and motion</string>
     <string name="behavior_flash_guidance">Nothing in Geode can flash more than three times a second. Published guidance (WCAG 2.3.1) puts the general limit there, and the clamp sits in the render path itself — it applies to every scene, every preset and every imported file, on screen and in exported video alike. It is not a setting, so there is nothing here to adjust.</string>
     <string name="behavior_slow_motion">Slow the motion down</string>

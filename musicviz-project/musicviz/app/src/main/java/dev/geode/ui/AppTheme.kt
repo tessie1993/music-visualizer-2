@@ -113,6 +113,11 @@ data class GuiPrefs(
      * the flash clamp is unconditional either way, so this only decides whether the notice shows.
      */
     val safetyAcknowledged: Boolean = false,
+    /**
+     * What the person said they came here to do, or null if first run has not asked yet. Null is
+     * the "unasked" state rather than a default answer, so the question is asked exactly once.
+     */
+    val intent: UserIntent? = null,
     val reducedMotion: Boolean = false,
     val micReactive: Boolean = false,
     val touchSmear: Boolean = false,
@@ -187,6 +192,10 @@ class ThemeStore(
                     .getFloat(KEY_TEXT_SCALE, 1f)
                     .coerceIn(GuiPrefs.TEXT_SCALE_MIN, GuiPrefs.TEXT_SCALE_MAX),
             safetyAcknowledged = loadSafetyAcknowledged(),
+            intent =
+                prefs
+                    .getString(KEY_INTENT, null)
+                    ?.let { stored -> UserIntent.entries.firstOrNull { it.name == stored } },
             reducedMotion = loadReducedMotion(),
             touchSmear = prefs.getBoolean(KEY_TOUCH_SMEAR, false),
             touchSmearStrength = prefs.getFloat(KEY_TOUCH_SMEAR_STRENGTH, 1f).coerceIn(0.2f, 2f),
@@ -232,7 +241,10 @@ class ThemeStore(
             .remove(KEY_WHITE_FONT)
             .putFloat(KEY_TEXT_SCALE, gui.textScale)
             .putBoolean(KEY_SAFETY_ACKNOWLEDGED, gui.safetyAcknowledged)
-            .putBoolean(KEY_REDUCED_MOTION, gui.reducedMotion)
+            .apply {
+                val intent = gui.intent
+                if (intent != null) putString(KEY_INTENT, intent.name) else remove(KEY_INTENT)
+            }.putBoolean(KEY_REDUCED_MOTION, gui.reducedMotion)
             .putBoolean(KEY_TOUCH_SMEAR, gui.touchSmear)
             .putFloat(KEY_TOUCH_SMEAR_STRENGTH, gui.touchSmearStrength)
             .putBoolean(KEY_TOUCH_TRANSFORM, gui.touchTransform)
@@ -243,6 +255,7 @@ class ThemeStore(
 
     internal companion object {
         const val KEY_SAFETY_ACKNOWLEDGED = "gui_safety_acknowledged"
+        const val KEY_INTENT = "gui_intent"
 
         /** Read-only now: the old three-way answer, kept solely to migrate existing installs. */
         const val KEY_SAFETY_CHOICE = "gui_safety_choice"

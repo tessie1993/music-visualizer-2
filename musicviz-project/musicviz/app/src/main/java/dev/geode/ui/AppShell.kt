@@ -153,10 +153,13 @@ fun AppRoot() {
                 onNext = viewModel::next,
             )
         }
+        // Someone who came here to listen does not get a render queue in their navigation bar.
+        // Until first run has an answer, show everything rather than guess and hide something.
+        val showsStudio = gui.intent?.showsStudio ?: true
         val navEntries =
-            GeodeDestination.entries.map {
-                NavEntry(it, CrystalNavItem(stringResource(it.labelRes), it.icon))
-            }
+            GeodeDestination.entries
+                .filter { it != GeodeDestination.STUDIO || showsStudio }
+                .map { NavEntry(it, CrystalNavItem(stringResource(it.labelRes), it.icon)) }
         val destinationContent: @Composable (twoPane: Boolean) -> Unit = { twoPane ->
             PlaybackNoticeBanner(viewModel)
             when (appState.dest) {
@@ -267,6 +270,15 @@ fun AppRoot() {
                 SafetyConsent(
                     onAcknowledge = { settingsViewModel.setGuiPrefs(gui.copy(safetyAcknowledged = true)) },
                 )
+            } else if ((!bootAnimEnabled || appState.bootDone) && gui.intent == null) {
+                // Setup runs only after the notice is acknowledged, and only until the one
+                // question has an answer — `intent == null` is the whole "first run" condition.
+                FirstRunGate(
+                    onChooseIntent = { chosen ->
+                        settingsViewModel.setGuiPrefs(gui.copy(intent = chosen))
+                        appState.navigateTo(chosen.landingDestination)
+                    },
+                )
             }
             if (bootAnimEnabled && !appState.bootDone) {
                 BootIntro(onDone = { appState.bootDone = true })
@@ -302,7 +314,9 @@ private fun AppShellCompact(
                 )
                 CrystalNavBar(
                     items = navEntries.map { it.item },
-                    selected = navEntries.indexOfFirst { it.destination == appState.dest },
+                    // A destination can be hidden while still being the current one — reaching
+                    // Studio from a track menu, say. Fall back to the first tab rather than -1.
+                    selected = navEntries.indexOfFirst { it.destination == appState.dest }.coerceAtLeast(0),
                     onSelect = { appState.navigateTo(navEntries[it].destination) },
                     opacity = gui.barOpacity,
                 )
