@@ -80,7 +80,12 @@ class PlaybackSession internal constructor(
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                     .build(),
                 true,
-            ).build()
+            )
+            // Local files, screen off: without a wake mode the CPU may doze mid-track on
+            // aggressive devices. LOCAL takes only the partial wake lock while playing -
+            // no wifi lock, because nothing is streamed.
+            .setWakeMode(C.WAKE_MODE_LOCAL)
+            .build()
 
     val audioFx = AudioFxController(GeodePrefsFiles(context).audioFx)
 
