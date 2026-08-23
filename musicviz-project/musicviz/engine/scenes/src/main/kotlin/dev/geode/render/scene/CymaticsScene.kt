@@ -47,7 +47,6 @@ internal class CymaticsScene(
 
         const val STYLE_FARADAY = 4
 
-
         const val TONE_TAU_SECONDS = 2.5f
 
         const val TONE_HUE_SPAN = 0.05f

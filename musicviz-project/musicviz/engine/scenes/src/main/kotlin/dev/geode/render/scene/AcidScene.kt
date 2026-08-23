@@ -59,6 +59,7 @@ internal class AcidScene(
     private var beatPulse = 0f
     private var glitch = 0f
     private var glitchEpoch = 0f
+
     /** Twelve live spectral spokes. Reused every frame — render hot path. */
     private val spokes = FloatArray(SPOKES)
 
