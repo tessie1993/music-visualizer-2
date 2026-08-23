@@ -69,12 +69,16 @@ jobs:
       - name: Verify (ktlint, tests, lint)
         run: ./gradlew ktlintCheck testDebugUnitTest lint --stacktrace
 
+      # The secrets keep their MUSICVIZ_ names, but app/build.gradle.kts reads
+      # GEODE_ — so they are exported under the names the build looks for.
+      # Mismatched, signingConfigs stays empty, bundleRelease silently produces
+      # an unsigned bundle and the next step is the first thing to notice.
       - name: Build signed AAB
         env:
-          MUSICVIZ_KEYSTORE: ${{ runner.temp }}/upload.jks
-          MUSICVIZ_KEYSTORE_PASSWORD: ${{ secrets.MUSICVIZ_KEYSTORE_PASSWORD }}
-          MUSICVIZ_KEY_ALIAS: ${{ secrets.MUSICVIZ_KEY_ALIAS }}
-          MUSICVIZ_KEY_PASSWORD: ${{ secrets.MUSICVIZ_KEY_PASSWORD }}
+          GEODE_KEYSTORE: ${{ runner.temp }}/upload.jks
+          GEODE_KEYSTORE_PASSWORD: ${{ secrets.MUSICVIZ_KEYSTORE_PASSWORD }}
+          GEODE_KEY_ALIAS: ${{ secrets.MUSICVIZ_KEY_ALIAS }}
+          GEODE_KEY_PASSWORD: ${{ secrets.MUSICVIZ_KEY_PASSWORD }}
         run: ./gradlew bundleRelease --stacktrace
 
       - name: Confirm the bundle is signed
