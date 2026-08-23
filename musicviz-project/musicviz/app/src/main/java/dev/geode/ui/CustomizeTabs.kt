@@ -640,7 +640,6 @@ private fun RateSecondsSlider(
 private fun ChipRow(
     labels: List<String>,
     selectedIndex: Int,
-    enabled: Boolean = true,
     onSelect: (Int) -> Unit,
 ) {
     Row(
@@ -650,7 +649,6 @@ private fun ChipRow(
         labels.forEachIndexed { index, label ->
             FilterChip(
                 selected = index == selectedIndex,
-                enabled = enabled,
                 onClick = { onSelect(index) },
                 label = { Text(label, style = MaterialTheme.typography.labelSmall) },
             )
@@ -1161,7 +1159,7 @@ private fun CardSubHeader(title: String) {
 private const val REACTIVITY_ATTACK = "Envelope attack"
 private const val REACTIVITY_DECAY = "Envelope decay"
 private const val PARAM_FADE = "Fade time (s)"
-private const val MOD_DEPTH = "Depth"
+private const val MOD_DEPTH = "Slot depth"
 private const val ENV_ATTACK = "Env attack"
 private const val ENV_DECAY = "Env decay"
 private const val ENV_SUSTAIN = "Sustain"

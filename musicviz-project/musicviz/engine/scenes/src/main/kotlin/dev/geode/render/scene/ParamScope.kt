@@ -122,12 +122,14 @@ enum class ParamScope {
 
         private val BY_KEY: Map<String, ParamScope> =
             buildMap {
-                fun put(
+                // Named `scoped` rather than `put` so nothing has to reason about whether an
+                // overload resolves to the local helper or to MutableMap.put.
+                fun scoped(
                     scope: ParamScope,
                     vararg keys: String,
-                ) = keys.forEach { put(it, scope) }
+                ) = keys.forEach { key -> put(key, scope) }
 
-                put(
+                scoped(
                     UNIVERSAL,
                     ParamKeys.ZOOM,
                     ParamKeys.ROTATION,
@@ -171,27 +173,27 @@ enum class ParamScope {
                     ParamKeys.WAVE_SPEED,
                     ParamKeys.DAMPING,
                 )
-                put(SCENE_CLOCK, ParamKeys.SPEED)
-                put(AUDIO_DRIVE, ParamKeys.AUDIO_DRIVE)
-                put(BASS_BAND, ParamKeys.BASS_GAIN)
-                put(MID_BAND, ParamKeys.MID_GAIN)
-                put(TREBLE_BAND, ParamKeys.TREBLE_GAIN)
-                put(SHADER_LOOK, ParamKeys.MORPH, ParamKeys.COLOUR_MAP, ParamKeys.PALETTE_2, ParamKeys.PALETTE_BLEND, ParamKeys.DUOTONE)
-                put(ENDLESS_ZOOM, ParamKeys.ENDLESS_ZOOM, ParamKeys.DIVE_SPEED)
-                put(TURBULENCE, ParamKeys.TURBULENCE)
-                put(DYE_DENSITY, ParamKeys.DENSITY)
-                put(TRAIL_TOGGLE, ParamKeys.TRAILS)
-                put(TRAIL_LENGTH, ParamKeys.TRAIL_LENGTH)
-                put(TRAIL_ECHO, ParamKeys.TRAIL_ZOOM_ECHO_IN_OUT, ParamKeys.TRAIL_WARP_LIQUID_ECHO)
-                put(
+                scoped(SCENE_CLOCK, ParamKeys.SPEED)
+                scoped(AUDIO_DRIVE, ParamKeys.AUDIO_DRIVE)
+                scoped(BASS_BAND, ParamKeys.BASS_GAIN)
+                scoped(MID_BAND, ParamKeys.MID_GAIN)
+                scoped(TREBLE_BAND, ParamKeys.TREBLE_GAIN)
+                scoped(SHADER_LOOK, ParamKeys.MORPH, ParamKeys.COLOUR_MAP, ParamKeys.PALETTE_2, ParamKeys.PALETTE_BLEND, ParamKeys.DUOTONE)
+                scoped(ENDLESS_ZOOM, ParamKeys.ENDLESS_ZOOM, ParamKeys.DIVE_SPEED)
+                scoped(TURBULENCE, ParamKeys.TURBULENCE)
+                scoped(DYE_DENSITY, ParamKeys.DENSITY)
+                scoped(TRAIL_TOGGLE, ParamKeys.TRAILS)
+                scoped(TRAIL_LENGTH, ParamKeys.TRAIL_LENGTH)
+                scoped(TRAIL_ECHO, ParamKeys.TRAIL_ZOOM_ECHO_IN_OUT, ParamKeys.TRAIL_WARP_LIQUID_ECHO)
+                scoped(
                     PARTICLE_SPRITE,
                     ParamKeys.PARTICLE_SHAPE,
                     ParamKeys.PARTICLE_SIZE,
                     ParamKeys.PARTICLE_LIFE_S,
                     ParamKeys.PARTICLE_DRAG,
                 )
-                put(MILKDROP, ParamKeys.MILKDROP_PALETTE_TINT, ParamKeys.BLEND_PRESET_CHANGES)
-                put(
+                scoped(MILKDROP, ParamKeys.MILKDROP_PALETTE_TINT, ParamKeys.BLEND_PRESET_CHANGES)
+                scoped(
                     FLUID_SIM,
                     ParamKeys.SOLVER_ITERATIONS,
                     ParamKeys.PRESSURE,
@@ -211,7 +213,7 @@ enum class ParamScope {
                     ParamKeys.GLOW_FROM_LOUDNESS,
                     ParamKeys.FADE_WHEN_QUIET,
                 )
-                put(
+                scoped(
                     EMITTERS,
                     ParamKeys.BEAT_PATTERN,
                     ParamKeys.BEAT_SPLATS,
@@ -223,7 +225,7 @@ enum class ParamScope {
                     ParamKeys.TREBLE_SPARKLE,
                     ParamKeys.RADIUS_ON_BEAT,
                 )
-                put(
+                scoped(
                     JOURNEY,
                     ParamKeys.PATH,
                     ParamKeys.SPAWN_POINTS,
@@ -231,8 +233,8 @@ enum class ParamScope {
                     ParamKeys.CATCH_PULL,
                     ParamKeys.CATCH_RADIUS,
                 )
-                put(FLOW_FIELD_SIM, ParamKeys.FLOW_FORCE, ParamKeys.FLOW_CURL)
-                put(
+                scoped(FLOW_FIELD_SIM, ParamKeys.FLOW_FORCE, ParamKeys.FLOW_CURL)
+                scoped(
                     WATER,
                     ParamKeys.RIPPLE_STRENGTH,
                     ParamKeys.DEPTH,
@@ -242,8 +244,8 @@ enum class ParamScope {
                     ParamKeys.LIQUID_FLOW,
                     ParamKeys.LIQUID_FADE,
                 )
-                put(RIPPLE_OVERLAY, ParamKeys.RIPPLE_OVERLAY_STRENGTH, ParamKeys.RIPPLE_GLINT)
-                put(
+                scoped(RIPPLE_OVERLAY, ParamKeys.RIPPLE_OVERLAY_STRENGTH, ParamKeys.RIPPLE_GLINT)
+                scoped(
                     CYMATICS,
                     ParamKeys.GEOMETRY,
                     ParamKeys.FUNDAMENTAL_HZ,
@@ -259,7 +261,7 @@ enum class ParamScope {
                     ParamKeys.IRIDESCENCE,
                     ParamKeys.CAUSTIC_SHEEN,
                 )
-                put(
+                scoped(
                     HYPERSPACE,
                     ParamKeys.ACT,
                     ParamKeys.ACT_LENGTH_S,
@@ -284,7 +286,7 @@ enum class ParamScope {
                     ParamKeys.VORTICITY,
                     ParamKeys.FLOW_FADE,
                 )
-                put(BEAM, ParamKeys.XY_PLOT, ParamKeys.BEAM_WIDTH, ParamKeys.BEAM_BRIGHTNESS, ParamKeys.BEAM_TAIL)
+                scoped(BEAM, ParamKeys.XY_PLOT, ParamKeys.BEAM_WIDTH, ParamKeys.BEAM_BRIGHTNESS, ParamKeys.BEAM_TAIL)
             }
 
         // Per-band gain only reaches a style that reads that band's envelope. Beam and MilkDrop
