@@ -114,17 +114,20 @@ class LfoStore(
      * `rateHz` is turned into the period it described so an existing setup keeps its speed;
      * the tempo lock is simply dropped, because the slots are free-running now.
      */
-    private fun readRateSeconds(o: JSONObject): Float {
+    private fun readRateSeconds(o: JSONObject): Float =
         if (o.has("rateSeconds")) {
-            return o
+            o
                 .optDouble("rateSeconds", LfoConfig.DEFAULT_RATE_SECONDS.toDouble())
                 .toFloat()
                 .coerceIn(LfoConfig.MIN_RATE_SECONDS, LfoConfig.MAX_RATE_SECONDS)
+        } else {
+            val hz = o.optDouble("rateHz", 0.0).toFloat()
+            if (hz <= 0f) {
+                LfoConfig.DEFAULT_RATE_SECONDS
+            } else {
+                (1f / hz).coerceIn(LfoConfig.MIN_RATE_SECONDS, LfoConfig.MAX_RATE_SECONDS)
+            }
         }
-        val hz = o.optDouble("rateHz", 0.0).toFloat()
-        if (hz <= 0f) return LfoConfig.DEFAULT_RATE_SECONDS
-        return (1f / hz).coerceIn(LfoConfig.MIN_RATE_SECONDS, LfoConfig.MAX_RATE_SECONDS)
-    }
 
     private companion object {
         const val KEY = "lfos"

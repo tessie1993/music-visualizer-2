@@ -448,23 +448,23 @@ class LoopRender(
         val frameDurationNs = 1_000_000_000L / fps
         var frame = 0
         var cancelled = false
-        while (frame < sourceFrames && !cancelled) {
+        while (frame < sourceFrames) {
             if (isCancelled()) {
                 cancelled = true
-            } else {
-                scene.renderFrame(frame)
-                if (frame < seamFrames) {
-                    seam.capture(frame)
-                } else {
-                    val tail = frame - loopFrames
-                    if (tail >= 0) seam.blendOver(tail, seamWeight(tail, seamFrames))
-                    egl.setPresentationTimeNs((frame - seamFrames) * frameDurationNs)
-                    egl.swapBuffers()
-                    writer.drain(untilEndOfStream = false)
-                }
-                onProgress(progressBase + progressSpan * (frame + 1) / sourceFrames)
-                frame++
+                break
             }
+            scene.renderFrame(frame)
+            if (frame < seamFrames) {
+                seam.capture(frame)
+            } else {
+                val tail = frame - loopFrames
+                if (tail >= 0) seam.blendOver(tail, seamWeight(tail, seamFrames))
+                egl.setPresentationTimeNs((frame - seamFrames) * frameDurationNs)
+                egl.swapBuffers()
+                writer.drain(untilEndOfStream = false)
+            }
+            onProgress(progressBase + progressSpan * (frame + 1) / sourceFrames)
+            frame++
         }
         return if (cancelled) StopOutcome.Cancelled else StopOutcome.Done(seamFrames)
     }
@@ -668,8 +668,10 @@ class LoopRender(
 
         private fun writeSample(index: Int): Boolean {
             val endOfStream = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
-            val codecConfig = info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
-            if (muxing && track >= 0 && info.size > 0 && !codecConfig) {
+            // A codec-config buffer carries the SPS/PPS the muxer already took from the output
+            // format, and an empty buffer carries nothing; neither is a frame worth writing.
+            val hasMediaPayload = info.size > 0 && info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0
+            if (muxing && track >= 0 && hasMediaPayload) {
                 val buffer = checkNotNull(encoder.getOutputBuffer(index)) { "video encoder buffer null (codec error state)" }
                 buffer.position(info.offset)
                 buffer.limit(info.offset + info.size)

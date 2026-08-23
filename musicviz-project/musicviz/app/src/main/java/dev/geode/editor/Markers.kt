@@ -144,8 +144,7 @@ data class MarkerSet(
         )
 
     /** Re-place every tapped-in marker with a new latency figure, using the raw taps kept on them. */
-    fun recalibrateTaps(latencyCompensationMs: Long): MarkerSet =
-        ordered(markers.map { it.withLatency(latencyCompensationMs) })
+    fun recalibrateTaps(latencyCompensationMs: Long): MarkerSet = ordered(markers.map { it.withLatency(latencyCompensationMs) })
 
     private fun ordered(next: List<Marker>): MarkerSet = copy(markers = next.sortedBy { it.atMs })
 }
