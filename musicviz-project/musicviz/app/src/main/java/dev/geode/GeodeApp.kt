@@ -10,8 +10,10 @@ class GeodeApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        RingLog.echo = { tag, line -> android.util.Log.w(tag, line) }
         if (BuildConfig.DEBUG) {
+            // Logcat echo is a debug convenience; release keeps failures in the
+            // ring buffer alone, where the crash report already includes them.
+            RingLog.echo = { tag, line -> android.util.Log.w(tag, line) }
             android.os.StrictMode.setThreadPolicy(
                 android.os.StrictMode.ThreadPolicy
                     .Builder()
