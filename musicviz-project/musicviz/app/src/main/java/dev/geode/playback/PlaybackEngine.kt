@@ -60,6 +60,8 @@ class PlaybackSession internal constructor(
                 }
         }
 
+    // WAKE_MODE_LOCAL takes a partial wake lock while playback is active, so the CPU
+    // cannot doze mid-track with the screen off. Not the WIFI variant: nothing streams.
     val player: ExoPlayer =
         ExoPlayer
             .Builder(context, TapRenderersFactory(context, tap, clockDriver))
@@ -80,11 +82,7 @@ class PlaybackSession internal constructor(
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                     .build(),
                 true,
-            )
-            // Local files, screen off: without a wake mode the CPU may doze mid-track on
-            // aggressive devices. LOCAL takes only the partial wake lock while playing -
-            // no wifi lock, because nothing is streamed.
-            .setWakeMode(C.WAKE_MODE_LOCAL)
+            ).setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
 
     val audioFx = AudioFxController(GeodePrefsFiles(context).audioFx)
