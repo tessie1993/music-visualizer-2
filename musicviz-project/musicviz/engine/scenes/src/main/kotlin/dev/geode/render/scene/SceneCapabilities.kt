@@ -2,6 +2,33 @@ package dev.geode.render.scene
 
 import dev.geode.engine.scenes.R
 
+/** Which scene class a style id builds. One entry per renderer, not per style. */
+enum class SceneKind {
+    SHADER,
+
+    SILK,
+
+    LIFE,
+
+    MYCELIUM,
+
+    ACID,
+
+    MILKDROP,
+
+    FLUID,
+
+    CURL_FLOW,
+
+    WATER,
+
+    CYMATICS,
+
+    BEAM,
+
+    HYPERSPACE,
+}
+
 object SceneCapabilities {
     val SHADER_SCENES: Map<String, Int> =
         linkedMapOf(
@@ -28,6 +55,29 @@ object SceneCapabilities {
             SceneIds.WINTER to R.raw.winter_frag,
             SceneIds.LAVA to R.raw.lava_frag,
         )
+
+    /**
+     * The renderer [sceneId] builds.
+     *
+     * Unknown ids resolve to [SceneKind.SILK] because [SceneIds.DEFAULT] is a Silk style and
+     * `SceneRegistry` falls back to it, so the Customize panel describes what will actually be
+     * on screen rather than an id nothing can render.
+     */
+    fun kindOf(sceneId: String): SceneKind =
+        when {
+            sceneId in SHADER_SCENES -> SceneKind.SHADER
+            sceneId == SceneIds.MILKDROP -> SceneKind.MILKDROP
+            sceneId == SceneIds.FLUID -> SceneKind.FLUID
+            sceneId == SceneIds.CURLFLOW -> SceneKind.CURL_FLOW
+            sceneId == SceneIds.WATER -> SceneKind.WATER
+            sceneId == SceneIds.BEAM -> SceneKind.BEAM
+            VisualStyleCatalog.isCymatics(sceneId) -> SceneKind.CYMATICS
+            VisualStyleCatalog.isHyperspace(sceneId) -> SceneKind.HYPERSPACE
+            VisualStyleCatalog.life(sceneId) != null -> SceneKind.LIFE
+            VisualStyleCatalog.myco(sceneId) != null -> SceneKind.MYCELIUM
+            VisualStyleCatalog.acid(sceneId) != null -> SceneKind.ACID
+            else -> SceneKind.SILK
+        }
 
     fun isFluid(sceneId: String): Boolean = sceneId == SceneIds.FLUID
 

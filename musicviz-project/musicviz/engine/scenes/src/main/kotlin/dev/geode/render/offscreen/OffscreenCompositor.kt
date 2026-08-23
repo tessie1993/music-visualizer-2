@@ -107,7 +107,7 @@ internal class OffscreenCompositor(
     ): Float {
         val impulse =
             dev.geode.render.VisualSafety
-                .flashImpulse(params.flash, features.beatImpulse)
+                .flashImpulse(params.flash, dev.geode.render.LiveSignal.hit(features))
         return flashBudget.gainFor(timeSeconds, impulse)
     }
 
@@ -263,7 +263,7 @@ internal class OffscreenCompositor(
         GLES30.glUniform1i(loc("uBlendMode"), BlendMode.NORMAL.ordinal)
         GLES30.glUniform1f(loc("uRatio"), width.toFloat() / height.toFloat())
         GLES30.glUniform1f(loc("uTime"), timeSeconds)
-        GLES30.glUniform1f(loc("uBeat"), features.beatImpulse)
+        GLES30.glUniform1f(loc("uBeat"), dev.geode.render.LiveSignal.hit(features))
         GLES30.glUniform1f(loc("uChroma"), params.chromaAb)
         GLES30.glUniform1f(loc("uVignette"), params.vignette)
         GLES30.glUniform1f(loc("uScanline"), params.scanlines)

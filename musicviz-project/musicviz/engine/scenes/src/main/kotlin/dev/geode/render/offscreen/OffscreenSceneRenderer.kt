@@ -131,7 +131,7 @@ class OffscreenSceneRenderer(
 
         val envValues = adsrEngine.tick(dt, features)
         val (envRate, envDepth) = AdsrEngine.lfoOffsets(adsrEngine.configs, envValues)
-        val lfoValues = lfoEngine.tick(dt, features.bpm, envRate, envDepth)
+        val lfoValues = lfoEngine.tick(dt, features, envRate, envDepth)
 
         var p = spec.paramsAt?.invoke(timeMs) ?: spec.baseParams
         p = LfoEngine.apply(p, lfoEngine.configs, lfoValues)

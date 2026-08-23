@@ -339,14 +339,14 @@ class VisualizerRenderer(
             }
         val envValues = adsrEngine.tick(dt, features)
         AdsrEngine.lfoOffsets(adsrEngine.configs, envValues, envRateOffsets, envDepthOffsets)
-        val lfoValues = lfoEngine.tick(dt, features.bpm, envRateOffsets, envDepthOffsets)
+        val lfoValues = lfoEngine.tick(dt, features, envRateOffsets, envDepthOffsets)
         var p = LfoEngine.apply(displayedParams, lfoEngine.configs, lfoValues)
         p = AdsrEngine.apply(p, adsrEngine.configs, envValues)
         p = VisualSafety.apply(p, reducedMotion)
         lastFinalParams = p
         postRotationAngle = CompositeGrade.integrateRotation(postRotationAngle, p.rotation, dt)
         postCyclePhase = CompositeGrade.integrateCyclePhase(postCyclePhase, p.cycleSpeed, dt, p.colorCycle)
-        postBeatPulse = CompositeGrade.integrateBeatPulse(postBeatPulse, features.motionImpulse, dt)
+        postBeatPulse = CompositeGrade.integrateBeatPulse(postBeatPulse, LiveSignal.hit(features), dt)
         return p
     }
 
@@ -485,8 +485,11 @@ class VisualizerRenderer(
         inputs.transitionId = transitionId
         inputs.ratio = renderWidth.toFloat() / renderHeight.toFloat()
         inputs.timeSeconds = timeSeconds
-        inputs.beatImpulse = features.beatImpulse
-        inputs.flash = fx.flash * flashGain(fx, features.beatImpulse)
+        // uBeat is the live transient, not a tracked beat: the FX that ride it (flash, shake,
+        // glitch, strobe duty) then land on what was actually played this frame.
+        val hit = LiveSignal.hit(features)
+        inputs.beatImpulse = hit
+        inputs.flash = fx.flash * flashGain(fx, hit)
         inputs.strobeHz = VisualSafety.strobeHz()
         inputs.postRotationAngle = postRotationAngle
         inputs.postCyclePhase = postCyclePhase
