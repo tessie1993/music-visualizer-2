@@ -8,6 +8,7 @@ import android.media.MediaFormat
 import android.net.Uri
 import dev.geode.util.bestEffort
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.ByteBuffer
