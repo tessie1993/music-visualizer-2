@@ -23,20 +23,72 @@
     <string name="safety_acknowledge">I understand</string>
 
     <!-- First run, after the notice: where the music is, and what you came here to do. -->
-    <string name="first_run_source_title">Where\'s your music?</string>
-    <string name="first_run_source_body">Pick your media library, a folder, or both. Scanning starts straight away and everything stays usable while it runs.</string>
-    <string name="first_run_source_media_library">Use my media library</string>
-    <string name="first_run_source_folder">Pick a folder</string>
-    <string name="first_run_continue">Continue</string>
+    <!-- First run: permission, then an optional folder. Nothing else is asked. -->
+    <string name="first_run_access_title">Let\'s find your music</string>
+    <string name="first_run_access_body">Geode needs access to the audio on this device. Nothing leaves your phone — there is no account and no sign-in.</string>
+    <string name="first_run_access_allow">Allow music access</string>
+    <string name="first_run_access_skip">Not now</string>
+    <string name="first_run_access_denied">Music access is off, and Android will not ask again from here. You can turn it on in app settings whenever you like.</string>
+    <string name="first_run_access_granted">Music access granted</string>
     <string name="first_run_scanning">%1$d tracks found</string>
-    <string name="first_run_intent_title">What brings you here?</string>
-    <string name="first_run_intent_body">This sets where the app opens. You can change it later in Settings.</string>
-    <string name="first_run_intent_listening">Listening</string>
-    <string name="first_run_intent_listening_detail">Opens on the player. Studio stays out of the way.</string>
-    <string name="first_run_intent_videos">Making videos</string>
-    <string name="first_run_intent_videos_detail">Opens in Studio, with your projects and render queue to hand.</string>
-    <string name="first_run_intent_both">Both</string>
-    <string name="first_run_intent_both_detail">Opens on the player, with Studio one tap away.</string>
+    <string name="first_run_scanning_working">Scanning your library…</string>
+    <string name="first_run_folder_title">Add a folder?</string>
+    <string name="first_run_folder_body">Optional. Your library is already loading. Add a folder only if you keep music somewhere Android does not index — an SD card, or Downloads.</string>
+    <string name="first_run_folder_pick">Choose a folder</string>
+    <string name="first_run_folder_added">%1$d folder added</string>
+    <string name="first_run_folder_added_plural">%1$d folders added</string>
+    <string name="first_run_optional">Optional</string>
+    <string name="first_run_done">Start listening</string>
+
+    <!-- The intent setting. No longer asked at first run; it lives in Settings > Behaviour. -->
+    <string name="settings_intent_title">What do you use Geode for?</string>
+    <string name="settings_intent_body">Sets where the app opens and whether Studio appears in the navigation bar.</string>
+    <string name="settings_intent_listening">Listening</string>
+    <string name="settings_intent_listening_detail">Opens on the player. Studio stays out of the way.</string>
+    <string name="settings_intent_videos">Making videos</string>
+    <string name="settings_intent_videos_detail">Opens in Studio, with your projects and render queue to hand.</string>
+    <string name="settings_intent_both">Both</string>
+    <string name="settings_intent_both_detail">Opens on the player, with Studio one tap away.</string>
+
+    <!-- Walkthrough. Each step navigates to the tab it describes, so the app underneath
+         is the thing being pointed at rather than a picture of it. -->
+    <string name="tutorial_skip">Skip</string>
+    <string name="tutorial_back">Back</string>
+    <string name="tutorial_next">Next</string>
+    <string name="tutorial_finish">Got it</string>
+    <string name="tutorial_progress">%1$d of %2$d</string>
+    <string name="tutorial_dont_show">Don\'t show this next time</string>
+    <string name="tutorial_player_title">This is the Player</string>
+    <string name="tutorial_player_body">Your track, the transport, and a live spectrum. Tap the artwork to go full screen — that is where the visuals live.</string>
+    <string name="tutorial_library_title">Your music lives here</string>
+    <string name="tutorial_library_body">Tracks, albums, artists, folders and playlists. Tapping any track queues everything you are looking at, so Next and Previous behave the way you expect.</string>
+    <string name="tutorial_visuals_title">Sixty-odd visual styles</string>
+    <string name="tutorial_visuals_body">Pick a style, then open Customize to change how it moves. Presets save a whole look; Randomize on any tab is the fastest way to find one you like.</string>
+    <string name="tutorial_touch_title">Touch the visuals</string>
+    <string name="tutorial_touch_body">On the full-screen visualizer, your finger is part of the picture: one finger sets a point the style builds itself around, two set an axis, three or more open a swirl. Pinch and twist zoom and rotate.</string>
+    <string name="tutorial_studio_title">Studio makes videos</string>
+    <string name="tutorial_studio_body">Record a performance as you play with the controls, then render it out at any quality. Hide this tab in Settings if you only came to listen.</string>
+    <string name="tutorial_settings_title">Everything else is in Settings</string>
+    <string name="tutorial_settings_body">Themes, audio, playback, folders and safety. Help lives here too — you can replay this walkthrough any time.</string>
+
+    <!-- Settings > Help -->
+    <string name="settings_tab_help">Help</string>
+    <string name="help_tutorial_group">Walkthrough</string>
+    <string name="help_tutorial_body">A short tour of the Player, Library, Visuals and Studio. It navigates the app as it goes, so you see the real thing.</string>
+    <string name="help_tutorial_start">Start the walkthrough</string>
+    <string name="help_tutorial_replay">Replay the walkthrough</string>
+    <string name="help_tutorial_on_first_run">Offer it on a fresh install</string>
+    <string name="help_topics_group">How things work</string>
+    <string name="help_topic_library">Library and folders</string>
+    <string name="help_topic_library_body">Geode reads the audio Android already indexes. If you keep music somewhere it does not look — an SD card, or Downloads — add that folder in Settings › Folders.</string>
+    <string name="help_topic_visuals">Styles, presets and Customize</string>
+    <string name="help_topic_visuals_body">A style is the renderer; a preset is a style plus every control around it. Customize hides controls a style cannot use, so an empty section means that style ignores it rather than that something is broken.</string>
+    <string name="help_topic_touch">Touch on the visualizer</string>
+    <string name="help_topic_touch_body">Every style reads where your finger is and means something by it — a vanishing point, a spawn point, a place the geometry reaches toward. Pinch and twist map onto the real Zoom and Rotation controls, so a gesture you like is saved with the preset.</string>
+    <string name="help_topic_safety">Flashing and motion</string>
+    <string name="help_topic_safety_body">Settings › Behaviour has a safe-visuals clamp that limits how fast and how much of the screen can flash, and a separate reduced-motion switch. Turn them on before exploring if flashing affects you.</string>
+    <string name="help_topic_performance">If it runs hot or stutters</string>
+    <string name="help_topic_performance_body">The engine already lowers its own quality when the device heats up. The Detail control on the marched styles is the biggest single lever you have, and lowering it costs less than you would expect.</string>
 
     <!-- Per-track metadata editor. -->
     <string name="track_info_title">Track info</string>

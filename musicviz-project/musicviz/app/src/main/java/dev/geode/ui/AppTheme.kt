@@ -121,10 +121,34 @@ data class GuiPrefs(
      */
     val safetyAcknowledged: Boolean = false,
     /**
-     * What the person said they came here to do, or null if first run has not asked yet. Null is
-     * the "unasked" state rather than a default answer, so the question is asked exactly once.
+     * Whether first-run setup has been completed.
+     *
+     * This used to be inferred from `intent == null`, back when setup ended by asking what the
+     * person came here to do. That question is gone — it made someone categorise themselves
+     * before they had seen anything to categorise — so the flag is now explicit rather than a
+     * side effect of an answer.
      */
-    val intent: UserIntent? = null,
+    val setupDone: Boolean = false,
+    /**
+     * What the person came here to do: which tab the app opens on, and whether Studio appears
+     * in the navigation at all.
+     *
+     * No longer asked at first run. Everyone starts on [UserIntent.BOTH], which shows
+     * everything, and anyone who wants a narrower app says so in Settings once they know what
+     * they would be narrowing.
+     */
+    val intent: UserIntent = UserIntent.BOTH,
+    /** Whether the walkthrough has been finished or skipped at least once. */
+    val tutorialSeen: Boolean = false,
+    /**
+     * The walkthrough's "don't show this next time" toggle.
+     *
+     * Separate from [tutorialSeen] because they answer different questions: seen is history and
+     * cannot be un-set, this is a preference the person controls. Someone who skips the tour on
+     * a fresh install but leaves this on gets offered it again next launch, which is what
+     * skipping usually means.
+     */
+    val tutorialOnFirstRun: Boolean = true,
     val reducedMotion: Boolean = false,
     val micReactive: Boolean = false,
     val touchSmear: Boolean = false,
@@ -208,10 +232,14 @@ class ThemeStore(
                     .getFloat(KEY_TEXT_SCALE, 1f)
                     .coerceIn(GuiPrefs.TEXT_SCALE_MIN, GuiPrefs.TEXT_SCALE_MAX),
             safetyAcknowledged = loadSafetyAcknowledged(),
+            setupDone = loadSetupDone(),
             intent =
                 prefs
                     .getString(KEY_INTENT, null)
-                    ?.let { stored -> UserIntent.entries.firstOrNull { it.name == stored } },
+                    ?.let { stored -> UserIntent.entries.firstOrNull { it.name == stored } }
+                    ?: UserIntent.BOTH,
+            tutorialSeen = prefs.getBoolean(KEY_TUTORIAL_SEEN, false),
+            tutorialOnFirstRun = prefs.getBoolean(KEY_TUTORIAL_ON_FIRST_RUN, true),
             reducedMotion = loadReducedMotion(),
             touchSmear = prefs.getBoolean(KEY_TOUCH_SMEAR, false),
             touchSmearStrength = prefs.getFloat(KEY_TOUCH_SMEAR_STRENGTH, 1f).coerceIn(0.2f, 2f),
@@ -228,6 +256,13 @@ class ThemeStore(
     private fun loadSafetyAcknowledged(): Boolean =
         prefs.getBoolean(KEY_SAFETY_ACKNOWLEDGED, false) ||
             prefs.getString(KEY_SAFETY_CHOICE, null) != null
+
+    /**
+     * Anyone who answered the old "what did you come here to do" question had, by answering it,
+     * finished setup — so they are not walked through it again. The question is gone; the fact
+     * that they got past it carries over.
+     */
+    private fun loadSetupDone(): Boolean = prefs.getBoolean(KEY_SETUP_DONE, false) || prefs.getString(KEY_INTENT, null) != null
 
     /**
      * Reduced motion survives the same migration: it used to be one of the three answers, and it is
@@ -257,10 +292,11 @@ class ThemeStore(
             .remove(KEY_WHITE_FONT)
             .putFloat(KEY_TEXT_SCALE, gui.textScale)
             .putBoolean(KEY_SAFETY_ACKNOWLEDGED, gui.safetyAcknowledged)
-            .apply {
-                val intent = gui.intent
-                if (intent != null) putString(KEY_INTENT, intent.name) else remove(KEY_INTENT)
-            }.putBoolean(KEY_REDUCED_MOTION, gui.reducedMotion)
+            .putBoolean(KEY_SETUP_DONE, gui.setupDone)
+            .putString(KEY_INTENT, gui.intent.name)
+            .putBoolean(KEY_TUTORIAL_SEEN, gui.tutorialSeen)
+            .putBoolean(KEY_TUTORIAL_ON_FIRST_RUN, gui.tutorialOnFirstRun)
+            .putBoolean(KEY_REDUCED_MOTION, gui.reducedMotion)
             .putBoolean(KEY_TOUCH_SMEAR, gui.touchSmear)
             .putFloat(KEY_TOUCH_SMEAR_STRENGTH, gui.touchSmearStrength)
             .putBoolean(KEY_TOUCH_TRANSFORM, gui.touchTransform)
@@ -272,6 +308,9 @@ class ThemeStore(
     internal companion object {
         const val KEY_SAFETY_ACKNOWLEDGED = "gui_safety_acknowledged"
         const val KEY_INTENT = "gui_intent"
+        const val KEY_SETUP_DONE = "gui_setup_done"
+        const val KEY_TUTORIAL_SEEN = "gui_tutorial_seen"
+        const val KEY_TUTORIAL_ON_FIRST_RUN = "gui_tutorial_on_first_run"
 
         /** Read-only now: the old three-way answer, kept solely to migrate existing installs. */
         const val KEY_SAFETY_CHOICE = "gui_safety_choice"

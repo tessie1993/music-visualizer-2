@@ -37,7 +37,7 @@ private fun IntentGroup(
     gui: GuiPrefs,
 ) {
     Column {
-        Text(stringResource(R.string.first_run_intent_title), style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.settings_intent_title), style = MaterialTheme.typography.bodyMedium)
         CrystalSegmented(
             options = UserIntent.entries.map { stringResource(it.labelRes) },
             selected = UserIntent.entries.indexOf(gui.intent ?: UserIntent.BOTH),

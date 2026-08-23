@@ -178,8 +178,19 @@ fun AppRoot() {
             )
         }
         // Someone who came here to listen does not get a render queue in their navigation bar.
-        // Until first run has an answer, show everything rather than guess and hide something.
-        val showsStudio = gui.intent?.showsStudio ?: true
+        // First run no longer asks, so everyone starts with everything and narrows it in Settings.
+        val showsStudio = gui.intent.showsStudio
+        // Set by Settings > Help to replay the tour after it has already been seen; the automatic
+        // first-run showing is a function of the stored prefs instead, so this stays false there.
+        var tutorialRunning by rememberSaveable { mutableStateOf(false) }
+        // Offered once, to someone who has finished setup and has not turned the offer off.
+        val offerTutorial = gui.setupDone && !gui.tutorialSeen && gui.tutorialOnFirstRun
+        // Latched the moment the tour is offered, so that from then on its visibility depends on
+        // `tutorialRunning` alone. Without this, ticking "don't show this next time" DURING the
+        // tour clears `tutorialOnFirstRun`, which clears `offerTutorial`, which closes the tour
+        // out from under the person who was reading it — the checkbox is about the NEXT install,
+        // not this minute.
+        LaunchedEffect(offerTutorial) { if (offerTutorial) tutorialRunning = true }
         val navEntries =
             GeodeDestination.entries
                 .filter { it != GeodeDestination.STUDIO || showsStudio }
@@ -226,7 +237,7 @@ fun AppRoot() {
                         liveBackdrop = gui.clearVisualsMenu && !appState.expanded && !onSecondScreen,
                     )
                 GeodeDestination.STUDIO -> StudioRoute()
-                GeodeDestination.SETTINGS -> SettingsScreen(viewModel, visualizerView)
+                GeodeDestination.SETTINGS -> SettingsScreen(viewModel, visualizerView, onStartTutorial = { tutorialRunning = true })
             }
         }
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -294,13 +305,25 @@ fun AppRoot() {
                 SafetyConsent(
                     onAcknowledge = { settingsViewModel.setGuiPrefs(gui.copy(safetyAcknowledged = true)) },
                 )
-            } else if ((!bootAnimEnabled || appState.bootDone) && gui.intent == null) {
-                // Setup runs only after the notice is acknowledged, and only until the one
-                // question has an answer — `intent == null` is the whole "first run" condition.
+            } else if ((!bootAnimEnabled || appState.bootDone) && !gui.setupDone) {
+                // Setup runs only after the notice is acknowledged, and only until it is done.
                 FirstRunGate(
-                    onChooseIntent = { chosen ->
-                        settingsViewModel.setGuiPrefs(gui.copy(intent = chosen))
-                        appState.navigateTo(chosen.landingDestination)
+                    onDone = {
+                        settingsViewModel.setGuiPrefs(gui.copy(setupDone = true))
+                        appState.navigateTo(gui.intent.landingDestination)
+                    },
+                )
+            } else if (tutorialRunning) {
+                // Offered once setup is out of the way, so the tour walks a real app with a real
+                // library rather than a set of empty tabs.
+                TutorialOverlay(
+                    steps = TutorialStep.forNav(showsStudio),
+                    dontShowAgain = !gui.tutorialOnFirstRun,
+                    onDontShowAgainChange = { settingsViewModel.setGuiPrefs(gui.copy(tutorialOnFirstRun = !it)) },
+                    onNavigate = appState::navigateTo,
+                    onDismiss = {
+                        tutorialRunning = false
+                        settingsViewModel.setGuiPrefs(gui.copy(tutorialSeen = true))
                     },
                 )
             }
@@ -451,6 +474,7 @@ private fun MiniPlayer(
 fun SettingsScreen(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
+    onStartTutorial: () -> Unit,
 ) {
     var showExport by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
@@ -458,7 +482,12 @@ fun SettingsScreen(
             CrystalOverline(stringResource(R.string.app_name))
             GlowTitle(stringResource(R.string.nav_settings))
         }
-        AppSettingsTab(viewModel, exportOpen = showExport, onOpenExport = { showExport = true })
+        AppSettingsTab(
+            viewModel,
+            exportOpen = showExport,
+            onOpenExport = { showExport = true },
+            onStartTutorial = onStartTutorial,
+        )
     }
     if (showExport) {
         ExportHost(viewModel, visualizerView) { showExport = false }
