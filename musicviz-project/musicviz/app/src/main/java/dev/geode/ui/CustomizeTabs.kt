@@ -78,10 +78,19 @@ val LocalSceneId = androidx.compose.runtime.compositionLocalOf { SceneIds.DEFAUL
 /** The panel-wide parameter search. Blank shows the tab as authored. */
 val LocalParamQuery = androidx.compose.runtime.compositionLocalOf { "" }
 
-/** True when this control both applies to the active style and matches the search. */
+/**
+ * True when this control both applies to the active style and matches the search.
+ *
+ * [scope] defaults to the one the parameter's own name declares. It is only passed explicitly for
+ * the handful of controls that are a master switch rather than a rolled parameter, and so have no
+ * entry of their own in [ParamScope.of].
+ */
 @Composable
-private fun visible(paramKey: String): Boolean {
-    if (!ParamScope.of(paramKey).appliesTo(LocalSceneId.current)) return false
+private fun visible(
+    paramKey: String,
+    scope: ParamScope,
+): Boolean {
+    if (!scope.appliesTo(LocalSceneId.current)) return false
     val query = LocalParamQuery.current
     return query.isBlank() || paramKey.contains(query.trim(), ignoreCase = true)
 }
@@ -227,7 +236,7 @@ internal fun ShapeTab(
             val folds = if (on && p.symmetry < 2) SceneParams.DEFAULT_SYMMETRY_FOLDS else p.symmetry
             onChange(p.copy(kaleidoscope = on, symmetry = folds))
         }
-        if (p.kaleidoscope && visible(ParamKeys.KALEIDOSCOPE)) {
+        if (p.kaleidoscope && visible(ParamKeys.KALEIDOSCOPE, ParamScope.of(ParamKeys.KALEIDOSCOPE))) {
             Text("Folds", style = MaterialTheme.typography.labelSmall)
             val folds = SceneParams.SYMMETRY_FOLDS.filter { it >= 2 }
             ChipRow(folds.map { "$it" }, selectedIndex = folds.indexOf(p.symmetry)) { idx ->
@@ -399,11 +408,11 @@ internal fun ColorTab(
             }
             artworkNote?.let { ControlHint(it) }
         }
-        if (visible(ParamKeys.PALETTE)) {
+        if (visible(ParamKeys.PALETTE, ParamScope.UNIVERSAL)) {
             LockableChipLabel(ParamKeys.PALETTE)
             PaletteSlotSelector(p, onChange, palettes)
         }
-        if (visible(ParamKeys.COLOUR_MAP)) {
+        if (visible(ParamKeys.COLOUR_MAP, ParamScope.SHADER_LOOK)) {
             LockableChipLabel(ParamKeys.COLOUR_MAP)
             ControlHint(
                 "Perceptually even, and cyclic - the two ends join, so a wrap has no seam.",
@@ -428,7 +437,7 @@ internal fun ColorTab(
             }
         }
         LabeledSlider(ParamKeys.PALETTE_BLEND, p.paletteMix, 0f..1f) { onChange(p.copy(paletteMix = it)) }
-        if (p.paletteMix > 0.001f && visible(ParamKeys.PALETTE_2)) {
+        if (p.paletteMix > 0.001f && visible(ParamKeys.PALETTE_2, ParamScope.SHADER_LOOK)) {
             LockableChipLabel(ParamKeys.PALETTE_2)
             PaletteSlotSelector(p, onChange, palettes, second = true)
         }
@@ -662,9 +671,10 @@ private fun ParamChips(
     label: String,
     options: List<String>,
     selectedIndex: Int,
+    scope: ParamScope = ParamScope.of(label),
     onSelect: (Int) -> Unit,
 ) {
-    if (!visible(label)) return
+    if (!visible(label, scope)) return
     ControlLabelRow(label, label)
     ChipRow(options, selectedIndex, onSelect = onSelect)
 }
@@ -675,9 +685,10 @@ private fun LabeledSlider(
     value: Float,
     range: ClosedFloatingPointRange<Float>,
     display: String = label,
+    scope: ParamScope = ParamScope.of(label),
     onChange: (Float) -> Unit,
 ) {
-    if (!visible(label)) return
+    if (!visible(label, scope)) return
     Column(Modifier.padding(vertical = 2.dp)) {
         ControlLabelRow("$display ${"%.2f".format(value)}", label)
         CrystalSlider(value = value, onValueChange = onChange, valueRange = range, modifier = Modifier.fillMaxWidth())
@@ -695,9 +706,10 @@ private fun CheckRow(
     label: String,
     checked: Boolean,
     display: String = label,
+    scope: ParamScope = ParamScope.of(label),
     onChange: (Boolean) -> Unit,
 ) {
-    if (!visible(label)) return
+    if (!visible(label, scope)) return
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Checkbox(checked = checked, onCheckedChange = onChange)
         Text(display, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
@@ -752,7 +764,9 @@ internal fun FluidTab(
             onChange(p.copy(fluidSpawnPath = it))
         }
         LabeledIntSlider(ParamKeys.SPAWN_POINTS, p.fluidSpawnPoints, 1..8) { onChange(p.copy(fluidSpawnPoints = it)) }
-        LabeledSlider(PROGRESSION, p.fluidSpawnProgress, 0f..1f) { onChange(p.copy(fluidSpawnProgress = it)) }
+        LabeledSlider(PROGRESSION, p.fluidSpawnProgress, 0f..1f, scope = ParamScope.JOURNEY) {
+            onChange(p.copy(fluidSpawnProgress = it))
+        }
         LabeledIntSlider(ParamKeys.CATCH_POINTS, p.fluidCatchPoints, 0..4) { onChange(p.copy(fluidCatchPoints = it)) }
         if (p.fluidCatchPoints > 0) {
             LabeledSlider(ParamKeys.CATCH_PULL, p.fluidCatchPull, 0f..3f) { onChange(p.copy(fluidCatchPull = it)) }
@@ -764,7 +778,7 @@ internal fun FluidTab(
                 dev.geode.render.fluid.FluidQuality.LABELS,
                 p.fluidQuality.coerceIn(0, dev.geode.render.fluid.FluidQuality.LABELS.size - 1),
             ) { onChange(p.copy(fluidQuality = it)) }
-            CheckRow(AUTO_QUALITY, p.fluidAutoQuality) { onChange(p.copy(fluidAutoQuality = it)) }
+            CheckRow(AUTO_QUALITY, p.fluidAutoQuality, scope = ParamScope.EMITTERS) { onChange(p.copy(fluidAutoQuality = it)) }
         }
         LabeledIntSlider(ParamKeys.SOLVER_ITERATIONS, p.fluidIterations, 8..40) { onChange(p.copy(fluidIterations = it)) }
         SectionHeader("Character", ParamScope.FLUID_SIM)
@@ -788,7 +802,9 @@ internal fun FluidTab(
         LabeledSlider(ParamKeys.PALETTE_CYCLE, p.fluidPaletteCycleSpeed, 0f..2f) { onChange(p.copy(fluidPaletteCycleSpeed = it)) }
         SectionHeader("Particles", ParamScope.PARTICLE_SPRITE)
         if (isFluidScene) {
-            CheckRow(PARTICLE_LAYER, p.fluidParticlesEnabled) { onChange(p.copy(fluidParticlesEnabled = it)) }
+            CheckRow(PARTICLE_LAYER, p.fluidParticlesEnabled, scope = ParamScope.FLUID_SIM) {
+                onChange(p.copy(fluidParticlesEnabled = it))
+            }
         }
         if (!isFluidScene || p.fluidParticlesEnabled) {
             LabeledSlider(ParamKeys.PARTICLE_DRAG, p.fluidParticleDrag, 0.02f..1f) { onChange(p.copy(fluidParticleDrag = it)) }
@@ -798,7 +814,7 @@ internal fun FluidTab(
             }
         }
         if (isFluidScene) {
-            CheckRow(INK_LAYER, p.fluidDyeEnabled) { onChange(p.copy(fluidDyeEnabled = it)) }
+            CheckRow(INK_LAYER, p.fluidDyeEnabled, scope = ParamScope.FLUID_SIM) { onChange(p.copy(fluidDyeEnabled = it)) }
         }
         SectionHeader("Look", ParamScope.FLUID_SIM)
         CheckRow(ParamKeys.SHADING_EMBOSSED_INK, p.fluidShading) { onChange(p.copy(fluidShading = it)) }
@@ -834,7 +850,9 @@ internal fun FluidTab(
                 "crests.",
             ParamScope.RIPPLE_OVERLAY,
         )
-        CheckRow(RIPPLES_ENABLED, p.rippleOverlayEnabled) { onChange(p.copy(rippleOverlayEnabled = it)) }
+        CheckRow(RIPPLES_ENABLED, p.rippleOverlayEnabled, scope = ParamScope.RIPPLE_OVERLAY) {
+            onChange(p.copy(rippleOverlayEnabled = it))
+        }
         if (p.rippleOverlayEnabled && !isWaterScene) {
             LabeledSlider(ParamKeys.WAVE_SPEED, p.waterWaveSpeed, 0.2f..2f) { onChange(p.copy(waterWaveSpeed = it)) }
             LabeledSlider(ParamKeys.DAMPING, p.waterDamping, 0.9f..0.999f) { onChange(p.copy(waterDamping = it)) }
@@ -978,7 +996,7 @@ internal fun HyperspaceTab(
                 "act, Cycle walks them on a timer.",
             ParamScope.HYPERSPACE,
         )
-        ParamChips(JOURNEY_MODE, SceneParams.HYPERSPACE_JOURNEYS, p.hyperJourney) {
+        ParamChips(JOURNEY_MODE, SceneParams.HYPERSPACE_JOURNEYS, p.hyperJourney, ParamScope.HYPERSPACE) {
             onChange(p.copy(hyperJourney = it))
         }
         if (p.hyperJourney == HyperspaceMath.JOURNEY_HOLD) {
@@ -1049,7 +1067,9 @@ internal fun HyperspaceTab(
                 "control: turn it down on a slower phone, up for finer detail.",
             ParamScope.HYPERSPACE,
         )
-        LabeledSlider(HYPER_DETAIL, p.hyperDetail, 0.25f..1.5f) { onChange(p.copy(hyperDetail = it)) }
+        LabeledSlider(HYPER_DETAIL, p.hyperDetail, 0.25f..1.5f, scope = ParamScope.HYPERSPACE) {
+            onChange(p.copy(hyperDetail = it))
+        }
     }
 }
 
@@ -1059,9 +1079,10 @@ private fun LabeledIntSlider(
     value: Int,
     range: IntRange,
     display: String = label,
+    scope: ParamScope = ParamScope.of(label),
     onChange: (Int) -> Unit,
 ) {
-    if (!visible(label)) return
+    if (!visible(label, scope)) return
     Column(Modifier.padding(vertical = 2.dp)) {
         ControlLabelRow("$display $value", label)
         CrystalSlider(
