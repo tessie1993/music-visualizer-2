@@ -361,6 +361,15 @@ class PlayerSession internal constructor(
 
     internal fun importMilkPresetBlocking(uri: Uri): String? = milkImport.importMilkPresetBlocking(uri)
 
+    fun milkTextureLinksFor(path: String) = milkImport.textureLinksFor(path)
+
+    fun assignMilkTextureAsync(
+        path: String,
+        expected: String,
+        texture: String?,
+        onDone: (List<dev.geode.data.MilkTextureLink>) -> Unit,
+    ) = milkImport.assignTextureAsync(path, expected, texture, onDone)
+
     fun importMilkFolderAsync(
         treeUri: Uri,
         onDone: (MilkPackImporter.Report) -> Unit,

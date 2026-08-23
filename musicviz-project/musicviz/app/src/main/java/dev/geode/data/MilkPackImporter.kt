@@ -20,15 +20,6 @@ object MilkPackImporter {
 
     private val TEXTURE_EXTENSIONS = setOf("png", "jpg", "jpeg", "bmp", "tga", "dds")
 
-    private val BUILTIN_SAMPLERS =
-        setOf(
-            "main", "blur1", "blur2", "blur3",
-            "noise_lq", "noise_lq_lite", "noise_mq", "noise_hq",
-            "noisevol_lq", "noisevol_hq",
-        )
-
-    private val SAMPLER_REFERENCE = Regex("""\bsampler(?:_(?:fw|fc|pw|pc))?_(\w+)""")
-
     fun import(
         entries: List<Entry>,
         milkDir: File,
@@ -93,10 +84,12 @@ object MilkPackImporter {
                 .orEmpty()
                 .map { it.nameWithoutExtension.lowercase() }
                 .toSet()
-        return SAMPLER_REFERENCE
+        // The sampler grammar lives in MilkTextureLinks so the importer and the linker can
+        // never drift apart on what counts as a texture reference.
+        return MilkTextureLinks.SAMPLER_REFERENCE
             .findAll(text)
             .map { it.groupValues[1].lowercase() }
-            .filterNot { it in BUILTIN_SAMPLERS }
+            .filterNot { it in MilkTextureLinks.BUILTIN_SAMPLERS }
             .filterNot { it.startsWith("rand") }
             .any { it !in available }
     }

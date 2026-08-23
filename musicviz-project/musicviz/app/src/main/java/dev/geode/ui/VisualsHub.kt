@@ -613,7 +613,15 @@ private fun MilkDropTab(
     val milkFiles = remember(refresh) { visualsViewModel.userMilkPresets() }
     val loaded by viewModel.activeMilkPath.collectAsStateWithLifecycle()
     var packReport by remember { mutableStateOf<dev.geode.data.MilkPackImporter.Report?>(null) }
-    var singleMissesTexture by remember { mutableStateOf(false) }
+    val importedTextures by visualsViewModel.textures.collectAsStateWithLifecycle()
+    var linkRefresh by remember { mutableStateOf(0) }
+    // What the linker decided for the preset on screen, kept live so a texture import or a
+    // manual choice is visible without leaving the tab.
+    val textureLinks =
+        remember(loaded, refresh, linkRefresh, importedTextures) {
+            loaded?.let { runCatching { viewModel.milkTextureLinksFor(it) }.getOrDefault(emptyList()) }.orEmpty()
+        }
+    var pickTextureFor by remember { mutableStateOf<String?>(null) }
     val milkFolderPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) {
@@ -628,11 +636,6 @@ private fun MilkDropTab(
             if (uri != null) {
                 viewModel.importMilkPresetAsync(uri) { path ->
                     if (path != null) {
-                        singleMissesTexture =
-                            dev.geode.data.MilkPackImporter.missesATexture(
-                                java.io.File(path),
-                                java.io.File(java.io.File(path).parentFile, "textures"),
-                            )
                         selectMilk(viewModel, visualizerView, path)
                         refresh++
                     }
@@ -657,8 +660,8 @@ private fun MilkDropTab(
                     append('.')
                     if (r.presetsMissingTextures > 0) {
                         append(
-                            " ${r.presetsMissingTextures} reference textures you don't have - " +
-                                "import those images too or they render without them.",
+                            " ${r.presetsMissingTextures} wanted textures you don't have and were " +
+                                "linked to stand-ins - load one to review or replace them.",
                         )
                     }
                 },
@@ -675,12 +678,26 @@ private fun MilkDropTab(
             viz.shaderError?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
             }
-            if (singleMissesTexture) {
-                Text(
-                    "This preset references textures you have not imported - it will render " +
-                        "without them. Textures… imports the images it wants.",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.labelSmall,
+            MilkTextureLinkPanel(
+                links = textureLinks,
+                onPick = { expected -> pickTextureFor = expected },
+            )
+            val pickingFor = pickTextureFor
+            val loadedPath = loaded
+            if (pickingFor != null && loadedPath != null) {
+                MilkTexturePickerDialog(
+                    expected = pickingFor,
+                    textures = importedTextures,
+                    onChoose = { chosen ->
+                        viewModel.assignMilkTextureAsync(loadedPath, pickingFor, chosen) {
+                            pickTextureFor = null
+                            linkRefresh++
+                            // Reload so the new link is what projectM reads - search paths are
+                            // re-set on every preset load, so this is the whole refresh.
+                            selectMilk(viewModel, visualizerView, loadedPath)
+                        }
+                    },
+                    onDismiss = { pickTextureFor = null },
                 )
             }
         }
@@ -710,6 +727,87 @@ private fun MilkDropTab(
             }
         }
     }
+}
+
+/**
+ * The loaded preset's texture resolution, shown only when there is something to say.
+ *
+ * Exact matches are silent - a working preset needs no panel. What earns a row is anything the
+ * linker had to decide: a rename undone, a stand-in chosen, or a choice the person already made.
+ * Every row is tappable, because the row IS the affordance for "load this preset with a
+ * different texture than it expects".
+ */
+@Composable
+private fun MilkTextureLinkPanel(
+    links: List<dev.geode.data.MilkTextureLink>,
+    onPick: (String) -> Unit,
+) {
+    val interesting = links.filter { it.kind != dev.geode.data.MilkTextureLinkKind.MATCHED }
+    if (interesting.isEmpty()) return
+    Text("Textures for this preset", style = MaterialTheme.typography.labelMedium, color = accentTextColor())
+    interesting.forEach { link ->
+        val note =
+            when (link.kind) {
+                dev.geode.data.MilkTextureLinkKind.MATCHED -> ""
+                dev.geode.data.MilkTextureLinkKind.RENAMED -> "linked - import renamed it"
+                dev.geode.data.MilkTextureLinkKind.OVERRIDDEN -> "your choice"
+                dev.geode.data.MilkTextureLinkKind.SUBSTITUTED -> "stand-in - tap to change"
+                dev.geode.data.MilkTextureLinkKind.MISSING -> "missing - import an image via Textures…"
+            }
+        Row(
+            Modifier.fillMaxWidth().clickable { onPick(link.expected) }.padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(link.expected, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+            Text(
+                link.texture?.let { "$it  ($note)" } ?: note,
+                style = MaterialTheme.typography.labelSmall,
+                color =
+                    when (link.kind) {
+                        dev.geode.data.MilkTextureLinkKind.MISSING -> MaterialTheme.colorScheme.error
+                        dev.geode.data.MilkTextureLinkKind.SUBSTITUTED -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+            )
+        }
+    }
+}
+
+@Composable
+private fun MilkTexturePickerDialog(
+    expected: String,
+    textures: List<dev.geode.data.MilkTexture>,
+    onChoose: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {},
+        dismissButton = { CrystalButton(filled = false, onClick = onDismiss) { Text("Cancel") } },
+        title = { Text("Texture for \"$expected\"") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "The preset asks for \"$expected\". Pick any imported image to load it with - " +
+                        "the choice is remembered for this preset.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                textures.forEach { tex ->
+                    Text(
+                        tex.name,
+                        Modifier.fillMaxWidth().clickable { onChoose(tex.name) }.padding(vertical = 8.dp),
+                    )
+                }
+                Text(
+                    "Use automatic matching",
+                    Modifier.fillMaxWidth().clickable { onChoose(null) }.padding(vertical = 8.dp),
+                    color = accentTextColor(),
+                )
+            }
+        },
+    )
 }
 
 private fun selectMilk(
