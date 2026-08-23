@@ -59,6 +59,9 @@ internal class TrailPass {
         }
         GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, sceneTarget.fbo)
         GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, trail.fbo)
+        // The blit below covers the whole of trail, so last frame's copy is dead the moment it is
+        // bound. trail is pure scratch - nothing samples it between the warp draw and this blit.
+        trail.discardContents(GLES30.GL_DRAW_FRAMEBUFFER)
         GLES30.glBlitFramebuffer(
             0,
             0,
@@ -74,6 +77,12 @@ internal class TrailPass {
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, sceneTarget.fbo)
         GLES30.glViewport(0, 0, renderWidth, renderHeight)
         GLES30.glDisable(GLES30.GL_BLEND)
+        // Safe only because the frame's history now lives in trail: the blit above copied it out,
+        // and trail_warp writes alpha 1.0 over the full viewport with blending off, so every texel
+        // of sceneTarget is rewritten before anything samples it again. The fade path below is the
+        // opposite case - it blends onto these contents - which is why the discard lives here and
+        // not in apply().
+        sceneTarget.discardContents()
         GLES30.glUseProgram(trailWarpProgram)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, trail.tex)

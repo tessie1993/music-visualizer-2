@@ -125,6 +125,12 @@ internal class CurlFlowScene(
             GLES30.glUniform1f(loc("uAmp"), CurlFlowMath.fieldAmp(params.audioDrive, beatDrive) * (1f + pcmKick * 0.35f))
             GLES30.glUniform2f(loc("uPeriod"), 0f, 0f)
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fld.fbo)
+            // The curl field is evaluated from noise, not integrated: this draw fills every texel
+            // from uTime alone with blending off, and the only reader (particles.step, below) runs
+            // after it. Nothing carries over between frames, so the old field is pure tile-load
+            // cost. Note this whole block is skipped when there is no new audio frame - on those
+            // frames the field is neither written nor read, so the discard cannot strand a reader.
+            fld.discardContents()
             GLES30.glViewport(0, 0, fld.width, fld.height)
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
             quad.unbind()

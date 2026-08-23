@@ -142,17 +142,22 @@ internal class FluidLook(
             0.25f / knee,
         )
         GLES30.glUniform1f(loc(prefilterProgram, "uThreshold"), bloomThreshold)
-        blit(dst)
+        blitDiscarding(dst)
         var last = dst
+        // Down-chain: each mip is rebuilt from the level above it, so whatever this mip held from
+        // last frame is never sampled again - discard it rather than pay to load it into tiles.
         for (i in 1 until bloomMips.size) {
             dst = bloomMips[i]
             use(bloomBlurProgram, 1f / last.width, 1f / last.height)
             bindTex(bloomBlurProgram, "uTexture", last.tex, 0)
-            blit(dst)
+            blitDiscarding(dst)
             last = dst
         }
         GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE)
         GLES30.glEnable(GLES30.GL_BLEND)
+        // Up-chain: additive. The destination mip still holds this frame's down-chain value and
+        // the blend reads it back, so these MUST stay plain blits - a discard here would throw
+        // away the very energy the chain is accumulating.
         for (i in bloomMips.size - 2 downTo 0) {
             dst = bloomMips[i]
             use(bloomBlurProgram, 1f / last.width, 1f / last.height)
@@ -164,27 +169,30 @@ internal class FluidLook(
         use(bloomFinalProgram, 1f / last.width, 1f / last.height)
         bindTex(bloomFinalProgram, "uTexture", last.tex, 0)
         GLES30.glUniform1f(loc(bloomFinalProgram, "uIntensity"), bloomIntensity)
-        blit(result)
+        blitDiscarding(result)
     }
 
     private fun applySunrays(dyeTex: Int) {
         val mask = sunraysMask ?: return
         val rays = sunrays ?: return
         val temp = sunraysTemp ?: return
+        // Straight chain, blending off: dye -> mask -> rays -> temp -> rays. Each step's source is
+        // the step before it, never the destination, so every destination is fully rewritten from
+        // fresh input. The second write to rays is safe for the same reason - it reads temp.
         use(sunraysMaskProgram, 1f / mask.width, 1f / mask.height)
         bindTex(sunraysMaskProgram, "uTexture", dyeTex, 0)
-        blit(mask)
+        blitDiscarding(mask)
         use(sunraysProgram, 1f / rays.width, 1f / rays.height)
         bindTex(sunraysProgram, "uTexture", mask.tex, 0)
         GLES30.glUniform1f(loc(sunraysProgram, "uWeight"), sunraysWeight)
-        blit(rays)
+        blitDiscarding(rays)
         use(blurProgram, 1f / rays.width, 1f / rays.height)
         bindTex(blurProgram, "uTexture", rays.tex, 0)
         GLES30.glUniform2f(loc(blurProgram, "uDirection"), 1.33333f / rays.width, 0f)
-        blit(temp)
+        blitDiscarding(temp)
         bindTex(blurProgram, "uTexture", temp.tex, 0)
         GLES30.glUniform2f(loc(blurProgram, "uDirection"), 0f, 1.33333f / rays.height)
-        blit(rays)
+        blitDiscarding(rays)
     }
 
     fun drawDisplay(
@@ -284,6 +292,20 @@ internal class FluidLook(
         GLES30.glUniform2f(loc(program, "uInvRes"), invW, invH)
     }
 
+    /**
+     * For a pass that rewrites the whole of [target] with blending off. Telling the driver the old
+     * contents are dead is worth more here than anywhere else in the engine: the bloom chain binds
+     * the whole BLOOM_MAX_LEVELS mip pyramid down and back up every frame, and a tiler charges a
+     * load and a store for each bind it thinks is incremental.
+     */
+    private fun blitDiscarding(target: FluidBuffers.Fbo) {
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, target.fbo)
+        target.discardContents()
+        GLES30.glViewport(0, 0, target.width, target.height)
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
+    }
+
+    /** For a pass that blends onto what is already in [target] - the additive bloom up-chain. */
     private fun blit(target: FluidBuffers.Fbo) {
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, target.fbo)
         GLES30.glViewport(0, 0, target.width, target.height)

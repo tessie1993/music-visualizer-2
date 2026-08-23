@@ -166,6 +166,7 @@ class VisualizerRenderer(
     private var height = 1
     private var renderWidth = 1
     private var renderHeight = 1
+    private var appliedThermalTier = ThermalTier.FULL
     private var lastFrameMs = 0L
     private var frameNowMs = 0L
     private var timeSeconds = 0f
@@ -249,6 +250,12 @@ class VisualizerRenderer(
         gl: GL10?,
         config: EGLConfig?,
     ) {
+        // Both idempotent. The registration is process-wide and no-ops after the first surface;
+        // the reset is here because a lost EGL context is also the moment the measured frame-time
+        // window stops describing anything that still exists. What it deliberately does NOT reset
+        // is the tier — the phone is exactly as hot as it was before the context went away.
+        ThermalGovernor.attach(context)
+        ThermalGovernor.onSurfaceRecreated()
         registry.onSurfaceCreated(renderWidth, renderHeight)
         // Before the first sceneFor(): a surface loss drops every scene, and the ones rebuilt
         // here must be handed the field on the way up rather than on the next handover. The
@@ -285,9 +292,27 @@ class VisualizerRenderer(
         this.width = width
         this.height = height
         GLES30.glViewport(0, 0, width, height)
-        val ss = supersampleFactor(width, height)
-        renderWidth = (width * ss).toInt()
-        renderHeight = (height * ss).toInt()
+        applyRenderScale()
+    }
+
+    /**
+     * Sizes the internal render targets, and re-sizes them whenever the thermal tier moves.
+     *
+     * Two independent factors multiply here. The supersample factor is about the panel — how much
+     * detail is worth resolving on this density. The tier's scale is §4.4's first and cheapest
+     * lever against heat, applied on top rather than instead, so a dense screen still supersamples
+     * (less) while a hot one still sheds pixels (from wherever it started).
+     *
+     * Every scene, overlay and FBO reallocates its textures here, which is why this is driven off
+     * a tier CHANGE and not read per frame: the governor's hysteresis is what keeps that from
+     * happening more than once every few seconds, and reallocating the world on a bounce would
+     * cost more than the tier saves.
+     */
+    private fun applyRenderScale() {
+        appliedThermalTier = ThermalGovernor.tier
+        val scale = supersampleFactor(width, height) * appliedThermalTier.renderScale
+        renderWidth = (width * scale).toInt().coerceAtLeast(1)
+        renderHeight = (height * scale).toInt().coerceAtLeast(1)
         registry.resize(renderWidth, renderHeight, width, height)
         overlays.resize(renderWidth, renderHeight)
         fboA.ensure(renderWidth, renderHeight)
@@ -308,6 +333,7 @@ class VisualizerRenderer(
 
     override fun onDrawFrame(gl: GL10?) {
         val dt = beginFrame()
+        if (ThermalGovernor.tier != appliedThermalTier) applyRenderScale()
         val scene = resolveActiveScene() ?: return
         val p = resolveParams(dt)
         registry.applyPendingFluidInjection()
@@ -327,6 +353,10 @@ class VisualizerRenderer(
         frameNowMs = now
         val dt = ((now - lastFrameMs).coerceIn(1, 100)) / 1000f
         lastFrameMs = now
+        // The clamped dt, deliberately: the governor's API 26-28 fallback should judge the engine
+        // by the same interval the simulations are stepping on, not by a 4-second stall that the
+        // rest of the frame is about to pretend never happened.
+        ThermalGovernor.onFrame(dt)
         timeSeconds = (timeSeconds + dt) % TIME_WRAP_SEC
         registry.drainPendingShaders()
         return dt
@@ -373,6 +403,15 @@ class VisualizerRenderer(
         var p = LfoEngine.apply(displayedParams, lfoEngine.configs, lfoValues)
         p = AdsrEngine.apply(p, adsrEngine.configs, envValues)
         p = VisualSafety.apply(p, reducedMotion)
+        // §4.4's second lever, expressed as params rather than as a branch: every consumer of the
+        // flow field and the ripple overlay — the sims, the scene uniforms, the composite — is
+        // already gated on these two flags, so switching them off here sheds two whole
+        // simulations per frame without a single extra `if` downstream. Touch-driven ripples are
+        // deliberately NOT shed with them: `rippleOverlayActive` still honours a live smear, and
+        // nobody keeps a finger down for the twenty minutes this tier is about.
+        if (!ThermalGovernor.tier.optionalPasses) {
+            p = p.copy(flowEnabled = false, rippleOverlayEnabled = false)
+        }
         lastFinalParams = p
         postRotationAngle = CompositeGrade.integrateRotation(postRotationAngle, p.rotation, dt)
         postCyclePhase = CompositeGrade.integrateCyclePhase(postCyclePhase, p.cycleSpeed, dt, p.colorCycle)

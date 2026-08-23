@@ -133,6 +133,16 @@ internal object FluidBuffers {
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
         }
 
+        /**
+         * See [dev.geode.render.RenderTarget.discardContents] for the tile-load argument and the
+         * bind-first contract. Only legal ahead of a pass that rewrites every texel with blending
+         * off - which is every solver pass here except the user-authored injection shaders.
+         */
+        fun discardContents() {
+            if (fbo == 0) return
+            dev.geode.render.RenderTarget.discardColorAttachments(GLES30.GL_FRAMEBUFFER, 1)
+        }
+
         fun release() {
             if (tex != 0) GLES30.glDeleteTextures(1, intArrayOf(tex), 0)
             if (fbo != 0) GLES30.glDeleteFramebuffers(1, intArrayOf(fbo), 0)
@@ -208,6 +218,16 @@ internal object FluidBuffers {
                 GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
                 GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, fmt.internal, w, h, 0, fmt.format, fmt.type, null)
                 return ids[0]
+            }
+
+            /**
+             * Both attachments, because the particle kernels write outPosVel and outMeta on every
+             * path - a half-discarded MRT would leave the meta texture undefined and recycle
+             * particles at random. See [dev.geode.render.RenderTarget.discardContents].
+             */
+            fun discardContents() {
+                if (fbo == 0) return
+                dev.geode.render.RenderTarget.discardColorAttachments(GLES30.GL_FRAMEBUFFER, 2)
             }
 
             fun release() {

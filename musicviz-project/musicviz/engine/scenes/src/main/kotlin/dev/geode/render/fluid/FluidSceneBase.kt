@@ -2,6 +2,7 @@ package dev.geode.render.fluid
 
 import android.opengl.GLES30
 import dev.geode.analysis.AudioFeatures
+import dev.geode.render.ThermalGovernor
 import dev.geode.render.scene.PcmPulse
 import dev.geode.render.scene.PcmSink
 import dev.geode.render.scene.Scene
@@ -128,6 +129,10 @@ internal abstract class FluidSceneBase(
 
     protected fun autoQualityTick() {
         if (params.fluidAutoQuality) {
+            // The rate the display is being ASKED for, so a deliberate cap — a wallpaper paced at
+            // 30, or the thermal governor's own last-resort cap — is not read as a device failing
+            // to keep up and charged as two quality tiers within three seconds.
+            monitor.pacedFps = ThermalGovernor.pacedFps
             val severity = monitor.onFrame(lastDt)
             if (severity > 0) {
                 autoDowngrade += severity

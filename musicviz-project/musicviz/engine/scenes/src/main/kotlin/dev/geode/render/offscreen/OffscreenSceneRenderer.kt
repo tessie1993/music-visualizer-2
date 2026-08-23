@@ -66,6 +66,7 @@ class OffscreenSceneRenderer(
     private var isCurlFlow = false
     private var isBeam = false
     private var fluidScene: dev.geode.render.fluid.FluidScene? = null
+    private var thermalSuppressed = false
 
     /**
      * Builds the scene and every effect the sequence turns out to need.
@@ -73,6 +74,16 @@ class OffscreenSceneRenderer(
      * Must be called with the target GL context current, before the first [renderFrame].
      */
     fun prepare() {
+        // Held for the whole sequence, not per frame: an export renders as fast as the encoder
+        // will take frames, so wall-clock frame time here measures the encoder and says nothing
+        // about the device. Left running, the thermal governor would read a 30 fps render
+        // delivered at 12 fps of wall clock as a permanent deficit and shed quality out of the
+        // file the user is waiting on. Paired with [release]; see ThermalGovernor for the whole
+        // argument, and [renderFrame] for the fluid ladder's half of the same suppression.
+        if (!thermalSuppressed) {
+            thermalSuppressed = true
+            dev.geode.render.ThermalGovernor.beginOffscreenRender()
+        }
         val created = sceneFactory.create().also { scene = it }
         created.init()
         created.resize(spec.width, spec.height)
@@ -140,6 +151,8 @@ class OffscreenSceneRenderer(
         p = AdsrEngine.apply(p, adsrEngine.configs, envValues)
         p = VisualSafety.apply(p, spec.reducedMotion)
         // An offscreen render has no frame budget to protect, so quality never adapts downward.
+        // The thermal half of the same rule is the suppression [prepare] installs — both have to
+        // hold, or the exported file records whatever the phone happened to feel like that day.
         p = p.copy(fluidAutoQuality = false)
 
         val banded = applyBandGains(features, p)
@@ -207,6 +220,12 @@ class OffscreenSceneRenderer(
 
     /** Frees every GL object this renderer owns. Safe to call more than once. */
     fun release() {
+        // Ahead of the GL teardown and behind its own flag, so a second release() — which this
+        // method promises to tolerate — cannot hand the governor back a suppression it never took.
+        if (thermalSuppressed) {
+            thermalSuppressed = false
+            dev.geode.render.ThermalGovernor.endOffscreenRender()
+        }
         bestEffort(TAG, "scene.release()") { scene?.release() }
         bestEffort(TAG, "flowField.release()") { flowField?.release() }
         bestEffort(TAG, "rippleOverlay.release()") { rippleOverlay?.release() }

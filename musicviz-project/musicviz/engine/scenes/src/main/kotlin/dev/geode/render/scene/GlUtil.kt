@@ -137,19 +137,42 @@ object GlUtil {
     fun resolveIncludes(
         context: android.content.Context,
         source: String,
-    ): String =
-        INCLUDE_PATTERN.replace(source) { match ->
+    ): String {
+        // Every scene reaches its shaders through loadShader, and this is the only Context
+        // that reaches this object at all — handing it to the binary cache here is what lets
+        // buildProgram stay a pure (vertexSrc, fragmentSrc) function for its four dozen
+        // callers. A caller that builds from a source string it assembled itself simply
+        // arrives before the cache has a directory, and gets no caching until one does; the
+        // cache re-primes rather than latching off, so that heals on the next build.
+        ProgramBinaryCache.install(context)
+        return INCLUDE_PATTERN.replace(source) { match ->
             val name = match.groupValues[1]
             val resId = INCLUDES[name] ?: throw ShaderCompileException("unknown shader include '$name'")
             Regex.escapeReplacement(
                 context.resources.openRawResource(resId).bufferedReader().use { it.readText() },
             )
         }
+    }
 
+    /**
+     * Compiles and links, or restores the same program from [ProgramBinaryCache].
+     *
+     * The cache is transparent: a hit returns a program indistinguishable from a freshly
+     * linked one, and every way it can fail — no binary formats on this driver, no entry, a
+     * stale or refused binary — falls through to the compile below and re-caches the result.
+     * Compile and link errors still throw [ShaderCompileException] with the driver's info
+     * log, because that is what the live GLSL editor puts in front of the user; a cache hit
+     * cannot suppress an error, since a source that failed to link never produced an entry.
+     */
     fun buildProgram(
         vertexSrc: String,
         fragmentSrc: String,
     ): Int {
+        val key = ProgramBinaryCache.keyFor(vertexSrc, fragmentSrc)
+        if (key != null) {
+            val cached = ProgramBinaryCache.load(key)
+            if (cached != 0) return cached
+        }
         val vs = compile(GLES30.GL_VERTEX_SHADER, vertexSrc)
         val fs =
             try {
@@ -161,6 +184,10 @@ object GlUtil {
         val prog = GLES30.glCreateProgram()
         GLES30.glAttachShader(prog, vs)
         GLES30.glAttachShader(prog, fs)
+        // Before the link, or the driver is entitled to discard the binary we are about to
+        // ask it for. Costs nothing on a device with no formats to store it in: the call
+        // no-ops when the cache is off.
+        if (key != null) ProgramBinaryCache.markRetrievable(prog)
         GLES30.glLinkProgram(prog)
         val status = IntArray(1)
         GLES30.glGetProgramiv(prog, GLES30.GL_LINK_STATUS, status, 0)
@@ -171,6 +198,7 @@ object GlUtil {
             GLES30.glDeleteProgram(prog)
             throw ShaderCompileException("Link failed: $log")
         }
+        if (key != null) ProgramBinaryCache.store(key, prog)
         return prog
     }
 

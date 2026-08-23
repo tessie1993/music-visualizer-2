@@ -123,7 +123,7 @@ internal class FluidParticles(
             GLES30.glUniform4fv(loc(seedProgram, "uSpawns"), FluidChoreography.MAX_SPAWN, spawnData, 0)
             GLES30.glUniform1i(loc(seedProgram, "uSpawnCount"), spawnCount)
             GLES30.glUniform1f(loc(seedProgram, "uLife"), life.coerceIn(1f, 30f))
-            blit(st.write)
+            blitDiscarding(st.write)
             st.swap()
             seeded = true
         }
@@ -147,7 +147,7 @@ internal class FluidParticles(
         GLES30.glUniform1i(loc(updateProgram, "uSpawnCount"), spawnCount)
         GLES30.glUniform4fv(loc(updateProgram, "uCatches"), FluidChoreography.MAX_CATCH, catchData, 0)
         GLES30.glUniform1i(loc(updateProgram, "uCatchCount"), catchCount)
-        blit(st.write)
+        blitDiscarding(st.write)
         st.swap()
         quad.unbind()
     }
@@ -207,8 +207,15 @@ internal class FluidParticles(
         available = false
     }
 
-    private fun blit(target: FluidBuffers.DoubleMrt.Side) {
+    /**
+     * Both the seed and the update kernel write outPosVel and outMeta on every path - including
+     * the respawn early-out - over the whole state texture with blending off, and both sample the
+     * read side rather than the side being written. So the write side's previous generation is
+     * dead before the draw and the driver can skip pulling two float textures into tile memory.
+     */
+    private fun blitDiscarding(target: FluidBuffers.DoubleMrt.Side) {
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, target.fbo)
+        target.discardContents()
         GLES30.glViewport(0, 0, side, side)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
     }
