@@ -1,6 +1,5 @@
 package dev.geode.audio
 
-import dev.geode.util.bestEffort
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -9,6 +8,7 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import androidx.core.content.ContextCompat
+import dev.geode.util.bestEffort
 import kotlin.math.abs
 
 class MicCapture(

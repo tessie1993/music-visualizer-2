@@ -1,6 +1,5 @@
 package dev.geode.audio
 
-import dev.geode.util.bestEffort
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
@@ -8,6 +7,7 @@ import android.media.AudioRecord
 import android.media.projection.MediaProjection
 import android.os.Build
 import androidx.annotation.RequiresApi
+import dev.geode.util.bestEffort
 import kotlin.math.abs
 
 enum class CaptureFailure {

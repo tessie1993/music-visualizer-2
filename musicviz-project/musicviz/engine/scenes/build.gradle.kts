@@ -9,4 +9,5 @@ android {
 dependencies {
     api(project(":engine:gl"))
     api(project(":engine:audio-core"))
+    implementation(libs.kotlinx.coroutines.android)
 }

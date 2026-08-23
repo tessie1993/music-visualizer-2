@@ -4,10 +4,10 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.geode.di.PlayerSessionProvider
-import javax.inject.Inject
 import dev.geode.export.ClipEdit
 import dev.geode.export.StudioClip
 import kotlinx.coroutines.flow.StateFlow
+import javax.inject.Inject
 
 @HiltViewModel
 class StudioViewModel

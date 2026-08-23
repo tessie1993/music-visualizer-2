@@ -1,6 +1,5 @@
 package dev.geode.ui
 
-import dev.geode.util.bestEffort
 import android.app.Application
 import android.content.ContentUris
 import android.content.SharedPreferences
@@ -8,6 +7,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import dev.geode.data.MusicPlaylist
 import dev.geode.data.MusicPlaylistStore
+import dev.geode.util.bestEffort
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow

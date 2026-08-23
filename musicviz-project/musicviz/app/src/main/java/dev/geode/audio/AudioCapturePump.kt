@@ -1,9 +1,9 @@
 package dev.geode.audio
 
-import dev.geode.util.bestEffort
 import android.media.AudioFormat
 import android.media.AudioRecord
 import androidx.annotation.AnyThread
+import dev.geode.util.bestEffort
 import kotlin.concurrent.thread
 
 abstract class AudioCapturePump(

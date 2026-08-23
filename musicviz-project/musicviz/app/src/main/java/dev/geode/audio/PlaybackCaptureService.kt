@@ -1,6 +1,5 @@
 package dev.geode.audio
 
-import dev.geode.util.bestEffort
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -14,6 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import dev.geode.util.bestEffort
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 

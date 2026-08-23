@@ -61,6 +61,8 @@ fun VideoExporter.Result.toPhase(): ExportPhase =
         VideoExporter.Result.Cancelled -> ExportPhase.Idle
     }
 
+// StudioExporter renders through Media3 Transformer, which is still @UnstableApi.
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 fun StudioExporter.Result.toPhase(): ExportPhase =
     when (this) {
         is StudioExporter.Result.Saved -> ExportPhase.Done(uri)

@@ -115,13 +115,14 @@ class AudioFxController(
             runCatching { eq.setBandLevel(band.toShort(), mB.coerceIn(lo, hi).toShort()) }
                 .onFailure { Log.w(TAG, "setBandLevel($band) failed", it) }
                 .isSuccess
-        if (!applied) return false
-        prefs
-            .edit()
-            .putInt(KEY_PRESET, -1)
-            .putString(KEY_BANDS, AudioFxFormat.encodeBandLevels(currentBandLevels()))
-            .apply()
-        return true
+        if (applied) {
+            prefs
+                .edit()
+                .putInt(KEY_PRESET, -1)
+                .putString(KEY_BANDS, AudioFxFormat.encodeBandLevels(currentBandLevels()))
+                .apply()
+        }
+        return applied
     }
 
     val presetNames: List<String>
@@ -134,19 +135,20 @@ class AudioFxController(
                 }.orEmpty()
 
     fun usePreset(i: Int): Boolean {
-        val eq = equalizer ?: return false
-        if (i !in presetNames.indices) return false
+        val eq = equalizer
+        if (eq == null || i !in presetNames.indices) return false
         val applied =
             runCatching { eq.usePreset(i.toShort()) }
                 .onFailure { Log.w(TAG, "usePreset($i) failed", it) }
                 .isSuccess
-        if (!applied) return false
-        prefs
-            .edit()
-            .putInt(KEY_PRESET, i)
-            .putString(KEY_BANDS, AudioFxFormat.encodeBandLevels(currentBandLevels()))
-            .apply()
-        return true
+        if (applied) {
+            prefs
+                .edit()
+                .putInt(KEY_PRESET, i)
+                .putString(KEY_BANDS, AudioFxFormat.encodeBandLevels(currentBandLevels()))
+                .apply()
+        }
+        return applied
     }
 
     fun setBassBoost(strength: Int): Boolean {

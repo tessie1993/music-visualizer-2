@@ -26,13 +26,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
-import androidx.window.core.layout.WindowWidthSizeClass
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,6 +53,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.window.core.layout.WindowWidthSizeClass
 import dev.geode.R
 import dev.geode.analysis.SearchMatcher
 import dev.geode.data.BootAnimationStore
@@ -212,7 +212,6 @@ fun AppRoot() {
                 AppShellExpanded(
                     navItems = navItems,
                     appState = appState,
-                    gui = gui,
                     hasMedia = state.hasMedia,
                     miniPlayer = miniPlayer,
                     content = { destinationContent(true) },
@@ -314,7 +313,6 @@ private fun AppShellCompact(
 private fun AppShellExpanded(
     navItems: List<CrystalNavItem>,
     appState: GeodeAppState,
-    gui: GuiPrefs,
     hasMedia: Boolean,
     miniPlayer: @Composable () -> Unit,
     content: @Composable () -> Unit,

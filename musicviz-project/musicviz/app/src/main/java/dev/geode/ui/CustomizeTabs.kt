@@ -802,12 +802,8 @@ internal fun FluidTab(
             val ctx = androidx.compose.ui.platform.LocalContext.current
             val template =
                 remember {
-                    runCatching {
-                        ctx.resources
-                            .openRawResource(dev.geode.R.raw.fluid_splat_frag)
-                            .bufferedReader()
-                            .use { it.readText() }
-                    }.getOrDefault("")
+                    dev.geode.render.fluid.FluidShaderTemplate
+                        .splat(ctx)
                 }
             var forceSrc by remember { mutableStateOf(template) }
             var dyeSrc by remember { mutableStateOf(template) }

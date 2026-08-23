@@ -38,7 +38,6 @@ import dev.geode.data.TakeStore
 import dev.geode.export.ExportAspect
 import dev.geode.export.ExportRange
 import dev.geode.export.StudioClip
-import dev.geode.export.VideoExporter
 import dev.geode.geodeContainer
 import dev.geode.playback.PlaybackEngine
 import dev.geode.playback.PlaybackErrors
@@ -50,7 +49,6 @@ import dev.geode.render.TransitionStyle
 import dev.geode.render.scene.CustomizeTab
 import dev.geode.render.scene.PcmChunk
 import dev.geode.render.scene.SceneParams
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -67,6 +65,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
 
 @OptIn(UnstableApi::class)
 class PlayerSession private constructor(
