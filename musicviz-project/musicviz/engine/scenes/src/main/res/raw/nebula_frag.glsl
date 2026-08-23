@@ -67,14 +67,15 @@ out vec4 fragColor;
  * Fraction of uSteps this style actually spends.
  *
  * uSteps is a budget, not a step count, and one volume step is not one
- * surface step: a marched SDF step costs one distance estimate, while a step
- * here costs three warp fbms, one density fbm and two shadow taps - about
- * fourteen vnoise3 evaluations, or roughly an order of magnitude more. Handed
- * the raw budget this style would be ten times the frame cost of its four
- * siblings at the same Detail setting, which is not what the user moving one
- * slider is asking for. So it spends a fixed FRACTION of the budget: Detail
- * still moves the march monotonically (45 steps at Detail 0.25, 90 at 1.5),
- * it just buys volume steps at the volume step's price.
+ * surface step. A marched SDF step costs one distance estimate; a step here
+ * costs three warp fbms (6 vnoise3), one density fbm (3 to 5) and, where there
+ * is medium, two shadow taps (4) - fifteen lattice noise evaluations at worst,
+ * which is over an order of magnitude. Handed the raw budget this style would
+ * cost many times its four siblings at the same Detail setting, which is not
+ * what the user moving one slider is asking for. So it spends a fixed FRACTION
+ * of the budget: Detail still moves the march monotonically (45 steps at
+ * Detail 0.25, 90 at 1.5), it just buys volume steps at the volume step's
+ * price.
  */
 #define NEB_STEP_SCALE 0.7
 /** Floor, so a scene that never uploaded uSteps still renders a cloud. */
@@ -110,10 +111,11 @@ out vec4 fragColor;
  * view() units by contract.
  *
  * 3.1 rather than something tighter so the eye stays OUTSIDE the support
- * sphere at every reachable inflation (support tops out near 2.87 with bass
- * and a finger down). Outside, the ray-sphere entry point is a real trim that
- * skips empty space; inside, it would collapse to zero and the march would
- * start at the lens.
+ * sphere at every reachable inflation: bass tops the envelope radius out at
+ * 1.15, which is a support of 2.15, and a finger down adds 0.14 - 2.29 at the
+ * very worst, comfortably short of the lens. Outside, the ray-sphere entry
+ * point is a real trim that skips empty space; inside, it would collapse to
+ * zero and the march would start at the lens.
  */
 #define NEB_FOCAL 3.1
 #define NEB_CAM_DIST 3.1
@@ -131,18 +133,28 @@ out vec4 fragColor;
  * can exist outside it, so nothing is clipped and no faint shell is left
  * behind at the bound where the march stopped.
  */
-#define NEB_ENV_CUTOFF 0.0035
+#define NEB_ENV_CUTOFF 0.03
 /** 1 / (1 - NEB_ENV_CUTOFF), so the centre of the cloud still reads 1. */
-#define NEB_ENV_NORM 1.0035123
+#define NEB_ENV_NORM 1.0309278
 /**
- * sqrt(-ln(NEB_ENV_CUTOFF)) = 2.37802..., rounded UP.
+ * sqrt(-ln(NEB_ENV_CUTOFF)) = 1.87256..., rounded UP.
  *
  * exp(-r^2/R^2) drops below the cutoff at r = R * this, so R * this is the
- * exact support radius. Rounded up rather than to nearest: rounding down
- * would put the bounding sphere a hair inside the support and shave a
- * one-pixel ring off the cloud's edge.
+ * exact support radius. Rounded up rather than to nearest: rounding down would
+ * put the bounding sphere a hair inside the support and shave a one-pixel ring
+ * off the cloud's edge.
+ *
+ * The cutoff is 3%, not the 0.35% an earlier draft used, and the reason is
+ * step SIZE rather than step count. The march divides the span it is given by
+ * the budget, so a support radius chosen to include the envelope's last
+ * thousandth stretches every slab across a span that is mostly empty tail -
+ * and a slab longer than a filament is thick integrates a dense sample as one
+ * lump, which the ray-start dither then turns into visible grain. Cutting the
+ * tail at 3% shortens the span by a fifth, buys back that much resolution at
+ * every Detail setting, and costs a boundary whose density was already under
+ * a hundredth of the core's.
  */
-#define NEB_SUPPORT_K 2.3781
+#define NEB_SUPPORT_K 1.8726
 
 // ---- the density field ----------------------------------------------------
 
@@ -164,7 +176,7 @@ out vec4 fragColor;
  */
 #define NEB_WARP_SCALE 1.6
 #define NEB_DENSITY_SCALE 5.0
-/** Two octaves: the warp only needs shape, and its detail is invisible under a 2.5x finer field. */
+/** Two octaves: the warp only needs shape, and its detail is invisible under a 3x finer field. */
 #define NEB_WARP_OCTAVES 2
 /**
  * Displacement in density-field units. Over one full cell, so a filament can
@@ -197,10 +209,15 @@ out vec4 fragColor;
 #define NEB_THRESHOLD 0.56
 /**
  * Floor on the threshold once the touch and beat terms have pushed it down.
- * Too far down the mask stops masking and the whole support sphere fills in as
- * a solid ball - the effect reads as the cloud being deleted, not gathered.
+ *
+ * Those terms sum to 0.24 and the floor only allows 0.20 of it, so the floor
+ * BINDS when a finger, a bridge and a beat land on the same sample - which is
+ * the point. Each of them is meant to be visible on its own; all three at once
+ * would drop the bar far enough that the mask stops masking and the support
+ * sphere fills in as a solid ball, and that reads as the cloud being deleted
+ * rather than gathered.
  */
-#define NEB_MIN_THRESHOLD 0.30
+#define NEB_MIN_THRESHOLD 0.36
 /**
  * Turns the surviving tail into an optical density of order 1.
  *
@@ -215,13 +232,16 @@ out vec4 fragColor;
  * Optical depth per unit density per world unit.
  *
  * Opacity only - in the closed form above it says nothing about brightness,
- * which is what makes it tunable on its own. At this value a ray down the
- * middle accumulates about two optical depths crossing the envelope, so the
- * far side of the cloud is dimmed by the near side without being erased by it;
- * much higher and the volume flattens into a lit shell, much lower and it
- * stops occluding itself and reads as a flat wash.
+ * which is what makes it tunable on its own. What it really sets is HOW MANY
+ * LAYERS DEEP the eye sees, and that turned out to be the difference between a
+ * nebula and fog. The cloud is about twelve filaments thick along a central
+ * ray; at 5.5 the ray averaged all twelve and every strand dissolved into the
+ * mean, which is a soft wash no amount of lighting fixes. At 13 the front two
+ * or three dominate, the ones behind them shade the ones in front, and the
+ * core lamp reads as a glow BEHIND something rather than a bright patch.
+ * Higher again and the volume collapses into a lit shell with no interior.
  */
-#define NEB_EXTINCTION 5.5
+#define NEB_EXTINCTION 13.0
 
 // ---- lighting from inside -------------------------------------------------
 
@@ -241,8 +261,8 @@ out vec4 fragColor;
 #define NEB_LIGHT_STEP 0.22
 /** Once this little light survives the taps, the rest cannot change the pixel. */
 #define NEB_LIGHT_CUTOFF 0.02
-/** Inverse-square-ish falloff of the core lamp. At r = 1 the core delivers a third. */
-#define NEB_CORE_FALLOFF 2.0
+/** Inverse-square-ish falloff of the core lamp. At r = 1 the core delivers a quarter. */
+#define NEB_CORE_FALLOFF 3.0
 /**
  * Long-range self-shadowing: optical depth from the core out to r, per unit
  * of the saturating column integral below.
@@ -288,9 +308,9 @@ out vec4 fragColor;
  * modelling, and at zero the frame's edges fall to black and the cloud reads
  * as a lamp in a box rather than as something the room is full of.
  */
-#define NEB_AMBIENT_EMIT 0.35
+#define NEB_AMBIENT_EMIT 0.22
 /** The core lamp. The largest term by far - "lit from inside" is the whole premise. */
-#define NEB_CORE_EMIT 3.0
+#define NEB_CORE_EMIT 4.5
 /**
  * Where the sum is soft-clipped, and the hard per-pixel ceiling of this style.
  *
@@ -314,7 +334,18 @@ out vec4 fragColor;
  */
 #define NEB_VEIN_THRESHOLD 0.62
 #define NEB_VEIN_TOP 0.78
-#define NEB_VEIN_EMIT 0.8
+#define NEB_VEIN_EMIT 1.9
+/**
+ * How much of the vein term survives silence.
+ *
+ * Not zero. The veins are the only thing in this style that makes a strand's
+ * spine brighter than its shoulder, and without them an integral through a
+ * dozen overlapping strands averages into the soft wash this shader spent a
+ * draft being. Treble ADDS to this rather than switching it on, which is also
+ * what the audio convention asks for: treble is fine detail and sparkle, not
+ * the existence of detail.
+ */
+#define NEB_VEIN_BASE 0.55
 /** Peak brightness of the beat shell. */
 #define NEB_SHOCK_EMIT 0.8
 /** World units the shell travels over one beat phase - just past the support radius. */
@@ -363,7 +394,7 @@ out vec4 fragColor;
 // ---- touch ----------------------------------------------------------------
 
 /** Reach of the anchor well, in view() units. */
-#define NEB_TOUCH_RADIUS 0.55
+#define NEB_TOUCH_RADIUS 0.32
 /**
  * How far the finger drops the density threshold under itself.
  *
@@ -373,13 +404,13 @@ out vec4 fragColor;
  * and the gather reads as the medium collecting rather than as a sphere being
  * pasted over it.
  */
-#define NEB_WELL_THRESHOLD 0.22
+#define NEB_WELL_THRESHOLD 0.06
 /** Emission the fading slots leave behind, after the wake sum is tone-mapped. */
-#define NEB_WAKE_EMIT 1.0
+#define NEB_WAKE_EMIT 0.45
 /** Half-width of the two-finger corridor. */
-#define NEB_CORRIDOR_RADIUS 0.30
-#define NEB_BRIDGE_THRESHOLD 0.20
-#define NEB_BRIDGE_EMIT 1.1
+#define NEB_CORRIDOR_RADIUS 0.20
+#define NEB_BRIDGE_THRESHOLD 0.08
+#define NEB_BRIDGE_EMIT 0.8
 /** Radians of swirl per unit of uTouchSpin, and how tightly it hugs the view axis. */
 #define NEB_SPIN_GAIN 0.9
 #define NEB_SPIN_TIGHT 0.55
@@ -551,9 +582,11 @@ void main() {
     float volSteps = min(max(uSteps * NEB_STEP_SCALE, NEB_MIN_STEPS), float(NEB_MAX_STEPS));
     // A miss costs zero iterations rather than a branch around the loop.
     if (disc <= 0.0) volSteps = 0.0;
-    // No upper clamp on the slab: span is bounded by twice the support radius
-    // by construction, so at the smallest budget ds is already under 0.13 and
-    // the march always covers the volume it was handed.
+    // No upper clamp on the slab. The span is bounded by twice the support
+    // radius by construction, so the worst case is 4.6 world units over the 45
+    // steps the lowest Detail buys - a slab of 0.10, half a filament thick.
+    // The march therefore always covers the volume it was handed, and clamping
+    // ds would only make it stop short of the far side and draw a plane there.
     float ds = max(span / max(volSteps, 1.0), NEB_MIN_STEP);
 
     // Per-pixel start offset inside the first slab.
@@ -632,10 +665,19 @@ void main() {
             // Measured on the UNWARPED point: the warp has already moved the
             // medium toward the finger, and measuring the falloff in warped
             // space too would compound the two and drag the well off the
-            // fingertip. All three only lower the threshold, and the
-            // threshold is multiplied by an envelope that is zero outside the
-            // bounding sphere, so none of them can put density where the
-            // march is not looking.
+            // fingertip.
+            //
+            // These are distances to the anchor's world RAY, not to a point in
+            // space - pc.xy is the ray's offset from the view axis at this
+            // depth, and the anchor line runs parallel to it. So the well is a
+            // column through the volume rather than a ball inside it, which is
+            // what makes it stay under the finger at every depth instead of
+            // only at the plane the finger nominally touches.
+            //
+            // All three only lower the threshold, and the threshold is
+            // multiplied by an envelope that is zero outside the bounding
+            // sphere, so none of them can put density where the march is not
+            // looking.
             well = touchFalloff(pc.xy, NEB_TOUCH_RADIUS);
             wake = touchWake(pc.xy);
             if (bridgeLenSq > 1e-8) {
@@ -645,7 +687,13 @@ void main() {
             }
         }
 
-        float shock = shockAmp * exp(-((r - shockR) / NEB_SHOCK_WIDTH) * ((r - shockR) / NEB_SHOCK_WIDTH));
+        // Uniform branch: at silence shockAmp is exactly 0 and the shell costs
+        // the march nothing at all.
+        float shock = 0.0;
+        if (shockAmp > 0.0) {
+            float sd = (r - shockR) / NEB_SHOCK_WIDTH;
+            shock = shockAmp * exp(-sd * sd);
+        }
         float thr = max(
             NEB_THRESHOLD
                 - NEB_WELL_THRESHOLD * well
@@ -688,11 +736,19 @@ void main() {
             float geom = 1.0 / (1.0 + NEB_CORE_FALLOFF * rSq);
             float lit = geom * coreShadow * ltrans;
 
-            // Treble picks out the ridge tops of the field that already
-            // passed the mask: thin bright veins through the strands. Squared
-            // so a hi-hat lights a line and not a region.
+            // The ridge tops of the field that already passed the mask: thin
+            // bright veins along the spine of each strand. Squared, so the
+            // light lands on a line and not on the region around it - which is
+            // also why treble reads as detail here rather than as brightness.
             float vein = smoothstep(NEB_VEIN_THRESHOLD, NEB_VEIN_TOP, f);
 
+            // pal() may sample the cyclic-palette atlas, and this is inside
+            // non-uniform control flow, where GLSL ES leaves an implicit-LOD
+            // texture fetch's derivatives undefined. It is safe here because
+            // CyclicPalettes builds that atlas with GL_LINEAR and never
+            // generates mipmaps, so level 0 is the only level there is to pick.
+            // Hoisting the call above the branch would cost a palette lookup on
+            // every empty sample instead, which is most of them.
             float shade = clamp(dens * NEB_HUE_DENS_NORM, 0.0, 1.0);
             vec3 tint = pal(
                 NEB_HUE_BASE
@@ -704,7 +760,7 @@ void main() {
 
             float emit = NEB_AMBIENT_EMIT
                 + NEB_CORE_EMIT * lit
-                + NEB_VEIN_EMIT * vein * vein * treble
+                + NEB_VEIN_EMIT * vein * vein * (NEB_VEIN_BASE + treble)
                 + NEB_SHOCK_EMIT * shock
                 // touchWake sums every slot and is unbounded above - five
                 // fingers sum to five. Tone-mapped rather than clamped so the
