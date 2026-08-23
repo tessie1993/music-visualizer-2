@@ -7,6 +7,7 @@ import android.media.AudioRecord
 import android.media.projection.MediaProjection
 import android.os.Build
 import androidx.annotation.RequiresApi
+import dev.geode.util.bestEffort
 import kotlin.math.abs
 
 enum class CaptureFailure {
@@ -106,7 +107,7 @@ class PlaybackCapture(
                         channelCount = channels
                         return rec
                     }
-                    runCatching { rec?.release() }
+                    bestEffort(TAG, "rec?.release()") { rec?.release() }
                 }
             }
         }
@@ -117,3 +118,5 @@ class PlaybackCapture(
         const val DEFAULT_RATE = 48_000
     }
 }
+
+private const val TAG = "PlaybackCapture"

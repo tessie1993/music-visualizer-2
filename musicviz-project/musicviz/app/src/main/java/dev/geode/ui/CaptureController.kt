@@ -33,7 +33,7 @@ data class ExternalAudioState(
 
 internal class CaptureController(
     private val application: Application,
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
     capture: dev.geode.engine.audio.PcmSink,
     private val host: Host,
 ) {
@@ -72,7 +72,17 @@ internal class CaptureController(
             if (!externalAudioOwnsAnalyzer()) host.setAnalysisRate(rate)
         }
 
-    init {
+    /**
+     * Begins watching for a media projection.
+     *
+     * Deliberately not an `init` block. [MediaProjectionHolder.projection] is a process-global
+     * StateFlow that outlives a [PlayerSession], so a projection can already be live when one is
+     * built; collecting it on `Dispatchers.Main.immediate` then runs [startPlaybackCapture]
+     * synchronously inside the constructor, which calls back into a session whose later fields
+     * — `player` among them — have not been assigned yet. The owner calls this once it is fully
+     * constructed instead.
+     */
+    fun start() {
         scope.launch {
             dev.geode.audio.MediaProjectionHolder.projection
                 .collect { projection ->

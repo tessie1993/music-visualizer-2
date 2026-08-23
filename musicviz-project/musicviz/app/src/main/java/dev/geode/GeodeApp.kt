@@ -1,9 +1,13 @@
 package dev.geode
 
 import android.app.Application
+import dagger.hilt.android.HiltAndroidApp
 import java.io.File
 
+@HiltAndroidApp
 class GeodeApp : Application() {
+    val container: GeodeContainer by lazy { GeodeContainer(this) }
+
     override fun onCreate() {
         super.onCreate()
         RingLog.echo = { tag, line -> android.util.Log.w(tag, line) }

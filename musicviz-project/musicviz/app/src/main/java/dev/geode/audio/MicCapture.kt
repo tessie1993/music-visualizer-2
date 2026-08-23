@@ -8,6 +8,7 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import androidx.core.content.ContextCompat
+import dev.geode.util.bestEffort
 import kotlin.math.abs
 
 class MicCapture(
@@ -90,7 +91,7 @@ class MicCapture(
                     sampleRateHz = rate
                     return rec
                 }
-                runCatching { rec?.release() }
+                bestEffort(TAG, "rec?.release()") { rec?.release() }
             }
         }
         return null
@@ -113,3 +114,5 @@ class MicCapture(
         const val DEFAULT_RATE = 44_100
     }
 }
+
+private const val TAG = "MicCapture"

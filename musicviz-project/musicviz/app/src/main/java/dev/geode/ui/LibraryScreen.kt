@@ -40,7 +40,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -64,17 +63,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.R
 import dev.geode.data.MusicPlaylist
 import dev.geode.ui.theme.StoneIcon
 import dev.geode.ui.theme.StoneIconArt
 import kotlin.math.roundToInt
 
+/** Playlists sit last and behave differently: hand-ordered, so search and sort do not apply. */
+private const val PLAYLISTS_TAB = 4
+
 @Composable
-fun LibraryScreen(
-    viewModel: PlayerViewModel,
-    onOpenSearch: () -> Unit,
-) {
+fun LibraryScreen(onOpenSearch: () -> Unit) {
+    val libraryViewModel: LibraryViewModel = geodeViewModel()
+    val playerViewModel: PlayerViewModel = geodeViewModel()
     val context = LocalContext.current
     val permission =
         if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
@@ -86,17 +88,19 @@ fun LibraryScreen(
     val permLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     var reloadKey by remember { mutableStateOf(0) }
-    val tracks by viewModel.deviceTracks.collectAsState()
-    LaunchedEffect(granted, reloadKey) { if (granted) viewModel.refreshDeviceTracks() }
+    val state by libraryViewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(granted, reloadKey) { if (granted) libraryViewModel.refreshDeviceTracks() }
     var tab by rememberSaveable { mutableStateOf(0) }
     val tabs =
         listOf(
             stringResource(R.string.library_tab_tracks),
             stringResource(R.string.library_tab_albums),
             stringResource(R.string.library_tab_artists),
-            stringResource(R.string.library_tab_playlists),
             stringResource(R.string.library_tab_folders),
+            stringResource(R.string.library_tab_playlists),
         )
+    // Already searched and sorted by the ViewModel — the screen draws what it is handed.
+    val shown = state.tracks
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -138,12 +142,29 @@ fun LibraryScreen(
             return
         }
         CrystalTabs(titles = tabs, selected = tab, onSelect = { tab = it })
+        // Search and sort belong to the track-shaped tabs. Playlists are ordered by hand, and
+        // re-sorting someone's running order out from under them would be a bug, not a feature.
+        if (tab != PLAYLISTS_TAB) {
+            OutlinedTextField(
+                value = state.query,
+                onValueChange = libraryViewModel::setQuery,
+                singleLine = true,
+                label = { Text(stringResource(R.string.library_search_hint)) },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+            CrystalSegmented(
+                options = LibrarySort.entries.map { stringResource(it.labelRes) },
+                selected = LibrarySort.entries.indexOf(state.sort),
+                onSelect = { libraryViewModel.setSort(LibrarySort.entries[it]) },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+        }
         when (tab) {
-            0 -> TrackList(tracks, viewModel)
-            1 -> GroupList(tracks.groupBy { it.album }, viewModel)
-            2 -> GroupList(tracks.groupBy { it.artist }, viewModel)
-            3 -> PlaylistsTab(viewModel)
-            4 -> FoldersTab(tracks.groupBy { it.folder }, viewModel)
+            0 -> TrackList(shown, playerViewModel, state.isSearching)
+            1 -> GroupList(shown.groupBy { it.album }, playerViewModel)
+            2 -> GroupList(shown.groupBy { it.artist }, playerViewModel)
+            3 -> FoldersTab(shown.groupBy { it.folder }, playerViewModel)
+            PLAYLISTS_TAB -> PlaylistsTab(libraryViewModel)
         }
     }
 }
@@ -152,11 +173,17 @@ fun LibraryScreen(
 private fun TrackList(
     tracks: List<DeviceTrack>,
     viewModel: PlayerViewModel,
+    searching: Boolean = false,
 ) {
     val queue = remember(tracks) { tracks.map(PlaybackQueue::queueTrack) }
     LazyColumn(Modifier.fillMaxSize()) {
         items(tracks, key = { it.uri }) { t -> TrackRow(t, viewModel, queue = queue) }
-        if (tracks.isEmpty()) item { Text(stringResource(R.string.library_no_music), Modifier.padding(16.dp)) }
+        if (tracks.isEmpty()) {
+            // An empty library and an empty result set are different problems, and telling
+            // someone "no music found" mid-search would send them looking for the wrong fix.
+            val empty = if (searching) R.string.library_no_results else R.string.library_no_music
+            item { Text(stringResource(empty), Modifier.padding(16.dp)) }
+        }
     }
 }
 
@@ -167,19 +194,19 @@ private fun TrackRow(
     subtitleOverride: String? = null,
     queue: List<QueueTrack> = emptyList(),
 ) {
-    val overrides by viewModel.trackOverrides.collectAsState()
+    val libraryViewModel: LibraryViewModel = geodeViewModel()
+    val overrides by libraryViewModel.trackOverrides.collectAsStateWithLifecycle()
     val stored = overrides[t.uri]
     val title = stored?.title?.ifBlank { null } ?: t.title
-    val analyzed = stored?.takeIf { it.analyzed }
+    // Title, artist, album, duration and artwork \u2014 and nothing else. No tempo, no key, no
+    // analysed badge: the library never waits on analysis, so it has nothing to report about it.
     val subtitle =
         subtitleOverride
             ?: listOf(
                 stored?.artist?.ifBlank { null } ?: t.artist,
-                stored?.album.orEmpty(),
-                stored?.genre.orEmpty(),
-                dev.geode.engine.audio.KeyDetector
-                    .compact(stored?.key.orEmpty()),
+                stored?.album?.ifBlank { null } ?: t.album,
             ).filter { it.isNotBlank() }.joinToString(" \u00b7 ")
+    val duration = LibraryBrowse.formatDuration(t.durationMs)
     var menu by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     var addingToPlaylist by remember { mutableStateOf(false) }
@@ -191,6 +218,8 @@ private fun TrackRow(
             }.padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        TrackArtwork(t.uri, Modifier.size(44.dp), corner = 8.dp)
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (subtitle.isNotBlank()) {
@@ -203,7 +232,14 @@ private fun TrackRow(
                 )
             }
         }
-        if (analyzed != null) AnalyzedBadge(analyzed.bpm, Modifier.padding(start = 8.dp))
+        if (duration.isNotBlank()) {
+            Text(
+                duration,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.action_more)) }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem(text = { Text(stringResource(R.string.action_play_next)) }, onClick = {
@@ -219,7 +255,7 @@ private fun TrackRow(
                 menu = false
             })
             DropdownMenuItem(text = { Text(stringResource(R.string.action_add_to_library_list)) }, onClick = {
-                viewModel.importTracks(listOf(Uri.parse(t.uri)))
+                libraryViewModel.importTracks(listOf(Uri.parse(t.uri)))
                 menu = false
             })
             DropdownMenuItem(text = { Text(stringResource(R.string.action_edit_track_info)) }, onClick = {
@@ -229,20 +265,20 @@ private fun TrackRow(
         }
     }
     if (editing) {
-        TrackInfoEditor(uri = t.uri, viewModel = viewModel, onDismiss = { editing = false })
+        TrackInfoEditor(uri = t.uri, viewModel = libraryViewModel, onDismiss = { editing = false })
     }
     if (addingToPlaylist) {
-        AddToPlaylistDialog(uri = t.uri, viewModel = viewModel, onDismiss = { addingToPlaylist = false })
+        AddToPlaylistDialog(uri = t.uri, viewModel = libraryViewModel, onDismiss = { addingToPlaylist = false })
     }
 }
 
 @Composable
 private fun AddToPlaylistDialog(
     uri: String,
-    viewModel: PlayerViewModel,
+    viewModel: LibraryViewModel,
     onDismiss: () -> Unit,
 ) {
-    val library by viewModel.library.collectAsState()
+    val library by viewModel.library.collectAsStateWithLifecycle()
     var naming by remember { mutableStateOf(false) }
     if (naming) {
         PlaylistNameDialog(
@@ -288,46 +324,15 @@ private fun AddToPlaylistDialog(
 }
 
 @Composable
-private fun AnalyzedBadge(
-    bpm: Float,
-    modifier: Modifier = Modifier,
-) {
-    val cs = MaterialTheme.colorScheme
-    val shape = crystalShardShape(8.dp, 3.dp)
-    val label = if (bpm > 0f) "${bpm.toInt()} BPM" else ""
-    val spoken =
-        if (label.isEmpty()) {
-            stringResource(R.string.analysed_badge)
-        } else {
-            stringResource(R.string.analysed_badge_with_tempo, label)
-        }
-    Row(
-        modifier
-            .clip(shape)
-            .background(cs.primary.copy(alpha = 0.16f))
-            .border(1.dp, cs.primary.copy(alpha = 0.45f), shape)
-            .padding(horizontal = 7.dp, vertical = 3.dp)
-            .semantics { contentDescription = spoken },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CrystalGem(cs.primary, size = 5.dp)
-        if (label.isNotEmpty()) {
-            Spacer(Modifier.width(5.dp))
-            Text(label, style = MaterialTheme.typography.labelSmall, color = accentTextColor(), maxLines = 1)
-        }
-    }
-}
-
-@Composable
 private fun GroupList(
     groups: Map<String, List<DeviceTrack>>,
     viewModel: PlayerViewModel,
 ) {
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     val sel = open
-    androidx.activity.compose.BackHandler(enabled = sel != null) { open = null }
+    val dismiss = rememberPredictiveDismiss(enabled = sel != null) { open = null }
     if (sel != null && groups.containsKey(sel)) {
-        Column {
+        Column(Modifier.dismissTransform(dismiss)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     stringResource(R.string.library_back),
@@ -378,8 +383,8 @@ private fun GroupList(
 }
 
 @Composable
-private fun PlaylistsTab(viewModel: PlayerViewModel) {
-    val library by viewModel.library.collectAsState()
+private fun PlaylistsTab(viewModel: LibraryViewModel) {
+    val library by viewModel.library.collectAsStateWithLifecycle()
     var expanded by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf<String?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -520,7 +525,7 @@ internal fun playlistRowShift(
 private fun PlaylistTracks(
     playlist: MusicPlaylist,
     tracks: List<LibraryTrack>,
-    viewModel: PlayerViewModel,
+    viewModel: LibraryViewModel,
 ) {
     val count = playlist.trackUris.size
     var dragFrom by remember(playlist.name) { mutableIntStateOf(-1) }
@@ -598,11 +603,12 @@ private fun FoldersTab(
     folders: Map<String, List<DeviceTrack>>,
     viewModel: PlayerViewModel,
 ) {
-    val roots by viewModel.mediaRoots.collectAsState()
-    val scanning by viewModel.libraryScanning.collectAsState()
+    val libraryViewModel: LibraryViewModel = geodeViewModel()
+    val roots by libraryViewModel.mediaRoots.collectAsStateWithLifecycle()
+    val scanning by libraryViewModel.libraryScanning.collectAsStateWithLifecycle()
     val folderPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-            if (uri != null) viewModel.importFolder(uri)
+            if (uri != null) libraryViewModel.importFolder(uri)
         }
     Column {
         Text(
@@ -624,7 +630,7 @@ private fun FoldersTab(
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
                 )
-                IconButton(onClick = { viewModel.removeMediaRoot(root) }) {
+                IconButton(onClick = { libraryViewModel.removeMediaRoot(root) }) {
                     StoneIconArt(StoneIcon.CLOSE, stringResource(R.string.folders_remove))
                 }
             }
@@ -641,7 +647,7 @@ private fun FoldersTab(
             CrystalButton(
                 compact = true,
                 filled = false,
-                onClick = viewModel::rescanMediaRoots,
+                onClick = libraryViewModel::rescanMediaRoots,
                 enabled = roots.isNotEmpty() && !scanning,
             ) {
                 Text(stringResource(if (scanning) R.string.folders_scanning else R.string.folders_rescan))

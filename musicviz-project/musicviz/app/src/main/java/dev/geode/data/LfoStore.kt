@@ -1,6 +1,6 @@
 package dev.geode.data
 
-import android.content.Context
+import android.content.SharedPreferences
 import dev.geode.render.AdsrConfig
 import dev.geode.render.AdsrEngine
 import dev.geode.render.EnvBand
@@ -11,10 +11,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class LfoStore(
-    context: Context,
+    private val prefs: SharedPreferences,
 ) {
-    private val prefs = context.getSharedPreferences("geode-prefs", Context.MODE_PRIVATE)
-
     fun load(): List<LfoConfig> =
         runCatching {
             val raw = prefs.getString(KEY, null) ?: return defaultList()

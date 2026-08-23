@@ -18,6 +18,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -40,7 +41,7 @@ internal fun AboutSettingsTab() {
 
 @Composable
 fun AboutSection() {
-    var showLicenses by remember { mutableStateOf(false) }
+    var showLicenses by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleSmall)

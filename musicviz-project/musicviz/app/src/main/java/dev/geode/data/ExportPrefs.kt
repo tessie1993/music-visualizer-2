@@ -1,6 +1,6 @@
 package dev.geode.data
 
-import android.content.Context
+import android.content.SharedPreferences
 import dev.geode.export.ExportQuality
 import dev.geode.export.ExportRatio
 
@@ -19,19 +19,17 @@ internal fun exportQualityLabel(quality: ExportQuality): String =
     }
 
 class ExportPrefsStore(
-    context: Context,
+    private val prefs: SharedPreferences,
 ) {
-    private val prefs = context.getSharedPreferences("geode-prefs", Context.MODE_PRIVATE)
-
     fun load(): ExportDefaults {
         val d = ExportDefaults()
         return ExportDefaults(
             quality =
-                runCatching { ExportQuality.valueOf(prefs.getString(KEY_QUALITY, d.quality.name)!!) }
+                runCatching { ExportQuality.valueOf(prefs.getString(KEY_QUALITY, null) ?: d.quality.name) }
                     .getOrDefault(d.quality),
             fps = prefs.getInt(KEY_FPS, d.fps).let { if (it == 30) 30 else 60 },
             ratio =
-                runCatching { ExportRatio.valueOf(prefs.getString(KEY_RATIO, d.ratio.name)!!) }
+                runCatching { ExportRatio.valueOf(prefs.getString(KEY_RATIO, null) ?: d.ratio.name) }
                     .getOrDefault(d.ratio),
             loopSafe = prefs.getBoolean(KEY_LOOP, d.loopSafe),
         )

@@ -14,6 +14,7 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
+import dev.geode.util.bestEffort
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -125,7 +126,7 @@ class StudioExporter(
             transformer = built
             continuation.invokeOnCancellation {
                 cancelled = true
-                runCatching { built.cancel() }
+                bestEffort(TAG, "built.cancel()") { built.cancel() }
             }
             runCatching { built.start(edited, output.absolutePath) }
                 .onFailure {
@@ -149,7 +150,7 @@ class StudioExporter(
 
     fun cancel() {
         cancelled = true
-        runCatching { transformer?.cancel() }
+        bestEffort(TAG, "transformer?.cancel()") { transformer?.cancel() }
     }
 
     private fun publish(
@@ -209,3 +210,5 @@ class StudioExporter(
         }
     }
 }
+
+private const val TAG = "StudioExporter"

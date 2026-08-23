@@ -4,17 +4,21 @@ import android.app.Application
 import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
-import dev.geode.data.FavouritesStore
+import dev.geode.data.FavouritesRepository
 import dev.geode.data.HistoryStore
+import dev.geode.data.SessionRepository
 import dev.geode.data.SessionStore
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
-import java.util.concurrent.ExecutorService
+import kotlinx.coroutines.launch
 
 internal class ListeningTracker(
     application: Application,
-    private val storeWriter: ExecutorService,
+    private val favouritesRepository: FavouritesRepository,
+    private val sessionRepository: SessionRepository,
+    private val storeScope: CoroutineScope,
     private val host: Host,
 ) {
     interface Host {
@@ -27,14 +31,11 @@ internal class ListeningTracker(
     }
 
     private val historyStore = HistoryStore(application)
-    private val sessionStore = SessionStore(application)
-    private val favouritesStore = FavouritesStore(application)
 
     private val _historyTick = MutableStateFlow(0)
     val historyTick: StateFlow<Int> = _historyTick
 
-    private val _favourites = MutableStateFlow(favouritesStore.all().toSet())
-    val favourites: StateFlow<Set<String>> = _favourites
+    val favourites: StateFlow<Set<String>> = favouritesRepository.favourites
 
     private var listenTickAtMs = 0L
     private var listenTickUri: String? = null
@@ -46,9 +47,10 @@ internal class ListeningTracker(
     fun recentlyPlayed(limit: Int) = historyStore.recentlyPlayed(limit)
 
     fun toggleFavourite(uri: String) {
-        favouritesStore.toggle(uri)
-        _favourites.value = favouritesStore.all().toSet()
-        _historyTick.update { it + 1 }
+        storeScope.launch {
+            favouritesRepository.toggle(uri)
+            _historyTick.update { it + 1 }
+        }
     }
 
     fun recordPlay(
@@ -84,9 +86,9 @@ internal class ListeningTracker(
     fun awaitHistoryWrites(timeoutMs: Long) = historyStore.awaitWrites(timeoutMs)
 
     @Suppress("ReturnCount")
-    fun prepareLastPlayed(): Uri? {
+    suspend fun prepareLastPlayed(): Uri? {
         val player = host.player
-        val saved = sessionStore.load()
+        val saved = sessionRepository.load()
         if (saved != null) {
             val restored =
                 runCatching {
@@ -130,7 +132,7 @@ internal class ListeningTracker(
                     artist = item.mediaMetadata.artist?.toString().orEmpty(),
                 )
             }
-        storeWriter.execute { sessionStore.save(SessionStore.Saved(tracks, index, position)) }
+        storeScope.launch { sessionRepository.save(SessionStore.Saved(tracks, index, position)) }
     }
 
     private companion object {

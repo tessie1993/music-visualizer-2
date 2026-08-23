@@ -1,5 +1,6 @@
 package dev.geode.data
 
+import dev.geode.util.bestEffort
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
@@ -37,7 +38,7 @@ object AtomicWrite {
                     temp.renameTo(file)
                 }.getOrDefault(false)
             if (!ok) {
-                runCatching { temp.delete() }
+                bestEffort(TAG, "temp.delete()") { temp.delete() }
                 dev.geode.RingLog.note("AtomicWrite", "write failed, previous content kept: ${file.name}")
             }
             return ok
@@ -49,3 +50,5 @@ object AtomicWrite {
             .getOrDefault(false)
             .also { moved -> if (moved) dev.geode.RingLog.note("AtomicWrite", "unparseable content quarantined: ${file.name}") }
 }
+
+private const val TAG = "AtomicWrite"

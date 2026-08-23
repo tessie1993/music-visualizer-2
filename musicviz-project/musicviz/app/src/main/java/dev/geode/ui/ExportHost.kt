@@ -3,14 +3,15 @@ package dev.geode.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.export.ExportAspect
 import dev.geode.export.ExportRange
+import dev.geode.render.SceneFactory
 import dev.geode.render.VisualizerView
 
 private data class PendingExport(
@@ -64,15 +65,16 @@ fun ExportHost(
     visualizerView: VisualizerView,
     onDismiss: () -> Unit,
 ) {
-    val state by viewModel.uiState.collectAsState()
-    val viz by viewModel.vizState.collectAsState()
-    val export by viewModel.exportState.collectAsState()
+    val studioViewModel: StudioViewModel = geodeViewModel()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val viz by viewModel.vizState.collectAsStateWithLifecycle()
+    val export by studioViewModel.exportState.collectAsStateWithLifecycle()
 
     var pendingExport by rememberSaveable(stateSaver = PendingExportSaver) {
         mutableStateOf<PendingExport?>(null)
     }
 
-    val sceneFactoryFor: (String, String) -> dev.geode.export.VideoExporter.SceneFactory =
+    val sceneFactoryFor: (String, String) -> SceneFactory =
         { requested, fallback ->
             val renderer = visualizerView.visualizerRenderer
             renderer.exportSceneFactory(
@@ -95,13 +97,13 @@ fun ExportHost(
                 )
             }
         }
-    val takes by viewModel.takeState.collectAsState()
+    val takes by studioViewModel.takeState.collectAsStateWithLifecycle()
     SettingsDialog(
         export = export,
         hasMedia = state.hasMedia,
         takes = takes.takes.map { it.name },
         selectedTake = takes.exportTake,
-        onSelectTake = viewModel::setExportTake,
+        onSelectTake = studioViewModel::setExportTake,
         bpm = viz.bpm,
         trackDurationMs = state.durationMs,
         onStart = { aspect, fps, loopSafe, range ->
@@ -126,9 +128,9 @@ fun ExportHost(
                 )
             destinationPicker.launch("geode_${System.currentTimeMillis()}.mp4")
         },
-        onCancel = viewModel::cancelExport,
+        onCancel = studioViewModel::cancelExport,
         onDismiss = {
-            viewModel.resetExportState()
+            studioViewModel.resetExportState()
             onDismiss()
         },
     )

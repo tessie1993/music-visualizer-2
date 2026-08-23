@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,7 +32,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.geode.R
 import dev.geode.data.CustomPalette
 import dev.geode.data.PaletteStore
 import dev.geode.render.scene.SceneParams
@@ -137,7 +140,7 @@ internal fun PaletteMakerCard(
 ) {
     var baseHue by remember { mutableFloatStateOf(p.paletteBase) }
     var hueSpan by remember { mutableFloatStateOf(p.paletteRange) }
-    var name by remember { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf("") }
     Column {
         Text(
             "Build a gradient: the base hue is where it starts, the span is " +
@@ -147,14 +150,20 @@ internal fun PaletteMakerCard(
             style = MaterialTheme.typography.labelSmall,
         )
         GradientPreview(baseHue, hueSpan, modifier = Modifier.fillMaxWidth())
-        Text("Base hue ${"%.2f".format(baseHue)}", style = MaterialTheme.typography.labelSmall)
+        Text(
+            stringResource(R.string.palette_base_hue, "%.2f".format(baseHue)),
+            style = MaterialTheme.typography.labelSmall,
+        )
         CrystalSlider(
             value = baseHue,
             onValueChange = { baseHue = it },
             valueRange = 0f..1f,
             modifier = Modifier.fillMaxWidth(),
         )
-        Text("Hue span ${"%.2f".format(hueSpan)}", style = MaterialTheme.typography.labelSmall)
+        Text(
+            stringResource(R.string.palette_hue_span, "%.2f".format(hueSpan)),
+            style = MaterialTheme.typography.labelSmall,
+        )
         CrystalSlider(
             value = hueSpan,
             onValueChange = { hueSpan = it },
@@ -163,20 +172,20 @@ internal fun PaletteMakerCard(
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(onClick = { onChange(PaletteStore.applyGradient(p, baseHue, hueSpan)) }) {
-                Text("Apply gradient")
+                Text(stringResource(R.string.palette_apply_gradient))
             }
             OutlinedButton(onClick = {
                 baseHue = p.paletteBase
                 hueSpan = p.paletteRange
             }) {
-                Text("From current")
+                Text(stringResource(R.string.palette_from_current))
             }
         }
         OutlinedTextField(
             value = name,
             onValueChange = { name = it },
             singleLine = true,
-            label = { Text("Palette name") },
+            label = { Text(stringResource(R.string.palette_name_label)) },
             modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
         )
         OutlinedButton(
@@ -187,11 +196,11 @@ internal fun PaletteMakerCard(
             },
             enabled = name.isNotBlank(),
         ) {
-            Text("Save palette")
+            Text(stringResource(R.string.palette_save))
         }
-        Text("Saved palettes", style = MaterialTheme.typography.labelSmall)
+        Text(stringResource(R.string.palette_saved_heading), style = MaterialTheme.typography.labelSmall)
         if (palettes.items.isEmpty()) {
-            Text("None yet - build a gradient above and save it.", style = MaterialTheme.typography.labelSmall)
+            Text(stringResource(R.string.palette_none_yet), style = MaterialTheme.typography.labelSmall)
         }
         palettes.items.forEach { palette ->
             Row(
@@ -205,13 +214,13 @@ internal fun PaletteMakerCard(
                     hueSpan = palette.hueSpan
                     name = palette.name
                 }) {
-                    Text("Edit", style = MaterialTheme.typography.labelSmall)
+                    Text(stringResource(R.string.palette_edit), style = MaterialTheme.typography.labelSmall)
                 }
                 TextButton(onClick = {
                     palettes.delete(palette.id)
                     onChange(PaletteStore.forgetDeleted(p, palette.id))
                 }) {
-                    Text("Delete", style = MaterialTheme.typography.labelSmall)
+                    Text(stringResource(R.string.palette_delete), style = MaterialTheme.typography.labelSmall)
                 }
             }
         }

@@ -1,6 +1,5 @@
 package dev.geode.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,7 +24,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +35,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import dev.geode.R
 import dev.geode.render.VisualizerView
@@ -52,26 +51,28 @@ fun VisualizerScreen(
     onCollapse: () -> Unit,
     onOpenVisuals: () -> Unit,
 ) {
-    val state by viewModel.uiState.collectAsState()
-    val autoMode by viewModel.autoMode.collectAsState()
-    val gui by viewModel.guiPrefs.collectAsState()
-    val waveform by viewModel.waveform.collectAsState()
-    val lyrics by viewModel.lyrics.collectAsState()
-    val queue by viewModel.queue.collectAsState()
-    val favourites by viewModel.favourites.collectAsState()
-    val abLoop by viewModel.abLoop.collectAsState()
-    val external by viewModel.externalAudio.collectAsState()
+    val settingsViewModel: SettingsViewModel = geodeViewModel()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val autoMode by viewModel.autoMode.collectAsStateWithLifecycle()
+    val gui by settingsViewModel.guiPrefs.collectAsStateWithLifecycle()
+    val waveform by viewModel.waveform.collectAsStateWithLifecycle()
+    val lyrics by viewModel.lyrics.collectAsStateWithLifecycle()
+    val queue by viewModel.queue.collectAsStateWithLifecycle()
+    val favourites by viewModel.favourites.collectAsStateWithLifecycle()
+    val abLoop by viewModel.abLoop.collectAsStateWithLifecycle()
+    val external by viewModel.externalAudio.collectAsStateWithLifecycle()
     val currentUri = remember(state.title, state.artist) { viewModel.currentTrackUri() }
     val isFavourite = currentUri != null && currentUri in favourites
     var panel by remember { mutableStateOf(PlayerPanel.TRANSPORT) }
     val chromeAlpha = maxOf(gui.barOpacity, 0.25f)
     var controlsVisible by remember { mutableStateOf(true) }
 
-    BackHandler { onCollapse() }
+    val dismiss = rememberPredictiveDismiss(onDismiss = onCollapse)
 
     Box(
         Modifier
             .fillMaxSize()
+            .dismissTransform(dismiss)
             .background(Color.Black)
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { controlsVisible = !controlsVisible })

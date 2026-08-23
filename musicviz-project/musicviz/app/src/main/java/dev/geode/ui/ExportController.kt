@@ -9,6 +9,7 @@ import dev.geode.export.ExportRange
 import dev.geode.export.ExportRun
 import dev.geode.export.ExportService
 import dev.geode.export.VideoExporter
+import dev.geode.render.SceneFactory
 import dev.geode.render.scene.SceneParams
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,36 +23,13 @@ import kotlinx.coroutines.withContext
 
 data class StudioUiState(
     val clips: List<dev.geode.export.StudioClip> = emptyList(),
-    val loading: Boolean = false,
-    val running: Boolean = false,
-    val progress: Float = 0f,
-    val resultUri: Uri? = null,
-    val error: String? = null,
+    val phase: ExportPhase = ExportPhase.Idle,
 )
 
 data class ExportUiState(
-    val running: Boolean = false,
     val customDestination: Boolean = false,
-    val progress: Float = 0f,
-    val resultUri: Uri? = null,
-    val error: String? = null,
+    val phase: ExportPhase = ExportPhase.Idle,
 )
-
-internal fun exportUiStateFor(
-    result: VideoExporter.Result,
-    customDestination: Boolean,
-): ExportUiState =
-    when (result) {
-        is VideoExporter.Result.Saved ->
-            ExportUiState(
-                running = false,
-                progress = 1f,
-                resultUri = result.uri,
-                customDestination = customDestination,
-            )
-        is VideoExporter.Result.Failed -> ExportUiState(running = false, error = result.message)
-        VideoExporter.Result.Cancelled -> ExportUiState(running = false)
-    }
 
 internal fun exportSceneIdFor(
     take: PerformanceTake.Timeline?,
@@ -88,7 +66,7 @@ internal class ExportController(
 
         fun adsrConfigs(): List<dev.geode.render.AdsrConfig>
 
-        fun loadExportTake(): PerformanceTake.Timeline?
+        suspend fun loadExportTake(): PerformanceTake.Timeline?
 
         fun publishSections(
             uri: Uri,
@@ -117,9 +95,9 @@ internal class ExportController(
                 ExportRun.state
                     .takeWhile { it.running }
                     .collect { run ->
-                        _exportState.update { it.copy(running = true, progress = run.progress ?: 0f) }
+                        _exportState.update { it.copy(phase = ExportPhase.Running(run.progress ?: 0f)) }
                     }
-                if (!ExportRun.running) _exportState.value = ExportUiState(running = false)
+                if (!ExportRun.running) _exportState.value = ExportUiState()
             }
         }
     }
@@ -129,16 +107,17 @@ internal class ExportController(
     fun startExport(
         aspect: ExportAspect,
         fps: Int,
-        sceneFactory: VideoExporter.SceneFactory,
+        sceneFactory: SceneFactory,
         destination: Uri? = null,
         loopSafe: Boolean = false,
         range: ExportRange? = null,
-        sceneFactoryFor: ((String) -> VideoExporter.SceneFactory)? = null,
+        sceneFactoryFor: ((String) -> SceneFactory)? = null,
     ) {
         val uri = host.exportUri ?: return
-        if (_exportState.value.running || ExportRun.running) return
+        if (_exportState.value.phase.isBusy || ExportRun.running) return
         exportCancelled = false
-        _exportState.value = ExportUiState(running = true, customDestination = destination != null)
+        _exportState.value =
+            ExportUiState(customDestination = destination != null, phase = ExportPhase.Running(0f))
         ExportRun.begin(uri.lastPathSegment.orEmpty())
         ExportService.start(application)
         exportJob =
@@ -146,7 +125,7 @@ internal class ExportController(
                 try {
                     val analysed =
                         host.cachedTimeline ?: host.analyze(uri) { p ->
-                            _exportState.update { it.copy(progress = p * 0.2f) }
+                            _exportState.update { it.copy(phase = ExportPhase.Running(p * 0.2f)) }
                             ExportRun.publish(p * 0.2f)
                         }.also { if (host.exportUri == uri) host.cachedTimeline = it }
                     val gui = host.guiPrefs
@@ -174,7 +153,7 @@ internal class ExportController(
                             sceneParams = host.sceneParams,
                             lfoConfigs = host.lfoConfigs(),
                             adsrConfigs = host.adsrConfigs(),
-                            safety = gui.safety,
+                            reducedMotion = gui.reducedMotion,
                             requestedFps = fps,
                             paramsAt =
                                 exportTake?.let { take ->
@@ -189,21 +168,22 @@ internal class ExportController(
                             destination = destination,
                             onProgress = { p ->
                                 val overall = 0.2f + p * 0.8f
-                                _exportState.update { it.copy(progress = overall) }
+                                _exportState.update { it.copy(phase = ExportPhase.Running(overall)) }
                                 ExportRun.publish(overall)
                             },
                             isCancelled = { exportCancelled || ExportRun.cancelRequested },
                         )
-                    _exportState.value = exportUiStateFor(result, customDestination = destination != null)
+                    _exportState.value =
+                        ExportUiState(customDestination = destination != null, phase = result.toPhase())
                 } catch (t: Throwable) {
                     if (exportCancelled) {
-                        _exportState.value = ExportUiState(running = false)
+                        _exportState.value = ExportUiState()
                     } else if (t is kotlinx.coroutines.CancellationException) {
-                        _exportState.value = ExportUiState(running = false)
+                        _exportState.value = ExportUiState()
                         throw t
                     } else {
                         val detail = "${t.javaClass.simpleName}: ${t.message ?: "no message"}"
-                        _exportState.value = ExportUiState(running = false, error = detail)
+                        _exportState.value = ExportUiState(phase = ExportPhase.Failed(detail))
                     }
                 } finally {
                     ExportRun.finish()
@@ -216,14 +196,14 @@ internal class ExportController(
     }
 
     fun resetExportState() {
-        if (!_exportState.value.running) _exportState.value = ExportUiState()
+        if (!_exportState.value.phase.isBusy) _exportState.value = ExportUiState()
     }
 
     fun refreshStudioClips() {
         scope.launch {
-            _studio.update { it.copy(loading = true) }
+            _studio.update { it.copy(phase = ExportPhase.Loading) }
             val clips = withContext(Dispatchers.IO) { dev.geode.export.StudioClips.list(application) }
-            _studio.update { it.copy(clips = clips, loading = false) }
+            _studio.update { it.copy(clips = clips, phase = ExportPhase.Idle) }
         }
     }
 
@@ -264,8 +244,8 @@ internal class ExportController(
         clip: dev.geode.export.StudioClip,
         edit: dev.geode.export.ClipEdit,
     ) {
-        if (_studio.value.running) return
-        _studio.update { it.copy(running = true, progress = 0f, resultUri = null, error = null) }
+        if (_studio.value.phase.isBusy) return
+        _studio.update { it.copy(phase = ExportPhase.Running(0f)) }
         studioJob =
             scope.launch {
                 val name = "geode_studio_${System.currentTimeMillis()}.mp4"
@@ -275,15 +255,8 @@ internal class ExportController(
                         sourceDurationMs = clip.durationMs,
                         edit = edit,
                         displayName = name,
-                    ) { p -> _studio.update { it.copy(progress = p.coerceIn(0f, 1f)) } }
-                when (result) {
-                    is dev.geode.export.StudioExporter.Result.Saved ->
-                        _studio.update { it.copy(running = false, progress = 1f, resultUri = result.uri) }
-                    is dev.geode.export.StudioExporter.Result.Failed ->
-                        _studio.update { it.copy(running = false, error = result.message) }
-                    dev.geode.export.StudioExporter.Result.Cancelled ->
-                        _studio.update { it.copy(running = false, progress = 0f) }
-                }
+                    ) { p -> _studio.update { it.copy(phase = ExportPhase.Running(p.coerceIn(0f, 1f))) } }
+                _studio.update { it.copy(phase = result.toPhase()) }
                 refreshStudioClips()
                 studioJob = null
             }
@@ -293,10 +266,10 @@ internal class ExportController(
         studioExporter.cancel()
         studioJob?.cancel()
         studioJob = null
-        _studio.update { it.copy(running = false, progress = 0f) }
+        _studio.update { it.copy(phase = ExportPhase.Idle) }
     }
 
     fun clearStudioResult() {
-        _studio.update { it.copy(resultUri = null, error = null, progress = 0f) }
+        _studio.update { it.copy(phase = ExportPhase.Idle) }
     }
 }

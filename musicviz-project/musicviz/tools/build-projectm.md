@@ -24,12 +24,16 @@ emulator and fails on a black one.
 > support for apps targeting Android 15+, and a hand build that misses it fails
 > silently until the app will not load on a device.
 >
-> Run it from Actions with the projectM release tag as input. It uploads the two
-> stripped .so files as the `jniLibs-arm64-v8a-16k` artifact — it does **not**
-> commit them. Download it, drop both into `app/src/main/jniLibs/arm64-v8a/` and
-> commit; the gate in `.github/workflows/release.yml` re-checks the alignment of
-> whatever is committed, so a hand-built .so that slipped through is caught
-> before a release rather than on a phone.
+> Run it from Actions with the projectM release tag as input. It builds every
+> ABI in the matrix and uploads each one's pair as `jniLibs-<abi>-16k`, together
+> with that ABI's `SHA256SUMS` — it does **not** commit them, and it does **not**
+> strip them: the .so files it produces carry their symbols, which is why the
+> committed `libprojectM-4.so` is ~17 MB rather than the ~2 MB a
+> `llvm-strip --strip-unneeded` would leave. Download the artifact, drop all
+> three files into `app/src/main/jniLibs/<abi>/` and commit them together; the
+> gate in `.github/workflows/release.yml` re-checks the alignment of whatever is
+> committed, so a hand-built .so that slipped through is caught before a release
+> rather than on a phone.
 >
 > A fresh engine build is not a repackage: run the MilkDrop items in
 > `docs/DEVICE_CHECKS.md` (1-4, 33) afterwards.

@@ -7,5 +7,4 @@ android {
 }
 
 dependencies {
-    api(project(":engine:visual-core"))
 }

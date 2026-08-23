@@ -10,6 +10,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import dev.geode.audio.AudioFxController
 import dev.geode.audio.PcmRingBuffer
 import dev.geode.audio.TapRenderersFactory
+import dev.geode.data.GeodePrefsFiles
 import dev.geode.engine.audio.AudioPresentationClock
 import dev.geode.engine.audio.PcmSink
 import dev.geode.engine.audio.SampleRing
@@ -81,7 +82,7 @@ class PlaybackSession internal constructor(
                 true,
             ).build()
 
-    val audioFx = AudioFxController(context)
+    val audioFx = AudioFxController(GeodePrefsFiles(context).audioFx)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 

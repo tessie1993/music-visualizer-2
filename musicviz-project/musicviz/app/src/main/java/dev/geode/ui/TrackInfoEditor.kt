@@ -31,7 +31,7 @@ private val COMMON_GENRES =
 @Composable
 fun TrackInfoEditor(
     uri: String,
-    viewModel: PlayerViewModel,
+    viewModel: LibraryViewModel,
     onDismiss: () -> Unit,
 ) {
     var loaded by remember(uri) { mutableStateOf<LibraryTrack?>(null) }

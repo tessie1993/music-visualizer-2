@@ -5,6 +5,7 @@ import android.opengl.GLSurfaceView
 import android.service.wallpaper.WallpaperService
 import android.view.SurfaceHolder
 import dev.geode.audio.AudioBus
+import dev.geode.data.GeodePrefsFiles
 import dev.geode.data.PresetStore
 import dev.geode.render.VisualizerRenderer
 import dev.geode.ui.ThemeStore
@@ -50,7 +51,8 @@ class VisualizerWallpaperService : WallpaperService() {
         }
 
         private fun restoreLiveState(engine: VisualizerRenderer) {
-            val prefs = getSharedPreferences("geode-viz", Context.MODE_PRIVATE)
+            val prefsFiles = GeodePrefsFiles(this@VisualizerWallpaperService)
+            val prefs = prefsFiles.viz
             prefs.getString("live_state", null)?.let { json ->
                 runCatching { PresetStore.fromJson(json) }.getOrNull()?.let { preset ->
                     engine.requestedSceneId = preset.sceneId
@@ -60,7 +62,7 @@ class VisualizerWallpaperService : WallpaperService() {
             prefs.getString("milk_path", null)?.let { path ->
                 if (java.io.File(path).isFile) engine.loadMilkPreset(path)
             }
-            engine.safety = ThemeStore(this@VisualizerWallpaperService).loadGui().safety
+            engine.reducedMotion = ThemeStore(prefsFiles.general).loadGui().reducedMotion
         }
 
         private fun startFeeding(engine: VisualizerRenderer) {

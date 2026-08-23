@@ -1,14 +1,12 @@
 package dev.geode.ui
 
-import android.content.Context
+import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
 
 class AutoVisualsPrefsStore(
-    context: Context,
+    private val prefs: SharedPreferences,
 ) {
-    private val prefs = context.getSharedPreferences("geode-viz", Context.MODE_PRIVATE)
-
     fun applyTo(state: VizUiState): VizUiState {
         val entries = prefs.getString(KEY_PLAYLIST_ENTRIES, null)?.let(::entriesFromJson) ?: state.vizPlaylist
         return state.copy(

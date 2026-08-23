@@ -12,7 +12,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -24,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.R
 import dev.geode.ui.theme.StoneIcon
 import dev.geode.ui.theme.StoneIconArt
@@ -31,11 +31,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-internal fun FolderSettingsTab(viewModel: PlayerViewModel) {
-    val gui by viewModel.guiPrefs.collectAsState()
+internal fun FolderSettingsTab() {
+    val settingsViewModel: SettingsViewModel = geodeViewModel()
+    val libraryViewModel: LibraryViewModel = geodeViewModel()
+    val gui by settingsViewModel.guiPrefs.collectAsStateWithLifecycle()
     SettingsTabColumn {
-        item { SettingsGroup(stringResource(R.string.folders_group_preset)) { PresetFolderGroup(viewModel, gui) } }
-        item { SettingsGroup(stringResource(R.string.folders_group_music)) { MusicFoldersEditor(viewModel) } }
+        item { SettingsGroup(stringResource(R.string.folders_group_preset)) { PresetFolderGroup(settingsViewModel, gui) } }
+        item { SettingsGroup(stringResource(R.string.folders_group_music)) { MusicFoldersEditor(libraryViewModel) } }
         item { SettingsGroup(stringResource(R.string.folders_group_cache)) { AnalysisCacheGroup() } }
         item {
             SettingsGroup(stringResource(R.string.folders_group_export)) {
@@ -51,7 +53,7 @@ internal fun FolderSettingsTab(viewModel: PlayerViewModel) {
 
 @Composable
 private fun PresetFolderGroup(
-    viewModel: PlayerViewModel,
+    viewModel: SettingsViewModel,
     gui: GuiPrefs,
 ) {
     val ctx = LocalContext.current
@@ -97,9 +99,9 @@ private fun PresetFolderGroup(
 }
 
 @Composable
-internal fun MusicFoldersEditor(viewModel: PlayerViewModel) {
-    val roots by viewModel.mediaRoots.collectAsState()
-    val scanning by viewModel.libraryScanning.collectAsState()
+internal fun MusicFoldersEditor(viewModel: LibraryViewModel) {
+    val roots by viewModel.mediaRoots.collectAsStateWithLifecycle()
+    val scanning by viewModel.libraryScanning.collectAsStateWithLifecycle()
     val folderPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) viewModel.importFolder(uri)

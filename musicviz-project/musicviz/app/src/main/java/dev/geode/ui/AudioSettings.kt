@@ -12,33 +12,35 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.R
 import dev.geode.analysis.BeatTuning
 import kotlin.math.roundToInt
 
 @Composable
 internal fun AudioSettingsTab(viewModel: PlayerViewModel) {
+    val settingsViewModel: SettingsViewModel = geodeViewModel()
     SettingsTabColumn {
-        item { SettingsGroup(stringResource(R.string.audio_group_playback)) { PlaybackSettingsSection(viewModel) } }
-        item { EqualizerSettings(viewModel) }
-        item { SettingsGroup(stringResource(R.string.audio_group_analysis)) { AnalysisGroup(viewModel) } }
+        item { SettingsGroup(stringResource(R.string.audio_group_playback)) { PlaybackSettingsSection(settingsViewModel) } }
+        item { EqualizerSettings(settingsViewModel) }
+        item { SettingsGroup(stringResource(R.string.audio_group_analysis)) { AnalysisGroup(settingsViewModel) } }
         item { SettingsGroup(stringResource(R.string.source_live_input)) { LiveInputGroup(viewModel) } }
         item { SettingsGroup(stringResource(R.string.source_other_apps)) { ExternalAudioSettings(viewModel) } }
     }
 }
 
 @Composable
-private fun AnalysisGroup(viewModel: PlayerViewModel) {
-    val gui by viewModel.guiPrefs.collectAsState()
+private fun AnalysisGroup(viewModel: SettingsViewModel) {
+    val playerViewModel: PlayerViewModel = geodeViewModel()
+    val gui by viewModel.guiPrefs.collectAsStateWithLifecycle()
     Column {
         Text(
             stringResource(R.string.audio_beat_sensitivity, "%.1f".format(gui.beatSensitivity)),
@@ -102,7 +104,7 @@ private fun AnalysisGroup(viewModel: PlayerViewModel) {
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Switch(checked = gui.keyColor, onCheckedChange = viewModel::setKeyColor)
+            Switch(checked = gui.keyColor, onCheckedChange = playerViewModel::setKeyColor)
         }
         Text(
             stringResource(R.string.audio_key_colour_explainer),
@@ -114,8 +116,8 @@ private fun AnalysisGroup(viewModel: PlayerViewModel) {
 
 @Composable
 private fun LiveInputGroup(viewModel: PlayerViewModel) {
-    val mic by viewModel.micState.collectAsState()
-    var denied by remember { mutableStateOf(false) }
+    val mic by viewModel.micState.collectAsStateWithLifecycle()
+    var denied by rememberSaveable { mutableStateOf(false) }
     val micPermission =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             denied = !granted

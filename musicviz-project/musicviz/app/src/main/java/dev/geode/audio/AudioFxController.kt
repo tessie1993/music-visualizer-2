@@ -1,10 +1,11 @@
 package dev.geode.audio
 
-import android.content.Context
 import android.content.SharedPreferences
 import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
+import android.util.Log
+import dev.geode.util.bestEffort
 
 data class AudioFxBand(
     val label: String,
@@ -57,11 +58,8 @@ object AudioFxFormat {
 }
 
 class AudioFxController(
-    context: Context,
+    private val prefs: SharedPreferences,
 ) {
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences("geode-audiofx", Context.MODE_PRIVATE)
-
     private var equalizer: Equalizer? = null
     private var bassBoost: BassBoost? = null
     private var loudness: LoudnessEnhancer? = null
@@ -85,9 +83,9 @@ class AudioFxController(
     }
 
     fun release() {
-        runCatching { equalizer?.release() }
-        runCatching { bassBoost?.release() }
-        runCatching { loudness?.release() }
+        bestEffort(TAG, "equalizer release") { equalizer?.release() }
+        bestEffort(TAG, "bassBoost release") { bassBoost?.release() }
+        bestEffort(TAG, "loudness release") { loudness?.release() }
         equalizer = null
         bassBoost = null
         loudness = null
@@ -110,15 +108,21 @@ class AudioFxController(
     fun setBandLevel(
         band: Int,
         mB: Int,
-    ) {
-        val eq = equalizer ?: return
+    ): Boolean {
+        val eq = equalizer ?: return false
         val (lo, hi) = bandRange(band)
-        runCatching { eq.setBandLevel(band.toShort(), mB.coerceIn(lo, hi).toShort()) }
-        prefs
-            .edit()
-            .putInt(KEY_PRESET, -1)
-            .putString(KEY_BANDS, AudioFxFormat.encodeBandLevels(currentBandLevels()))
-            .apply()
+        val applied =
+            runCatching { eq.setBandLevel(band.toShort(), mB.coerceIn(lo, hi).toShort()) }
+                .onFailure { Log.w(TAG, "setBandLevel($band) failed", it) }
+                .isSuccess
+        if (applied) {
+            prefs
+                .edit()
+                .putInt(KEY_PRESET, -1)
+                .putString(KEY_BANDS, AudioFxFormat.encodeBandLevels(currentBandLevels()))
+                .apply()
+        }
+        return applied
     }
 
     val presetNames: List<String>
@@ -130,27 +134,41 @@ class AudioFxController(
                     }.getOrNull()
                 }.orEmpty()
 
-    fun usePreset(i: Int) {
-        val eq = equalizer ?: return
-        if (i !in presetNames.indices) return
-        runCatching { eq.usePreset(i.toShort()) }
-        prefs
-            .edit()
-            .putInt(KEY_PRESET, i)
-            .putString(KEY_BANDS, AudioFxFormat.encodeBandLevels(currentBandLevels()))
-            .apply()
+    fun usePreset(i: Int): Boolean {
+        val eq = equalizer
+        if (eq == null || i !in presetNames.indices) return false
+        val applied =
+            runCatching { eq.usePreset(i.toShort()) }
+                .onFailure { Log.w(TAG, "usePreset($i) failed", it) }
+                .isSuccess
+        if (applied) {
+            prefs
+                .edit()
+                .putInt(KEY_PRESET, i)
+                .putString(KEY_BANDS, AudioFxFormat.encodeBandLevels(currentBandLevels()))
+                .apply()
+        }
+        return applied
     }
 
-    fun setBassBoost(strength: Int) {
+    fun setBassBoost(strength: Int): Boolean {
         val s = strength.coerceIn(0, 1000)
-        prefs.edit().putInt(KEY_BASS, s).apply()
-        runCatching { bassBoost?.setStrength(s.toShort()) }
+        val applied =
+            runCatching { bassBoost?.setStrength(s.toShort()) }
+                .onFailure { Log.w(TAG, "setBassBoost failed", it) }
+                .isSuccess
+        if (applied) prefs.edit().putInt(KEY_BASS, s).apply()
+        return applied
     }
 
-    fun setLoudness(mB: Int) {
+    fun setLoudness(mB: Int): Boolean {
         val g = mB.coerceIn(0, 1000)
-        prefs.edit().putInt(KEY_LOUDNESS, g).apply()
-        runCatching { loudness?.setTargetGain(g) }
+        val applied =
+            runCatching { loudness?.setTargetGain(g) }
+                .onFailure { Log.w(TAG, "setLoudness failed", it) }
+                .isSuccess
+        if (applied) prefs.edit().putInt(KEY_LOUDNESS, g).apply()
+        return applied
     }
 
     fun snapshot(): AudioFxState {
@@ -199,20 +217,26 @@ class AudioFxController(
                 levels.forEachIndexed { band, mb ->
                     if (band < bandCount) {
                         val (lo, hi) = bandRange(band)
-                        runCatching { eq.setBandLevel(band.toShort(), mb.coerceIn(lo, hi).toShort()) }
+                        bestEffort(TAG, "restore band $band") {
+                            eq.setBandLevel(band.toShort(), mb.coerceIn(lo, hi).toShort())
+                        }
                     }
                 }
             }
         }
-        runCatching { bassBoost?.setStrength(prefs.getInt(KEY_BASS, 0).coerceIn(0, 1000).toShort()) }
-        runCatching { loudness?.setTargetGain(prefs.getInt(KEY_LOUDNESS, 0).coerceIn(0, 1000)) }
+        bestEffort(TAG, "restore bassBoost") {
+            bassBoost?.setStrength(prefs.getInt(KEY_BASS, 0).coerceIn(0, 1000).toShort())
+        }
+        bestEffort(TAG, "restore loudness") {
+            loudness?.setTargetGain(prefs.getInt(KEY_LOUDNESS, 0).coerceIn(0, 1000))
+        }
         applyEnabled(prefs.getBoolean(KEY_ENABLED, false))
     }
 
     private fun applyEnabled(enabled: Boolean) {
-        runCatching { equalizer?.enabled = enabled }
-        runCatching { bassBoost?.enabled = enabled }
-        runCatching { loudness?.enabled = enabled }
+        bestEffort(TAG, "equalizer enabled=$enabled") { equalizer?.enabled = enabled }
+        bestEffort(TAG, "bassBoost enabled=$enabled") { bassBoost?.enabled = enabled }
+        bestEffort(TAG, "loudness enabled=$enabled") { loudness?.enabled = enabled }
     }
 
     private companion object {
@@ -223,3 +247,5 @@ class AudioFxController(
         const val KEY_LOUDNESS = "loudness"
     }
 }
+
+private const val TAG = "AudioFxController"

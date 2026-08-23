@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,12 +26,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,9 +53,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.window.core.layout.WindowWidthSizeClass
 import dev.geode.R
 import dev.geode.analysis.SearchMatcher
-import dev.geode.render.VisualSafetyChoice
+import dev.geode.data.BootAnimationStore
+import dev.geode.data.GeodePrefsFiles
 import dev.geode.render.VisualizerView
 import dev.geode.ui.theme.StoneIcon
 import dev.geode.ui.theme.StoneIconArt
@@ -62,12 +67,25 @@ import kotlinx.coroutines.withContext
 
 private const val CRASH_REPORT_MAX_BYTES = 64 * 1024
 
+/**
+ * A destination paired with the resolved label and icon the navigation surfaces draw for it.
+ *
+ * Built from [GeodeDestination.entries], so the bar and the rail cannot drift out of step with
+ * the screens they switch between, and selection compares destinations rather than positions.
+ */
+private data class NavEntry(
+    val destination: GeodeDestination,
+    val item: CrystalNavItem,
+)
+
 @Composable
-fun AppRoot(viewModel: PlayerViewModel) {
+fun AppRoot() {
+    val viewModel: PlayerViewModel = geodeViewModel()
+    val settingsViewModel: SettingsViewModel = geodeViewModel()
     val context = LocalContext.current
     val visualizerView = remember { VisualizerView(context) }
-    val themePack by viewModel.theme.collectAsState()
-    val gui by viewModel.guiPrefs.collectAsState()
+    val themePack by settingsViewModel.theme.collectAsStateWithLifecycle()
+    val gui by settingsViewModel.guiPrefs.collectAsStateWithLifecycle()
     val systemDark = isSystemInDarkTheme()
     val effectiveTheme =
         if (gui.followSystemDark && !systemDark) {
@@ -76,18 +94,10 @@ fun AppRoot(viewModel: PlayerViewModel) {
         } else {
             themePack
         }
-    var dest by rememberSaveable { mutableStateOf(0) }
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    var searching by rememberSaveable { mutableStateOf(false) }
-    var bootDone by rememberSaveable { mutableStateOf(false) }
-    val bootAnimEnabled =
-        remember {
-            context
-                .getSharedPreferences("geode-prefs", android.content.Context.MODE_PRIVATE)
-                .getBoolean("boot_anim", true)
-        }
-    val state by viewModel.uiState.collectAsState()
     val externalDisplay = rememberExternalDisplay()
+    val appState = rememberGeodeAppState(externalDisplay)
+    val bootAnimEnabled = remember { BootAnimationStore(GeodePrefsFiles(context).general).load() }
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val onSecondScreen = gui.secondScreen && externalDisplay != null
     if (onSecondScreen) {
         SecondScreenCanvas(externalDisplay, visualizerView)
@@ -115,7 +125,7 @@ fun AppRoot(viewModel: PlayerViewModel) {
             }
     }
     VisualizerEngineBindings(viewModel, visualizerView)
-    androidx.activity.compose.BackHandler(enabled = dest != 0) { dest = 0 }
+    androidx.activity.compose.BackHandler(enabled = !appState.onPlayer) { appState.resetToPlayer() }
     CrystalMaterialTheme(
         pack = effectiveTheme,
         gui = gui,
@@ -137,71 +147,87 @@ fun AppRoot(viewModel: PlayerViewModel) {
                     },
                 compact = gui.compactPlayer,
                 barOpacity = gui.barOpacity,
-                onExpand = { expanded = true },
+                onExpand = appState::expand,
                 onPlayPause = viewModel::togglePlayPause,
                 onPrevious = viewModel::previous,
                 onNext = viewModel::next,
             )
         }
+        // Someone who came here to listen does not get a render queue in their navigation bar.
+        // Until first run has an answer, show everything rather than guess and hide something.
+        val showsStudio = gui.intent?.showsStudio ?: true
+        val navEntries =
+            GeodeDestination.entries
+                .filter { it != GeodeDestination.STUDIO || showsStudio }
+                .map { NavEntry(it, CrystalNavItem(stringResource(it.labelRes), it.icon)) }
+        val destinationContent: @Composable (twoPane: Boolean) -> Unit = { twoPane ->
+            PlaybackNoticeBanner(viewModel)
+            when (appState.dest) {
+                GeodeDestination.PLAYER ->
+                    PlayerScreen(
+                        viewModel,
+                        onOpenSearch = appState::openSearch,
+                        onExpand = appState::expand,
+                        onOpenLibrary = { appState.navigateTo(GeodeDestination.LIBRARY) },
+                    )
+                GeodeDestination.LIBRARY ->
+                    if (twoPane) {
+                        Row(Modifier.fillMaxSize()) {
+                            Box(Modifier.weight(1f)) {
+                                LibraryScreen(onOpenSearch = appState::openSearch)
+                            }
+                            Box(
+                                Modifier
+                                    .width(1.dp)
+                                    .fillMaxHeight()
+                                    .luminousHairline(MaterialTheme.colorScheme.primary),
+                            )
+                            Box(Modifier.weight(1f)) {
+                                PlayerScreen(
+                                    viewModel,
+                                    onOpenSearch = appState::openSearch,
+                                    onExpand = appState::expand,
+                                    onOpenLibrary = {},
+                                )
+                            }
+                        }
+                    } else {
+                        LibraryScreen(onOpenSearch = appState::openSearch)
+                    }
+                GeodeDestination.VISUALS ->
+                    VisualsHub(
+                        viewModel,
+                        visualizerView,
+                        onOpenNowPlaying = appState::expand,
+                        liveBackdrop = gui.clearVisualsMenu && !appState.expanded && !onSecondScreen,
+                    )
+                GeodeDestination.STUDIO -> StudioRoute()
+                GeodeDestination.SETTINGS -> SettingsScreen(viewModel, visualizerView)
+            }
+        }
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             CrystalBackground(Modifier.fillMaxSize(), reducedMotion = gui.reducedMotion)
-            Scaffold(
-                containerColor = Color.Transparent,
-                topBar = {
-                    if (gui.playerPosition == PlayerPosition.TOP && state.hasMedia && dest != 0) {
-                        Box(Modifier.statusBarsPadding()) { miniPlayer() }
-                    }
-                },
-                bottomBar = {
-                    Column {
-                        if (gui.playerPosition == PlayerPosition.BOTTOM && dest != 0) miniPlayer()
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .luminousHairline(MaterialTheme.colorScheme.primary),
-                        )
-                        CrystalNavBar(
-                            items =
-                                listOf(
-                                    CrystalNavItem(stringResource(R.string.nav_player), StoneIcon.PLAY),
-                                    CrystalNavItem(stringResource(R.string.nav_library), StoneIcon.LIBRARY),
-                                    CrystalNavItem(stringResource(R.string.nav_visuals), StoneIcon.VISUALIZER),
-                                    CrystalNavItem(stringResource(R.string.nav_studio), StoneIcon.STUDIO),
-                                    CrystalNavItem(stringResource(R.string.nav_settings), StoneIcon.SETTINGS),
-                                ),
-                            selected = dest,
-                            onSelect = { dest = it },
-                            opacity = gui.barOpacity,
-                        )
-                    }
-                },
-            ) { pad ->
-                Box(Modifier.padding(pad)) {
-                    PlaybackNoticeBanner(viewModel)
-                    when (dest) {
-                        0 ->
-                            PlayerScreen(
-                                viewModel,
-                                onOpenSearch = { searching = true },
-                                onExpand = { expanded = true },
-                                onOpenLibrary = { dest = 1 },
-                            )
-                        1 -> LibraryScreen(viewModel, onOpenSearch = { searching = true })
-                        2 ->
-                            VisualsHub(
-                                viewModel,
-                                visualizerView,
-                                onOpenNowPlaying = { expanded = true },
-                                liveBackdrop = gui.clearVisualsMenu && !expanded && !onSecondScreen,
-                            )
-                        3 -> StudioScreen(viewModel)
-                        4 -> SettingsScreen(viewModel, visualizerView)
-                    }
-                }
+            val widthClass = currentWindowAdaptiveInfo().windowSizeClass.windowWidthSizeClass
+            if (widthClass == WindowWidthSizeClass.COMPACT) {
+                AppShellCompact(
+                    navEntries = navEntries,
+                    appState = appState,
+                    gui = gui,
+                    hasMedia = state.hasMedia,
+                    miniPlayer = miniPlayer,
+                    content = { destinationContent(false) },
+                )
+            } else {
+                AppShellExpanded(
+                    navEntries = navEntries,
+                    appState = appState,
+                    hasMedia = state.hasMedia,
+                    miniPlayer = miniPlayer,
+                    content = { destinationContent(true) },
+                )
             }
-            if (searching) {
-                SearchScreen(viewModel, onClose = { searching = false })
+            if (appState.searching) {
+                SearchScreen(viewModel, onClose = appState::closeSearch)
             }
             val clipLabel = stringResource(R.string.crash_clip_label)
             crashText?.let { text ->
@@ -228,28 +254,107 @@ fun AppRoot(viewModel: PlayerViewModel) {
                     },
                 )
             }
-            if (expanded) {
+            if (appState.expanded) {
                 VisualizerScreen(
                     viewModel = viewModel,
                     visualizerView = visualizerView,
                     externalDisplayName = if (onSecondScreen) externalDisplay?.name else null,
-                    onCollapse = { expanded = false },
+                    onCollapse = appState::collapse,
                     onOpenVisuals = {
-                        expanded = false
-                        dest = 2
+                        appState.collapse()
+                        appState.navigateTo(GeodeDestination.VISUALS)
                     },
                 )
             }
-            if ((!bootAnimEnabled || bootDone) && gui.safetyChoice == VisualSafetyChoice.UNKNOWN) {
+            if ((!bootAnimEnabled || appState.bootDone) && !gui.safetyAcknowledged) {
                 SafetyConsent(
-                    onChoose = { choice, limited ->
-                        viewModel.setGuiPrefs(gui.copy(safetyChoice = choice, safeVisuals = limited))
+                    onAcknowledge = { settingsViewModel.setGuiPrefs(gui.copy(safetyAcknowledged = true)) },
+                )
+            } else if ((!bootAnimEnabled || appState.bootDone) && gui.intent == null) {
+                // Setup runs only after the notice is acknowledged, and only until the one
+                // question has an answer — `intent == null` is the whole "first run" condition.
+                FirstRunGate(
+                    onChooseIntent = { chosen ->
+                        settingsViewModel.setGuiPrefs(gui.copy(intent = chosen))
+                        appState.navigateTo(chosen.landingDestination)
                     },
                 )
             }
-            if (bootAnimEnabled && !bootDone) {
-                BootIntro(onDone = { bootDone = true })
+            if (bootAnimEnabled && !appState.bootDone) {
+                BootIntro(onDone = { appState.bootDone = true })
             }
+        }
+    }
+}
+
+@Composable
+private fun AppShellCompact(
+    navEntries: List<NavEntry>,
+    appState: GeodeAppState,
+    gui: GuiPrefs,
+    hasMedia: Boolean,
+    miniPlayer: @Composable () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Scaffold(
+        containerColor = Color.Transparent,
+        topBar = {
+            if (gui.playerPosition == PlayerPosition.TOP && hasMedia && !appState.onPlayer) {
+                Box(Modifier.statusBarsPadding()) { miniPlayer() }
+            }
+        },
+        bottomBar = {
+            Column {
+                if (gui.playerPosition == PlayerPosition.BOTTOM && !appState.onPlayer) miniPlayer()
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .luminousHairline(MaterialTheme.colorScheme.primary),
+                )
+                CrystalNavBar(
+                    items = navEntries.map { it.item },
+                    // A destination can be hidden while still being the current one — reaching
+                    // Studio from a track menu, say. Fall back to the first tab rather than -1.
+                    selected = navEntries.indexOfFirst { it.destination == appState.dest }.coerceAtLeast(0),
+                    onSelect = { appState.navigateTo(navEntries[it].destination) },
+                    opacity = gui.barOpacity,
+                )
+            }
+        },
+    ) { pad ->
+        Box(Modifier.padding(pad)) { content() }
+    }
+}
+
+@Composable
+private fun AppShellExpanded(
+    navEntries: List<NavEntry>,
+    appState: GeodeAppState,
+    hasMedia: Boolean,
+    miniPlayer: @Composable () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Row(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+        NavigationRail(containerColor = Color.Transparent) {
+            navEntries.forEach { (destination, item) ->
+                NavigationRailItem(
+                    selected = appState.dest == destination,
+                    onClick = { appState.navigateTo(destination) },
+                    icon = { StoneIconArt(item.icon, item.label) },
+                    label = { Text(item.label, style = MaterialTheme.typography.labelSmall) },
+                )
+            }
+        }
+        Box(
+            Modifier
+                .width(1.dp)
+                .fillMaxHeight()
+                .luminousHairline(MaterialTheme.colorScheme.primary),
+        )
+        Column(Modifier.weight(1f)) {
+            if (hasMedia && !appState.onPlayer) miniPlayer()
+            Box(Modifier.weight(1f)) { content() }
         }
     }
 }
@@ -323,7 +428,7 @@ fun SettingsScreen(
     viewModel: PlayerViewModel,
     visualizerView: VisualizerView,
 ) {
-    var showExport by remember { mutableStateOf(false) }
+    var showExport by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
             CrystalOverline(stringResource(R.string.app_name))
@@ -349,18 +454,20 @@ fun SearchScreen(
     viewModel: PlayerViewModel,
     onClose: () -> Unit,
 ) {
+    val settingsViewModel: SettingsViewModel = geodeViewModel()
+    val libraryViewModel: LibraryViewModel = geodeViewModel()
     var query by rememberSaveable { mutableStateOf("") }
     var debounced by rememberSaveable { mutableStateOf("") }
-    val gui by viewModel.guiPrefs.collectAsState()
-    val library by viewModel.library.collectAsState()
-    val viz by viewModel.vizState.collectAsState()
-    val deviceTracks by viewModel.deviceTracks.collectAsState()
-    LaunchedEffect(Unit) { viewModel.refreshDeviceTracks() }
+    val gui by settingsViewModel.guiPrefs.collectAsStateWithLifecycle()
+    val library by libraryViewModel.library.collectAsStateWithLifecycle()
+    val viz by viewModel.vizState.collectAsStateWithLifecycle()
+    val deviceTracks by libraryViewModel.deviceTracks.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { libraryViewModel.refreshDeviceTracks() }
     LaunchedEffect(query) {
         if (query.isNotBlank()) delay(250)
         debounced = query
     }
-    androidx.activity.compose.BackHandler { onClose() }
+    val dismiss = rememberPredictiveDismiss(onDismiss = onClose)
 
     val terms = remember(debounced) { SearchMatcher.terms(debounced) }
     val trackResults =
@@ -401,7 +508,7 @@ fun SearchScreen(
             viz.presets.filter { SearchMatcher.matches(terms, listOf(it.name)) }
         }
 
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().dismissTransform(dismiss)) {
         CrystalBackground(Modifier.fillMaxSize(), reducedMotion = gui.reducedMotion)
         Column(
             Modifier
@@ -481,7 +588,7 @@ fun SearchScreen(
                                 Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        viewModel.playPlaylist(pl.name)
+                                        libraryViewModel.playPlaylist(pl.name)
                                         onClose()
                                     }.padding(vertical = 8.dp),
                             ) {

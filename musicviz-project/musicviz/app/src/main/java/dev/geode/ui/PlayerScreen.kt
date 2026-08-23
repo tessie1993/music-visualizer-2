@@ -23,7 +23,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -39,6 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import dev.geode.R
 import dev.geode.ui.theme.StoneIcon
@@ -52,17 +52,17 @@ fun PlayerScreen(
     onExpand: () -> Unit,
     onOpenLibrary: () -> Unit,
 ) {
-    val state by viewModel.uiState.collectAsState()
-    val viz by viewModel.vizState.collectAsState()
-    val mic by viewModel.micState.collectAsState()
-    val external by viewModel.externalAudio.collectAsState()
-    val waveform by viewModel.waveform.collectAsState()
-    val abLoop by viewModel.abLoop.collectAsState()
-    val autoMode by viewModel.autoMode.collectAsState()
-    val queue by viewModel.queue.collectAsState()
-    val favourites by viewModel.favourites.collectAsState()
-    val tick by viewModel.historyTick.collectAsState()
-    val sleepRemainingMs by viewModel.sleepTimerRemainingMs.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val viz by viewModel.vizState.collectAsStateWithLifecycle()
+    val mic by viewModel.micState.collectAsStateWithLifecycle()
+    val external by viewModel.externalAudio.collectAsStateWithLifecycle()
+    val waveform by viewModel.waveform.collectAsStateWithLifecycle()
+    val abLoop by viewModel.abLoop.collectAsStateWithLifecycle()
+    val autoMode by viewModel.autoMode.collectAsStateWithLifecycle()
+    val queue by viewModel.queue.collectAsStateWithLifecycle()
+    val favourites by viewModel.favourites.collectAsStateWithLifecycle()
+    val tick by viewModel.historyTick.collectAsStateWithLifecycle()
+    val sleepRemainingMs by viewModel.sleepTimerRemainingMs.collectAsStateWithLifecycle()
     val canShuffle = remember(tick) { viewModel.recentlyPlayed().isNotEmpty() }
     var showQueue by rememberSaveable { mutableStateOf(true) }
     val upNext = remember(queue) { queue.tracks.drop(queue.index + 1).take(3) }

@@ -10,18 +10,36 @@ naming:
     ignoreAnnotated: ["Composable"]
 
 complexity:
-  # Size/complexity thresholds are tracked by review, not the build; the
-  # decomposition work shrinks them incrementally.
+  # Thresholds sit just above the worst measured value so the gate cannot
+  # regress. Lower each one in the commit that shrinks its worst offender.
   LongMethod:
-    active: false
+    active: true
+    threshold: 320
   LongParameterList:
-    active: false
+    active: true
+    functionThreshold: 20
+    constructorThreshold: 20
+    ignoreDefaultParameters: true
   CyclomaticComplexMethod:
-    active: false
+    active: true
+    threshold: 85
   TooManyFunctions:
-    active: false
+    active: true
+    thresholdInFiles: 200
+    thresholdInClasses: 200
+    thresholdInInterfaces: 200
+    thresholdInObjects: 200
+    thresholdInEnums: 200
+    ignorePrivate: true
+    ignoreOverridden: true
   LargeClass:
-    active: false
+    active: true
+    threshold: 1100
+    # Pure data catalogs: long by nature, no logic to decompose.
+    excludes:
+      - '**/ThemePackCatalog.kt'
+      - '**/VisualStyleCatalog.kt'
+      - '**/BuiltInPresets.kt'
 
 potential-bugs:
   active: true

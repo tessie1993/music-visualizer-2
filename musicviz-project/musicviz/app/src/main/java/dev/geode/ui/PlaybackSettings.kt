@@ -11,12 +11,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.R
 import dev.geode.analysis.PlaybackMath
 import dev.geode.data.PlayerPrefs
@@ -24,9 +24,10 @@ import dev.geode.data.PlayerPrefs
 private val SLEEP_TIMER_CHOICES = listOf(0, 15, 30, 45, 60)
 
 @Composable
-fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
-    val prefs by viewModel.playerPrefs.collectAsState()
-    val sleepRemainingMs by viewModel.sleepTimerRemainingMs.collectAsState()
+fun PlaybackSettingsSection(viewModel: SettingsViewModel) {
+    val playerViewModel: PlayerViewModel = geodeViewModel()
+    val prefs by viewModel.playerPrefs.collectAsStateWithLifecycle()
+    val sleepRemainingMs by playerViewModel.sleepTimerRemainingMs.collectAsStateWithLifecycle()
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Column {
             Text(
@@ -100,7 +101,7 @@ fun PlaybackSettingsSection(viewModel: PlayerViewModel) {
                                 minutes == 0
                             },
                         onClick = {
-                            if (minutes == 0) viewModel.cancelSleepTimer() else viewModel.startSleepTimer(minutes)
+                            if (minutes == 0) playerViewModel.cancelSleepTimer() else playerViewModel.startSleepTimer(minutes)
                         },
                         label = {
                             Text(

@@ -1,6 +1,5 @@
 package dev.geode.ui
 
-import android.app.Application
 import androidx.annotation.OptIn
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -11,14 +10,18 @@ import dev.geode.analysis.PlaybackMath
 import dev.geode.audio.AudioFxController
 import dev.geode.audio.AudioFxState
 import dev.geode.data.PlayerPrefs
-import dev.geode.data.PlayerPrefsStore
+import dev.geode.data.PlayerPrefsRepository
 import dev.geode.ui.theme.ThemePack
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
 @OptIn(UnstableApi::class)
 internal class PlayerSettingsController(
-    application: Application,
+    private val userData: UserDataRepository,
+    private val playerPrefsRepository: PlayerPrefsRepository,
+    private val scope: CoroutineScope,
     private val player: ExoPlayer,
     private val engine: AnalysisEngine,
     private val audioFx: AudioFxController,
@@ -30,25 +33,20 @@ internal class PlayerSettingsController(
         fun refreshUi()
     }
 
-    private val themeStore = ThemeStore(application)
-    private val playerPrefsStore = PlayerPrefsStore(application)
+    val theme: StateFlow<ThemePack> = userData.theme
 
-    private val _theme = MutableStateFlow(themeStore.load())
-    val theme: StateFlow<ThemePack> = _theme
+    val guiPrefs: StateFlow<GuiPrefs> = userData.guiPrefs
 
-    private val _guiPrefs = MutableStateFlow(themeStore.loadGui())
-    val guiPrefs: StateFlow<GuiPrefs> = _guiPrefs
+    val playerPrefs: StateFlow<PlayerPrefs> = playerPrefsRepository.prefs
 
-    private val _playerPrefs = MutableStateFlow(playerPrefsStore.load())
-    val playerPrefs: StateFlow<PlayerPrefs> = _playerPrefs
+    suspend fun loadedPlayerPrefs(): PlayerPrefs = playerPrefsRepository.loaded()
 
     private val _audioFxState = MutableStateFlow(audioFx.snapshot())
     val audioFxState: StateFlow<AudioFxState> = _audioFxState
 
     fun setGuiPrefs(prefs: GuiPrefs) {
-        val previous = _guiPrefs.value
-        themeStore.saveGui(prefs)
-        _guiPrefs.value = prefs
+        val previous = guiPrefs.value
+        scope.launch { userData.setGuiPrefs(prefs) }
         engine.beatSensitivity = prefs.beatSensitivity
         engine.beatMinIntervalMs = prefs.effectiveBeatMinIntervalMs
         val sensitivityChanged =
@@ -58,19 +56,12 @@ internal class PlayerSettingsController(
     }
 
     fun setTheme(theme: ThemePack) {
-        themeStore.save(theme)
-        _theme.value = theme
+        scope.launch { userData.setTheme(theme) }
     }
 
     fun setPlayerPrefs(prefs: PlayerPrefs) {
-        val p =
-            prefs.copy(
-                speed = prefs.speed.coerceIn(0.5f, 2f),
-                pitchSemitones = prefs.pitchSemitones.coerceIn(-6f, 6f),
-                sleepTimerMinutes = prefs.sleepTimerMinutes.coerceAtLeast(0),
-            )
-        _playerPrefs.value = p
-        playerPrefsStore.save(p)
+        val p = prefs.coerced()
+        scope.launch { playerPrefsRepository.update { p } }
         applyPlaybackPrefs(p)
     }
 
@@ -81,9 +72,11 @@ internal class PlayerSettingsController(
     }
 
     private fun persistPlayerOptions() {
-        val p = _playerPrefs.value.copy(shuffle = player.shuffleModeEnabled, repeatMode = player.repeatMode)
-        _playerPrefs.value = p
-        playerPrefsStore.save(p)
+        val shuffle = player.shuffleModeEnabled
+        val repeatMode = player.repeatMode
+        scope.launch {
+            playerPrefsRepository.update { it.copy(shuffle = shuffle, repeatMode = repeatMode) }
+        }
     }
 
     fun toggleShuffle() {

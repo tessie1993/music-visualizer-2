@@ -8,17 +8,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.R
 import dev.geode.audio.AudioFxFormat
 import dev.geode.audio.AudioFxState
 
 @Composable
-fun EqualizerSettings(viewModel: PlayerViewModel) {
-    val fx by viewModel.audioFx.collectAsState()
+fun EqualizerSettings(viewModel: SettingsViewModel) {
+    val fx by viewModel.audioFx.collectAsStateWithLifecycle()
     EqualizerCard(
         fx = fx,
         onEnabled = viewModel::setAudioFxEnabled,

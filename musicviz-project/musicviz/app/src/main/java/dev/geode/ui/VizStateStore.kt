@@ -1,7 +1,5 @@
 package dev.geode.ui
 
-import android.app.Application
-import android.content.Context
 import android.content.SharedPreferences
 import dev.geode.data.Preset
 import dev.geode.data.PresetStore
@@ -15,13 +13,10 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal class VizStateStore(
-    application: Application,
+    private val prefs: SharedPreferences,
     private val scope: CoroutineScope,
     autoVisualsPrefsStore: AutoVisualsPrefsStore,
 ) {
-    private val prefs: SharedPreferences =
-        application.getSharedPreferences("geode-viz", Context.MODE_PRIVATE)
-
     val state = MutableStateFlow(restore(autoVisualsPrefsStore))
 
     private val _activeMilkPath =

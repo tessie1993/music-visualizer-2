@@ -29,11 +29,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.geode.R
 import dev.geode.ui.theme.StoneIcon
@@ -257,7 +258,7 @@ fun QueuePanel(
     onMoveUp: (Int) -> Unit,
     onRemove: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: PlayerViewModel = viewModel(),
+    viewModel: LibraryViewModel = geodeViewModel(),
 ) {
     if (queue.tracks.isEmpty()) {
         Column(modifier.padding(24.dp)) {
@@ -270,8 +271,8 @@ fun QueuePanel(
         }
         return
     }
-    val library by viewModel.library.collectAsState()
-    var saving by remember { mutableStateOf(false) }
+    val library by viewModel.library.collectAsStateWithLifecycle()
+    var saving by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val follows = rememberFollowsPlayback(listState)
     LaunchedEffect(queue.index, follows.value) {
@@ -377,7 +378,7 @@ internal fun PlaylistNameDialog(
     onName: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var name by remember { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },

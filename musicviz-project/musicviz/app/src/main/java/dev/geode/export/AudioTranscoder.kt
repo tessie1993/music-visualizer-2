@@ -6,6 +6,7 @@ import android.media.MediaCodecInfo
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import dev.geode.util.bestEffort
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -25,7 +26,7 @@ class AudioTranscoder(
             } ?: 0L
 
         fun release() {
-            runCatching { file.delete() }
+            bestEffort(TAG, "file.delete()") { file.delete() }
         }
     }
 
@@ -90,9 +91,9 @@ class AudioTranscoder(
             outFile = File.createTempFile("geode_aac_", ".bin", context.cacheDir).also { outFileRef = it }
             out = BufferedOutputStream(FileOutputStream(outFile))
         } catch (t: Throwable) {
-            runCatching { encoderRef?.release() }
-            runCatching { outFileRef?.delete() }
-            runCatching { aiff.close() }
+            bestEffort(TAG, "encoderRef?.release()") { encoderRef?.release() }
+            bestEffort(TAG, "outFileRef?.delete()") { outFileRef?.delete() }
+            bestEffort(TAG, "aiff.close()") { aiff.close() }
             throw t
         }
         var outBytes = 0L
@@ -148,8 +149,8 @@ class AudioTranscoder(
                     }
                     progressed = true
                 }
-                if (pcmCarry != null) {
-                    val carry = pcmCarry!!
+                val carry = pcmCarry
+                if (carry != null) {
                     val inIndex = encoder.dequeueInputBuffer(10_000)
                     if (inIndex >= 0) {
                         val inBuf = checkNotNull(encoder.getInputBuffer(inIndex)) { "encoder input buffer null (codec error state)" }
@@ -209,14 +210,14 @@ class AudioTranscoder(
             out.flush()
             return Result(requireNotNull(outFormat) { "AAC encoder produced no format" }, outFile, infos)
         } catch (t: Throwable) {
-            runCatching { out.close() }
-            runCatching { outFile.delete() }
+            bestEffort(TAG, "out.close()") { out.close() }
+            bestEffort(TAG, "outFile.delete()") { outFile.delete() }
             throw t
         } finally {
-            runCatching { out.close() }
-            runCatching { encoder.stop() }
-            runCatching { encoder.release() }
-            runCatching { aiff.close() }
+            bestEffort(TAG, "out.close()") { out.close() }
+            bestEffort(TAG, "encoder.stop()") { encoder.stop() }
+            bestEffort(TAG, "encoder.release()") { encoder.release() }
+            bestEffort(TAG, "aiff.close()") { aiff.close() }
         }
     }
 
@@ -263,9 +264,9 @@ class AudioTranscoder(
             outFile = File.createTempFile("geode_aac_", ".bin", context.cacheDir).also { outFileRef = it }
             out = BufferedOutputStream(FileOutputStream(outFile))
         } catch (t: Throwable) {
-            runCatching { decoderRef?.release() }
-            runCatching { outFileRef?.delete() }
-            runCatching { extractor.release() }
+            bestEffort(TAG, "decoderRef?.release()") { decoderRef?.release() }
+            bestEffort(TAG, "outFileRef?.delete()") { outFileRef?.delete() }
+            bestEffort(TAG, "extractor.release()") { extractor.release() }
             throw t
         }
 
@@ -460,16 +461,16 @@ class AudioTranscoder(
             out.flush()
             return Result(requireNotNull(outFormat) { "AAC encoder produced no format" }, outFile, infos)
         } catch (t: Throwable) {
-            runCatching { out.close() }
-            runCatching { outFile.delete() }
+            bestEffort(TAG, "out.close()") { out.close() }
+            bestEffort(TAG, "outFile.delete()") { outFile.delete() }
             throw t
         } finally {
-            runCatching { out.close() }
-            runCatching { decoder.stop() }
-            runCatching { decoder.release() }
-            runCatching { encoder?.stop() }
-            runCatching { encoder?.release() }
-            runCatching { extractor.release() }
+            bestEffort(TAG, "out.close()") { out.close() }
+            bestEffort(TAG, "decoder.stop()") { decoder.stop() }
+            bestEffort(TAG, "decoder.release()") { decoder.release() }
+            bestEffort(TAG, "encoder?.stop()") { encoder?.stop() }
+            bestEffort(TAG, "encoder?.release()") { encoder?.release() }
+            bestEffort(TAG, "extractor.release()") { extractor.release() }
         }
     }
 
@@ -477,3 +478,5 @@ class AudioTranscoder(
         const val STALL_LIMIT = 1_000
     }
 }
+
+private const val TAG = "AudioTranscoder"

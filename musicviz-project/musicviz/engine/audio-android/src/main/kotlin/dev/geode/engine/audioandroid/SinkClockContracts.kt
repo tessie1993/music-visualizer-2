@@ -11,7 +11,7 @@ interface SinkClockHooks {
 
     fun attachSkippedFrames(source: SkippedFrameSource)
 
-    object None : SinkClockHooks {
+    data object None : SinkClockHooks {
         override fun onSpeedApplied(speed: Float) = Unit
 
         override fun onSkipSilenceApplied(enabled: Boolean) = Unit

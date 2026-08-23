@@ -1,7 +1,5 @@
 package dev.geode.ui
 
-import android.app.Application
-import android.content.Context
 import android.content.SharedPreferences
 import dev.geode.data.LfoStore
 import dev.geode.render.AdsrConfig
@@ -15,7 +13,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 
 internal class ModulationController(
-    application: Application,
+    private val lfoStore: LfoStore,
+    private val prefs: SharedPreferences,
     private val host: Host,
 ) {
     interface Host {
@@ -23,11 +22,6 @@ internal class ModulationController(
 
         fun setSceneParams(params: SceneParams)
     }
-
-    private val lfoStore = LfoStore(application)
-
-    private val prefs: SharedPreferences =
-        application.getSharedPreferences("geode-mod", Context.MODE_PRIVATE)
 
     private val _lfos = MutableStateFlow(lfoStore.load())
     val lfos: StateFlow<List<LfoConfig>> = _lfos

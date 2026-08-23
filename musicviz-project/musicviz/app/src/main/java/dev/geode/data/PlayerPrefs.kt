@@ -1,6 +1,6 @@
 package dev.geode.data
 
-import android.content.Context
+import android.content.SharedPreferences
 
 data class PlayerPrefs(
     val shuffle: Boolean = false,
@@ -15,30 +15,41 @@ data class PlayerPrefs(
     val sleepFinishTrack: Boolean = false,
     val fadeMs: Int = 0,
 ) {
+    fun coerced(): PlayerPrefs =
+        copy(
+            repeatMode = repeatMode.coerceIn(0, MAX_REPEAT_MODE),
+            speed = speed.coerceIn(MIN_SPEED, MAX_SPEED),
+            pitchSemitones = pitchSemitones.coerceIn(-MAX_PITCH_SEMITONES, MAX_PITCH_SEMITONES),
+            sleepTimerMinutes = sleepTimerMinutes.coerceAtLeast(0),
+            fadeMs = fadeMs.coerceIn(0, MAX_FADE_MS),
+        )
+
     companion object {
         const val MAX_FADE_MS = 6_000
+        const val MAX_REPEAT_MODE = 2
+        const val MIN_SPEED = 0.5f
+        const val MAX_SPEED = 2f
+        const val MAX_PITCH_SEMITONES = 6f
     }
 }
 
 class PlayerPrefsStore(
-    context: Context,
+    private val prefs: SharedPreferences,
 ) {
-    private val prefs = context.getSharedPreferences("geode-player", Context.MODE_PRIVATE)
-
     fun load(): PlayerPrefs =
         PlayerPrefs(
             shuffle = prefs.getBoolean(KEY_SHUFFLE, false),
-            repeatMode = prefs.getInt(KEY_REPEAT, 0).coerceIn(0, 2),
-            speed = prefs.getFloat(KEY_SPEED, 1f).coerceIn(0.5f, 2f),
-            pitchSemitones = prefs.getFloat(KEY_PITCH, 0f).coerceIn(-6f, 6f),
+            repeatMode = prefs.getInt(KEY_REPEAT, 0),
+            speed = prefs.getFloat(KEY_SPEED, 1f),
+            pitchSemitones = prefs.getFloat(KEY_PITCH, 0f),
             skipSilence = prefs.getBoolean(KEY_SKIP_SILENCE, false),
             pauseOnNoisy = prefs.getBoolean(KEY_NOISY, true),
             keepScreenOn = prefs.getBoolean(KEY_SCREEN_ON, false),
             autoResume = prefs.getBoolean(KEY_AUTO_RESUME, false),
-            sleepTimerMinutes = prefs.getInt(KEY_SLEEP_MIN, 0).coerceAtLeast(0),
+            sleepTimerMinutes = prefs.getInt(KEY_SLEEP_MIN, 0),
             sleepFinishTrack = prefs.getBoolean(KEY_SLEEP_FINISH, false),
-            fadeMs = prefs.getInt(KEY_FADE_MS, 0).coerceIn(0, PlayerPrefs.MAX_FADE_MS),
-        )
+            fadeMs = prefs.getInt(KEY_FADE_MS, 0),
+        ).coerced()
 
     fun save(p: PlayerPrefs) {
         prefs

@@ -114,12 +114,12 @@ internal class TrackAnalysisController(
         val uri = host.currentUri ?: return
         if (analyzingUri == uri) return
         analyzingUri = uri
-        host.vizState.update { it.copy(analyzing = true, analysisProgress = 0f) }
+        host.vizState.update { it.copy(analysis = AnalysisState.Running(0f)) }
         scope.launch(Dispatchers.Default) {
             try {
                 val t =
                     analyzeCached(uri) { p ->
-                        host.vizState.update { it.copy(analysisProgress = p) }
+                        host.vizState.update { it.copy(analysis = AnalysisState.Running(p)) }
                     }
                 host.noteAnalysis(uri, t)
                 if (host.currentUri == uri) {
@@ -128,7 +128,7 @@ internal class TrackAnalysisController(
                     val suggestion = SceneSuggester.suggestForTrack(t)
                     host.vizState.update {
                         it.copy(
-                            analyzing = false,
+                            analysis = AnalysisState.Idle,
                             bpm = t.bpm,
                             sections = t.detectSections(),
                             suggestedSceneId = suggestion,
@@ -139,7 +139,7 @@ internal class TrackAnalysisController(
                 } else {
                     if (analyzingUri == uri) {
                         analyzingUri = null
-                        host.vizState.update { it.copy(analyzing = false) }
+                        host.vizState.update { it.copy(analysis = AnalysisState.Idle) }
                         if (host.vizState.value.intelligenceMode != IntelligenceMode.MANUAL) {
                             withContext(Dispatchers.Main) { analyzeCurrentTrack() }
                         }
@@ -151,7 +151,7 @@ internal class TrackAnalysisController(
                 RingLog.note("Analysis", "track analysis failed", t)
                 if (analyzingUri == uri) {
                     analyzingUri = null
-                    host.vizState.update { it.copy(analyzing = false) }
+                    host.vizState.update { it.copy(analysis = AnalysisState.Idle) }
                 }
             }
         }
