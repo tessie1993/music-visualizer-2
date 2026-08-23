@@ -16,6 +16,18 @@ class EncoderSurface(
     private var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
 
     init {
+        // A half-built EGL context is never handed back to the caller, so nothing would ever call
+        // release() on it. Tear down what was created before rethrowing, or every failed export
+        // strands an EGLContext for the life of the process and the next one starts poorer.
+        try {
+            setUp(surface)
+        } catch (t: Throwable) {
+            release()
+            throw t
+        }
+    }
+
+    private fun setUp(surface: Surface) {
         display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
         check(display != EGL14.EGL_NO_DISPLAY) { "No EGL display" }
         val version = IntArray(2)

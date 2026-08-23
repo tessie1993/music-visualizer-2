@@ -504,7 +504,7 @@ class LoopRender(
                     lfoConfigs = job.lfoConfigs,
                     adsrConfigs = job.adsrConfigs,
                     reducedMotion = job.reducedMotion,
-                    paramsAt = if (at == null) null else { timeMs -> stop.applyTo(at(timeMs)) },
+                    paramsAt = driftedParamsAt,
                 ),
         )
     }

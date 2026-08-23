@@ -177,22 +177,24 @@ class LoudnessMeter(
                     val format = decoder.outputFormat
                     val rate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
                     val channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-                    val current = analyser
-                    val target =
-                        when {
-                            current == null && !LoudnessAnalyser.supports(channels) -> {
-                                decoder.releaseOutputBuffer(outIndex, false)
-                                return LoudnessResult.Unreadable(unsupportedLayout(channels))
-                            }
-                            current == null -> LoudnessAnalyser(rate, channels).also { analyser = it }
-                            current.sampleRate != rate || current.channelCount != channels -> {
-                                // Splicing blocks measured at two different rates would quietly bias the
-                                // gated average, and a wrong loudness number is worse than none.
-                                decoder.releaseOutputBuffer(outIndex, false)
-                                return LoudnessResult.Unreadable(FORMAT_CHANGED)
-                            }
-                            else -> current
+                    val existing = analyser
+                    val target: LoudnessAnalyser
+                    if (existing == null) {
+                        if (!LoudnessAnalyser.supports(channels)) {
+                            decoder.releaseOutputBuffer(outIndex, false)
+                            return LoudnessResult.Unreadable(unsupportedLayout(channels))
                         }
+                        target = LoudnessAnalyser(rate, channels)
+                        analyser = target
+                    } else {
+                        // Splicing blocks measured at two different rates would quietly bias the gated
+                        // average, and a wrong loudness number is worse than no number at all.
+                        if (existing.sampleRate != rate || existing.channelCount != channels) {
+                            decoder.releaseOutputBuffer(outIndex, false)
+                            return LoudnessResult.Unreadable(FORMAT_CHANGED)
+                        }
+                        target = existing
+                    }
                     val output = decoder.getOutputBuffer(outIndex) ?: return LoudnessResult.Unreadable(CODEC_STATE)
                     output.position(info.offset)
                     output.limit(info.offset + info.size)
@@ -234,11 +236,15 @@ class LoudnessMeter(
      * deliberately exempts.
      */
     private class Scratch {
-        private var buffer = FloatArray(INITIAL_SCRATCH_FLOATS)
+        private var buffer = FloatArray(INITIAL_FLOATS)
 
         fun ensure(floats: Int): FloatArray {
             if (buffer.size < floats) buffer = FloatArray(floats)
             return buffer
+        }
+
+        private companion object {
+            const val INITIAL_FLOATS = 16_384
         }
     }
 
@@ -255,7 +261,6 @@ class LoudnessMeter(
     private companion object {
         const val DEQUEUE_TIMEOUT_US = 10_000L
         const val STALL_LIMIT = 1_000
-        const val INITIAL_SCRATCH_FLOATS = 16_384
         const val SHORT_SCALE = 32_768f
         const val CODEC_STATE = "The audio decoder returned no buffer, which means it has failed."
         const val FORMAT_CHANGED =

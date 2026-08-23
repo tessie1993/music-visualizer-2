@@ -154,9 +154,12 @@ object AutoCut {
         }
 
     /**
-     * Turn accepted suggestions into clips that butt up against each other, the last one running
-     * to [untilMs]. Auto-cut decides *when* the cuts fall; [content] decides what plays in each
-     * one, because that is a taste decision and this is not the place for it.
+     * Turn accepted suggestions into clips that butt up against each other, the first starting on
+     * the first hit and the last running to [untilMs]. The stretch before the first hit is left
+     * empty: nothing was detected there, so there is no cut to justify.
+     *
+     * Auto-cut decides *when* the cuts fall; [content] decides what plays in each one, because
+     * that is a taste decision and this is not the place for it.
      */
     fun clipsFrom(
         hits: List<TransientHit>,
