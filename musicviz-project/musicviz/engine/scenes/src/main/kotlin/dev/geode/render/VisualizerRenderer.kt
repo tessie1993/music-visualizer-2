@@ -15,7 +15,7 @@ import dev.geode.render.fluid.FluidScene
 import dev.geode.render.fluid.WaterScene
 import dev.geode.render.scene.BeamScene
 import dev.geode.render.scene.GlUtil
-import dev.geode.render.scene.MilkdropScene
+import dev.geode.render.scene.ProjectMScene
 import dev.geode.render.scene.PcmChunk
 import dev.geode.render.scene.PcmSink
 import dev.geode.render.scene.Scene
@@ -352,7 +352,7 @@ class VisualizerRenderer(
         val scale = supersampleFactor(width, height) * appliedThermalTier.renderScale
         renderWidth = (width * scale).toInt().coerceAtLeast(1)
         renderHeight = (height * scale).toInt().coerceAtLeast(1)
-        registry.resize(renderWidth, renderHeight, width, height)
+        registry.resize(renderWidth, renderHeight)
         overlays.resize(renderWidth, renderHeight)
         fboA.ensure(renderWidth, renderHeight)
         fboB.ensure(renderWidth, renderHeight)
@@ -681,7 +681,7 @@ class VisualizerRenderer(
     private fun compositeFamily(scene: Scene?): CompositeGrade.SceneFamily =
         when (scene) {
             is ShaderScene -> CompositeGrade.SceneFamily.SHADER
-            is MilkdropScene -> CompositeGrade.SceneFamily.MILKDROP
+            is ProjectMScene -> CompositeGrade.SceneFamily.MILKDROP
             else -> CompositeGrade.SceneFamily.FLUID
         }
 

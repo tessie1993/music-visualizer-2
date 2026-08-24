@@ -90,7 +90,7 @@ class OffscreenSceneRenderer(
         GLES30.glViewport(0, 0, spec.width, spec.height)
 
         isShaderScene = created is dev.geode.render.scene.ShaderScene
-        isProjectM = created is dev.geode.render.scene.MilkdropScene
+        isProjectM = created is dev.geode.render.scene.ProjectMScene
         isCurlFlow = created is dev.geode.render.fluid.CurlFlowScene
         isBeam = created is dev.geode.render.scene.BeamScene
         canvasPersists = isCurlFlow || isBeam

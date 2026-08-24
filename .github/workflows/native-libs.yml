@@ -1,0 +1,195 @@
+name: Rebuild native libs (projectM 4.2, 16 KB aligned)
+
+# Builds the two .so files committed under app/src/main/jniLibs: libprojectM-4.so
+# and the JNI bridge libprojectmjni.so.
+#
+# Google Play requires 16 KB page-size support for apps targeting Android 15+
+# (API 35 and above), so every ELF LOAD segment must be aligned to 16384. That
+# means NDK r28 (16 KB is its default) plus the explicit max-page-size flag.
+#
+# Run this manually, download each ABI's artifact, drop its two .so AND its
+# SHA256SUMS into app/src/main/jniLibs/<abi>/ and commit them together: the
+# SHA256SUMS carries the run URL and source SHA that let the repo prove the
+# committed blobs match tools/projectm_jni.c and the projectM revision.
+# android.yml verifies the hashes on every pull request.
+#
+# The engine is built STOCK — no patches, and none are needed any more.
+# projectM 4.2 added projectm_opengl_render_frame_fbo(), so the app hands the
+# engine a framebuffer it owns instead of letting it paint framebuffer 0 and
+# copying the frame back (see ProjectMScene.kt for why that round-trip was
+# unsound). Patching the engine to get an FBO target is what shipped a black
+# MilkDrop twice; this build has no patch to go stale.
+
+on:
+  workflow_dispatch:
+    inputs:
+      projectm_ref:
+        description: >-
+          projectM revision to build. Defaults to the pinned 4.2 commit. Do not
+          use a moving branch: master carries in-progress work, and the whole
+          point of pinning is that the committed blobs name the exact source.
+        default: 2f244141320f6b97b09bf99964cc72a4efdfcfd3
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      matrix:
+        # arm64-v8a ships to devices; x86_64 exists so the CI emulator (and
+        # ChromeOS / developer emulators) can actually load the engine —
+        # without it ProjectMEngine.available is false on the emulator and no
+        # instrumented test can exercise the MilkDrop pipeline at all.
+        abi: [arm64-v8a, x86_64]
+    env:
+      # NDK r28 defaults to 16 KB-aligned shared objects.
+      NDK_VERSION: 28.0.13004108
+      ABI: ${{ matrix.abi }}
+      API: 26
+      PAGE_FLAGS: -Wl,-z,max-page-size=16384,-z,common-page-size=16384
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install NDK ${{ env.NDK_VERSION }}
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;${NDK_VERSION}"
+          echo "NDK=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
+
+      - name: Clone projectM ${{ inputs.projectm_ref }}
+        run: |
+          set -euo pipefail
+          git clone --recurse-submodules \
+            https://github.com/projectM-visualizer/projectm.git projectm
+          git -C projectm checkout --recurse-submodules "${{ inputs.projectm_ref }}"
+          echo "PROJECTM_SHA=$(git -C projectm rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      # The FBO entry point is the reason this rebuild exists. If the revision
+      # being built does not have it, the bridge below would fail to link with
+      # a confusing message — fail here instead, naming the cause.
+      - name: Require projectm_opengl_render_frame_fbo in the chosen revision
+        run: |
+          set -euo pipefail
+          grep -q 'projectm_opengl_render_frame_fbo' \
+            projectm/src/api/include/projectM-4/render_opengl.h || {
+              echo "::error::projectM ${{ inputs.projectm_ref }} has no projectm_opengl_render_frame_fbo (needs >= 4.2)"
+              exit 1; }
+
+      - name: Build libprojectM-4.so
+        run: |
+          set -euo pipefail
+          cmake -B build-android -S projectm \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI="$ABI" \
+            -DANDROID_PLATFORM="android-$API" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DENABLE_PLAYLIST=ON \
+            -DCMAKE_SHARED_LINKER_FLAGS="$PAGE_FLAGS" \
+            -G Ninja
+          ninja -C build-android
+
+      - name: Build libprojectmjni.so
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          find build-android -name 'libprojectM-4.so' -exec cp {} out/ \;
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          case "$ABI" in
+            arm64-v8a) TRIPLE=aarch64-linux-android ;;
+            x86_64)    TRIPLE=x86_64-linux-android ;;
+            *) echo "::error::no toolchain triple mapped for ABI $ABI"; exit 1 ;;
+          esac
+          "$TOOLCHAIN/bin/$TRIPLE$API-clang" \
+            -shared -fPIC -O2 -DNDEBUG \
+            -o out/libprojectmjni.so \
+            musicviz-project/musicviz/tools/projectm_jni.c \
+            -I projectm/src/api/include \
+            -I build-android/src/api/include \
+            -L out -lprojectM-4 -llog \
+            $PAGE_FLAGS
+
+      # The symbol names are derived from ProjectMEngine's fully qualified name.
+      # A bridge that exports a different set resolves nothing at runtime and
+      # ProjectMEngine.available silently goes false, so check it here.
+      - name: Verify the bridge exports every ProjectMEngine symbol
+        run: |
+          set -euo pipefail
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          "$TOOLCHAIN/bin/llvm-nm" -D --defined-only out/libprojectmjni.so \
+            | awk '{print $NF}' | grep '^Java_' | sort > exported.txt
+          cat exported.txt
+          for m in nativeCreate nativeDestroy nativeResize nativeAddPcmMono \
+                   nativeRenderToFbo nativeSetTexturePaths nativeLoadPreset \
+                   nativeGetLastError nativeSetBeatSensitivity nativeSetPresetLocked; do
+            grep -qx "Java_dev_geode_render_scene_ProjectMEngine_$m" exported.txt || {
+              echo "::error::missing JNI export: $m"; exit 1; }
+          done
+
+      # These .so are committed and shipped as-is, and unstripped they each carry
+      # about 11 MB of DWARF that no device reads. AGP's own strip step cannot
+      # help: the app build installs no NDK, so stripDebugSymbols is a no-op and
+      # whatever is committed is what users download. Strip here, after the
+      # export check and before the checksums, so the recorded hashes describe
+      # the bytes that actually ship. --strip-unneeded keeps .dynsym, so every
+      # Java_dev_geode_* export verified above survives.
+      - name: Strip debug symbols
+        run: |
+          set -euo pipefail
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          for so in out/*.so; do
+            before=$(stat -c%s "$so")
+            "$TOOLCHAIN/bin/llvm-strip" --strip-unneeded "$so"
+            echo "$(basename "$so"): $before -> $(stat -c%s "$so") bytes"
+          done
+
+      - name: Verify 16 KB alignment
+        run: |
+          set -euo pipefail
+          fail=0
+          for so in out/*.so; do
+            readelf -lW "$so" | awk '$1 == "LOAD"'
+            for a in $(readelf -lW "$so" | awk '$1 == "LOAD" { print $NF }'); do
+              if [ "$((a))" -lt 16384 ]; then
+                echo "::error file=$so::LOAD segment aligned to $a, needs >= 16384"
+                fail=1
+              fi
+            done
+          done
+          [ "$fail" -eq 0 ]
+
+      - name: Record provenance
+        working-directory: out
+        run: |
+          set -euo pipefail
+          {
+            echo "# Provenance of the prebuilt libraries committed in this directory."
+            echo "#"
+            echo "# Built by native-libs.yml run:"
+            echo "#   $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "# projectM ${{ inputs.projectm_ref }} ($PROJECTM_SHA), stock (no patches);"
+            echo "# ABI $ABI, NDK $NDK_VERSION, android-$API, Release, 16 KB aligned, stripped."
+            echo "# JNI bridge tools/projectm_jni.c at $GITHUB_SHA."
+            echo "#"
+            echo "# Commit this file alongside the .so files it describes;"
+            echo "# android.yml verifies the hashes on every pull request."
+            sha256sum libprojectmjni.so libprojectM-4.so
+          } > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload native libs
+        uses: actions/upload-artifact@v7
+        with:
+          name: jniLibs-${{ matrix.abi }}-16k
+          path: |
+            out/*.so
+            out/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30

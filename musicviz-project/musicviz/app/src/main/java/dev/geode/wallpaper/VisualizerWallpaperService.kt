@@ -234,7 +234,7 @@ class VisualizerWallpaperService : WallpaperService() {
         }
 
         /**
-         * The engine is discarded here, and MilkdropScene's projectM instance lives in the native
+         * The engine is discarded here, and ProjectMScene's projectM instance lives in the native
          * heap, where losing the GL context reclaims nothing. A wallpaper engine is created and
          * destroyed every time the screen sleeps or the user switches launcher screens, so without
          * this each of those leaks one engine into a process that keeps running.

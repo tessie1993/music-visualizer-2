@@ -11,9 +11,9 @@ import dev.geode.render.scene.BeamScene
 import dev.geode.render.scene.CymaticsScene
 import dev.geode.render.scene.GlUtil
 import dev.geode.render.scene.LifeScene
-import dev.geode.render.scene.MilkdropEngine
-import dev.geode.render.scene.MilkdropScene
 import dev.geode.render.scene.MycoScene
+import dev.geode.render.scene.ProjectMEngine
+import dev.geode.render.scene.ProjectMScene
 import dev.geode.render.scene.Scene
 import dev.geode.render.scene.SceneCapabilities
 import dev.geode.render.scene.SceneIds
@@ -51,7 +51,7 @@ internal class SceneRegistry(
     private var touchField: TouchField? = null
 
     @Volatile
-    private var milkdropScene: MilkdropScene? = null
+    private var milkdropScene: ProjectMScene? = null
 
     @Volatile
     private var lastMilkPreset: String? = null
@@ -69,10 +69,8 @@ internal class SceneRegistry(
 
     private var renderWidth = 1
     private var renderHeight = 1
-    private var windowWidth = 1
-    private var windowHeight = 1
 
-    val milkdropAvailable: Boolean get() = MilkdropEngine.available
+    val milkdropAvailable: Boolean get() = ProjectMEngine.available
 
     fun availableSceneIds(): List<String> =
         buildList {
@@ -81,7 +79,7 @@ internal class SceneRegistry(
             addAll(VisualStyleCatalog.mycoIds)
             addAll(VisualStyleCatalog.acidIds)
             addAll(SceneCapabilities.SHADER_SCENES.keys)
-            if (MilkdropEngine.available) add(SceneIds.MILKDROP)
+            if (ProjectMEngine.available) add(SceneIds.MILKDROP)
             add(SceneIds.FLUID)
             add(SceneIds.CURLFLOW)
             add(SceneIds.WATER)
@@ -136,8 +134,8 @@ internal class SceneRegistry(
      *
      * [onSurfaceCreated] does this because a NEW context has arrived and the old objects are
      * stale. This is the other direction: a host that is going away for good. It matters because
-     * MilkdropScene owns a projectM instance in the NATIVE heap, and losing the GL context
-     * reclaims none of that - only MilkdropScene.release() calls nativeDestroy. Pure-GL scenes
+     * ProjectMScene owns a projectM instance in the NATIVE heap, and losing the GL context
+     * reclaims none of that - only ProjectMScene.release() calls nativeDestroy. Pure-GL scenes
      * would be reclaimed either way.
      *
      * Must be called on the GL thread.
@@ -177,15 +175,10 @@ internal class SceneRegistry(
     fun resize(
         width: Int,
         height: Int,
-        windowWidth: Int,
-        windowHeight: Int,
     ) {
         renderWidth = width
         renderHeight = height
-        this.windowWidth = windowWidth
-        this.windowHeight = windowHeight
         scenes.values.forEach { it.resize(width, height) }
-        milkdropScene?.setWindowSize(windowWidth, windowHeight)
     }
 
     @Suppress("ReturnCount")
@@ -205,9 +198,8 @@ internal class SceneRegistry(
         scene.setParams(sceneParams)
         scene.resize(renderWidth, renderHeight)
         activeCustomShaders[id]?.let { (scene as? ShaderScene)?.setFragmentSource(it) }
-        if (scene is MilkdropScene) {
+        if (scene is ProjectMScene) {
             milkdropScene = scene
-            scene.setWindowSize(windowWidth, windowHeight)
             lastMilkPreset?.let { scene.queuePreset(it) }
         }
         if (scene is FluidScene && (fluidForceSrc != null || fluidDyeSrc != null)) {
@@ -215,13 +207,6 @@ internal class SceneRegistry(
         }
         scenes[id] = scene
         return scene
-    }
-
-    fun setMilkdropWindowSize(
-        width: Int,
-        height: Int,
-    ) {
-        milkdropScene?.setWindowSize(width, height)
     }
 
     fun createScene(
@@ -285,9 +270,9 @@ internal class SceneRegistry(
                     beam.onShaderError = { host.onShaderError(it) }
                 }
             SceneIds.MILKDROP ->
-                MilkdropScene(
+                ProjectMScene(
                     postVertexSrc = GlUtil.loadShader(context, R.raw.fade_vert),
-                    postFragmentSrc = GlUtil.loadShader(context, R.raw.pm_post_frag),
+                    postFragmentSrc = GlUtil.loadShader(context, R.raw.projectm_grade_frag),
                     sharedTextureDir = File(context.filesDir, "milk/textures").absolutePath,
                     onError = { host.onShaderError(it) },
                     onPresetLoaded = { host.onMilkPresetLoaded(it) },
@@ -302,7 +287,7 @@ internal class SceneRegistry(
         val quadVert = GlUtil.loadShader(context, R.raw.quad_vert)
         val scene = createScene(sceneId, quadVert, export = true)
         (scene as? FluidScene)?.setInjectionShaders(fluidForceSrc, fluidDyeSrc)
-        (scene as? MilkdropScene)?.let { pm ->
+        (scene as? ProjectMScene)?.let { pm ->
             lastMilkPreset?.let { pm.queuePreset(it) }
         }
         scene.setParams(params)
