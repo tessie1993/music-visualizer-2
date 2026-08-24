@@ -1,0 +1,12 @@
+# Provenance of the prebuilt libraries committed in this directory.
+#
+# Built by native-libs.yml run:
+#   https://github.com/tessie1993/music-visualizer-2/actions/runs/32740440555
+# projectM 2f244141320f6b97b09bf99964cc72a4efdfcfd3 (2f244141320f6b97b09bf99964cc72a4efdfcfd3), stock (no patches);
+# ABI arm64-v8a, NDK 28.0.13004108, android-26, Release, 16 KB aligned, stripped.
+# JNI bridge tools/projectm_jni.c at 5c20ad858468c20d6e1ce328dc8c39240f70262a.
+#
+# Commit this file alongside the .so files it describes;
+# android.yml verifies the hashes on every pull request.
+57fdd5954dff30fa117d88a0fdcfabf8804a02b8893f5226a1ec43879cfd8d56  libprojectmjni.so
+7fa86e095834db70142d1bfcd1f2b600b3c3badf6d242b58e4915bbf8abb1ff7  libprojectM-4.so

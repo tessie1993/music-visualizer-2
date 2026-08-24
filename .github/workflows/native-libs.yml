@@ -7,11 +7,13 @@ name: Rebuild native libs (projectM 4.2, 16 KB aligned)
 # (API 35 and above), so every ELF LOAD segment must be aligned to 16384. That
 # means NDK r28 (16 KB is its default) plus the explicit max-page-size flag.
 #
-# Run this manually, download each ABI's artifact, drop its two .so AND its
-# SHA256SUMS into app/src/main/jniLibs/<abi>/ and commit them together: the
-# SHA256SUMS carries the run URL and source SHA that let the repo prove the
-# committed blobs match tools/projectm_jni.c and the projectM revision.
-# android.yml verifies the hashes on every pull request.
+# Run this manually. With `commit` set it places the libraries and pushes them
+# to the branch it was dispatched on; otherwise download each ABI's artifact and
+# drop its two .so AND its SHA256SUMS into app/src/main/jniLibs/<abi>/ by hand.
+# Either way the three files move together: the SHA256SUMS carries the run URL
+# and source SHA that let the repo prove the committed blobs match
+# tools/projectm_jni.c and the projectM revision, and android.yml verifies the
+# hashes on every pull request.
 #
 # The engine is built STOCK — no patches, and none are needed any more.
 # projectM 4.2 added projectm_opengl_render_frame_fbo(), so the app hands the
@@ -30,9 +32,17 @@ on:
           point of pinning is that the committed blobs name the exact source.
         default: 2f244141320f6b97b09bf99964cc72a4efdfcfd3
         required: true
+      commit:
+        description: >-
+          Commit the built libraries straight back to the branch this run was
+          dispatched on, instead of only uploading artifacts. The artifact
+          download is not reachable from every environment, which is the whole
+          reason this exists.
+        type: boolean
+        default: false
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -229,3 +239,58 @@ jobs:
             out/SHA256SUMS
           if-no-files-found: error
           retention-days: 30
+
+  # One job rather than a step inside the matrix: two matrix jobs pushing to the
+  # same branch race, and the loser either fails or silently drops an ABI. This
+  # waits for both, then makes a single commit carrying the whole set.
+  commit:
+    needs: build
+    if: ${{ inputs.commit }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: jniLibs-*-16k
+          path: artifacts
+
+      - name: Place the libraries and verify their recorded hashes
+        run: |
+          set -euo pipefail
+          root=musicviz-project/musicviz/app/src/main/jniLibs
+          found=0
+          for dir in artifacts/jniLibs-*-16k; do
+            [ -d "$dir" ] || continue
+            abi=$(basename "$dir"); abi=${abi#jniLibs-}; abi=${abi%-16k}
+            echo "== $abi"
+            mkdir -p "$root/$abi"
+            cp "$dir"/libprojectM-4.so "$dir"/libprojectmjni.so "$dir"/SHA256SUMS "$root/$abi/"
+            # The same check android.yml runs, before the bytes are committed
+            # rather than after, so a corrupted download cannot land.
+            (cd "$root/$abi" && sha256sum -c SHA256SUMS)
+            found=$((found + 1))
+          done
+          [ "$found" -gt 0 ] || { echo "::error::no jniLibs artifacts to commit"; exit 1; }
+
+      - name: Commit
+        run: |
+          set -euo pipefail
+          root=musicviz-project/musicviz/app/src/main/jniLibs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A "$root"
+          if git diff --cached --quiet; then
+            echo "committed libraries already match this build - nothing to do"
+            exit 0
+          fi
+          git commit -m "build(native): projectM ${{ inputs.projectm_ref }} libraries for every shipped ABI
+
+          Built by native-libs.yml run ${{ github.run_id }} from the sources on
+          this branch. Each ABI's SHA256SUMS records the run, the projectM
+          revision and the JNI bridge commit; android.yml re-checks the hashes
+          on every pull request."
+          git push origin "HEAD:${{ github.ref_name }}"
