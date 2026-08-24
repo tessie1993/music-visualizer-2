@@ -13,7 +13,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.geode.R
-import dev.geode.render.scene.MilkdropEngine
+import dev.geode.render.scene.ProjectMEngine
 import kotlin.math.roundToInt
 
 private val INTERVAL_RANGE =
@@ -76,7 +76,7 @@ internal fun AutoVisualsGroup(viewModel: PlayerViewModel) {
             Text(stringResource(R.string.autoviz_pick_presets), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             Switch(checked = viz.randomIncludePresets, onCheckedChange = viewModel::setRandomIncludePresets)
         }
-        if (MilkdropEngine.available) {
+        if (ProjectMEngine.available) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.autoviz_pick_milk), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 Switch(checked = viz.randomIncludeMilk, onCheckedChange = viewModel::setRandomIncludeMilk)

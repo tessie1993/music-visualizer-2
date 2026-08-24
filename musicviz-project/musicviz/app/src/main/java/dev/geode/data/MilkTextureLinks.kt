@@ -47,7 +47,7 @@ data class MilkTextureLink(
  * The fix is not to teach projectM to search better — it is upstream code — but to materialize
  * the resolution as a directory of links projectM can already read: for each expected name,
  * `milk/textures/.links/<presetStem>/<expected>.<ext>` points at the stored file that satisfies
- * it. [dev.geode.render.scene.MilkdropScene] puts that directory FIRST in the search paths, so a
+ * it. [dev.geode.render.scene.ProjectMScene] puts that directory FIRST in the search paths, so a
  * per-preset choice always beats a same-named file in the shared folder — which is what makes a
  * deliberate substitution possible at all.
  *

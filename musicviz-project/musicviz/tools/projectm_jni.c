@@ -3,8 +3,9 @@
 #include <stdio.h>
 #include <android/log.h>
 #include <projectM-4/projectM.h>
+#include <projectM-4/render_opengl.h>
 
-#define TAG "milkdrop-jni"
+#define TAG "projectm-jni"
 /* LOGI names user-chosen preset and texture paths, and native code cannot see
  * BuildConfig.DEBUG - so the gate that keeps RingLog's echo out of release
  * builds does not reach here. native-libs.yml compiles this file with -DNDEBUG,
@@ -17,15 +18,31 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
 /*
- * Minimal JNI bridge over the STOCK projectM 4 C API (v4.1.7, unpatched).
+ * JNI bridge over the STOCK projectM 4.2 C API (no patches).
  *
- * There is deliberately no render-to-FBO entry point: upstream's
- * projectm_opengl_render_frame ends its frame on the DEFAULT framebuffer
- * (where its glDrawBuffers(GL_BACK) is legal), and the Kotlin scene copies
- * the result off framebuffer 0 into its own texture. Rendering into a
- * framebuffer object required patching the engine, and a stale or wrong
- * patch shipped a permanently black MilkDrop twice; the stock engine plus a
- * copy cannot drift that way.
+ * WHY THIS FILE EXISTS IN THIS SHAPE
+ *
+ * The previous bridge could only call projectm_opengl_render_frame(), which in
+ * projectM <= 4.1.7 ends every frame on the DEFAULT framebuffer - ProjectM.cpp
+ * hardcoded `glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)` with an upstream ToDo
+ * against it. The app therefore had to let the engine paint framebuffer 0 and
+ * then claw the frame back with glReadBuffer(GL_BACK) + glCopyTexSubImage2D.
+ * That round-trip is unsound here for three independent reasons:
+ *
+ *   - it stamps the raw, ungraded engine frame onto the window every frame,
+ *     underneath whatever the compositor draws afterwards;
+ *   - offscreen and export render into an FBO whose EGL draw surface is not
+ *     the screen, so the readback samples a surface that may be smaller than
+ *     the copy region, or not a colour surface at all - undefined texels,
+ *     which is what "MilkDrop renders black" actually was;
+ *   - the copy is sized from the WINDOW while the scene renders at the
+ *     thermal governor's scaled resolution, so the two can disagree.
+ *
+ * projectM 4.2 fixes it upstream: RenderFrame takes a target framebuffer and
+ * only forces the GL_BACK draw buffer when that target is 0. So this bridge
+ * exposes projectm_opengl_render_frame_fbo and the app hands it an FBO it
+ * owns. There is no readback, no dependence on the default framebuffer, and
+ * the on-screen and offscreen paths run exactly the same code.
  *
  * All GL-touching functions (create, render, load, destroy) must run on the
  * GL thread, which also means the error buffer needs no locking.
@@ -41,7 +58,7 @@ static void on_preset_switch_failed(const char *preset_filename, const char *mes
 }
 
 JNIEXPORT jlong JNICALL
-Java_dev_geode_render_scene_MilkdropEngine_nativeCreate(JNIEnv *env, jobject thiz) {
+Java_dev_geode_render_scene_ProjectMEngine_nativeCreate(JNIEnv *env, jobject thiz) {
     projectm_handle h = projectm_create();
     if (h) {
         projectm_set_fps(h, 60);
@@ -59,18 +76,26 @@ Java_dev_geode_render_scene_MilkdropEngine_nativeCreate(JNIEnv *env, jobject thi
 }
 
 JNIEXPORT void JNICALL
-Java_dev_geode_render_scene_MilkdropEngine_nativeDestroy(JNIEnv *env, jobject thiz, jlong handle) {
+Java_dev_geode_render_scene_ProjectMEngine_nativeDestroy(JNIEnv *env, jobject thiz, jlong handle) {
     if (handle) projectm_destroy((projectm_handle) handle);
 }
 
+/*
+ * The size projectM renders AT, which is the size of the target framebuffer -
+ * not the window. RenderFrame sets glViewport(0, 0, w, h) from this before it
+ * composites into the target, so a value that disagrees with the target's
+ * dimensions letterboxes or crops the frame.
+ */
 JNIEXPORT void JNICALL
-Java_dev_geode_render_scene_MilkdropEngine_nativeResize(JNIEnv *env, jobject thiz, jlong handle,
+Java_dev_geode_render_scene_ProjectMEngine_nativeResize(JNIEnv *env, jobject thiz, jlong handle,
                                                         jint width, jint height) {
-    if (handle) projectm_set_window_size((projectm_handle) handle, (size_t) width, (size_t) height);
+    if (handle && width > 0 && height > 0) {
+        projectm_set_window_size((projectm_handle) handle, (size_t) width, (size_t) height);
+    }
 }
 
 JNIEXPORT void JNICALL
-Java_dev_geode_render_scene_MilkdropEngine_nativeAddPcmMono(JNIEnv *env, jobject thiz, jlong handle,
+Java_dev_geode_render_scene_ProjectMEngine_nativeAddPcmMono(JNIEnv *env, jobject thiz, jlong handle,
                                                             jfloatArray samples, jint count) {
     if (!handle || !samples || count <= 0) return;
     /* Clamp to the array's real length: a Java-side caller bug must surface
@@ -85,13 +110,22 @@ Java_dev_geode_render_scene_MilkdropEngine_nativeAddPcmMono(JNIEnv *env, jobject
     }
 }
 
+/*
+ * Renders one frame into [fbo], which the caller owns and keeps.
+ *
+ * fbo == 0 means the default framebuffer and is legal, but the app never asks
+ * for it: every caller has a colour-attached FBO of its own. projectM binds
+ * the target itself and leaves it bound, along with a viewport sized from
+ * nativeResize - the Kotlin side restores both.
+ */
 JNIEXPORT void JNICALL
-Java_dev_geode_render_scene_MilkdropEngine_nativeRender(JNIEnv *env, jobject thiz, jlong handle) {
-    if (handle) projectm_opengl_render_frame((projectm_handle) handle);
+Java_dev_geode_render_scene_ProjectMEngine_nativeRenderToFbo(JNIEnv *env, jobject thiz,
+                                                             jlong handle, jint fbo) {
+    if (handle) projectm_opengl_render_frame_fbo((projectm_handle) handle, (uint32_t) fbo);
 }
 
 JNIEXPORT void JNICALL
-Java_dev_geode_render_scene_MilkdropEngine_nativeSetTexturePaths(JNIEnv *env, jobject thiz, jlong handle,
+Java_dev_geode_render_scene_ProjectMEngine_nativeSetTexturePaths(JNIEnv *env, jobject thiz, jlong handle,
                                                                  jobjectArray dirs) {
     if (!handle || !dirs) return;
     jsize n = (*env)->GetArrayLength(env, dirs);
@@ -115,7 +149,7 @@ Java_dev_geode_render_scene_MilkdropEngine_nativeSetTexturePaths(JNIEnv *env, jo
 }
 
 JNIEXPORT void JNICALL
-Java_dev_geode_render_scene_MilkdropEngine_nativeLoadPreset(JNIEnv *env, jobject thiz, jlong handle,
+Java_dev_geode_render_scene_ProjectMEngine_nativeLoadPreset(JNIEnv *env, jobject thiz, jlong handle,
                                                             jstring path, jboolean smooth) {
     if (!handle || !path) return;
     const char *cpath = (*env)->GetStringUTFChars(env, path, NULL);
@@ -129,7 +163,7 @@ Java_dev_geode_render_scene_MilkdropEngine_nativeLoadPreset(JNIEnv *env, jobject
 }
 
 JNIEXPORT jstring JNICALL
-Java_dev_geode_render_scene_MilkdropEngine_nativeGetLastError(JNIEnv *env, jobject thiz) {
+Java_dev_geode_render_scene_ProjectMEngine_nativeGetLastError(JNIEnv *env, jobject thiz) {
     if (g_last_error[0] == '\0') return NULL;
     jstring result = (*env)->NewStringUTF(env, g_last_error);
     g_last_error[0] = '\0';
@@ -137,13 +171,13 @@ Java_dev_geode_render_scene_MilkdropEngine_nativeGetLastError(JNIEnv *env, jobje
 }
 
 JNIEXPORT void JNICALL
-Java_dev_geode_render_scene_MilkdropEngine_nativeSetBeatSensitivity(JNIEnv *env, jobject thiz,
+Java_dev_geode_render_scene_ProjectMEngine_nativeSetBeatSensitivity(JNIEnv *env, jobject thiz,
                                                                     jlong handle, jfloat value) {
     if (handle) projectm_set_beat_sensitivity((projectm_handle) handle, value);
 }
 
 JNIEXPORT void JNICALL
-Java_dev_geode_render_scene_MilkdropEngine_nativeSetPresetLocked(JNIEnv *env, jobject thiz,
+Java_dev_geode_render_scene_ProjectMEngine_nativeSetPresetLocked(JNIEnv *env, jobject thiz,
                                                                  jlong handle, jboolean locked) {
     if (handle) projectm_set_preset_locked((projectm_handle) handle, locked);
 }

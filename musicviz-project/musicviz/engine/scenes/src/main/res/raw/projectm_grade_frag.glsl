@@ -5,6 +5,18 @@ precision highp float;
 // clamped and quantized.
 precision highp sampler2D;
 
+// The app's control surface over a projectM frame.
+//
+// uTex is the colour attachment of the FBO projectM rendered into this frame
+// (ProjectMScene.frame) - NOT a copy taken off the default framebuffer, which
+// is what the pre-4.2 integration had to do and what made this pass unsound
+// offscreen. The engine's output arrives here as an ordinary texture, so this
+// runs identically on screen, on the wallpaper surface and in an export.
+//
+// A .milk preset authors its own colours and its own motion. Everything below
+// is therefore a STEER, not a replacement: geometry (zoom, rotation, mirror)
+// and grade (palette tint, hue, saturation, contrast, gamma, invert) only.
+
 in vec2 vUv;
 out vec4 fragColor;
 
