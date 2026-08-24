@@ -74,6 +74,7 @@ class ProjectMScene(
     private var height = 0
 
     private var reportedCreateFailure = false
+    private var reportedAllocFailure = false
 
     /** Where projectM composites. Sized to the SCENE's render size, never the window's. */
     private val frame = RenderTarget("projectm")
@@ -150,9 +151,13 @@ class ProjectMScene(
     private fun ensureEngine(): Boolean {
         if (width <= 1 || height <= 1) return false
         if (!frame.ensure(width, height)) {
-            onError("MilkDrop could not allocate a ${width}x$height frame buffer")
+            if (!reportedAllocFailure) {
+                reportedAllocFailure = true
+                onError("MilkDrop could not allocate a ${width}x$height frame buffer")
+            }
             return false
         }
+        reportedAllocFailure = false
         if (handle == 0L) {
             handle = ProjectMEngine.nativeCreate()
             if (handle == 0L) {
@@ -195,7 +200,14 @@ class ProjectMScene(
         if (!postProgramOk) return
         GLES30.glGetIntegerv(GLES30.GL_DRAW_FRAMEBUFFER_BINDING, prevFbo, 0)
         GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0)
-        if (!ensureEngine()) return
+        if (!ensureEngine()) {
+            // RenderTarget.ensure() binds and unbinds while it allocates, so a failure here has
+            // already moved the draw binding off whatever the caller had. Put it back: the
+            // renderer draws the rest of the frame into it.
+            GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, prevFbo[0])
+            GLES30.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3])
+            return
+        }
         loadPendingPreset()
 
         val p = sceneParams
