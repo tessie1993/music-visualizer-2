@@ -113,6 +113,24 @@ jobs:
             -G Ninja
           ninja -C build-android
 
+      # A build that silently produced nothing, or a stub, must not reach the
+      # bridge link — where a missing symbol would otherwise become an
+      # UnsatisfiedLinkError on a phone. Assert the engine exists, is a real
+      # library rather than a placeholder, and actually exports the 4.2 entry
+      # point this whole integration is built on.
+      - name: Verify the engine built and exports the FBO entry point
+        run: |
+          set -euo pipefail
+          ENGINE=$(find build-android -name 'libprojectM-4.so' -print -quit)
+          [ -n "$ENGINE" ] || { echo "::error::cmake produced no libprojectM-4.so"; exit 1; }
+          size=$(stat -c%s "$ENGINE")
+          echo "$ENGINE: $size bytes"
+          [ "$size" -gt 1000000 ] || { echo "::error::libprojectM-4.so is only $size bytes — not a real build"; exit 1; }
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          "$TOOLCHAIN/bin/llvm-nm" -D --defined-only "$ENGINE" | awk '{print $NF}' \
+            | grep -qx 'projectm_opengl_render_frame_fbo' || {
+              echo "::error::built libprojectM-4.so does not export projectm_opengl_render_frame_fbo"; exit 1; }
+
       - name: Build libprojectmjni.so
         run: |
           set -euo pipefail
@@ -131,6 +149,7 @@ jobs:
             -I projectm/src/api/include \
             -I build-android/src/api/include \
             -L out -lprojectM-4 -llog \
+            -Wl,--no-undefined \
             $PAGE_FLAGS
 
       # The symbol names are derived from ProjectMEngine's fully qualified name.
