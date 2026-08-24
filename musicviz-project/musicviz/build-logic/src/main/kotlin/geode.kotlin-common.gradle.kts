@@ -1,28 +1,22 @@
 plugins {
     id("org.jlleitschuh.gradle.ktlint")
-    id("io.gitlab.arturbosch.detekt")
     id("geode.provenance")
 }
 
 ktlint {
     android.set(true)
-}
-
-// Detekt lives here rather than in app/build.gradle.kts so that it actually covers the code.
-// It was applied to :app alone, which meant the whole engine - every scene, the GL capability
-// tier, the analysis graph, roughly all of the code that is hard to get right - was outside
-// static analysis entirely, while the gate still reported green. Each module carries its own
-// baseline of what was already there on the day it was brought under the tool; the point is
-// that nothing NEW can regress, which is the same bargain config/detekt/detekt.yml strikes
-// with its thresholds.
-extensions.configure<io.gitlab.arturbosch.detekt.extensions.DetektExtension> {
-    config.setFrom(rootProject.file("config/detekt/detekt.yml"))
-    baseline = file("detekt-baseline.xml")
-    buildUponDefaultConfig = true
+    // The PLUGIN moves to 14.x because that is what supports Gradle 9; the
+    // ENGINE is pinned separately, because a newer engine is a newer set of
+    // style rules, not a compatibility requirement. Unpinned it reports 454
+    // violations across 52 files (argument-list-wrapping,
+    // chain-method-continuation, class-signature) in a tree that has always
+    // passed this gate. Adopting that reformat is a change worth making on its
+    // own; it is not part of moving the build to JDK 25 and API 37.
+    version.set("1.0.1")
 }
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
     }
 }

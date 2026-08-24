@@ -5,7 +5,6 @@ import java.util.zip.ZipFile
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     id("geode.kotlin-common")
     alias(libs.plugins.ksp)
@@ -35,12 +34,12 @@ val hasReleaseSigning =
 
 android {
     namespace = "dev.geode"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "dev.geode"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 31
         versionName = "1.7.0"
         ndk {
@@ -91,8 +90,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
     lint {
         checkReleaseBuilds = true
@@ -203,6 +202,7 @@ dependencies {
     implementation(libs.compose.material3.adaptive)
     implementation(libs.hilt.android)
     implementation(libs.hilt.navigation.compose)
+    implementation(libs.hilt.lifecycle.viewmodel.compose)
     ksp(libs.hilt.compiler)
     implementation(libs.compose.material.icons.extended)
     implementation(libs.activity.compose)

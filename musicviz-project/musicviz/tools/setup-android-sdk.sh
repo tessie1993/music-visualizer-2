@@ -21,6 +21,7 @@
 # Overridable inputs:
 #   ANDROID_SDK_ROOT     where to install          (default $HOME/android-sdk)
 #   ANDROID_BUILD_TOOLS  build-tools version       (default <compileSdk>.0.0)
+#   ANDROID_PLATFORM_MINOR  platform minor release (default 0)
 #   CMDLINE_TOOLS_ZIP    cmdline-tools archive URL (default below)
 set -euo pipefail
 
@@ -39,7 +40,14 @@ if [ -z "$COMPILE_SDK" ]; then
 fi
 BUILD_TOOLS="${ANDROID_BUILD_TOOLS:-$COMPILE_SDK.0.0}"
 
-echo "setup-android-sdk: compileSdk=$COMPILE_SDK build-tools=$BUILD_TOOLS root=$SDK_ROOT"
+# From API 37 Android ships MINOR platform releases and the bare package id is
+# gone: there is no "platforms;android-37", only android-37.0 and android-37.1.
+# So the platform id needs the minor component appended, which is why this is
+# not just "android-$COMPILE_SDK" the way build-tools still is.
+PLATFORM_MINOR="${ANDROID_PLATFORM_MINOR:-0}"
+PLATFORM="platforms;android-$COMPILE_SDK.$PLATFORM_MINOR"
+
+echo "setup-android-sdk: platform=$PLATFORM build-tools=$BUILD_TOOLS root=$SDK_ROOT"
 
 # --- Preflight: fail on the egress policy, not 200 lines into sdkmanager -----
 if ! curl -fsS --max-time 30 -o /dev/null --range 0-0 "$CMDLINE_TOOLS_ZIP"; then
@@ -87,7 +95,7 @@ fi
 yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
 "$SDKMANAGER" --sdk_root="$SDK_ROOT" \
   "platform-tools" \
-  "platforms;android-$COMPILE_SDK" \
+  "$PLATFORM" \
   "build-tools;$BUILD_TOOLS"
 
 # --- hand the location to Gradle --------------------------------------------
@@ -96,8 +104,8 @@ yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
 # file. It is git-ignored.
 echo "sdk.dir=$SDK_ROOT" > "$PROJECT_DIR/local.properties"
 
-if ! java -version 2>&1 | grep -q '"17'; then
-  echo "setup-android-sdk: note — CI builds on JDK 17; this machine has" \
+if ! java -version 2>&1 | grep -q '"25'; then
+  echo "setup-android-sdk: note — CI builds on JDK 25; this machine has" \
     "$(java -version 2>&1 | head -n 1). Set org.gradle.java.home if the" \
     "build disagrees with CI." >&2
 fi

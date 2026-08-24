@@ -5,7 +5,7 @@ Kotlin (Jetpack Compose UI, OpenGL ES 3.0 rendering, a thin C/JNI layer for
 libprojectM). Everything runs on-device: the app holds no network permission,
 and nothing it hears or renders leaves the phone.
 
-Currently v1.7.0 (versionCode 31); minSdk 26, targetSdk 36. The full version
+Currently v1.7.0 (versionCode 31); minSdk 26, targetSdk 37. The full version
 history is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Features
@@ -48,8 +48,9 @@ history is in [CHANGELOG.md](CHANGELOG.md).
 ./gradlew installDebug            # install on a connected device
 ```
 
-Requires JDK 17+ and Android SDK 36; `local.properties` must point at your
-SDK.
+Requires JDK 21+ and Android SDK 37; `local.properties` must point at your
+SDK. CI builds on JDK 25 (the current LTS), which is also what the Gradle
+wrapper is exercised against.
 
 On a machine with no SDK — a fresh container, a cloud session —
 `tools/setup-android-sdk.sh` installs the packages `compileSdk` asks for and

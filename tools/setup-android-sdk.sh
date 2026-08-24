@@ -2,11 +2,15 @@
 # Installs the Android SDK pieces this repo's Gradle build needs, idempotently.
 #
 # CLAUDE.md points contributors (and CI-like containers) here. The build wants:
-#   - platforms;android-36   (compileSdk 36, app/build.gradle.kts)
-#   - build-tools;36.0.0
+#   - platforms;android-37.0 (compileSdk 37, app/build.gradle.kts)
+#   - build-tools;37.0.0
 #   - platform-tools         (adb, for on-device smoke tests)
-# plus a JDK 17+ that is assumed present (the Gradle toolchain does not
-# auto-provision one in offline-ish containers).
+# plus a JDK 21+ that is assumed present (the Gradle toolchain does not
+# auto-provision one in offline-ish containers). CI builds on JDK 25.
+#
+# From API 37 the platform packages carry a MINOR component - there is no bare
+# "platforms;android-37", only android-37.0 and android-37.1 - so the package
+# id is not simply "android-<compileSdk>" any more.
 #
 # Usage:
 #   tools/setup-android-sdk.sh [sdk-dir]
@@ -26,19 +30,19 @@ GRADLE_ROOT="$(cd "$(dirname "$0")/.." && pwd)/musicviz-project/musicviz"
 CMDLINE_TOOLS_ZIP="commandlinetools-linux-16111833_latest.zip"
 CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/${CMDLINE_TOOLS_ZIP}"
 
-PLATFORM="platforms;android-36"
-BUILD_TOOLS="build-tools;36.0.0"
+PLATFORM="platforms;android-37.0"
+BUILD_TOOLS="build-tools;37.0.0"
 
 say() { printf '[android-sdk] %s\n' "$*"; }
 
 # ---- JDK ------------------------------------------------------------------
 if ! command -v java >/dev/null 2>&1; then
-    say "ERROR: no java on PATH; this build needs JDK 17+" >&2
+    say "ERROR: no java on PATH; this build needs JDK 21+" >&2
     exit 1
 fi
 JAVA_MAJOR="$(java -version 2>&1 | sed -n 's/.*version "\([0-9]*\).*/\1/p' | head -1)"
-if [ "${JAVA_MAJOR:-0}" -lt 17 ]; then
-    say "ERROR: JDK ${JAVA_MAJOR} found; this build needs 17+" >&2
+if [ "${JAVA_MAJOR:-0}" -lt 21 ]; then
+    say "ERROR: JDK ${JAVA_MAJOR} found; this build needs 21+ (CI uses 25)" >&2
     exit 1
 fi
 
@@ -65,8 +69,8 @@ fi
 # re-run near-instant, which is what lets a session hook call this every time.
 NEED=()
 [ -d "$SDK_DIR/platform-tools" ] || NEED+=("platform-tools")
-[ -d "$SDK_DIR/platforms/android-36" ] || NEED+=("$PLATFORM")
-[ -d "$SDK_DIR/build-tools/36.0.0" ] || NEED+=("$BUILD_TOOLS")
+[ -d "$SDK_DIR/platforms/android-37.0" ] || NEED+=("$PLATFORM")
+[ -d "$SDK_DIR/build-tools/37.0.0" ] || NEED+=("$BUILD_TOOLS")
 
 if [ "${#NEED[@]}" -gt 0 ]; then
     say "accepting licenses"

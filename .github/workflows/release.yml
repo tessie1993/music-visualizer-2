@@ -29,11 +29,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set up JDK 17
+      - name: Set up JDK 25
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "25"
 
       - name: Set up Gradle (with caching)
         uses: gradle/actions/setup-gradle@v6
@@ -41,9 +41,18 @@ jobs:
       # A release that fails Play's 16 KB page-size requirement is rejected at
       # upload, so fail here instead of after a review cycle.
       - name: Gate on 16 KB native alignment
-        working-directory: musicviz-project/musicviz/app/src/main/jniLibs
+        working-directory: musicviz-project/musicviz/app/src/main
         run: |
           set -euo pipefail
+          # Same ENOENT trap as android.yml: this named jniLibs directly, so a
+          # tree without the committed .so files failed the step before the
+          # alignment check could report anything. A release without them is
+          # still a release that must not ship.
+          if [ ! -d jniLibs ]; then
+            echo "::error::jniLibs is missing; a release build must carry the 16 KB-aligned native libraries."
+            exit 1
+          fi
+          cd jniLibs
           fail=0
           for so in $(find . -name '*.so'); do
             for a in $(readelf -lW "$so" | awk '$1 == "LOAD" { print $NF }'); do
