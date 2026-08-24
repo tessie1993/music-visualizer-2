@@ -36,30 +36,44 @@ jobs:
       # The .so files are committed blobs built out-of-band by native-libs.yml;
       # the recorded hashes are the only link between those bytes and the
       # sources they claim to come from, so drift fails the build.
+      #
+      # The step used to name jniLibs as its own working-directory, which meant
+      # that while the .so files were absent - between 7040ee4 removing them and
+      # 7924fc8 committing the projectM 4.2 rebuild - it died with a bare ENOENT
+      # before a single check ran, instead of the clear error the script below
+      # already knew how to print. Missing libs still fail the build; they just
+      # say why now.
       - name: Verify committed native libs match their recorded checksums
-        working-directory: musicviz-project/musicviz/app/src/main/jniLibs
+        shell: bash
         run: |
           set -euo pipefail
+          libs="$PROJECT_DIR/app/src/main/jniLibs"
+          if [ ! -d "$libs" ]; then
+            echo "::error::$libs is missing; the shipped engine cannot be tied to its sources. Rebuild it with the native-libs workflow and commit each .so alongside its SHA256SUMS."
+            exit 1
+          fi
+          cd "$libs"
           found=0
           for sums in */SHA256SUMS; do
+            [ -e "$sums" ] || continue
             found=1
             echo "== ${sums%/SHA256SUMS}"
             (cd "$(dirname "$sums")" && sha256sum -c SHA256SUMS)
           done
-          [ "$found" -eq 1 ] || { echo "::error::no SHA256SUMS under jniLibs"; exit 1; }
+          [ "$found" -eq 1 ] || { echo "::error::jniLibs is present but carries no SHA256SUMS; the committed blobs cannot be tied to their sources"; exit 1; }
 
-      - name: Set up Java 17
+      - name: Set up JDK 25
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "25"
 
       - name: Set up Gradle and cache
         uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
-      - name: Install Android SDK 36
+      - name: Install Android SDK 37
         shell: bash
         # sdkmanager is not on PATH on the ubuntu-24.04 runner image; resolve
         # it from the preinstalled SDK location instead.
@@ -69,8 +83,8 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" \
             "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;36.0.0"
+            "platforms;android-37.0" \
+            "build-tools;37.0.0"
 
       # The shader compile pass in ShaderSyntaxTest skips without this, and
       # ShaderSyntaxTest asserts this step exists so it cannot skip unnoticed.
@@ -80,36 +94,6 @@ jobs:
       - name: Make Gradle wrapper executable
         working-directory: ${{ env.PROJECT_DIR }}
         run: chmod +x gradlew
-
-      # Baselined static analysis: the SwallowedException/UnusedParameter
-      # class of bug is caught at PR time instead of the next audit.
-      - name: detekt
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: ./gradlew :app:detekt --stacktrace --no-daemon
-
-      # detekt prints only "Analysis failed with N weighted issues" and a stack
-      # trace; the findings themselves go to a report file. Without this, reading
-      # a failure means downloading the reports artifact, so the log says a gate
-      # failed but never which rule or which line. Print them instead.
-      - name: Show detekt findings
-        if: failure()
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          dir=app/build/reports/detekt
-          if [ -f "$dir/detekt.txt" ]; then
-            echo "::group::detekt findings"
-            cat "$dir/detekt.txt"
-            echo "::endgroup::"
-          elif [ -f "$dir/detekt.xml" ]; then
-            # The XML carries the same findings one <error> element per issue;
-            # enough to name the rule, file and line without the artifact.
-            echo "::group::detekt findings (xml)"
-            grep -oE '<file name="[^"]*"|<error line="[0-9]+" column="[0-9]+" severity="[^"]*" message="[^"]*" source="[^"]*"' "$dir/detekt.xml" || cat "$dir/detekt.xml"
-            echo "::endgroup::"
-          else
-            echo "No detekt report found under $dir. Present:"
-            ls -la "$dir" 2>/dev/null || echo "  (directory absent)"
-          fi
 
       - name: Assemble debug APK
         working-directory: ${{ env.PROJECT_DIR }}
@@ -207,14 +191,14 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "25"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       # The emulator needs hardware acceleration to be usable; ubuntu runners
       # expose KVM but not to unprivileged processes by default.

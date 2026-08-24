@@ -159,11 +159,14 @@ internal fun MusicFoldersEditor(viewModel: LibraryViewModel) {
 @Composable
 private fun AnalysisCacheGroup() {
     val context = LocalContext.current
-    val measuring = stringResource(R.string.folders_cache_measuring)
-    var cacheInfo by remember { mutableStateOf(measuring) }
+    // The COUNTS are carried out of the IO block, not the finished sentence:
+    // formatting has to happen in composition, because a Configuration change
+    // does not invalidate a LocalContext read and Context.getString off the
+    // composition can hand back a translation from the previous locale.
+    var cacheStats by remember { mutableStateOf<Pair<Int, Float>?>(null) }
     var cacheBump by remember { mutableIntStateOf(0) }
     LaunchedEffect(cacheBump) {
-        cacheInfo =
+        cacheStats =
             withContext(Dispatchers.IO) {
                 val app = context.applicationContext
                 val n =
@@ -172,9 +175,16 @@ private fun AnalysisCacheGroup() {
                 val mb =
                     dev.geode.analysis.AnalysisCache
                         .sizeBytes(app) / (1024f * 1024f)
-                context.getString(R.string.folders_cache_summary, n, mb)
+                n to mb
             }
     }
+    val stats = cacheStats
+    val cacheInfo =
+        if (stats == null) {
+            stringResource(R.string.folders_cache_measuring)
+        } else {
+            stringResource(R.string.folders_cache_summary, stats.first, stats.second)
+        }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             stringResource(R.string.folders_cache_label, cacheInfo),

@@ -9,6 +9,74 @@ their content shipped, and the original `docs/DEVICE_CHECKS.md` was lost —
 a partial reconstruction, rebuilt from the references in these entries, is at
 [docs/DEVICE_CHECKS.md](docs/DEVICE_CHECKS.md).
 
+## Build toolchain rebuilt on JDK 25 and Android 17 (working tree)
+
+- **CI leads the toolchain now, instead of trailing it.** The workflows pinned
+  JDK 17 and Android SDK 36, and because CI is what the build is proven
+  against, that pin is what kept the app on an ageing Java. They now provision
+  JDK 25 (the current LTS) and Android SDK 37, and the build was moved up to
+  meet them rather than the other way round.
+- Android Gradle Plugin 8.13.2 to 9.3.2, Gradle 8.13 to 9.7.1, Kotlin 2.2.0 to
+  2.4.10, KSP to 2.3.11, Hilt to 2.60.1, ktlint plugin to 14.2.0. Reaching
+  `compileSdk 37` is what forced the major versions: AGP 8.13 tops out at API
+  36, and AGP 9.3 needs Gradle 9.5+.
+- **AGP 9 compiles Kotlin itself**, so `org.jetbrains.kotlin.android` is no
+  longer applied anywhere - it is gone from the version catalog, the root build
+  file, `:app`, and the `geode.android-library` convention plugin. The pure-JVM
+  module (`:engine:audio-core`) still uses the Kotlin JVM plugin, which is
+  unaffected by built-in Kotlin.
+- `geode.android-library` moved to AGP 9's new DSL: the old
+  `com.android.build.gradle.LibraryExtension` no longer exists and the
+  configured type is now `com.android.build.api.dsl.LibraryExtension`.
+- `compileSdk` and `targetSdk` are 37 (Android 17); `minSdk` stays 26. Java
+  language level moved from 17 to 21 across the app, both library convention
+  plugins and `build-logic`.
+- **API 37 platform packages carry a minor component.** There is no bare
+  `platforms;android-37` - only `android-37.0` and `android-37.1` - so both
+  `setup-android-sdk.sh` copies and the workflow SDK steps name the minor
+  explicitly. The musicviz copy derived its package id from `compileSdk`, which
+  would have silently asked for a package that does not exist.
+- The emulator job had drifted a major version behind the rest of CI on
+  `actions/setup-java` and `gradle/actions/setup-gradle`; both are now on the
+  same versions as every other job.
+- AndroidX moved with the compose BOM rather than being left behind it:
+  activity-compose 1.13.0, lifecycle 2.11.0, coroutines 1.11.0, material3
+  adaptive 1.3.0, core-splashscreen 1.2.0, documentfile 1.1.0, hilt compose
+  1.4.0, media3 1.11.0, compose BOM 2026.08.00.
+- `hiltViewModel` moved out of `androidx.hilt.navigation.compose` in Hilt
+  compose 1.4.0. `geodeViewModel` - the single seam the screens resolve
+  through - now imports it from `androidx.hilt.lifecycle.viewmodel.compose`,
+  and that artifact is declared directly instead of arriving transitively.
+- **detekt is removed.** detekt 1.23.8 is the last stable release, it runs
+  in-process in the Gradle daemon, and it cannot run on JDK 25 - it dies
+  parsing the JDK's own version string. detekt 2.x exists only as
+  `2.0.0-alpha.6`, which is not something to gate a shipping app on. With the
+  build moving to JDK 25, detekt could not come along: the plugin, its config,
+  the six per-module baselines and the two CI steps are all gone. ktlint and
+  Android lint remain as the static gates.
+- **The Kotlin code style is now declared in `.editorconfig`.** It never was:
+  the ktlint plugin's `android` flag supplied it implicitly, ktlint-gradle 14
+  stopped feeding it through, and the engine fell back to a newer rule set -
+  454 violations across 52 files in a tree that had always passed the gate.
+  `ktlint_code_style = ktlint_official` states it in the file ktlint reads, and
+  the engine is pinned alongside it, so a plugin upgrade cannot silently
+  reinterpret how this code is meant to look.
+- Two Compose lint errors that the newer androidx lint checks surfaced are
+  fixed rather than suppressed: `AboutSettings` and `FolderSettings` both read
+  strings through `Context.getString` off the composition, which a
+  Configuration change does not invalidate, so a locale switch could leave
+  stale text on screen. Both now resolve through `stringResource`.
+- One import in `VisualizerRenderer` was genuinely out of lexicographic order
+  (`ProjectMScene` ahead of `PcmChunk`) and is corrected.
+- **Two workflow steps could die before running any check.** Both the
+  native-lib checksum verification in `android.yml` and the 16 KB alignment
+  gate in `release.yml` named `app/src/main/jniLibs` as their
+  working-directory, so while the `.so` files were absent - between 7040ee4
+  removing them and 7924fc8 committing the projectM 4.2 rebuild - every run
+  died with a bare ENOENT before a single check executed, instead of the clear
+  error the script already knew how to print. Missing libraries still fail the
+  build; they just say why now.
+
 ## Composite visual families and mineral UI (working tree)
 
 - **Removed the Hyperspace style family.** All eleven looks (Original · Living

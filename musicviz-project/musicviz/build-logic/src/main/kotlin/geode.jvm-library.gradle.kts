@@ -4,11 +4,11 @@ plugins {
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 dependencies {
     "testImplementation"("junit:junit:4.13.2")
-    "testImplementation"("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    "testImplementation"("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 }
