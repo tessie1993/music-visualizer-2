@@ -60,8 +60,25 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;${NDK_VERSION}"
           echo "NDK=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
+      # Three consecutive runs once sat 20+ minutes in this step on an apt mirror
+      # stall and never reached the alignment gate. ubuntu-latest already ships
+      # cmake and ninja, so install only what is genuinely missing, skip the
+      # apt-get update round-trip when nothing is, and bound the step so a stall
+      # fails fast instead of burning the run's timeout.
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          missing=()
+          command -v cmake >/dev/null || missing+=(cmake)
+          command -v ninja >/dev/null || missing+=(ninja-build)
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "cmake $(cmake --version | head -1), ninja $(ninja --version) already present"
+          else
+            echo "installing: ${missing[*]}"
+            sudo apt-get update
+            sudo apt-get install -y "${missing[@]}"
+          fi
 
       - name: Clone projectM ${{ inputs.projectm_ref }}
         run: |
