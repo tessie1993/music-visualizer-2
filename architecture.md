@@ -1,6 +1,155 @@
 ```mermaid
 classDiagram
-    direction LR
+    direction TB
+
+    namespace app {
+        class pkg_app_dev_geode["~"] {
+            3 types
+        }
+        class pkg_app_dev_geode_di["~.di"] {
+            3 types
+        }
+        class pkg_app_dev_geode_ui["~.ui"] {
+            117 types
+        }
+        class pkg_app_dev_geode_ui_theme["~.ui.theme"] {
+            16 types
+        }
+        class pkg_app_dev_geode_editor["~.editor"] {
+            98 types
+        }
+        class pkg_app_dev_geode_export["~.export"] {
+            109 types
+        }
+        class pkg_app_dev_geode_publish["~.publish"] {
+            23 types
+        }
+        class pkg_app_dev_geode_data["~.data"] {
+            100 types
+        }
+        class pkg_app_dev_geode_playback["~.playback"] {
+            21 types
+        }
+        class pkg_app_dev_geode_audio["~.audio"] {
+            21 types
+        }
+        class pkg_app_dev_geode_audio_dsp["~.audio.dsp"] {
+            1 types
+        }
+        class pkg_app_dev_geode_billing["~.billing"] {
+            14 types
+        }
+        class pkg_app_dev_geode_wallpaper["~.wallpaper"] {
+            4 types
+        }
+    }
+
+    namespace scenes {
+        class pkg_scenes_dev_geode_audio["~.audio"] {
+            1 types
+        }
+        class pkg_scenes_dev_geode_render["~.render"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_render_scene["~.render.scene"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_render_fluid["~.render.fluid"] {
+            34 types
+        }
+        class pkg_scenes_dev_geode_render_compute["~.render.compute"] {
+            15 types
+        }
+        class pkg_scenes_dev_geode_render_offscreen["~.render.offscreen"] {
+            6 types
+        }
+        class pkg_scenes_dev_geode_analysis["~.analysis"] {
+            22 types
+        }
+    }
+
+    namespace gl {
+        class pkg_gl_dev_geode_engine_gl["~.engine.gl"] {
+            53 types
+        }
+    }
+
+    namespace audio_core {
+        class pkg_audio_core_dev_geode_engine_audio["~.engine.audio"] {
+            54 types
+        }
+    }
+
+    namespace audio_android {
+        class pkg_audio_android_dev_geode_engine_audioandroid["~.engine.audioandroid"] {
+            9 types
+        }
+    }
+
+    namespace runtime {
+        class pkg_runtime_dev_geode_engine_runtime["~.engine.runtime"] {
+            5 types
+        }
+    }
+
+    namespace build_logic {
+        class pkg_build_logic_root["(build-logic)"] {
+            11 types
+        }
+    }
+
+    pkg_app_dev_geode_ui --> pkg_app_dev_geode_data : 26
+    pkg_app_dev_geode_ui --> pkg_scenes_dev_geode_render_scene : 14
+    pkg_scenes_dev_geode_render --> pkg_scenes_dev_geode_render_scene : 13
+    pkg_app_dev_geode_ui --> pkg_scenes_dev_geode_analysis : 11
+    pkg_app_dev_geode_ui --> pkg_app_dev_geode_audio : 9
+    pkg_scenes_dev_geode_render_scene --> pkg_scenes_dev_geode_render : 8
+    pkg_scenes_dev_geode_render_scene --> pkg_scenes_dev_geode_render_fluid : 8
+    pkg_app_dev_geode_ui --> pkg_app_dev_geode_ui_theme : 8
+    pkg_app_dev_geode_ui --> pkg_scenes_dev_geode_render : 8
+    pkg_scenes_dev_geode_render_fluid --> pkg_scenes_dev_geode_render_scene : 6
+    pkg_app_dev_geode_data --> pkg_scenes_dev_geode_render_scene : 6
+    pkg_app_dev_geode_export --> pkg_scenes_dev_geode_render : 6
+    pkg_scenes_dev_geode_render_compute --> pkg_gl_dev_geode_engine_gl : 6
+    pkg_scenes_dev_geode_render_scene --> pkg_scenes_dev_geode_analysis : 5
+    pkg_app_dev_geode_data --> pkg_app_dev_geode_export : 4
+    pkg_scenes_dev_geode_render_fluid --> pkg_scenes_dev_geode_analysis : 4
+    pkg_app_dev_geode_audio_dsp --> pkg_audio_android_dev_geode_engine_audioandroid : 3
+    pkg_app_dev_geode_export --> pkg_scenes_dev_geode_render_scene : 3
+    pkg_scenes_dev_geode_render --> pkg_scenes_dev_geode_analysis : 3
+    pkg_scenes_dev_geode_render_offscreen --> pkg_scenes_dev_geode_render : 3
+    pkg_scenes_dev_geode_render_offscreen --> pkg_scenes_dev_geode_render_fluid : 3
+    pkg_app_dev_geode_ui --> pkg_app_dev_geode_export : 3
+    pkg_app_dev_geode_data --> pkg_app_dev_geode_editor : 3
+    pkg_app_dev_geode_data --> pkg_scenes_dev_geode_render : 3
+    pkg_scenes_dev_geode_analysis --> pkg_audio_core_dev_geode_engine_audio : 2
+    pkg_app_dev_geode_audio --> pkg_audio_android_dev_geode_engine_audioandroid : 2
+    pkg_app_dev_geode_editor --> pkg_app_dev_geode_export : 2
+    pkg_audio_android_dev_geode_engine_audioandroid --> pkg_audio_core_dev_geode_engine_audio : 2
+    pkg_app_dev_geode_export --> pkg_scenes_dev_geode_analysis : 2
+    pkg_scenes_dev_geode_render --> pkg_scenes_dev_geode_render_fluid : 2
+    pkg_scenes_dev_geode_render_offscreen --> pkg_scenes_dev_geode_render_scene : 2
+    pkg_scenes_dev_geode_render_scene --> pkg_scenes_dev_geode_render_compute : 2
+    pkg_app_dev_geode_ui --> pkg_app_dev_geode_editor : 2
+    pkg_app_dev_geode_audio --> pkg_audio_core_dev_geode_engine_audio : 1
+    pkg_app_dev_geode --> pkg_app_dev_geode_ui : 1
+    pkg_app_dev_geode_audio --> pkg_scenes_dev_geode_analysis : 1
+    pkg_scenes_dev_geode_render --> pkg_gl_dev_geode_engine_gl : 1
+    pkg_scenes_dev_geode_render_fluid --> pkg_app_dev_geode_billing : 1
+    pkg_scenes_dev_geode_render_offscreen --> pkg_scenes_dev_geode_analysis : 1
+    pkg_app_dev_geode_wallpaper --> pkg_scenes_dev_geode_render : 1
+    pkg_scenes_dev_geode_analysis --> pkg_scenes_dev_geode_render_scene : 1
+    pkg_app_dev_geode_audio --> pkg_app_dev_geode_audio_dsp : 1
+    pkg_app_dev_geode_data --> pkg_app_dev_geode_ui : 1
+    pkg_app_dev_geode_di --> pkg_app_dev_geode_data : 1
+    pkg_app_dev_geode_wallpaper --> pkg_scenes_dev_geode_analysis : 1
+```
+
+## app :: dev.geode
+
+```mermaid
+classDiagram
+    direction TB
 
     namespace app.dev.geode {
         class GeodeApp["GeodeApp"] {
@@ -14,6 +163,29 @@ classDiagram
         }
     }
 
+    namespace other_packages {
+        class pkg_app_dev_geode_ui["~.ui"] {
+            117 types
+        }
+    }
+
+    namespace android.app {
+        class ext_Application["Application"] {
+            <<class>>
+        }
+    }
+
+    GeodeApp --> GeodeContainer
+    GeodeContainer ..> pkg_app_dev_geode_ui
+    ext_Application <|-- GeodeApp
+```
+
+## app :: dev.geode.di
+
+```mermaid
+classDiagram
+    direction TB
+
     namespace app.dev.geode.di {
         class DataModule["DataModule"] {
             <<object>>
@@ -25,6 +197,21 @@ classDiagram
             <<class>>
         }
     }
+
+    namespace other_packages {
+        class pkg_app_dev_geode_data["~.data"] {
+            100 types
+        }
+    }
+
+    DataModule ..> pkg_app_dev_geode_data
+```
+
+## app :: dev.geode.ui
+
+```mermaid
+classDiagram
+    direction TB
 
     namespace app.dev.geode.ui {
         class AbLoop["AbLoop"] {
@@ -380,6 +567,207 @@ classDiagram
         }
     }
 
+    namespace other_packages {
+        class pkg_app_dev_geode["~"] {
+            3 types
+        }
+        class pkg_app_dev_geode_ui_theme["~.ui.theme"] {
+            16 types
+        }
+        class pkg_app_dev_geode_editor["~.editor"] {
+            98 types
+        }
+        class pkg_app_dev_geode_export["~.export"] {
+            109 types
+        }
+        class pkg_app_dev_geode_data["~.data"] {
+            100 types
+        }
+        class pkg_app_dev_geode_audio["~.audio"] {
+            21 types
+        }
+        class pkg_scenes_dev_geode_render["~.render"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_render_scene["~.render.scene"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_analysis["~.analysis"] {
+            22 types
+        }
+    }
+
+    namespace androidx.activity {
+        class ext_ComponentActivity["ComponentActivity"] {
+            <<class>>
+        }
+    }
+
+    AnalysisState <|.. AnalysisState_Failed
+    AnalysisState <|.. AnalysisState_Idle
+    AnalysisState <|.. AnalysisState_Running
+    ExportPhase <|.. ExportPhase_Done
+    ExportPhase <|.. ExportPhase_Failed
+    ExportPhase <|.. ExportPhase_Idle
+    ExportPhase <|.. ExportPhase_Loading
+    ExportPhase <|.. ExportPhase_Running
+    PresetLinkImport <|.. PresetLinkImport_Imported
+    PresetLinkImport <|.. PresetLinkImport_NotALink
+    PresetLinkImport <|.. PresetLinkImport_Unreadable
+    PlaybackRepository <|.. SessionPlaybackRepository
+    VisualizerRepository <|.. SessionVisualizerRepository
+    UserDataRepository <|.. SharedPrefsUserDataRepository
+    AutoVisualsController --> AutoVisualsPrefsStore
+    AutoVisualsController --> MilkFile
+    AutoVisualsController_Host --> VizUiState
+    BuiltInPresets --> BuiltInPresets_Look
+    CaptureController --> ExternalAudioState
+    CaptureController --> MicState
+    ExportController --> ExportUiState
+    ExportController --> StudioUiState
+    ExportController_Host --> GuiPrefs
+    ExportUiState --> ExportPhase
+    GeodeAppState --> GeodeDestination
+    GeodeUserData --> GuiPrefs
+    GuiPrefs --> CornerStyle
+    GuiPrefs --> PlayerPosition
+    GuiPrefs --> UserIntent
+    LibraryState --> LibraryTrack
+    LibraryUiState --> DeviceTrack
+    LibraryUiState --> LibrarySort
+    Lyrics --> LyricLine
+    MainActivity --> SettingsViewModel
+    MainActivity --> VisualsViewModel
+    ModulationController --> AbSnapshotState
+    ModulationController --> ParamHistoryState
+    MusicLibraryController --> DeviceTrack
+    MusicLibraryController --> LibraryState
+    MusicLibraryController --> LibraryTrack
+    NavEntry --> CrystalNavItem
+    NavEntry --> GeodeDestination
+    PlaybackQueue --> QueueTrack
+    PlaybackQueue_Window --> QueueTrack
+    PlaybackRepository --> AbLoop
+    PlaybackRepository --> PlayerUiState
+    PlaybackRepository --> QueueUiState
+    PlayerSettingsController --> GuiPrefs
+    PlayerSettingsController --> UserDataRepository
+    PresetLibraryController_Host --> VizUiState
+    QueueController --> AbLoop
+    QueueController --> QueueTrack
+    QueueController --> QueueUiState
+    QueueController_Host --> DeviceTrack
+    QueueController_Host --> LibraryTrack
+    QueueUiState --> QueueTrack
+    SessionPlaybackRepository --> AbLoop
+    SessionPlaybackRepository --> PlayerSession
+    SessionPlaybackRepository --> PlayerUiState
+    SessionPlaybackRepository --> QueueUiState
+    SessionVisualizerRepository --> PlayerSession
+    SessionVisualizerRepository --> VizUiState
+    SharedPrefsUserDataRepository --> GeodeUserData
+    SharedPrefsUserDataRepository --> GuiPrefs
+    StudioUiState --> ExportPhase
+    TakeController --> TakeUiState
+    TakeController_Host --> VizUiState
+    TrackAnalysisController_Host --> GuiPrefs
+    TrackAnalysisController_Host --> VizUiState
+    TutorialStep --> GeodeDestination
+    UserDataRepository --> GeodeUserData
+    UserDataRepository --> GuiPrefs
+    UserIntent --> GeodeDestination
+    VisualSettingsController --> VizApply
+    VisualSettingsController --> VizStateStore
+    VisualSettingsController_Host --> GuiPrefs
+    VisualizerRepository --> VizUiState
+    VizStateStore --> AutoVisualsPrefsStore
+    VizUiState --> AnalysisState
+    VizUiState --> VizPlaylistEntry
+    AutoVisualsController ..> VizPlaylistEntry
+    AutoVisualsController_Host ..> MilkFile
+    AutoVisualsPrefsStore ..> VizUiState
+    ListeningTracker_Host ..> QueueTrack
+    MilkImportController ..> MilkFile
+    MusicLibraryController ..> MusicLibraryController_FileMeta
+    PlaybackQueue ..> DeviceTrack
+    PlaybackQueue ..> LibraryTrack
+    PlayerSettingsController_Host ..> GuiPrefs
+    QueueController ..> PlaybackQueue
+    ThemeStore ..> GuiPrefs
+    TrackAnalysisController ..> GuiPrefs
+    TrackLibrary ..> LibraryTrack
+    VizStateStore ..> VizUiState
+    pkg_app_dev_geode ..> UserDataRepository
+    AbSnapshotState ..> pkg_scenes_dev_geode_render_scene
+    BuiltInPresets ..> pkg_app_dev_geode_data
+    BuiltInPresets ..> pkg_scenes_dev_geode_render_scene
+    BuiltInPresets_Look ..> pkg_scenes_dev_geode_render_scene
+    CrystalNavItem ..> pkg_app_dev_geode_ui_theme
+    ExportController_Host ..> pkg_scenes_dev_geode_analysis
+    ExportController_Host ..> pkg_scenes_dev_geode_render_scene
+    ExternalAudioState ..> pkg_app_dev_geode_audio : 3
+    GeodeDestination ..> pkg_app_dev_geode_ui_theme
+    GeodeUserData ..> pkg_app_dev_geode_ui_theme
+    GuiPrefs ..> pkg_scenes_dev_geode_analysis
+    LayersUiState ..> pkg_scenes_dev_geode_render
+    LibraryState ..> pkg_app_dev_geode_data
+    LibraryUiState ..> pkg_app_dev_geode_data
+    ListeningTracker ..> pkg_app_dev_geode_data : 2
+    MicState ..> pkg_app_dev_geode_audio : 2
+    ModulationController ..> pkg_app_dev_geode_data
+    ModulationController ..> pkg_scenes_dev_geode_render : 2
+    ModulationController_Host ..> pkg_scenes_dev_geode_render_scene
+    PendingExport ..> pkg_app_dev_geode_export : 2
+    PlayerSettingsController ..> pkg_scenes_dev_geode_analysis
+    PlayerSettingsController ..> pkg_app_dev_geode_audio : 2
+    PlayerSettingsController ..> pkg_app_dev_geode_data : 2
+    PlayerSettingsController ..> pkg_app_dev_geode_ui_theme
+    PresetLibraryController ..> pkg_app_dev_geode_data : 3
+    SavedPalettes ..> pkg_app_dev_geode_data : 2
+    SessionVisualizerRepository ..> pkg_scenes_dev_geode_analysis
+    SharedPrefsUserDataRepository ..> pkg_app_dev_geode_ui_theme
+    StudioUiState ..> pkg_app_dev_geode_export
+    TakeController ..> pkg_app_dev_geode_data : 3
+    TakeUiState ..> pkg_app_dev_geode_data
+    TextureController ..> pkg_app_dev_geode_data
+    TrackAnalysisController ..> pkg_scenes_dev_geode_analysis : 2
+    TrackColorController_Host ..> pkg_scenes_dev_geode_render_scene
+    UserDataRepository ..> pkg_app_dev_geode_ui_theme
+    VisualSettingsController ..> pkg_scenes_dev_geode_analysis : 2
+    VisualizerRepository ..> pkg_scenes_dev_geode_analysis
+    VisualizerTouch ..> pkg_scenes_dev_geode_render
+    VizUiState ..> pkg_scenes_dev_geode_analysis
+    VizUiState ..> pkg_app_dev_geode_data
+    VizUiState ..> pkg_scenes_dev_geode_render
+    VizUiState ..> pkg_scenes_dev_geode_render_scene : 2
+    pkg_app_dev_geode_data ..> PresetLink
+    AutoVisualsController_Host ..> pkg_scenes_dev_geode_analysis
+    AutoVisualsController_Host ..> pkg_app_dev_geode_data
+    CaptureController ..> pkg_app_dev_geode_audio : 2
+    CustomizeSummary ..> pkg_app_dev_geode_data
+    CustomizeSummary ..> pkg_scenes_dev_geode_render_scene
+    ExportController_Host ..> pkg_app_dev_geode_data
+    ExportController_Host ..> pkg_app_dev_geode_editor
+    ExportController_Host ..> pkg_scenes_dev_geode_render : 2
+    MilkImportController ..> pkg_app_dev_geode_data
+    ModulationController ..> pkg_scenes_dev_geode_render_scene : 3
+    PresetLibraryController_Host ..> pkg_app_dev_geode_data
+    TakeController ..> pkg_app_dev_geode_editor
+    TakeController_Host ..> pkg_scenes_dev_geode_render_scene
+    ThemeStore ..> pkg_app_dev_geode_ui_theme : 2
+    VisualSettingsController ..> pkg_app_dev_geode_data
+    VisualSettingsController ..> pkg_scenes_dev_geode_render
+    VisualSettingsController ..> pkg_scenes_dev_geode_render_scene
+    VisualSettingsController_Host ..> pkg_app_dev_geode_data
+    ext_ComponentActivity <|-- MainActivity
+```
+
+## app :: dev.geode.ui.theme
+
+```mermaid
+classDiagram
+    direction TB
+
     namespace app.dev.geode.ui.theme {
         class ParsedGlyph["ParsedGlyph"] {
             <<class>>
@@ -430,6 +818,31 @@ classDiagram
             <<object>>
         }
     }
+
+    namespace other_packages {
+        class pkg_app_dev_geode_ui["~.ui"] {
+            117 types
+        }
+    }
+
+    ThemePack --> StoneComponent
+    ThemePack --> StoneMaterial
+    ThemePack --> StoneMotion
+    ThemePack --> StonePalette
+    ThemePack --> StoneSounds
+    ThemePackCatalog --> ThemePack
+    StoneStateArt ..> StoneState
+    ThemePack ..> StoneStateArt
+    pkg_app_dev_geode_ui ..> StoneIcon : 2
+    pkg_app_dev_geode_ui ..> ThemePack : 5
+    pkg_app_dev_geode_ui ..> ThemePackCatalog
+```
+
+## app :: dev.geode.editor
+
+```mermaid
+classDiagram
+    direction TB
 
     namespace app.dev.geode.editor {
         class AutoCut["AutoCut"] {
@@ -727,6 +1140,178 @@ classDiagram
             <<data class>>
         }
     }
+
+    namespace other_packages {
+        class pkg_app_dev_geode_ui["~.ui"] {
+            117 types
+        }
+        class pkg_app_dev_geode_export["~.export"] {
+            109 types
+        }
+        class pkg_app_dev_geode_data["~.data"] {
+            100 types
+        }
+    }
+
+    AutoCutMiss <|.. AutoCutMiss_EmptyEnvelope
+    AutoCutMiss <|.. AutoCutMiss_NoTransients
+    AutoCutMiss <|.. AutoCutMiss_WindowTooShort
+    AutoCutResult <|.. AutoCutResult_NoCuts
+    AutoCutResult <|.. AutoCutResult_Suggested
+    ClipContent <|.. ClipContent_Audio
+    ClipContent <|.. ClipContent_Overlay
+    ClipContent <|.. ClipContent_Scene
+    ClipContent <|.. ClipContent_Still
+    ClipContent <|.. ClipContent_Text
+    ClipContent <|.. ClipContent_Video
+    EditError <|.. EditError_ClipNotFound
+    EditError <|.. EditError_LaneLocked
+    EditError <|.. EditError_LaneNotFound
+    EditError <|.. EditError_NeedsSplit
+    EditError <|.. EditError_OutsideClip
+    EditError <|.. EditError_Overlaps
+    EditError <|.. EditError_TooShort
+    EditError <|.. EditError_WrongLaneKind
+    EditResult <|.. EditResult_Applied
+    EditResult <|.. EditResult_Rejected
+    Interpolation <|.. Interpolation_Custom
+    Interpolation <|.. Interpolation_Ease
+    Interpolation <|.. Interpolation_Hold
+    Interpolation <|.. Interpolation_Linear
+    KeyframeError <|.. KeyframeError_KeyNotFound
+    KeyframeError <|.. KeyframeError_KindMismatch
+    KeyframeResult <|.. KeyframeResult_Applied
+    KeyframeResult <|.. KeyframeResult_Rejected
+    LaneKind <|.. LaneKind_Audio
+    LaneKind <|.. LaneKind_Media
+    LaneKind <|.. LaneKind_Overlay
+    LaneKind <|.. LaneKind_Text
+    LaneKind <|.. LaneKind_Visual
+    MarkerOrigin <|.. MarkerOrigin_Detected
+    MarkerOrigin <|.. MarkerOrigin_Manual
+    MarkerOrigin <|.. MarkerOrigin_TappedIn
+    ParamValue <|.. ParamValue_Choice
+    ParamValue <|.. ParamValue_Colour
+    ParamValue <|.. ParamValue_Scalar
+    ParamValue <|.. ParamValue_Toggle
+    ParamValue <|.. ParamValue_Vector2
+    PlaceOutcome <|.. PlaceOutcome_Blocked
+    PlaceOutcome <|.. PlaceOutcome_Placed
+    SnapMode <|.. SnapMode_Free
+    SnapMode <|.. SnapMode_Magnetic
+    TapResult <|.. TapResult_Debounced
+    TapResult <|.. TapResult_Placed
+    AutoCutResult --> AutoCutSettings
+    AutoCutResult --> TransientHit
+    AutoCutResult_NoCuts --> AutoCutMiss
+    AutoCutResult_Suggested --> AutoCutSettings
+    AutoCutResult_Suggested --> TransientHit
+    AutoCutSettings --> TransientSource
+    Clip --> ClipContent
+    Clip --> ClipId
+    ClipContent --> LaneKind
+    ClipContent --> OverlayBlend
+    ClipContent_Audio --> LaneKind
+    ClipContent_Overlay --> LaneKind
+    ClipContent_Overlay --> OverlayBlend
+    ClipContent_Scene --> LaneKind
+    ClipContent_Still --> LaneKind
+    ClipContent_Text --> LaneKind
+    ClipContent_Video --> LaneKind
+    ClipSplit --> Clip
+    EaseShape --> BezierCurve
+    EditError --> LaneId
+    EditError --> LaneKind
+    EditError_ClipNotFound --> ClipId
+    EditError_LaneLocked --> LaneId
+    EditError_LaneNotFound --> LaneId
+    EditError_NeedsSplit --> ClipId
+    EditError_Overlaps --> ClipId
+    EditError_WrongLaneKind --> LaneId
+    EditError_WrongLaneKind --> LaneKind
+    EditResult --> ClipId
+    EditResult --> RippleShift
+    EditResult --> Timeline
+    EditResult_Applied --> ClipId
+    EditResult_Applied --> RippleShift
+    EditResult_Applied --> Timeline
+    EditResult_Rejected --> EditError
+    EditorProject --> KeyframeSheet
+    EditorProject --> MarkerSet
+    EditorProject --> Timeline
+    Interpolation_Custom --> BezierCurve
+    Interpolation_Ease --> EaseShape
+    Keyframe --> Interpolation
+    Keyframe --> Interpolation_Linear
+    Keyframe --> KeyframeId
+    Keyframe --> ParamValue
+    KeyframeError --> ParamKind
+    KeyframeError_KeyNotFound --> KeyframeId
+    KeyframeError_KindMismatch --> ParamKind
+    KeyframeResult_Applied --> KeyframeTrack
+    KeyframeResult_Rejected --> KeyframeError
+    KeyframeSheet --> KeyframeTrack
+    KeyframeTrack --> ClipId
+    KeyframeTrack --> Keyframe
+    KeyframeTrack --> ParamId
+    KeyframeTrack --> ParamKind
+    Lane --> Clip
+    Lane --> LaneId
+    Lane --> LaneKind
+    Marker --> MarkerColour
+    Marker --> MarkerId
+    Marker --> MarkerOrigin
+    Marker --> MarkerOrigin_Manual
+    MarkerSet --> Marker
+    ParamValue --> ParamKind
+    ParamValue_Choice --> ParamKind
+    ParamValue_Colour --> ParamKind
+    ParamValue_Scalar --> ParamKind
+    ParamValue_Toggle --> ParamKind
+    ParamValue_Vector2 --> ParamKind
+    PerformanceSample --> ParamId
+    PlaceOutcome_Blocked --> EditError
+    PlaceOutcome_Placed --> Lane
+    RippleShift --> ClipId
+    RippleShift --> RippleScope
+    SnapMode --> SnapTarget
+    SnapMode_Magnetic --> SnapTarget
+    SnapResult --> SnapTarget
+    TapInSession --> Marker
+    TapInSession --> TapInSettings
+    TapInSettings --> MarkerColour
+    TapResult --> Marker
+    TapResult --> TapInSession
+    TapResult_Debounced --> TapInSession
+    TapResult_Placed --> Marker
+    TapResult_Placed --> TapInSession
+    Timeline --> Lane
+    EditorProject ..> EditResult
+    KeyframeSheet ..> ClipId
+    KeyframeSheet ..> RippleShift
+    KeyframeTrack ..> KeyframeId
+    KeyframeTrack ..> KeyframeResult
+    KeyframeTrack ..> ParamValue
+    KeyframeTrack ..> RippleShift
+    Lane ..> ClipId
+    Lane ..> RippleShift
+    MarkerSet ..> MarkerId
+    MarkerSet ..> RippleShift
+    Timeline ..> Clip
+    Timeline ..> ClipId
+    Timeline ..> EditResult
+    Timeline ..> LaneId
+    ClipContent ..> pkg_app_dev_geode_export
+    ClipContent_Video ..> pkg_app_dev_geode_export
+    pkg_app_dev_geode_data ..> Timeline : 3
+    pkg_app_dev_geode_ui ..> Timeline : 2
+```
+
+## app :: dev.geode.export
+
+```mermaid
+classDiagram
+    direction TB
 
     namespace app.dev.geode.export {
         class AudioTranscoder["AudioTranscoder"] {
@@ -1058,6 +1643,178 @@ classDiagram
         }
     }
 
+    namespace other_packages {
+        class pkg_app_dev_geode_ui["~.ui"] {
+            117 types
+        }
+        class pkg_app_dev_geode_editor["~.editor"] {
+            98 types
+        }
+        class pkg_app_dev_geode_data["~.data"] {
+            100 types
+        }
+        class pkg_scenes_dev_geode_render["~.render"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_render_scene["~.render.scene"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_analysis["~.analysis"] {
+            22 types
+        }
+    }
+
+    namespace java.io {
+        class ext_Closeable["Closeable"] {
+            <<interface>>
+        }
+    }
+
+    namespace android.app {
+        class ext_Service["Service"] {
+            <<class>>
+        }
+    }
+
+    ChapterWriteResult <|.. ChapterWriteResult_Failed
+    ChapterWriteResult <|.. ChapterWriteResult_Skipped
+    ChapterWriteResult <|.. ChapterWriteResult_Written
+    IntegratedLoudness <|.. IntegratedLoudness_BelowGate
+    IntegratedLoudness <|.. IntegratedLoudness_Lufs
+    LongFormAudio <|.. LongFormAudio_Mix
+    LongFormAudio <|.. LongFormAudio_SingleTrack
+    LoopExtend_AudioBuild <|.. LoopExtend_AudioBuild_Failed
+    LoopExtend_AudioBuild <|.. LoopExtend_AudioBuild_Ready
+    LoopExtend_Result <|.. LoopExtend_Result_Cancelled
+    LoopExtend_Result <|.. LoopExtend_Result_Failed
+    LoopExtend_Result <|.. LoopExtend_Result_Saved
+    LoopExtend_Target <|.. LoopExtend_Target_Failed
+    LoopExtend_Target <|.. LoopExtend_Target_Opened
+    LoopRender_Result <|.. LoopRender_Result_Cancelled
+    LoopRender_Result <|.. LoopRender_Result_Failed
+    LoopRender_Result <|.. LoopRender_Result_Rendered
+    LoopRender_StopOutcome <|.. LoopRender_StopOutcome_Cancelled
+    LoopRender_StopOutcome <|.. LoopRender_StopOutcome_Done
+    LoudnessAdvice <|.. LoudnessAdvice_AsMixed
+    LoudnessAdvice <|.. LoudnessAdvice_Normalise
+    LoudnessAdvice <|.. LoudnessAdvice_NothingToMeasure
+    LoudnessAdvice <|.. LoudnessAdvice_OnTarget
+    LoudnessMeter_PcmLayout <|.. LoudnessMeter_PcmLayout_Float32
+    LoudnessMeter_PcmLayout <|.. LoudnessMeter_PcmLayout_Signed16
+    LoudnessMeter_PcmLayout <|.. LoudnessMeter_PcmLayout_Unsupported
+    LoudnessResult <|.. LoudnessResult_Cancelled
+    LoudnessResult <|.. LoudnessResult_Measured
+    LoudnessResult <|.. LoudnessResult_NoAudioTrack
+    LoudnessResult <|.. LoudnessResult_TooShort
+    LoudnessResult <|.. LoudnessResult_Unreadable
+    LoudnessTarget <|.. LoudnessTarget_LeaveAsIs
+    LoudnessTarget <|-- LoudnessTarget_Normalising
+    LoudnessTarget_Normalising <|.. LoudnessTarget_ShortsAndTikTok
+    LoudnessTarget_Normalising <|.. LoudnessTarget_YouTube
+    StudioExporter_Result <|.. StudioExporter_Result_Cancelled
+    StudioExporter_Result <|.. StudioExporter_Result_Failed
+    StudioExporter_Result <|.. StudioExporter_Result_Saved
+    VideoExporter_Result <|.. VideoExporter_Result_Cancelled
+    VideoExporter_Result <|.. VideoExporter_Result_Failed
+    VideoExporter_Result <|.. VideoExporter_Result_Saved
+    AudioTranscoder --> AudioTranscoder_SampleInfo
+    AudioTranscoder_Result --> AudioTranscoder_SampleInfo
+    ChapterMarkers --> Chapter
+    ClipEdit --> ClipLook
+    ClipEdit --> ExportQuality
+    ClipEdit --> ExportRatio
+    ExportPreset --> ExportQuality
+    ExportPreset --> ExportRatio
+    ExportPresets --> ExportPreset
+    LongFormAudio --> MixClip
+    LongFormAudio_Mix --> MixClip
+    LongFormAudio_SingleTrack --> MixClip
+    LoopExtend --> AudioTranscoder
+    LoopExtend --> LoopExtend_TranscodedClip
+    LoopExtend --> MixClip
+    LoopExtend_AudioBuild --> LoopExtend_Soundtrack
+    LoopExtend_AudioBuild_Ready --> LoopExtend_Soundtrack
+    LoopExtend_AudioReel --> LoopExtend_TranscodedClip
+    LoopExtend_Result --> ChapterMarkers
+    LoopExtend_Result --> LoopExtendPlan
+    LoopExtend_Result_Saved --> ChapterMarkers
+    LoopExtend_Result_Saved --> LoopExtendPlan
+    LoopExtend_Soundtrack --> LoopExtend_TranscodedClip
+    LoopExtend_Soundtrack --> MixClipSpan
+    LoopExtend_TranscodedClip --> AudioTranscoder
+    LoopExtend_TranscodedClip --> LoopExtend_Result
+    LoopExtend_TranscodedClip --> MixClip
+    LoopExtendPlan --> LoopSegment
+    LoopExtendPlan --> LoopWrite
+    LoopReel --> LoopSpec
+    LoopReel --> RenderedLoop
+    LoopRender --> ExportAspect
+    LoopRender --> LoopRender_EncoderChoice
+    LoopRender --> LoopSpec
+    LoopRender --> TimeOfDayDrift
+    LoopRender_RenderJob --> ExportAspect
+    LoopRender_RenderJob --> LoopRender_EncoderChoice
+    LoopRender_RenderJob --> LoopSpec
+    LoopRender_RenderJob --> TimeOfDayDrift
+    LoopRender_Result --> LoopReel
+    LoopRender_Result_Rendered --> LoopReel
+    LoudnessAdvice --> LoudnessTarget
+    LoudnessAdvice --> LoudnessTarget_Normalising
+    LoudnessAdvice_Normalise --> GainDirection
+    LoudnessAdvice_Normalise --> LoudnessTarget
+    LoudnessAdvice_Normalise --> LoudnessTarget_Normalising
+    LoudnessAdvice_OnTarget --> LoudnessTarget
+    LoudnessAdvice_OnTarget --> LoudnessTarget_Normalising
+    LoudnessAnalyser --> IntegratedLoudness
+    LoudnessAnalyser --> LoudnessAnalyser_Biquad
+    LoudnessAnalyser_Gated --> IntegratedLoudness
+    LoudnessReport --> IntegratedLoudness
+    LoudnessResult --> LoudnessReport
+    LoudnessResult_Measured --> LoudnessReport
+    LoudnessTarget_Normalising --> LoudnessWindow
+    LoudnessTarget_ShortsAndTikTok --> LoudnessWindow
+    LoudnessTarget_YouTube --> LoudnessWindow
+    MixClipSpan --> MixClip
+    RenderedLoop --> DriftStop
+    VideoExporter --> AudioTranscoder
+    VideoExporter_AudioFeed --> AudioTranscoder
+    VideoExporter_AudioFeed --> VideoExporter_Result
+    ChapterMarkers ..> ChapterFormat
+    ClipLook ..> ClipEdit
+    ExportService ..> ExportRun
+    LoopExtend ..> LoopExtend_AudioBuild
+    LoopExtend ..> LoopExtend_LoopReader
+    LoopExtend ..> LoopExtend_Target
+    LoopExtend ..> LoopExtend_Target_Opened
+    LoudnessAnalyser ..> LoudnessAnalyser_Gated
+    LoudnessAnalyser ..> LoudnessReport
+    StudioClips ..> StudioClip
+    TimeOfDayDrift ..> DriftStop
+    pkg_app_dev_geode_data ..> ExportQuality : 2
+    pkg_app_dev_geode_data ..> ExportRatio : 2
+    pkg_app_dev_geode_editor ..> ClipEdit : 2
+    LoopRender ..> pkg_scenes_dev_geode_analysis
+    LoopRender ..> pkg_scenes_dev_geode_render : 3
+    LoopRender ..> pkg_scenes_dev_geode_render_scene
+    LoopRender_RenderJob ..> pkg_scenes_dev_geode_analysis
+    LoopRender_RenderJob ..> pkg_scenes_dev_geode_render : 3
+    LoopRender_RenderJob ..> pkg_scenes_dev_geode_render_scene
+    pkg_app_dev_geode_ui ..> ExportAspect
+    pkg_app_dev_geode_ui ..> ExportRange
+    pkg_app_dev_geode_ui ..> StudioClip
+    DriftStop ..> pkg_scenes_dev_geode_render_scene
+    ext_Service <|-- ExportService
+    ext_Closeable <|.. LoopExtend_AudioReel
+    ext_Closeable <|.. LoopRender_SeamStash
+    ext_Closeable <|.. VideoExporter_AudioFeed
+```
+
+## app :: dev.geode.publish
+
+```mermaid
+classDiagram
+    direction TB
+
     namespace app.dev.geode.publish {
         class ChapterCheck["ChapterCheck"] {
             <<sealed interface>>
@@ -1129,6 +1886,36 @@ classDiagram
             <<data class>>
         }
     }
+
+    ChapterCheck <|.. ChapterCheck_NotChapters
+    ChapterCheck <|.. ChapterCheck_Ready
+    ThumbnailFrame <|.. ThumbnailFrame_NoFrameThere
+    ThumbnailFrame <|.. ThumbnailFrame_Rendered
+    ThumbnailFrame <|.. ThumbnailFrame_Unreadable
+    ThumbnailSave <|.. ThumbnailSave_Failed
+    ThumbnailSave <|.. ThumbnailSave_NoFrameThere
+    ThumbnailSave <|.. ThumbnailSave_Saved
+    ChapterCheck --> ChapterProblem
+    ChapterCheck_NotChapters --> ChapterProblem
+    PublishDescription --> ChapterCheck
+    PublishFacts --> PublishTrack
+    ThumbnailSpec --> ThumbnailFormat
+    ThumbnailSpec --> ThumbnailLayout
+    ThumbnailSpec --> ThumbnailMaker
+    DescriptionMaker ..> ChapterCheck
+    DescriptionMaker ..> PublishFacts
+    DescriptionMaker ..> PublishTrack
+    PublishTemplateStore ..> PublishTemplates
+    PublishToken ..> PublishFacts
+    ThumbnailMaker ..> ThumbnailFrame
+    ThumbnailMaker ..> ThumbnailSpec
+```
+
+## app :: dev.geode.data
+
+```mermaid
+classDiagram
+    direction TB
 
     namespace app.dev.geode.data {
         class ArtworkStyle["ArtworkStyle"] {
@@ -1433,6 +2220,200 @@ classDiagram
         }
     }
 
+    namespace other_packages {
+        class pkg_app_dev_geode_di["~.di"] {
+            3 types
+        }
+        class pkg_app_dev_geode_ui["~.ui"] {
+            117 types
+        }
+        class pkg_app_dev_geode_editor["~.editor"] {
+            98 types
+        }
+        class pkg_app_dev_geode_export["~.export"] {
+            109 types
+        }
+        class pkg_scenes_dev_geode_render["~.render"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_render_scene["~.render.scene"] {
+            49 types
+        }
+    }
+
+    PresetRepository <|.. FilePresetRepository
+    SessionRepository <|.. FileSessionRepository
+    TakeRepository <|.. FileTakeRepository
+    TemplateRepository <|.. FileTemplateRepository
+    PlaylistParse <|.. PlaylistParse_Parsed
+    PlaylistParse <|.. PlaylistParse_Unreadable
+    FavouritesRepository <|.. SharedPrefsFavouritesRepository
+    PlayerPrefsRepository <|.. SharedPrefsPlayerPrefsRepository
+    TemplateImport <|.. TemplateImport_Added
+    TemplateImport <|.. TemplateImport_Replaced
+    TemplateImport <|.. TemplateImport_Unreadable
+    TemplateImport <|.. TemplateImport_WriteFailed
+    TemplateParse <|.. TemplateParse_Malformed
+    TemplateParse <|.. TemplateParse_NotATemplate
+    TemplateParse <|.. TemplateParse_Parsed
+    TemplateSegment <|.. TemplateSegment_Fixed
+    TemplateSegment <|.. TemplateSegment_LoudestWindow
+    TemplateSegment <|.. TemplateSegment_Unknown
+    TemplateSegment <|.. TemplateSegment_WholeTrack
+    TemplateWrite <|.. TemplateWrite_Failed
+    TemplateWrite <|.. TemplateWrite_Written
+    Tolerant <|.. Tolerant_Foreign
+    Tolerant <|.. Tolerant_Known
+    BundledTemplates --> VideoTemplate
+    FilePresetRepository --> PresetFolders
+    FilePresetRepository --> PresetStore
+    FileSessionRepository --> SessionStore
+    FileTakeRepository --> TakeStore
+    FileTemplateRepository --> TemplateStore
+    FileTemplateRepository --> VideoTemplate
+    MilkTextureLink --> MilkTextureLinkKind
+    PlayerPrefsRepository --> PlayerPrefs
+    PlaylistEntry --> PlaylistFormats
+    PlaylistParse --> PlaylistEntry
+    PlaylistParse --> PlaylistFormat
+    PlaylistParse_Parsed --> PlaylistEntry
+    PlaylistParse_Parsed --> PlaylistFormat
+    PlaylistResolution --> PlaylistEntry
+    PresetRepository --> PresetFolders
+    ResolvedText --> TextSlot
+    SessionStore --> SessionStore_SavedTrack
+    SessionStore_Saved --> SessionStore_SavedTrack
+    SharedPrefsPlayerPrefsRepository --> PlayerPrefs
+    SharedPrefsPlayerPrefsRepository --> PlayerPrefsStore
+    TemplateExport --> AudioHandling
+    TemplateExport --> ForeignFields
+    TemplateExport --> TemplateSegment
+    TemplateExport --> TemplateSegment_WholeTrack
+    TemplateExport --> Tolerant
+    TemplateExport --> Tolerant_Known
+    TemplateImport --> VideoTemplate
+    TemplateImport_Added --> VideoTemplate
+    TemplateImport_Replaced --> VideoTemplate
+    TemplateJob --> ResolvedText
+    TemplateJob --> TemplateWindow
+    TemplateJob --> TrackFacts
+    TemplateJob --> VideoTemplate
+    TemplateLayout --> ArtworkStyle
+    TemplateLayout --> ForeignFields
+    TemplateLayout --> ProgressStyle
+    TemplateLayout --> Tolerant
+    TemplateLayout --> Tolerant_Known
+    TemplateLook --> ForeignFields
+    TemplateParse --> VideoTemplate
+    TemplateParse_Parsed --> VideoTemplate
+    TemplateRepository --> VideoTemplate
+    TemplateSegment --> ForeignFields
+    TemplateSegment_Unknown --> ForeignFields
+    TemplateText --> ForeignFields
+    TemplateText --> TextSlot
+    TextSlot --> ForeignFields
+    TextSlot --> TextAnchor
+    TextSlot --> TextRole
+    TextSlot --> TextWeight
+    TextSlot --> Tolerant
+    TextSlot --> Tolerant_Known
+    TextureImportOutcome --> MilkTexture
+    TextureImportOutcome --> TextureImportResult
+    TextureRemoveOutcome --> MilkTexture
+    VideoTemplate --> ForeignFields
+    VideoTemplate --> TemplateExport
+    VideoTemplate --> TemplateFormat
+    VideoTemplate --> TemplateId
+    VideoTemplate --> TemplateLayout
+    VideoTemplate --> TemplateLook
+    VideoTemplate --> TemplateOrigin
+    VideoTemplate --> TemplateText
+    BundledTemplates ..> TemplateId
+    ExportPrefsStore ..> ExportDefaults
+    FilePresetRepository ..> Preset
+    FileTakeRepository ..> PerformanceTake
+    FileTakeRepository ..> TakeInfo
+    FileTemplateRepository ..> TemplateFormat
+    FileTemplateRepository ..> TemplateId
+    FileTemplateRepository ..> TemplateImport
+    FileTemplateRepository ..> TemplateWrite
+    MilkTextureLinks ..> MilkTextureLink
+    MusicPlaylistStore ..> MusicPlaylist
+    MusicPlaylistStore ..> PresetStore
+    PaletteStore ..> CustomPalette
+    PerformanceTake_Timeline ..> PerformanceTake_State
+    PlayerPrefsStore ..> PlayerPrefs
+    PlaylistFormats ..> PlaylistEntry
+    PlaylistFormats ..> PlaylistFormat
+    PresetRepository ..> Preset
+    PresetStore ..> Preset
+    SessionRepository ..> SessionStore
+    TakeRepository ..> PerformanceTake
+    TakeRepository ..> TakeInfo
+    TakeStore ..> PerformanceTake
+    TakeStore ..> PresetStore
+    TakeStore ..> TakeInfo
+    TemplateFormat ..> ForeignFields
+    TemplateFormat ..> TemplateExport
+    TemplateFormat ..> TemplateLayout
+    TemplateFormat ..> TemplateLook
+    TemplateFormat ..> TemplateParse
+    TemplateFormat ..> TemplateSegment
+    TemplateFormat ..> TemplateText
+    TemplateFormat ..> TextSlot
+    TemplateFormat ..> Tolerant
+    TemplateFormat ..> VideoTemplate
+    TemplateLook ..> Preset
+    TemplateRepository ..> TemplateId
+    TemplateRepository ..> TemplateImport
+    TemplateRepository ..> TemplateWrite
+    TemplateStore ..> TemplateId
+    TemplateStore ..> TemplateWrite
+    TemplateStore ..> VideoTemplate
+    TextureStore ..> MilkTexture
+    TextureStore ..> TextureImportOutcome
+    TextureStore ..> TextureImportResult
+    TextureStore ..> TextureRemoveOutcome
+    ExportDefaults ..> pkg_app_dev_geode_export : 2
+    PerformanceTake ..> pkg_scenes_dev_geode_render_scene
+    PerformanceTake_Recorder ..> pkg_scenes_dev_geode_render_scene
+    PerformanceTake_State ..> pkg_scenes_dev_geode_render_scene
+    Preset ..> pkg_scenes_dev_geode_render_scene
+    TemplateExport ..> pkg_app_dev_geode_export
+    TemplateLayout ..> pkg_app_dev_geode_export
+    TemplateLook ..> pkg_scenes_dev_geode_render_scene : 2
+    pkg_app_dev_geode_ui ..> Preset : 7
+    pkg_app_dev_geode_ui ..> MusicPlaylist : 2
+    pkg_app_dev_geode_ui ..> FavouritesRepository
+    pkg_app_dev_geode_ui ..> SessionRepository
+    pkg_app_dev_geode_ui ..> LfoStore
+    pkg_app_dev_geode_ui ..> PlayerPrefs
+    pkg_app_dev_geode_ui ..> PlayerPrefsRepository
+    pkg_app_dev_geode_ui ..> PresetFolders
+    pkg_app_dev_geode_ui ..> PresetRepository
+    pkg_app_dev_geode_ui ..> CustomPalette
+    pkg_app_dev_geode_ui ..> PaletteStore
+    pkg_app_dev_geode_ui ..> PerformanceTake : 2
+    pkg_app_dev_geode_ui ..> PerformanceTake_Recorder
+    pkg_app_dev_geode_ui ..> TakeRepository
+    pkg_app_dev_geode_ui ..> TakeInfo
+    pkg_app_dev_geode_ui ..> MilkTexture
+    FileTakeRepository ..> pkg_app_dev_geode_editor
+    LfoStore ..> pkg_scenes_dev_geode_render : 3
+    TakeRepository ..> pkg_app_dev_geode_editor
+    TakeStore ..> pkg_app_dev_geode_editor
+    TemplateFormat ..> pkg_app_dev_geode_ui
+    pkg_app_dev_geode_di ..> GeodePrefsFiles
+    pkg_app_dev_geode_ui ..> PresetStore
+    pkg_app_dev_geode_ui ..> MilkTextureLink
+```
+
+## app :: dev.geode.playback
+
+```mermaid
+classDiagram
+    direction TB
+
     namespace app.dev.geode.playback {
         class MediaArtwork["MediaArtwork"] {
             <<object>>
@@ -1498,6 +2479,42 @@ classDiagram
             <<data object>>
         }
     }
+
+    namespace androidx.media3.common {
+        class ext_BitmapLoader["BitmapLoader"] {
+            <<interface>>
+        }
+    }
+
+    namespace androidx.media3.session {
+        class ext_Callback["MediaSession.Callback"] {
+            <<interface>>
+        }
+        class ext_MediaSessionService["MediaSessionService"] {
+            <<class>>
+        }
+    }
+
+    PlaybackErrors_Action <|.. PlaybackErrors_Action_SkipToNext
+    PlaybackErrors_Action <|.. PlaybackErrors_Action_StopEndOfQueue
+    PlaybackErrors_Action <|.. PlaybackErrors_Action_StopSourceUnavailable
+    ShuffleMode <|.. ShuffleMode_Albums
+    ShuffleMode <|.. ShuffleMode_InOrder
+    ShuffleMode <|.. ShuffleMode_Spread
+    ShuffleMode <|.. ShuffleMode_Tracks
+    ShuffleMode <|.. ShuffleMode_Weighted
+    PlaybackEngine --> PlaybackSession
+    PlaybackService --> SessionBitmapLoader
+    ext_MediaSessionService <|-- PlaybackService
+    ext_Callback <|.. PlaybackService_ResumptionCallback
+    ext_BitmapLoader <|.. SessionBitmapLoader
+```
+
+## app :: dev.geode.audio
+
+```mermaid
+classDiagram
+    direction TB
 
     namespace app.dev.geode.audio {
         class AiffExtractor["AiffExtractor"] {
@@ -1565,11 +2582,123 @@ classDiagram
         }
     }
 
+    namespace audio_core.dev.geode.engine.audio {
+        class PcmSink["PcmSink"] {
+            <<fun interface>>
+        }
+    }
+
+    namespace other_packages {
+        class pkg_app_dev_geode_ui["~.ui"] {
+            117 types
+        }
+        class pkg_app_dev_geode_audio_dsp["~.audio.dsp"] {
+            1 types
+        }
+        class pkg_scenes_dev_geode_analysis["~.analysis"] {
+            22 types
+        }
+        class pkg_audio_android_dev_geode_engine_audioandroid["~.engine.audioandroid"] {
+            9 types
+        }
+    }
+
+    namespace android.app {
+        class ext_Service["Service"] {
+            <<class>>
+        }
+    }
+
+    namespace android.service.notification {
+        class ext_NotificationListenerService["NotificationListenerService"] {
+            <<class>>
+        }
+    }
+
+    namespace androidx.media3.exoplayer {
+        class ext_AudioBufferSink["TeeAudioProcessor.AudioBufferSink"] {
+            <<interface>>
+        }
+        class ext_DefaultRenderersFactory["DefaultRenderersFactory"] {
+            <<class>>
+        }
+    }
+
+    namespace androidx.media3.extractor {
+        class ext_Extractor["Extractor"] {
+            <<interface>>
+        }
+    }
+
+    AudioCapturePump <|-- MicCapture
+    PcmSink <|.. PcmRingBuffer
+    AudioCapturePump <|-- PlaybackCapture
+    AudioFxState --> AudioFxBand
+    PcmTapSink --> PcmRingBuffer
+    AudioFxController ..> AudioFxState
+    MicCapture ..> MicCapture_Failure
+    NowPlayingBridge ..> NowPlayingBridge_External
+    AudioBus ..> pkg_scenes_dev_geode_analysis
+    TapRenderersFactory ..> pkg_audio_android_dev_geode_engine_audioandroid : 2
+    pkg_app_dev_geode_ui ..> CaptureFailure
+    pkg_app_dev_geode_ui ..> NowPlayingBridge
+    pkg_app_dev_geode_ui ..> NowPlayingBridge_External
+    pkg_app_dev_geode_ui ..> MicCapture : 2
+    pkg_app_dev_geode_ui ..> MicCapture_Failure : 2
+    pkg_app_dev_geode_ui ..> AudioFxController
+    pkg_app_dev_geode_ui ..> AudioFxState
+    TapRenderersFactory ..> pkg_app_dev_geode_audio_dsp
+    ext_Extractor <|.. AiffExtractor
+    ext_NotificationListenerService <|-- GeodeNotificationListener
+    ext_AudioBufferSink <|.. PcmTapSink
+    ext_Service <|-- PlaybackCaptureService
+    ext_DefaultRenderersFactory <|-- TapRenderersFactory
+```
+
+## app :: dev.geode.audio.dsp
+
+```mermaid
+classDiagram
+    direction TB
+
     namespace app.dev.geode.audio.dsp {
         class MvzAudioProcessorChain["MvzAudioProcessorChain"] {
             <<class>>
         }
     }
+
+    namespace audio_android.dev.geode.engine.audioandroid {
+        class SkippedFrameSource["SkippedFrameSource"] {
+            <<fun interface>>
+        }
+    }
+
+    namespace other_packages {
+        class pkg_app_dev_geode_audio["~.audio"] {
+            21 types
+        }
+        class pkg_audio_android_dev_geode_engine_audioandroid["~.engine.audioandroid"] {
+            9 types
+        }
+    }
+
+    namespace androidx.media3.exoplayer {
+        class ext_AudioProcessorChain["DefaultAudioSink.AudioProcessorChain"] {
+            <<interface>>
+        }
+    }
+
+    SkippedFrameSource <|.. MvzAudioProcessorChain
+    MvzAudioProcessorChain ..> pkg_audio_android_dev_geode_engine_audioandroid : 2
+    pkg_app_dev_geode_audio ..> MvzAudioProcessorChain
+    ext_AudioProcessorChain <|.. MvzAudioProcessorChain
+```
+
+## app :: dev.geode.billing
+
+```mermaid
+classDiagram
+    direction TB
 
     namespace app.dev.geode.billing {
         class AdMoment["AdMoment"] {
@@ -1616,6 +2745,32 @@ classDiagram
         }
     }
 
+    namespace other_packages {
+        class pkg_scenes_dev_geode_render_fluid["~.render.fluid"] {
+            34 types
+        }
+    }
+
+    AdMoment <|.. AdMoment_TrackFinished
+    BlockedReason <|.. BlockedReason_TooLarge
+    BlockedReason <|.. BlockedReason_TooLong
+    BlockedReason <|.. BlockedReason_TooLongAndTooLarge
+    ExportVerdict <|.. ExportVerdict_Allowed
+    ExportVerdict <|.. ExportVerdict_Blocked
+    ExportVerdict --> BlockedReason
+    ExportVerdict --> ExportRequest
+    ExportVerdict_Blocked --> BlockedReason
+    ExportVerdict_Blocked --> ExportRequest
+    Tier --> ExportLimits
+    pkg_scenes_dev_geode_render_fluid ..> Tier
+```
+
+## app :: dev.geode.wallpaper
+
+```mermaid
+classDiagram
+    direction TB
+
     namespace app.dev.geode.wallpaper {
         class IdleFeatures["IdleFeatures"] {
             <<class>>
@@ -1631,11 +2786,57 @@ classDiagram
         }
     }
 
+    namespace other_packages {
+        class pkg_scenes_dev_geode_render["~.render"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_analysis["~.analysis"] {
+            22 types
+        }
+    }
+
+    namespace android.opengl {
+        class ext_GLSurfaceView["GLSurfaceView"] {
+            <<class>>
+        }
+    }
+
+    namespace android.service.wallpaper {
+        class ext_Engine["WallpaperService.Engine"] {
+            <<class>>
+        }
+        class ext_WallpaperService["WallpaperService"] {
+            <<class>>
+        }
+    }
+
+    VisualizerWallpaperService_VisualizerEngine --> VisualizerWallpaperService_VisualizerEngine_WallpaperGlSurfaceView
+    VisualizerWallpaperService ..> VisualizerWallpaperService_VisualizerEngine
+    VisualizerWallpaperService_VisualizerEngine ..> pkg_scenes_dev_geode_render
+    IdleFeatures ..> pkg_scenes_dev_geode_analysis
+    ext_WallpaperService <|-- VisualizerWallpaperService
+    ext_Engine <|-- VisualizerWallpaperService_VisualizerEngine
+    ext_GLSurfaceView <|-- VisualizerWallpaperService_VisualizerEngine_WallpaperGlSurfaceView
+```
+
+## engine:scenes :: dev.geode.audio
+
+```mermaid
+classDiagram
+    direction TB
+
     namespace scenes.dev.geode.audio {
         class AiffPcm["AiffPcm"] {
             <<class>>
         }
     }
+```
+
+## engine:scenes :: dev.geode.render
+
+```mermaid
+classDiagram
+    direction TB
 
     namespace scenes.dev.geode.render {
         class AdsrConfig["AdsrConfig"] {
@@ -1786,6 +2987,122 @@ classDiagram
             <<data class>>
         }
     }
+
+    namespace other_packages {
+        class pkg_app_dev_geode_ui["~.ui"] {
+            117 types
+        }
+        class pkg_app_dev_geode_export["~.export"] {
+            109 types
+        }
+        class pkg_app_dev_geode_data["~.data"] {
+            100 types
+        }
+        class pkg_app_dev_geode_wallpaper["~.wallpaper"] {
+            4 types
+        }
+        class pkg_scenes_dev_geode_render_scene["~.render.scene"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_render_fluid["~.render.fluid"] {
+            34 types
+        }
+        class pkg_scenes_dev_geode_render_offscreen["~.render.offscreen"] {
+            6 types
+        }
+        class pkg_scenes_dev_geode_analysis["~.analysis"] {
+            22 types
+        }
+        class pkg_gl_dev_geode_engine_gl["~.engine.gl"] {
+            53 types
+        }
+    }
+
+    namespace android.opengl {
+        class ext_GLSurfaceView["GLSurfaceView"] {
+            <<class>>
+        }
+        class ext_Renderer["GLSurfaceView.Renderer"] {
+            <<interface>>
+        }
+    }
+
+    FrameRatePolicy <|.. FrameRatePolicy_Capped
+    FrameRatePolicy <|.. FrameRatePolicy_Native
+    AdsrConfig --> EnvBand
+    AdsrConfig --> LfoTarget
+    AdsrEngine --> AdsrConfig
+    CompositeGrade --> CompositeGrade_Gate
+    CompositeGrade --> CompositeGrade_SceneFamily
+    CompositePass_Inputs --> TransitionStyle
+    FlashBudget --> VisualSafety
+    FramePacer --> FrameRatePolicy
+    FramePacer --> FrameRatePolicy_Capped
+    FramePacer --> FrameSink
+    LfoConfig --> LfoTarget
+    LfoConfig --> LfoWave
+    LfoConfig --> ModCurve
+    LfoConfig --> ModPolarity
+    LfoConfig --> ModSource
+    LfoEngine --> LfoConfig
+    LfoTarget --> ModChain
+    ModChain --> ModChainField
+    OverlayEffects --> TouchField
+    SceneRegistry --> TouchField
+    ThermalGovernor --> ThermalTier
+    TransitionCatalog --> TransitionCatalog_Def
+    TransitionCatalog --> TransitionCatalog_Param
+    TransitionCatalog --> TransitionStyle
+    TransitionCatalog_Def --> TransitionCatalog_Param
+    TransitionPrograms --> TransitionCatalog
+    TransitionPrograms --> TransitionCatalog_Def
+    VisualizerRenderer --> BlendMode
+    VisualizerRenderer --> TransitionStyle
+    VisualizerView --> FramePacer
+    VisualizerView --> VisualizerRenderer
+    CompositePass ..> CompositePass_Inputs
+    FramePacer ..> FrameStats
+    VisualSafety ..> TransitionStyle
+    VisualizerRenderer ..> CompositeGrade
+    VisualizerRenderer ..> CompositeGrade_SceneFamily
+    VisualizerRenderer ..> SceneFactory
+    pkg_app_dev_geode_export ..> AdsrConfig : 2
+    pkg_app_dev_geode_export ..> LfoConfig : 2
+    pkg_app_dev_geode_export ..> SceneFactory : 2
+    CompositePass_Inputs ..> pkg_scenes_dev_geode_render_scene
+    LfoTarget ..> pkg_scenes_dev_geode_render_scene
+    OverlayEffects ..> pkg_scenes_dev_geode_render_fluid : 2
+    SceneRegistry ..> pkg_scenes_dev_geode_render_scene : 3
+    TransitionPrograms ..> pkg_scenes_dev_geode_render_scene : 2
+    VisualizerRenderer ..> pkg_scenes_dev_geode_analysis
+    VisualizerRenderer ..> pkg_gl_dev_geode_engine_gl
+    VisualizerRenderer ..> pkg_scenes_dev_geode_render_scene : 4
+    pkg_scenes_dev_geode_render_offscreen ..> AdsrConfig
+    pkg_scenes_dev_geode_render_offscreen ..> LfoConfig
+    pkg_scenes_dev_geode_render_offscreen ..> SceneFactory
+    pkg_scenes_dev_geode_render_scene ..> TouchField : 8
+    pkg_app_dev_geode_ui ..> BlendMode
+    pkg_app_dev_geode_ui ..> AdsrConfig : 2
+    pkg_app_dev_geode_ui ..> LfoConfig : 2
+    pkg_app_dev_geode_ui ..> VisualizerRenderer
+    pkg_app_dev_geode_ui ..> TransitionStyle : 2
+    pkg_app_dev_geode_wallpaper ..> VisualizerRenderer
+    pkg_app_dev_geode_data ..> AdsrConfig
+    pkg_app_dev_geode_data ..> LfoConfig
+    pkg_app_dev_geode_data ..> LfoEngine
+    LiveSignal ..> pkg_scenes_dev_geode_analysis
+    LiveSignal_Edge ..> pkg_scenes_dev_geode_analysis
+    OverlayEffects ..> pkg_scenes_dev_geode_render_scene
+    SceneFactory ..> pkg_scenes_dev_geode_render_scene
+    ext_Renderer <|.. VisualizerRenderer
+    ext_GLSurfaceView <|-- VisualizerView
+```
+
+## engine:scenes :: dev.geode.render.scene
+
+```mermaid
+classDiagram
+    direction TB
 
     namespace scenes.dev.geode.render.scene {
         class AcidScene["AcidScene"] {
@@ -1938,6 +3255,163 @@ classDiagram
     }
 
     namespace scenes.dev.geode.render.fluid {
+        class FluidSceneBase["FluidSceneBase"] {
+            <<abstract class>>
+        }
+    }
+
+    namespace other_packages {
+        class pkg_app_dev_geode_ui["~.ui"] {
+            117 types
+        }
+        class pkg_app_dev_geode_export["~.export"] {
+            109 types
+        }
+        class pkg_app_dev_geode_data["~.data"] {
+            100 types
+        }
+        class pkg_scenes_dev_geode_render["~.render"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_render_fluid["~.render.fluid"] {
+            34 types
+        }
+        class pkg_scenes_dev_geode_render_compute["~.render.compute"] {
+            15 types
+        }
+        class pkg_scenes_dev_geode_render_offscreen["~.render.offscreen"] {
+            6 types
+        }
+        class pkg_scenes_dev_geode_analysis["~.analysis"] {
+            22 types
+        }
+    }
+
+    namespace kotlin {
+        class ext_RuntimeException["RuntimeException"] {
+            <<class>>
+        }
+    }
+
+    scenes_render_scene_PcmSink <|.. FluidSceneBase
+    Scene <|.. FluidSceneBase
+    scenes_render_scene_PcmSink <|.. AcidScene
+    Scene <|.. AcidScene
+    TouchReactive <|.. AcidScene
+    scenes_render_scene_PcmSink <|.. BeamScene
+    Scene <|.. BeamScene
+    TouchReactive <|.. BeamScene
+    scenes_render_scene_PcmSink <|.. CymaticsScene
+    Scene <|.. CymaticsScene
+    TouchReactive <|.. CymaticsScene
+    scenes_render_scene_PcmSink <|.. LifeScene
+    Scene <|.. LifeScene
+    TouchReactive <|.. LifeScene
+    scenes_render_scene_PcmSink <|.. MycoScene
+    Scene <|.. MycoScene
+    TouchReactive <|.. MycoScene
+    ProgramBinaryCache_Store <|.. ProgramBinaryCache_Store_Off
+    ProgramBinaryCache_Store <|.. ProgramBinaryCache_Store_On
+    ProgramBinaryCache_Store <|.. ProgramBinaryCache_Store_Unprimed
+    scenes_render_scene_PcmSink <|.. ProjectMScene
+    Scene <|.. ProjectMScene
+    scenes_render_scene_PcmSink <|.. ShaderScene
+    Scene <|.. ShaderScene
+    scenes_render_scene_PcmSink <|.. SilkScene
+    Scene <|.. SilkScene
+    TouchReactive <|.. SilkScene
+    AcidScene --> VisualStyleCatalog
+    AcidScene --> VisualStyleCatalog_AcidStyle
+    CymaticsMath --> CymaticsMath_Mode
+    CymaticsScene --> VisualStyleCatalog
+    CymaticsScene --> VisualStyleCatalog_CymaticsStyle
+    LifeScene --> VisualStyleCatalog
+    LifeScene --> VisualStyleCatalog_LifeStyle
+    MycoScene --> VisualStyleCatalog
+    MycoScene --> VisualStyleCatalog_MycoStyle
+    ParamRandomizer --> CustomizeTab
+    ProgramBinaryCache --> ProgramBinaryCache_Store
+    ProjectMScene --> SceneParams
+    ShaderScene --> SceneParams
+    SilkScene --> VisualStyleCatalog
+    SilkScene --> VisualStyleCatalog_SilkStyle
+    VisualStyleCatalog --> VisualStyleCatalog_AcidStyle
+    VisualStyleCatalog --> VisualStyleCatalog_CymaticsStyle
+    VisualStyleCatalog --> VisualStyleCatalog_LifeStyle
+    VisualStyleCatalog --> VisualStyleCatalog_MycoStyle
+    VisualStyleCatalog --> VisualStyleCatalog_SilkStyle
+    VisualStyleCatalog_CymaticsStyle --> CymaticsMath
+    AcidScene ..> SceneParams
+    BeamScene ..> SceneParams
+    CymaticsScene ..> SceneParams
+    LifeScene ..> SceneParams
+    MycoScene ..> SceneParams
+    ParamRandomizer ..> SceneParams
+    ParamScope ..> SceneKind
+    ProgramBinaryCache ..> ProgramBinaryCache_Store_On
+    ProgramBinaryCache ..> ProgramKey
+    Scene ..> SceneParams
+    SceneCapabilities ..> SceneIds
+    SceneCapabilities ..> SceneKind
+    SceneCapabilities ..> VisualStyleCatalog
+    SilkScene ..> SceneParams
+    pkg_app_dev_geode_data ..> SceneParams : 5
+    pkg_app_dev_geode_data ..> SceneIds
+    pkg_app_dev_geode_export ..> SceneParams : 3
+    pkg_scenes_dev_geode_render ..> SceneParams : 3
+    pkg_scenes_dev_geode_render ..> ParamScope
+    pkg_scenes_dev_geode_render ..> ProjectMScene
+    pkg_scenes_dev_geode_render ..> GlUtil
+    pkg_scenes_dev_geode_render ..> GlUtil_UniformCache
+    pkg_scenes_dev_geode_render ..> PcmChunk
+    pkg_scenes_dev_geode_render ..> Scene : 4
+    pkg_scenes_dev_geode_render_fluid ..> GlUtil
+    pkg_scenes_dev_geode_render_fluid ..> GlUtil_UniformCache
+    pkg_scenes_dev_geode_render_offscreen ..> SceneParams
+    pkg_scenes_dev_geode_render_offscreen ..> Scene
+    AcidScene ..> pkg_scenes_dev_geode_analysis
+    AcidScene ..> pkg_scenes_dev_geode_render
+    AcidScene ..> pkg_scenes_dev_geode_render_fluid : 2
+    BeamScene ..> pkg_scenes_dev_geode_render
+    CymaticsScene ..> pkg_scenes_dev_geode_analysis
+    CymaticsScene ..> pkg_scenes_dev_geode_render
+    LifeScene ..> pkg_scenes_dev_geode_analysis
+    LifeScene ..> pkg_scenes_dev_geode_render
+    LifeScene ..> pkg_scenes_dev_geode_render_fluid : 3
+    MycoScene ..> pkg_scenes_dev_geode_analysis
+    MycoScene ..> pkg_scenes_dev_geode_render
+    MycoScene ..> pkg_scenes_dev_geode_render_fluid : 3
+    ShaderScene ..> pkg_scenes_dev_geode_render
+    SilkScene ..> pkg_scenes_dev_geode_analysis
+    SilkScene ..> pkg_scenes_dev_geode_render
+    SilkScene ..> pkg_scenes_dev_geode_render_compute : 2
+    pkg_app_dev_geode_ui ..> SceneParams : 11
+    pkg_app_dev_geode_ui ..> SceneIds
+    pkg_scenes_dev_geode_analysis ..> SceneParams
+    pkg_scenes_dev_geode_render ..> scenes_render_scene_PcmSink
+    pkg_scenes_dev_geode_render_fluid ..> SceneParams : 2
+    TouchReactive ..> pkg_scenes_dev_geode_render
+    pkg_app_dev_geode_ui ..> CustomizeTab
+    pkg_app_dev_geode_ui ..> ParamRandomizer
+    ext_RuntimeException <|-- GlUtil_ShaderCompileException
+```
+
+## engine:scenes :: dev.geode.render.fluid
+
+```mermaid
+classDiagram
+    direction TB
+
+    namespace scenes.dev.geode.render.scene {
+        class scenes_render_scene_PcmSink["PcmSink"] {
+            <<interface>>
+        }
+        class Scene["Scene"] {
+            <<interface>>
+        }
+    }
+
+    namespace scenes.dev.geode.render.fluid {
         class CurlFlowMath["CurlFlowMath"] {
             <<object>>
         }
@@ -2042,6 +3516,80 @@ classDiagram
         }
     }
 
+    namespace other_packages {
+        class pkg_app_dev_geode_billing["~.billing"] {
+            14 types
+        }
+        class pkg_scenes_dev_geode_render["~.render"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_render_scene["~.render.scene"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_render_offscreen["~.render.offscreen"] {
+            6 types
+        }
+        class pkg_scenes_dev_geode_analysis["~.analysis"] {
+            22 types
+        }
+    }
+
+    FluidSceneBase <|-- CurlFlowScene
+    FluidSceneBase <|-- FluidScene
+    scenes_render_scene_PcmSink <|.. FluidSceneBase
+    Scene <|.. FluidSceneBase
+    FluidSceneBase <|-- WaterScene
+    CurlFlowScene --> FluidBuffers
+    CurlFlowScene --> FluidBuffers_Fbo
+    CurlFlowScene --> FluidBuffers_Formats
+    FluidBuffers --> FluidBuffers_TexFormat
+    FluidBuffers_DoubleFbo --> FluidBuffers_TexFormat
+    FluidBuffers_DoubleMrt --> FluidBuffers_TexFormat
+    FluidBuffers_DoubleMrt_Side --> FluidBuffers_TexFormat
+    FluidBuffers_Fbo --> FluidBuffers_TexFormat
+    FluidBuffers_Formats --> FluidBuffers_TexFormat
+    FluidChoreography --> FluidChoreography_Anchor
+    FluidEmitters --> FluidChoreography
+    FluidLook --> FluidBuffers
+    FluidLook --> FluidBuffers_Fbo
+    FluidLook --> FluidBuffers_Formats
+    FluidParticles --> FluidBuffers
+    FluidParticles --> FluidBuffers_DoubleMrt
+    FluidSim --> FluidBuffers
+    FluidSim --> FluidBuffers_DoubleFbo
+    FluidSim --> FluidBuffers_Fbo
+    FluidSim --> FluidBuffers_Formats
+    RippleSim --> FluidBuffers
+    RippleSim --> FluidBuffers_DoubleFbo
+    RippleSim --> FluidBuffers_Formats
+    FluidBuffers ..> FluidBuffers_Formats
+    FluidSceneBase ..> FluidParticles
+    FluidSim ..> FluidSim_Splat
+    RippleSim ..> FluidBuffers_Fbo
+    pkg_scenes_dev_geode_render ..> FlowField
+    pkg_scenes_dev_geode_render ..> RippleSim
+    FluidQuality ..> pkg_app_dev_geode_billing
+    FluidSceneBase ..> pkg_scenes_dev_geode_analysis
+    FluidSim ..> pkg_scenes_dev_geode_render_scene : 2
+    pkg_scenes_dev_geode_render_offscreen ..> FlowField
+    pkg_scenes_dev_geode_render_offscreen ..> FluidScene
+    pkg_scenes_dev_geode_render_offscreen ..> RippleSim
+    pkg_scenes_dev_geode_render_scene ..> FluidBuffers : 3
+    pkg_scenes_dev_geode_render_scene ..> FluidBuffers_DoubleFbo : 3
+    pkg_scenes_dev_geode_render_scene ..> FluidBuffers_Formats : 2
+    CurlFlowScene ..> pkg_scenes_dev_geode_analysis
+    FluidEmitters ..> pkg_scenes_dev_geode_render_scene
+    FluidScene ..> pkg_scenes_dev_geode_analysis
+    FluidSceneBase ..> pkg_scenes_dev_geode_render_scene
+    WaterScene ..> pkg_scenes_dev_geode_analysis
+```
+
+## engine:scenes :: dev.geode.render.compute
+
+```mermaid
+classDiagram
+    direction TB
+
     namespace scenes.dev.geode.render.compute {
         class BaseSimPass["BaseSimPass"] {
             <<abstract class>>
@@ -2090,6 +3638,48 @@ classDiagram
         }
     }
 
+    namespace other_packages {
+        class pkg_scenes_dev_geode_render_scene["~.render.scene"] {
+            49 types
+        }
+        class pkg_gl_dev_geode_engine_gl["~.engine.gl"] {
+            53 types
+        }
+    }
+
+    SimPass <|.. BaseSimPass
+    BaseSimPass <|-- ComputeSimPass
+    BaseSimPass <|-- FragmentSimPass
+    SimBuild <|.. SimBuild_Failed
+    SimBuild <|.. SimBuild_Ready
+    BaseSimPass --> SimField
+    BaseSimPass --> SimStateEncoding
+    ComputeSimPass --> SimField
+    ComputeSimPass --> SimStateEncoding
+    FragmentSimPass --> SimField
+    FragmentSimPass --> SimStateEncoding
+    SimBuild --> SimPass
+    SimBuild_Ready --> SimPass
+    SimSpec --> SimSampling
+    BaseSimPass ..> SimGlsl
+    ComputeSimPass ..> SimUniformBinder
+    FragmentSimPass ..> SimUniformBinder
+    SimPass ..> SimUniformBinder
+    SimUniformBinder ..> SimUniforms
+    ComputeSimPass ..> pkg_gl_dev_geode_engine_gl : 2
+    SimField ..> pkg_gl_dev_geode_engine_gl
+    SimSpec ..> pkg_gl_dev_geode_engine_gl : 2
+    SimStateEncoding ..> pkg_gl_dev_geode_engine_gl
+    pkg_scenes_dev_geode_render_scene ..> SimPass
+    pkg_scenes_dev_geode_render_scene ..> SimUniforms
+```
+
+## engine:scenes :: dev.geode.render.offscreen
+
+```mermaid
+classDiagram
+    direction TB
+
     namespace scenes.dev.geode.render.offscreen {
         class OffscreenCompositor["OffscreenCompositor"] {
             <<class>>
@@ -2110,6 +3700,38 @@ classDiagram
             <<data class>>
         }
     }
+
+    namespace other_packages {
+        class pkg_scenes_dev_geode_render["~.render"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_render_scene["~.render.scene"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_render_fluid["~.render.fluid"] {
+            34 types
+        }
+        class pkg_scenes_dev_geode_analysis["~.analysis"] {
+            22 types
+        }
+    }
+
+    OffscreenSceneRenderer --> OffscreenCompositor
+    OffscreenSceneRenderer --> OffscreenRenderSpec
+    OffscreenSceneRenderer ..> OffscreenSceneRenderer_EffectUse
+    OffscreenRenderSpec ..> pkg_scenes_dev_geode_render : 2
+    OffscreenRenderSpec ..> pkg_scenes_dev_geode_render_scene
+    OffscreenSceneRenderer ..> pkg_scenes_dev_geode_analysis
+    OffscreenSceneRenderer ..> pkg_scenes_dev_geode_render
+    OffscreenSceneRenderer ..> pkg_scenes_dev_geode_render_fluid : 3
+    OffscreenSceneRenderer ..> pkg_scenes_dev_geode_render_scene
+```
+
+## engine:scenes :: dev.geode.analysis
+
+```mermaid
+classDiagram
+    direction TB
 
     namespace scenes.dev.geode.analysis {
         class AnalysisCache["AnalysisCache"] {
@@ -2179,6 +3801,70 @@ classDiagram
             <<data class>>
         }
     }
+
+    namespace other_packages {
+        class pkg_app_dev_geode_ui["~.ui"] {
+            117 types
+        }
+        class pkg_app_dev_geode_export["~.export"] {
+            109 types
+        }
+        class pkg_app_dev_geode_audio["~.audio"] {
+            21 types
+        }
+        class pkg_app_dev_geode_wallpaper["~.wallpaper"] {
+            4 types
+        }
+        class pkg_scenes_dev_geode_render["~.render"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_render_scene["~.render.scene"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_render_fluid["~.render.fluid"] {
+            34 types
+        }
+        class pkg_scenes_dev_geode_render_offscreen["~.render.offscreen"] {
+            6 types
+        }
+        class pkg_audio_core_dev_geode_engine_audio["~.engine.audio"] {
+            54 types
+        }
+    }
+
+    AnalysisEngine --> AudioFeatures
+    FeatureTimeline --> TimelineFrame
+    SceneSuggester --> SceneSuggester_Affinity
+    TimelineFrame --> AudioFeatures
+    ArtPalette ..> ArtPalette_Extracted
+    FeatureRingBridge ..> AudioFeatures
+    FrameAccumulator ..> TimelineFrame
+    OfflineAnalyzer_StreamingPipeline ..> AudioFeatures
+    OfflineAnalyzer_StreamingPipeline ..> FeatureTimeline
+    SceneSuggester ..> FeatureTimeline
+    AnalysisEngine ..> pkg_audio_core_dev_geode_engine_audio
+    pkg_app_dev_geode_audio ..> AudioFeatures
+    pkg_app_dev_geode_export ..> FeatureTimeline : 2
+    pkg_scenes_dev_geode_render ..> AudioFeatures : 3
+    pkg_scenes_dev_geode_render_fluid ..> AudioFeatures : 4
+    pkg_scenes_dev_geode_render_offscreen ..> FeatureTimeline
+    pkg_scenes_dev_geode_render_scene ..> AudioFeatures : 5
+    pkg_app_dev_geode_ui ..> FeatureTimeline : 2
+    pkg_app_dev_geode_ui ..> BeatTuning
+    pkg_app_dev_geode_ui ..> AnalysisEngine : 2
+    pkg_app_dev_geode_ui ..> AudioFeatures : 3
+    pkg_app_dev_geode_ui ..> IntelligenceMode : 2
+    FeatureRingBridge ..> pkg_audio_core_dev_geode_engine_audio
+    LiveInputProfile ..> pkg_scenes_dev_geode_render_scene
+    pkg_app_dev_geode_ui ..> LiveInputProfile
+    pkg_app_dev_geode_wallpaper ..> AudioFeatures
+```
+
+## engine:gl :: dev.geode.engine.gl
+
+```mermaid
+classDiagram
+    direction TB
 
     namespace gl.dev.geode.engine.gl {
         class BaselineCause["BaselineCause"] {
@@ -2339,6 +4025,114 @@ classDiagram
         }
         class NoCompute_LimitsUnreadable["NoCompute.LimitsUnreadable"] {
             <<data class>>
+        }
+    }
+
+    namespace other_packages {
+        class pkg_scenes_dev_geode_render["~.render"] {
+            49 types
+        }
+        class pkg_scenes_dev_geode_render_compute["~.render.compute"] {
+            15 types
+        }
+    }
+
+    namespace kotlin {
+        class ext_Comparable["Comparable"] {
+            <<interface>>
+        }
+        class ext_RuntimeException["RuntimeException"] {
+            <<class>>
+        }
+    }
+
+    BaselineCause <|.. BaselineCause_BelowEs31
+    BaselineCause <|.. BaselineCause_ComputeLimitsBelowSpecFloor
+    BaselineCause <|.. BaselineCause_NoImageLoadStore
+    BaselineCause <|.. BaselineCause_NoProbeContext
+    BaselineCause <|.. BaselineCause_VersionUnparseable
+    ComputeSupport <|.. ComputeSupport_Available
+    ComputeSupport <|.. ComputeSupport_Unavailable
+    EglProbeOutcome <|.. EglProbeOutcome_Probed
+    EglProbeOutcome <|.. EglProbeOutcome_Unavailable
+    GlTier <|.. GlTier_Baseline
+    GlTier <|.. GlTier_Compute
+    NoCompute <|.. NoCompute_DeviceIsBaseline
+    NoCompute <|.. NoCompute_GroupCountBelowSpecFloor
+    NoCompute <|.. NoCompute_GroupSizeBelowSpecFloor
+    NoCompute <|.. NoCompute_LimitsUnreadable
+    BaselineCause --> GlVersion
+    BaselineCause_BelowEs31 --> GlVersion
+    ComputeLimits --> WorkGroupCount
+    ComputeLimits --> WorkGroupSize
+    ComputePass --> ComputeProgram
+    ComputePass --> ComputeReader
+    ComputePass --> WorkGroupSize
+    ComputeProof --> GlVersion
+    ComputeSupport --> ComputeLimits
+    ComputeSupport --> ComputeProof
+    ComputeSupport --> NoCompute
+    ComputeSupport_Available --> ComputeLimits
+    ComputeSupport_Available --> ComputeProof
+    ComputeSupport_Unavailable --> NoCompute
+    DeviceGl --> GlProfile
+    EglProbeOutcome --> EglStage
+    EglProbeOutcome_Unavailable --> EglStage
+    FormatPlan --> ResolvedFormat
+    GlCapabilities --> GlVersion
+    GlCapabilities --> TimerQuerySupport
+    GlProbeReport --> ProbedFormat
+    GlProber --> GlProber_FormatSpec
+    GlProber --> ProbedFormat
+    GlProfile --> FormatPlan
+    GlProfile --> GlCapabilities
+    GlProfile --> GlProbeReport
+    GlProfile --> GlTier
+    GlProfile --> ProbeSource
+    GlTier --> BaselineCause
+    GlTier --> ComputeProof
+    GlTier_Baseline --> BaselineCause
+    GlTier_Compute --> ComputeProof
+    NoCompute --> BaselineCause
+    NoCompute --> WorkGroupCount
+    NoCompute --> WorkGroupSize
+    NoCompute_DeviceIsBaseline --> BaselineCause
+    NoCompute_GroupCountBelowSpecFloor --> WorkGroupCount
+    NoCompute_GroupSizeBelowSpecFloor --> WorkGroupSize
+    ResolvedFormat --> ProbedFormat
+    ResolvedFormat --> TexelEncoding
+    CapabilityCache ..> FormatProbe
+    CapabilityCache ..> GlProbeReport
+    ComputePass ..> WorkGroupCount
+    DeviceGl ..> GlIdentity
+    EglProbeHarness ..> EglProbeOutcome
+    FormatPolicy ..> FormatPlan
+    FormatPolicy ..> GlProbeReport
+    FormatPolicy ..> ResolvedFormat
+    GlProbeReport ..> FormatProbe
+    GlProber ..> GlIdentity
+    GlProber ..> GlProbeReport
+    GlProber_GlArena ..> GlProber_FormatSpec
+    GlProber_GlArena ..> GlProber_ProbeTarget
+    pkg_scenes_dev_geode_render ..> GlProfile
+    pkg_scenes_dev_geode_render_compute ..> ComputePass
+    pkg_scenes_dev_geode_render_compute ..> WorkGroupCount
+    pkg_scenes_dev_geode_render_compute ..> GlImageFormat : 2
+    pkg_scenes_dev_geode_render_compute ..> ComputeReader
+    pkg_scenes_dev_geode_render_compute ..> WorkGroupSize
+    ext_RuntimeException <|-- ComputeCompileException
+    ext_Comparable <|.. GlVersion
+```
+
+## engine:audio-core :: dev.geode.engine.audio
+
+```mermaid
+classDiagram
+    direction TB
+
+    namespace app.dev.geode.audio {
+        class PcmRingBuffer["PcmRingBuffer"] {
+            <<class>>
         }
     }
 
@@ -2507,6 +4301,55 @@ classDiagram
         }
     }
 
+    namespace other_packages {
+        class pkg_scenes_dev_geode_analysis["~.analysis"] {
+            22 types
+        }
+        class pkg_audio_android_dev_geode_engine_audioandroid["~.engine.audioandroid"] {
+            9 types
+        }
+    }
+
+    PcmSink <|.. PcmRingBuffer
+    InputPosition <|.. InputPosition_At
+    InputPosition <|.. InputPosition_Unknown
+    PresentationTime <|.. PresentationTime_At
+    PresentationTime <|.. PresentationTime_Skipped
+    PresentationTime <|.. PresentationTime_StaleEpoch
+    PresentationTime <|.. PresentationTime_Unknown
+    RingReadResult <|.. RingReadResult_Discontinuity
+    RingReadResult <|.. RingReadResult_Gap
+    RingReadResult <|.. RingReadResult_NotYetAvailable
+    RingReadResult <|.. RingReadResult_Ok
+    PcmSink <|.. SampleRing
+    AudioPresentationClock --> PresentationSnapshot
+    DrumChannels --> LogBands
+    FrameGrid --> AnalysisBranch
+    MidSideWindow --> SampleRing
+    PresentationSnapshot --> ClockSegment
+    RingReader --> SampleRing
+    WindowTable --> WindowShape
+    AudioPresentationClock ..> ClockSegment
+    PresentationSnapshot ..> InputPosition
+    RingReader ..> RingReadResult
+    pkg_scenes_dev_geode_analysis ..> SampleRing
+    pkg_audio_android_dev_geode_engine_audioandroid ..> PcmSink
+    pkg_audio_android_dev_geode_engine_audioandroid ..> AudioPresentationClock
+    pkg_scenes_dev_geode_analysis ..> FeatureFrame
+```
+
+## engine:audio-android :: dev.geode.engine.audioandroid
+
+```mermaid
+classDiagram
+    direction TB
+
+    namespace app.dev.geode.audio.dsp {
+        class MvzAudioProcessorChain["MvzAudioProcessorChain"] {
+            <<class>>
+        }
+    }
+
     namespace audio_android.dev.geode.engine.audioandroid {
         class PcmSampleWidth["PcmSampleWidth"] {
             <<enumeration>>
@@ -2537,6 +4380,50 @@ classDiagram
         }
     }
 
+    namespace other_packages {
+        class pkg_app_dev_geode_audio["~.audio"] {
+            21 types
+        }
+        class pkg_app_dev_geode_audio_dsp["~.audio.dsp"] {
+            1 types
+        }
+        class pkg_audio_core_dev_geode_engine_audio["~.engine.audio"] {
+            54 types
+        }
+    }
+
+    namespace androidx.media3.exoplayer {
+        class ext_AudioBufferSink["TeeAudioProcessor.AudioBufferSink"] {
+            <<interface>>
+        }
+    }
+
+    SkippedFrameSource <|.. MvzAudioProcessorChain
+    SinkClockHooks <|.. SinkClockDriver
+    TapBoundaryListener <|.. SinkClockDriver
+    SinkClockHooks <|.. SinkClockHooks_None
+    PcmTap --> PcmTapFormat
+    PcmTap --> TapBoundaryListener
+    PcmTapFormat --> PcmSampleWidth
+    SinkClockDriver --> SinkClockDiagnostics
+    SinkClockDriver --> SkippedFrameSource
+    SinkClockHooks ..> SkippedFrameSource
+    SinkClockHooks_None ..> SkippedFrameSource
+    pkg_app_dev_geode_audio ..> SinkClockHooks
+    pkg_app_dev_geode_audio ..> SinkClockHooks_None
+    pkg_app_dev_geode_audio_dsp ..> SinkClockHooks
+    pkg_app_dev_geode_audio_dsp ..> SinkClockHooks_None
+    PcmTap ..> pkg_audio_core_dev_geode_engine_audio
+    SinkClockDriver ..> pkg_audio_core_dev_geode_engine_audio
+    ext_AudioBufferSink <|.. PcmTap
+```
+
+## engine:runtime :: dev.geode.engine.runtime
+
+```mermaid
+classDiagram
+    direction TB
+
     namespace runtime.dev.geode.engine.runtime {
         class EngineComposition["EngineComposition"] {
             <<class>>
@@ -2554,6 +4441,20 @@ classDiagram
             <<abstract class>>
         }
     }
+
+    EngineLifetime <|.. ManagedLifetime
+    EngineLifetime --> LifetimeId
+    EngineLifetime --> LifetimePhase
+    ManagedLifetime --> LifetimeId
+    ManagedLifetime --> LifetimePhase
+    EngineComposition ..> LifetimeId
+```
+
+## build-logic :: (build-logic)
+
+```mermaid
+classDiagram
+    direction TB
 
     namespace build_logic {
         class ProvenanceRules["ProvenanceRules"] {
@@ -2591,341 +4492,11 @@ classDiagram
         }
     }
 
-    namespace java.io {
-        class ext_Closeable["Closeable"] {
-            <<interface>>
-        }
-    }
-
-    namespace kotlin {
-        class ext_Comparable["Comparable"] {
-            <<interface>>
-        }
-        class ext_RuntimeException["RuntimeException"] {
-            <<class>>
-        }
-    }
-
-    namespace android.app {
-        class ext_Application["Application"] {
-            <<class>>
-        }
-        class ext_Service["Service"] {
-            <<class>>
-        }
-    }
-
-    namespace android.opengl {
-        class ext_GLSurfaceView["GLSurfaceView"] {
-            <<class>>
-        }
-        class ext_Renderer["GLSurfaceView.Renderer"] {
-            <<interface>>
-        }
-    }
-
-    namespace android.service.notification {
-        class ext_NotificationListenerService["NotificationListenerService"] {
-            <<class>>
-        }
-    }
-
-    namespace android.service.wallpaper {
-        class ext_Engine["WallpaperService.Engine"] {
-            <<class>>
-        }
-        class ext_WallpaperService["WallpaperService"] {
-            <<class>>
-        }
-    }
-
-    namespace androidx.activity {
-        class ext_ComponentActivity["ComponentActivity"] {
-            <<class>>
-        }
-    }
-
-    namespace androidx.media3.common {
-        class ext_BitmapLoader["BitmapLoader"] {
-            <<interface>>
-        }
-    }
-
-    namespace androidx.media3.exoplayer {
-        class ext_AudioBufferSink["TeeAudioProcessor.AudioBufferSink"] {
-            <<interface>>
-        }
-        class ext_AudioProcessorChain["DefaultAudioSink.AudioProcessorChain"] {
-            <<interface>>
-        }
-        class ext_DefaultRenderersFactory["DefaultRenderersFactory"] {
-            <<class>>
-        }
-    }
-
-    namespace androidx.media3.extractor {
-        class ext_Extractor["Extractor"] {
-            <<interface>>
-        }
-    }
-
-    namespace androidx.media3.session {
-        class ext_Callback["MediaSession.Callback"] {
-            <<interface>>
-        }
-        class ext_MediaSessionService["MediaSessionService"] {
-            <<class>>
-        }
-    }
-
-    ext_Application <|-- GeodeApp
-    ext_Extractor <|.. AiffExtractor
-    AudioCapturePump <|-- MicCapture
-    ext_NotificationListenerService <|-- GeodeNotificationListener
-    PcmSink <|.. PcmRingBuffer
-    ext_AudioBufferSink <|.. PcmTapSink
-    AudioCapturePump <|-- PlaybackCapture
-    ext_Service <|-- PlaybackCaptureService
-    ext_DefaultRenderersFactory <|-- TapRenderersFactory
-    SkippedFrameSource <|.. MvzAudioProcessorChain
-    ext_AudioProcessorChain <|.. MvzAudioProcessorChain
-    AdMoment <|.. AdMoment_TrackFinished
-    ExportVerdict <|.. ExportVerdict_Allowed
-    ExportVerdict <|.. ExportVerdict_Blocked
-    BlockedReason <|.. BlockedReason_TooLong
-    BlockedReason <|.. BlockedReason_TooLarge
-    BlockedReason <|.. BlockedReason_TooLongAndTooLarge
-    FavouritesRepository <|.. SharedPrefsFavouritesRepository
-    PlayerPrefsRepository <|.. SharedPrefsPlayerPrefsRepository
-    PlaylistParse <|.. PlaylistParse_Parsed
-    PlaylistParse <|.. PlaylistParse_Unreadable
-    PresetRepository <|.. FilePresetRepository
-    SessionRepository <|.. FileSessionRepository
-    TakeRepository <|.. FileTakeRepository
-    TemplateParse <|.. TemplateParse_Parsed
-    TemplateParse <|.. TemplateParse_NotATemplate
-    TemplateParse <|.. TemplateParse_Malformed
-    TemplateWrite <|.. TemplateWrite_Written
-    TemplateWrite <|.. TemplateWrite_Failed
-    TemplateImport <|.. TemplateImport_Added
-    TemplateImport <|.. TemplateImport_Replaced
-    TemplateImport <|.. TemplateImport_Unreadable
-    TemplateImport <|.. TemplateImport_WriteFailed
-    TemplateRepository <|.. FileTemplateRepository
-    Tolerant <|.. Tolerant_Known
-    Tolerant <|.. Tolerant_Foreign
-    TemplateSegment <|.. TemplateSegment_WholeTrack
-    TemplateSegment <|.. TemplateSegment_Fixed
-    TemplateSegment <|.. TemplateSegment_LoudestWindow
-    TemplateSegment <|.. TemplateSegment_Unknown
-    AutoCutResult <|.. AutoCutResult_Suggested
-    AutoCutResult <|.. AutoCutResult_NoCuts
-    AutoCutMiss <|.. AutoCutMiss_EmptyEnvelope
-    AutoCutMiss <|.. AutoCutMiss_NoTransients
-    AutoCutMiss <|.. AutoCutMiss_WindowTooShort
-    ParamValue <|.. ParamValue_Scalar
-    ParamValue <|.. ParamValue_Vector2
-    ParamValue <|.. ParamValue_Colour
-    ParamValue <|.. ParamValue_Toggle
-    ParamValue <|.. ParamValue_Choice
-    Interpolation <|.. Interpolation_Hold
-    Interpolation <|.. Interpolation_Linear
-    Interpolation <|.. Interpolation_Ease
-    Interpolation <|.. Interpolation_Custom
-    KeyframeResult <|.. KeyframeResult_Applied
-    KeyframeResult <|.. KeyframeResult_Rejected
-    KeyframeError <|.. KeyframeError_KindMismatch
-    KeyframeError <|.. KeyframeError_KeyNotFound
-    MarkerOrigin <|.. MarkerOrigin_Manual
-    MarkerOrigin <|.. MarkerOrigin_TappedIn
-    MarkerOrigin <|.. MarkerOrigin_Detected
-    TapResult <|.. TapResult_Placed
-    TapResult <|.. TapResult_Debounced
-    LaneKind <|.. LaneKind_Visual
-    LaneKind <|.. LaneKind_Media
-    LaneKind <|.. LaneKind_Text
-    LaneKind <|.. LaneKind_Overlay
-    LaneKind <|.. LaneKind_Audio
-    ClipContent <|.. ClipContent_Scene
-    ClipContent <|.. ClipContent_Video
-    ClipContent <|.. ClipContent_Still
-    ClipContent <|.. ClipContent_Text
-    ClipContent <|.. ClipContent_Overlay
-    ClipContent <|.. ClipContent_Audio
-    EditResult <|.. EditResult_Applied
-    EditResult <|.. EditResult_Rejected
-    EditError <|.. EditError_LaneNotFound
-    EditError <|.. EditError_ClipNotFound
-    EditError <|.. EditError_LaneLocked
-    EditError <|.. EditError_WrongLaneKind
-    EditError <|.. EditError_Overlaps
-    EditError <|.. EditError_NeedsSplit
-    EditError <|.. EditError_TooShort
-    EditError <|.. EditError_OutsideClip
-    SnapMode <|.. SnapMode_Free
-    SnapMode <|.. SnapMode_Magnetic
-    PlaceOutcome <|.. PlaceOutcome_Placed
-    PlaceOutcome <|.. PlaceOutcome_Blocked
-    ChapterWriteResult <|.. ChapterWriteResult_Written
-    ChapterWriteResult <|.. ChapterWriteResult_Skipped
-    ChapterWriteResult <|.. ChapterWriteResult_Failed
-    ext_Service <|-- ExportService
-    LongFormAudio <|.. LongFormAudio_SingleTrack
-    LongFormAudio <|.. LongFormAudio_Mix
-    LoopExtend_Result <|.. LoopExtend_Result_Saved
-    LoopExtend_Result <|.. LoopExtend_Result_Failed
-    LoopExtend_Result <|.. LoopExtend_Result_Cancelled
-    LoopExtend_AudioBuild <|.. LoopExtend_AudioBuild_Ready
-    LoopExtend_AudioBuild <|.. LoopExtend_AudioBuild_Failed
-    LoopExtend_Target <|.. LoopExtend_Target_Opened
-    LoopExtend_Target <|.. LoopExtend_Target_Failed
-    ext_Closeable <|.. LoopExtend_AudioReel
-    LoopRender_Result <|.. LoopRender_Result_Rendered
-    LoopRender_Result <|.. LoopRender_Result_Failed
-    LoopRender_Result <|.. LoopRender_Result_Cancelled
-    LoopRender_StopOutcome <|.. LoopRender_StopOutcome_Done
-    LoopRender_StopOutcome <|.. LoopRender_StopOutcome_Cancelled
-    ext_Closeable <|.. LoopRender_SeamStash
-    IntegratedLoudness <|.. IntegratedLoudness_Lufs
-    IntegratedLoudness <|.. IntegratedLoudness_BelowGate
-    LoudnessResult <|.. LoudnessResult_Measured
-    LoudnessResult <|.. LoudnessResult_NoAudioTrack
-    LoudnessResult <|.. LoudnessResult_TooShort
-    LoudnessResult <|.. LoudnessResult_Unreadable
-    LoudnessResult <|.. LoudnessResult_Cancelled
-    LoudnessMeter_PcmLayout <|.. LoudnessMeter_PcmLayout_Signed16
-    LoudnessMeter_PcmLayout <|.. LoudnessMeter_PcmLayout_Float32
-    LoudnessMeter_PcmLayout <|.. LoudnessMeter_PcmLayout_Unsupported
-    LoudnessTarget <|-- LoudnessTarget_Normalising
-    LoudnessTarget_Normalising <|.. LoudnessTarget_YouTube
-    LoudnessTarget_Normalising <|.. LoudnessTarget_ShortsAndTikTok
-    LoudnessTarget <|.. LoudnessTarget_LeaveAsIs
-    LoudnessAdvice <|.. LoudnessAdvice_NothingToMeasure
-    LoudnessAdvice <|.. LoudnessAdvice_AsMixed
-    LoudnessAdvice <|.. LoudnessAdvice_OnTarget
-    LoudnessAdvice <|.. LoudnessAdvice_Normalise
-    StudioExporter_Result <|.. StudioExporter_Result_Saved
-    StudioExporter_Result <|.. StudioExporter_Result_Failed
-    StudioExporter_Result <|.. StudioExporter_Result_Cancelled
-    VideoExporter_Result <|.. VideoExporter_Result_Saved
-    VideoExporter_Result <|.. VideoExporter_Result_Failed
-    VideoExporter_Result <|.. VideoExporter_Result_Cancelled
-    ext_Closeable <|.. VideoExporter_AudioFeed
-    PlaybackErrors_Action <|.. PlaybackErrors_Action_SkipToNext
-    PlaybackErrors_Action <|.. PlaybackErrors_Action_StopEndOfQueue
-    PlaybackErrors_Action <|.. PlaybackErrors_Action_StopSourceUnavailable
-    ext_MediaSessionService <|-- PlaybackService
-    ext_Callback <|.. PlaybackService_ResumptionCallback
-    ext_BitmapLoader <|.. SessionBitmapLoader
-    ShuffleMode <|.. ShuffleMode_InOrder
-    ShuffleMode <|.. ShuffleMode_Tracks
-    ShuffleMode <|.. ShuffleMode_Albums
-    ShuffleMode <|.. ShuffleMode_Spread
-    ShuffleMode <|.. ShuffleMode_Weighted
-    ChapterCheck <|.. ChapterCheck_Ready
-    ChapterCheck <|.. ChapterCheck_NotChapters
-    ThumbnailFrame <|.. ThumbnailFrame_Rendered
-    ThumbnailFrame <|.. ThumbnailFrame_NoFrameThere
-    ThumbnailFrame <|.. ThumbnailFrame_Unreadable
-    ThumbnailSave <|.. ThumbnailSave_Saved
-    ThumbnailSave <|.. ThumbnailSave_NoFrameThere
-    ThumbnailSave <|.. ThumbnailSave_Failed
-    AnalysisState <|.. AnalysisState_Idle
-    AnalysisState <|.. AnalysisState_Running
-    AnalysisState <|.. AnalysisState_Failed
-    ExportPhase <|.. ExportPhase_Idle
-    ExportPhase <|.. ExportPhase_Loading
-    ExportPhase <|.. ExportPhase_Running
-    ExportPhase <|.. ExportPhase_Done
-    ExportPhase <|.. ExportPhase_Failed
-    ext_ComponentActivity <|-- MainActivity
-    PlaybackRepository <|.. SessionPlaybackRepository
-    UserDataRepository <|.. SharedPrefsUserDataRepository
-    VisualizerRepository <|.. SessionVisualizerRepository
-    PresetLinkImport <|.. PresetLinkImport_NotALink
-    PresetLinkImport <|.. PresetLinkImport_Imported
-    PresetLinkImport <|.. PresetLinkImport_Unreadable
-    ext_WallpaperService <|-- VisualizerWallpaperService
-    ext_Engine <|-- VisualizerWallpaperService_VisualizerEngine
-    ext_GLSurfaceView <|-- VisualizerWallpaperService_VisualizerEngine_WallpaperGlSurfaceView
-    ProvenanceViolation <|.. ProvenanceViolation_OriginWithoutSpdx
-    ProvenanceViolation <|.. ProvenanceViolation_UnknownOrigin
-    ProvenanceViolation <|.. ProvenanceViolation_OriginCommitMismatch
+    ProvenanceViolation <|.. ProvenanceViolation_ForbiddenSourceMentioned
     ProvenanceViolation <|.. ProvenanceViolation_ForbiddenTier
     ProvenanceViolation <|.. ProvenanceViolation_LicenceMismatch
-    ProvenanceViolation <|.. ProvenanceViolation_ForbiddenSourceMentioned
     ProvenanceViolation <|.. ProvenanceViolation_MissingNotice
-    ext_AudioBufferSink <|.. PcmTap
-    SinkClockHooks <|.. SinkClockHooks_None
-    SinkClockHooks <|.. SinkClockDriver
-    TapBoundaryListener <|.. SinkClockDriver
-    PresentationTime <|.. PresentationTime_At
-    PresentationTime <|.. PresentationTime_Skipped
-    PresentationTime <|.. PresentationTime_StaleEpoch
-    PresentationTime <|.. PresentationTime_Unknown
-    InputPosition <|.. InputPosition_At
-    InputPosition <|.. InputPosition_Unknown
-    RingReadResult <|.. RingReadResult_Ok
-    RingReadResult <|.. RingReadResult_Gap
-    RingReadResult <|.. RingReadResult_Discontinuity
-    RingReadResult <|.. RingReadResult_NotYetAvailable
-    PcmSink <|.. SampleRing
-    ext_RuntimeException <|-- ComputeCompileException
-    NoCompute <|.. NoCompute_DeviceIsBaseline
-    NoCompute <|.. NoCompute_GroupSizeBelowSpecFloor
-    NoCompute <|.. NoCompute_GroupCountBelowSpecFloor
-    NoCompute <|.. NoCompute_LimitsUnreadable
-    ComputeSupport <|.. ComputeSupport_Available
-    ComputeSupport <|.. ComputeSupport_Unavailable
-    EglProbeOutcome <|.. EglProbeOutcome_Probed
-    EglProbeOutcome <|.. EglProbeOutcome_Unavailable
-    BaselineCause <|.. BaselineCause_NoProbeContext
-    BaselineCause <|.. BaselineCause_VersionUnparseable
-    BaselineCause <|.. BaselineCause_BelowEs31
-    BaselineCause <|.. BaselineCause_ComputeLimitsBelowSpecFloor
-    BaselineCause <|.. BaselineCause_NoImageLoadStore
-    GlTier <|.. GlTier_Compute
-    GlTier <|.. GlTier_Baseline
-    ext_Comparable <|.. GlVersion
-    EngineLifetime <|.. ManagedLifetime
-    FrameRatePolicy <|.. FrameRatePolicy_Native
-    FrameRatePolicy <|.. FrameRatePolicy_Capped
-    ext_Renderer <|.. VisualizerRenderer
-    ext_GLSurfaceView <|-- VisualizerView
-    BaseSimPass <|-- ComputeSimPass
-    BaseSimPass <|-- FragmentSimPass
-    SimBuild <|.. SimBuild_Ready
-    SimBuild <|.. SimBuild_Failed
-    SimPass <|.. BaseSimPass
-    FluidSceneBase <|-- CurlFlowScene
-    FluidSceneBase <|-- FluidScene
-    Scene <|.. FluidSceneBase
-    scenes_render_scene_PcmSink <|.. FluidSceneBase
-    FluidSceneBase <|-- WaterScene
-    Scene <|.. AcidScene
-    scenes_render_scene_PcmSink <|.. AcidScene
-    TouchReactive <|.. AcidScene
-    Scene <|.. BeamScene
-    scenes_render_scene_PcmSink <|.. BeamScene
-    TouchReactive <|.. BeamScene
-    Scene <|.. CymaticsScene
-    scenes_render_scene_PcmSink <|.. CymaticsScene
-    TouchReactive <|.. CymaticsScene
-    ext_RuntimeException <|-- GlUtil_ShaderCompileException
-    Scene <|.. LifeScene
-    scenes_render_scene_PcmSink <|.. LifeScene
-    TouchReactive <|.. LifeScene
-    Scene <|.. MycoScene
-    scenes_render_scene_PcmSink <|.. MycoScene
-    TouchReactive <|.. MycoScene
-    ProgramBinaryCache_Store <|.. ProgramBinaryCache_Store_Unprimed
-    ProgramBinaryCache_Store <|.. ProgramBinaryCache_Store_Off
-    ProgramBinaryCache_Store <|.. ProgramBinaryCache_Store_On
-    Scene <|.. ProjectMScene
-    scenes_render_scene_PcmSink <|.. ProjectMScene
-    Scene <|.. ShaderScene
-    scenes_render_scene_PcmSink <|.. ShaderScene
-    Scene <|.. SilkScene
-    scenes_render_scene_PcmSink <|.. SilkScene
-    TouchReactive <|.. SilkScene
+    ProvenanceViolation <|.. ProvenanceViolation_OriginCommitMismatch
+    ProvenanceViolation <|.. ProvenanceViolation_OriginWithoutSpdx
+    ProvenanceViolation <|.. ProvenanceViolation_UnknownOrigin
 ```
