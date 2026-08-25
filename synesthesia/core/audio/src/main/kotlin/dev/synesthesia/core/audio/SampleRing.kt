@@ -2,10 +2,12 @@ package dev.synesthesia.core.audio
 
 /**
  * Single-writer lock-free PCM ring (blueprint decision #1).
- * Producer: audio/tap thread via write() — never blocks, drop-oldest on overflow.
- * Consumer: any thread via snapshotLatest() — seqlock-style versioned read.
- * Epochs: beginEpoch() invalidates in-flight snapshots at source switches;
- * snapshots carry the epoch so stale data is detectable (AAA clock-domain law).
+ * Producer: audio/tap thread via write() - never blocks, drop-oldest on overflow.
+ * Consumer: any thread via snapshotLatest() - true seqlock (version validated
+ * BEFORE and AFTER the copy; retry on torn read). Fields are @Volatile: JMM
+ * gives no atomicity/visibility guarantees for plain Long across threads.
+ * Epochs: beginEpoch() invalidates in-flight snapshots at source switches
+ * (route changes, format changes); snapshots carry the epoch (clock-domain law).
  */
 class SampleRing(
     private val capacityFrames: Int,
@@ -16,9 +18,9 @@ class SampleRing(
     }
 
     private val data = FloatArray(capacityFrames * channels)
-    private var writePos = 0L // total frames ever written
-    private var version = 0L // bumped per write; odd = mid-write
-    private var epoch = 0L
+    @Volatile private var writePos = 0L // ABSOLUTE stream position incl. dropped frames
+    @Volatile private var version = 0L // bumped per write; odd = mid-write
+    @Volatile private var epoch = 0L
 
     val totalFramesWritten: Long get() = writePos
     val currentEpoch: Long get() = epoch
@@ -26,50 +28,64 @@ class SampleRing(
     /** Producer only. Drops oldest frames when pcm exceeds capacity. */
     fun write(pcm: FloatArray, frames: Int) {
         require(pcm.size >= frames * channels)
-        version++ // odd
-        val usable = minOf(frames, capacityFrames)
-        if (frames > capacityFrames) {
-            // keep the newest tail
-            val skip = (frames - capacityFrames) * channels
-            System.arraycopy(pcm, skip, data, 0, usable * channels)
-        } else {
-            val pos = (writePos % capacityFrames).toInt()
-            val first = minOf(usable, capacityFrames - pos.toInt())
-            System.arraycopy(pcm, 0, data, pos.toInt() * channels, first * channels)
-            System.arraycopy(pcm, first * channels, data, 0, (usable - first) * channels)
+        version++ // odd: write in progress
+        // Drop-oldest: when over capacity, skip the oldest head and wrap-write
+        // the retained tail NORMALLY so data[p % cap] == frame p still holds.
+        val skipFrames = if (frames > capacityFrames) frames - capacityFrames else 0
+        val count = frames - skipFrames
+        var pos = ((writePos + skipFrames) % capacityFrames).toInt()
+        var offsetInSrc = skipFrames * channels
+        var remaining = count
+        while (remaining > 0) {
+            val chunk = minOf(remaining, capacityFrames - pos)
+            System.arraycopy(pcm, offsetInSrc, data, pos * channels, chunk * channels)
+            pos = (pos + chunk) % capacityFrames
+            offsetInSrc += chunk * channels
+            remaining -= chunk
         }
-        writePos += usable
+        writePos += frames // absolute position advances even when frames were dropped
         version++ // even: stable again
     }
 
     /**
      * Consistent snapshot of the newest [maxFrames] frames (older if fewer written).
-     * Returns null when no complete frame is available or epoch changed mid-read.
+     * Seqlock discipline: validate version before AND after copying payload;
+     * retry on torn read. Returns null when nothing is available yet.
      */
     fun snapshotLatest(maxFrames: Int, into: FloatArray? = null): Snapshot? {
-        var v: Long
-        var w: Long
-        var e: Long
-        do {
-            v = version
-            if (v % 2L == 1L) continue // producer mid-write: retry
-            w = writePos
-            e = epoch
-        } while (v != version)
-        val available = minOf(w.toInt(), maxFrames, capacityFrames)
-        if (available == 0) return null
-        val out = into ?: FloatArray(available * channels)
-        require(out.size >= available * channels)
-        val endPos = (w % capacityFrames).toInt()
-        val start = endPos - available
-        for (i in 0 until available) {
-            val src = ((start + i).mod(capacityFrames)) * channels
-            System.arraycopy(data, src, out, i * channels, channels)
+        require(maxFrames > 0)
+        while (true) {
+            val v1 = version
+            if (v1 % 2L == 1L) continue // producer mid-write: spin
+            val w = writePos
+            val e = epoch
+            val available = minOf(w, maxFrames.toLong(), capacityFrames.toLong()).toInt()
+            if (available == 0) return null
+            val out = into ?: FloatArray(available * channels)
+            require(out.size >= available * channels)
+            val endPos = (w % capacityFrames).toInt()
+            val start = endPos - available
+            for (i in 0 until available) {
+                val src = ((start + i).mod(capacityFrames)) * channels
+                System.arraycopy(data, src, out, i * channels, channels)
+            }
+            val v2 = version
+            if (v1 == v2 && v2 % 2L == 0L) {
+                return Snapshot(out, available, channels, e, w)
+            }
+            // torn by concurrent write: discard copy, retry
         }
-        return Snapshot(out, available, channels, e, w)
     }
 
-    fun beginEpoch(): Long = ++epoch
+    /** Atomic w.r.t. readers (AAA review B1): wrapped in the seqlock so no
+     *  snapshot can straddle the switch carrying pre-switch samples labeled
+     *  with the new epoch. */
+    fun beginEpoch(): Long {
+        version++
+        val e = ++epoch
+        version++
+        return e
+    }
 
     data class Snapshot(
         val pcm: FloatArray,

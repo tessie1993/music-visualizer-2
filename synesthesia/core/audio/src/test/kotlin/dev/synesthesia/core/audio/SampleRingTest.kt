@@ -44,7 +44,7 @@ class SampleRingTest {
     fun `stereo interleaving preserved across wrap`() {
         val ring = SampleRing(capacityFrames = 3, channels = 2)
         ring.write(floatArrayOf(1f, 11f, 2f, 12f, 3f, 13f, 4f, 14f, 5f, 15f, 6f, 16f), 6)
-        val s = assertNotNull(ring.snapshotLatest(3))
+        val s = ring.snapshotLatest(3)!!
         assertEquals(listOf(4f, 14f, 5f, 15f, 6f, 16f), s.pcm.toList())
     }
 }

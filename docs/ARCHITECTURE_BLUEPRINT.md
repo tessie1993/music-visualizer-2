@@ -243,7 +243,7 @@ Identical math both paths (SPEC §2.1). **Threads:** main (UI/session) · GL thr
 
 ## 6. Name ledger (legacy semantics carried forward)
 Unchanged: SampleRing, ReactiveAnalyzer, LogBands, FeatureRing, OfflineAnalyzer, FeatureTimeline, AnalysisCache, SceneParams, AudioBus, PlaybackService, QueueOps, ProjectMScene.
-Renamed: OnsetTracker←SuperFlux/OnsetPeakPicker · TempoGrid←TempoTracker+BeatGrid+BarTracker · TierGovernor←ThermalGovernor/GlTier · SafetyClamp←VisualSafety(+FlashBudget) · ModRoute←LfoConfig/AdsrConfig · ParamRegistry←ParamKeys/ParamScope · StyleManifest←VisualStyleCatalog entries · StyleRepository←PresetStore · EqEngine←MvzAudioProcessorChain · LibraryRepository←TrackLibrary · CaptureCoordinator←CaptureController · LoudnessNormalizer←LoudnessMeter/Target · ThemeEngine←ThemePackCatalog · FrameStitcher←LoopRender seam logic.
+Renamed: TapAudioProcessor<-legacy TeeAudioProcessor wrapper · OnsetTracker←SuperFlux/OnsetPeakPicker · TempoGrid←TempoTracker+BeatGrid+BarTracker · TierGovernor←ThermalGovernor/GlTier · SafetyClamp←VisualSafety(+FlashBudget) · ModRoute←LfoConfig/AdsrConfig · ParamRegistry←ParamKeys/ParamScope · StyleManifest←VisualStyleCatalog entries · StyleRepository←PresetStore · EqEngine←MvzAudioProcessorChain · LibraryRepository←TrackLibrary · CaptureCoordinator←CaptureController · LoudnessNormalizer←LoudnessMeter/Target · ThemeEngine←ThemePackCatalog · FrameStitcher←LoopRender seam logic.
 New: RenderClock, RecipeResolver, SegmentCache, FrameStepper, UnlockSheet, PurchasePort, DebugPurchasePort, Bgfx3DStyleBase.
 
 ## 7. Implemented seams ledger (code that EXISTS - cartographer-maintained)
@@ -254,4 +254,6 @@ New: RenderClock, RecipeResolver, SegmentCache, FrameStepper, UnlockSheet, Purch
 | PurchasePort/EntitlementRepository/Entitlements | synesthesia/core/billing/.../Entitlements.kt | LANDED |
 | ExportLimits/ExportLimitsResolver | synesthesia/core/export/.../ExportLimits.kt | LANDED |
 | CrashRing | synesthesia/core/common/.../CrashRing.kt | LANDED |
+| TapAudioProcessor (+TapConversion) | synesthesia/core/audio/.../TapAudioProcessor.kt | LANDED - owned UnstableApi tee, s16-to-f32 mono, SR/ch-change epoch callback |
+| PlayerGraph + PlaybackService | synesthesia/feature/player/... | LANDED - ExoPlayer-DefaultAudioSink-tap-ring wiring; FGS mediaPlayback; POST_NOTIFICATIONS declared (runtime request w/ UI later) |
 Design rationale: docs/FOUNDATION_DESIGN.md. Engines behind these seams are M4-M6 work.
