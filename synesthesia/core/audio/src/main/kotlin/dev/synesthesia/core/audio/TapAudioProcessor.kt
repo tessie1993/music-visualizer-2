@@ -38,6 +38,7 @@ object TapConversion {
  * [onSampleRateChanged] so owners bump ring epoch + flush analyzers.
  */
 @OptIn(UnstableApi::class)
+@androidx.annotation.OptIn(UnstableApi::class)
 class TapAudioProcessor(
     private val sink: PcmSink,
     private val onSampleRateChanged: (Int) -> Unit = {},
