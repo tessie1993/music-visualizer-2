@@ -39,7 +39,7 @@ L11 **DATA-SAFETY GATE**: every milestone is additionally reviewed by a hostile 
 | M3 | Greenfield skeleton (`synesthesia/` gradle root): catalog pins JDK26/r29/KSP-paired, convention plugins, empty app builds + lint/ktlint clean locally AND CI | assembleDebug green both sides | ☐ |
 | M4 | Audio-reactive core port (analysis/FFT/bands/onset/ring) + characterization tests mined from deleted suite | parity tests green vs legacy-known values | ☐ |
 | M5 | Render engine dual-mode + adaptive tiers + style framework (params/modulation/clamps/presets) | Tier-1 offline↔offline parity green; Tier-2 pHash structural check; tier switch no-crash | ☐ |
-| M6 | Style families: shader/fluid/cymatics prettified + MilkDrop compat + ≥2 new 3D styles | .milk loads; 3D styles hit frame budget mid-tier device profile | ☐ |
+| M6 | Style families: shader/fluid/cymatics prettified + MilkDrop compat + ≥2 new 3D styles + flagship-tier gate (Ultra switch, device-gated) + catalogue breadth per STYLE_CATALOGUE.md | .milk loads; 3D styles hit frame budget mid-tier profile; Ultra paths verified on capable device profile only; ≥25 looks listed | ☐ |
 | M7 | Player rebuild (Media3, library/EQ/comfort/advanced) | queue/EQ/gapless/lyrics instrumented-green on emulator | ☐ |
 | M8 | Export suite (offline pipeline, essentials, 6 differentiators, formats) | Canvas loop-perfect export verified; LUFS within ±0.5 | ☐ |
 | M9 | UI shell five-pillar navigation + themes system + generated packs v1 | all surfaces navigable; theme swap live | ☐ |
@@ -60,7 +60,8 @@ CUT-LINE (droppable if schedule breaks): extra 3D styles beyond 2, alpha lane GI
 | DATA-SAFETY gate | STANDING per L11 | audits every milestone; veto power |
 
 ## §Progress journal (append-only, newest top)
-- 2026-08-25 Spec v1.2 PASSED data-safety verification. Branch pushed, PR opened. Next: M1 spec-vs-codebase verdicts → M2 ARCHITECTURE_BLUEPRINT.
+- 2026-08-25 Owner decisions: WIDE style catalogue (≥25 v1 looks) + Ultra-flagship shader tier (Settings switch, GL-probe gated, additive quality). Spec §2.4/§3.4 updated, M6 DoD extended. Style-catalogue research agent dispatched.
+- 2026-08-25 Spec v1.2 PASSED data-safety verification. Branch pushed, PR blocked pending owner token fix (needs Pull requests: Write). Next: M1 verdicts absorbed → M2 ARCHITECTURE_BLUEPRINT.
 - 2026-08-25 DATA-SAFETY audit #1 verdict absorbed into spec v1.2 + tech strategy (RC removed). Branch synesthesia/rebuild committed @74fff9e0.
 - 2026-08-25 L11 added per owner: standing data-safety expert gate. First audit dispatched on SPEC+TECH_STRATEGY.
 - 2026-08-25 M1b R&D fleet returned: stack survey / render-engine strategy / billing+player mining. Consolidated into specs/TECH_STRATEGY.md.

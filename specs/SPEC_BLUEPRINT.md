@@ -64,7 +64,9 @@ Four JSON artifact kinds exist — **recipes**, **presets**, **themes**, **modul
 - Export records the exact schemaVersion used — that is what makes an old export reproducible.
 
 ### 2.4 Adaptive performance tiers (default ON)
-Auto-tier selects from measured frame time: render scale (0.5–1.0), sim grid res, particle budget, raymarch step count, half-res offscreen passes. Manual override Low/Med/High/Ultra. Battery-saver caps tier. Export ignores tiers (uses recipe's locked quality).
+Auto-tier selects from measured frame time: render scale (0.5–1.0), sim grid res, particle budget, raymarch step count, half-res offscreen passes. Manual override Low/Med/High/**Ultra-flagship**. Battery-saver caps tier. Export ignores tiers (uses recipe's locked quality).
+
+**Ultra-flagship tier (owner decision):** Settings exposes a "High-end shaders" switch, visible ONLY on devices whose GL probe (GlTier/CapabilityCache port) certifies flagship-class GPU + thermals. When ON, styles may unlock their top-end paths (full-res raymarch step counts, 4K-class sim grids, compute-assisted scenes, heavier bloom chains) — the very ceiling of what a gaming phone sustains. Every style ships MOBILE-SAFE at default tiers regardless; Ultra paths are additive quality, never required to render the style. Styles declare per-path cost class in their manifest entry; picker badges them (⚡ mobile-safe / 🔥 flagship) and hides/badges locked ones per device+setting.
 
 ## 3. P2 — Visualizer styles
 
@@ -91,6 +93,7 @@ GPU does shader math (GLSL stays primary). C++ earns its place ONLY for: mesh/sc
 
 ### 3.4 Style framework requirements
 Every style exposes: typed param schema (auto-generated Customize panel), modulation targets (§2.3), palette hooks, randomize-with-lock chips, presets (JSON) + **recipes** (§4.4), safety clamps, tier hints (what degrades first).
+**Catalogue breadth goal (owner decision): v1 ships a WIDE selection — target ≥25 distinct looks across families** (shader scenes, fluid trio, cymatics substyles, MilkDrop starter pack, five 3D flagships), each re-graded to the premium bar; breadth beats three perfect styles. Deep-dive catalogue source: specs/STYLE_CATALOGUE.md (research agent output, feeds M6).
 
 ## 4. P4 — Export & Edit Suite
 
