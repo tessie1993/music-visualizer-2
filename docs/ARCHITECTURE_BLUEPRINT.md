@@ -62,7 +62,7 @@ Ports law: `AudioSource` is the ONLY seam between Media3/mic/projection/file and
 ```mermaid
 classDiagram
     class StyleFramework { +render(clock, audioFrame, params) frame }
-    class StyleManifest { +styleId +costClass base|high|ultra +glesFloor +modTargets }
+    class StyleManifest { +styleId +costClass enum base_high_ultra +glesFloor +modTargets }
     class ParamRegistry { +paramId to typed schema } : legacy ParamKeys+ParamScope
     class ModRoute { +paramId +source +depth +curve } : legacy LfoConfig/AdsrConfig as JSON
     class SceneParams { +stylable fields }
@@ -145,6 +145,7 @@ classDiagram
 ```
 
 **Room entities:** `Track(uri PK, title, artist, album, durationMs, contentHash, folderRoot)` · `Playlist(id, name)` · `PlaylistTrack(playlistId, trackId, position)` · `HistoryDay(day, trackId, playCount, listenedMs)` · `Favorite(trackId, addedAt)`.
+**Backup disposition:** `HistoryDay` (listening history) is device-local by default — EXCLUDED from auto-backup alongside entitlement cache / analysis cache / crash ring (privacy-lean; playlists/presets/recipes/themes DO sync as user work).
 **DataStore keys:** entitlement.cache · player.eq.bands · player.eq.preset.<deviceId> · player.playback.* · visuals.activeRecipeId · visuals.tier.override · comfort.flashDepth · comfort.reducedMotion · paywall.lastSheetAtMs · export.defaults.
 **Backup-excluded (D-SAFE-4):** entitlement cache, analysis cache, crash ring buffer.
 
@@ -159,7 +160,7 @@ flowchart LR
     F[file decoder] --> OA[OfflineAnalyzer] --> FT[(FeatureTimeline cache)]
     FT --> FS[FrameStepper idx x 1/fps NO drops] --> MWO[ModRouter + SafetyClamp identical chain] --> EGL["EGL headless FBO native res; tiled-render valve for frames above GPU max"] --> PBO[PBO readback]
     PBO --> SEG[SegmentCache] --> MX[muxer + stitch + LUFS normalize]
-    PBO -. alpha lane .-> AL[AlphaEncoderLane: WebP-anim / VP9-alpha / GIF software encoders from NDK-pinned sources]
+    PBO -. alpha lane .-> AL["AlphaEncoderLane: WebP-anim / VP9-alpha / GIF software encoders from NDK-pinned sources"]
   end
 ```
 
