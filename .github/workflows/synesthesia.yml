@@ -1,0 +1,136 @@
+name: Build & Test Synesthesia
+
+# PR CI + manual dispatch for the greenfield rebuild. Pushes to main are NOT
+# built here yet - the legacy pipeline owns main until feature parity; this
+# workflow gates every synesthesia/* pull request per REBUILD_PLAN law L1.
+#
+# Version policy (law L7): the ONLY pins allowed in this file are the ones the
+# runner cannot infer. JDK/SDK/AGP/Kotlin truth lives in
+# synesthesia/gradle/libs.versions.toml + build-logic convention plugins; this
+# file reads compileSdk from there instead of hardcoding it.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "synesthesia/**"
+      - ".github/workflows/synesthesia.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: synesthesia-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROJECT_DIR: synesthesia
+  APK_SOURCE: synesthesia/app/build/outputs/apk/debug/app-debug.apk
+  JAVA_VERSION: "26"
+
+jobs:
+  build-test:
+    name: Build, unit-test, lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      # compileSdk is read from the single source of truth (convention plugin),
+      # so an SDK bump never rots this step. API 37 packages carry a minor
+      # component ("android-37.0") - bare "android-37" does not exist.
+      - name: Resolve SDK package from source of truth
+        id: sdk
+        run: |
+          set -euo pipefail
+          CS=$(grep -oP 'compileSdk\s*=\s*\K[0-9]+' \
+            "$PROJECT_DIR/build-logic/src/main/kotlin/SynesthesiaAndroidLibraryPlugin.kt" | head -n1)
+          [ -n "$CS" ] || { echo "::error::could not resolve compileSdk"; exit 1; }
+          echo "platform=platforms;android-${CS}.0" >> "$GITHUB_OUTPUT"
+          echo "build_tools=build-tools;${CS}.0.0" >> "$GITHUB_OUTPUT"
+          echo "Resolved compileSdk=$CS"
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle and cache
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Install Android SDK components
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK location not set on runner}}"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "${{ steps.sdk.outputs.platform }}" \
+            "${{ steps.sdk.outputs.build_tools }}"
+
+      - name: Make Gradle wrapper executable
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: chmod +x gradlew
+
+      - name: Assemble debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Unit tests
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./gradlew :core:audio:testDebugUnitTest --stacktrace --no-daemon
+
+      - name: Android lint
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./gradlew :app:lintDebug :core:audio:lintDebug --stacktrace --no-daemon
+
+      - name: Kotlin formatting checks
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./gradlew ktlintCheck --stacktrace --no-daemon
+
+      # Convenience, never a gate: quota-full or flaky uploads must not speak
+      # for the code (legacy run-185 lesson). Reports land only on failure below.
+      - name: Package APK + checksum
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_NAME=$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' \
+            "$PROJECT_DIR/app/build.gradle.kts" | head -n1)
+          FILE_NAME="Synesthesia-${VERSION_NAME:-debug}-${GITHUB_SHA::7}-debug.apk"
+          mkdir -p dist
+          cp "$APK_SOURCE" "dist/$FILE_NAME"
+          sha256sum "dist/$FILE_NAME" > "dist/$FILE_NAME.sha256"
+          echo "file_name=$FILE_NAME" >> "$GITHUB_OUTPUT"
+          echo "Built dist/$FILE_NAME"
+        id: package
+
+      - name: Upload debug APK
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: synesthesia-debug-${{ github.run_number }}-${{ github.sha }}
+          path: |
+            dist/${{ steps.package.outputs.file_name }}
+            dist/${{ steps.package.outputs.file_name }}.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload reports when verification fails
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: synesthesia-reports-${{ github.run_number }}
+          path: |
+            ${{ env.PROJECT_DIR }}/app/build/reports/
+            ${{ env.PROJECT_DIR }}/core/audio/build/reports/
+            ${{ env.PROJECT_DIR }}/core/audio/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
