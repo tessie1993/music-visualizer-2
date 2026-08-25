@@ -27,6 +27,7 @@ L7 App-side toolchain tracks latest stable via catalog; NATIVE side hard-pinned 
 L8 Paywall seams exist from day 1 (PurchasePort/EntitlementRepository), no billing UI until M8.
 L9 Token hygiene: gh credential store only; never in git/logs/files; rotate at completion.
 L10 Compaction protocol: after compact → read §Mission, SPEC_BLUEPRINT.md, progress table below → continue at first ☐.
+L12 **CARTOGRAPHER-AGENT**: after EVERY reviewer-approved milestone, a dedicated agent diffs the approved code + its dependencies against docs/ARCHITECTURE_BLUEPRINT.md and updates it (class diagrams, name ledger, implemented-seams ledger) BEFORE the merge is considered complete. Fidelity duty - the map never drifts from the territory.
 L11 **DATA-SAFETY GATE**: every milestone is additionally reviewed by a hostile Android PRIVACY/DATA-SAFETY expert agent (permissions, disclosures, Play data-safety form coherence, backup rules, dark-pattern/UX-policy risks). Its verdict is recorded next to the architecture reviewer's; either veto blocks merge.
 
 ## §Milestones & Definition of Done
