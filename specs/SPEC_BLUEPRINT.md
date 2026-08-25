@@ -42,14 +42,14 @@ render(clock, audioFrame, params) -> frame
 **Parity contract (two tiers, both testable):**
 - **Tier 1 — offline↔offline EXACT**: same (track bytes, recipe, schema version, seed) rendered twice offline ⇒ pixel-identical frames. This is the acceptance gate (CI-run on software/GL harness); any style failing it is broken by definition.
 - **Tier 2 — live↔offline STRUCTURAL**: live playback approximates the offline frame sequence (same scene graph, same param timeline; frames may drop/scale under load). Verified by sampled perceptual-hash distance ≤ threshold at matched beats, not byte equality.
-- Harness owner: render-engine module's own test source set. Metric: pHash Hamming distance, threshold pinned per family in code.
+- Harness owner: render-engine module's own test source set. Metric: pHash Hamming distance, threshold pinned per family in code. **Scope law (panel consensus):** Tier-1 byte-exactness is asserted per REFERENCE-HARDWARE PAIR (same device model + driver, two runs); SwiftShader/emulator parity is a regression SMOKE gate, never proof of device behavior. A shader-precision law (explicit highp/mediump policy per style) accompanies every ported sim.
 - **Offline determinism mode (AAA review B-3) — engineered, not assumed:** every render-source symbol scan enforces a SeededRng registry (arch-test fails on bare `Random(`/`currentTimeMillis` in render paths); TierGovernor/FSR adaptivity flags FROZEN offline at recipe quality; strict frame-ordered fenced PBO readback (no out-of-order consumption); ALL temporal accumulators initialize from recipe seed at t=0 AND re-initialize identically at every segment boundary.
 - All randomness seeded; the seed is part of the recipe record → exports reproducible **for a given schema version** (see §2.5).
 
 ### 2.2 Audio pipeline
 - Sources → single-writer PCM ring (48 kHz mono analysis bus):
   player tap (Media3 audio processor), microphone, other-apps capture (API 29 playback capture w/ MediaProjection foreground service + prominent disclosure), file decoder (offline path reads file directly — no realtime dependency).
-- Analysis: FFT (2048) → log-spaced bands (~64) → beat/onset tracker (spectral flux + tempo grid) → loudness/RMS curve cache per track (reused by seek-bar waveform + export normalization).
+- Analysis: FFT (2048) → log-spaced bands (~64) → beat/onset tracker (spectral flux + tempo grid) → loudness/RMS curve cache per track (reused by seek-bar waveform + export normalization). **Band law (DSP panel):** band-edge table regenerated at RUNTIME sample rate (legacy tables assumed 44.1k — 8.8% edge skew at 48k); fmin ≥ ~55 Hz so no two bands share fewer than 4 bins; integration weighting stated per band.
 - Offline analysis cache keyed by (content hash, params version).
 
 ### 2.3 Modulation system (modular rebuild of legacy LFO/ADSR)
@@ -123,7 +123,7 @@ Trim (filmstrip) · grade (bright/contrast/sat/hue/vignette) · speed (with pitc
 | Capability | Free | Premium |
 |---|---|---|
 | Export duration | ≤ 3 min | unlimited |
-| Quality ladder | rung 1 of 5 = **720p30 H.264 baseline bitrate** | full ladder → 4K60 |
+| Quality ladder | rung 1 of 5 = **720p60 H.264 baseline bitrate** (D-TIE-1: fps cap 60 stands at free tier) | full ladder → 4K60 |
 | FPS cap | ≤ 60 | device max |
 | Alpha lane (WebP/VP9α/GIF) | — | ✓ |
 | Recipes save/share | ✓ (free forever) | ✓ |
@@ -144,7 +144,7 @@ Base: Media3/ExoPlayer + MediaSessionService (background play), MediaStore libra
 | Block | Features |
 |---|---|
 | Library core | tracks/albums/artists/genres, folders view, queue edit (jump/pull/remove), favorites, playlists, multi-term search |
-| Audio controls | parametric EQ (band types LP/HP/shelf/peak, presets **per output device**), bass/treble, speed **and pitch**, gapless, crossfade (0–6s, pause/resume/skip fades), ReplayGain, skip silence, preamp |
+| Audio controls | parametric EQ (band types LP/HP/shelf/peak, presets **per output device**), bass/treble, speed **and pitch**, gapless, fades on pause/resume/skip (equal-power √gains law, −1 dBTP ceiling), ReplayGain, skip silence, preamp. True track-to-track CROSSFADE descoped to v1.1 (needs a second decode pipeline; Media3 has none in-chain — D-TIE-2) |
 | DSP chain order law (AAA B-5): decode → speed/pitch → skip-silence → EQ/bass/treble → ReplayGain preamp+gain → limiter → crossfade mixbus → visualizer tee LAST. Tee is POST-EQ by law — the visualizer reacts to what the user actually hears. Crossfade = custom mixing AudioProcessor (Media3 has none natively). ReplayGain scan lazy + cached by contentHash. | |
 | Comfort set | sleep timer (let-track-finish), A-B repeat painted on waveform seek bar, pause-on-unplug, auto-resume last track |
 | Poweramp-inspired advanced | direct-volume path where possible, .lrc timed lyrics over the visualizer, m3u/pls import/export, cue-sheet read, smart playlists (rules-based — Poweramp's top complaint gap), native scrobble hook |
@@ -164,7 +164,7 @@ Loudness-curve waveform seek bar (from analysis cache) is player+visualizer shar
 ## 7. Monetization port (subscription, single premium tier)
 
 Free (permanent): full player · 3 signature styles + randomizer · standard-quality live visuals · export ≤3 min, lowest quality, ≤60fps.
-Premium (sub monthly/yearly): ALL styles incl. new 3D + future packs · export to 4K/full quality/no time cap · alpha lane · recipes cloud-free sharing (file export).
+Premium (sub monthly/yearly **or one-time lifetime SKU** — D-TIE-5): ALL styles incl. new 3D + future packs · export to 4K/full quality/no time cap · alpha lane · recipes cloud-free sharing (file export).
 Paywall UX (D-SAFE-2): unlock sheet's 3-second timer gates ONLY the purchase-button enablement; the dismiss/close control is NEVER delayed, obscured, or penalized. Trigger surfaces = (a) app boot/reopen unlock sheet, (b) contextual feature-gate nudges shown only AT a gated feature's touchpoint, max one per session each, (c) evergreen Settings entry. Unlock-sheet cadence capped at 1 per 4 hours and 1 per session (numbers are law, tunable only downward); never mid-playback, never during export. Play's own transactional message sheet (`showInAppMessages`) is invoked at launch only — a platform-owned surface, never triggered by us mid-playback/export.
 Free-tier 3D sampling: a **rotating preview style** (one premium style free each week, live use allowed, export locked) so free users can taste depth — answers "randomizer over 3 styles ≠ customization" loophole.
 Known accepted risk (documented): client-only entitlement means a refund revokes at next `queryPurchasesAsync` (session-length premium leak ≤ one session) and sideloaded APKs can forge grants — serverless v1 stance, revisit post-launch.

@@ -45,6 +45,8 @@ L11 **DATA-SAFETY GATE**: every milestone is additionally reviewed by a hostile 
 | M9 | UI shell five-pillar navigation + themes system + generated packs v1 | all surfaces navigable; theme swap live | ☐ |
 | M10 | Paywall port (PBL9 impl + free/premium enforcement + popup cadence) | entitlement flows pass debug-stub matrix | ☐ |
 | M11 | Workflows rebuild + Play-readiness pack | zero version literals in YAML; checklist §8 complete; release-gate benchmark (parity job + device-matrix perf numbers) recorded in journal | ☐ |
+EXECUTION ORDER (Q-6 resolved, follow-the-data-flow law): M3 scaffold → M7 player foundation (session/service/library-minimal/tap) → M4 audio engine port → M5 render engine → M6 styles → remaining pillars. Milestone NUMBERS unchanged; this row defines build sequence.
+
 CUT-LINE (droppable if schedule breaks): extra 3D styles beyond 2, alpha lane GIF (keep WebP), smart playlists, scrobble hook, extended ratios beyond 21:9/4:5.
 
 ## §Verification commands (local gate, run in C:\Users\tessi\dev\music-visualizer-2\synesthesia once M3 lands)
@@ -60,6 +62,7 @@ CUT-LINE (droppable if schedule breaks): extra 3D styles beyond 2, alpha lane GI
 | DATA-SAFETY gate | STANDING per L11 | audits every milestone; veto power |
 
 ## §Progress journal (append-only, newest top)
+- 2026-08-25 5-PANEL AUDIT absorbed: speed-only clock scaling, runtime-SR band law, latency=target+p95 measured, Tier-1 scoped to reference-HW pairs (SwiftShader=smoke), UnstableApi rescoped, projection-FGS to feature layer, bg-playback checklist, ring seqlock/drop-oldest, equal-power fades. TIEBREAKERS (owner): 720p60 free tier; crossfade descoped v1.1; KEEP C++/bgfx + all 5 3D styles; KEEP dual gates; ADD lifetime SKU; devices via Test Lab/closed tracks; Q-6=data-flow order (player before engine before visual); no dates.
 - 2026-08-25 AAA lead #2 (blind) REVISE absorbed: clamp ordered after ALL pixel-modifying stages (RCAS+captions; arch-test), latency law scoped per-source w/ tap→photon M7 gate, seek/speed clock-rebasing law, styleGate entitlement field, segmented==single-pass parity case. Re-verification dispatched before merge.
 - 2026-08-25 M2 blueprint drafted → architect reviewer REVISE (3 blocking: projectM bridge placement / ExportLimitsResolver missing / modroute schema refs) → ALL absorbed + parallel session's alpha-lane & lifecycle additions kept. Awaiting data-safety pass then push/PR.
 - 2026-08-25 CONTEXT HYGIENE LAW (owner): one-shot agents cleared to tiny references after interaction ends; report at ~50% context. Token updated by owner — retest on next PR attempt.
