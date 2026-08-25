@@ -56,8 +56,10 @@ CUT-LINE (droppable if schedule breaks): extra 3D styles beyond 2, alpha lane GI
 | Plan v1→v4 (pre-execution) | REVISE→absorbed | sequencing, DoD, toolchain repins |
 | SPEC_BLUEPRINT v1 | REVISE→absorbed | parity contract two-tier; §2.5 schema versioning; §4.4 matrix+watermark D-1; §4.5 budgets/encoders; §12 cross-cutting; popup cadence caps; GLSL count 82 |
 | SPEC_BLUEPRINT v1.1 | PENDING re-review | |
+| DATA-SAFETY audit #1 (spec+strategy) | REVISE→absorbed | D-SAFE-1 hard flash ceiling always-on; D-SAFE-2 timer gates CTA only, never dismissal; D-SAFE-3 RC cut from v1 (no-network law preserved); D-SAFE-4 crash-buffer backup exclusion + write-time trace sanitization; D-SAFE-5 normative disclosure copy |
 | DATA-SAFETY gate | STANDING per L11 | audits every milestone; veto power |
 
 ## §Progress journal (append-only, newest top)
+- 2026-08-25 DATA-SAFETY audit #1 verdict absorbed into spec v1.2 + tech strategy (RC removed). Branch synesthesia/rebuild committed @74fff9e0.
 - 2026-08-25 L11 added per owner: standing data-safety expert gate. First audit dispatched on SPEC+TECH_STRATEGY.
 - 2026-08-25 M1b R&D fleet returned: stack survey / render-engine strategy / billing+player mining. Consolidated into specs/TECH_STRATEGY.md.

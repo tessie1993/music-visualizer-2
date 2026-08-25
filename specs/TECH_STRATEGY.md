@@ -31,7 +31,7 @@ Status: DRAFT · Feeds ARCHITECTURE_BLUEPRINT (M2) · Verified against live sour
 - Widgets/Android Auto deferred post-v1 (cost: RemoteViews quirks ≈2× est.; Auto = separate Google review 4–8 wks). Session service built Auto-ready structurally from day 1 (free).
 
 ## 4. Monetization operations
-- Raw PBL 9.1.0 implementation behind PurchasePort + **RevenueCat SDK free tier day-one** (free ≤$2.5k MTR; kills server requirement for validation/webhooks) + RC webhook mirrored into own DB weekly-dump to prevent lock-in; reassess >$10k MTR.
+- Raw PBL 9.1.0 implementation behind PurchasePort — **v1 is serverless, client-side only** (D-SAFE-3: RevenueCat/Adapty SDKs embed INTERNET and phone home, violating the no-network product law; excluded from v1). Fraud/forgery accepted as documented risk (SPEC §7); revisit server validation or RC **only as explicit owner decision amending the network law**.
 - Patterns codified: queryPurchasesAsync every launch/resume · acknowledge only post-check (3-day auto-refund law) · linkedPurchaseToken chain on upgrades · proration replacement params · PendingPurchasesParams incl. prepaid · honor isSuspended() · showInAppMessages(TRANSACTIONAL) each launch (platform-capped 1×/7 days).
 - Paywall cadence (blends owner law + SOSA 2026 benchmarks): owner's boot/reopen unlock sheet (3s timer) **capped 1/session + 1/4h**; otherwise contextual feature-gate nudges only (touchpoint of gated feature, once per session); evergreen settings entry; NO 3-day trials ever (55% cancel Day 0); if trials come later → annual-only, 7–14 days.
 - Gotcha list carried into impl tickets: BILLING_UNAVAILABLE reclassification, nullable getLinkUri(), reinstall→restore test path, SOSA refund-inflation flag.

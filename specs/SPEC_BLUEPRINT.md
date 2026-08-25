@@ -54,7 +54,7 @@ render(clock, audioFrame, params) -> frame
 Every stylable parameter is addressable: `paramId → value`:
 - Static value · envelope (ADSR) · LFO (rate clamped ≤ photosensitivity limits) · beat-gated impulse · band follower (FFT band → param, attack/release shaped)
 - Modulation routes are data (JSON), stackable per parameter, shareable inside recipes/presets.
-- Safety clamp stage LAST in chain (WCAG flash limits); off = exact no-op.
+- Safety architecture (D-SAFE-1): a HARD, NON-DEFEATABLE WCAG flash ceiling (≤3 flashes/s equivalent) is applied LAST in every modulation chain — always on, all tiers, all styles, not exposed as a setting. Optional comfort controls (flash depth, reduced-motion) operate BELOW the ceiling, default OFF, off = exact no-op.
 
 ### 2.5 Determinism & data-model versioning (architecture prerequisite)
 Four JSON artifact kinds exist — **recipes**, **presets**, **themes**, **modulation routes**. Rules:
@@ -118,7 +118,7 @@ Trim (filmstrip) · grade (bright/contrast/sat/hue/vignette) · speed (with pitc
 | Recipes save/share | ✓ (free forever) | ✓ |
 | Styles at export time | the 3 free styles + rotating preview style | all |
 | Watermark on exports | **YES** — small corner mark (DECISION D-1, default yes; owner may veto before M8) | none |
-Visual-safety clamps apply to ALL tiers unconditionally — monetization never touches photosafety.
+Visual-safety: the hard WCAG ceiling (§2.3 D-SAFE-1) applies to ALL tiers unconditionally — monetization never touches photosafety; comfort controls below it are cosmetic preferences.
 
 ### 4.5 Offline render budgets & lifecycle
 - Time budget model per (resolution tier × SoC class {flagship/mid/entry}): pre-flight estimate shown BEFORE render starts; >15 min requires explicit confirm; >45 min suggests lower tier.
@@ -146,17 +146,17 @@ Loudness-curve waveform seek bar (from analysis cache) is player+visualizer shar
 - New theme packs required → asset generation pipeline: procedural-first (deterministic generator producing WebP/shader textures, reproducible in-build). AI image-generation assist is stretch, not dependency (tooling risk logged).
 - IA: bottom nav — Home (resume hero + live spectrum + shelves) · Library · Visuals (styles/customize hub) · Studio (export/edit) · Settings. Now-Playing = full-screen over live canvas (player face: wave seekbar, lyrics, queue).
 - Customization surfaces: per-style modular panels (schema-driven, not hand-built screens).
-- Accessibility/photosensitivity: safe-visuals clamps default OFF but first-run prompt; reduced-motion independent switch; WCAG flash ceiling enforced in modulation stage.
+- Accessibility/photosensitivity: hard WCAG flash ceiling ALWAYS ON by construction (§2.3 D-SAFE-1); optional comfort controls default OFF with first-run prompt; reduced-motion independent switch.
 - Light theme exists but dark-glass is the identity.
 
 ## 7. Monetization port (subscription, single premium tier)
 
 Free (permanent): full player · 3 signature styles + randomizer · standard-quality live visuals · export ≤3 min, lowest quality, ≤60fps.
 Premium (sub monthly/yearly): ALL styles incl. new 3D + future packs · export to 4K/full quality/no time cap · alpha lane · recipes cloud-free sharing (file export).
-Paywall UX: unlock sheet with 3-second timer before button enables; triggers = app boot/reopen + timed loop **capped at 1 per 4 hours and 1 per session** (numbers are law, tunable only downward); never mid-playback, never during export.
+Paywall UX (D-SAFE-2): unlock sheet's 3-second timer gates ONLY the purchase-button enablement; the dismiss/close control is NEVER delayed, obscured, or penalized. Triggers = app boot/reopen + timed loop **capped at 1 per 4 hours and 1 per session** (numbers are law, tunable only downward); never mid-playback, never during export.
 Free-tier 3D sampling: a **rotating preview style** (one premium style free each week, live use allowed, export locked) so free users can taste depth — answers "randomizer over 3 styles ≠ customization" loophole.
 Known accepted risk (documented): client-only entitlement means a refund revokes at next `queryPurchasesAsync` (session-length premium leak ≤ one session) and sideloaded APKs can forge grants — serverless v1 stance, revisit post-launch.
-Architecture (port seams, built day-1): `EntitlementRepository` (DataStore-cached, queryPurchasesAsync on resume) ← `PurchasePort` interface ← PBL 9.x impl (acknowledge ≤3 days, PENDING never grants, grace/account-hold from query results) + `DebugPurchasePort` stub simulating grant/pending/expiry. AdPolicy hooks reserved, ads NOT in v1 plan.
+Architecture (port seams, built day-1): `EntitlementRepository` (DataStore-cached, queryPurchasesAsync on resume) ← `PurchasePort` interface ← **PBL 9.x-only impl for v1** — D-SAFE-3 RESOLUTION: RevenueCat (or any validation SDK) embeds INTERNET permission and transmits identifiers/purchase tokens off-device, contradicting the no-network product law; RC is therefore EXCLUDED from v1 and reconsidered only as a formal owner decision to amend the network law (with data-safety form + privacy policy updates). v1 stays serverless client-side per §7's own design. PBL rules: acknowledge ≤3 days after verification, PENDING never grants, grace/account-hold read from query results + `DebugPurchasePort` stub simulating grant/pending/expiry. AdPolicy hooks reserved, ads NOT in v1 plan.
 
 ## 8. Platform, toolchain, distribution
 
@@ -199,9 +199,15 @@ Play-readiness checklist (living): 16KB pages verified across ALL shipped .so ·
 ## 12. Cross-cutting policies
 - **Error & degradation UX**: GPU context loss → auto scene rebuild + toast; corrupt .milk → style marked unavailable with reason in picker; MediaProjection revoked → capture stops + settings card explains; disk-full mid-export → segment cache flushed, partial kept with ".partial" suffix + retry.
 - **Permission flow order**: first-run: none required → on first mic/capture use: in-context prominent disclosure → OS prompt. Projection consent per session (platform law). No permission asked before it has a visible feature behind it.
-- **Telemetry stance**: NO network permission ⇒ no crash reporting SDK, period. Silent build ships with a LOCAL crash ring buffer (last 20 traces) the owner can pull from their own device via share sheet. Play-native ANR/vitals coverage begins at closed testing.
+- **Telemetry stance**: NO network permission ⇒ no crash reporting SDK, period. Silent build ships with a LOCAL crash ring buffer (last 20 traces) the owner can pull from their own device via share sheet. Play-native ANR/vitals coverage begins at closed testing. Traces are SANITIZED AT WRITE TIME: file paths reduced to hashes/relative form; track titles/artists never included; share-sheet export re-sanitizes.
 - **i18n**: English-first; all strings via resources from day 1 (Compose lint enforced); layouts RTL-safe; locales_config shipped. New languages post-Play.
-- **Backup/restore**: Android auto-backup rules EXCLUDE entitlement tokens + analysis cache; include presets/recipes/themes/playlists (user work is sacred).
+- **Backup/restore**: Android auto-backup rules EXCLUDE entitlement tokens + analysis cache + **the crash ring buffer** (D-SAFE-4); include presets/recipes/themes/playlists (user work is sacred).
+- **Normative disclosure copy (D-SAFE-5)** — required verbatim elements in BOTH mic and capture flows, shown immediately BEFORE the OS prompt, never buried in settings:
+  1. WHAT: "Synesthesia will listen to {your microphone | audio from other apps}."
+  2. WHY: "…to create live visuals synced to sound."
+  3. PROMISE: "Audio is processed on this device only — never stored or transmitted."
+  4. ESCAPE: "You can decline and everything else keeps working."
+  Projection additionally: per-session system consent; foreground service of type mediaProjection starts ONLY after consent (Android 14+ requirement); manifest carries FOREGROUND_SERVICE_MEDIA_PROJECTION.
 
 ---
 
