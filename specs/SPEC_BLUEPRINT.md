@@ -13,6 +13,7 @@ Rebuild, not refactor — legacy code is a mine and an inspiration, not a founda
 
 - **Audience**: listeners (eye-candy while music plays) AND creators (social/Canvas exports) AND VJs (live). No primary segment exclusion.
 - **Identity**: high-end glowy crystal-glass dark UI. Premium feel; never childish.
+- **AAA law**: the product sells BEAUTY, period. Baseline = TOP of mid-tier (upper-mid SoC at 60fps, medium settings). A Settings "Cinematic shaders" class (flagship/gaming phones only, capability-gated) unlocks the extreme tier. See specs/STYLE_CATALOG.md for the catalog + AAA polish layer + GPU budgets.
 - **Positioning vs market**: Poweramp's audio depth without its settings maze; CapCut's ease without flaky beat-sync; Avee's template economy without template-bound visuals; Specterr/Videobolt quality without cloud renders.
 
 ## 1. The five pillars
@@ -63,12 +64,17 @@ Four JSON artifact kinds exist — **recipes**, **presets**, **themes**, **modul
 - Migration rule: read forward-compatible (unknown keys ignored); breaking schema change bumps major and ships a migrator; old artifacts never silently reinterpret.
 - Export records the exact schemaVersion used — that is what makes an old export reproducible.
 
-### 2.4 Adaptive performance tiers (default ON)
-Auto-tier selects from measured frame time: render scale (0.5–1.0), sim grid res, particle budget, raymarch step count, half-res offscreen passes. Manual override Low/Med/High/**Ultra-flagship**. Battery-saver caps tier. Export ignores tiers (uses recipe's locked quality).
+### 2.4 Performance model (owner decision: HIGH-END ONLY)
+**Performance floor = upper-mid-tier as the MINIMUM.** Baseline reference device: Snapdragon 7-series / Dimensity 8000-class (Adreno 7xx / Mali-G610), 8 GB RAM — the guaranteed experience is steady 60 fps at native 1080p on default settings. Devices below this class are NOT a design target: no degraded "lite" paths exist; the Play listing declares hardware expectations and the app shows an advisory on sub-baseline GPUs. This is a premium visual product; cheap-looking output is forbidden everywhere.
 
-**Ultra-flagship tier (owner decision):** Settings exposes a "High-end shaders" switch, visible ONLY on devices whose GL probe (GlTier/CapabilityCache port) certifies flagship-class GPU + thermals. When ON, styles may unlock their top-end paths (full-res raymarch step counts, 4K-class sim grids, compute-assisted scenes, heavier bloom chains) — the very ceiling of what a gaming phone sustains. Every style ships MOBILE-SAFE at default tiers regardless; Ultra paths are additive quality, never required to render the style. Styles declare per-path cost class in their manifest entry; picker badges them (⚡ mobile-safe / 🔥 flagship) and hides/badges locked ones per device+setting.
+Tier ladder (auto-selected by measured frame time, manual override): **Base** (the 1080p60 guarantee) · **High** (1440p-class rendering, fuller sim grids, deeper raymarch steps) · **Ultra-flagship** (gaming-phone ceiling: max step counts, 4K-class sims, compute-assisted paths). Battery-saver caps at Base. Export ignores tiers (uses recipe's locked quality).
+
+**Ultra-flagship tier:** Settings exposes a "High-end shaders" switch, visible ONLY on devices whose GL probe (GlTier/CapabilityCache port) certifies flagship-class GPU + thermals. When ON, styles unlock their top-end paths. Every style ships at full intended quality on Base tier regardless — Ultra paths are additive ceiling, never a different look. Styles declare per-path cost class (`base` / `high` / `ultra`) in their manifest entry; picker badges them.
+Tag equivalence for catalog docs: STYLE_CATALOG `MID/HIGH/CINEMATIC` ≙ these tiers `Base/High/Ultra`. Budget tables there are expressed @1080p60 on SD 7-series (Adreno 642L-class) vs SD 8-gen-3 (Adreno 750).
 
 ## 3. P2 — Visualizer styles
+
+Full candidate pool (34 concepts), AAA polish layer (post-FX order, palette discipline, motion law, transition craft), performance budgets and the recommended 12-scene launch lineup live in **specs/STYLE_CATALOG.md** — normative for M6.
 
 ### 3.1 Families at v1
 | Family | Origin | v1 work |
@@ -93,7 +99,8 @@ GPU does shader math (GLSL stays primary). C++ earns its place ONLY for: mesh/sc
 
 ### 3.4 Style framework requirements
 Every style exposes: typed param schema (auto-generated Customize panel), modulation targets (§2.3), palette hooks, randomize-with-lock chips, presets (JSON) + **recipes** (§4.4), safety clamps, tier hints (what degrades first).
-**Catalogue breadth goal (owner decision): v1 ships a WIDE selection — target ≥25 distinct looks across families** (shader scenes, fluid trio, cymatics substyles, MilkDrop starter pack, five 3D flagships), each re-graded to the premium bar; breadth beats three perfect styles. Deep-dive catalogue source: specs/STYLE_CATALOGUE.md (research agent output, feeds M6).
+**Quality bar (owner law): there are no cheap styles.** Every look is authored against the premium grade — full bloom chain, graded palettes, deliberate motion design — validated on the Baseline reference device at 60 fps minimum. Anything that only reads "basic" or "placeholder" does not ship.
+**Catalogue breadth goal: v1 ships a WIDE selection — target ≥25 distinct looks across families** (shader scenes, fluid trio, cymatics substyles, MilkDrop starter pack, five 3D flagships), each at the same premium bar; breadth AND depth. Deep-dive source: specs/STYLE_CATALOGUE.md.
 
 ## 4. P4 — Export & Edit Suite
 
@@ -177,7 +184,8 @@ Architecture (port seams, built day-1): `EntitlementRepository` (DataStore-cache
 
 Play-readiness checklist (living): 16KB pages verified across ALL shipped .so · media-projection FGS type + in-context disclosure · RECORD_AUDIO prominent disclosure · data-safety form coherence ("processed locally, never transmitted" vs no-network permission) · LGPL-2.1 attribution for projectM · privacy policy rewrite for Synesthesia branding.
 
-## 9. Legacy codebase verdicts (preliminary — deep comparison task pending)
+## 9. Legacy codebase verdicts — FINAL (M1 complete)
+Authoritative table: **specs/LEGACY_VERDICTS.md**. Headlines: ~19–23k Kotlin portable + 82 GLSL re-grade assets; UI/player (~30k) rebuilt fresh; VisualSafety.kt already implements D-SAFE-1 (port verbatim); TemplateFormat tolerance machinery becomes the §2.5 schema-registry core; projectM bridge trio reused as-is under NDK-r29 rebuild provenance. Top-10 port order defined there and feeds M4+.
 
 | Asset | Verdict |
 |---|---|

@@ -1,6 +1,6 @@
 # Synesthesia — Style Catalogue v1 (research output → M6 build list)
 Source: deep-dive agent survey (Shadertoy canon w/ verified IDs, projectM Cream-of-the-Crop corpus 9,795 presets, STAELLA/Spectrolizer/Avee catalogues, Resolume footage taxonomy, demoscene) · Aug 2026
-Contract: every style MOBILE-SAFE at default tiers; additive ULTRA paths for certified flagships (SPEC §2.4).
+Contract (owner law): HIGH-END ONLY. Cost classes are **base** / **high** / **ultra** — `base` = guaranteed 60fps @1080p on the upper-mid-tier reference device (SD 7-series / Dimensity 8000-class); no sub-baseline "lite" paths exist anywhere in the app. Every style authored to the premium grade; nothing basic ships.
 
 ## A. v1 catalogue assembly (≥25 looks — plan of record)
 | Source | Looks |
