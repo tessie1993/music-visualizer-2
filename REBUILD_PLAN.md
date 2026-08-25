@@ -60,6 +60,8 @@ CUT-LINE (droppable if schedule breaks): extra 3D styles beyond 2, alpha lane GI
 | DATA-SAFETY gate | STANDING per L11 | audits every milestone; veto power |
 
 ## §Progress journal (append-only, newest top)
+- 2026-08-25 M2 blueprint drafted → architect reviewer REVISE (3 blocking: projectM bridge placement / ExportLimitsResolver missing / modroute schema refs) → ALL absorbed + parallel session's alpha-lane & lifecycle additions kept. Awaiting data-safety pass then push/PR.
+- 2026-08-25 CONTEXT HYGIENE LAW (owner): one-shot agents cleared to tiny references after interaction ends; report at ~50% context. Token updated by owner — retest on next PR attempt.
 - 2026-08-25 Style research RETURNED: specs/STYLE_CATALOG.md — 34 concepts, AAA polish layer (post-FX order/motion law/transitions), GPU budget tables, top-12 launch lineup. Tag equivalence MID/HIGH/CINEMATIC ≙ base/high/ultra recorded in SPEC §2.4/§3.
 - 2026-08-25 M1 COMPLETE: specs/LEGACY_VERDICTS.md — reuse/mine/rebuild table, hidden gems, top-15 deleted-test characterization sources, ~19–23k LOC portable + 82 GLSL re-grade assets.
 - 2026-08-25 OWNER LAW: high-end only — performance floor raised to upper-mid-tier reference device (60fps@1080p base guarantee), no lite paths, no cheap styles; cost classes now base/high/ultra. Spec §2.4/§3.4 + STYLE_CATALOGUE updated.

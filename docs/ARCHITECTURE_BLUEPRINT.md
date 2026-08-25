@@ -29,6 +29,12 @@ graph BT
 
 Edges are the ONLY allowed dependencies. Forbidden by compile-time convention plugin check: any `core:*`→`feature:*`; reverse `ui→engine` edges; Media3 session/UI types inside `:core:audio` except behind its `AudioSource` ports. `:app` owns DI wiring (Hilt), `SynesthesiaApp`, `MainActivity`, service declarations.
 
+**Placement pins (review R1):**
+- **projectM JNI bridge lives in `:core:visualizer/native`** (ProjectMEngine + .so loading) — NOT in :feature:visuals, else :core:export could never offline-render .milk styles. Compose glue stays in FVIS.
+- **ArtifactRegistry (schema registry, SPEC §2.5) is owned by `:core:visualizer`.**
+- Procedural theme-pack generator = deterministic Gradle task owned by `:core:designsystem`, writing generated packs into build assets (SPEC §6).
+- FSET↔VIS seam for tier override / Ultra switch = **DataStore keys** (`visuals.tier.override`): settings writes, VIS reads via an `:app`-wired port — no direct module edge.
+
 ## 2. Class diagrams by pillar
 
 ### P1a — :core:audio
@@ -80,13 +86,13 @@ classDiagram
     class Style <<interface>> { manifest() params() render(frame) }
     ShaderStyleBase ..|> Style : legacy ShaderScene re-grade
     FluidStyleBase ..|> Style : legacy FluidScene family
-    ProjectMStyle ..|> Style : interface in core; JNI bridge impl in feature:visuals
+    ProjectMStyleBridge ..|> Style : JNI bridge in :core:visualizer/native REUSE-as-is
     CymaticsStyles --|> FluidStyleBase
     Bgfx3DStyleBase ..|> Style : NEW bgfx renders into FBO texture
     StyleRepository --> Style : picker model
 ```
 
-projectM placement (aligns LEGACY_VERDICTS): the `ProjectMStyle` *interface* lives in `:core:visualizer/styles`; the JNI bridge implementation (`ProjectMEngine` native bindings, `.so` packaging) lives in `:feature:visuals`, which depends on VIS.
+projectM placement (review R1 OVERRIDES legacy target column): `ProjectMStyle` interface AND the JNI bridge implementation (`ProjectMEngine`, `.so` loading/packaging) live in **`:core:visualizer/native`** — :core:export must offline-render .milk styles and core→feature edges are forbidden; only Compose glue sits in :feature:visuals. LEGACY_VERDICTS target cell superseded.
 
 ### P3 — :feature:player (REBUILD — zero legacy player code)
 
@@ -116,7 +122,10 @@ classDiagram
     ExportService --> RecipeResolver
     ExportService --> LoudnessNormalizer : -14 LUFS BS.1770 port
     ExportService --> TransformerEditor : ALL UnstableApi confined HERE
+    ExportService --> ExportLimitsResolver : immutable ExportLimits via :app DI pre-flight
 ```
+
+**Entitlement enforcement (SPEC §4.4):** `ExportLimitsResolver` (wired in `:app` DI) resolves the active `ExportLimits` value — duration cap, quality rung, fps cap, watermark flag, alpha-lane flag — and injects it into `ExportService` pre-flight. Free/premium is DATA, checked in ONE place; UI may read the same value for picker graying but the resolver is authoritative.
 
 ### P5 + billing
 `NavGraph` (Nav3 typed NavKeys: Home/Library/Visuals/Studio/Settings/NowPlaying) · `AppShell` slot API (topBar/content/nowPlayingOverlay) · `ThemeEngine(packs)` mineral+glass composition, packs procedurally generated · `UnlockSheet(entitlement)` cadence governor (D-SAFE-2). Billing: `PurchasePort` ← PBL 9.x impl; `EntitlementRepository` (DataStore-cached, queryPurchasesAsync on resume); `DebugPurchasePort` simulates grant/pending/expiry/suspended. Legacy AdPolicy dropped (no ads v1).
@@ -132,7 +141,7 @@ classDiagram
 ```
 ```json
 {"kind":"synesthesia.preset","schemaVersion":1,"id":"p3","styleId":"neon_terrain",
- "params":{"speed":1.2,"marchDetail":0.8},"modRouteIds":["mr1"],"randomLocks":["palette"]}
+ "params":{"speed":1.2,"marchDetail":0.8},"modRouteRefs":[{"id":"mr1","contentHash":"sha256:.."}],"randomLocks":["palette"]}
 ```
 ```json
 {"kind":"synesthesia.theme","schemaVersion":1,"id":"obsidian_neon",
@@ -144,7 +153,10 @@ classDiagram
  {"type":"beat_impulse","curve":"exp_decay"}]}
 ```
 
-**Room entities:** `Track(uri PK, title, artist, album, durationMs, contentHash, folderRoot)` · `Playlist(id, name)` · `PlaylistTrack(playlistId, trackId, position)` · `HistoryDay(day, trackId, playCount, listenedMs)` · `Favorite(trackId, addedAt)`.
+**Room entities:** `Track(uri PK, title, artist, album, durationMs, contentHash, folderRoot)` · `Playlist(id, name)` · `PlaylistTrack(playlistId, trackId, position)` · `HistoryDay(day, trackId, playCount, listenedMs)` · `Favorite(trackId, addedAt)` · `QueueItem(position, trackUri, titleSnapshot, addedAt)` (process-death queue restore) · `FolderRoot(treeUri PK, displayName)` (persisted SAF grants).
+**Lyrics disposition:** sidecar `.lrc` files beside tracks (SPEC §5) — never copied into the DB; DB holds only a lookup cache keyed by contentHash.
+
+**Loader validation law:** every artifact load validates against the registry — `paramId` must exist in `ParamRegistry`'s typed schema (type + range coerced), modroute entries require their per-`type` discriminator's mandatory fields; violations quarantine the artifact (legacy AtomicWrite quarantine pattern), never crash.
 **Backup disposition:** `HistoryDay` (listening history) is device-local by default — EXCLUDED from auto-backup alongside entitlement cache / analysis cache / crash ring (privacy-lean; playlists/presets/recipes/themes DO sync as user work).
 **DataStore keys:** entitlement.cache · player.eq.bands · player.eq.preset.<deviceId> · player.playback.* · visuals.activeRecipeId · visuals.tier.override · comfort.flashDepth · comfort.reducedMotion · paywall.lastSheetAtMs · export.defaults.
 **Backup-excluded (D-SAFE-4):** entitlement cache, analysis cache, crash ring buffer.
@@ -177,6 +189,11 @@ Identical math both paths (SPEC §2.1) — including the SafetyClamp, which runs
 | Process death (player) | PlaybackService | Room-backed queue snapshot restore |
 | Audio focus / becoming noisy | PlaybackService | Media3 default handling + pause-on-unplug pref |
 | Parity harness (§2.1) | **:core:visualizer test source set** — Tier-1 offline↔offline pixel-exact suite; Tier-2 pHash structural check | CI-run |
+| Source switch / epoch | CaptureCoordinator → AudioSource port | every attach/detach bumps SampleRing `beginEpoch()` and flushes OnsetTracker/TempoGrid/FeatureRing |
+| Offline EGL context loss | OfflineRenderPipeline | recreate pbuffer/surfaceless context, re-upload ProgramBinaryCache, resume at current segment index |
+| Export process death | ExportService | START_NOT_STICKY; on relaunch resume from last COMPLETE segment in SegmentCache |
+| Frametime measurement | TierGovernor | Choreographer callback on GL thread feeds auto-tier; battery-saver observer caps tier at Base |
+| FBO compositing (bgfx + projectM + raw GL) | StyleFramework GL-spine pass | single compositor owns all external FBO blends — styles never composite each other |
 
 Legacy-target name map: LEGACY_VERDICTS "render-engine" ≙ `:core:visualizer` · "stores" ≙ `:core:database`+`:core:common` · ":feature:player capture" ≙ CaptureCoordinator flow · "style families" ≙ `:core:visualizer/styles`.
 
@@ -201,6 +218,8 @@ Identical math both paths (SPEC §2.1). **Threads:** main (UI/session) · GL thr
 | 13 | Parity harness owned by :core:visualizer test source set | SPEC §2.1 names render-engine module = this one | §2.1 |
 | 14 | Alpha lane = software encoders bundled from NDK-pinned sources, branch after PBO readback | HW VP9 encode absent on phones | §4.5 |
 | 15 | Capture permission/disclosure surface in feature layer; core audio permission-free | policy copy near user, engine pure | §12 D-SAFE-5 |
+| 16 | ExportLimitsResolver injects immutable ExportLimits via :app DI pre-flight | free/premium checked in ONE authoritative place | §4.4 |
+| 17 | projectM JNI bridge in :core:visualizer/native (R1 override) | :core:export must reach it offline; core→feature forbidden | §1 pins |
 
 ## 6. Name ledger (legacy semantics carried forward)
 Unchanged: SampleRing, ReactiveAnalyzer, LogBands, FeatureRing, OfflineAnalyzer, FeatureTimeline, AnalysisCache, SceneParams, AudioBus, PlaybackService, QueueOps, ProjectMScene.
