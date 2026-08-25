@@ -43,6 +43,7 @@ render(clock, audioFrame, params) -> frame
 - **Tier 1 — offline↔offline EXACT**: same (track bytes, recipe, schema version, seed) rendered twice offline ⇒ pixel-identical frames. This is the acceptance gate (CI-run on software/GL harness); any style failing it is broken by definition.
 - **Tier 2 — live↔offline STRUCTURAL**: live playback approximates the offline frame sequence (same scene graph, same param timeline; frames may drop/scale under load). Verified by sampled perceptual-hash distance ≤ threshold at matched beats, not byte equality.
 - Harness owner: render-engine module's own test source set. Metric: pHash Hamming distance, threshold pinned per family in code.
+- **Offline determinism mode (AAA review B-3) — engineered, not assumed:** every render-source symbol scan enforces a SeededRng registry (arch-test fails on bare `Random(`/`currentTimeMillis` in render paths); TierGovernor/FSR adaptivity flags FROZEN offline at recipe quality; strict frame-ordered fenced PBO readback (no out-of-order consumption); ALL temporal accumulators initialize from recipe seed at t=0 AND re-initialize identically at every segment boundary.
 - All randomness seeded; the seed is part of the recipe record → exports reproducible **for a given schema version** (see §2.5).
 
 ### 2.2 Audio pipeline
@@ -55,7 +56,7 @@ render(clock, audioFrame, params) -> frame
 Every stylable parameter is addressable: `paramId → value`:
 - Static value · envelope (ADSR) · LFO (rate clamped ≤ photosensitivity limits) · beat-gated impulse · band follower (FFT band → param, attack/release shaped)
 - Modulation routes are data (JSON), stackable per parameter, shareable inside recipes/presets.
-- Safety architecture (D-SAFE-1): a HARD, NON-DEFEATABLE WCAG flash ceiling (≤3 flashes/s equivalent) is applied LAST in every modulation chain — always on, all tiers, all styles, not exposed as a setting. Optional comfort controls (flash depth, reduced-motion) operate BELOW the ceiling, default OFF, off = exact no-op.
+- Safety architecture (D-SAFE-1, AAA-review hardened): **TWO-STAGE** flash control. Stage 1 — param-space WCAG ceiling applied LAST inside ModRouter (≤3 flashes/s equivalent, non-defeatable, not a setting). Stage 2 — `FlashBudget` output-space pass measuring FINAL composited luminance, running as the last fullscreen pass before surface/encoder (post-bloom/post-tonemap — bloom can turn an in-budget impulse into an out-of-budget flash otherwise). Post-clamp passes restricted to non-additive or budget-aware effects (grain clamped). Clamp is cadence-aware: transitions→Hz computed from ACTUAL emitted fps so live frame drops can never loosen the ceiling. Optional comfort controls operate BELOW stage 1, default OFF, off = exact no-op.
 
 ### 2.5 Determinism & data-model versioning (architecture prerequisite)
 Four JSON artifact kinds exist — **recipes**, **presets**, **themes**, **modulation routes**. Rules:
@@ -131,7 +132,7 @@ Trim (filmstrip) · grade (bright/contrast/sat/hue/vignette) · speed (with pitc
 Visual-safety: the hard WCAG ceiling (§2.3 D-SAFE-1) applies to ALL tiers unconditionally — monetization never touches photosafety; comfort controls below it are cosmetic preferences.
 
 ### 4.5 Offline render budgets & lifecycle
-- Time budget model per (resolution tier × SoC class {flagship/mid/entry}): pre-flight estimate shown BEFORE render starts; >15 min requires explicit confirm; >45 min suggests lower tier.
+- Time budget model per (resolution tier × SoC class {flagship/mid/entry}): pre-flight estimate shown BEFORE render starts; estimates come from a ~2s CALIBRATION PASS extrapolated through a thermal-derate curve (AAA review) so sustained-load clock throttling can't make them lie; >15 min requires explicit confirm; >45 min suggests lower tier.
 - Cancellation always available; **resume** via chunked segment cache (renders in N-second segments to app storage, stitched losslessly at finalize — mp4parser-style sample-copy where container allows).
 - Long renders run under foreground service `mediaProcessing` type; doze-safe; battery-undone warning <15%.
 - Encoder strategy: HW H.264/HEVC via Media3; **VP9-alpha & GIF/WebP via software encoders bundled from NDK-pinned sources** (libvpx et al.) — hardware VP9 encode does not exist on phones; cost accepted and budgeted above.
@@ -144,6 +145,7 @@ Base: Media3/ExoPlayer + MediaSessionService (background play), MediaStore libra
 |---|---|
 | Library core | tracks/albums/artists/genres, folders view, queue edit (jump/pull/remove), favorites, playlists, multi-term search |
 | Audio controls | parametric EQ (band types LP/HP/shelf/peak, presets **per output device**), bass/treble, speed **and pitch**, gapless, crossfade (0–6s, pause/resume/skip fades), ReplayGain, skip silence, preamp |
+| DSP chain order law (AAA B-5): decode → speed/pitch → skip-silence → EQ/bass/treble → ReplayGain preamp+gain → limiter → crossfade mixbus → visualizer tee LAST. Tee is POST-EQ by law — the visualizer reacts to what the user actually hears. Crossfade = custom mixing AudioProcessor (Media3 has none natively). ReplayGain scan lazy + cached by contentHash. | |
 | Comfort set | sleep timer (let-track-finish), A-B repeat painted on waveform seek bar, pause-on-unplug, auto-resume last track |
 | Poweramp-inspired advanced | direct-volume path where possible, .lrc timed lyrics over the visualizer, m3u/pls import/export, cue-sheet read, smart playlists (rules-based — Poweramp's top complaint gap), native scrobble hook |
 | Explicitly skipped | skins marketplace, DSD/exotic formats, 64-band EQ depth, Chromecast |

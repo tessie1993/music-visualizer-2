@@ -88,7 +88,7 @@ Tier-tag equivalence for old notes: MID ≙ base · HIGH ≙ high · CINEMATIC �
 Parity-test against mass archetypes: zoom-decay psychedelic (~30%) · per-frame swirl fields · custom-wave rings · spectrum-bar centered · corridors · strobes · texture-wrapped feedback · MD2-shader fractal flights · shape-tunnels · mashup blends.
 
 ## F. AAA polish layer (NON-NEGOTIABLE product bar)
-- Fixed post order: HDR render → soft-knee bright-pass → dual-Kawada mip-chain bloom → ACES tonemap → edge-only CA (<1px) → animated fine grain → vignette → optional ultra DOF (CoC bokeh sprites).
+- Fixed post order: HDR render → soft-knee bright-pass → dual-Kawada mip-chain bloom → ACES tonemap → edge-only CA (<1px) → animated fine grain → **FlashBudget luminance pass (D-SAFE-1 stage 2, last before surface/encoder)** → vignette → optional ultra DOF (CoC bokeh sprites). Post-clamp effects must be non-additive or budget-aware.
 - FX menu economics: cheap always-available (bloom 0.4 default, grain 3–5%, vignette, mirror/kaleido, feedback trails); mid tier adds halation + one-pass VHS/CRT; true pixel-sorting is flagship-only. **Law:** never all simultaneously; CA/glitch are transient-gated; restraint IS the aesthetic.
 - Palette discipline: one graded LUT per scene; hues shift on musical SECTIONS, never continuously.
 - Motion law: spring-damper smoothing on band energies (fast attack, release 3–4× slower); drive from onset grid + BPM clock so peaks land ON beats; anticipate via pre-roll ramps.

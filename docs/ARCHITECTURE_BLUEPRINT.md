@@ -63,6 +63,8 @@ classDiagram
 
 Ports law: `AudioSource` is the ONLY seam between Media3/mic/projection/file and the analysis bus.
 
+**Canonical ingest contract (AAA review B-2):** every AudioSource emits **f32 interleaved @48 kHz mono-analysis** — the SOURCE owns resampling/downmix (tap follows sink config, mic 44.1k, capture mixer rate, file decode arbitrary). A format/rate change INSIDE a live tap (BT↔speaker route change is NOT attach/detach) forces `beginEpoch()` + full analyzer flush. FeatureRing entries carry source timestamps; the renderer selects the snapshot at `mediaPosition − calibratedLatency`. Latency budget (<50 ms live law): tap→ring ~1 ms · hop wait ≤10.7 ms (FFT hop 512 @48k) · FFT+features ~3 ms · modroute+clamp ~1 ms · GL submit+display ≈ 2 vsync (~33 ms worst) ⇒ budget holds with headroom; the 2048 window is analysis smoothing, NOT latency.
+
 ### P1b — :core:visualizer core
 
 ```mermaid
@@ -126,6 +128,10 @@ classDiagram
 ```
 
 **Entitlement enforcement (SPEC §4.4):** `ExportLimitsResolver` (wired in `:app` DI) resolves the active `ExportLimits` value — duration cap, quality rung, fps cap, watermark flag, alpha-lane flag — and injects it into `ExportService` pre-flight. Free/premium is DATA, checked in ONE place; UI may read the same value for picker graying but the resolver is authoritative.
+
+**Player DSP chain law (AAA review B-5):** decode → speed/pitch → skip-silence → EQ/bass/treble → ReplayGain preamp+gain → limiter → crossfade mixbus (custom mixing AudioProcessor; Media3 has none) → PlayerTapSource tee LAST = POST-EQ (visualizer reacts to what is heard). ReplayGain scan lazy + cached by contentHash.
+
+**Style statefulness classes (AAA review B-4):** every StyleManifest declares `stateless | checkpointable`. Stateless styles (fullscreen shaders, cymatics) cut anywhere. Checkpointable styles (fluid/RD/trail buffers) serialize sim buffers at segment boundaries OR segments align to their natural reset points; Rebound loop-perfect Canvas renders single-pass whole-timeline (never segmented). Offline determinism mode (SPEC §2.1): SeededRng registry enforced by arch-test symbol scan over render sources; adaptivity frozen at recipe quality; frame-ordered fenced PBO readback; accumulators re-seeded per segment boundary identically.
 
 ### P5 + billing
 `NavGraph` (Nav3 typed NavKeys: Home/Library/Visuals/Studio/Settings/NowPlaying) · `AppShell` slot API (topBar/content/nowPlayingOverlay) · `ThemeEngine(packs)` mineral+glass composition, packs procedurally generated · `UnlockSheet(entitlement)` cadence governor (D-SAFE-2). Billing: `PurchasePort` ← PBL 9.x impl; `EntitlementRepository` (DataStore-cached, queryPurchasesAsync on resume); `DebugPurchasePort` simulates grant/pending/expiry/suspended. Legacy AdPolicy dropped (no ads v1).
@@ -223,6 +229,11 @@ Identical math both paths (SPEC §2.1). **Threads:** main (UI/session) · GL thr
 | 17 | projectM JNI bridge in :core:visualizer/native (R1 override) | :core:export must reach it offline; core→feature forbidden | §1 pins |
 | 18 | Persistence split: `synesthesia_userwork.db` (playlists/favorites — backup-eligible) vs `synesthesia_local.db` (queue/history — device-local, backup-excluded) | sqlite backup granularity is file-level; privacy-lean requires the split | §3 D-SAFE-4 |
 | 19 | CrashRing law extended: track titles / QueueItem.titleSnapshot NEVER enter traces or logs; queue-restore logging uses contentHash only | title leak path closed at source | §12 D-SAFE-4 |
+| 20 | Two-stage flash control: param clamp (ModRouter) + output-space FlashBudget last fullscreen pass pre-surface/encoder | bloom/tonemap can defeat param-space clamps | §2.3 D-SAFE-1 |
+| 21 | Canonical ingest: sources emit f32 interleaved @48k mono-analysis; in-tap format change forces epoch+flush; FeatureRing carries source timestamps | route changes ≠ attach/detach; clock skew killed by position−latency selection | §2.2 |
+| 22 | SeededRng registry + arch-test symbol scan over render paths; offline adaptivity frozen; fenced ordered PBO readback | Tier-1 pixel-exactness is engineered, not asserted | §2.1 |
+| 23 | Styles declare stateless / checkpointable; checkpointables checkpoint or align segments; Rebound = single-pass | stitch seams impossible by construction | §4.5 |
+| 24 | Shared shader lib: `lib_*` preludes + palette LUTs owned by :core:visualizer/styles/glsl, build-time include splice | one source of truth for AAA look primitives | TS §2 |
 
 ## 6. Name ledger (legacy semantics carried forward)
 Unchanged: SampleRing, ReactiveAnalyzer, LogBands, FeatureRing, OfflineAnalyzer, FeatureTimeline, AnalysisCache, SceneParams, AudioBus, PlaybackService, QueueOps, ProjectMScene.
