@@ -154,6 +154,7 @@ classDiagram
 ```
 
 **Room entities:** `Track(uri PK, title, artist, album, durationMs, contentHash, folderRoot)` · `Playlist(id, name)` · `PlaylistTrack(playlistId, trackId, position)` · `HistoryDay(day, trackId, playCount, listenedMs)` · `Favorite(trackId, addedAt)` · `QueueItem(position, trackUri, titleSnapshot, addedAt)` (process-death queue restore) · `FolderRoot(treeUri PK, displayName)` (persisted SAF grants).
+**Persistence split (D-SAFE-4 audit fix):** TWO Room databases — `synesthesia_userwork.db` (Playlist/PlaylistTrack/Favorite/Track — backup-eligible user work) and `synesthesia_local.db` (QueueItem/HistoryDay — device-local, excluded from cloud backup + device transfer; backup rules artifacts live in app res/xml). Restore of queue re-resolves via trackUri.
 **Lyrics disposition:** sidecar `.lrc` files beside tracks (SPEC §5) — never copied into the DB; DB holds only a lookup cache keyed by contentHash.
 
 **Loader validation law:** every artifact load validates against the registry — `paramId` must exist in `ParamRegistry`'s typed schema (type + range coerced), modroute entries require their per-`type` discriminator's mandatory fields; violations quarantine the artifact (legacy AtomicWrite quarantine pattern), never crash.
@@ -220,6 +221,8 @@ Identical math both paths (SPEC §2.1). **Threads:** main (UI/session) · GL thr
 | 15 | Capture permission/disclosure surface in feature layer; core audio permission-free | policy copy near user, engine pure | §12 D-SAFE-5 |
 | 16 | ExportLimitsResolver injects immutable ExportLimits via :app DI pre-flight | free/premium checked in ONE authoritative place | §4.4 |
 | 17 | projectM JNI bridge in :core:visualizer/native (R1 override) | :core:export must reach it offline; core→feature forbidden | §1 pins |
+| 18 | Persistence split: `synesthesia_userwork.db` (playlists/favorites — backup-eligible) vs `synesthesia_local.db` (queue/history — device-local, backup-excluded) | sqlite backup granularity is file-level; privacy-lean requires the split | §3 D-SAFE-4 |
+| 19 | CrashRing law extended: track titles / QueueItem.titleSnapshot NEVER enter traces or logs; queue-restore logging uses contentHash only | title leak path closed at source | §12 D-SAFE-4 |
 
 ## 6. Name ledger (legacy semantics carried forward)
 Unchanged: SampleRing, ReactiveAnalyzer, LogBands, FeatureRing, OfflineAnalyzer, FeatureTimeline, AnalysisCache, SceneParams, AudioBus, PlaybackService, QueueOps, ProjectMScene.

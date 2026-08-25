@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- D-SAFE-4: device-local data never leaves the phone via cloud backup or
+     device-to-device transfer. User WORK (presets/recipes/themes/playlists)
+     stays eligible; everything privacy-lean is excluded here. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="database" path="synesthesia_local.db" />
+        <exclude domain="database" path="synesthesia_local.db-wal" />
+        <exclude domain="database" path="synesthesia_local.db-shm" />
+        <exclude domain="sharedpref" path="entitlement.cache.preferences_pb" />
+        <exclude domain="sharedpref" path="paywall.preferences_pb" />
+        <exclude domain="file" path="cache/analysis/" />
+        <exclude domain="file" path="crash_ring/" />
+        <exclude domain="file" path="datastore/visuals_tier.preferences_pb" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="database" path="synesthesia_local.db" />
+        <exclude domain="database" path="synesthesia_local.db-wal" />
+        <exclude domain="database" path="synesthesia_local.db-shm" />
+        <exclude domain="sharedpref" path="entitlement.cache.preferences_pb" />
+        <exclude domain="file" path="cache/analysis/" />
+        <exclude domain="file" path="crash_ring/" />
+    </device-transfer>
+</data-extraction-rules>

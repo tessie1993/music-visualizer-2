@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Legacy API (<31) full-backup rules; mirrors data_extraction_rules.xml (D-SAFE-4). -->
+<full-backup-content>
+    <exclude domain="database" path="synesthesia_local.db" />
+    <exclude domain="database" path="synesthesia_local.db-wal" />
+    <exclude domain="database" path="synesthesia_local.db-shm" />
+    <exclude domain="sharedpref" path="entitlement.cache.preferences_pb" />
+    <exclude domain="sharedpref" path="paywall.preferences_pb" />
+    <exclude domain="file" path="cache/analysis/" />
+    <exclude domain="file" path="crash_ring/" />
+</full-backup-content>
