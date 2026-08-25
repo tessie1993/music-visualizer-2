@@ -63,7 +63,7 @@ classDiagram
 
 Ports law: `AudioSource` is the ONLY seam between Media3/mic/projection/file and the analysis bus.
 
-**Canonical ingest contract (AAA review B-2):** every AudioSource emits **f32 interleaved @48 kHz mono-analysis** — the SOURCE owns resampling/downmix (tap follows sink config, mic 44.1k, capture mixer rate, file decode arbitrary). A format/rate change INSIDE a live tap (BT↔speaker route change is NOT attach/detach) forces `beginEpoch()` + full analyzer flush. FeatureRing entries carry source timestamps; the renderer selects the snapshot at `mediaPosition − calibratedLatency`. Latency budget (<50 ms live law): tap→ring ~1 ms · hop wait ≤10.7 ms (FFT hop 512 @48k) · FFT+features ~3 ms · modroute+clamp ~1 ms · GL submit+display ≈ 2 vsync (~33 ms worst) ⇒ budget holds with headroom; the 2048 window is analysis smoothing, NOT latency.
+**Canonical ingest contract (AAA reviews B-2/B-3):** every AudioSource emits **f32 interleaved @48 kHz mono-analysis** — the SOURCE owns resampling/downmix. A format/rate change INSIDE a live tap forces `beginEpoch()` + full analyzer flush. **Clock-domain law:** FeatureRing entries carry source timestamps SCALED BY the active speed/pitch factor; renderer selects snapshot at `mediaPosition − calibratedLatency`; a SEEK (position discontinuity) triggers offset REBASING of the mapping plus onset/tempo flush when the gap exceeds one analysis window — never silent drift. Crossfade tee reads the post-mix bus: single stream, always. **Latency law, scoped honestly:** hard ≤50 ms end-to-end for player-tap and file-decode sources; mic/playback-capture are BEST-EFFORT with measured values published per source (projection capture buffering can exceed the budget physically). Per-source calibration protocol: measure tap→photon on reference hardware (instrumented M7 test); `calibratedLatency` is data, not a constant. Budget arithmetic (player-tap): hop wait ≤10.7 ms (FFT hop 512 @48k) · FFT+features ~3 ms · modroute+clamp ~1 ms · GL submit+display ≈ 2 vsync ⇒ ~48 ms worst-case — thin by design, hence the measurement gate.
 
 ### P1b — :core:visualizer core
 
@@ -127,7 +127,7 @@ classDiagram
     ExportService --> ExportLimitsResolver : immutable ExportLimits via :app DI pre-flight
 ```
 
-**Entitlement enforcement (SPEC §4.4):** `ExportLimitsResolver` (wired in `:app` DI) resolves the active `ExportLimits` value — duration cap, quality rung, fps cap, watermark flag, alpha-lane flag — and injects it into `ExportService` pre-flight. Free/premium is DATA, checked in ONE place; UI may read the same value for picker graying but the resolver is authoritative.
+**Entitlement enforcement (SPEC §4.4):** `ExportLimitsResolver` (wired in `:app` DI) resolves the active `ExportLimits` value — duration cap, quality rung, fps cap, watermark flag, alpha-lane flag, **styleGate (allowed style ids: 3 free + current rotating preview)** — and injects it into `ExportService` pre-flight. Free/premium is DATA, checked in ONE place; UI may read the same value for picker graying but the resolver is authoritative.
 
 **Player DSP chain law (AAA review B-5):** decode → speed/pitch → skip-silence → EQ/bass/treble → ReplayGain preamp+gain → limiter → crossfade mixbus (custom mixing AudioProcessor; Media3 has none) → PlayerTapSource tee LAST = POST-EQ (visualizer reacts to what is heard). ReplayGain scan lazy + cached by contentHash.
 
