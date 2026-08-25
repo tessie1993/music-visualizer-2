@@ -245,3 +245,13 @@ Identical math both paths (SPEC §2.1). **Threads:** main (UI/session) · GL thr
 Unchanged: SampleRing, ReactiveAnalyzer, LogBands, FeatureRing, OfflineAnalyzer, FeatureTimeline, AnalysisCache, SceneParams, AudioBus, PlaybackService, QueueOps, ProjectMScene.
 Renamed: OnsetTracker←SuperFlux/OnsetPeakPicker · TempoGrid←TempoTracker+BeatGrid+BarTracker · TierGovernor←ThermalGovernor/GlTier · SafetyClamp←VisualSafety(+FlashBudget) · ModRoute←LfoConfig/AdsrConfig · ParamRegistry←ParamKeys/ParamScope · StyleManifest←VisualStyleCatalog entries · StyleRepository←PresetStore · EqEngine←MvzAudioProcessorChain · LibraryRepository←TrackLibrary · CaptureCoordinator←CaptureController · LoudnessNormalizer←LoudnessMeter/Target · ThemeEngine←ThemePackCatalog · FrameStitcher←LoopRender seam logic.
 New: RenderClock, RecipeResolver, SegmentCache, FrameStepper, UnlockSheet, PurchasePort, DebugPurchasePort, Bgfx3DStyleBase.
+
+## 7. Implemented seams ledger (code that EXISTS - cartographer-maintained)
+| Contract | File | Status |
+|---|---|---|
+| AudioSource/PcmSink/AudioFeatures | synesthesia/core/audio/.../AudioSource.kt | LANDED |
+| Style/StyleManifest/RenderClock/ModulationRouter/ParamClamp | synesthesia/core/visualizer/.../Style.kt | LANDED |
+| PurchasePort/EntitlementRepository/Entitlements | synesthesia/core/billing/.../Entitlements.kt | LANDED |
+| ExportLimits/ExportLimitsResolver | synesthesia/core/export/.../ExportLimits.kt | LANDED |
+| CrashRing | synesthesia/core/common/.../CrashRing.kt | LANDED |
+Design rationale: docs/FOUNDATION_DESIGN.md. Engines behind these seams are M4-M6 work.
