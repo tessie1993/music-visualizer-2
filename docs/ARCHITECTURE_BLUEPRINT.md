@@ -173,11 +173,12 @@ classDiagram
 ```mermaid
 flowchart LR
   subgraph LIVE
-    A[media clock via Media3 sink] -->|tap| R[(SampleRing)] --> RA[ReactiveAnalyzer] --> FR[FeatureRing snapshot] --> MW[ModRouter + SafetyClamp] --> GL["GL frame at surface res drops under load; half-res styles upscaled via FSR1 EASU+RCAS mobile"]
+    A[media clock via Media3 sink] -->|tap| R[(SampleRing)] --> RA[ReactiveAnalyzer] --> FR[FeatureRing snapshot] --> MW[ModRouter param-clamp stage-1] --> GLR[GL render at surface res; drops under load] --> FSR[FSR1 EASU+RCAS upscale if scaled] --> FB[FlashBudget stage-2 LAST pixel pass] --> S[surface]
   end
   subgraph OFFLINE
     F[file decoder] --> OA[OfflineAnalyzer] --> FT[(FeatureTimeline cache)]
-    FT --> FS[FrameStepper idx x 1/fps NO drops] --> MWO[ModRouter + SafetyClamp identical chain] --> EGL["EGL headless FBO native res; tiled-render valve for frames above GPU max"] --> PBO[PBO readback]
+    FT --> FS[FrameStepper idx x 1/fps NO drops] --> MWO[ModRouter stage-1 identical chain] --> EGL[EGL headless FBO native res; tiled-render valve above GPU max] --> CAP[in-engine captions/text] --> FB2[FlashBudget stage-2 LAST before encode]
+    FB2 --> PBO[fenced ordered PBO readback]
     PBO --> SEG[SegmentCache] --> MX[muxer + stitch + LUFS normalize]
     PBO -. alpha lane .-> AL["AlphaEncoderLane: WebP-anim / VP9-alpha / GIF software encoders from NDK-pinned sources"]
   end
