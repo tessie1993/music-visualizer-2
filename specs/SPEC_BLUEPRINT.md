@@ -1,5 +1,5 @@
-# Synesthesia — Spec Blueprint v1
-Status: DRAFT under hostile review · Owner: tessie1993 · Date: 2026-08-25
+# Synesthesia — Spec Blueprint v1.2
+Status: data-safety gate PASSED · architecture review pending (M2) · Owner: tessie1993 · Date: 2026-08-25
 Source: owner interview (3 rounds) + research fleet (Poweramp inventory, export-gap scan, 3D style/engine survey)
 
 ---
@@ -153,7 +153,7 @@ Loudness-curve waveform seek bar (from analysis cache) is player+visualizer shar
 
 Free (permanent): full player · 3 signature styles + randomizer · standard-quality live visuals · export ≤3 min, lowest quality, ≤60fps.
 Premium (sub monthly/yearly): ALL styles incl. new 3D + future packs · export to 4K/full quality/no time cap · alpha lane · recipes cloud-free sharing (file export).
-Paywall UX (D-SAFE-2): unlock sheet's 3-second timer gates ONLY the purchase-button enablement; the dismiss/close control is NEVER delayed, obscured, or penalized. Triggers = app boot/reopen + timed loop **capped at 1 per 4 hours and 1 per session** (numbers are law, tunable only downward); never mid-playback, never during export.
+Paywall UX (D-SAFE-2): unlock sheet's 3-second timer gates ONLY the purchase-button enablement; the dismiss/close control is NEVER delayed, obscured, or penalized. Trigger surfaces = (a) app boot/reopen unlock sheet, (b) contextual feature-gate nudges shown only AT a gated feature's touchpoint, max one per session each, (c) evergreen Settings entry. Unlock-sheet cadence capped at 1 per 4 hours and 1 per session (numbers are law, tunable only downward); never mid-playback, never during export. Play's own transactional message sheet (`showInAppMessages`) is invoked at launch only — a platform-owned surface, never triggered by us mid-playback/export.
 Free-tier 3D sampling: a **rotating preview style** (one premium style free each week, live use allowed, export locked) so free users can taste depth — answers "randomizer over 3 styles ≠ customization" loophole.
 Known accepted risk (documented): client-only entitlement means a refund revokes at next `queryPurchasesAsync` (session-length premium leak ≤ one session) and sideloaded APKs can forge grants — serverless v1 stance, revisit post-launch.
 Architecture (port seams, built day-1): `EntitlementRepository` (DataStore-cached, queryPurchasesAsync on resume) ← `PurchasePort` interface ← **PBL 9.x-only impl for v1** — D-SAFE-3 RESOLUTION: RevenueCat (or any validation SDK) embeds INTERNET permission and transmits identifiers/purchase tokens off-device, contradicting the no-network product law; RC is therefore EXCLUDED from v1 and reconsidered only as a formal owner decision to amend the network law (with data-safety form + privacy policy updates). v1 stays serverless client-side per §7's own design. PBL rules: acknowledge ≤3 days after verification, PENDING never grants, grace/account-hold read from query results + `DebugPurchasePort` stub simulating grant/pending/expiry. AdPolicy hooks reserved, ads NOT in v1 plan.
