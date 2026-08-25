@@ -63,7 +63,9 @@ classDiagram
 
 Ports law: `AudioSource` is the ONLY seam between Media3/mic/projection/file and the analysis bus.
 
-**Canonical ingest contract (AAA reviews B-2/B-3):** every AudioSource emits **f32 interleaved @48 kHz mono-analysis** — the SOURCE owns resampling/downmix. A format/rate change INSIDE a live tap forces `beginEpoch()` + full analyzer flush. **Clock-domain law:** FeatureRing entries carry source timestamps SCALED BY the active speed/pitch factor; renderer selects snapshot at `mediaPosition − calibratedLatency`; a SEEK (position discontinuity) triggers offset REBASING of the mapping plus onset/tempo flush when the gap exceeds one analysis window — never silent drift. Crossfade tee reads the post-mix bus: single stream, always. **Latency law, scoped honestly:** hard ≤50 ms end-to-end for player-tap and file-decode sources; mic/playback-capture are BEST-EFFORT with measured values published per source (projection capture buffering can exceed the budget physically). Per-source calibration protocol: measure tap→photon on reference hardware (instrumented M7 test); `calibratedLatency` is data, not a constant. Budget arithmetic (player-tap): hop wait ≤10.7 ms (FFT hop 512 @48k) · FFT+features ~3 ms · modroute+clamp ~1 ms · GL submit+display ≈ 2 vsync ⇒ ~48 ms worst-case — thin by design, hence the measurement gate.
+**Canonical ingest contract (AAA reviews B-2/B-3):** every AudioSource emits **f32 interleaved @48 kHz mono-analysis** — the SOURCE owns resampling/downmix. A format/rate change INSIDE a live tap forces `beginEpoch()` + full analyzer flush. **Clock-domain law:** FeatureRing entries carry source timestamps scaled by `playbackParameters.speed` ONLY — pitch shifting preserves duration and NEVER enters t→frame mappings (AAA panel A1); renderer selects snapshot at `mediaPosition − calibratedLatency`; a SEEK triggers offset REBASING plus onset/tempo flush when the gap exceeds one analysis window — never silent drift. Crossfade tee reads the post-mix bus when crossfade ships (v1.1). **Latency law:** ≤50 ms is a TARGET for player-tap/file-decode sources, verified by measured p95 published per source (sink-buffer depth included via tap→photon measurement — arithmetic on paper is not evidence); mic/playback-capture are best-effort with measured values. Per-source calibration protocol runs in the M7 gate; `calibratedLatency` is data, not a constant.
+**Ring protocol (DSP panel):** SampleRing snapshot = seqlock/versioned read with acquire/release ordering; steady state is ZERO-ALLOCATION (GC pause > hop ⇒ overflow); overflow policy = drop-oldest, counted.
+**Fades law:** pause/resume/skip fades use equal-power √gains (linear dips −3 dB mid-fade); loudness measurement gated BS.1770 (−70 abs / −10 rel), −1 dBTP ceiling on any gain path.
 
 ### P1b — :core:visualizer core
 
@@ -100,15 +102,18 @@ projectM placement (review R1 OVERRIDES legacy target column): `ProjectMStyle` i
 
 ```mermaid
 classDiagram
-    class PlaybackService { MediaSessionService owns audio focus + becoming-noisy + process-death queue restore Room-backed }
+    class PlaybackService { MediaSessionService + FGS mediaPlayback type }
     PlaybackService --> EqEngine : BaseAudioProcessor biquads
-    PlaybackService --> PlayerTapSource : tee into ring
-    class PlaybackController { MediaController facade + sleepTimer + ABrepeat + crossfade controls }
-    class LibraryRepository { Room }
+    PlaybackService --> PlayerTapSource : tee into ring POST-EQ
+    class PlaybackController { MediaController facade + sleepTimer + ABrepeat + fades }
+    class LibraryRepository { Room userwork db }
     class QueueOps
     class LyricsRepo { lrc parser }
-    class CaptureCoordinator { mic XOR capture exclusivity }
+    class CaptureCoordinator { port-owned; impl in feature layer }
 ```
+
+**Background-playback platform checklist (streaming panel — M7 gate):** manifest `foregroundServiceType="mediaPlayback"` · POST_NOTIFICATIONS runtime grant flow (API 33+ or notification is silently dropped) · wake-mode/`onTaskRemoved` policy · MediaNotificationProvider wired · session activity intent.
+**EQ preset keys:** hashed route type+name (never raw BT MAC — randomized IDs churn + privacy). **True crossfade:** descoped v1.1, requires second decode pipeline w/ drift correction.
 
 ### P4 — :core:export
 
@@ -191,7 +196,7 @@ Identical math both paths (SPEC §2.1) — including the SafetyClamp, which runs
 |---|---|---|
 | GL context loss | StyleFramework (per style) + GlUtil.resetFrameState port | rebuild scene, re-upload program binaries via ProgramBinaryCache port |
 | Projection revoked mid-capture | CaptureCoordinator (:feature:player) | system callback → stop CaptureSource through AudioSource port; settings card explains |
-| Mic/capture seam | CaptureCoordinator drives MicSource/CaptureSource THROUGH the AudioSource port; permissions + D-SAFE-5 disclosure strings live in :feature:player/:core:designsystem | :core:audio stays permission-free |
+| Mic/capture seam | CaptureCoordinator drives MicSource/CaptureSource THROUGH the AudioSource port; the mediaProjection FGS service shell + permissions + D-SAFE-5 disclosure strings live in :feature:player/:core:designsystem (a projection FGS cannot be manifest-declared permission-free — panel fix) | :core:audio keeps ONLY the port; feature→feature edges stay forbidden via :app-wired port |
 | Disk-full during export | SegmentCache | flush partials as `.partial`, keep resumable state, surface retry |
 | Crash ring buffer | :core:common CrashRing (backup-excluded, write-time sanitization per §12/D-SAFE-4) | share-sheet pull, sanitized |
 | Process death (player) | PlaybackService | Room-backed queue snapshot restore |
@@ -213,7 +218,7 @@ Identical math both paths (SPEC §2.1). **Threads:** main (UI/session) · GL thr
 |---|---|---|---|
 | 1 | Single-writer lock-free SampleRing | audio thread never blocks GL | §2.2 |
 | 2 | One schema-registry module owns all 4 JSON kinds w/ Tolerant+ForeignFields | nothing silently dropped on upgrade | §2.5 |
-| 3 | ALL @UnstableApi confined to TransformerEditor (:core:export) | Media3 churn touches one module | TS §6 |
+| 3 | @UnstableApi confined to Transformer/effect/muxer SURFACES via TransformerEditor + owned processor wrappers in :core:audio (Base/TeeAudioProcessor ARE UnstableApi) | Media3 churn touches one module per surface family | TS §6 |
 | 4 | Injected clock: media-clock vs frame-index — one render fn | determinism soul | §2.1 |
 | 5 | SafetyClamp LAST, non-defeatable, not a setting | photosafety untouchable by tiers/paywall | D-SAFE-1 |
 | 6 | AudioSource port unifies tap/mic/capture/file behind PcmSink | engine source-agnostic | §2.2 |
