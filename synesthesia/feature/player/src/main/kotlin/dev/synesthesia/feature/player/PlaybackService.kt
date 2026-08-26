@@ -1,6 +1,7 @@
 package dev.synesthesia.feature.player
 
 import androidx.media3.exoplayer.ExoPlayer
+import dev.synesthesia.core.audio.SampleRing
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 

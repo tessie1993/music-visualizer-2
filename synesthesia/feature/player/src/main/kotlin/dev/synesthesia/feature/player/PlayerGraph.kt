@@ -3,6 +3,7 @@ package dev.synesthesia.feature.player
 import android.content.Context
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import dev.synesthesia.core.audio.SampleRing
 import dev.synesthesia.core.audio.TapAudioProcessor
@@ -13,6 +14,7 @@ import dev.synesthesia.core.audio.TapAudioProcessor
  * All @UnstableApi usage confined HERE per blueprint decision #3.
  */
 @OptIn(androidx.media3.common.util.UnstableApi::class)
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 object PlayerGraph {
 
     /** ~4 seconds of mono analysis headroom at 48 kHz (192,000 frames). */

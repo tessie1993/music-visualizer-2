@@ -50,6 +50,10 @@ classDiagram
     FileDecoderSource ..|> AudioSource : offline direct decode
     class SampleRing { +write() +snapshotLatest() +beginEpoch() }
     PcmSink <|.. SampleRing : single-writer ring
+    class SampleRing { +write() +snapshotLatest() +beginEpoch() } : seqlock volatile version pre+post copy
+    PcmSink <|.. SampleRing : drop-oldest wrap data[p%cap]==p
+    class TapAudioProcessor { +queueInput() tee } : owned UnstableApi s16-f32 mono SR/ch-epoch-callback
+    TapAudioProcessor --> SampleRing : PcmSink zero-alloc scratch
     SampleRing --> ReactiveAnalyzer
     class ReactiveAnalyzer { +bands[64] +rms +bass +bpm +onset +beatPhase }
     ReactiveAnalyzer --> LogBands : FFT2048 to 64 log bands
@@ -103,7 +107,9 @@ projectM placement (review R1 OVERRIDES legacy target column): `ProjectMStyle` i
 ```mermaid
 classDiagram
     class PlaybackService { MediaSessionService + FGS mediaPlayback type }
-    PlaybackService --> EqEngine : BaseAudioProcessor biquads
+    PlaybackService --> PlayerGraph : composition root UnstableApi-confined
+    PlayerGraph --> DefaultAudioSink : audioProcessors=[TapAudioProcessor]
+    PlaybackService --> SampleRing : ring lifecycle onCreate/onDestroy
     PlaybackService --> PlayerTapSource : tee into ring POST-EQ
     class PlaybackController { MediaController facade + sleepTimer + ABrepeat + fades }
     class LibraryRepository { Room userwork db }

@@ -5,4 +5,3 @@ plugins {
 android {
     namespace = "dev.synesthesia.core.visualizer"
 }
-
