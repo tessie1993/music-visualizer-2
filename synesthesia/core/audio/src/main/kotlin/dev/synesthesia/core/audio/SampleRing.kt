@@ -22,6 +22,13 @@ class SampleRing(
     @Volatile private var version = 0L // bumped per write; odd = mid-write
     @Volatile private var epoch = 0L
 
+    val channelCount: Int get() = channels
+    val writtenFrames: Long get() = writePos
+
+    /** Absolute position of the OLDEST retained frame (drop-oldest aware).
+     *  Frames below this have been dropped; readers detect gaps against it. */
+    val oldestAvailable: Long get() = writePos - minOf(writePos, capacityFrames.toLong())
+
     val totalFramesWritten: Long get() = writePos
     val currentEpoch: Long get() = epoch
 
@@ -85,6 +92,65 @@ class SampleRing(
         val e = ++epoch
         version++
         return e
+    }
+
+    /**
+     * Sequential planar read of ABSOLUTE frames [firstFrame, firstFrame+frameCount)
+     * into per-channel arrays. Seqlock-guarded: retries until the copy is stable.
+     * Caller re-checks [oldestAvailable] afterwards to detect mid-read drops
+     * (RingReadResult.Gap). Requires firstFrame >= oldestAvailable at call time.
+     */
+    fun copyInto(firstFrame: Long, frameCount: Int, out: Array<FloatArray>) {
+        require(frameCount > 0)
+        require(out.size == channels) {
+            "out has ${out.size} channels, ring has $channels"
+        }
+        val minSize = frameCount * channels
+        out.forEach { require(it.size * channels >= minSize) { "channel buffer too small" } }
+        while (true) {
+            val v1 = version
+            if (v1 % 2L == 1L) continue // producer mid-write: spin
+            for (i in 0 until frameCount) {
+                val src = ((firstFrame + i).mod(capacityFrames)) * channels
+                for (c in 0 until channels) {
+                    out[c][i] = data[src + c]
+                }
+            }
+            val v2 = version
+            if (v1 == v2 && v2 % 2L == 0L) return
+            // torn by concurrent write: discard, retry
+        }
+    }
+
+    /**
+     * Planar snapshot of the newest exactly-[out[0].size] frames across ALL
+     * channels. Returns false until the full window is available (never
+     * partially fills - callers keep their previous view intact).
+     */
+    fun snapshotLatest(out: Array<FloatArray>): Boolean {
+        val windowFrames = out[0].size
+        require(windowFrames > 0)
+        require(out.size == channels) {
+            "out has ${out.size} channels, ring has $channels"
+        }
+        out.forEach { require(it.size == windowFrames) { "planar buffers must match" } }
+        while (true) {
+            val v1 = version
+            if (v1 % 2L == 1L) continue // producer mid-write: spin
+            val w = writePos
+            if (w < windowFrames) return false // wait for the full window
+            val endPos = (w % capacityFrames).toInt()
+            val start = endPos - windowFrames
+            for (i in 0 until windowFrames) {
+                val src = ((start + i).mod(capacityFrames)) * channels
+                for (c in 0 until channels) {
+                    out[c][i] = data[src + c]
+                }
+            }
+            val v2 = version
+            if (v1 == v2 && v2 % 2L == 0L) return true
+            // torn by concurrent write: discard copy, retry
+        }
     }
 
     data class Snapshot(
