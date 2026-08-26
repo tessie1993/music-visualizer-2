@@ -13,8 +13,9 @@ graph BT
   AUDIO --> VIS
   COMMON --> DB["core:database"]
   COMMON --> BILLING["core:billing"]
+  BILLING --> EXPORT["core:export"]
   COMMON --> DS["core:designsystem"]
-  VIS --> EXPORT["core:export"]
+  VIS --> EXPORT
   AUDIO --> EXPORT
   NAV["core:navigation"]
   FPLAYER["feature:player"] --> AUDIO & DB & NAV & DS & COMMON
@@ -25,7 +26,7 @@ graph BT
   APP["app"] --> FPLAYER & FLIB & FVIS & FSTUDIO & FSET & NAV & DS & BILLING
 ```
 
-`FSTUDIO→VIS` exists for READ-ONLY style/preset metadata when composing recipes; rendering itself never leaves `:core:visualizer`.
+`FSTUDIO→VIS` exists for READ-ONLY style/preset metadata when composing recipes; rendering itself never leaves `:core:visualizer`. `BILLING→EXPORT` carries the `Entitlements` DATA TYPE only (`ExportLimitsResolver.resolve(entitlements)`); enforcement stays wired in :app DI (decision #16) — no billing logic in export.
 
 Edges are the ONLY allowed dependencies. Forbidden by compile-time convention plugin check: any `core:*`→`feature:*`; reverse `ui→engine` edges; Media3 session/UI types inside `:core:audio` except behind its `AudioSource` ports. `:app` owns DI wiring (Hilt), `SynesthesiaApp`, `MainActivity`, service declarations.
 
@@ -262,4 +263,5 @@ New: RenderClock, RecipeResolver, SegmentCache, FrameStepper, UnlockSheet, Purch
 | CrashRing | synesthesia/core/common/.../CrashRing.kt | LANDED |
 | TapAudioProcessor (+TapConversion) | synesthesia/core/audio/.../TapAudioProcessor.kt | LANDED - owned UnstableApi tee, s16-to-f32 mono, SR/ch-change epoch callback |
 | PlayerGraph + PlaybackService | synesthesia/feature/player/... | LANDED - ExoPlayer-DefaultAudioSink-tap-ring wiring; FGS mediaPlayback; POST_NOTIFICATIONS declared (runtime request w/ UI later) |
+| Legacy DSP analysis chain (37 classes: ReactiveAnalyzer, LogBands, SuperFlux, OnsetPeakPicker, TempoTracker, BeatGrid, BarTracker, chroma/mel/MFCC/key banks) | synesthesia/core/audio/.../ReactiveAnalyzer.kt et al | LANDED - M4 port (PR #139); package rewritten; consumes SampleRing via analysis read surface (copyInto/snapshotLatest planar); characterization tests + chain wiring REMAINING for M4 DoD |
 Design rationale: docs/FOUNDATION_DESIGN.md. Engines behind these seams are M4-M6 work.
