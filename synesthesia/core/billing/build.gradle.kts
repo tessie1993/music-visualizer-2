@@ -5,3 +5,7 @@ plugins {
 android {
     namespace = "dev.synesthesia.core.billing"
 }
+
+dependencies {
+    implementation(libs.kotlinx.coroutines.android)
+}
